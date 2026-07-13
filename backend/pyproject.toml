@@ -7,7 +7,7 @@ name = "xuanzang-backend"
 version = "0.0.1"
 description = "Xuanzang backend — layout-preserving research-paper translation and reading assistant"
 readme = "../README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Xuanzang contributors" }]
 dependencies = [
@@ -17,7 +17,9 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
     "sse-starlette>=2.1",
-    "pymupdf>=1.26.7",
+    # Keep the range compatible with the engine (pdf2zh-next pins pymupdf<1.25.3);
+    # the app only uses the stable page-count / metadata API.
+    "pymupdf>=1.24,<1.25.3",
     "python-multipart>=0.0.12",
 ]
 
@@ -36,7 +38,7 @@ packages = ["xuanzang"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 src = ["xuanzang", "engine_worker"]
 
 [tool.ruff.lint]
@@ -44,13 +46,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 
 [tool.black]
 line-length = 100
-target-version = ["py313"]
+target-version = ["py311"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 warn_unused_ignores = true
 ignore_missing_imports = true
