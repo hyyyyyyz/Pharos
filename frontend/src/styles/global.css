@@ -1,0 +1,330 @@
+/* ============================================================================
+   玄奘 · Xuanzang — global.css
+   大唐 design system: 唐三彩 / 敦煌 palette, brush-calligraphy display type,
+   ink-wash & gold-shimmer effects, 宣纸 paper texture, day / night themes.
+   Everything downstream is built on these tokens.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- tokens -- */
+:root {
+  color-scheme: light dark;
+
+  /* — raw 唐三彩 / 敦煌 palette (theme-independent) — */
+  --tang-ink:        #2a221a;   /* 墨    warm near-black          */
+  --tang-cinnabar:   #b23320;   /* 朱砂  imperial vermilion       */
+  --tang-cinnabar-d: #8c2414;
+  --tang-gold:       #cba14e;   /* 鎏金  metallic gold            */
+  --tang-gold-d:     #a67c2c;
+  --tang-jade:       #3f7d6a;   /* 青绿  jade green               */
+  --tang-ochre:      #a75f2b;   /* 赭石  ochre                    */
+  --tang-lapis:      #2f5f86;   /* 敦煌青金石                     */
+  --tang-paper:      #f3e8cf;   /* 宣纸  warm cream               */
+
+  /* — semantic tokens (light / 昼) — */
+  --bg:            #f1e6cc;
+  --bg-2:          #ecdfc0;
+  --surface:       #fbf5e6;
+  --surface-2:     #f6eed9;
+  --text:          var(--tang-ink);
+  --text-soft:     #5c4f3d;
+  --text-faint:    #8a7a60;
+  --border:        #dcc9a1;
+  --border-strong: #c9b184;
+  --accent:        var(--tang-cinnabar);
+  --accent-strong: var(--tang-cinnabar-d);
+  --on-accent:     #fdf6e6;
+  --gold:          var(--tang-gold-d);
+  --gold-bright:   var(--tang-gold);
+  --jade:          var(--tang-jade);
+  --ring:          color-mix(in srgb, var(--accent) 40%, transparent);
+  --shadow-1: 0 1px 2px rgba(42,34,26,.05), 0 3px 10px rgba(42,34,26,.07);
+  --shadow-2: 0 10px 34px rgba(42,34,26,.14), 0 3px 8px rgba(42,34,26,.09);
+  --gild:      linear-gradient(100deg, var(--tang-gold-d), var(--tang-gold), #f0dfa4, var(--tang-gold), var(--tang-gold-d));
+
+  /* subtle 宣纸 grain, drawn once as an inline SVG (no external asset) */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+
+  /* — type — */
+  --font-display: "Kaiti SC", "STKaiti", "KaiTi", "Songti SC", "Noto Serif SC", ui-serif, serif;
+  --font-serif:   "Songti SC", "STSong", "Noto Serif SC", Georgia, "Times New Roman", ui-serif, serif;
+  --font-sans:    "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", ui-sans-serif, sans-serif;
+  --font-mono:    "SFMono-Regular", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --step--1: clamp(.78rem, .74rem + .2vw, .86rem);
+  --step-0:  clamp(.95rem, .9rem + .3vw, 1.05rem);
+  --step-1:  clamp(1.15rem, 1.05rem + .5vw, 1.35rem);
+  --step-2:  clamp(1.5rem, 1.3rem + 1vw, 2rem);
+  --step-3:  clamp(2.1rem, 1.7rem + 2vw, 3.2rem);
+  --step-4:  clamp(3rem, 2.2rem + 4vw, 5.5rem);
+
+  /* — space / radius / motion — */
+  --sp-1: .375rem; --sp-2: .625rem; --sp-3: 1rem; --sp-4: 1.5rem;
+  --sp-5: 2.5rem; --sp-6: 4rem; --sp-7: 6rem;
+  --r-1: 4px; --r-2: 8px; --r-3: 14px; --r-4: 22px;
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --dur: .5s;
+}
+
+/* — night / 夜 theme: 墨底鎏金 (ink ground, gold & cream) — */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #16110c;
+    --bg-2:          #120d09;
+    --surface:       #211913;
+    --surface-2:     #2a2017;
+    --text:          #f0e4c8;
+    --text-soft:     #cdbb95;
+    --text-faint:    #9a8763;
+    --border:        #3c2f22;
+    --border-strong: #55432f;
+    --accent:        #d1502f;
+    --accent-strong: #b23320;
+    --on-accent:     #1a120c;
+    --gold:          var(--tang-gold);
+    --gold-bright:   #f0dfa4;
+    --jade:          #5aa088;
+    --ring:          color-mix(in srgb, var(--gold) 55%, transparent);
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.4);
+    --shadow-2: 0 14px 40px rgba(0,0,0,.55), 0 4px 12px rgba(0,0,0,.4);
+  }
+}
+/* explicit overrides win over the media query in both directions */
+:root[data-theme="light"] {
+  --bg: #f1e6cc; --bg-2: #ecdfc0; --surface: #fbf5e6; --surface-2: #f6eed9;
+  --text: var(--tang-ink); --text-soft: #5c4f3d; --text-faint: #8a7a60;
+  --border: #dcc9a1; --border-strong: #c9b184;
+  --accent: var(--tang-cinnabar); --accent-strong: var(--tang-cinnabar-d); --on-accent: #fdf6e6;
+  --gold: var(--tang-gold-d); --gold-bright: var(--tang-gold); --jade: var(--tang-jade);
+  --ring: color-mix(in srgb, var(--accent) 40%, transparent);
+  --shadow-1: 0 1px 2px rgba(42,34,26,.05), 0 3px 10px rgba(42,34,26,.07);
+  --shadow-2: 0 10px 34px rgba(42,34,26,.14), 0 3px 8px rgba(42,34,26,.09);
+}
+:root[data-theme="dark"] {
+  --bg: #16110c; --bg-2: #120d09; --surface: #211913; --surface-2: #2a2017;
+  --text: #f0e4c8; --text-soft: #cdbb95; --text-faint: #9a8763;
+  --border: #3c2f22; --border-strong: #55432f;
+  --accent: #d1502f; --accent-strong: #b23320; --on-accent: #1a120c;
+  --gold: var(--tang-gold); --gold-bright: #f0dfa4; --jade: #5aa088;
+  --ring: color-mix(in srgb, var(--gold) 55%, transparent);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.4);
+  --shadow-2: 0 14px 40px rgba(0,0,0,.55), 0 4px 12px rgba(0,0,0,.4);
+}
+
+/* ----------------------------------------------------------------- reset -- */
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font-serif);
+  font-size: var(--step-0);
+  line-height: 1.7;
+  color: var(--text);
+  background-color: var(--bg);
+  /* layered ground: soft 唐三彩 light pools + a woven 宣纸 grain */
+  background-image:
+    radial-gradient(120% 90% at 12% -10%, color-mix(in srgb, var(--gold-bright) 16%, transparent), transparent 55%),
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 50%),
+    radial-gradient(140% 120% at 50% 120%, color-mix(in srgb, var(--jade) 12%, transparent), transparent 60%),
+    linear-gradient(var(--bg), var(--bg-2));
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+/* woven paper grain overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: var(--paper-grain);
+  background-size: 180px 180px;
+  opacity: .05;
+  mix-blend-mode: multiply;
+}
+@media (prefers-color-scheme: dark) {
+  body::before { opacity: .08; mix-blend-mode: overlay; }
+}
+:root[data-theme="dark"] body::before { opacity: .08; mix-blend-mode: overlay; }
+:root[data-theme="light"] body::before { opacity: .05; mix-blend-mode: multiply; }
+
+img, svg, video { display: block; max-width: 100%; }
+input, button, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; }
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { color: var(--accent-strong); }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); }
+
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+
+/* thin, warm scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 99px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+
+/* --------------------------------------------------------------- headings - */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: .01em;
+  text-wrap: balance;
+  color: var(--text);
+}
+h1 { font-size: var(--step-3); }
+h2 { font-size: var(--step-2); }
+h3 { font-size: var(--step-1); }
+
+.xz-eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 600;
+}
+.xz-muted { color: var(--text-soft); }
+.xz-faint { color: var(--text-faint); }
+
+/* ------------------------------------------------------ effect primitives - */
+
+/* 鎏金流光 — gold shimmer sweeping across text */
+.xz-gild {
+  background: var(--gild);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: xz-gild-move 6s var(--ease) infinite;
+}
+@keyframes xz-gild-move {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* 水墨晕染 — ink-wash reveal (blur + rise) */
+.xz-ink-in { animation: xz-ink-in var(--dur) var(--ease) both; }
+@keyframes xz-ink-in {
+  from { opacity: 0; filter: blur(10px); transform: translateY(10px); }
+  to   { opacity: 1; filter: blur(0);    transform: none; }
+}
+.xz-delay-1 { animation-delay: .08s; }
+.xz-delay-2 { animation-delay: .16s; }
+.xz-delay-3 { animation-delay: .24s; }
+.xz-delay-4 { animation-delay: .32s; }
+
+/* 朱印 — a cinnabar seal stamp */
+.xz-seal {
+  display: inline-grid;
+  place-items: center;
+  width: 3.4em; height: 3.4em;
+  padding: .2em;
+  font-family: var(--font-display);
+  font-size: 1em; font-weight: 700; line-height: 1;
+  color: #fbeede;
+  text-align: center;
+  background:
+    radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--tang-cinnabar) 88%, #fff 10%), var(--tang-cinnabar-d));
+  border: 2px solid color-mix(in srgb, var(--tang-cinnabar-d) 80%, #000 10%);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, #fbeede 30%, transparent), var(--shadow-1);
+  transform: rotate(-4deg);
+  mask-image: var(--paper-grain);
+  mask-size: 120px 120px;
+  -webkit-mask-image: var(--paper-grain);
+  -webkit-mask-size: 120px 120px;
+}
+
+/* 云纹分隔 — a cloud-scroll divider rule */
+.xz-rule {
+  display: flex; align-items: center; gap: var(--sp-3);
+  color: var(--gold);
+}
+.xz-rule::before, .xz-rule::after {
+  content: ""; height: 1px; flex: 1;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
+.xz-rule > span { font-family: var(--font-display); letter-spacing: .3em; }
+
+/* --------------------------------------------------------------- surfaces - */
+.xz-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.xz-card--hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-2);
+  border-color: var(--border-strong);
+}
+/* a thin gilt top edge for elevated scroll-cards */
+.xz-card--gilt::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+  border-radius: var(--r-3) var(--r-3) 0 0;
+  background: var(--gild); background-size: 220% 100%;
+  opacity: .85;
+}
+
+/* --------------------------------------------------------------- controls - */
+.xz-btn {
+  --_bg: var(--surface-2);
+  --_fg: var(--text);
+  --_bd: var(--border-strong);
+  display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+  padding: .65em 1.25em;
+  font-family: var(--font-sans); font-size: var(--step-0); font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--_fg);
+  background: var(--_bg);
+  border: 1px solid var(--_bd);
+  border-radius: 999px;
+  transition: transform .18s var(--ease), box-shadow .3s var(--ease), background .3s var(--ease), filter .3s var(--ease);
+}
+.xz-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.xz-btn:active { transform: translateY(0) scale(.985); }
+.xz-btn--primary {
+  --_bg: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  --_fg: var(--on-accent); --_bd: var(--accent-strong);
+}
+.xz-btn--primary:hover { filter: brightness(1.06); }
+.xz-btn--gold {
+  --_bg: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  --_fg: #241a0a; --_bd: var(--gold-d, var(--gold));
+}
+
+.xz-tag {
+  display: inline-flex; align-items: center; gap: .4em;
+  padding: .2em .7em;
+  font-family: var(--font-sans); font-size: var(--step--1); font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--jade);
+  background: color-mix(in srgb, var(--jade) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--jade) 30%, transparent);
+  border-radius: 999px;
+}
+
+/* --------------------------------------------------------------- utility -- */
+.xz-container { width: min(1180px, 100% - 2 * var(--sp-4)); margin-inline: auto; }
+.xz-stack { display: flex; flex-direction: column; }
+.xz-center { display: grid; place-items: center; }
+[hidden] { display: none !important; }
+
+/* --------------------------------------------------- reduced motion guard - */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .xz-gild { animation: none; background-position: 0 50%; }
+}
