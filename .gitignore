@@ -1,0 +1,41 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Environments & secrets (NEVER commit API keys) ---
+.env
+.env.*
+!.env.example
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# --- Xuanzang runtime data (never commit user papers / DB / caches) ---
+backend/storage/files/
+data/
+*.db
+*.sqlite3
+*.sqlite3-*
+
+# --- Model / HuggingFace / offline caches ---
+.cache/
+offline_assets/
+*.onnx
+
+# --- macOS / editors ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
