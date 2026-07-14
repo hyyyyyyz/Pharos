@@ -32,3 +32,8 @@ export interface Paper {
 }
 
 export type PdfKind = "original" | "mono" | "dual";
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}

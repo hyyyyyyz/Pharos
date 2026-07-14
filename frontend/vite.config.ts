@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
   // Ensure a single React instance (avoids "Invalid hook call" from libraries
   // like @tanstack/react-query when Vite pre-bundles them separately).
   resolve: { dedupe: ["react", "react-dom"] },
-  optimizeDeps: { include: ["react", "react-dom", "@tanstack/react-query"] },
+  optimizeDeps: { include: ["react", "react-dom", "@tanstack/react-query", "zustand"] },
   server: {
     port: 5173,
     proxy: {
