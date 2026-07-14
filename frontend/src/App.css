@@ -1,8 +1,8 @@
-/* App shell / cover layout — built entirely on global.css tokens. */
+/* App shell + 译场 (library) — built on global.css tokens. */
 
 .app {
   position: relative;
-  z-index: 1; /* sit above the fixed 宣纸 grain (body::before) */
+  z-index: 1; /* above the fixed 宣纸 grain (body::before) */
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -22,7 +22,7 @@
 }
 .brand-seal {
   font-size: 1.05rem;
-  writing-mode: vertical-rl;   /* 玄 over 奘, like a real seal */
+  writing-mode: vertical-rl; /* 玄 over 奘, like a real seal */
   letter-spacing: -0.05em;
   line-height: 1;
 }
@@ -37,47 +37,98 @@
   letter-spacing: 0.15em;
 }
 
-/* -------------------------------------------------------------------- hero */
-.hero {
+/* -------------------------------------------------------------------- main */
+.app-main {
+  flex: 1;
+  padding-block: var(--sp-4) var(--sp-5);
+}
+.intro {
   text-align: center;
-  padding-block: clamp(var(--sp-5), 6vw, var(--sp-7));
+  padding-block: var(--sp-4) var(--sp-5);
 }
-.wordmark {
-  font-size: var(--step-4);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  margin-block: var(--sp-2) var(--sp-3);
+.intro-title {
+  font-size: var(--step-3);
+  letter-spacing: 0.12em;
+  margin-block: var(--sp-1) var(--sp-2);
 }
-.lede {
-  max-width: 46ch;
-  margin-inline: auto;
+.intro-lede {
   font-size: var(--step-1);
-  line-height: 1.85;
-  color: var(--text-soft);
 }
-.lede b { color: var(--accent); font-weight: 600; }
-.hero-actions {
+
+/* ------------------------------------------------------------- upload zone */
+.upload-zone {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-  justify-content: center;
-  margin-top: var(--sp-4);
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+  background: var(--surface);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--r-4);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
+    transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.upload-zone:hover,
+.upload-zone:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+}
+.upload-zone.is-over {
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  transform: scale(1.01);
+}
+.upload-zone.is-busy {
+  cursor: progress;
+  opacity: 0.8;
+}
+.upload-seal {
+  font-size: 1.1rem;
+  margin-bottom: var(--sp-1);
+}
+.upload-title {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  color: var(--text);
+}
+.upload-hint {
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  letter-spacing: 0.04em;
 }
 
-/* ----------------------------------------------------------------- section */
-.section {
-  padding-block: var(--sp-5);
+/* ------------------------------------------------------------------ 译场 */
+.library {
+  padding-top: var(--sp-4);
 }
-.section .xz-rule {
-  margin-bottom: var(--sp-4);
+.library .xz-rule {
+  margin-block: var(--sp-5) var(--sp-4);
 }
-
-/* --------------------------------------------------------------- 译场 grid */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--sp-4);
 }
+
+.lib-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+}
+.empty-seal {
+  font-size: 1.4rem;
+  opacity: 0.85;
+}
+
+/* -------------------------------------------------------------- paper card */
 .paper {
   display: flex;
   flex-direction: column;
@@ -98,69 +149,83 @@
   font-size: var(--step-1);
   line-height: 1.35;
 }
-.paper-en {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: var(--step--1);
-  line-height: 1.5;
-}
 .paper-meta {
-  margin-top: auto;
-  padding-top: var(--sp-2);
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+
+/* status tag hues */
+.xz-tag.tag-done {
+  color: var(--jade);
+  background: color-mix(in srgb, var(--jade) 12%, transparent);
+  border-color: color-mix(in srgb, var(--jade) 30%, transparent);
+}
+.xz-tag.tag-running,
+.xz-tag.tag-queued {
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 34%, transparent);
+}
+.xz-tag.tag-error {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* 译经 progress — a scroll of cinnabar → gold filling in */
+.paper-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-block: var(--sp-1);
+}
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 40%, transparent);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--gold-bright));
+  background-size: 200% 100%;
+  animation: xz-flow 2.2s linear infinite;
+  transition: width 0.6s var(--ease);
+}
+@keyframes xz-flow {
+  to {
+    background-position: -200% 0;
+  }
+}
+.progress-label {
   font-family: var(--font-sans);
   font-size: var(--step--1);
   letter-spacing: 0.03em;
 }
 
-/* --------------------------------------------------------- palette / spec */
-.swatches {
+.paper-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-4);
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-top: var(--sp-2);
 }
-.swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-1);
-}
-.swatch-chip {
-  width: 3.4rem;
-  height: 3.4rem;
-  border-radius: 50%;
-  box-shadow: var(--shadow-1), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
-}
-.swatch-name {
-  font-family: var(--font-display);
+.paper-actions .xz-btn {
+  padding: 0.5em 1em;
   font-size: var(--step--1);
-  letter-spacing: 0.1em;
-  color: var(--text-soft);
 }
 
-.specimen {
-  padding: var(--sp-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.spec-display {
-  font-family: var(--font-display);
-  font-size: var(--step-2);
-  line-height: 1.5;
-  color: var(--text);
-}
-.spec-serif {
-  font-family: var(--font-serif);
-  font-size: var(--step-0);
-  line-height: 1.9;
-  max-width: 60ch;
-}
-.spec-serif b { color: var(--accent); }
-.spec-sans {
+.paper-error {
   font-family: var(--font-sans);
   font-size: var(--step--1);
-  letter-spacing: 0.06em;
+  color: var(--accent);
+  line-height: 1.5;
+}
+.paper-error.center {
+  text-align: center;
 }
 
 /* ------------------------------------------------------------------ footer */
@@ -174,6 +239,7 @@
 }
 
 @media (max-width: 560px) {
-  .wordmark { font-size: var(--step-3); }
-  .hero-actions { flex-direction: column; align-items: stretch; }
+  .intro-title {
+    font-size: var(--step-2);
+  }
 }
