@@ -8,10 +8,10 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from xuanzang.api.schemas import JobOut, job_out
-from xuanzang.db.models import Paper, TranslationJob
-from xuanzang.db.session import session_scope
-from xuanzang.services.translation import create_job
+from pharos.api.schemas import JobOut, job_out
+from pharos.db.models import Paper, TranslationJob
+from pharos.db.session import session_scope
+from pharos.services.translation import create_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 

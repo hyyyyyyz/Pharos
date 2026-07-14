@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Xuanzang — translation engine environment setup (macOS / Apple Silicon)
+# Pharos — translation engine environment setup (macOS / Apple Silicon)
 # -----------------------------------------------------------------------
 # Creates an isolated conda environment that holds the AGPL-3.0 BabelDOC
 # engine (installed via its sanctioned wrapper `pdf2zh-next`).
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 CONDA="${CONDA:-$HOME/miniconda3/bin/conda}"
-ENV_NAME="${ENV_NAME:-xuanzang-engine}"
+ENV_NAME="${ENV_NAME:-pharos-engine}"
 PY_VER="${PY_VER:-3.12}"
 PDF2ZH_VERSION="${PDF2ZH_VERSION:-2.9.0}"
 # Resilient pip networking (flaky connections to PyPI are common). Override
@@ -31,7 +31,7 @@ PDF2ZH_VERSION="${PDF2ZH_VERSION:-2.9.0}"
 #   PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple bash scripts/setup_engine_env.sh
 PIP_NET_OPTS="--retries 8 --timeout 180"
 
-log() { printf '\n\033[1;36m[xuanzang]\033[0m %s\n' "$*"; }
+log() { printf '\n\033[1;36m[pharos]\033[0m %s\n' "$*"; }
 
 log "conda binary: $CONDA"
 "$CONDA" --version

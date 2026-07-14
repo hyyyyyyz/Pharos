@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Xuanzang translation engine worker.
+"""Pharos translation engine worker.
 
-Runs INSIDE the dedicated ``xuanzang-engine`` conda env (osx-64 / Rosetta). This
+Runs INSIDE the dedicated ``pharos-engine`` conda env (osx-64 / Rosetta). This
 is the ONLY place the AGPL-3.0 BabelDOC engine is imported. The FastAPI backend
 (a separate process in a separate env) spawns this script at arm's length,
 passing a job-spec file, and reads newline-delimited JSON progress events from

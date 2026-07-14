@@ -1,7 +1,7 @@
 """SQLAlchemy 2.x ORM models.
 
 Only metadata lives in SQLite; the PDFs themselves are content-addressed on
-disk (see :mod:`xuanzang.storage`). Highlight/Note/Chunk are stubs for future
+disk (see :mod:`pharos.storage`). Highlight/Note/Chunk are stubs for future
 reader annotations and RAG (created but unused in the MVP).
 """
 

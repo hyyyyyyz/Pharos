@@ -1,6 +1,6 @@
 """Application configuration (env-driven, 12-factor).
 
-Values come from environment variables prefixed ``XUANZANG_`` or a ``.env`` file
+Values come from environment variables prefixed ``PHAROS_`` or a ``.env`` file
 at the repo root. Never hard-code secrets — the DeepSeek/LLM key lives only in
 the environment. See ``.env.example``.
 """
@@ -13,14 +13,14 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from xuanzang.engines.base import TranslatorConfig
+from pharos.engines.base import TranslatorConfig
 
-REPO_ROOT = Path(__file__).resolve().parents[2]  # .../Xuanzang
+REPO_ROOT = Path(__file__).resolve().parents[2]  # .../Pharos
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="XUANZANG_",
+        env_prefix="PHAROS_",
         env_file=(REPO_ROOT / ".env", REPO_ROOT / "backend" / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     data_dir: Path = REPO_ROOT / "data"
 
     # --- translation engine (subprocess in the engine env) ---
-    engine_python: Path = Path.home() / "miniconda3" / "envs" / "xuanzang-engine" / "bin" / "python"
+    engine_python: Path = Path.home() / "miniconda3" / "envs" / "pharos-engine" / "bin" / "python"
     qps: int = 4
     max_concurrent_jobs: int = 2
 
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "xuanzang.db"
+        return self.data_dir / "pharos.db"
 
     @property
     def files_dir(self) -> Path:

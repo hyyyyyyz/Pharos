@@ -1,7 +1,7 @@
 """Translation-engine abstraction and implementations."""
 
-from xuanzang.engines.babeldoc_engine import BabelDocEngine
-from xuanzang.engines.base import (
+from pharos.engines.babeldoc_engine import BabelDocEngine
+from pharos.engines.base import (
     EngineError,
     JobStage,
     TranslationEngine,

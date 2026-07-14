@@ -16,7 +16,7 @@ import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from xuanzang.engines.base import (
+from pharos.engines.base import (
     EngineError,
     JobStage,
     TranslationEvent,
@@ -51,7 +51,7 @@ def default_worker_script() -> Path:
 
 def default_engine_python() -> Path:
     """Best-effort default path to the engine env's Python. Override in config."""
-    return Path.home() / "miniconda3" / "envs" / "xuanzang-engine" / "bin" / "python"
+    return Path.home() / "miniconda3" / "envs" / "pharos-engine" / "bin" / "python"
 
 
 def _coarse_stage(name: str) -> JobStage:

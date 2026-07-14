@@ -1,10 +1,10 @@
 """Tests for the BabelDOC engine adapter.
 
 Fast unit tests always run. The end-to-end integration test needs the
-``xuanzang-engine`` conda env plus a sample PDF and is skipped otherwise:
+``pharos-engine`` conda env plus a sample PDF and is skipped otherwise:
 
-    XUANZANG_ENGINE_PYTHON=~/miniconda3/envs/xuanzang-engine/bin/python \
-    XUANZANG_TEST_PDF=/path/to/paper.pdf \
+    PHAROS_ENGINE_PYTHON=~/miniconda3/envs/pharos-engine/bin/python \
+    PHAROS_TEST_PDF=/path/to/paper.pdf \
     pytest backend/tests/test_babeldoc_engine.py
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from xuanzang.engines import (
+from pharos.engines import (
     BabelDocEngine,
     JobStage,
     TranslationProgress,
@@ -23,7 +23,7 @@ from xuanzang.engines import (
     TranslationResult,
     TranslatorConfig,
 )
-from xuanzang.engines.babeldoc_engine import _coarse_stage, default_worker_script
+from pharos.engines.babeldoc_engine import _coarse_stage, default_worker_script
 
 
 # ----------------------------- fast unit tests -----------------------------
@@ -62,13 +62,13 @@ def test_build_job_keeps_secret_and_shape(tmp_path: Path) -> None:
 
 # --------------------------- integration (opt-in) ---------------------------
 
-_ENGINE_PY = os.environ.get("XUANZANG_ENGINE_PYTHON")
-_TEST_PDF = os.environ.get("XUANZANG_TEST_PDF")
+_ENGINE_PY = os.environ.get("PHAROS_ENGINE_PYTHON")
+_TEST_PDF = os.environ.get("PHAROS_TEST_PDF")
 
 
 @pytest.mark.skipif(
     not (_ENGINE_PY and Path(_ENGINE_PY).exists() and _TEST_PDF and Path(_TEST_PDF).exists()),
-    reason="set XUANZANG_ENGINE_PYTHON and XUANZANG_TEST_PDF to run the engine integration test",
+    reason="set PHAROS_ENGINE_PYTHON and PHAROS_TEST_PDF to run the engine integration test",
 )
 async def test_translate_one_page(tmp_path: Path) -> None:
     engine = BabelDocEngine(engine_python=_ENGINE_PY, translator=TranslatorConfig(type="bing"))

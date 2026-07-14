@@ -16,16 +16,16 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from xuanzang.db.models import Paper, TranslationJob
-from xuanzang.db.session import session_scope
-from xuanzang.engines.base import (
+from pharos.db.models import Paper, TranslationJob
+from pharos.db.session import session_scope
+from pharos.engines.base import (
     EngineError,
     TranslationEngine,
     TranslationProgress,
     TranslationRequest,
     TranslationResult,
 )
-from xuanzang.storage.blobs import BlobStore
+from pharos.storage.blobs import BlobStore
 
 log = logging.getLogger(__name__)
 
