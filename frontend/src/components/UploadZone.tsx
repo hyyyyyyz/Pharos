@@ -3,10 +3,11 @@ import { useRef, useState } from "react";
 interface Props {
   onUpload: (file: File) => void;
   busy?: boolean;
+  compact?: boolean;
 }
 
 /** Drag-and-drop (or click) a PDF to bring it into the 译场. */
-export function UploadZone({ onUpload, busy }: Props) {
+export function UploadZone({ onUpload, busy, compact }: Props) {
   const [over, setOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -24,7 +25,7 @@ export function UploadZone({ onUpload, busy }: Props) {
 
   return (
     <div
-      className={`upload-zone${over ? " is-over" : ""}${busy ? " is-busy" : ""}`}
+      className={`upload-zone${compact ? " compact" : ""}${over ? " is-over" : ""}${busy ? " is-busy" : ""}`}
       role="button"
       tabIndex={0}
       aria-label="上传 PDF 论文"
@@ -51,8 +52,10 @@ export function UploadZone({ onUpload, busy }: Props) {
         onChange={(e) => take(e.target.files)}
       />
       <span className="xz-seal upload-seal">译</span>
-      <p className="upload-title">{busy ? "正在迎入译场…" : "拖入英文论文，或点此择卷"}</p>
-      <p className="upload-hint xz-faint">PDF · 完全保留排版，译成中文</p>
+      <p className="upload-title">
+        {busy ? "迎入译场…" : compact ? "＋ 译新论文" : "拖入英文论文，或点此择卷"}
+      </p>
+      {!compact && <p className="upload-hint xz-faint">PDF · 完全保留排版，译成中文</p>}
       {error && <p className="paper-error">{error}</p>}
     </div>
   );

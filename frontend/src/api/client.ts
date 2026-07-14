@@ -1,4 +1,4 @@
-import type { Job, Paper, PdfKind } from "./types";
+import type { ChatMessage, Job, Paper, PdfKind } from "./types";
 
 // Dev: "/api" is proxied by Vite to the backend (127.0.0.1:8848 → SSH tunnel → ROG2).
 // Prod (github.io): set VITE_API_BASE to the backend's public URL.
@@ -40,4 +40,35 @@ export const api = {
   getJob: (jobId: string): Promise<Job> => fetch(`${BASE}/jobs/${jobId}`).then(unwrap),
 
   pdfUrl: (paperId: string, kind: PdfKind): string => `${BASE}/papers/${paperId}/pdf/${kind}`,
+
+  /** Ask a question about a paper; streams the answer token-by-token. */
+  chatStream: async (
+    paperId: string,
+    messages: ChatMessage[],
+    onToken: (t: string) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const res = await fetch(`${BASE}/papers/${paperId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      let detail = res.statusText;
+      try {
+        detail = (await res.json()).detail ?? detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      onToken(decoder.decode(value, { stream: true }));
+    }
+  },
 };
