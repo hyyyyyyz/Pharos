@@ -1,163 +1,124 @@
 /* ============================================================================
-   Pharos · global.css
-   Design language: the Lighthouse of Alexandria — a guiding gold beam over a
-   deep sea-night, Alexandrian/Hellenistic classicism, maritime undertones.
-   A classical serif for display, a clean sans for the UI. Both themes.
-   Semantic tokens + effect classes keep their names; only the values change.
+   Pharos · global.css  —  clean, bright, research-first.
+   A calm white/light surface with a user-selectable "fresh" accent color.
+   Minimal chrome, generous whitespace, one modern sans, subtle motion.
+   Accent is switched via :root[data-accent]; light/dark via :root[data-theme].
    ========================================================================== */
 
 :root {
   color-scheme: light dark;
 
-  /* — raw Pharos palette (theme-independent) — */
-  --sea-950: #081019; /* abyssal ground */
-  --sea-900: #0a1420;
-  --sea-800: #0e2033;
-  --sea-700: #16324c;
-  --beam:    #f0c86a; /* the lighthouse light */
-  --beam-hi: #ffe6a6;
-  --beam-lo: #c99a3c;
-  --brass:   #c79a5a; /* warm nautical metal */
-  --foam:    #86b8bd; /* pale sea-teal */
-  --coral:   #e2734a; /* signal accent */
-  --marble:  #f2eee4; /* Alexandrian marble / parchment */
+  /* — neutral surfaces (light / default) — */
+  --bg:            #f6f8fa;
+  --bg-2:          #eef1f5;
+  --surface:       #ffffff;
+  --surface-2:     #f3f5f8;
+  --text:          #1b2733;
+  --text-soft:     #5a6672;
+  --text-faint:    #8b95a1;
+  --border:        #e7ebf0;
+  --border-strong: #d5dbe3;
 
-  /* — semantic tokens (dark "sea-night" is the signature default) — */
-  --bg:            #0b1622;
-  --bg-2:          #081019;
-  --surface:       #10202f;
-  --surface-2:     #16293b;
-  --text:          #e9eef4;
-  --text-soft:     #a9bccc;
-  --text-faint:    #6f889b;
-  --border:        #21384e;
-  --border-strong: #33506b;
-  --accent:        var(--beam);
-  --accent-strong: var(--beam-lo);
-  --on-accent:     #10202f;
-  --gold:          var(--beam);
-  --gold-bright:   var(--beam-hi);
-  --jade:          var(--foam); /* token name kept; now sea-teal */
-  --ring:          color-mix(in srgb, var(--beam) 55%, transparent);
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 18px 48px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.4);
-  --beam-grad: linear-gradient(100deg, var(--beam-lo), var(--beam), var(--beam-hi), var(--beam), var(--beam-lo));
+  /* — accent (default: mint). Overridden by [data-accent]. — */
+  --accent:        #12b5a6;
+  --accent-strong: #0e9488;
+  --accent-soft:   color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-line:   color-mix(in srgb, var(--accent) 26%, transparent);
+  --on-accent:     #ffffff;
 
-  /* soft grain (works over both grounds) */
-  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* legacy token aliases kept so existing components restyle for free */
+  --gold:          var(--accent);
+  --gold-bright:   var(--accent);
+  --jade:          var(--accent);
 
-  /* — type — */
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", ui-serif, serif;
-  --font-serif:   Georgia, "Iowan Old Style", "Times New Roman", "Songti SC", ui-serif, serif;
-  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", ui-sans-serif, sans-serif;
+  --ring:          color-mix(in srgb, var(--accent) 45%, transparent);
+  --shadow-1: 0 1px 2px rgba(20, 30, 45, .05), 0 2px 8px rgba(20, 30, 45, .05);
+  --shadow-2: 0 8px 30px rgba(20, 30, 45, .10), 0 2px 8px rgba(20, 30, 45, .06);
+
+  /* — type: one clean sans does the work — */
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", ui-sans-serif, sans-serif;
+  --font-display: var(--font-sans);
+  --font-serif:   Georgia, "Songti SC", "Times New Roman", ui-serif, serif;
   --font-mono:    "SFMono-Regular", "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --step--1: clamp(.78rem, .74rem + .2vw, .86rem);
-  --step-0:  clamp(.95rem, .9rem + .3vw, 1.05rem);
-  --step-1:  clamp(1.15rem, 1.05rem + .5vw, 1.35rem);
-  --step-2:  clamp(1.5rem, 1.3rem + 1vw, 2rem);
-  --step-3:  clamp(2.1rem, 1.7rem + 2vw, 3.2rem);
-  --step-4:  clamp(3rem, 2.2rem + 4vw, 5.5rem);
+  --step--1: clamp(.78rem, .75rem + .15vw, .84rem);
+  --step-0:  clamp(.9rem, .87rem + .2vw, .98rem);
+  --step-1:  clamp(1.05rem, .98rem + .35vw, 1.2rem);
+  --step-2:  clamp(1.35rem, 1.2rem + .8vw, 1.8rem);
+  --step-3:  clamp(1.9rem, 1.5rem + 1.8vw, 2.9rem);
+  --step-4:  clamp(2.6rem, 1.9rem + 3.6vw, 4.6rem);
 
   --sp-1: .375rem; --sp-2: .625rem; --sp-3: 1rem; --sp-4: 1.5rem;
   --sp-5: 2.5rem; --sp-6: 4rem; --sp-7: 6rem;
-  --r-1: 4px; --r-2: 8px; --r-3: 14px; --r-4: 22px;
+  --r-1: 6px; --r-2: 10px; --r-3: 14px; --r-4: 20px;
   --ease: cubic-bezier(.22, .61, .36, 1);
-  --dur: .5s;
+  --dur: .4s;
 }
 
-/* — light "marble / day" theme — */
-:root[data-theme="light"] {
-  --bg:            #f1ece0;
-  --bg-2:          #e9e2d2;
-  --surface:       #faf7ef;
-  --surface-2:     #f3ecdd;
-  --text:          #1b2a39;
-  --text-soft:     #4a5c6d;
-  --text-faint:    #7d8fa0;
-  --border:        #d8cdb6;
-  --border-strong: #c3b593;
-  --accent:        #b8862a;
-  --accent-strong: #96691a;
-  --on-accent:     #fff8e8;
-  --gold:          #b8862a;
-  --gold-bright:   #d8a53f;
-  --jade:          #3f7d84;
-  --ring:          color-mix(in srgb, var(--accent) 45%, transparent);
-  --shadow-1: 0 1px 2px rgba(27, 42, 57, 0.06), 0 4px 14px rgba(27, 42, 57, 0.08);
-  --shadow-2: 0 14px 40px rgba(27, 42, 57, 0.16), 0 4px 12px rgba(27, 42, 57, 0.1);
-  --beam-grad: linear-gradient(100deg, #96691a, #c58f2a, #e6bd52, #c58f2a, #96691a);
-}
-/* honor OS light preference when the user hasn't explicitly chosen dark */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f1ece0; --bg-2: #e9e2d2; --surface: #faf7ef; --surface-2: #f3ecdd;
-    --text: #1b2a39; --text-soft: #4a5c6d; --text-faint: #7d8fa0;
-    --border: #d8cdb6; --border-strong: #c3b593;
-    --accent: #b8862a; --accent-strong: #96691a; --on-accent: #fff8e8;
-    --gold: #b8862a; --gold-bright: #d8a53f; --jade: #3f7d84;
-    --ring: color-mix(in srgb, var(--accent) 45%, transparent);
-    --shadow-1: 0 1px 2px rgba(27,42,57,.06), 0 4px 14px rgba(27,42,57,.08);
-    --shadow-2: 0 14px 40px rgba(27,42,57,.16), 0 4px 12px rgba(27,42,57,.1);
-    --beam-grad: linear-gradient(100deg, #96691a, #c58f2a, #e6bd52, #c58f2a, #96691a);
-  }
+/* — fresh accent presets — */
+:root[data-accent="mint"]    { --accent: #12b5a6; --accent-strong: #0e9488; }
+:root[data-accent="sky"]     { --accent: #2b9bf0; --accent-strong: #1a80d6; }
+:root[data-accent="indigo"]  { --accent: #6366f1; --accent-strong: #4f46e5; }
+:root[data-accent="violet"]  { --accent: #8b5cf6; --accent-strong: #7c3aed; }
+:root[data-accent="rose"]    { --accent: #f2607d; --accent-strong: #e04968; }
+:root[data-accent="amber"]   { --accent: #eaa64b; --accent-strong: #d68b2c; }
+:root[data-accent="emerald"] { --accent: #22b07a; --accent-strong: #199366; }
+:root[data-accent="slate"]   { --accent: #5b7291; --accent-strong: #47597a; }
+
+/* — dark theme: a clean neutral dark (not heavy) — */
+:root[data-theme="dark"] {
+  --bg:            #0f141a;
+  --bg-2:          #0b1015;
+  --surface:       #161c24;
+  --surface-2:     #1d252f;
+  --text:          #e7ecf1;
+  --text-soft:     #a3adb9;
+  --text-faint:    #6d7885;
+  --border:        #242e39;
+  --border-strong: #33404e;
+  --on-accent:     #0b1015;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 10px rgba(0, 0, 0, .35);
+  --shadow-2: 0 10px 34px rgba(0, 0, 0, .5), 0 2px 10px rgba(0, 0, 0, .4);
 }
 
 /* ----------------------------------------------------------------- reset -- */
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   min-height: 100dvh;
   font-family: var(--font-sans);
   font-size: var(--step-0);
-  line-height: 1.7;
+  line-height: 1.65;
   color: var(--text);
-  background-color: var(--bg);
-  /* sea-night with a beam of light raking down from the lighthouse */
-  background-image:
-    radial-gradient(120% 80% at 82% -10%, color-mix(in srgb, var(--beam) 22%, transparent), transparent 55%),
-    radial-gradient(90% 70% at 12% 8%, color-mix(in srgb, var(--foam) 12%, transparent), transparent 55%),
-    linear-gradient(var(--bg), var(--bg-2));
-  background-attachment: fixed;
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image: var(--grain);
-  background-size: 180px 180px;
-  opacity: .05;
-  mix-blend-mode: overlay;
-}
-:root[data-theme="light"] body::before { opacity: .04; mix-blend-mode: multiply; }
 
-img, svg, video { display: block; max-width: 100%; }
+img, svg, video, canvas { display: block; max-width: 100%; }
 input, button, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: none; }
 a { color: var(--accent); text-underline-offset: 3px; }
-a:hover { color: var(--gold-bright); }
-::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text); }
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+a:hover { color: var(--accent-strong); }
+::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--text); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 
 * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar { width: 11px; height: 11px; }
 *::-webkit-scrollbar-thumb {
   background: var(--border-strong); border-radius: 99px;
   border: 3px solid transparent; background-clip: content-box;
 }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
 
 /* --------------------------------------------------------------- headings - */
 h1, h2, h3, h4 {
   font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: .005em;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   text-wrap: balance;
   color: var(--text);
 }
@@ -168,68 +129,55 @@ h3 { font-size: var(--step-1); }
 .xz-eyebrow {
   font-family: var(--font-sans);
   font-size: var(--step--1);
-  letter-spacing: .3em;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--accent);
   font-weight: 600;
 }
 .xz-muted { color: var(--text-soft); }
 .xz-faint { color: var(--text-faint); }
 
 /* ------------------------------------------------------ effect primitives - */
-
-/* the sweeping beam: gold light sweeping across text (the lighthouse light) */
+/* wordmark: a clean accent tint (no gaudy shimmer) */
 .xz-gild {
-  background: var(--beam-grad);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: xz-beam 6s var(--ease) infinite;
-}
-@keyframes xz-beam {
-  0%, 100% { background-position: 0% 50%; }
-  50%      { background-position: 100% 50%; }
+  color: var(--accent);
 }
 
-/* rise-in reveal (out of the fog) */
 .xz-ink-in { animation: xz-rise var(--dur) var(--ease) both; }
 @keyframes xz-rise {
-  from { opacity: 0; filter: blur(8px); transform: translateY(9px); }
-  to   { opacity: 1; filter: blur(0);   transform: none; }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
 }
-.xz-delay-1 { animation-delay: .08s; }
-.xz-delay-2 { animation-delay: .16s; }
-.xz-delay-3 { animation-delay: .24s; }
-.xz-delay-4 { animation-delay: .32s; }
+.xz-delay-1 { animation-delay: .05s; }
+.xz-delay-2 { animation-delay: .1s; }
+.xz-delay-3 { animation-delay: .15s; }
+.xz-delay-4 { animation-delay: .2s; }
 
-/* Pharos emblem — a small glowing beam roundel (replaces the old seal) */
+/* small brand/emblem chip */
 .xz-seal {
   display: inline-grid;
   place-items: center;
-  width: 2.4em; height: 2.4em;
+  width: 1.9em; height: 1.9em;
   font-family: var(--font-display);
   font-size: 1em; font-weight: 700; line-height: 1;
-  color: var(--sea-950);
-  background:
-    radial-gradient(120% 120% at 30% 20%, var(--beam-hi), var(--beam) 55%, var(--beam-lo));
-  border: 1px solid color-mix(in srgb, var(--beam-lo) 70%, #000 10%);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--beam-hi) 40%, transparent) inset,
-    0 0 16px color-mix(in srgb, var(--beam) 45%, transparent);
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-/* a horizon rule with a nautical label */
 .xz-rule {
   display: flex; align-items: center; gap: var(--sp-3);
-  color: var(--gold);
+  color: var(--text-faint);
 }
 .xz-rule::before, .xz-rule::after {
   content: ""; height: 1px; flex: 1;
-  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+  background: var(--border);
 }
-.xz-rule > span { font-family: var(--font-display); letter-spacing: .28em; }
+.xz-rule > span {
+  font-family: var(--font-sans); font-size: var(--step--1);
+  letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+}
 
 /* --------------------------------------------------------------- surfaces - */
 .xz-card {
@@ -241,58 +189,54 @@ h3 { font-size: var(--step-1); }
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .xz-card--hover:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-2);
-  border-color: var(--border-strong);
+  border-color: var(--accent-line);
 }
 .xz-card--gilt::before {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
   border-radius: var(--r-3) var(--r-3) 0 0;
-  background: var(--beam-grad); background-size: 220% 100%;
+  background: var(--accent);
   opacity: .9;
 }
 
 /* --------------------------------------------------------------- controls - */
 .xz-btn {
-  --_bg: var(--surface-2);
+  --_bg: var(--surface);
   --_fg: var(--text);
   --_bd: var(--border-strong);
   display: inline-flex; align-items: center; justify-content: center; gap: .5em;
-  padding: .6em 1.2em;
+  padding: .55em 1.05em;
   font-family: var(--font-sans); font-size: var(--step-0); font-weight: 600;
-  letter-spacing: .01em;
   color: var(--_fg);
   background: var(--_bg);
   border: 1px solid var(--_bd);
   border-radius: 10px;
-  transition: transform .18s var(--ease), box-shadow .3s var(--ease), background .3s var(--ease), filter .3s var(--ease);
+  transition: transform .15s var(--ease), box-shadow .25s var(--ease), background .2s var(--ease), border-color .2s var(--ease), filter .2s var(--ease);
 }
-.xz-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.xz-btn:hover { border-color: var(--accent-line); box-shadow: var(--shadow-1); }
 .xz-btn:active { transform: translateY(0) scale(.985); }
-.xz-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.xz-btn:disabled { opacity: .5; cursor: not-allowed; }
 .xz-btn--primary {
-  --_bg: linear-gradient(180deg, var(--beam-hi), var(--beam) 55%, var(--beam-lo));
-  --_fg: var(--sea-950); --_bd: var(--beam-lo);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--beam) 30%, transparent);
+  --_bg: var(--accent); --_fg: var(--on-accent); --_bd: transparent;
 }
-.xz-btn--primary:hover { filter: brightness(1.05); }
+.xz-btn--primary:hover { background: var(--accent-strong); border-color: transparent; }
 .xz-btn--gold {
-  --_bg: transparent; --_fg: var(--gold); --_bd: var(--border-strong);
+  --_bg: transparent; --_fg: var(--accent); --_bd: var(--accent-line);
 }
 
 .xz-tag {
   display: inline-flex; align-items: center; gap: .4em;
-  padding: .2em .7em;
+  padding: .18em .6em;
   font-family: var(--font-sans); font-size: var(--step--1); font-weight: 600;
-  letter-spacing: .03em;
-  color: var(--foam);
-  background: color-mix(in srgb, var(--foam) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--foam) 30%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
   border-radius: 999px;
 }
 
 /* --------------------------------------------------------------- utility -- */
-.xz-container { width: min(1180px, 100% - 2 * var(--sp-4)); margin-inline: auto; }
+.xz-container { width: min(1120px, 100% - 2 * var(--sp-4)); margin-inline: auto; }
 [hidden] { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -300,7 +244,5 @@ h3 { font-size: var(--step-1); }
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
-    scroll-behavior: auto !important;
   }
-  .xz-gild { animation: none; background-position: 0 50%; }
 }
