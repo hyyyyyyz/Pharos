@@ -53,7 +53,7 @@ export function UploadZone({ onUpload, busy, compact }: Props) {
       />
       <span className="xz-seal upload-seal">译</span>
       <p className="upload-title">
-        {busy ? "迎入译场…" : compact ? "＋ 译新论文" : "拖入英文论文，或点此择卷"}
+        {busy ? "迎入文库…" : compact ? "＋ 翻译新论文" : "拖入英文论文，或点此选择"}
       </p>
       {!compact && <p className="upload-hint xz-faint">PDF · 完全保留排版，译成中文</p>}
       {error && <p className="paper-error">{error}</p>}

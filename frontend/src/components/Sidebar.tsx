@@ -6,8 +6,8 @@ import { useTheme } from "../hooks/useTheme";
 import { UploadZone } from "./UploadZone";
 
 const STATUS_DOT: Record<string, { label: string; cls: string }> = {
-  done: { label: "已成", cls: "dot-done" },
-  running: { label: "译经中", cls: "dot-run" },
+  done: { label: "已译", cls: "dot-done" },
+  running: { label: "翻译中", cls: "dot-run" },
   queued: { label: "待译", cls: "dot-run" },
   error: { label: "有误", cls: "dot-err" },
 };
@@ -37,8 +37,8 @@ export function Sidebar() {
     <aside className="sidebar">
       <header className="sidebar-head">
         <div className="brand">
-          <span className="xz-seal brand-seal">玄奘</span>
-          <span className="brand-name xz-gild">Xuanzang</span>
+          <span className="xz-seal brand-seal">P</span>
+          <span className="brand-name xz-gild">Pharos</span>
         </div>
         <button className="icon-btn" onClick={toggle} aria-label="切换昼夜" title="切换昼夜">
           {theme === "dark" ? "☾" : "☀"}
@@ -51,7 +51,7 @@ export function Sidebar() {
       {upload.isError && <p className="paper-error side-error">{(upload.error as Error).message}</p>}
 
       <div className="sidebar-rule">
-        <span>译 场</span>
+        <span>文 库</span>
         <span className="count xz-faint">{papers.length}</span>
       </div>
 
