@@ -7,11 +7,11 @@ from collections.abc import Iterator
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from xuanzang.config import Settings
-from xuanzang.db.session import session_scope
-from xuanzang.services.library import LibraryService
-from xuanzang.services.translation import JobManager
-from xuanzang.storage.blobs import BlobStore
+from pharos.config import Settings
+from pharos.db.session import session_scope
+from pharos.services.library import LibraryService
+from pharos.services.translation import JobManager
+from pharos.storage.blobs import BlobStore
 
 
 def get_session() -> Iterator[Session]:

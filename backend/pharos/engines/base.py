@@ -1,7 +1,7 @@
 """Translation-engine abstraction.
 
 Every translation backend is reached through the :class:`TranslationEngine`
-protocol. The MVP implementation (:mod:`xuanzang.engines.babeldoc_engine`)
+protocol. The MVP implementation (:mod:`pharos.engines.babeldoc_engine`)
 drives the AGPL-3.0 BabelDOC engine as an *arm's-length subprocess* (see
 ``docs/ARCHITECTURE.md`` §3); future engines — e.g. a MinerU-based extractor
 that also yields structured chunks for RAG/Q&A — can be dropped in without

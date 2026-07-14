@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from xuanzang.db.models import Paper, TranslationJob
+from pharos.db.models import Paper, TranslationJob
 
 
 class JobOut(BaseModel):

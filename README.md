@@ -1,14 +1,14 @@
 <div align="center">
 
-# 玄奘 · Xuanzang
+# Pharos
 
-**A layout-preserving research-paper translator, growing into a full reading assistant.**
-**保留原始排版的科研论文翻译器，并逐步长成完整的论文阅读助手。**
+**An integrated research platform — a lighthouse over the sea of literature.**
+**一体化科研平台 —— 检索、阅读、翻译、AI 领航问答，尽在一处。**
 
-> Named after Xuanzang (玄奘), the Tang-dynasty monk who led the largest
-> scripture-translation project in Chinese history.
+> Named after the Pharos of Alexandria, the ancient lighthouse — a beam of
+> light guiding readers through the fog of dense literature.
 
-*Status: early development — the layout-preserving translation core is being built first.*
+*Status: early development — the layout-preserving paper translator & reader is the first module.*
 
 </div>
 
@@ -22,7 +22,7 @@ were; only the prose is translated. You get both a **Chinese-only** PDF and a
 **bilingual side-by-side** PDF.
 
 Unlike a reference manager (Zotero) bolted together with translation plugins,
-Xuanzang is built from the ground up as a **read + translate** product, with a
+Pharos is built from the ground up as a **read + translate** product, with a
 clean client/server split so it can grow — AI summary/Q&A, highlights & notes,
 a terminology glossary, arXiv import — and later ship as a desktop app (macOS /
 Windows) or a phone client, all talking to **one backend**.
@@ -71,7 +71,7 @@ bash scripts/setup_engine_env.sh
 
 ## License
 
-Xuanzang is licensed under the **GNU Affero General Public License v3.0**
+Pharos is licensed under the **GNU Affero General Public License v3.0**
 ([`LICENSE`](LICENSE)). This matches its AGPL-3.0 engine dependency and keeps
 the whole project free and open.
 
@@ -80,5 +80,5 @@ the whole project free and open.
 The layout-preserving translation core is powered by
 [**BabelDOC**](https://github.com/funstory-ai/BabelDOC) and
 [**PDFMathTranslate / pdf2zh-next**](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
-by funstory.ai (AGPL-3.0). Xuanzang builds its own application, library, and
+by funstory.ai (AGPL-3.0). Pharos builds its own application, library, and
 reading experience around that engine.

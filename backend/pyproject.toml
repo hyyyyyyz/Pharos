@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "xuanzang-backend"
+name = "pharos-backend"
 version = "0.0.1"
-description = "Xuanzang backend — layout-preserving research-paper translation and reading assistant"
+description = "Pharos backend — layout-preserving research-paper translation and reading assistant"
 readme = "../README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
-authors = [{ name = "Xuanzang contributors" }]
+authors = [{ name = "Pharos contributors" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -34,12 +34,12 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["xuanzang"]
+packages = ["pharos"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["xuanzang", "engine_worker"]
+src = ["pharos", "engine_worker"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from xuanzang.db.models import Base
+from pharos.db.models import Base
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None

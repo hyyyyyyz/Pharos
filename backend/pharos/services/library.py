@@ -7,8 +7,8 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from xuanzang.db.models import Paper
-from xuanzang.storage.blobs import BlobStore
+from pharos.db.models import Paper
+from pharos.storage.blobs import BlobStore
 
 
 def _pdf_metadata(path: Path, fallback_name: str) -> tuple[int | None, str]:

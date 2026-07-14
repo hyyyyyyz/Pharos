@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from xuanzang.api.deps import get_blobs, get_library, get_session
-from xuanzang.api.schemas import PaperOut, paper_out
-from xuanzang.services.library import LibraryService
-from xuanzang.storage.blobs import BlobStore
+from pharos.api.deps import get_blobs, get_library, get_session
+from pharos.api.schemas import PaperOut, paper_out
+from pharos.services.library import LibraryService
+from pharos.storage.blobs import BlobStore
 
 router = APIRouter(prefix="/api", tags=["papers"])
 

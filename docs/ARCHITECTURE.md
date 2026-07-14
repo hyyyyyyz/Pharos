@@ -1,6 +1,6 @@
-# Xuanzang — Architecture
+# Pharos — Architecture
 
-This document records the design of Xuanzang and the reasoning behind each
+This document records the design of Pharos and the reasoning behind each
 decision. It is the source of truth; code should follow it, and changes to the
 design should update it.
 
@@ -124,7 +124,7 @@ For quality we control the system prompt (scientific EN→ZH, keep `$...$` and
 
 ## 7. License
 
-The engine stack (BabelDOC, pdf2zh-next) is **AGPL-3.0**. Xuanzang is therefore
+The engine stack (BabelDOC, pdf2zh-next) is **AGPL-3.0**. Pharos is therefore
 also **AGPL-3.0** — the clean, conflict-free choice for an open-source project.
 
 - **Private, single-user, non-networked use:** zero source-disclosure obligation.
@@ -132,7 +132,7 @@ also **AGPL-3.0** — the clean, conflict-free choice for an open-source project
   every network user must be offered the Corresponding Source of the AGPL work
   (engine + our modifications + anything forming one combined work).
 
-Because Xuanzang is open-source under AGPL-3.0, this is satisfied by keeping the
+Because Pharos is open-source under AGPL-3.0, this is satisfied by keeping the
 repo public. The subprocess boundary is retained regardless, as good hygiene and
 to keep future licensing options open. A proprietary/hosted product would need a
 funstory-ai commercial license.

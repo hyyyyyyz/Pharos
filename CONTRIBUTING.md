@@ -1,6 +1,6 @@
-# Contributing to Xuanzang
+# Contributing to Pharos
 
-Thanks for your interest! Xuanzang is an open-source (AGPL-3.0) research-paper
+Thanks for your interest! Pharos is an open-source (AGPL-3.0) research-paper
 translator and reading assistant. This guide covers the conventions we follow so
 the codebase stays clean and reviewable.
 
