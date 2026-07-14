@@ -1,17 +1,9 @@
-import { Sidebar } from "./components/Sidebar";
-import { Reader } from "./components/Reader";
-import { ChatPanel } from "./components/ChatPanel";
+import { Landing } from "./components/Landing";
+import { Workbench } from "./components/Workbench";
 import { useUI } from "./store";
 import "./App.css";
 
 export default function App() {
-  const chatOpen = useUI((s) => s.chatOpen);
-
-  return (
-    <div className={`workbench${chatOpen ? " chat-open" : ""}`}>
-      <Sidebar />
-      <Reader />
-      {chatOpen && <ChatPanel />}
-    </div>
-  );
+  const view = useUI((s) => s.view);
+  return view === "landing" ? <Landing /> : <Workbench />;
 }

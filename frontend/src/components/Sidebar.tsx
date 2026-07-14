@@ -21,6 +21,7 @@ export function Sidebar() {
   const { theme, toggle } = useTheme();
   const selectedPaperId = useUI((s) => s.selectedPaperId);
   const select = useUI((s) => s.select);
+  const setView = useUI((s) => s.setView);
 
   const papersQuery = useQuery({ queryKey: ["papers"], queryFn: api.listPapers });
   const upload = useMutation({
@@ -36,10 +37,10 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <header className="sidebar-head">
-        <div className="brand">
+        <button className="brand brand-btn" onClick={() => setView("landing")} title="返回平台首页">
           <span className="xz-seal brand-seal">P</span>
           <span className="brand-name xz-gild">Pharos</span>
-        </div>
+        </button>
         <button className="icon-btn" onClick={toggle} aria-label="切换昼夜" title="切换昼夜">
           {theme === "dark" ? "☾" : "☀"}
         </button>
