@@ -7,6 +7,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ mode }) => ({
   base: mode === "production" ? "/Xuanzang/" : "/",
   plugins: [react()],
+  // Ensure a single React instance (avoids "Invalid hook call" from libraries
+  // like @tanstack/react-query when Vite pre-bundles them separately).
+  resolve: { dedupe: ["react", "react-dom"] },
+  optimizeDeps: { include: ["react", "react-dom", "@tanstack/react-query"] },
   server: {
     port: 5173,
     proxy: {
