@@ -1,5 +1,5 @@
 import { useUI } from "../store";
-import { useTheme } from "../hooks/useTheme";
+import { Settings } from "./Settings";
 import "./Landing.css";
 
 interface Module {
@@ -20,7 +20,6 @@ const MODULES: Module[] = [
 
 export function Landing() {
   const setView = useUI((s) => s.setView);
-  const { theme, toggle } = useTheme();
   const enter = () => setView("read");
 
   return (
@@ -30,9 +29,7 @@ export function Landing() {
           <span className="xz-seal brand-seal">P</span>
           <span className="brand-name xz-gild">Pharos</span>
         </div>
-        <button className="icon-btn" onClick={toggle} aria-label="切换昼夜">
-          {theme === "dark" ? "☾" : "☀"}
-        </button>
+        <Settings />
       </header>
 
       <main className="landing-hero">

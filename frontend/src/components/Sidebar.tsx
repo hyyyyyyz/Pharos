@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { JobStatus, Paper } from "../api/types";
 import { useUI } from "../store";
-import { useTheme } from "../hooks/useTheme";
 import { UploadZone } from "./UploadZone";
+import { Settings } from "./Settings";
 
 const STATUS_DOT: Record<string, { label: string; cls: string }> = {
   done: { label: "已译", cls: "dot-done" },
@@ -18,7 +18,6 @@ function statusOf(p: Paper): JobStatus | "none" {
 
 export function Sidebar() {
   const qc = useQueryClient();
-  const { theme, toggle } = useTheme();
   const selectedPaperId = useUI((s) => s.selectedPaperId);
   const select = useUI((s) => s.select);
   const setView = useUI((s) => s.setView);
@@ -41,9 +40,7 @@ export function Sidebar() {
           <span className="xz-seal brand-seal">P</span>
           <span className="brand-name xz-gild">Pharos</span>
         </button>
-        <button className="icon-btn" onClick={toggle} aria-label="切换昼夜" title="切换昼夜">
-          {theme === "dark" ? "☾" : "☀"}
-        </button>
+        <Settings />
       </header>
 
       <div className="sidebar-upload">

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Job, Paper, ReaderKind } from "../api/types";
 import { useUI } from "../store";
+import { PdfViewer } from "./PdfViewer";
 
 const STAGE_LABEL: Record<string, string> = {
   queued: "待译",
@@ -127,12 +128,7 @@ export function Reader() {
 
       <div className="reader-viewer">
         {showViewer ? (
-          <iframe
-            key={`${paper.id}-${effectiveKind}`}
-            className="pdf-frame"
-            src={api.pdfUrl(paper.id, effectiveKind)}
-            title={`${paper.title} · ${effectiveKind}`}
-          />
+          <PdfViewer key={`${paper.id}-${effectiveKind}`} url={api.pdfUrl(paper.id, effectiveKind)} />
         ) : (
           <div className="reader-empty">
             <p className="xz-faint">翻译完成后，中文将在此展读。</p>
