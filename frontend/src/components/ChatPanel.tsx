@@ -66,7 +66,7 @@ export function ChatPanel() {
     <aside className="chat">
       <header className="chat-head">
         <span className="chat-title">
-          <span className="xz-seal chat-seal">问</span> 问玄奘
+          <span className="xz-seal chat-seal">P</span> 领航
         </span>
         <button className="icon-btn" onClick={toggleChat} title="收起" aria-label="收起对话">
           ▷
@@ -90,7 +90,7 @@ export function ChatPanel() {
         ) : (
           messages.map((m, i) => (
             <div key={i} className={`bubble ${m.role}`}>
-              {m.role === "assistant" && <span className="xz-seal bubble-seal">奘</span>}
+              {m.role === "assistant" && <span className="xz-seal bubble-seal">P</span>}
               <div className="bubble-body">
                 {m.content || (streaming && i === messages.length - 1 ? <span className="caret" /> : "")}
                 {streaming && i === messages.length - 1 && m.content && <span className="caret" />}

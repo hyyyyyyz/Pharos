@@ -7,8 +7,8 @@ import { useUI } from "../store";
 const STAGE_LABEL: Record<string, string> = {
   queued: "待译",
   parsing: "解析版面",
-  translating: "译经中",
-  typesetting: "重制卷帙",
+  translating: "翻译中",
+  typesetting: "重排版面",
 };
 
 function isActive(job: Job | null | undefined): boolean {
@@ -95,7 +95,7 @@ export function Reader() {
             ))}
           </div>
           <button className="icon-btn" onClick={toggleChat} title="问玄奘" aria-label="问玄奘">
-            {chatOpen ? "▷" : "◁"} 问
+            {chatOpen ? "▷" : "◁"} 领航
           </button>
         </div>
       </header>
@@ -107,9 +107,9 @@ export function Reader() {
             onClick={() => translate.mutate()}
             disabled={translate.isPending}
           >
-            {translate.isPending ? "启程…" : "译此篇 · 保留排版成中文"}
+            {translate.isPending ? "启程…" : "翻译此篇 · 保留排版"}
           </button>
-          {job?.status === "error" && <span className="paper-error">上次译经受阻：{job.error?.slice(0, 100)}</span>}
+          {job?.status === "error" && <span className="paper-error">上次翻译失败：{job.error?.slice(0, 100)}</span>}
           {translate.isError && <span className="paper-error">{(translate.error as Error).message}</span>}
         </div>
       )}
@@ -135,7 +135,7 @@ export function Reader() {
           />
         ) : (
           <div className="reader-empty">
-            <p className="xz-faint">译经完成后，中文卷帙将在此展读。</p>
+            <p className="xz-faint">翻译完成后，中文将在此展读。</p>
           </div>
         )}
       </div>
