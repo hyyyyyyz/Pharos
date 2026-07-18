@@ -1,0 +1,50 @@
+/* PdfCanvas — the real pdf.js viewport (zoomable, drag-pannable). */
+
+.ph-pc {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  background: var(--c-read, #f1f2f4);
+  cursor: grab;
+}
+.ph-pc.is-grabbing {
+  cursor: grabbing;
+}
+
+.ph-pc-pages {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  /* grow past the viewport when zoomed in, stay centred when it fits */
+  width: max-content;
+  min-width: 100%;
+  user-select: none;
+}
+
+.ph-pc-page {
+  display: block;
+  /* A PDF page is white paper — not a themed surface. */
+  background: #ffffff;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 2px;
+  box-shadow: var(--sh-md);
+}
+
+.ph-pc-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-pc-msg.is-err {
+  color: var(--c-err, #d93a3a);
+}

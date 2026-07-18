@@ -1,0 +1,52 @@
+/* Placeholder panel for the modules that are not built yet.
+   Ported verbatim from the design prototype (markup lines 341-345). */
+
+.ph-cs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.ph-cs-box {
+  text-align: center;
+  max-width: 380px;
+}
+
+.ph-cs-ic {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--c-hv);
+  color: var(--c-tx3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+
+.ph-cs-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--c-tx);
+  margin-bottom: 6px;
+}
+
+.ph-cs-desc {
+  font-size: 12.5px;
+  color: var(--c-tx2);
+  line-height: 1.7;
+}
+
+.ph-cs-pill {
+  display: inline-flex;
+  margin-top: 14px;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 11px;
+  border-radius: 20px;
+  background: var(--c-acs);
+  color: var(--c-ac);
+}

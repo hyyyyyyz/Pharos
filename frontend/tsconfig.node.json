@@ -7,7 +7,11 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "strict": true,
-    "noEmit": true
+    /* A referenced project must be composite and may not disable emit (TS6306 /
+       TS6310), so emit somewhere disposable instead of beside the source. */
+    "composite": true,
+    "outDir": "./node_modules/.tmp/tsconfig.node",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts"]
 }

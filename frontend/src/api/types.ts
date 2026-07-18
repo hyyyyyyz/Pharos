@@ -1,4 +1,4 @@
-// Mirrors the backend Pydantic schemas (xuanzang/api/schemas.py).
+// Mirrors the backend Pydantic schemas (pharos/api/schemas.py).
 
 export type JobStatus = "queued" | "running" | "done" | "error";
 

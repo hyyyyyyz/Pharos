@@ -1,0 +1,481 @@
+/* ReadingView — the reader row: outline | centre pane | 领航.
+   Every value here is copied verbatim from the design prototype. */
+
+.ph-rv {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------ centre pane */
+
+.ph-rv-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-read, #f1f2f4);
+  border-right: 1px solid var(--c-bd, #e6e8ec);
+}
+
+/* ------------------------------------------------------------- top bar */
+
+.ph-rv-bar {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  background: var(--c-sf, #fff);
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-rv-spacer {
+  flex: 1;
+}
+
+.ph-rv-ico {
+  display: flex;
+}
+
+.ph-rv-outline-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.ph-rv-file {
+  font-size: 12px;
+  color: var(--c-tx2, #5a616e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* read-mode segmented control */
+.ph-rv-seg {
+  display: flex;
+  background: var(--c-bg, #fafbfc);
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  padding: 1px;
+  gap: 1px;
+}
+
+.ph-rv-seg-btn {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  box-shadow: none;
+}
+.ph-rv-seg-btn.is-on {
+  font-weight: 600;
+  background: var(--c-sf, #fff);
+  color: var(--c-ac, #5b53d6);
+  box-shadow: var(--sh-sm);
+}
+.ph-rv-seg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 领航 toggle */
+.ph-rv-ai-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+}
+.ph-rv-ai-btn.is-on {
+  border: 1px solid var(--c-acsb, #dcdcf7);
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+}
+
+/* ---------------------------------------------------------------- body */
+
+.ph-rv-body {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* the three non-PDF states share this centring shell */
+.ph-rv-state {
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  overflow-y: auto;
+}
+
+/* ------------------------------------------------------- 1. untranslated */
+
+.ph-rv-untrans {
+  max-width: 440px;
+  text-align: center;
+}
+
+.ph-rv-mock {
+  position: relative;
+  margin: 0 auto 18px;
+  width: 150px;
+  height: 110px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  overflow: hidden;
+  box-shadow: var(--sh-sm);
+}
+.ph-rv-mock-inner {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  opacity: 0.45;
+}
+.ph-rv-mock-title {
+  height: 5px;
+  width: 66%;
+  background: var(--c-bds, #d4d8de);
+  border-radius: 2px;
+  margin: 0 auto 8px;
+}
+.ph-rv-mock-cols {
+  display: flex;
+  gap: 8px;
+}
+.ph-rv-mock-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ph-rv-mock-line {
+  height: 3px;
+  background: var(--c-bd, #e6e8ec);
+}
+.ph-rv-mock-line.w88 {
+  width: 88%;
+}
+.ph-rv-mock-line.w80 {
+  width: 80%;
+}
+.ph-rv-mock-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent, var(--c-sf, #fff));
+}
+
+.ph-rv-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  margin-bottom: 3px;
+}
+.ph-rv-meta {
+  font-size: 12px;
+  color: var(--c-tx3, #8b93a1);
+  margin-bottom: 16px;
+}
+.ph-rv-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 7px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ph-rv-cta:hover {
+  background: var(--c-ach);
+}
+.ph-rv-cta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ph-rv-note {
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  margin-top: 11px;
+}
+/* not in the prototype: without it there is no path to the source PDF */
+.ph-rv-ghost {
+  display: inline-block;
+  margin-top: 9px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ph-rv-ghost:hover {
+  color: var(--c-ac, #5b53d6);
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------- 2. translating */
+
+.ph-rv-translating {
+  max-width: 380px;
+  width: 100%;
+}
+.ph-rv-trans-head {
+  text-align: center;
+  margin-bottom: 22px;
+}
+.ph-rv-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 3px solid var(--c-bd, #e6e8ec);
+  border-top-color: var(--c-ac, #5b53d6);
+  animation: ph-spin 1s linear infinite;
+}
+.ph-rv-trans-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+}
+.ph-rv-trans-sub {
+  font-size: 12px;
+  color: var(--c-tx3, #8b93a1);
+  margin-top: 3px;
+}
+.ph-rv-prog {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--c-bd, #e6e8ec);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.ph-rv-prog-fill {
+  display: block;
+  height: 100%;
+  background: var(--c-ac, #5b53d6);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.ph-rv-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ph-rv-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ph-rv-dot {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+.ph-rv-dot.is-done {
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+}
+.ph-rv-dot.is-active {
+  border: 2px solid var(--c-ac, #5b53d6);
+  color: var(--c-ac, #5b53d6);
+}
+.ph-rv-dot.is-todo {
+  border: 2px solid var(--c-bd, #e6e8ec);
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-rv-step-label {
+  font-size: 12.5px;
+  color: var(--c-tx, #1e222a);
+  font-weight: 400;
+}
+.ph-rv-step-label.is-active {
+  font-weight: 600;
+}
+.ph-rv-step-label.is-todo {
+  color: var(--c-tx3, #8b93a1);
+}
+
+/* -------------------------------------------------------------- 3. failed */
+
+.ph-rv-failed {
+  max-width: 360px;
+  text-align: center;
+}
+.ph-rv-err-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--c-err-soft, #fdeceb);
+  color: var(--c-err, #d93a3a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+.ph-rv-err-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  margin-bottom: 6px;
+}
+.ph-rv-err-msg {
+  font-size: 12.5px;
+  color: var(--c-tx2, #5a616e);
+  line-height: 1.7;
+  margin-bottom: 16px;
+  word-break: break-word;
+}
+.ph-rv-btn-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.ph-rv-btn-primary {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-rv-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ph-rv-btn-outline {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------- 4. the PDF viewer */
+
+.ph-rv-pdf {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ph-rv-subbar {
+  flex: none;
+  height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+}
+
+.ph-rv-zoom {
+  display: flex;
+  align-items: center;
+  background: var(--c-bg, #fafbfc);
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ph-rv-zoom-btn {
+  width: 26px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ph-rv-zoom-btn.is-plus {
+  font-size: 14px;
+}
+.ph-rv-zoom-val {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-tx, #1e222a);
+  font-variant-numeric: tabular-nums;
+}
+
+.ph-rv-fit {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-bg, #fafbfc);
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  cursor: pointer;
+}
+.ph-rv-fit:hover {
+  background: var(--c-hv);
+}
+
+.ph-rv-hint {
+  font-size: 10.5px;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-rv-pdf-msg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--c-tx3, #8b93a1);
+  background: var(--c-read, #f1f2f4);
+}
+.ph-rv-pdf-msg.is-err {
+  color: var(--c-err, #d93a3a);
+}

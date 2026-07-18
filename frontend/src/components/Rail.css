@@ -1,0 +1,247 @@
+/* Far-left module rail — collapsed 44px / expanded 178px.
+   Ported verbatim from the design prototype (railStyle / brandRowStyle /
+   navListStyle / brandBtnStyle / navRail item styles). */
+
+.ph-rail {
+  flex: none;
+  background: var(--c-rail);
+  border-right: 1px solid var(--c-bd);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: width 0.16s ease;
+  overflow: hidden;
+}
+.ph-rail--exp {
+  width: 178px;
+  align-items: stretch;
+  padding: 9px 8px 8px;
+}
+.ph-rail--col {
+  width: 44px;
+  align-items: center;
+  padding: 9px 0 8px;
+}
+
+/* ------------------------------------------------------------ brand row */
+
+.ph-rail-brand {
+  display: flex;
+  margin-bottom: 6px;
+}
+.ph-rail-brand--exp {
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  height: 34px;
+}
+.ph-rail-brand--col {
+  justify-content: center;
+}
+
+.ph-rail-brand-btn {
+  flex: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--c-ac);
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.ph-rail-brand-btn--exp {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+}
+.ph-rail-brand-btn--col {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.ph-rail-brand-btn:hover {
+  background: var(--c-hv);
+  color: var(--c-tx2);
+}
+
+.ph-rail-wordmark {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-tx);
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- nav list */
+
+.ph-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ph-rail-nav--exp {
+  width: 100%;
+}
+.ph-rail-nav--col {
+  align-items: center;
+}
+
+.ph-rail-item {
+  position: relative;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  background: transparent;
+  color: var(--c-tx2);
+  transition:
+    background 0.13s,
+    color 0.13s;
+}
+.ph-rail-item--exp {
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.ph-rail-item--col {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.ph-rail-item--cs {
+  color: var(--c-tx3);
+}
+.ph-rail-item--exp.ph-rail-item--cs {
+  opacity: 0.8;
+}
+.ph-rail-item--col.ph-rail-item--cs {
+  opacity: 0.7;
+}
+.ph-rail-item--active {
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+.ph-rail-item--exp.ph-rail-item--active {
+  font-weight: 600;
+}
+
+.ph-rail-item-ic {
+  display: flex;
+  flex: none;
+}
+.ph-rail-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ph-rail-item-pill {
+  flex: none;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--c-hv);
+  color: var(--c-tx3);
+}
+.ph-rail-item-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c-tx3);
+}
+.ph-rail-item-bar {
+  position: absolute;
+  left: -9px;
+  top: 7px;
+  width: 2.5px;
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+  background: var(--c-ac);
+}
+
+.ph-rail-spacer {
+  flex: 1;
+}
+
+/* -------------------------------------------------------------- account */
+
+.ph-rail-acct {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 40px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.ph-rail-acct:hover {
+  background: var(--c-hv);
+}
+.ph-rail-acct-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-acs);
+  color: var(--c-ac);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-rail-acct-text {
+  flex: 1;
+  min-width: 0;
+}
+.ph-rail-acct-name {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ph-rail-acct-sub {
+  display: block;
+  font-size: 10.5px;
+  color: var(--c-tx3);
+}
+
+.ph-rail-acct-mini {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--c-acs);
+  color: var(--c-ac);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-rail-acct-mini:hover {
+  filter: brightness(0.97);
+}

@@ -1,0 +1,70 @@
+.ph-tabbar {
+  flex: none;
+  height: 33px;
+  display: flex;
+  align-items: stretch;
+  background: var(--c-rail);
+  border-bottom: 1px solid var(--c-bd);
+  padding: 0 2px;
+  overflow: hidden;
+}
+
+.ph-tabbar-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 33px;
+  padding: 0 10px;
+  margin-top: 3px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--c-tx2);
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  position: relative;
+  top: 1px;
+}
+
+.ph-tabbar-tab.is-active {
+  font-weight: 600;
+  background: var(--c-sf);
+  color: var(--c-tx);
+  border: 1px solid var(--c-bd);
+  border-bottom: 1px solid var(--c-sf);
+}
+
+.ph-tabbar-icon {
+  display: flex;
+  color: var(--c-tx3);
+}
+
+.ph-tabbar-tab.is-active .ph-tabbar-icon {
+  color: var(--c-ac);
+}
+
+.ph-tabbar-title {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-tabbar-close {
+  display: flex;
+  margin-left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-tx3);
+}
+
+.ph-tabbar-close:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}

@@ -22,7 +22,7 @@ frontend/dist/
 frontend/.vite/
 *.local
 
-# --- Xuanzang runtime data (never commit user papers / DB / caches) ---
+# --- Pharos runtime data (never commit user papers / DB / caches) ---
 backend/storage/files/
 data/
 *.db
@@ -39,3 +39,7 @@ offline_assets/
 .idea/
 .vscode/
 *.swp
+
+# --- TypeScript incremental build artifacts ---
+*.tsbuildinfo
+node_modules/.tmp/

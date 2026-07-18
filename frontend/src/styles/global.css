@@ -1,248 +1,101 @@
-/* ============================================================================
-   Pharos · global.css  —  clean, bright, research-first.
-   A calm white/light surface with a user-selectable "fresh" accent color.
-   Minimal chrome, generous whitespace, one modern sans, subtle motion.
-   Accent is switched via :root[data-accent]; light/dark via :root[data-theme].
-   ========================================================================== */
+/* Pharos — base layer. Tokens live in src/design/tokens.ts and are injected
+   onto the app root as CSS custom properties (--c-*). */
 
-:root {
-  color-scheme: light dark;
-
-  /* — neutral surfaces (light / default) — */
-  --bg:            #f6f8fa;
-  --bg-2:          #eef1f5;
-  --surface:       #ffffff;
-  --surface-2:     #f3f5f8;
-  --text:          #1b2733;
-  --text-soft:     #5a6672;
-  --text-faint:    #8b95a1;
-  --border:        #e7ebf0;
-  --border-strong: #d5dbe3;
-
-  /* — accent (default: mint). Overridden by [data-accent]. — */
-  --accent:        #12b5a6;
-  --accent-strong: #0e9488;
-  --accent-soft:   color-mix(in srgb, var(--accent) 12%, transparent);
-  --accent-line:   color-mix(in srgb, var(--accent) 26%, transparent);
-  --on-accent:     #ffffff;
-
-  /* legacy token aliases kept so existing components restyle for free */
-  --gold:          var(--accent);
-  --gold-bright:   var(--accent);
-  --jade:          var(--accent);
-
-  --ring:          color-mix(in srgb, var(--accent) 45%, transparent);
-  --shadow-1: 0 1px 2px rgba(20, 30, 45, .05), 0 2px 8px rgba(20, 30, 45, .05);
-  --shadow-2: 0 8px 30px rgba(20, 30, 45, .10), 0 2px 8px rgba(20, 30, 45, .06);
-
-  /* — type: one clean sans does the work — */
-  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", ui-sans-serif, sans-serif;
-  --font-display: var(--font-sans);
-  --font-serif:   Georgia, "Songti SC", "Times New Roman", ui-serif, serif;
-  --font-mono:    "SFMono-Regular", "JetBrains Mono", ui-monospace, Menlo, monospace;
-
-  --step--1: clamp(.78rem, .75rem + .15vw, .84rem);
-  --step-0:  clamp(.9rem, .87rem + .2vw, .98rem);
-  --step-1:  clamp(1.05rem, .98rem + .35vw, 1.2rem);
-  --step-2:  clamp(1.35rem, 1.2rem + .8vw, 1.8rem);
-  --step-3:  clamp(1.9rem, 1.5rem + 1.8vw, 2.9rem);
-  --step-4:  clamp(2.6rem, 1.9rem + 3.6vw, 4.6rem);
-
-  --sp-1: .375rem; --sp-2: .625rem; --sp-3: 1rem; --sp-4: 1.5rem;
-  --sp-5: 2.5rem; --sp-6: 4rem; --sp-7: 6rem;
-  --r-1: 6px; --r-2: 10px; --r-3: 14px; --r-4: 20px;
-  --ease: cubic-bezier(.22, .61, .36, 1);
-  --dur: .4s;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-/* — fresh accent presets — */
-:root[data-accent="mint"]    { --accent: #12b5a6; --accent-strong: #0e9488; }
-:root[data-accent="sky"]     { --accent: #2b9bf0; --accent-strong: #1a80d6; }
-:root[data-accent="indigo"]  { --accent: #6366f1; --accent-strong: #4f46e5; }
-:root[data-accent="violet"]  { --accent: #8b5cf6; --accent-strong: #7c3aed; }
-:root[data-accent="rose"]    { --accent: #f2607d; --accent-strong: #e04968; }
-:root[data-accent="amber"]   { --accent: #eaa64b; --accent-strong: #d68b2c; }
-:root[data-accent="emerald"] { --accent: #22b07a; --accent-strong: #199366; }
-:root[data-accent="slate"]   { --accent: #5b7291; --accent-strong: #47597a; }
-
-/* — dark theme: a clean neutral dark (not heavy) — */
-:root[data-theme="dark"] {
-  --bg:            #0f141a;
-  --bg-2:          #0b1015;
-  --surface:       #161c24;
-  --surface-2:     #1d252f;
-  --text:          #e7ecf1;
-  --text-soft:     #a3adb9;
-  --text-faint:    #6d7885;
-  --border:        #242e39;
-  --border-strong: #33404e;
-  --on-accent:     #0b1015;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 10px rgba(0, 0, 0, .35);
-  --shadow-2: 0 10px 34px rgba(0, 0, 0, .5), 0 2px 10px rgba(0, 0, 0, .4);
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
 }
-
-/* ----------------------------------------------------------------- reset -- */
-*, *::before, *::after { box-sizing: border-box; }
-* { margin: 0; }
-html { -webkit-text-size-adjust: 100%; }
 
 body {
-  min-height: 100dvh;
-  font-family: var(--font-sans);
-  font-size: var(--step-0);
-  line-height: 1.65;
-  color: var(--text);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  /* No webfont request: Inter if the user has it, otherwise the (excellent)
+     platform UI fonts. Keeps first paint instant and works behind the GFW. */
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  overflow: hidden;
 }
 
-img, svg, video, canvas { display: block; max-width: 100%; }
-input, button, textarea, select { font: inherit; color: inherit; }
-button { cursor: pointer; background: none; border: none; }
-a { color: var(--accent); text-underline-offset: 3px; }
-a:hover { color: var(--accent-strong); }
-::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--text); }
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
-
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-*::-webkit-scrollbar { width: 11px; height: 11px; }
-*::-webkit-scrollbar-thumb {
-  background: var(--border-strong); border-radius: 99px;
-  border: 3px solid transparent; background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
-
-/* --------------------------------------------------------------- headings - */
-h1, h2, h3, h4 {
-  font-family: var(--font-display);
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  text-wrap: balance;
-  color: var(--text);
-}
-h1 { font-size: var(--step-3); }
-h2 { font-size: var(--step-2); }
-h3 { font-size: var(--step-1); }
-
-.xz-eyebrow {
-  font-family: var(--font-sans);
-  font-size: var(--step--1);
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 600;
-}
-.xz-muted { color: var(--text-soft); }
-.xz-faint { color: var(--text-faint); }
-
-/* ------------------------------------------------------ effect primitives - */
-/* wordmark: a clean accent tint (no gaudy shimmer) */
-.xz-gild {
-  color: var(--accent);
+::selection {
+  background: var(--c-acs, #eef);
 }
 
-.xz-ink-in { animation: xz-rise var(--dur) var(--ease) both; }
-@keyframes xz-rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+textarea,
+input,
+button {
+  font-family: inherit;
+  color: inherit;
 }
-.xz-delay-1 { animation-delay: .05s; }
-.xz-delay-2 { animation-delay: .1s; }
-.xz-delay-3 { animation-delay: .15s; }
-.xz-delay-4 { animation-delay: .2s; }
 
-/* small brand/emblem chip */
-.xz-seal {
-  display: inline-grid;
-  place-items: center;
-  width: 1.9em; height: 1.9em;
-  font-family: var(--font-display);
-  font-size: 1em; font-weight: 700; line-height: 1;
-  color: var(--on-accent);
-  background: var(--accent);
+button {
+  font-size: inherit;
+}
+
+a {
+  color: var(--c-aclink, #4f46e5);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* thin, unobtrusive scrollbars on every scroll container */
+.ph-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-bds) transparent;
+}
+.ph-scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.ph-scroll::-webkit-scrollbar-thumb {
+  background: var(--c-bds, #d4d8de);
   border-radius: 8px;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ph-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-tx3, #8b93a1);
+  background-clip: padding-box;
 }
 
-.xz-rule {
-  display: flex; align-items: center; gap: var(--sp-3);
-  color: var(--text-faint);
+@keyframes ph-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
-.xz-rule::before, .xz-rule::after {
-  content: ""; height: 1px; flex: 1;
-  background: var(--border);
+@keyframes ph-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
-.xz-rule > span {
-  font-family: var(--font-sans); font-size: var(--step--1);
-  letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+@keyframes ph-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
-
-/* --------------------------------------------------------------- surfaces - */
-.xz-card {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-3);
-  box-shadow: var(--shadow-1);
-  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
-}
-.xz-card--hover:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-2);
-  border-color: var(--accent-line);
-}
-.xz-card--gilt::before {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
-  border-radius: var(--r-3) var(--r-3) 0 0;
-  background: var(--accent);
-  opacity: .9;
-}
-
-/* --------------------------------------------------------------- controls - */
-.xz-btn {
-  --_bg: var(--surface);
-  --_fg: var(--text);
-  --_bd: var(--border-strong);
-  display: inline-flex; align-items: center; justify-content: center; gap: .5em;
-  padding: .55em 1.05em;
-  font-family: var(--font-sans); font-size: var(--step-0); font-weight: 600;
-  color: var(--_fg);
-  background: var(--_bg);
-  border: 1px solid var(--_bd);
-  border-radius: 10px;
-  transition: transform .15s var(--ease), box-shadow .25s var(--ease), background .2s var(--ease), border-color .2s var(--ease), filter .2s var(--ease);
-}
-.xz-btn:hover { border-color: var(--accent-line); box-shadow: var(--shadow-1); }
-.xz-btn:active { transform: translateY(0) scale(.985); }
-.xz-btn:disabled { opacity: .5; cursor: not-allowed; }
-.xz-btn--primary {
-  --_bg: var(--accent); --_fg: var(--on-accent); --_bd: transparent;
-}
-.xz-btn--primary:hover { background: var(--accent-strong); border-color: transparent; }
-.xz-btn--gold {
-  --_bg: transparent; --_fg: var(--accent); --_bd: var(--accent-line);
-}
-
-.xz-tag {
-  display: inline-flex; align-items: center; gap: .4em;
-  padding: .18em .6em;
-  font-family: var(--font-sans); font-size: var(--step--1); font-weight: 600;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  border-radius: 999px;
-}
-
-/* --------------------------------------------------------------- utility -- */
-.xz-container { width: min(1120px, 100% - 2 * var(--sp-4)); margin-inline: auto; }
-[hidden] { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

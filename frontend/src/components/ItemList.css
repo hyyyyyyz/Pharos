@@ -1,0 +1,393 @@
+/* 文库 centre pane — toolbar, column header, item rows, empty states.
+   Every value is copied verbatim from the design prototype (Pharos.dc.html
+   lines 96-152 markup + renderVals lines 600-604, 566). */
+
+.ph-il {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-sf, #fff);
+  border-right: 1px solid var(--c-bd, #e6e8ec);
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+.ph-il-bar {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-il-searchwrap {
+  position: relative;
+  flex: 1;
+  max-width: 280px;
+}
+.ph-il-searchicon {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-tx3, #8b93a1);
+  display: flex;
+}
+.ph-il-search {
+  width: 100%;
+  height: 25px;
+  padding: 0 8px 0 26px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-bg, #fafbfc);
+  color: var(--c-tx, #1e222a);
+  font-size: 12px;
+  outline: none;
+}
+.ph-il-search:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-il-spacer {
+  flex: 1;
+}
+
+.ph-il-selcount {
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-il-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.ph-il-arxiv {
+  width: 132px;
+  height: 25px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-bg, #fafbfc);
+  color: var(--c-tx, #1e222a);
+  font-size: 11.5px;
+  outline: none;
+}
+.ph-il-arxiv:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-il-btn-ghost {
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-il-btn-ghost:hover {
+  background: var(--c-hv);
+}
+
+.ph-il-btn-primary {
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ph-il-btn-primary > span {
+  display: flex;
+}
+
+.ph-il-file {
+  display: none;
+}
+
+/* Notices sit below the toolbar. The prototype has no backend, so it has no
+   equivalent — these only ever appear in states the prototype cannot reach. */
+.ph-il-note {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--c-tx3, #8b93a1);
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+}
+.ph-il-note.is-error {
+  color: var(--c-err);
+}
+
+/* --------------------------------------------------------------------- body */
+
+.ph-il-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.ph-il-drop {
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed var(--c-ac, #5b53d6);
+  border-radius: 8px;
+  background: var(--c-acs, #eef);
+  opacity: 0.85;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-ac, #5b53d6);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ empty states */
+
+.ph-il-firstuse {
+  height: 100%;
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.ph-il-firstuse-inner {
+  text-align: center;
+  max-width: 380px;
+}
+.ph-il-firstuse-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+.ph-il-firstuse-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  margin-bottom: 5px;
+}
+.ph-il-firstuse-desc {
+  font-size: 12.5px;
+  color: var(--c-tx2, #5a616e);
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+.ph-il-firstuse-cta {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.ph-il-cta-primary {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-il-cta-ghost {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ph-il-empty {
+  height: 100%;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-il-empty-text {
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.ph-il-empty-text.is-error {
+  color: var(--c-err);
+}
+
+/* ------------------------------------------------------------------ header */
+
+.ph-il-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 27px;
+  background: var(--c-hdr, #f7f8fa);
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-tx3, #8b93a1);
+  padding: 0 8px;
+}
+.ph-il-head > span {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* shared column geometry (header + rows) */
+.ph-il-c-title {
+  flex: 1;
+  min-width: 0;
+}
+.ph-il-c-authors {
+  width: 80px;
+  flex: none;
+}
+.ph-il-c-year {
+  width: 44px;
+  flex: none;
+}
+.ph-il-c-pages {
+  width: 38px;
+  flex: none;
+}
+.ph-il-c-status {
+  width: 92px;
+  flex: none;
+}
+
+/* -------------------------------------------------------------------- rows */
+
+.ph-il-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: default;
+  border-bottom: 1px solid var(--c-bd);
+  background: transparent;
+}
+.ph-il-row.is-selected {
+  background: var(--c-acs);
+}
+.ph-il-row.is-primary {
+  box-shadow: inset 2px 0 0 var(--c-ac);
+}
+
+.ph-il-row .ph-il-c-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ph-il-zotero {
+  display: flex;
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-il-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-tx, #1e222a);
+  font-weight: 400;
+}
+.ph-il-row.is-selected .ph-il-title {
+  font-weight: 600;
+}
+
+.ph-il-row .ph-il-c-authors {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-tx2, #5a616e);
+}
+.ph-il-row .ph-il-c-year {
+  color: var(--c-tx2, #5a616e);
+  font-variant-numeric: tabular-nums;
+}
+.ph-il-row .ph-il-c-pages {
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+}
+.ph-il-row .ph-il-c-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* --------------------------------------------------------------- status pill */
+
+.ph-il-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 20px;
+}
+.ph-il-pill::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ph-il-pill.is-translating {
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+.ph-il-pill.is-translated {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+.ph-il-pill.is-failed {
+  background: var(--c-err-soft);
+  color: var(--c-err);
+}
+.ph-il-pill.is-untranslated {
+  background: var(--c-hv);
+  color: var(--c-tx3);
+}
+
+.ph-il-prog {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-bd, #e6e8ec);
+  overflow: hidden;
+}
+.ph-il-prog > span {
+  display: block;
+  height: 100%;
+  background: var(--c-ac);
+  border-radius: 2px;
+}

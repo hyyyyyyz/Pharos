@@ -1,0 +1,226 @@
+/* 文库 view — 280px right-hand detail panel. Ported 1:1 from Pharos.dc.html (lines 154-194). */
+
+.ph-dp {
+  width: 280px;
+  flex: none;
+  background: var(--c-sf, #fff);
+  overflow-y: auto;
+}
+
+/* ------------------------------------------------------------ empty state */
+
+.ph-dp-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--c-tx3, #8b93a1);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+/* ----------------------------------------------------------------- header */
+
+.ph-dp-body {
+  padding: 14px 16px;
+}
+
+.ph-dp-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+.ph-dp-sub {
+  font-size: 11.5px;
+  color: var(--c-tx3, #8b93a1);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+/* ------------------------------------------------------------- action row */
+
+.ph-dp-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.ph-dp-primary {
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.ph-dp-secondary {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The prototype has no disabled state; the real translate call needs one. */
+.ph-dp-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ph-dp-ic {
+  display: flex;
+}
+
+/* ---------------------------------------------------------------- progress */
+
+.ph-dp-prog {
+  margin-bottom: 14px;
+}
+
+.ph-dp-track {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--c-bd, #e6e8ec);
+  overflow: hidden;
+}
+
+.ph-dp-bar {
+  display: block;
+  height: 100%;
+  background: var(--c-ac, #5b53d6);
+  border-radius: 3px;
+}
+
+.ph-dp-prog-label {
+  font-size: 11px;
+  color: var(--c-ac, #5b53d6);
+  margin-top: 5px;
+}
+
+/* Real backend jobs can fail; the prototype had no such branch. */
+.ph-dp-error {
+  font-size: 11.5px;
+  color: var(--c-err, #d93a3a);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+/* --------------------------------------------------------- metadata grid */
+
+.ph-dp-grid {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 0;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dp-k {
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-dp-v {
+  color: var(--c-tx, #1e222a);
+}
+
+.ph-dp-v-doi {
+  color: var(--c-aclink, #4f46e5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- sections */
+
+.ph-dp-sec {
+  padding: 12px 0;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dp-sec-last {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dp-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-tx3, #8b93a1);
+  margin-bottom: 6px;
+}
+
+/* 附件 / 标签 / 笔记 labels sit 1px lower than 摘要 in the prototype. */
+.ph-dp-label-7 {
+  margin-bottom: 7px;
+}
+
+.ph-dp-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--c-bg, #fafbfc);
+  border: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dp-file-ic {
+  display: flex;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-dp-file-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--c-tx, #1e222a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-dp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ph-dp-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--c-hv, #f0f2f5);
+  color: var(--c-tx2, #5a616e);
+}
+
+/* Placeholders for data the backend cannot supply yet (摘要 / 标签 / 笔记). */
+.ph-dp-muted {
+  font-size: 12px;
+  color: var(--c-tx3, #8b93a1);
+  font-style: italic;
+}
+
+.ph-dp-muted-ab {
+  line-height: 1.65;
+}

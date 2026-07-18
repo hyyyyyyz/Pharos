@@ -1,0 +1,122 @@
+/* CollectionTree — the 196px category rail of the 文库 view.
+   Every value is copied verbatim from the design prototype (Pharos.dc.html,
+   markup lines 77-94, styles from renderVals() lines 589-598). */
+
+.ph-tree {
+  width: 196px;
+  flex: none;
+  background: var(--c-sf, #fff);
+  border-right: 1px solid var(--c-bd, #e6e8ec);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.ph-tree-head {
+  padding: 0 8px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--c-tx3, #8b93a1);
+}
+
+/* padding-left is set inline: 8 + depth * 15 px */
+.ph-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  margin: 0 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--c-tx, #1e222a);
+  font-weight: 400;
+  background: transparent;
+  transition: background 0.1s;
+}
+
+.ph-tree-row.is-active {
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+  background: var(--c-acs);
+}
+
+.ph-tree-caret {
+  display: flex;
+  width: 14px;
+  margin-left: -2px;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-tree-icon {
+  display: flex;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-tree-row.is-active .ph-tree-icon {
+  color: var(--c-ac, #5b53d6);
+}
+
+.ph-tree-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-tree-sync {
+  display: flex;
+  color: var(--c-ac, #5b53d6);
+  animation: ph-spin 1.1s linear infinite;
+}
+
+.ph-tree-count {
+  font-size: 10.5px;
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Real-data deviation: placeholder line where the prototype listed mock
+   collections. Same row metrics, muted, not clickable, no hover. */
+.ph-tree-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  margin: 0 4px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-tree-div {
+  height: 1px;
+  background: var(--c-bd, #e6e8ec);
+  margin: 8px 8px;
+}
+
+.ph-tree-tags {
+  padding: 0 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ph-tree-tag {
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ph-tree-tag.is-on {
+  border-color: var(--c-acsb);
+  background: var(--c-acs);
+  color: var(--c-ac, #5b53d6);
+}

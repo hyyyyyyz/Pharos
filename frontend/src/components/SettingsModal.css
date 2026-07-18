@@ -1,0 +1,373 @@
+/* Settings modal — ported verbatim from the design prototype
+   (markup lines 348-400; styles from settingsTabsRow / themeOptions /
+   accentRows in renderVals). */
+
+.ph-set-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--c-overlay);
+}
+
+.ph-set-dialog {
+  position: fixed;
+  z-index: 51;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 604px;
+  max-width: calc(100vw - 40px);
+  height: 448px;
+  max-height: calc(100vh - 40px);
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 12px;
+  box-shadow: var(--sh-pop);
+  display: flex;
+  overflow: hidden;
+  /* The prototype used the shared `ph-fade`, whose `to { transform: none }`
+     cancels the centring translate — the dialog visibly snapped in from the
+     bottom-right for 140ms. Same fade + 3px rise, centring preserved. */
+  animation: ph-fade-center 0.14s ease;
+}
+
+@keyframes ph-fade-center {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 3px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* ------------------------------------------------------------- left nav */
+
+.ph-set-nav {
+  width: 152px;
+  flex: none;
+  background: var(--c-bg);
+  border-right: 1px solid var(--c-bd);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 10px;
+}
+
+.ph-set-nav-title {
+  padding: 0 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+
+.ph-set-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ph-set-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  color: var(--c-tx2);
+  font-weight: 500;
+}
+.ph-set-tab--on {
+  background: var(--c-acs);
+  color: var(--c-ac);
+  font-weight: 600;
+}
+
+.ph-set-nav-spacer {
+  flex: 1;
+}
+
+.ph-set-nav-foot {
+  padding: 0 6px;
+  font-size: 10.5px;
+  color: var(--c-tx3);
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------ right pane */
+
+.ph-set-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  position: relative;
+  padding: 20px 22px;
+}
+
+.ph-set-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--c-tx3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-set-close:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+
+.ph-set-ic {
+  display: flex;
+}
+.ph-set-ic--tx2 {
+  color: var(--c-tx2);
+}
+.ph-set-ic--spin {
+  color: var(--c-ac);
+  animation: ph-spin 1.1s linear infinite;
+}
+
+.ph-set-h {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-tx);
+  margin-bottom: 16px;
+}
+
+/* ----------------------------------------------------------- account tab */
+
+.ph-set-acct {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.ph-set-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--c-acs);
+  color: var(--c-ac);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ph-set-acct-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+.ph-set-acct-sub {
+  font-size: 11.5px;
+  color: var(--c-tx3);
+}
+
+.ph-set-zot {
+  padding: 16px 0 0;
+  border-top: 1px solid var(--c-bd);
+}
+
+.ph-set-zot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ph-set-zot-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+
+.ph-set-zot-desc {
+  font-size: 12px;
+  color: var(--c-tx2);
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+
+.ph-set-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  margin-bottom: 9px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-bg);
+  color: var(--c-tx);
+  font-size: 12px;
+  outline: none;
+}
+.ph-set-input:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-set-connect {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac);
+  color: var(--c-acc);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Zotero sync is not built yet, so the button must not pretend to work. */
+.ph-set-connect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ph-set-zot-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+.ph-set-zot-connecting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--c-tx2);
+}
+
+.ph-set-zot-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-bd);
+}
+.ph-set-zot-check {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-set-zot-card-text {
+  flex: 1;
+  min-width: 0;
+}
+.ph-set-zot-card-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+.ph-set-zot-card-sub {
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+.ph-set-zot-disconnect {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------- appearance tab */
+
+.ph-set-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-tx2);
+  margin-bottom: 9px;
+}
+.ph-set-label-sub {
+  font-weight: 400;
+  color: var(--c-tx3);
+}
+
+.ph-set-themes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  max-width: 280px;
+}
+
+.ph-set-theme {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--c-bd);
+  background: transparent;
+  color: var(--c-tx2);
+}
+.ph-set-theme--on {
+  border: 1px solid var(--c-acsb);
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+
+.ph-set-accents {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-width: 328px;
+}
+
+.ph-set-acc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 2px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+.ph-set-acc--on {
+  border: 1px solid var(--c-acsb);
+  background: var(--c-acs);
+}
+
+.ph-set-acc-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.ph-set-acc-name {
+  font-size: 9.5px;
+  color: var(--c-tx3);
+}

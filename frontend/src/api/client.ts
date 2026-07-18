@@ -20,24 +20,24 @@ async function unwrap<T>(res: Response): Promise<T> {
 
 export const api = {
   health: (): Promise<{ status: string; engine: string; translator: string }> =>
-    fetch(`${BASE}/health`).then(unwrap),
+    fetch(`${BASE}/health`).then(unwrap<{ status: string; engine: string; translator: string }>),
 
-  listPapers: (): Promise<Paper[]> => fetch(`${BASE}/papers`).then(unwrap),
+  listPapers: (): Promise<Paper[]> => fetch(`${BASE}/papers`).then(unwrap<Paper[]>),
 
-  getPaper: (id: string): Promise<Paper> => fetch(`${BASE}/papers/${id}`).then(unwrap),
+  getPaper: (id: string): Promise<Paper> => fetch(`${BASE}/papers/${id}`).then(unwrap<Paper>),
 
   upload: (file: File): Promise<Paper> => {
     const form = new FormData();
     form.append("file", file);
-    return fetch(`${BASE}/papers`, { method: "POST", body: form }).then(unwrap);
+    return fetch(`${BASE}/papers`, { method: "POST", body: form }).then(unwrap<Paper>);
   },
 
   translate: (paperId: string, pages?: string): Promise<Job> => {
     const qs = pages ? `?pages=${encodeURIComponent(pages)}` : "";
-    return fetch(`${BASE}/papers/${paperId}/translate${qs}`, { method: "POST" }).then(unwrap);
+    return fetch(`${BASE}/papers/${paperId}/translate${qs}`, { method: "POST" }).then(unwrap<Job>);
   },
 
-  getJob: (jobId: string): Promise<Job> => fetch(`${BASE}/jobs/${jobId}`).then(unwrap),
+  getJob: (jobId: string): Promise<Job> => fetch(`${BASE}/jobs/${jobId}`).then(unwrap<Job>),
 
   pdfUrl: (paperId: string, kind: PdfKind): string => `${BASE}/papers/${paperId}/pdf/${kind}`,
 
