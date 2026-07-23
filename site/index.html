@@ -1,708 +1,490 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pharos · 一体化科研平台</title>
-<meta name="description" content="一体化科研平台——从读论文到写论文，科研的一整条路，一盏灯照到底。旗舰模块：保留排版的英文论文中文翻译，附领航问答、每日论文与文库。" />
-<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
-<link rel="apple-touch-icon" href="assets/favicon-180.png" />
-<meta name="theme-color" content="#070E18" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pharos — 保留排版的论文翻译与科研阅读工作台</title>
+  <meta name="description" content="Pharos 是面向中文科研工作者的开源、自托管研究工作台：保留排版翻译、可交互精读、每日 arXiv 与个人文库，收进同一盏灯下。" />
+  <meta name="theme-color" content="#F7F2E9" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/favicon-180.png" />
 
-<!-- Link previews (WeChat / Twitter / Slack …). Absolute URLs so scrapers on
-     other hosts can resolve the image. -->
-<meta property="og:type" content="website" />
-<meta property="og:title" content="Pharos · 一体化科研平台" />
-<meta property="og:description" content="从读论文到写论文，科研的一整条路，一盏灯照到底。" />
-<meta property="og:image" content="https://hyyyyyyz.github.io/Pharos/assets/mark.png" />
-<meta property="og:url" content="https://hyyyyyyz.github.io/Pharos/" />
-<meta name="twitter:card" content="summary" />
-<meta name="twitter:title" content="Pharos · 一体化科研平台" />
-<meta name="twitter:description" content="从读论文到写论文，科研的一整条路，一盏灯照到底。" />
-<meta name="twitter:image" content="https://hyyyyyyz.github.io/Pharos/assets/mark.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pharos — 保留排版的论文翻译与科研阅读工作台" />
+  <meta property="og:description" content="翻译文字，尽量保留原版面。从发现、精读到整理，科研的一整条路，一盏灯照到底。" />
+  <meta property="og:image" content="https://hyyyyyyz.github.io/Pharos/assets/poster.webp" />
+  <meta property="og:url" content="https://hyyyyyyz.github.io/Pharos/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Pharos — 科研的一整条路，一盏灯照到底" />
+  <meta name="twitter:description" content="保留排版翻译、可交互精读、每日 arXiv 与个人文库。" />
+  <meta name="twitter:image" content="https://hyyyyyyz.github.io/Pharos/assets/poster.webp" />
 
-<style>
-/* ============================================================= tokens ===== */
-:root {
-  --sea-0:   #05090F;   /* deepest night */
-  --sea-1:   #070E18;   /* sea floor */
-  --sea-2:   #0C1A2E;   /* raised panel */
-  --sea-3:   #12294a;   /* border / lifted */
-  --navy:    #0C2040;
-  --gold:    #F8C040;
-  --gold-2:  #ffd576;
-  --gold-dk: #c8901f;
-  --teal:    #2bb3ac;
-  --teal-2:  #57d0c9;
-  --paper:   #F7F2E9;
-  --ink:     #EDE7DC;    /* primary text on sea */
-  --ink-2:   #A7B6CC;    /* muted */
-  --ink-3:   #63758f;    /* faint */
-
-  --font-body: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
-    "Segoe UI", system-ui, sans-serif;
-  --font-serif: "Songti SC", "SimSun", "Noto Serif SC", "STSong", Georgia, serif;
-
-  --maxw: 1180px;
-  --pad: clamp(20px, 5vw, 68px);
-}
-
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body {
-  margin: 0;
-  font-family: var(--font-body);
-  color: var(--ink);
-  background: var(--sea-1);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  overflow-x: hidden;
-}
-img { max-width: 100%; display: block; }
-a { color: inherit; text-decoration: none; }
-
-.wrap { max-width: var(--maxw); margin: 0 auto; padding-inline: var(--pad); }
-.section { padding-block: clamp(72px, 12vw, 150px); position: relative; z-index: 1; }
-
-/* shared type ---------------------------------------------------------------*/
-.eyebrow {
-  font-size: 12px; font-weight: 700; letter-spacing: .34em; text-transform: uppercase;
-  color: var(--gold); margin: 0 0 20px;
-  display: inline-flex; align-items: center; gap: 10px;
-}
-.eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--gold); opacity: .6; }
-.h2 { font-size: clamp(28px, 4.4vw, 48px); line-height: 1.12; font-weight: 800; letter-spacing: -.02em; margin: 0 0 20px; }
-.lead { font-size: clamp(15px, 1.7vw, 18px); line-height: 1.8; color: var(--ink-2); max-width: 46ch; margin: 0; }
-
-/* the signature carved glyph */
-.glyph {
-  font-family: var(--font-serif); font-weight: 700; line-height: .8;
-  font-size: clamp(130px, 24vw, 300px);
-  position: absolute; z-index: 0; user-select: none; pointer-events: none;
-  color: transparent;
-  -webkit-text-stroke: 1.5px color-mix(in oklab, var(--gold) 40%, transparent);
-  opacity: .5;
-}
-
-/* buttons -------------------------------------------------------------------*/
-.btn {
-  display: inline-flex; align-items: center; gap: 9px; position: relative;
-  height: 50px; padding: 0 26px; border-radius: 12px;
-  font-size: 15px; font-weight: 700; letter-spacing: .01em;
-  border: 1.5px solid transparent; cursor: pointer;
-  transition: transform .14s ease, box-shadow .25s ease, background .2s ease, border-color .2s ease;
-}
-.btn:active { transform: translateY(1px) scale(.99); }
-.btn--gold {
-  background: linear-gradient(180deg, var(--gold-2), var(--gold));
-  color: #241a00;
-  box-shadow: 0 0 0 0 color-mix(in oklab, var(--gold) 60%, transparent), 0 10px 30px -8px rgba(248,192,64,.5);
-}
-.btn--gold:hover { box-shadow: 0 0 34px -2px color-mix(in oklab, var(--gold) 65%, transparent), 0 14px 34px -8px rgba(248,192,64,.55); transform: translateY(-2px); }
-.btn--ghost { border-color: color-mix(in oklab, var(--ink) 26%, transparent); color: var(--ink); }
-.btn--ghost:hover { border-color: var(--gold); color: var(--gold-2); box-shadow: 0 0 24px -6px color-mix(in oklab, var(--gold) 40%, transparent); }
-
-/* ================================================= animated backdrop ====== */
-/* One field of stars + drifting fog behind the whole page. Fixed, so the beam
-   and content scroll over a continuous night. */
-.sky {
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(120% 80% at 50% -10%, #10233f 0%, var(--sea-1) 42%, var(--sea-0) 100%);
-}
-.stars, .stars2 {
-  position: absolute; inset: 0;
-  background-repeat: repeat;
-  background-image:
-    radial-gradient(1.4px 1.4px at 20% 30%, #fff, transparent),
-    radial-gradient(1.2px 1.2px at 75% 44%, #cfe0ff, transparent),
-    radial-gradient(1.1px 1.1px at 40% 70%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 88% 18%, #ffe9b0, transparent),
-    radial-gradient(1px 1px at 60% 85%, #fff, transparent),
-    radial-gradient(1.2px 1.2px at 12% 62%, #cfe0ff, transparent),
-    radial-gradient(1px 1px at 52% 22%, #fff, transparent);
-  background-size: 100% 100%;
-  animation: twinkle 5.5s ease-in-out infinite alternate;
-}
-.stars2 { opacity: .5; transform: scale(1.4); animation-duration: 8s; animation-delay: -3s; }
-@keyframes twinkle { from { opacity: .35; } to { opacity: .9; } }
-.fog {
-  position: absolute; inset: 0; opacity: .5;
-  background:
-    radial-gradient(60% 40% at 20% 80%, color-mix(in oklab, var(--teal) 12%, transparent), transparent 70%),
-    radial-gradient(50% 40% at 85% 90%, color-mix(in oklab, var(--navy) 60%, transparent), transparent 70%);
-  animation: drift 22s ease-in-out infinite alternate;
-}
-@keyframes drift { from { transform: translate3d(-3%, 0, 0); } to { transform: translate3d(3%, -2%, 0); } }
-
-/* ================================================================ nav ===== */
-.nav {
-  position: sticky; top: 0; z-index: 60;
-  background: color-mix(in oklab, var(--sea-0) 72%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid color-mix(in oklab, var(--gold) 12%, transparent);
-}
-.nav__in { display: flex; align-items: center; justify-content: space-between; height: 66px; }
-.brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 20px; letter-spacing: -.01em; color: var(--ink); }
-.brand img { width: 32px; height: 32px; border-radius: 50%; box-shadow: 0 0 18px -2px color-mix(in oklab, var(--gold) 55%, transparent); }
-.nav__links { display: flex; align-items: center; gap: 6px; }
-.nav__link { font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 9px 13px; border-radius: 9px; transition: color .18s, background .18s; }
-.nav__link:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 8%, transparent); }
-.nav__cta { font-size: 14px; font-weight: 700; color: #241a00; background: linear-gradient(180deg, var(--gold-2), var(--gold)); padding: 10px 18px; border-radius: 10px; box-shadow: 0 8px 22px -10px rgba(248,192,64,.7); }
-.nav__cta:hover { box-shadow: 0 0 26px -4px color-mix(in oklab, var(--gold) 60%, transparent); }
-
-/* ============================================================== hero ===== */
-.hero {
-  position: relative; z-index: 1;
-  min-height: 100svh; display: grid; place-items: center; text-align: center;
-  padding: 90px var(--pad) 40px; overflow: hidden;
-}
-/* the rotating lighthouse beams — two conic cones from the lamp point */
-.beacon {
-  position: absolute; left: 50%; bottom: -6%; width: 168vmax; height: 168vmax;
-  transform: translateX(-50%); z-index: 0; pointer-events: none;
-  mix-blend-mode: screen;
-  background: conic-gradient(from 0deg,
-    transparent 0deg,
-    color-mix(in oklab, var(--gold) 20%, transparent) 3deg,
-    color-mix(in oklab, #fff6df 62%, transparent) 6.5deg,
-    color-mix(in oklab, var(--gold) 20%, transparent) 10deg,
-    transparent 18deg,
-    transparent 173deg,
-    color-mix(in oklab, var(--gold) 34%, transparent) 183deg,
-    transparent 193deg,
-    transparent 360deg);
-  -webkit-mask: radial-gradient(closest-side, #000 0%, #000 30%, transparent 74%);
-          mask: radial-gradient(closest-side, #000 0%, #000 30%, transparent 74%);
-  filter: blur(1.5px);
-  animation: sweep 15s linear infinite;
-  opacity: 1;
-}
-@keyframes sweep { to { transform: translateX(-50%) rotate(360deg); } }
-/* soft glow halo at the lamp */
-.hero__halo {
-  position: absolute; left: 50%; bottom: -2%; width: 46vmax; height: 46vmax;
-  transform: translateX(-50%); z-index: 0; pointer-events: none;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--gold) 30%, transparent), transparent 70%);
-  filter: blur(8px); animation: pulse 4.5s ease-in-out infinite;
-}
-@keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
-
-.hero__in { position: relative; z-index: 2; max-width: 940px; }
-.hero__eyebrow {
-  display: inline-flex; align-items: center; gap: 9px;
-  font-size: 12.5px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--gold);
-  padding: 7px 16px; border-radius: 30px; margin: 0 0 30px;
-  border: 1px solid color-mix(in oklab, var(--gold) 30%, transparent);
-  background: color-mix(in oklab, var(--gold) 8%, transparent);
-  opacity: 0; animation: rise .8s .1s both;
-}
-.hero__title {
-  font-size: clamp(40px, 7.4vw, 92px); line-height: 1.04; font-weight: 850; letter-spacing: -.035em;
-  margin: 0 0 26px; color: var(--ink);
-}
-.hero__title .l1 { display: block; opacity: 0; animation: rise .9s .22s both; }
-.hero__title .l2 { display: block; opacity: 0; animation: rise .9s .38s both; }
-/* the lit word — a gold gradient with a light-sweep passing over it */
-.lit {
-  background: linear-gradient(100deg, var(--gold-dk) 0%, var(--gold) 30%, #fff6df 48%, var(--gold) 66%, var(--gold-dk) 100%);
-  background-size: 260% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: shine 5s ease-in-out infinite;
-  text-shadow: 0 0 40px color-mix(in oklab, var(--gold) 45%, transparent);
-}
-@keyframes shine { 0%,100% { background-position: 120% 0; } 50% { background-position: -20% 0; } }
-.hero__sub { font-size: clamp(15px, 1.9vw, 20px); line-height: 1.8; color: var(--ink-2); max-width: 40ch; margin: 0 auto 38px; opacity: 0; animation: rise .9s .54s both; }
-.hero__cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; opacity: 0; animation: rise .9s .7s both; }
-.hero__scroll {
-  position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 2;
-  font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-3);
-  display: flex; flex-direction: column; align-items: center; gap: 9px; opacity: 0; animation: rise 1s 1.1s both;
-}
-.hero__scroll span { width: 1px; height: 34px; background: linear-gradient(var(--gold), transparent); animation: scrolldot 2s ease-in-out infinite; }
-@keyframes scrolldot { 0% { transform: scaleY(0); transform-origin: top; } 50% { transform: scaleY(1); transform-origin: top; } 50.1% { transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
-
-@keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
-
-/* ================================================= translation demo ===== */
-.tx { overflow: hidden; }
-.tx .glyph { top: -8%; right: -1%; }
-.tx__grid { display: grid; grid-template-columns: 1fr 1.05fr; gap: clamp(30px, 5vw, 68px); align-items: center; }
-.tx__out { margin-top: 24px; font-size: 14px; font-weight: 700; color: var(--gold); letter-spacing: .02em; }
-
-/* the paper that lights up in the beam and morphs EN -> ZH */
-.paper {
-  position: relative; background: var(--paper); color: var(--navy);
-  border-radius: 12px; padding: 22px 22px 24px;
-  box-shadow: 0 40px 90px -30px rgba(0,0,0,.85), 0 0 60px -18px color-mix(in oklab, var(--gold) 40%, transparent);
-}
-.paper::after {
-  content: ""; position: absolute; inset: 0; border-radius: 12px; pointer-events: none;
-  background: linear-gradient(105deg, transparent 40%, color-mix(in oklab, #fff 55%, transparent) 50%, transparent 60%);
-  background-size: 260% 100%; animation: glare 6s ease-in-out infinite; mix-blend-mode: overlay;
-}
-@keyframes glare { 0%,100% { background-position: 130% 0; } 50% { background-position: -30% 0; } }
-.paper__tag { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #a99; margin-bottom: 10px; display: flex; justify-content: space-between; }
-.paper__tag .en, .paper__tag .zh { transition: opacity .5s; }
-.paper__h { height: 8px; width: 60%; margin: 0 auto 13px; border-radius: 2px; background: var(--navy); }
-.paper__cols { column-count: 2; column-gap: 13px; }
-.row { height: 5px; border-radius: 2px; margin-bottom: 6px; background: #cfc6b4; position: relative; overflow: hidden; }
-.row::after { content: ""; position: absolute; inset: 0; width: 0; background: color-mix(in oklab, var(--navy) 45%, #cfc6b4); animation: fillzh 7s ease-in-out infinite; }
-.row.w9 { width: 92%; } .row.w7 { width: 72%; } .row.w5 { width: 54%; }
-.row.d2::after { animation-delay: .15s; } .row.d3::after { animation-delay: .3s; } .row.d4::after { animation-delay: .45s; } .row.d5::after { animation-delay: .6s; }
-@keyframes fillzh { 0%, 8% { width: 0; } 30%, 62% { width: 100%; } 84%, 100% { width: 0; } }
-.keep {
-  break-inside: avoid; margin: 4px 0 10px; border-radius: 6px;
-  border: 1px solid #e2d8c6; background: #fbf6ec;
-  font-size: 9.5px; color: #8a7f6b; text-align: center; padding: 10px 6px; line-height: 1.5;
-  box-shadow: 0 0 0 0 color-mix(in oklab, var(--gold) 50%, transparent); animation: keepglow 7s ease-in-out infinite;
-}
-.keep.fig { background: repeating-linear-gradient(135deg, #fbf6ec, #fbf6ec 5px, #efe6d4 5px, #efe6d4 10px); }
-@keyframes keepglow { 0%,20%,80%,100% { box-shadow: 0 0 0 0 transparent; } 45%,55% { box-shadow: 0 0 16px -2px color-mix(in oklab, var(--gold) 60%, transparent); border-color: color-mix(in oklab, var(--gold) 50%, #e2d8c6); } }
-
-/* ==================================================== voyage (horizontal) = */
-/* Scrolling down through this tall section drives a HORIZONTAL glide past four
-   "islands" — the break from plain vertical scroll. On small screens and under
-   reduced-motion it degrades to an ordinary vertical stack. */
-.voyage { position: relative; height: 460vh; }
-.voyage__pin {
-  position: sticky; top: 0; height: 100svh; overflow: hidden;
-  display: flex; flex-direction: column; justify-content: center;
-}
-.voyage__head {
-  position: absolute; top: clamp(28px, 7vh, 74px); left: 0; right: 0;
-  text-align: center; z-index: 3; padding-inline: var(--pad);
-}
-.voyage__head .eyebrow { justify-content: center; }
-.voyage__head h2 { font-size: clamp(24px, 3.6vw, 40px); font-weight: 800; letter-spacing: -.02em; margin: 0; color: var(--ink); }
-.voyage__track {
-  display: flex; gap: clamp(20px, 3vw, 40px); align-items: center;
-  padding-inline: max(var(--pad), 9vw); width: max-content;
-  will-change: transform;
-}
-.isle {
-  flex: 0 0 auto; width: min(540px, 80vw); height: min(60vh, 460px);
-  position: relative; border-radius: 22px; overflow: hidden;
-  background: linear-gradient(165deg, var(--sea-2), var(--sea-1) 70%);
-  border: 1px solid var(--sea-3);
-  padding: 34px 34px 30px; display: flex; flex-direction: column;
-  box-shadow: 0 40px 80px -40px rgba(0,0,0,.85);
-  transition: border-color .3s, box-shadow .3s;
-}
-.isle::after { /* the beam catches the isle it faces */
-  content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .5s;
-  background: radial-gradient(70% 60% at 50% -8%, color-mix(in oklab, var(--gold) 20%, transparent), transparent 62%);
-  pointer-events: none;
-}
-.isle.lit { border-color: color-mix(in oklab, var(--gold) 42%, var(--sea-3)); box-shadow: 0 40px 90px -36px rgba(0,0,0,.9), 0 0 60px -20px color-mix(in oklab, var(--gold) 45%, transparent); }
-.isle.lit::after { opacity: 1; }
-.isle__glyph { position: absolute; top: 8px; right: 22px; font-family: var(--font-serif); font-weight: 700; font-size: clamp(96px, 12vw, 150px); line-height: 1; color: color-mix(in oklab, var(--teal) 22%, transparent); }
-.isle.lit .isle__glyph { color: color-mix(in oklab, var(--gold) 40%, transparent); transition: color .5s; }
-.isle__no { position: relative; font-family: var(--font-serif); font-size: 15px; color: var(--gold); letter-spacing: .1em; margin-bottom: auto; }
-.isle__k { position: relative; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--teal-2); margin: 0 0 9px; }
-.isle__t { position: relative; font-size: clamp(22px, 2.4vw, 27px); font-weight: 800; letter-spacing: -.01em; margin: 0 0 12px; color: var(--ink); }
-.isle__d { position: relative; font-size: 14.5px; line-height: 1.7; color: var(--ink-2); margin: 0; max-width: 36ch; }
-.isle__soon { display: inline-block; margin-top: 12px; font-size: 11px; font-weight: 700; color: var(--gold); background: color-mix(in oklab, var(--gold) 14%, transparent); padding: 3px 10px; border-radius: 20px; }
-/* little mock visual sitting at the bottom of each isle */
-.mock { position: relative; margin-top: 18px; display: flex; gap: 8px; align-items: flex-end; }
-.mock__paper { flex: 1; background: var(--paper); border-radius: 8px; padding: 10px; box-shadow: 0 14px 30px -14px rgba(0,0,0,.7); }
-.mock__paper .r { height: 4px; border-radius: 2px; background: #cfc6b4; margin-bottom: 5px; }
-.mock__paper .r.z { background: color-mix(in oklab, var(--navy) 50%, #cfc6b4); }
-.mock__paper .r.hl { background: color-mix(in oklab, var(--gold) 55%, #cfc6b4); }
-.mock__pills { display: flex; gap: 6px; margin-top: 8px; }
-.mock__pill { font-size: 10px; color: var(--navy); background: #e7ddca; border-radius: 5px; padding: 2px 7px; font-weight: 700; }
-.bubble { max-width: 78%; font-size: 12px; line-height: 1.5; padding: 9px 12px; border-radius: 12px; }
-.bubble.q { align-self: flex-end; background: linear-gradient(180deg, var(--gold-2), var(--gold)); color: #241a00; border-bottom-right-radius: 3px; }
-.bubble.a { align-self: flex-start; background: var(--sea-3); color: var(--ink); border-bottom-left-radius: 3px; border: 1px solid color-mix(in oklab, var(--teal) 30%, transparent); }
-.chat { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.scorecard { display: flex; align-items: center; gap: 14px; width: 100%; background: var(--sea-1); border: 1px solid var(--sea-3); border-radius: 12px; padding: 12px 14px; }
-.scorecard b { font-family: var(--font-serif); font-size: 30px; color: var(--teal-2); }
-.scorecard .sc__t { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1.3; }
-.scorecard .sc__d { font-size: 11px; color: var(--ink-3); }
-.tree { width: 100%; font-size: 12.5px; color: var(--ink-2); }
-.tree__row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.tree__row.sub { padding-left: 18px; color: var(--ink-3); }
-.tree__dot { width: 12px; height: 10px; border-radius: 2px; background: color-mix(in oklab, var(--gold) 60%, transparent); flex: none; }
-.tree__row.sub .tree__dot { background: color-mix(in oklab, var(--teal) 55%, transparent); }
-
-.voyage__dots { position: absolute; bottom: clamp(24px, 6vh, 56px); left: 0; right: 0; display: flex; gap: 10px; justify-content: center; z-index: 3; }
-.voyage__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sea-3); transition: background .3s, transform .3s, width .3s; }
-.voyage__dot.on { background: var(--gold); width: 24px; border-radius: 5px; }
-
-@media (max-width: 900px) {
-  .voyage { height: auto; }
-  .voyage__pin { position: static; height: auto; padding-block: 64px 20px; }
-  .voyage__head { position: static; margin-bottom: 30px; }
-  .voyage__track { flex-direction: column; width: auto; transform: none !important; padding-inline: var(--pad); }
-  .isle { width: 100%; height: auto; }
-  .voyage__dots { display: none; }
-  .isle.lit::after { opacity: 0; }
-}
-
-/* ============================================================== daily ===== */
-.daily .glyph { top: -10%; left: -1%; }
-.daily__grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: clamp(30px, 4vw, 64px); align-items: center; }
-.feed { display: flex; flex-direction: column; gap: 12px; }
-.feed__item {
-  background: linear-gradient(180deg, var(--sea-2), var(--sea-1)); border: 1px solid var(--sea-3);
-  border-radius: 14px; padding: 16px 18px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: start;
-  transition: border-color .25s, transform .2s;
-}
-.feed__item:hover { border-color: color-mix(in oklab, var(--teal) 45%, var(--sea-3)); transform: translateX(4px); }
-.feed__dir { grid-column: 1; font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--gold); }
-.feed__score { grid-row: 1 / span 3; grid-column: 2; align-self: center; font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--teal-2); font-variant-numeric: tabular-nums; }
-.feed__title { grid-column: 1; font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.35; }
-.feed__sum { grid-column: 1; font-size: 12.5px; line-height: 1.6; color: var(--ink-3); }
-.tags { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 20px; }
-.tag { font-size: 12.5px; font-weight: 600; color: var(--ink); border: 1px solid var(--sea-3); background: var(--sea-2); padding: 7px 13px; border-radius: 22px; transition: border-color .2s, color .2s; }
-.tag:hover { border-color: var(--teal); color: var(--teal-2); }
-.tag--add { color: var(--gold); border-style: dashed; border-color: color-mix(in oklab, var(--gold) 45%, transparent); }
-
-/* ============================================================== open ===== */
-.open__grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(30px, 5vw, 76px); align-items: center; }
-.pillars { display: flex; flex-direction: column; gap: 24px; }
-.pillar { display: grid; grid-template-columns: 44px 1fr; gap: 16px; align-items: start; }
-.pillar__i { width: 44px; height: 44px; border-radius: 11px; display: grid; place-items: center; color: var(--gold); background: color-mix(in oklab, var(--gold) 12%, transparent); border: 1px solid color-mix(in oklab, var(--gold) 26%, transparent); }
-.pillar__t { font-size: 17px; font-weight: 800; margin: 0 0 5px; color: var(--ink); }
-.pillar__d { font-size: 14px; line-height: 1.7; color: var(--ink-2); margin: 0; }
-
-/* ============================================================== cta ====== */
-.cta { text-align: center; overflow: hidden; position: relative; }
-.cta__mark { width: 78px; height: 78px; border-radius: 50%; margin: 0 auto 26px; box-shadow: 0 0 0 8px color-mix(in oklab, var(--gold) 16%, transparent), 0 0 60px -6px color-mix(in oklab, var(--gold) 60%, transparent); animation: pulse 4s ease-in-out infinite; }
-.cta__h { font-size: clamp(30px, 5.2vw, 58px); font-weight: 850; letter-spacing: -.025em; margin: 0 0 16px; color: var(--ink); }
-.cta__p { font-size: 17px; line-height: 1.7; color: var(--ink-2); max-width: 42ch; margin: 0 auto 34px; }
-.cta__row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-
-.foot { border-top: 1px solid var(--sea-3); position: relative; z-index: 1; }
-.foot__in { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding-block: 30px; font-size: 13px; color: var(--ink-3); }
-.foot__brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--ink); font-size: 16px; }
-.foot__brand img { width: 27px; height: 27px; border-radius: 50%; }
-.foot a { color: var(--ink-2); } .foot a:hover { color: var(--gold); }
-
-/* =========================================================== reveal ======= */
-.reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
-.reveal.in { opacity: 1; transform: none; }
-.reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; } .reveal.d3 { transition-delay: .24s; } .reveal.d4 { transition-delay: .32s; }
-
-/* ========================================================= responsive ===== */
-@media (max-width: 900px) {
-  .tx__grid, .daily__grid, .open__grid { grid-template-columns: 1fr; }
-  .grid4 { grid-template-columns: 1fr; }
-  .glyph { font-size: clamp(110px, 40vw, 200px); }
-}
-@media (max-width: 540px) {
-  .paper__cols { column-count: 2; }
-  .nav__links .nav__link { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .beacon { animation: none; transform: translateX(-50%) rotate(-18deg); }
-  .stars, .stars2, .fog, .paper::after, .row::after, .keep, .lit, .cta__mark, .hero__halo,
-  .hero__eyebrow, .hero__title .l1, .hero__title .l2, .hero__sub, .hero__cta, .hero__scroll span {
-    animation: none !important;
-  }
-  .lit { color: var(--gold); }
-  .hero__eyebrow, .hero__sub, .hero__cta { opacity: 1; }
-  .reveal { transition: none; opacity: 1; transform: none; }
-}
-</style>
+  <script>document.documentElement.classList.add("js");</script>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="paper-grain" aria-hidden="true"></div>
 
-<div class="sky" aria-hidden="true">
-  <div class="stars"></div>
-  <div class="stars2"></div>
-  <div class="fog"></div>
-</div>
+  <header class="site-header" data-header>
+    <div class="shell site-header__inner">
+      <a class="brand" href="#top" aria-label="Pharos 首页">
+        <span class="brand__mark"><img src="assets/mark.png" alt="" /></span>
+        <span class="brand__name">Pharos</span>
+        <span class="brand__descriptor">research workbench</span>
+      </a>
 
-<!-- ============================================================== nav ===== -->
-<header class="nav">
-  <div class="wrap nav__in">
-    <a class="brand" href="#top"><img src="assets/mark.png" alt="" />Pharos</a>
-    <nav class="nav__links">
-      <a class="nav__link" href="#translate">翻译</a>
-      <a class="nav__link" href="#stations">功能</a>
-      <a class="nav__link" href="#daily">每日论文</a>
-      <a class="nav__link" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener">GitHub</a>
-      <a class="nav__cta" href="#start">开始阅读</a>
-    </nav>
-  </div>
-</header>
-
-<!-- ============================================================= hero ===== -->
-<section class="hero" id="top">
-  <div class="beacon" aria-hidden="true"></div>
-  <div class="hero__halo" aria-hidden="true"></div>
-  <div class="hero__in">
-    <span class="hero__eyebrow">一体化科研平台</span>
-    <h1 class="hero__title">
-      <span class="l1">科研的一整条路，</span>
-      <span class="l2"><span class="lit">一盏灯</span>照到底。</span>
-    </h1>
-    <p class="hero__sub">从读论文到写论文——翻译精读、领航问答、每日跟进、文献管理，收进同一盏灯下。翻译阅读已可用，写作模块正在路上。</p>
-    <div class="hero__cta">
-      <a class="btn btn--gold" href="#start">开始阅读 →</a>
-      <a class="btn btn--ghost" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener">在 GitHub 查看 ★</a>
+      <nav class="site-nav" aria-label="主要导航">
+        <a href="#translation">翻译演示</a>
+        <a href="#workbench">工作台</a>
+        <a href="#roadmap">路线图</a>
+        <a class="site-nav__github" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
     </div>
-  </div>
-  <div class="hero__scroll" aria-hidden="true">向下 <span></span></div>
-</section>
+  </header>
 
-<!-- ================================================= translation demo ===== -->
-<section class="section tx" id="translate">
-  <span class="glyph" aria-hidden="true">照</span>
-  <div class="wrap tx__grid">
-    <div class="tx__copy reveal">
-      <p class="eyebrow">旗舰模块 · 保留排版的翻译</p>
-      <h2 class="h2">左边长什么样，<br />右边就长什么样</h2>
-      <p class="lead">大多数工具把 PDF 抽成纯文本再翻，版面就散了。Pharos 逐页重建版面：公式、图表、分栏一个都不挪，只把文字换成中文。</p>
-      <p class="tx__out">输出中文单版 · 与中英对照双版</p>
-    </div>
-    <div class="tx__demo reveal d2">
-      <div class="paper">
-        <div class="paper__tag"><span class="en">English · original</span><span class="zh">中文 · 原位重排</span></div>
-        <div class="paper__h"></div>
-        <div class="paper__cols">
-          <div class="row w9"></div><div class="row d2"></div><div class="row w7 d3"></div>
-          <div class="keep">E = mc²</div>
-          <div class="row d4"></div><div class="row w9 d5"></div>
-          <div class="keep fig">figure · 图 1</div>
-          <div class="row w7 d2"></div><div class="row w5 d3"></div>
-          <div class="row w9 d4"></div><div class="row w7 d5"></div>
-        </div>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero__orbit" aria-hidden="true">
+        <span></span><span></span><span></span>
       </div>
-    </div>
-  </div>
-</section>
 
-<!-- =================================================== voyage (horizontal) = -->
-<section class="voyage" id="stations">
-  <div class="voyage__pin">
-    <div class="voyage__head">
-      <p class="eyebrow">一次航行，路过灯下的每座岛</p>
-      <h2>读、问、追、藏、写，一整条科研的路</h2>
-    </div>
-    <div class="voyage__track">
-      <article class="isle">
-        <span class="isle__glyph">阅</span>
-        <span class="isle__no">其一</span>
-        <p class="isle__k">READER · 阅读</p>
-        <h3 class="isle__t">一个真正的阅读器</h3>
-        <p class="isle__d">可缩放、可鼠标拖动、能选词复制、能全文查找、能划词高亮记笔记。不是一张图片，是能操作的论文。</p>
-        <div class="mock">
-          <div class="mock__paper">
-            <div class="r" style="width:88%"></div><div class="r z" style="width:70%"></div>
-            <div class="r hl"></div><div class="r z" style="width:60%"></div>
-            <div class="mock__pills"><span class="mock__pill">− 97% +</span><span class="mock__pill">适应宽度</span></div>
+      <div class="shell hero__grid">
+        <div class="hero__copy">
+          <p class="kicker reveal">OPEN SOURCE · SELF-HOSTED</p>
+          <h1 class="hero__title reveal reveal--delay-1">
+            科研的一整条路，<br />
+            <span>一盏灯</span>照到底。
+          </h1>
+          <p class="hero__lead reveal reveal--delay-2">
+            把英文论文尽量按原版式翻成中文，在真正的阅读器里精读；每天跟进你的方向，再把读过的一切收回自己的文库。
+          </p>
+
+          <div class="hero__actions reveal reveal--delay-3">
+            <a class="button button--primary" href="#workbench">
+              继续看完整演示 <span aria-hidden="true">↓</span>
+            </a>
+            <a class="button button--quiet" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">
+              查看源码与本地运行 <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <div class="hero__status reveal reveal--delay-4">
+            <span class="status-dot" aria-hidden="true"></span>
+            核心阅读工作流已可用
+            <span class="hero__status-sep" aria-hidden="true"></span>
+            领航与写作正在接通
           </div>
         </div>
-      </article>
 
-      <article class="isle">
-        <span class="isle__glyph">航</span>
-        <span class="isle__no">其二</span>
-        <p class="isle__k">领航 · AI 问答</p>
-        <h3 class="isle__t">读到卡住，就地问</h3>
-        <p class="isle__d">论文旁边一盏领航灯。某一段没懂？直接问它，不必先把整篇翻完。<span class="isle__soon">接入 API 后启用</span></p>
-        <div class="mock">
-          <div class="chat">
-            <span class="bubble q">这一段的核心贡献是什么？</span>
-            <span class="bubble a">它把冻结的视觉语言模型当作可重试的操作原语，无需微调即可迁移。</span>
+        <div class="hero__demo reveal reveal--delay-2" id="translation">
+          <div class="translation-demo" data-translation-demo>
+            <div class="demo-toolbar">
+              <div class="demo-toolbar__traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="demo-toolbar__title">
+                <span class="demo-file-icon" aria-hidden="true">PDF</span>
+                attention-is-all-you-need.pdf
+              </div>
+              <div class="demo-toolbar__mode"><span></span> 原位翻译</div>
+            </div>
+
+            <div class="paper-stage" data-paper-stage tabindex="0" aria-label="互动翻译演示：使用鼠标、触摸或方向键移动光束，光束内显示中文翻译">
+              <div class="beam-arm" aria-hidden="true"></div>
+              <div class="beam-focus" aria-hidden="true"></div>
+              <div class="paper-shadow" aria-hidden="true"></div>
+
+              <div class="paper-sheet paper-sheet--en" aria-label="英文论文原文">
+                <div class="paper-meta"><span>NEURAL INFORMATION PROCESSING SYSTEMS</span><span>01 / 15</span></div>
+                <h2>Attention Is All You Need</h2>
+                <p class="paper-authors">Ashish Vaswani · Noam Shazeer · Niki Parmar · Jakob Uszkoreit</p>
+                <div class="paper-rule"></div>
+                <div class="paper-columns">
+                  <div>
+                    <h3>Abstract</h3>
+                    <p>Earlier sequence systems commonly rely on recurrence or convolution, pairing an encoder with a decoder.</p>
+                    <p>This paper introduces the Transformer, a simpler architecture built around attention.</p>
+                    <div class="paper-formula">Attention(Q,K,V) = softmax(QKᵀ/√dₖ)V</div>
+                    <p>The model improves quality while allowing substantially more parallel computation.</p>
+                  </div>
+                  <div>
+                    <h3>1 · Introduction</h3>
+                    <p>Recurrent networks have long been a standard choice for sequence modeling and transduction.</p>
+                    <div class="paper-figure" aria-hidden="true">
+                      <span class="node n1">Q</span><span class="node n2">K</span><span class="node n3">V</span>
+                      <span class="node n4">Attention</span>
+                      <svg viewBox="0 0 180 92" role="presentation">
+                        <path d="M28 25 C68 25 69 45 93 45 M28 46 C63 46 67 46 93 46 M28 67 C68 67 69 48 93 48 M129 46 H166" />
+                      </svg>
+                    </div>
+                    <p class="paper-caption">Figure 1 · Scaled Dot-Product Attention</p>
+                    <p>Attention can connect distant positions directly instead of stepping through a sequence one token at a time.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="paper-sheet paper-sheet--zh" aria-hidden="true">
+                <div class="paper-meta"><span>神经信息处理系统大会</span><span>01 / 15</span></div>
+                <h2>注意力机制就是你所需要的一切</h2>
+                <p class="paper-authors">Ashish Vaswani · Noam Shazeer · Niki Parmar · Jakob Uszkoreit</p>
+                <div class="paper-rule"></div>
+                <div class="paper-columns">
+                  <div>
+                    <h3>摘要</h3>
+                    <p>主流的序列转换模型依赖复杂的循环或卷积神经网络，并由编码器与解码器组成。</p>
+                    <p>我们提出一种全新的简洁网络架构 Transformer，它完全建立在注意力机制之上。</p>
+                    <div class="paper-formula">Attention(Q,K,V) = softmax(QKᵀ/√dₖ)V</div>
+                    <p>实验表明，该模型质量更高，同时具备更强的并行计算能力。</p>
+                  </div>
+                  <div>
+                    <h3>1 · 引言</h3>
+                    <p>循环神经网络长期以来一直是序列建模与序列转换问题中的主流方法。</p>
+                    <div class="paper-figure" aria-hidden="true">
+                      <span class="node n1">Q</span><span class="node n2">K</span><span class="node n3">V</span>
+                      <span class="node n4">注意力</span>
+                      <svg viewBox="0 0 180 92" role="presentation">
+                        <path d="M28 25 C68 25 69 45 93 45 M28 46 C63 46 67 46 93 46 M28 67 C68 67 69 48 93 48 M129 46 H166" />
+                      </svg>
+                    </div>
+                    <p class="paper-caption">图 1 · 缩放点积注意力</p>
+                    <p>注意力机制可以直接建模依赖关系，而不受输入或输出序列中距离的限制。</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="beacon-emitter" aria-hidden="true">
+                <span class="beacon-emitter__glow"></span>
+                <span class="beacon-emitter__cap"></span>
+                <span class="beacon-emitter__body"></span>
+              </div>
+            </div>
+
+            <div class="demo-footer">
+              <p><span class="mouse-glyph" aria-hidden="true"></span> 移动光束，查看原位翻译</p>
+              <div class="demo-legend"><span class="legend-en"></span>原文 <span class="legend-zh"></span>中文</div>
+            </div>
+          </div>
+
+          <div class="hero__annotation hero__annotation--layout" aria-hidden="true">
+            <span>01</span> 双栏尽量保留
+          </div>
+          <div class="hero__annotation hero__annotation--formula" aria-hidden="true">
+            <span>02</span> 公式位置保留
+          </div>
+          <div class="hero__annotation hero__annotation--figure" aria-hidden="true">
+            <span>03</span> 图表位置保留
           </div>
         </div>
-      </article>
+      </div>
 
-      <article class="isle">
-        <span class="isle__glyph">报</span>
-        <span class="isle__no">其三</span>
-        <p class="isle__k">每日论文 · DAILY</p>
-        <h3 class="isle__t">每天，只看你要看的</h3>
-        <p class="isle__d">你定的方向，每天从 arXiv 拉来匹配的新论文，附中文摘要、核心贡献与推荐分。</p>
-        <div class="mock">
-          <div class="scorecard">
-            <b>9.1</b>
-            <div><div class="sc__t">用一致性模型加速文本到图像生成</div><div class="sc__d">扩散模型 · 今日推荐</div></div>
+      <div class="shell proof-ribbon reveal">
+        <span class="proof-ribbon__label">NOW SHIPPING</span>
+        <span>保留排版翻译</span>
+        <span>pdf.js 真文本层</span>
+        <span>每日 arXiv</span>
+        <span>Zotero 元数据导入</span>
+        <span>约 400 项后端测试</span>
+      </div>
+    </section>
+
+    <section class="reader-section" id="workbench">
+      <div class="reader-section__glow" aria-hidden="true"></div>
+      <div class="shell">
+        <div class="section-heading section-heading--light reveal">
+          <p class="kicker kicker--gold">A REAL READER, NOT AN IMAGE VIEWER</p>
+          <h2>不是把 PDF 变成一张图。<br />它仍然是一篇<span>可操作的论文</span>。</h2>
+          <p>缩放、拖动、选择复制、页内查找、高亮和笔记都留在原处。原文、中文与中英双版，在同一个阅读空间切换。</p>
+        </div>
+
+        <div class="workbench-window reveal reveal--delay-1">
+          <div class="workbench-window__top">
+            <div class="window-brand"><img src="assets/mark.png" alt="" /><b>Pharos</b></div>
+            <div class="window-tabs">
+              <span class="window-tab"><i></i>我的文库</span>
+              <span class="window-tab window-tab--active"><i></i>Attention Is All You Need <b>×</b></span>
+            </div>
+            <div class="window-tools"><small>界面示意</small><span>⌕</span><span>−</span><strong>97%</strong><span>＋</span><span>···</span></div>
+          </div>
+
+          <div class="workbench-window__body">
+            <aside class="app-rail" aria-label="Pharos 模块示意">
+              <span class="app-rail__active">▤<em>文库</em></span>
+              <span>◫<em>每日</em></span>
+              <span class="app-rail__next">⌕<em>检索</em></span>
+              <span class="app-rail__next">✦<em>领航</em></span>
+              <span class="app-rail__bottom">⚙</span>
+            </aside>
+
+            <aside class="outline-pane">
+              <div class="pane-label">目录</div>
+              <span class="outline-pane__active">摘要</span>
+              <span>1　引言</span>
+              <span>2　背景</span>
+              <span>3　模型架构</span>
+              <span class="outline-pane__sub">3.1 编码器与解码器</span>
+              <span class="outline-pane__sub">3.2 注意力</span>
+              <span>4　为何使用自注意力</span>
+              <span>5　训练</span>
+            </aside>
+
+            <div class="reader-canvas">
+              <div class="reader-modebar" role="group" aria-label="阅读模式示意">
+                <button type="button" aria-pressed="false">原文</button>
+                <button class="is-active" type="button" aria-pressed="true">中文</button>
+                <button type="button" aria-pressed="false">中英</button>
+                <span></span>
+                <b>已译</b>
+              </div>
+              <article class="reader-page">
+                <div class="reader-page__folio">1</div>
+                <h3>注意力机制就是你所需要的一切</h3>
+                <p class="reader-page__authors">Ashish Vaswani · Noam Shazeer · Niki Parmar</p>
+                <div class="reader-page__cols">
+                  <div>
+                    <h4>摘要</h4>
+                    <p>主流的序列转换模型依赖复杂的循环或卷积神经网络，并由编码器与解码器组成。</p>
+                    <p><mark>我们提出一种全新的简洁网络架构 Transformer，它完全建立在注意力机制之上。</mark></p>
+                    <p>实验表明，该模型质量更高，同时具备更强的并行计算能力。</p>
+                  </div>
+                  <div>
+                    <h4>1　引言</h4>
+                    <p>循环神经网络长期以来一直是序列建模与序列转换问题中的主流方法。</p>
+                    <div class="mini-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                    <p>注意力机制可以直接建模依赖关系，而不受序列距离的限制。</p>
+                  </div>
+                </div>
+              </article>
+              <span class="selection-caret" aria-hidden="true"></span>
+              <div class="selection-menu" aria-hidden="true"><b>高亮</b><span>写笔记</span><span>领航 · NEXT</span></div>
+            </div>
+
+            <aside class="note-pane">
+              <div class="pane-label">笔记与高亮 <span>3</span></div>
+              <div class="note-card note-card--gold">
+                <small>第 1 页 · 摘要</small>
+                <p>Transformer 完全基于注意力机制，不再依赖循环结构。</p>
+                <textarea aria-label="笔记示意" readonly>核心贡献：把序列建模从递归计算改成可并行的注意力。</textarea>
+              </div>
+              <div class="note-card note-card--teal">
+                <small>第 1 页 · 引言</small>
+                <p>直接建模长距离依赖。</p>
+              </div>
+              <div class="note-pane__ask">✦　领航问答 · 后端接入中</div>
+            </aside>
+          </div>
+
+          <div class="window-callout window-callout--text"><span>01</span><b>真文本层</b><small>可选择、复制与查找</small></div>
+          <div class="window-callout window-callout--mode"><span>02</span><b>三种阅读模式</b><small>原文 / 中文 / 中英</small></div>
+          <div class="window-callout window-callout--notes"><span>03</span><b>高亮落在 PDF 坐标</b><small>任何缩放都不会漂移</small></div>
+        </div>
+
+        <div class="reader-proof reveal">
+          <p><span>01</span><b>选择与复制</b><small>pdf.js 文本层，不是截图</small></p>
+          <p><span>02</span><b>页内查找</b><small>在整篇论文里定位术语</small></p>
+          <p><span>03</span><b>高亮与笔记</b><small>坐标跟随 PDF，不跟随屏幕</small></p>
+          <p><span>04</span><b>原 / 中 / 双语</b><small>阅读方式随时切换</small></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="journey-section" id="journey">
+      <div class="shell journey-layout">
+        <div class="journey-copy reveal">
+          <p class="kicker">ONE PAPER · ONE CONTINUOUS ROUTE</p>
+          <h2>同一篇论文，<br />不必在五个工具间漂流。</h2>
+          <p>从今天该读什么，到读懂、收好。发现、翻译与归档已经接通；写作是下一站。</p>
+
+          <div class="route-tabs" role="tablist" aria-label="科研工作流">
+            <button class="route-tab is-active" type="button" role="tab" aria-selected="true" data-route="daily">
+              <span>01</span><b>每日发现</b><small>方向一改，信息流立刻重排</small>
+            </button>
+            <button class="route-tab" type="button" role="tab" aria-selected="false" data-route="translate">
+              <span>02</span><b>翻译精读</b><small>中文单版与中英双版</small>
+            </button>
+            <button class="route-tab" type="button" role="tab" aria-selected="false" data-route="library">
+              <span>03</span><b>收入文库</b><small>分类、全文搜索、Zotero 元数据</small>
+            </button>
+            <button class="route-tab route-tab--next" type="button" role="tab" aria-selected="false" data-route="writing">
+              <span>04</span><b>基于文库写作</b><small>NEXT · 正在接通</small>
+            </button>
           </div>
         </div>
-      </article>
 
-      <article class="isle">
-        <span class="isle__glyph">库</span>
-        <span class="isle__no">其四</span>
-        <p class="isle__k">文库 · LIBRARY</p>
-        <h3 class="isle__t">你自己的文献库</h3>
-        <p class="isle__d">分类、标签、全文搜索。连上 Zotero，云端文库一并同步——文库是家，Zotero 只是搬进来的一条路。</p>
-        <div class="mock">
-          <div class="tree">
-            <div class="tree__row"><span class="tree__dot"></span>我的文库</div>
-            <div class="tree__row sub"><span class="tree__dot"></span>扩散模型 · 24 篇</div>
-            <div class="tree__row sub"><span class="tree__dot"></span>具身智能 · 11 篇</div>
+        <div class="route-stage reveal reveal--delay-1" data-route-stage>
+          <div class="route-stage__top">
+            <span>PHAROS / WORKFLOW</span>
+            <div class="route-stage__progress"><i></i><i></i><i></i><i></i></div>
+            <b>界面示意 · 示例数据</b>
+          </div>
+
+          <div class="route-scene route-scene--daily is-active" data-scene="daily">
+            <div class="scene-sidebar">
+              <span class="scene-sidebar__brand">P</span>
+              <span class="is-on">今</span><span>库</span><span>搜</span>
+            </div>
+            <div class="daily-scene">
+              <div class="daily-scene__head">
+                <div><small>示例数据 · 中文速览需配置 LLM</small><h3>今天，只看与你有关的。</h3></div>
+                <div class="direction-chips"><span>具身智能</span><span>世界模型</span><span>VLA</span></div>
+              </div>
+              <article class="daily-paper daily-paper--top">
+                <b>9.1</b><div><small>具身智能 · 今日推荐</small><h4>Vision-Language-Action Models for Generalist Robot Control</h4><p>把视觉、语言与动作统一进同一序列建模框架，并验证跨任务迁移能力。</p></div><span>读这篇 →</span>
+              </article>
+              <article class="daily-paper">
+                <b>8.6</b><div><small>世界模型</small><h4>Interactive World Models for Long-Horizon Planning</h4><p>在潜空间内学习环境动态，让智能体先在想象中演练。</p></div><span>＋ 文库</span>
+              </article>
+              <article class="daily-paper">
+                <b>7.9</b><div><small>VLA</small><h4>Scaling Robot Learning with Internet Video</h4><p>从视频先验中获得可迁移的操作表示。</p></div><span>＋ 文库</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="route-scene route-scene--translate" data-scene="translate">
+            <div class="translate-job">
+              <div class="translate-job__paper">
+                <div class="job-page job-page--en"><span>EN</span><i></i><i></i><i></i><b>E = mc²</b><i></i><i></i></div>
+                <div class="job-arrow"><span>光束翻译</span><b>→</b></div>
+                <div class="job-page job-page--zh"><span>中</span><i></i><i></i><i></i><b>E = mc²</b><i></i><i></i></div>
+              </div>
+              <div class="translate-job__status">
+                <div><span>布局分析</span><b>完成</b></div>
+                <div><span>段落翻译</span><b>完成</b></div>
+                <div><span>字体回填</span><b>完成</b></div>
+                <div><span>双语版本</span><b>完成</b></div>
+              </div>
+              <div class="translate-job__outputs"><span>打开中文 PDF</span><span>打开中英双版</span></div>
+            </div>
+          </div>
+
+          <div class="route-scene route-scene--library" data-scene="library">
+            <div class="library-scene">
+              <aside>
+                <h4>我的文库</h4>
+                <span class="is-on">▾ 全部文献 <b>128</b></span>
+                <span>　▾ 具身智能 <b>24</b></span>
+                <span>　　VLA <b>11</b></span>
+                <span>　　世界模型 <b>13</b></span>
+                <span>　扩散模型 <b>31</b></span>
+                <span>　论文写作 <b>18</b></span>
+                <hr />
+                <span>⌁ Zotero 元数据已导入</span>
+              </aside>
+              <div class="library-list">
+                <div class="library-search">⌕　搜索标题、作者或全文</div>
+                <article class="is-selected"><i></i><div><h5>Attention Is All You Need</h5><p>Vaswani et al. · NeurIPS 2017</p></div><span>已译</span></article>
+                <article><i></i><div><h5>RT-2: Vision-Language-Action Models</h5><p>Brohan et al. · CoRL 2023</p></div><span>原文</span></article>
+                <article><i></i><div><h5>Learning Interactive World Models</h5><p>Bruce et al. · 2024</p></div><span>双语</span></article>
+              </div>
+              <div class="library-detail"><small>当前文献</small><h4>Attention Is All You Need</h4><p>把序列转换完全建立在注意力机制之上。</p><div><span>NeurIPS 2017</span><span>经典论文</span><span>已译</span></div><strong>继续阅读 →</strong></div>
+            </div>
+          </div>
+
+          <div class="route-scene route-scene--writing" data-scene="writing">
+            <div class="writing-scene">
+              <div class="writing-scene__future">NEXT</div>
+              <p>未来的一段航程</p>
+              <h3>从你的文库出发，<br />把读过的变成写得出的。</h3>
+              <div class="writing-outline"><span>01　研究问题</span><span>02　相关工作</span><span>03　方法与证据</span><span>04　引用核验</span></div>
+              <small>领航后端、研究知识库与写作助手正在规划中；当前页面不会把它们包装成已上线功能。</small>
+            </div>
           </div>
         </div>
-      </article>
+      </div>
+    </section>
 
-      <article class="isle">
-        <span class="isle__glyph">写</span>
-        <span class="isle__no">其五</span>
-        <p class="isle__k">写作 · WRITING</p>
-        <h3 class="isle__t">读完，接着就写</h3>
-        <p class="isle__d">从提纲到成稿，扎根你读过的文献来写——引用有据，思路成形。科研的路走到写作，也在同一盏灯下。<span class="isle__soon">规划中</span></p>
-        <div class="mock">
-          <div class="mock__paper">
-            <div class="r" style="width:40%;background:color-mix(in oklab,var(--navy) 50%,#cfc6b4)"></div>
-            <div class="r" style="width:92%"></div><div class="r" style="width:84%"></div>
-            <div class="r hl" style="width:60%"></div>
+    <section class="poster-section">
+      <div class="shell">
+        <div class="poster-frame reveal" data-poster-frame>
+          <img src="assets/poster.webp" loading="lazy" decoding="async" alt="小机器人围绕中央灯塔阅读、翻译、整理与写作论文的 Pharos 研究工坊" />
+          <div class="poster-frame__shade" aria-hidden="true"></div>
+          <div class="poster-copy">
+            <p class="kicker kicker--gold">THE WORKSHOP AROUND THE LIGHT</p>
+            <h2>不是一个翻译插件。<br />是一座属于你的<span>研究工坊</span>。</h2>
+            <p>上传、arXiv 与 Zotero 元数据是进入文库的航线；翻译、精读、整理与未来写作，是灯塔周围相互连接的工作站。</p>
+          </div>
+          <div class="poster-hotspot poster-hotspot--discover"><i></i><span>发现</span></div>
+          <div class="poster-hotspot poster-hotspot--read"><i></i><span>精读</span></div>
+          <div class="poster-hotspot poster-hotspot--translate"><i></i><span>翻译</span></div>
+          <div class="poster-hotspot poster-hotspot--library"><i></i><span>文库</span></div>
+          <div class="poster-hotspot poster-hotspot--write"><i></i><span>写作 · NEXT</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust-section" id="roadmap">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <p class="kicker">OPEN, SELF-HOSTED, AND CLEAR ABOUT DATA FLOW</p>
+          <h2>文件与文库由你自托管。<br />外部服务边界，也说得清清楚楚。</h2>
+        </div>
+
+        <div class="trust-grid">
+          <article class="architecture-card reveal">
+            <div class="architecture-card__head"><span>ARCHITECTURE</span><b>一个后端，多种客户端</b></div>
+            <div class="architecture-flow">
+              <div><i>01</i><b>浏览器</b><small>今天</small></div><span>REST / SSE</span>
+              <div><i>02</i><b>FastAPI Core</b><small>账户 · 文库 · 检索 · 每日</small></div><span>NDJSON</span>
+              <div><i>03</i><b>Engine Worker</b><small>BabelDOC / pdf2zh-next</small></div>
+            </div>
+            <p>翻译引擎以独立进程运行；文件、文库与账户数据由你部署的核心保存。翻译、速览与元数据补全会按配置访问外部服务，也可接自托管兼容端点。</p>
+          </article>
+
+          <article class="evidence-card reveal reveal--delay-1">
+            <div class="evidence-card__row"><span>01</span><div><b>自托管 · AGPL-3.0</b><p>代码、文件与文库由你掌控；外部服务按配置调用。</p></div></div>
+            <div class="evidence-card__row"><span>02</span><div><b>逐用户隔离</b><p>argon2id 密码哈希、JWT 与所有者范围校验。</p></div></div>
+            <div class="evidence-card__row"><span>03</span><div><b>约 400 项后端测试</b><p>覆盖账户、任务、翻译、每日论文、检索与标注。</p></div></div>
+          </article>
+        </div>
+
+        <div class="roadmap-grid">
+          <div class="roadmap-column roadmap-column--now reveal">
+            <div class="roadmap-column__head"><span></span><b>NOW · 已可用</b></div>
+            <ul>
+              <li>保留排版的中文单版与中英双版</li>
+              <li>可缩放、搜索、选取与高亮的 PDF 阅读器</li>
+              <li>自定义方向的每日 arXiv；可选 LLM 中文速览</li>
+              <li>文库、全文搜索与 Zotero 元数据导入（暂不下载附件）</li>
+              <li>账户系统与逐用户数据隔离</li>
+            </ul>
+          </div>
+          <div class="roadmap-column roadmap-column--next reveal reveal--delay-1">
+            <div class="roadmap-column__head"><span></span><b>NEXT · 正在接通</b></div>
+            <ul>
+              <li>领航问答后端与论文上下文检索</li>
+              <li>跨数据库文献发现</li>
+              <li>研究知识库</li>
+              <li>基于个人文库的写作助手</li>
+              <li>桌面与移动客户端</li>
+            </ul>
           </div>
         </div>
-      </article>
-    </div>
-    <div class="voyage__dots" aria-hidden="true">
-      <span class="voyage__dot on"></span><span class="voyage__dot"></span><span class="voyage__dot"></span><span class="voyage__dot"></span><span class="voyage__dot"></span>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================= daily ===== -->
-<section class="section daily" id="daily">
-  <span class="glyph" aria-hidden="true">报</span>
-  <div class="wrap daily__grid">
-    <div class="daily__copy reveal">
-      <p class="eyebrow">每日论文</p>
-      <h2 class="h2">你的方向，<br />自己定</h2>
-      <p class="lead">填上关注的领域和关键词，Pharos 每天替你从 arXiv 里挑出匹配的新论文，读一遍，写成中文摘要、核心贡献、创新点，再给个推荐分。改一下方向，信息流立刻重排——不必等它重新抓。</p>
-      <div class="tags">
-        <span class="tag">大语言模型</span>
-        <span class="tag">扩散模型</span>
-        <span class="tag">具身智能</span>
-        <span class="tag">世界模型</span>
-        <span class="tag tag--add">+ 自定义</span>
       </div>
-    </div>
-    <div class="daily__feed reveal d2">
-      <div class="feed">
-        <div class="feed__item">
-          <span class="feed__dir">扩散模型</span>
-          <span class="feed__score">9.1</span>
-          <span class="feed__title">用一致性模型加速文本到图像生成</span>
-          <span class="feed__sum">提出单步采样的一致性蒸馏，在保持画质的前提下把推理步数从 50 步压到 1 步。</span>
-        </div>
-        <div class="feed__item">
-          <span class="feed__dir">具身智能</span>
-          <span class="feed__score">8.4</span>
-          <span class="feed__title">面向机械臂操作的视觉-语言-动作模型</span>
-          <span class="feed__sum">把冻结的视觉语言模型当作可重试的操作原语，无需微调即可应对语义重标与目标重绑定。</span>
-        </div>
-        <div class="feed__item">
-          <span class="feed__dir">世界模型</span>
-          <span class="feed__score">7.8</span>
-          <span class="feed__title">可交互的视频世界模型</span>
-          <span class="feed__sum">在潜空间中学习环境动态，让智能体在想象中演练长时序任务。</span>
+    </section>
+
+    <section class="finale">
+      <div class="finale__beam" aria-hidden="true"></div>
+      <div class="shell finale__inner reveal">
+        <img src="assets/mark.png" alt="Pharos" />
+        <p class="kicker kicker--gold">PHAROS · 灯塔照亮文献之海</p>
+        <h2>把下一篇读不动的论文，<br />带到灯下。</h2>
+        <p>Pharos 仍在积极开发中。现在可以在 macOS / Apple Silicon 上本地运行核心阅读工作流，也欢迎一起把下一段航程接通。</p>
+        <div class="finale__actions">
+          <a class="button button--primary" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">查看 GitHub <span aria-hidden="true">↗</span></a>
+          <a class="button button--dark" href="https://github.com/hyyyyyyz/Pharos#quick-start-macos--apple-silicon" target="_blank" rel="noopener noreferrer">本地运行说明</a>
         </div>
       </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell site-footer__inner">
+      <div class="site-footer__brand"><img src="assets/mark.png" alt="" /><b>Pharos</b><span>research workbench</span></div>
+      <p>开源 · 本地运行 · AGPL-3.0</p>
+      <div><a href="#top">回到顶部 ↑</a><a href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div>
     </div>
-  </div>
-</section>
+  </footer>
 
-<!-- ============================================================== open ===== -->
-<section class="section open" id="start">
-  <div class="wrap open__grid">
-    <div class="open__copy reveal">
-      <p class="eyebrow">开源 · 且属于你</p>
-      <h2 class="h2">你的论文，<br />只有你看得到</h2>
-      <p class="lead">Pharos 以 AGPL-3.0 全部开源，翻译内核基于 BabelDOC。多用户从底层做起——每个人的文库严格隔离，别人的论文对你等于不存在。</p>
-      <div class="hero__cta" style="justify-content:flex-start;margin-top:30px;">
-        <a class="btn btn--gold" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener">在 GitHub 开始 →</a>
-      </div>
-    </div>
-    <div class="pillars reveal d2">
-      <div class="pillar">
-        <span class="pillar__i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
-        <div><p class="pillar__t">账户隔离</p><p class="pillar__d">邮箱密码登录，密码以 argon2 加密、从不明文留存。跨用户访问一律当作「不存在」。</p></div>
-      </div>
-      <div class="pillar">
-        <span class="pillar__i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span>
-        <div><p class="pillar__t">一个后端，多个客户端</p><p class="pillar__d">今天是网页，之后是桌面与手机——同一套后端，功能在一处生长。</p></div>
-      </div>
-      <div class="pillar">
-        <span class="pillar__i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-        <div><p class="pillar__t">数据在你手里</p><p class="pillar__d">本地优先，PDF 按内容寻址存放。自己部署，自己掌控。</p></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- =============================================================== cta ===== -->
-<section class="section cta">
-  <div class="wrap reveal">
-    <img class="cta__mark" src="assets/mark.png" alt="Pharos" />
-    <h2 class="cta__h">照亮你的文献之海</h2>
-    <p class="cta__p">一盏灯塔，带你穿过密密麻麻的文献之雾。</p>
-    <div class="cta__row">
-      <a class="btn btn--gold" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener">在 GitHub 查看 ★</a>
-      <a class="btn btn--ghost" href="#top">回到顶部</a>
-    </div>
-  </div>
-</section>
-
-<footer class="foot">
-  <div class="wrap foot__in">
-    <div class="foot__brand"><img src="assets/mark.png" alt="" />Pharos</div>
-    <div>灯塔照亮文献之海 · 以 BabelDOC 为翻译内核</div>
-    <div><a href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener">GitHub</a> · AGPL-3.0</div>
-  </div>
-</footer>
-
-<script>
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  // reveal-on-scroll
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-  }, { threshold: 0.12, rootMargin: "0px 0px -8% 0px" });
-  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
-
-  // horizontal voyage: vertical scroll through the tall section glides the track
-  // sideways past the four islands. Skipped on mobile (CSS stacks it) and under
-  // reduced-motion.
-  const voyage = document.querySelector(".voyage");
-  const track = document.querySelector(".voyage__track");
-  const dots = [...document.querySelectorAll(".voyage__dot")];
-  const isles = [...document.querySelectorAll(".isle")];
-  const beacon = document.querySelector(".beacon");
-  const sky = document.querySelector(".sky");
-  let horizontal = !reduce && window.innerWidth > 900;
-
-  let ticking = false;
-  function frame() {
-    ticking = false;
-    if (!horizontal || !voyage || !track) return;
-    const y = window.scrollY;
-    const span = voyage.offsetHeight - window.innerHeight;
-    const p = Math.min(1, Math.max(0, (y - voyage.offsetTop) / span));
-    const dist = Math.max(0, track.scrollWidth - window.innerWidth);
-    track.style.transform = `translate3d(${(-p * dist).toFixed(1)}px,0,0)`;
-    // light up whichever island the voyage is currently facing
-    const active = Math.min(isles.length - 1, Math.round(p * (isles.length - 1)));
-    isles.forEach((el, i) => el.classList.toggle("lit", i === active));
-    dots.forEach((d, i) => d.classList.toggle("on", i === active));
-  }
-  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(frame); } }
-  window.addEventListener("scroll", onScroll, { passive: true });
-  window.addEventListener("resize", () => { horizontal = !reduce && window.innerWidth > 900; if (!horizontal && track) track.style.transform = ""; frame(); });
-  frame();
-
-  // gentle 3D tilt on the islands, following the pointer
-  if (!reduce && matchMedia("(pointer:fine)").matches) {
-    isles.forEach((el) => {
-      el.addEventListener("pointermove", (e) => {
-        const r = el.getBoundingClientRect();
-        const dx = (e.clientX - r.left) / r.width - 0.5;
-        const dy = (e.clientY - r.top) / r.height - 0.5;
-        el.style.transform = `perspective(900px) rotateY(${dx * 6}deg) rotateX(${-dy * 6}deg)`;
-      });
-      el.addEventListener("pointerleave", () => { el.style.transform = ""; });
-    });
-  }
-</script>
+  <script src="main.js" defer></script>
 </body>
 </html>
