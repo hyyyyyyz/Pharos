@@ -4,9 +4,24 @@
     {
       "name": "pharos-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "pharos-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4321",
+        "--directory",
+        "Pharos/site"
+      ],
+      "port": 4321
     }
   ]
 }
