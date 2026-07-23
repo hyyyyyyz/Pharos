@@ -343,6 +343,64 @@
   gap: 5px;
 }
 
+/* ----------------------------------------------------------- search results */
+
+/* A hit is the standard 28px row plus a snippet line. The rule between results
+   moves to the wrapper so the row keeps its exact metrics and the border never
+   lands between a row and its own snippet. */
+.ph-il-hit {
+  border-bottom: 1px solid var(--c-bd);
+}
+.ph-il-hit .ph-il-row {
+  border-bottom: none;
+}
+
+.ph-il-snip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 8px 5px 8px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* Which field matched. The design has no slot for this, so it borrows the type
+   of the existing 10.5px muted metadata (the status pill, the tree counts)
+   rather than introducing a badge the rest of the UI does not have. */
+.ph-il-snip-field {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--c-tx3, #8b93a1);
+  /* Widest label is two full-width characters; fixing the width keeps the
+     snippets on adjacent rows aligned with each other. */
+  width: 24px;
+}
+
+.ph-il-snip-text {
+  min-width: 0;
+  color: var(--c-tx2, #5a616e);
+  /* Snippets are one line of context; a long one truncates rather than
+     reflowing and pushing the next result down the page. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-il-mark {
+  background: transparent;
+  color: var(--c-ac);
+  font-weight: 600;
+}
+
+/* Search caps at SEARCH_LIMIT; when the server found more, say so rather than
+   letting the list imply it is complete. */
+.ph-il-more {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  text-align: center;
+}
+
 /* --------------------------------------------------------------- status pill */
 
 .ph-il-pill {

@@ -12,7 +12,10 @@ export default defineConfig(({ mode }) => ({
   resolve: { dedupe: ["react", "react-dom"] },
   optimizeDeps: { include: ["react", "react-dom", "@tanstack/react-query", "zustand"] },
   server: {
-    port: 5173,
+    // Vite does not read $PORT on its own. Honouring it lets a supervisor
+    // assign a free port (avoiding a clash with an already-running instance)
+    // while a plain `npm run dev` still lands on the familiar 5173.
+    port: Number(process.env.PORT) || 5173,
     proxy: {
       "/api": { target: "http://127.0.0.1:8848", changeOrigin: true },
     },

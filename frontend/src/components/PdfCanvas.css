@@ -1,4 +1,12 @@
-/* PdfCanvas — the real pdf.js viewport (zoomable, drag-pannable). */
+/* PdfCanvas — the real pdf.js viewport (zoomable, pannable, selectable, searchable). */
+
+.ph-pc-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 .ph-pc {
   flex: 1;
@@ -6,10 +14,24 @@
   overflow: auto;
   position: relative;
   background: var(--c-read, #f1f2f4);
+  /* Blank paper and the margin pan; the text layer below overrides to `text`. */
   cursor: grab;
+  outline: none;
 }
 .ph-pc.is-grabbing {
   cursor: grabbing;
+}
+/* While panning the cursor must not flicker to a caret over glyphs. */
+.ph-pc.is-grabbing * {
+  cursor: grabbing !important;
+}
+/* Space held: pan everywhere, so a text-dense page is never un-pannable. */
+.ph-pc.is-panlock,
+.ph-pc.is-panlock * {
+  cursor: grab;
+}
+.ph-pc.is-panlock .ph-pc-tl {
+  pointer-events: none;
 }
 
 .ph-pc-pages {
@@ -22,17 +44,192 @@
   /* grow past the viewport when zoomed in, stay centred when it fits */
   width: max-content;
   min-width: 100%;
-  user-select: none;
 }
 
 .ph-pc-page {
-  display: block;
+  position: relative;
   /* A PDF page is white paper — not a themed surface. */
-  background: #ffffff;
-  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sheet);
   border-radius: 2px;
-  box-shadow: var(--sh-md);
+  /* The hairline is a shadow, not a border: a border would inset the content
+     box and the text layer would land 1px off the glyphs it must cover. */
+  box-shadow:
+    0 0 0 1px var(--c-bd, #e6e8ec),
+    var(--sh-md);
 }
+
+.ph-pc-cv {
+  display: block;
+}
+
+/* ------------------------------------------------------------- text layer */
+/* Geometry here is pdf.js's — its spans are positioned in
+   `calc(var(--scale-factor) * …)`, which PdfCanvas keeps in step with zoom. */
+
+.ph-pc-tl {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+  /* Transparent to the mouse except on an actual glyph: that is what lets a
+     drag on blank paper fall through to the pan handler. */
+  pointer-events: none;
+  user-select: text;
+}
+
+.ph-pc-tl span,
+.ph-pc-tl br {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0% 0%;
+  /* Invisible: the canvas underneath is the rendering. Only the selection
+     highlight and the caret ever show. */
+  color: transparent;
+  pointer-events: auto;
+  cursor: text;
+}
+
+.ph-pc-tl span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+/* The app-wide ::selection is a pale accent wash meant for UI text; over white
+   paper it is invisible, so the reader gets a stronger one. */
+.ph-pc-tl ::selection {
+  background: color-mix(in oklch, var(--c-ac) 34%, transparent);
+}
+.ph-pc-tl ::-moz-selection {
+  background: color-mix(in oklch, var(--c-ac) 34%, transparent);
+}
+
+/* ---------------------------------------------------------- find highlights */
+
+.ph-pc-hl {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ph-pc-hit {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--c-ac) 26%, transparent);
+}
+.ph-pc-hit.is-on {
+  background: color-mix(in oklch, var(--c-ac) 55%, transparent);
+  box-shadow: 0 0 0 1px var(--c-ac);
+}
+
+/* ---------------------------------------------------------------- find bar */
+/* Metrics track .ph-rv-subbar's controls: 24px tall, 6px radius, 11px text. */
+
+.ph-pc-find,
+.ph-pc-find-open {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 5;
+  background: var(--c-sf, #fff);
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  box-shadow: var(--sh-md);
+  /* Chrome, not content — this is the one place the old blanket rule belongs. */
+  user-select: none;
+}
+
+.ph-pc-find {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 5px 0 8px;
+}
+
+.ph-pc-find-open {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+}
+.ph-pc-find-open:hover {
+  background: var(--c-hv);
+  color: var(--c-tx, #1e222a);
+}
+
+.ph-pc-find-ico {
+  display: flex;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-pc-find-in {
+  width: 150px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-bg, #fafbfc);
+  color: var(--c-tx, #1e222a);
+  font-size: 11px;
+  outline: none;
+  user-select: text;
+}
+.ph-pc-find-in::placeholder {
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-pc-find-in:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-pc-find-n {
+  min-width: 46px;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+}
+.ph-pc-find-n.is-none {
+  color: var(--c-err, #d93a3a);
+}
+
+.ph-pc-find-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+}
+.ph-pc-find-btn:hover:not(:disabled) {
+  background: var(--c-hv);
+  color: var(--c-tx, #1e222a);
+}
+.ph-pc-find-btn:disabled {
+  color: var(--c-tx3, #8b93a1);
+  opacity: 0.5;
+  cursor: default;
+}
+.ph-pc-find-btn.is-prev svg {
+  transform: rotate(180deg);
+}
+
+/* -------------------------------------------------------------- overlays */
 
 .ph-pc-msg {
   position: absolute;
@@ -44,6 +241,7 @@
   text-align: center;
   font-size: 12.5px;
   color: var(--c-tx3, #8b93a1);
+  user-select: none;
 }
 .ph-pc-msg.is-err {
   color: var(--c-err, #d93a3a);

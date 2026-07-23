@@ -1,0 +1,220 @@
+/* HighlightLayer — painted marks under the text layer, toolbar above it. */
+
+/* ------------------------------------------------------------- the palette */
+/*
+   Highlight colours are FIXED across themes, and that is not an oversight.
+   `.ph-pc-page` is `background: var(--c-sheet)` in both light and dark — a PDF page is
+   white paper, not a themed surface — so a wash that is legible over it in one
+   theme is legible over it in the other, and swapping the palette with the theme
+   would mean a highlight the user drew in daylight came back a different colour
+   at night.
+
+   Every value is light (oklch L ≈ 0.85), which is what keeps black glyphs
+   readable through `mix-blend-mode: multiply`. Declared as variables rather than
+   written inline because the component picks one by *token name* — the API
+   stores "amber", never a colour — so this block is the single place a
+   highlight's appearance is decided.
+
+   Scoped to the two roots instead of `:root`: these belong to the reader, and
+   putting five more names in the global namespace would invite their use for
+   chrome, where they would not follow the theme and would be a defect.
+*/
+.ph-hl,
+.ph-hl-pop {
+  --c-hl-amber: oklch(0.89 0.15 88);
+  --c-hl-green: oklch(0.88 0.14 148);
+  --c-hl-blue: oklch(0.87 0.1 238);
+  --c-hl-pink: oklch(0.86 0.11 355);
+  --c-hl-purple: oklch(0.85 0.1 305);
+}
+
+/* ------------------------------------------------------------ painted marks */
+
+.ph-hl {
+  position: absolute;
+  inset: 0;
+  /* Above the canvas (unpositioned, so it paints in an earlier layer) and below
+     `.ph-pc-tl` at z-index 1 — which is the whole point: the glyphs stay on top,
+     so the paper remains selectable, copyable and searchable through the mark. */
+  z-index: 0;
+  pointer-events: none;
+}
+
+.ph-hl-mark {
+  position: absolute;
+  border-radius: 1.5px;
+  /* Multiply keeps the ink underneath: the canvas glyphs show through the wash
+     rather than being covered by it. `background` is set inline from the
+     highlight's colour token. */
+  mix-blend-mode: multiply;
+}
+
+/* The mark whose toolbar is open, so it is obvious which one is being edited. */
+.ph-hl-mark.is-on {
+  box-shadow: 0 0 0 1px var(--c-ac);
+}
+
+/* A highlight carrying a note gets a marginal rule — the only affordance that
+   says "there is writing attached to this" without covering the text. */
+.ph-hl-mark.has-note {
+  border-left: 2px solid var(--c-ac);
+}
+
+/* --------------------------------------------------------------- the toolbar */
+/* Metrics track `.ph-pc-find`: 6px radius, 11px text, 22-24px controls. */
+
+.ph-hl-pop {
+  position: absolute;
+  /* Above `.ph-pc-tl` (1) and the find highlights (2), below the find bar (5).
+     Under the text layer its buttons would be unclickable — the glyph spans are
+     `pointer-events: auto` and would swallow every press. */
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 8px;
+  box-shadow: var(--sh-pop);
+  /* Chrome, not content. */
+  user-select: none;
+  /* NOT the shared `ph-fade`: its keyframes animate `transform`, which would
+     override the translateX(-50%) above for the whole 0.12s and then snap back
+     — the toolbar would fly in half its own width off-centre. Same trap
+     SettingsModal.css documents. */
+  animation: ph-hl-pop-in 0.12s ease;
+}
+
+@keyframes ph-hl-pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+
+.ph-hl-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ph-hl-sw {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  /* The swatches are pale by design, so on the white surface of the light theme
+     they would otherwise have no edge at all. `--c-bds` delineates them on both
+     surfaces without competing with the selected ring below. */
+  border: 1px solid var(--c-bds);
+}
+.ph-hl-sw:hover {
+  transform: scale(1.12);
+}
+.ph-hl-sw.is-on {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-hl-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 1px;
+  background: var(--c-bd);
+}
+
+.ph-hl-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-tx2);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ph-hl-btn:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-hl-btn.is-danger:hover {
+  background: var(--c-err-soft);
+  color: var(--c-err);
+}
+
+/* ------------------------------------------------------------- note editor */
+
+.ph-hl-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ph-hl-ta {
+  width: 220px;
+  height: 76px;
+  padding: 6px 7px;
+  resize: none;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-bg);
+  color: var(--c-tx);
+  font-size: 11.5px;
+  line-height: 1.5;
+  outline: none;
+  user-select: text;
+}
+.ph-hl-ta::placeholder {
+  color: var(--c-tx3);
+}
+.ph-hl-ta:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-hl-note-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ph-hl-ghost,
+.ph-hl-primary {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ph-hl-ghost {
+  border: 1px solid var(--c-bd);
+  background: transparent;
+  color: var(--c-tx2);
+}
+.ph-hl-ghost:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+
+.ph-hl-primary {
+  border: 1px solid var(--c-ac);
+  background: var(--c-ac);
+  color: var(--c-acc);
+  font-weight: 500;
+}
+.ph-hl-primary:hover {
+  background: var(--c-ach);
+  border-color: var(--c-ach);
+}

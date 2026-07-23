@@ -1,12 +1,12 @@
 import { Icons } from "../design/icons";
-import type { ModuleKey } from "../store";
+import type { LiveModuleKey, ModuleKey } from "../store";
 import "./ComingSoon.css";
 
 type IconComponent = (typeof Icons)["search"];
 
 /** Copy is verbatim from the prototype's `modInfo` map (design line 576). */
 const MODULES: Record<
-  Exclude<ModuleKey, "library">,
+  Exclude<ModuleKey, LiveModuleKey>,
   { name: string; desc: string; Icon: IconComponent }
 > = {
   search: {
@@ -26,7 +26,7 @@ const MODULES: Record<
   },
 };
 
-export function ComingSoon({ module }: { module: Exclude<ModuleKey, "library"> }): JSX.Element {
+export function ComingSoon({ module }: { module: Exclude<ModuleKey, LiveModuleKey> }): JSX.Element {
   const { name, desc, Icon } = MODULES[module];
   return (
     <div className="ph-cs">

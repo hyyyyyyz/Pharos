@@ -1,0 +1,318 @@
+/* 每日论文 settings tab.
+
+   Deliberately thin: the shared modal furniture (.ph-set-input, .ph-set-btn,
+   .ph-set-sec, .ph-set-label, .ph-set-err) is reused as-is so this tab cannot
+   drift away from 账户 and 外观. Only what genuinely does not exist yet — the
+   direction row, the keyword chips, the note block — is defined here, and it
+   is built to the same metrics: 30px inputs, 26px buttons, 6px radii, 12px
+   body text, and the --c-ac / 0 0 0 2px var(--c-ring) focus ring. */
+
+/* The tab's own section rhythm. .ph-set-sec's rule ends with margin-bottom on
+   the 账户 tab's single block; here two stack, and the last one must not push
+   the pane's own padding out. */
+.ph-dir-sec:last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------- note */
+
+.ph-dir-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  border: 1px solid var(--c-acsb);
+  background: var(--c-acs);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--c-tx2);
+}
+.ph-dir-note strong {
+  color: var(--c-tx);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- direction */
+
+/* Pushes the count to the right end of the section head, which is otherwise a
+   left-aligned icon + title pair shared with the 账户 tab. */
+.ph-dir-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+.ph-dir-muted {
+  font-size: 12px;
+  color: var(--c-tx3);
+}
+
+.ph-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-bg);
+}
+/* A disabled direction still occupies its row — it has not been deleted, and
+   hiding it would make "已停用" indistinguishable from gone. It is dimmed
+   rather than removed, and the badge says which. */
+.ph-dir-row--off .ph-dir-name,
+.ph-dir-row--off .ph-dir-kws {
+  opacity: 0.55;
+}
+
+.ph-dir-order {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 1px;
+}
+
+.ph-dir-icb {
+  width: 18px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-tx3);
+  cursor: pointer;
+}
+.ph-dir-icb:hover:not(:disabled) {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-dir-icb:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+/* There is no caretU in the icon set; the same glyph rotated is exactly it,
+   and stays in sync if the caret is ever redrawn. */
+.ph-dir-icb--up > svg {
+  transform: rotate(180deg);
+}
+
+.ph-dir-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ph-dir-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+
+.ph-dir-badge {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--c-hv);
+  color: var(--c-tx3);
+  font-size: 9.5px;
+  font-weight: 500;
+}
+
+/* Two lines, then ellipsis, with the full list on the title attribute. A
+   direction can carry twenty terms; showing all of them would make the list
+   unscannable, and showing none would hide what the row actually matches. */
+.ph-dir-kws {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-tx3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.ph-dir-acts {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* The enable state, in the soft-accent treatment the 主题 buttons use, rather
+   than the solid .ph-set-btn--on: this appears on every row, and a column of
+   filled accent buttons would shout louder than anything else in the modal. */
+.ph-dir-btn--on {
+  border-color: var(--c-acsb);
+  background: var(--c-acs);
+  color: var(--c-ac);
+  font-weight: 600;
+}
+.ph-dir-btn--on:hover:not(:disabled) {
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+
+.ph-dir-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  width: 100%;
+  padding: 0 10px;
+  margin-top: 2px;
+  border-radius: 6px;
+  border: 1px dashed var(--c-bds);
+  background: transparent;
+  color: var(--c-tx2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ph-dir-add:hover:not(:disabled) {
+  border-color: var(--c-ac);
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-dir-add:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ editor */
+
+.ph-dir-editor {
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--c-acsb);
+  background: var(--c-bg);
+}
+
+/* Same box as .ph-set-input, but multi-line: a keyword list is pasted, and a
+   single-line field turns a paste into a horizontal scroll nobody can read. */
+.ph-dir-textarea {
+  width: 100%;
+  padding: 7px 10px;
+  margin-bottom: 9px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+.ph-dir-textarea:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-dir-parsed {
+  margin-bottom: 9px;
+}
+
+.ph-dir-parsed-head {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+.ph-dir-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ph-dir-chips--cat {
+  margin-top: 2px;
+}
+
+.ph-dir-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx2);
+  font-size: 10.5px;
+  line-height: 1.5;
+  /* The exact stored string, spaces and hyphens intact — this is what gets
+     substring-matched, so it must not be re-wrapped mid-term. */
+  white-space: pre;
+}
+.ph-dir-chip--bad {
+  border-color: var(--c-err);
+  color: var(--c-err);
+}
+
+.ph-dir-editor-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* --------------------------------------------------------------- messaging */
+
+/* Advisory, not a failure: the user is over a limit the backend will also
+   enforce, and finds out while typing instead of after a round trip. Amber
+   weight rather than --c-err, which is reserved for something that did fail. */
+.ph-dir-warn {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-tx2);
+  overflow-wrap: anywhere;
+}
+
+.ph-dir-hint {
+  margin: -3px 0 10px;
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--c-tx3);
+}
+
+/* Sits under an input rather than at the top of a group, so it needs the label
+   spacing back that .ph-set-label alone does not carry here. */
+.ph-dir-label2 {
+  margin-top: 12px;
+}
+
+/* A count, not a sentence — it does not need the full field width. */
+.ph-dir-num {
+  width: 96px;
+}
+
+/* ------------------------------------------------------------ empty state */
+
+.ph-dir-empty {
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--c-bds);
+  background: var(--c-bg);
+}
+
+.ph-dir-empty-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-tx);
+  margin-bottom: 6px;
+}
+
+.ph-dir-empty-desc {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--c-tx2);
+  margin-bottom: 10px;
+}
+
+.ph-dir-empty-acts {
+  display: flex;
+  gap: 6px;
+}

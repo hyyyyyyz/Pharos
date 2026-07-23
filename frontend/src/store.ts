@@ -1,10 +1,14 @@
 import { create } from "zustand";
 import type { AccentKey, ThemeMode } from "./design/tokens";
+import type { AuthUser } from "./api/types";
+import { getSession, subscribe as subscribeSession } from "./auth/session";
 
-export type ModuleKey = "library" | "search" | "kb" | "writing";
+export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing";
+/** Modules that are actually built. Everything else falls through to <ComingSoon />. */
+export type LiveModuleKey = "library" | "daily";
 export type ReadMode = "zh" | "bilingual" | "original";
 export type OutlineMode = "outline" | "thumbs";
-export type SettingsTab = "account" | "appearance";
+export type SettingsTab = "account" | "appearance" | "daily";
 export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
@@ -60,6 +64,15 @@ interface UIState {
   /** Click a row. `order` is the currently visible id order (for shift-range). */
   selectRow: (id: string, order: string[], mods: { meta: boolean; shift: boolean }) => void;
 
+  /* --------------------------------------------------------------- daily */
+  /** "YYYY-MM-DD" of the digest being viewed; null = not chosen yet, so the
+   *  view falls back to the newest date the backend reports. */
+  dailyDate: string | null;
+  setDailyDate: (d: string | null) => void;
+  /** DailyPaper.id of the expanded card; null = none open. */
+  dailyPaperId: string | null;
+  setDailyPaper: (id: string | null) => void;
+
   /* ---------------------------------------------------------------- tabs */
   tabs: Tab[];
   activeTabId: string;
@@ -99,13 +112,18 @@ export function isAiOpen(s: Pick<UIState, "aiOpenPref" | "winW">): boolean {
 
 export const useUI = create<UIState>((set) => ({
   theme: (ls("ph-theme") as ThemeMode) ?? "light",
-  accent: (ls("ph-accent") as AccentKey) ?? "indigo",
+  // Storage key is versioned because the palette was rebranded: the previous
+  // default, "indigo", is indistinguishable from a deliberate choice once it
+  // is in localStorage, so every existing browser would have kept showing the
+  // pre-brand accent forever. Bumping the key retires those values once and
+  // lets the brand default apply; a user who re-picks indigo keeps it.
+  accent: (ls("ph-accent-v2") as AccentKey) ?? "pharos",
   setTheme: (theme) => {
     save("ph-theme", theme);
     set({ theme });
   },
   setAccent: (accent) => {
-    save("ph-accent", accent);
+    save("ph-accent-v2", accent);
     set({ accent });
   },
 
@@ -163,6 +181,13 @@ export const useUI = create<UIState>((set) => ({
       return { selectedIds: sel, selectedPaperId: id, lastClick: id };
     }),
 
+  dailyDate: null,
+  // Papers belong to exactly one date, so a stale selection could never be
+  // rendered after the date changes — clear it rather than leave it dangling.
+  setDailyDate: (dailyDate) => set({ dailyDate, dailyPaperId: null }),
+  dailyPaperId: null,
+  setDailyPaper: (dailyPaperId) => set({ dailyPaperId }),
+
   tabs: [{ id: "library", kind: "library" }],
   activeTabId: "library",
   openPaper: (paperId) =>
@@ -201,3 +226,66 @@ export const useUI = create<UIState>((set) => ({
   closeSettings: () => set({ settingsOpen: false }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),
 }));
+
+/* ======================================================================= */
+/*                                session                                  */
+/* ======================================================================= */
+
+/**
+ * Who is signed in, for rendering.
+ *
+ * Deliberately a second store rather than fields on `useUI`: this is not UI
+ * state, it does not reset with the workbench, and giving it its own hook means
+ * a component that only needs the user does not re-render when a tab changes.
+ *
+ * READ-ONLY BY DESIGN. `auth/session.ts` owns the session, because `api/client.ts`
+ * has to read the token and clear it on a 401 from outside React entirely. This
+ * store has no actions on purpose: a second way to write the token is a second
+ * way for the token and the localStorage copy to disagree, and on a gate whose
+ * whole job is "is this person allowed in", disagreeing states are the bug you
+ * cannot afford. To change the session, call `api.auth.*` (login, register,
+ * logout, logoutAll) or `auth/session.ts` directly — the change lands here.
+ */
+interface SessionState {
+  /** Null = signed out. AuthGate renders sign-in on exactly this condition. */
+  token: string | null;
+  /** May be null while a stored token is still being validated on a cold start. */
+  user: AuthUser | null;
+}
+
+/**
+ * Does this account get whole-PDF translation?
+ *
+ * Server-owned and per-account — deliberately NOT a localStorage key alongside
+ * `ph-theme`. The theme is a property of this screen; this is a property of the
+ * person. A per-device copy would disagree with the server the moment they open
+ * Pharos in another browser, and it would disagree in the expensive direction:
+ * a stale "on" keeps offering 翻译此篇 for an account that has turned it off,
+ * and every press spends API budget the user thought they had stopped spending.
+ * So it rides in on the session user — refreshed by the `GET /auth/me` the gate
+ * makes on every cold start, and by the PATCH response when it is changed —
+ * which is why this is a selector over `useSession` rather than state of its own.
+ *
+ * Absent reads as ON, and only an explicit `false` turns the apparatus off.
+ * There are two ways it can arrive absent: a session cached by a build that
+ * predates the field, and the legacy NULL the backend's additive migration
+ * leaves on rows that existed before the column did. In both the account's real
+ * setting is the default, `true` — so this mirrors `pdf_translation_enabled()`
+ * in `pharos/api/auth.py` exactly, rather than letting a missing field quietly
+ * hide a feature the user actually has.
+ */
+export function pdfTranslationEnabled(s: Pick<SessionState, "user">): boolean {
+  return s.user?.pdf_translation !== false;
+}
+
+const sessionSnapshot = (): SessionState => {
+  const s = getSession();
+  return { token: s.token, user: s.user };
+};
+
+export const useSession = create<SessionState>(() => sessionSnapshot());
+
+// One subscription for the app's lifetime: every change to the underlying
+// session — sign-in, sign-out, a 401 handled deep inside client.ts, or another
+// tab signing out — pushes into the store and re-renders the gate.
+subscribeSession(() => useSession.setState(sessionSnapshot()));

@@ -224,3 +224,13 @@
 .ph-dp-muted-ab {
   line-height: 1.65;
 }
+
+/* Real abstract text: same metrics as the muted placeholder it replaces, but
+   upright and readable. `overflow-wrap` keeps an unbroken DOI/URL inside a
+   PDF-extracted abstract from widening the fixed 280px panel. */
+.ph-dp-abstract {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--c-tx2, #5a616e);
+  overflow-wrap: anywhere;
+}

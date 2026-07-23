@@ -5,18 +5,46 @@
 .ph-tree {
   width: 196px;
   flex: none;
-  background: var(--c-sf, #fff);
+  background: var(--c-sf, var(--c-sf));
   border-right: 1px solid var(--c-bd, #e6e8ec);
   overflow-y: auto;
   padding: 8px 0;
 }
 
 .ph-tree-head {
+  display: flex;
+  align-items: center;
   padding: 0 8px 6px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: var(--c-tx3, #8b93a1);
+}
+
+.ph-tree-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sits in the 10.5px header, so it is sized to that line rather than to the
+   26px rows below it — a 26px button here would push the header out of rhythm. */
+.ph-tree-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: -2px -2px 0 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-tx3, #8b93a1);
+  cursor: pointer;
+}
+.ph-tree-add:hover {
+  background: var(--c-hv);
+  color: var(--c-tx, #1e222a);
 }
 
 /* padding-left is set inline: 8 + depth * 15 px */
@@ -36,10 +64,21 @@
   transition: background 0.1s;
 }
 
+.ph-tree-row:hover {
+  background: var(--c-hv);
+}
+
 .ph-tree-row.is-active {
   color: var(--c-ac, #5b53d6);
   font-weight: 600;
   background: var(--c-acs);
+}
+
+/* Drop target for a paper drag. Inset ring rather than a border: a border would
+   add 1px to a 26px row and shift every row below it as the pointer moves. */
+.ph-tree-row.is-drop {
+  background: var(--c-acs);
+  box-shadow: inset 0 0 0 1px var(--c-ac);
 }
 
 .ph-tree-caret {
@@ -92,6 +131,92 @@
   color: var(--c-tx3, #8b93a1);
 }
 
+/* ------------------------------------------------------- inline name editor */
+
+/* Occupies exactly one 26px row so creating or renaming a folder does not make
+   the list jump. The input itself is the house input (1px --c-bd, accent focus
+   ring) scaled to fit that row — 22px/4px here against the modal's 30px/6px,
+   the same relationship the 25px toolbar inputs in ItemList already have. */
+.ph-tree-edit {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  margin: 0 4px;
+}
+
+.ph-tree-input {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 4px;
+  background: var(--c-bg, #fafbfc);
+  color: var(--c-tx, #1e222a);
+  font-size: 12px;
+  outline: none;
+}
+.ph-tree-input:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+/* Transient feedback (a rejected name, a folder delete that moved children).
+   Click to dismiss; styled as quiet body text, not as a banner. */
+.ph-tree-msg {
+  padding: 4px 12px;
+  margin: 2px 4px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ context menu */
+
+.ph-tree-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 132px;
+  max-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  background: var(--c-sf, var(--c-sf));
+  box-shadow: var(--sh-pop);
+}
+
+.ph-tree-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-tx, #1e222a);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.ph-tree-menu-item:hover {
+  background: var(--c-hv);
+}
+.ph-tree-menu-item.is-danger {
+  color: var(--c-err);
+}
+.ph-tree-menu-item.is-danger:hover {
+  background: var(--c-err-soft);
+}
+
+.ph-tree-menu-note {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-tx2, #5a616e);
+}
+
 .ph-tree-div {
   height: 1px;
   background: var(--c-bd, #e6e8ec);
@@ -105,6 +230,30 @@
   gap: 5px;
 }
 
+/* The six tag colour tokens the backend allow-lists (amber | blue | green |
+   red | purple | grey). They belong in design/tokens.ts beside every other
+   --c-* variable, and should be moved there: that module is not in this
+   agent's file list, so they are defined here on the rail's own scope as the
+   narrowest place that keeps `data-color` working.
+
+   Consequence of living outside tokens.ts: tokens.ts swaps its whole palette
+   per theme via an inline style on .ph-root, and CSS here cannot read which
+   theme is active. So each hue is pitched at a single mid lightness that stays
+   legible on both the light (var(--c-sf)) and dark (var(--c-sf)) surface, instead of the
+   light/dark pair the other tokens get. Moving them into neutralVars() would
+   let them be tuned per theme like --c-ok and --c-err already are. */
+.ph-tree {
+  --c-tag-amber: oklch(0.68 0.14 78);
+  --c-tag-blue: oklch(0.65 0.14 245);
+  --c-tag-green: oklch(0.64 0.13 150);
+  --c-tag-red: oklch(0.64 0.16 25);
+  --c-tag-purple: oklch(0.65 0.14 300);
+  --c-tag-grey: oklch(0.62 0.02 250);
+}
+
+/* A chip is a label, not a control: nothing in the current API maps a tag to
+   its papers, so these report what exists and do not pretend to filter.
+   `default` rather than `pointer` so the affordance matches the behaviour. */
 .ph-tree-tag {
   padding: 2px 8px;
   border-radius: 20px;
@@ -112,11 +261,36 @@
   background: transparent;
   color: var(--c-tx2, #5a616e);
   font-size: 11px;
-  cursor: pointer;
+  cursor: default;
+  /* The rail is 196px; a long tag must not widen it into the item list. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ph-tree-tag.is-on {
-  border-color: var(--c-acsb);
-  background: var(--c-acs);
-  color: var(--c-ac, #5b53d6);
+/* Colour is mixed against the surface rather than set flat, so one token works
+   on both themes' backgrounds. A tag with no colour keeps the neutral chip. */
+.ph-tree-tag[data-color] {
+  border-color: color-mix(in oklch, var(--c-tag) 38%, transparent);
+  background: color-mix(in oklch, var(--c-tag) 14%, transparent);
+  color: var(--c-tag);
+}
+.ph-tree-tag[data-color="amber"] {
+  --c-tag: var(--c-tag-amber);
+}
+.ph-tree-tag[data-color="blue"] {
+  --c-tag: var(--c-tag-blue);
+}
+.ph-tree-tag[data-color="green"] {
+  --c-tag: var(--c-tag-green);
+}
+.ph-tree-tag[data-color="red"] {
+  --c-tag: var(--c-tag-red);
+}
+.ph-tree-tag[data-color="purple"] {
+  --c-tag: var(--c-tag-purple);
+}
+.ph-tree-tag[data-color="grey"] {
+  --c-tag: var(--c-tag-grey);
 }

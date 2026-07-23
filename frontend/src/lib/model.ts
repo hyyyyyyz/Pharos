@@ -1,9 +1,12 @@
 /**
  * View model: maps the backend's `Paper`/`Job` onto the fields the UI renders.
  *
- * The design prototype assumed rich bibliographic metadata (authors, venue,
- * DOI, abstract, tags). The backend does not extract that yet, so those fields
- * come back as `null` and the UI renders a “—” placeholder — no invented data.
+ * The backend now extracts bibliographic metadata, but only ever reports what it
+ * could determine with confidence — a field it is unsure about comes back
+ * null/empty rather than guessed. The UI mirrors that contract: it renders a
+ * “—” placeholder for anything missing and never fabricates a stand-in, because
+ * a wrong author list is worse than a visibly absent one. `tags` stays empty
+ * because tagging genuinely has no backend yet.
  */
 import type { Job, Paper } from "../api/types";
 
@@ -20,12 +23,14 @@ export interface PaperVM {
   progress: number;
   addedAt: string;
   isZotero: boolean;
-  /** Metadata the backend cannot supply yet. */
-  authors: string | null;
+  /** Empty when the backend could not extract authors confidently. */
+  authors: string[];
   year: number | null;
   venue: string | null;
+  /** Bare DOI; callers build the https://doi.org/ URL themselves. */
   doi: string | null;
   abstract: string | null;
+  /** Always empty — tagging has no backend yet. */
   tags: string[];
   job: Job | null;
 }
@@ -52,19 +57,43 @@ export function toVM(p: Paper): PaperVM {
     progress: job?.progress ?? 0,
     addedAt: p.added_at,
     isZotero: p.source === "zotero",
-    authors: null,
-    year: null,
-    venue: null,
-    doi: null,
-    abstract: null,
+    authors: p.authors ?? [],
+    year: p.year,
+    venue: p.venue,
+    doi: p.doi,
+    abstract: p.abstract,
     tags: [],
     job,
   };
 }
 
-/** “—” for anything the backend hasn’t given us. */
-export const dash = (v: string | number | null | undefined): string =>
-  v === null || v === undefined || v === "" ? "—" : String(v);
+/** “—” for anything the backend hasn’t given us. An author list is accepted
+ *  directly so callers that only need a plain inline rendering don’t each
+ *  reimplement the empty-array case. */
+export const dash = (v: string | number | readonly string[] | null | undefined): string => {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) return v.length === 0 ? "—" : v.join(", ");
+  return String(v);
+};
+
+/**
+ * Compact author label for the narrow 作者 column.
+ *
+ * The backend stores authors in “A. Vaswani” form, so the last whitespace-
+ * separated token is the surname — the only part that fits in 80px. Returns
+ * null (not a guess) when there is nothing to show.
+ */
+export function compactAuthors(authors: readonly string[]): string | null {
+  const surname = (name: string): string => {
+    const parts = name.trim().split(/\s+/);
+    return parts[parts.length - 1] ?? "";
+  };
+  const named = authors.map(surname).filter((s) => s !== "");
+  if (named.length === 0) return null;
+  if (named.length === 1) return named[0]!;
+  if (named.length === 2) return `${named[0]} 和 ${named[1]}`;
+  return `${named[0]} 等`;
+}
 
 /** Badge text + colour for a status pill, matching the design prototype. */
 export function statusMeta(st: PaperStatus): { label: string; cls: string } {

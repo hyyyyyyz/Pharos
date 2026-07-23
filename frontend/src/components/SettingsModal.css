@@ -168,6 +168,14 @@
   justify-content: center;
 }
 
+/* Takes the space the prototype's bare <div> took, so the avatar/name metrics
+   are unchanged; `min-width:0` lets a long email ellipsise instead of pushing
+   the 重命名/退出登录 buttons off the pane. */
+.ph-set-acct-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .ph-set-acct-name {
   font-size: 13.5px;
   font-weight: 600;
@@ -176,6 +184,66 @@
 .ph-set-acct-sub {
   font-size: 11.5px;
   color: var(--c-tx3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-set-acct-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.ph-set-acct-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Inline variant of the shared input: same border/radius/type scale, but it
+   sits in a row rather than a stack, so it drops the block margin. */
+.ph-set-input--inline {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+/* Inline failure text. Shared by the account and Zotero blocks so a backend
+   error always looks the same wherever it surfaces. */
+.ph-set-err {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-err);
+  overflow-wrap: anywhere;
+}
+
+/* A divider-topped block on the 账户 tab, same rhythm as .ph-set-acct →
+   .ph-set-zot. Its own class rather than a reused .ph-set-zot so that changing
+   Zotero's spacing can never silently move an unrelated section. */
+.ph-set-sec {
+  padding: 16px 0 0;
+  margin-bottom: 18px;
+  border-top: 1px solid var(--c-bd);
+}
+
+.ph-set-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ph-set-sec-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+
+.ph-set-sec-desc {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--c-tx2);
+  line-height: 1.65;
 }
 
 .ph-set-zot {
@@ -233,7 +301,8 @@
   align-items: center;
   gap: 6px;
 }
-/* Zotero sync is not built yet, so the button must not pretend to work. */
+/* Disabled until both the userID and the API key are filled in — an empty
+   submit would only produce a round-trip and a backend error. */
 .ph-set-connect:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -273,6 +342,11 @@
   align-items: center;
   justify-content: center;
 }
+/* The link is live but the last sync failed: same badge box, error palette. */
+.ph-set-zot-check--err {
+  background: var(--c-err-soft);
+  color: var(--c-err);
+}
 .ph-set-zot-card-text {
   flex: 1;
   min-width: 0;
@@ -286,6 +360,10 @@
   font-size: 11px;
   color: var(--c-tx3);
 }
+/* One secondary button, used for 重命名 / 退出登录 / 保存 / 取消 / 同步 / 断开.
+   `.ph-set-zot-disconnect` is the prototype's name for it and keeps its exact
+   metrics — the two selectors share a rule so the styles cannot drift apart. */
+.ph-set-btn,
 .ph-set-zot-disconnect {
   height: 26px;
   padding: 0 10px;
@@ -295,6 +373,35 @@
   color: var(--c-tx2);
   font-size: 11.5px;
   cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+.ph-set-btn:hover:not(:disabled),
+.ph-set-zot-disconnect:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-set-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* Confirming the accent-coloured action (保存) — same box, accent fill. */
+.ph-set-btn--on {
+  border-color: var(--c-ac);
+  background: var(--c-ac);
+  color: var(--c-acc);
+  font-weight: 600;
+}
+.ph-set-btn--on:hover:not(:disabled) {
+  background: var(--c-ac);
+  color: var(--c-acc);
+}
+/* Destructive intent is signalled on hover only, so the resting row keeps the
+   prototype's neutral weighting and nothing shouts at the user. */
+.ph-set-btn--danger:hover:not(:disabled) {
+  border-color: var(--c-err);
+  background: var(--c-err-soft);
+  color: var(--c-err);
 }
 
 /* -------------------------------------------------------- appearance tab */
@@ -317,7 +424,20 @@
   max-width: 280px;
 }
 
-.ph-set-theme {
+/* The 阅读 tab's on/off pair. Only the container differs from .ph-set-themes —
+   it sits above a description line rather than another labelled group, so it
+   takes less trailing space. The buttons themselves share the rules below. */
+.ph-set-seg {
+  display: flex;
+  gap: 8px;
+  max-width: 280px;
+}
+
+/* One declaration, two names. The 整篇 PDF 翻译 control has to look exactly like
+   the 主题 buttons, and grouping the selectors is the only version of "exactly"
+   that stays true after someone edits one of them. */
+.ph-set-theme,
+.ph-set-seg-btn {
   flex: 1;
   display: flex;
   align-items: center;
@@ -332,10 +452,18 @@
   background: transparent;
   color: var(--c-tx2);
 }
-.ph-set-theme--on {
+.ph-set-theme--on,
+.ph-set-seg-btn--on {
   border: 1px solid var(--c-acsb);
   background: var(--c-acs);
   color: var(--c-ac);
+}
+
+/* Only the segment can be disabled (while the PATCH is in flight); a theme
+   click is local and always available. */
+.ph-set-seg-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .ph-set-accents {

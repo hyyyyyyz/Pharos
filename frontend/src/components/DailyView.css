@@ -1,0 +1,817 @@
+/* 每日论文 — date rail | digest list | detail panel.
+
+   Metrics are taken from the 文库 module so the two read as one app:
+   196px rail + 26px rows (CollectionTree.css), 34px toolbar + 25px controls
+   (ItemList.css), 280px detail pane + 12px section rhythm (DetailPanel.css).
+   Colours are CSS variables only — never a literal. */
+
+.ph-dv {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* =============================================================== date rail */
+
+.ph-dv-rail {
+  width: 196px;
+  flex: none;
+  background: var(--c-sf, #fff);
+  border-right: 1px solid var(--c-bd, #e6e8ec);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.ph-dv-rail-head {
+  padding: 0 8px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-dv-rail-note {
+  padding: 0 8px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-dv-rail-note.is-err {
+  color: var(--c-err);
+}
+
+.ph-dv-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  margin: 0 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--c-tx, #1e222a);
+  font-weight: 400;
+  background: transparent;
+  transition: background 0.1s;
+}
+.ph-dv-date:hover {
+  background: var(--c-hv);
+}
+.ph-dv-date.is-active {
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+  background: var(--c-acs);
+}
+.ph-dv-date.is-active:hover {
+  background: var(--c-acs);
+}
+
+.ph-dv-date-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unread badge: present only when that day still has 待解读 papers. */
+.ph-dv-date-pending {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 20px;
+  background: var(--c-hv, #f0f2f5);
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+}
+.ph-dv-date.is-active .ph-dv-date-pending {
+  background: var(--c-acsb);
+  color: var(--c-ac, #5b53d6);
+}
+
+.ph-dv-date-count {
+  font-size: 10.5px;
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================== centre */
+
+.ph-dv-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-sf, #fff);
+  border-right: 1px solid var(--c-bd, #e6e8ec);
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+.ph-dv-bar {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dv-bar-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* Scrolls rather than clips: `overflow: hidden` alone amputated the last chip
+   mid-glyph once more than two directions matched, which reads as a broken
+   layout and silently hides a filter the user cannot then reach. */
+.ph-dv-filters {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ph-dv-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.ph-dv-fchip {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 20px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ph-dv-fchip:hover {
+  background: var(--c-hv);
+}
+.ph-dv-fchip.is-on {
+  border-color: var(--c-acsb);
+  background: var(--c-acs);
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+}
+
+.ph-dv-spacer {
+  flex: 1;
+}
+
+.ph-dv-sort {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.ph-dv-sbtn {
+  height: 23px;
+  padding: 0 9px;
+  border: none;
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ph-dv-sbtn + .ph-dv-sbtn {
+  border-left: 1px solid var(--c-bd, #e6e8ec);
+}
+.ph-dv-sbtn:hover {
+  background: var(--c-hv);
+}
+.ph-dv-sbtn.is-on {
+  background: var(--c-acs);
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+}
+
+.ph-dv-refresh {
+  flex: none;
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ph-dv-refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ph-dv-refresh-ic {
+  display: flex;
+}
+.ph-dv-refresh-ic.is-spin {
+  animation: ph-spin 1.1s linear infinite;
+}
+
+/* ------------------------------------------------------- notices & banner */
+
+.ph-dv-note {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--c-tx3, #8b93a1);
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+  font-variant-numeric: tabular-nums;
+}
+.ph-dv-note.is-err {
+  color: var(--c-err);
+}
+
+/* The "no API key" banner. Informational, not an error: fetching really does
+   work without a key, so it must not read as a failure. */
+.ph-dv-banner {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  background: var(--c-acs);
+  border-bottom: 1px solid var(--c-acsb);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--c-tx2, #5a616e);
+}
+
+.ph-dv-banner-ic {
+  display: flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--c-ac, #5b53d6);
+}
+
+/* ------------------------------------------------------------------- list */
+
+.ph-dv-list {
+  flex: 1;
+  overflow: auto;
+}
+
+/* --------------------------------------------------------------- capsules */
+
+.ph-dv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 20px;
+}
+.ph-dv-chip::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ph-dv-chip.is-pending {
+  background: var(--c-hv);
+  color: var(--c-tx3);
+}
+.ph-dv-chip.is-err {
+  background: var(--c-err-soft);
+  color: var(--c-err);
+}
+
+/* ------------------------------------------------------------------ cards */
+
+.ph-dv-card {
+  padding: 7px 10px 8px;
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+  cursor: default;
+  background: transparent;
+}
+.ph-dv-card:hover {
+  background: var(--c-hv);
+}
+.ph-dv-card.is-selected {
+  background: var(--c-acs);
+  box-shadow: inset 2px 0 0 var(--c-ac);
+}
+.ph-dv-card.is-selected:hover {
+  background: var(--c-acs);
+}
+
+.ph-dv-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The recommendation score. Tiers exist so a column of cards can be triaged by
+   scanning this badge alone — see scoreTier() for why discrimination matters. */
+.ph-dv-score {
+  flex: none;
+  min-width: 28px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+.ph-dv-score.is-high {
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-weight: 700;
+}
+.ph-dv-score.is-mid {
+  background: var(--c-acs);
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+}
+.ph-dv-score.is-low {
+  background: var(--c-hv);
+  color: var(--c-tx2, #5a616e);
+  font-weight: 500;
+}
+/* Unread: no score exists, and none is implied. */
+.ph-dv-score.is-none {
+  background: transparent;
+  border: 1px dashed var(--c-bd, #e6e8ec);
+  color: var(--c-tx3, #8b93a1);
+  font-weight: 400;
+}
+
+.ph-dv-domain {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 20px;
+  background: var(--c-hv, #f0f2f5);
+  color: var(--c-tx2, #5a616e);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.ph-dv-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--c-tx, #1e222a);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ph-dv-card.is-selected .ph-dv-card-title {
+  font-weight: 600;
+}
+
+.ph-dv-card-sum {
+  margin-top: 3px;
+  padding-left: 34px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--c-tx2, #5a616e);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------ empty states */
+
+.ph-dv-empty {
+  height: 100%;
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--c-tx3, #8b93a1);
+}
+.ph-dv-empty-text {
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.ph-dv-empty-text.is-err {
+  color: var(--c-err);
+}
+.ph-dv-empty-hint {
+  font-size: 11.5px;
+}
+
+/* An inline action inside an empty state — used when the emptiness is caused by
+   the reader's own configuration and the fix is one click away in settings.
+   Styled as a link rather than a button: the panel is a sentence, and a solid
+   control in the middle of it would outweigh the explanation it depends on. */
+.ph-dv-empty-link {
+  margin-top: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--c-aclink, #4f46e5);
+  cursor: pointer;
+}
+.ph-dv-empty-link:hover {
+  text-decoration: underline;
+}
+
+.ph-dv-firstuse {
+  height: 100%;
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.ph-dv-firstuse-inner {
+  text-align: center;
+  max-width: 400px;
+}
+.ph-dv-firstuse-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--c-acs);
+  color: var(--c-ac, #5b53d6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+.ph-dv-firstuse-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  margin-bottom: 5px;
+}
+.ph-dv-firstuse-desc {
+  font-size: 12.5px;
+  color: var(--c-tx2, #5a616e);
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+/* The reader's current directions, shown under an empty state so the
+   configuration that produced the emptiness can be checked against it without
+   opening settings first. Wraps: a user may have a dozen. */
+.ph-dv-dirs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.ph-dv-dirs-k {
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  margin-right: 2px;
+}
+
+.ph-dv-dirs-v {
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: var(--c-hv, #f0f2f5);
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Two actions where an empty state has both a fix and a retry. The primary is
+   whichever one the cause points at, so the order is set in the markup. */
+.ph-dv-firstuse-btns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ph-dv-cta {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-dv-cta:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Secondary action; matches .ph-dv-cta's box so the pair sits on one baseline. */
+.ph-dv-cta-ghost {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-dv-cta-ghost:hover {
+  background: var(--c-hv);
+}
+.ph-dv-cta-ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ============================================================ detail panel */
+
+.ph-dv-detail {
+  width: 280px;
+  flex: none;
+  background: var(--c-sf, #fff);
+  overflow-y: auto;
+}
+
+.ph-dv-detail-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--c-tx3, #8b93a1);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.ph-dv-detail-body {
+  padding: 14px 16px;
+}
+
+.ph-dv-d-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--c-tx, #1e222a);
+  line-height: 1.45;
+  margin-bottom: 2px;
+}
+
+.ph-dv-d-sub {
+  font-size: 11.5px;
+  color: var(--c-tx3, #8b93a1);
+  line-height: 1.4;
+  margin-bottom: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ph-dv-d-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ph-dv-d-primary {
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: var(--c-ac, #5b53d6);
+  color: var(--c-acc, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.ph-dv-d-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ph-dv-d-ghost {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-dv-d-ghost:hover {
+  background: var(--c-hv);
+}
+.ph-dv-d-ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ph-dv-d-ic {
+  display: flex;
+}
+
+.ph-dv-d-err {
+  font-size: 11.5px;
+  color: var(--c-err, #d93a3a);
+  line-height: 1.5;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Read state sits above the content sections, so an absent summary is never
+   ambiguous between "not read yet" and "read, nothing to show". */
+.ph-dv-d-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ph-dv-d-state.is-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.ph-dv-d-state-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ph-dv-d-state.is-col .ph-dv-d-err {
+  margin-bottom: 0;
+}
+
+/* -------------------------------------------------------------- sections */
+
+.ph-dv-d-sec {
+  padding: 12px 0;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dv-d-sec-last {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-dv-d-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-tx3, #8b93a1);
+  margin-bottom: 7px;
+}
+
+.ph-dv-d-summary {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--c-tx, #1e222a);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------- highlights */
+
+.ph-dv-hl + .ph-dv-hl {
+  margin-top: 8px;
+}
+
+.ph-dv-hl-k {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--c-ac, #5b53d6);
+  margin-bottom: 2px;
+}
+
+.ph-dv-hl-v {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--c-tx2, #5a616e);
+  overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------------- scores */
+
+.ph-dv-sc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 19px;
+}
+
+.ph-dv-sc-k {
+  flex: none;
+  width: 28px;
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-dv-sc-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--c-bd, #e6e8ec);
+  overflow: hidden;
+}
+
+.ph-dv-sc-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--c-tx3, #8b93a1);
+}
+
+.ph-dv-sc-v {
+  flex: none;
+  width: 24px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--c-tx2, #5a616e);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 推荐 is the weighted conclusion, so it is the one row drawn in the accent. */
+.ph-dv-sc.is-rec .ph-dv-sc-k,
+.ph-dv-sc.is-rec .ph-dv-sc-v {
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+}
+.ph-dv-sc.is-rec .ph-dv-sc-bar {
+  background: var(--c-ac, #5b53d6);
+}
+
+/* 相关 and 推荐 are computed for the signed-in reader, the other three describe
+   the paper. Stated once under the block rather than per row: five rows of
+   qualifier would bury the numbers they qualify. */
+.ph-dv-sc-note {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--c-tx3, #8b93a1);
+}
+
+/* ------------------------------------------------------------ info & links */
+
+.ph-dv-d-grid {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ph-dv-d-k {
+  color: var(--c-tx3, #8b93a1);
+}
+
+.ph-dv-d-v {
+  color: var(--c-tx, #1e222a);
+  overflow-wrap: anywhere;
+}
+
+.ph-dv-d-abstract {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--c-tx2, #5a616e);
+  overflow-wrap: anywhere;
+}
+
+.ph-dv-d-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ph-dv-d-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--c-aclink, #4f46e5);
+  text-decoration: none;
+}
+.ph-dv-d-link:hover {
+  text-decoration: underline;
+}

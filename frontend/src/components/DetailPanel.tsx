@@ -2,16 +2,16 @@
  * 文库 view — the 280px right-hand detail panel.
  *
  * Ported from the design prototype (Pharos.dc.html lines 154-194 / renderVals
- * lines 606-609). The prototype's mock papers carried authors, venue, year, DOI,
- * abstract and tags; the backend supplies none of those yet, so those rows fall
- * back to `dash()` / muted placeholders rather than invented data.
+ * lines 606-609). Every metadata row is now backed by real extraction, but the
+ * backend reports nothing when it is unsure, so each row keeps its `dash()` /
+ * muted fallback rather than showing an invented value.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Paper } from "../api/types";
 import { Icons } from "../design/icons";
 import { dash, isJobActive, statusOf, toVM } from "../lib/model";
-import { useUI } from "../store";
+import { pdfTranslationEnabled, useSession, useUI } from "../store";
 import "./DetailPanel.css";
 
 /** Job error messages can be a whole stack trace; the panel only has room for a line. */
@@ -20,6 +20,7 @@ const ERR_MAX = 120;
 export function DetailPanel(): JSX.Element {
   const selectedPaperId = useUI((s) => s.selectedPaperId);
   const openPaper = useUI((s) => s.openPaper);
+  const pdfTx = useSession(pdfTranslationEnabled);
   const qc = useQueryClient();
   const id = selectedPaperId ?? "";
 
@@ -63,8 +64,10 @@ export function DetailPanel(): JSX.Element {
   const translating = status === "translating";
   const progress = Math.round(job?.progress ?? 0);
   const failedError = status === "failed" ? (job?.error ?? null) : null;
-  // Always empty until the backend extracts metadata, but the chip markup is live.
-  const tags = toVM(paper).tags;
+  const vm = toVM(paper);
+  // Always empty until tagging gets a backend, but the chip markup is live.
+  const tags = vm.tags;
+  const abstract = vm.abstract?.trim() ?? "";
 
   return (
     <aside className="ph-dp ph-scroll">
@@ -72,8 +75,12 @@ export function DetailPanel(): JSX.Element {
         <div className="ph-dp-title">{paper.title || paper.orig_filename}</div>
         <div className="ph-dp-sub">{paper.orig_filename}</div>
 
+        {/* With translation off there is exactly one thing to do with a paper —
+            read it — so the two-button split collapses to 打开阅读 for every
+            row, translated or not. An already-translated paper still opens with
+            its 中文/中英 modes intact; the reader decides that, not this panel. */}
         <div className="ph-dp-actions">
-          {translated ? (
+          {translated || !pdfTx ? (
             <button type="button" className="ph-dp-primary" onClick={() => openPaper(paper.id)}>
               <span className="ph-dp-ic">
                 <Icons.open />
@@ -93,7 +100,7 @@ export function DetailPanel(): JSX.Element {
               翻译此篇 · 保留排版
             </button>
           )}
-          {!translated && (
+          {!translated && pdfTx && (
             <button
               type="button"
               className="ph-dp-secondary"
@@ -108,7 +115,12 @@ export function DetailPanel(): JSX.Element {
           )}
         </div>
 
-        {translating && (
+        {/* Progress and failure are reports on a pipeline the user has switched
+            off. A job started before the flip still runs to completion server-
+            side (and its result appears as reading modes when it lands), but
+            narrating it here would be exactly the greyed-out apparatus this is
+            meant to remove. */}
+        {translating && pdfTx && (
           <div className="ph-dp-prog">
             <div className="ph-dp-track">
               <span className="ph-dp-bar" style={{ width: `${progress}%` }} />
@@ -117,7 +129,7 @@ export function DetailPanel(): JSX.Element {
           </div>
         )}
 
-        {failedError !== null && failedError !== "" && (
+        {pdfTx && failedError !== null && failedError !== "" && (
           <div className="ph-dp-error">
             {failedError.length > ERR_MAX ? `${failedError.slice(0, ERR_MAX)}…` : failedError}
           </div>
@@ -125,22 +137,40 @@ export function DetailPanel(): JSX.Element {
 
         <div className="ph-dp-grid">
           <span className="ph-dp-k">作者</span>
-          <span className="ph-dp-v">{dash(null)}</span>
+          <span className="ph-dp-v">
+            {vm.authors.length > 0 ? vm.authors.join(" · ") : dash(null)}
+          </span>
           <span className="ph-dp-k">来源</span>
-          <span className="ph-dp-v">{dash(null)}</span>
+          <span className="ph-dp-v">{dash(vm.venue)}</span>
           <span className="ph-dp-k">年份</span>
-          <span className="ph-dp-v">{dash(null)}</span>
+          <span className="ph-dp-v">{dash(vm.year)}</span>
           <span className="ph-dp-k">页数</span>
           <span className="ph-dp-v">
             {paper.page_count === null ? dash(null) : `${paper.page_count} 页`}
           </span>
           <span className="ph-dp-k">DOI</span>
-          <span className="ph-dp-v-doi">{dash(null)}</span>
+          {vm.doi ? (
+            <a
+              className="ph-dp-v-doi"
+              href={`https://doi.org/${vm.doi}`}
+              target="_blank"
+              rel="noreferrer"
+              title={vm.doi}
+            >
+              {vm.doi}
+            </a>
+          ) : (
+            <span className="ph-dp-v-doi">{dash(null)}</span>
+          )}
         </div>
 
         <div className="ph-dp-sec">
           <div className="ph-dp-label">摘要</div>
-          <div className="ph-dp-muted ph-dp-muted-ab">暂无摘要 · 后端尚未提取元数据</div>
+          {abstract !== "" ? (
+            <div className="ph-dp-abstract">{abstract}</div>
+          ) : (
+            <div className="ph-dp-muted ph-dp-muted-ab">暂无摘要 · 未能从该 PDF 提取</div>
+          )}
         </div>
 
         <div className="ph-dp-sec">

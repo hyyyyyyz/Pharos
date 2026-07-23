@@ -7,7 +7,7 @@ import { api } from "../api/client";
 import type { Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
-import { isAiOpen, useUI } from "../store";
+import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
 import { PdfCanvas } from "./PdfCanvas";
@@ -73,6 +73,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const outlineMode = useUI((s) => s.outlineMode);
   const aiOpen = useUI(isAiOpen);
   const toggleAI = useUI((s) => s.toggleAI);
+  const pdfTx = useSession(pdfTranslationEnabled);
 
   /* --------------------------------------------------------- the paper */
   const { data: paper } = useQuery({
@@ -107,17 +108,44 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   /* ------------------------------------------------------ which state shows */
   const status = vm?.status ?? "untranslated";
   const isTranslated = status === "translated";
+
+  /**
+   * The mode actually rendered.
+   *
+   * With translation on this is just `readMode` — the on-path is untouched.
+   * With it off, a paper that has no Chinese PDF has no other mode to be in, so
+   * it collapses to 原文 and the reader opens straight into the source. That is
+   * what makes the 未译/翻译中/失败 screens below unreachable rather than merely
+   * hidden: `showPdf` is then always true.
+   *
+   * A paper translated BEFORE the setting was turned off keeps `readMode`. The
+   * setting governs whether Pharos *spends* on new translations, not whether it
+   * shows work already paid for and sitting on disk — hiding that would be
+   * taking something away, which is not what "don't translate my PDFs" asks for.
+   */
+  const effMode: ReadMode = pdfTx || isTranslated ? readMode : "original";
+
+  /* The 中文/中英/原文 group. Off + untranslated leaves 原文 as the only member,
+     and a one-button segmented control is noise pretending to be a choice — so
+     the group goes entirely, per "the apparatus must genuinely disappear". */
+  const showModes = pdfTx || isTranslated;
+
   // 原文 always wins: it is the only path to the source PDF before/after a
   // failed translation.
-  const showPdf = readMode === "original" || isTranslated;
+  const showPdf = effMode === "original" || isTranslated;
 
-  const pdfSrc = useMemo(() => {
+  /* Which PDF to show, as a plain string. Deliberately NOT the PdfSource object:
+     this memo recomputes whenever `vm.job` gets a new identity (every /papers
+     refetch), and returning a fresh object each time would re-run the loader
+     effect below and tear down a perfectly good document. A string compares
+     equal, so the reload only happens when the file actually changes. */
+  const pdfKind = useMemo<PdfKind | null>(() => {
     if (!showPdf) return null;
-    let kind: PdfKind = readMode === "zh" ? "mono" : readMode === "bilingual" ? "dual" : "original";
+    let kind: PdfKind = effMode === "zh" ? "mono" : effMode === "bilingual" ? "dual" : "original";
     // The backend may produce a mono-only result; don't request a 404.
     if (kind === "dual" && vm?.job && !vm.job.has_dual) kind = "mono";
-    return api.pdfUrl(paperId, kind);
-  }, [showPdf, readMode, paperId, vm?.job]);
+    return kind;
+  }, [showPdf, effMode, vm?.job]);
 
   /* -------------------------------------------------------- the pdf.js doc */
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
@@ -126,9 +154,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   useEffect(() => {
     setDoc(null);
     setDocError(null);
-    if (!pdfSrc) return;
+    if (!pdfKind) return;
     let cancelled = false;
-    const task = pdfjs.getDocument({ url: pdfSrc });
+    // pdfSource(), not pdfUrl(): /papers/{id}/pdf/{kind} requires a bearer token
+    // like every other endpoint, and a bare URL cannot carry one. pdf.js issues
+    // the requests itself, so httpHeaders rides along on the initial fetch and
+    // on every range request. Built here rather than in the memo so the token
+    // read is as late as possible.
+    const task = pdfjs.getDocument(api.pdfSource(paperId, pdfKind));
     task.promise.then(
       (d) => {
         if (cancelled) return;
@@ -143,7 +176,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
       // Destroying the loading task destroys the document it produced.
       void task.destroy().catch(() => undefined);
     };
-  }, [pdfSrc]);
+  }, [pdfKind, paperId]);
 
   /* ------------------------------------------------------------ zoom / fit */
   const [zoom, setZoom] = useState(1);
@@ -155,7 +188,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   // Fit width on load and whenever the document changes.
   useEffect(() => {
     setFitMode(true);
-  }, [pdfSrc]);
+  }, [pdfKind, paperId]);
 
   const handleFitScale = useCallback((scale: number) => {
     setFitScale(scale);
@@ -256,7 +289,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
       : jobError
     : "翻译任务失败，未返回错误详情。";
 
-  const MODES: { key: "zh" | "bilingual" | "original"; label: string }[] = [
+  const MODES: { key: ReadMode; label: string }[] = [
     { key: "zh", label: "中文" },
     { key: "bilingual", label: "中英" },
     { key: "original", label: "原文" },
@@ -284,24 +317,29 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           )}
           <div className="ph-rv-file">{vm?.file ?? ""}</div>
           <div className="ph-rv-spacer" />
-          <div className="ph-rv-seg">
-            {MODES.map((m) => {
-              // Without a translation there is no 中文/中英 rendition — but 原文
-              // must stay reachable, so the group is always visible.
-              const locked = m.key !== "original" && !isTranslated;
-              return (
-                <button
-                  key={m.key}
-                  className={`ph-rv-seg-btn${readMode === m.key ? " is-on" : ""}`}
-                  disabled={locked}
-                  title={locked ? "尚未译出" : undefined}
-                  onClick={() => setReadMode(m.key)}
-                >
-                  {m.label}
-                </button>
-              );
-            })}
-          </div>
+          {showModes && (
+            <div className="ph-rv-seg">
+              {MODES.map((m) => {
+                // Without a translation there is no 中文/中英 rendition — but 原文
+                // must stay reachable, so the group keeps all three and locks
+                // the two that have no file behind them. Unreachable while the
+                // setting is off: `showModes` only lets the group render then
+                // for an already-translated paper, where nothing is locked.
+                const locked = m.key !== "original" && !isTranslated;
+                return (
+                  <button
+                    key={m.key}
+                    className={`ph-rv-seg-btn${effMode === m.key ? " is-on" : ""}`}
+                    disabled={locked}
+                    title={locked ? "尚未译出" : undefined}
+                    onClick={() => setReadMode(m.key)}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <button
             className={`ph-rv-ai-btn${aiOpen ? " is-on" : ""}`}
             title="领航 AI"
@@ -342,6 +380,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
               ) : (
                 <PdfCanvas
                   doc={doc}
+                  paperId={paperId}
+                  /* Highlights are stored per rendition: a mark drawn on the
+                     bilingual PDF has no meaning on the original's page 3. */
+                  kind={pdfKind}
                   zoom={zoom}
                   onZoom={handleZoom}
                   onFitScale={handleFitScale}
