@@ -43,3 +43,10 @@ offline_assets/
 # --- TypeScript incremental build artifacts ---
 *.tsbuildinfo
 node_modules/.tmp/
+
+# --- image-generation scratch (curated brand assets live in assets/brand/) ---
+output/
+
+# --- stray agent worktrees ---
+**/.claude/worktrees/
+backend/.claude/

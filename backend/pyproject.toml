@@ -21,6 +21,11 @@ dependencies = [
     # the app only uses the stable page-count / metadata API.
     "pymupdf>=1.24,<1.25.3",
     "python-multipart>=0.0.12",
+    # Auth. argon2id is the current password-hashing recommendation (memory-hard,
+    # tuned defaults); PyJWT signs the stateless access tokens the browser and
+    # future mobile clients both use.
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.9",
 ]
 
 [project.optional-dependencies]
