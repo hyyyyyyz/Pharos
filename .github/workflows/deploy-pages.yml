@@ -1,0 +1,59 @@
+# Publishes the marketing landing page (site/) to GitHub Pages, at
+# https://hyyyyyyz.github.io/Pharos/
+#
+# Uses the modern Actions-based Pages deployment (not the legacy gh-pages
+# branch). The page is static and self-contained — no build step, the site/
+# directory is served as-is. `configure-pages` with enablement: true turns
+# Pages on the first time this runs, so no manual Settings change is normally
+# needed; if the first run fails complaining Pages is not enabled, set
+# Settings → Pages → Source to "GitHub Actions" once and re-run.
+#
+# The app (frontend/) is NOT deployed here — it needs a backend, which is
+# hosted separately. When that lands, add a build job and publish it under a
+# sub-path (e.g. site/app/) with the matching Vite base.
+
+name: Deploy landing page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch: {}
+
+# Least-privilege token, plus the OIDC id-token the deploy step needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two Pages deploys race; the newest push wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Enable Pages via the API on first run so no manual toggle is needed.
+          enablement: true
+
+      - name: Upload the landing page
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
