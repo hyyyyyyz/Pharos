@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core window controls plus opening external links in the system browser. Deliberately minimal — the app is a thin shell over the web UI and needs no filesystem or shell access beyond that.",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default"]
+}

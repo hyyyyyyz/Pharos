@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pharos",
+  "version": "0.1.0",
+  "identifier": "io.github.hyyyyyyz.pharos",
+  "build": {
+    "frontendDist": "../../frontend/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm --prefix ../frontend run dev",
+    "beforeBuildCommand": "npm --prefix ../frontend run build:desktop"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pharos",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8848 http://localhost:8848; frame-src 'self' blob:; object-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "copyright": "© Pharos contributors · AGPL-3.0-or-later",
+    "shortDescription": "保留排版的论文翻译与科研阅读工作台",
+    "longDescription": "Pharos — 一体化科研工作台。把英文论文照原样译成中文，配领航问答、每日论文与你自己的文库。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

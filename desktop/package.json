@@ -1,0 +1,17 @@
+{
+  "name": "pharos-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pharos desktop shell (Tauri) — the exact same React frontend in a native window.",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:universal": "tauri build --target universal-apple-darwin",
+    "icon": "tauri icon ../site/assets/mark.png",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

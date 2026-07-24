@@ -50,3 +50,8 @@ output/
 # --- stray agent worktrees ---
 **/.claude/worktrees/
 backend/.claude/
+
+# --- Tauri desktop (build artifacts & generated files) ---
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
