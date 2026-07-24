@@ -75,17 +75,9 @@ assistant is next** — reading and writing under the same light.
 
 ## Architecture at a glance
 
-```
-Browser today · Desktop & mobile later    ── one thin client per platform
-                    │  REST + Server-Sent Events, Bearer-token auth
-                    ▼
-        FastAPI backend  (the single core)
-        accounts · library · jobs · daily · search · annotations · Zotero
-                    │  arm's-length subprocess (NDJSON progress)
-                    ▼
-        Engine worker  →  BabelDOC (via pdf2zh-next)
-                          mono.pdf (Chinese) + dual.pdf (bilingual)
-```
+<div align="center">
+  <img src="assets/brand/architecture-overview.png" alt="Pharos architecture: thin clients connect to the FastAPI backend, which delegates PDF translation to an isolated BabelDOC worker and produces Chinese and bilingual PDFs." width="100%" />
+</div>
 
 The translation engine (BabelDOC) is **AGPL-3.0** and runs as a **separate
 process in its own environment** — never imported in-process. That boundary is
