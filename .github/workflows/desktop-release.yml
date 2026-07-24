@@ -1,18 +1,22 @@
-# Builds the macOS desktop app (Tauri) and attaches the .dmg to a GitHub
-# Release. The .dmg is a universal binary — one download runs on both Apple
-# Silicon and Intel Macs.
+# Builds the Pharos desktop app (Tauri) for macOS and Windows and attaches the
+# installers to a single GitHub Release:
+#   - macOS   : a universal .dmg (one download runs on Apple Silicon AND Intel)
+#   - Windows : an .msi and an .exe (NSIS) setup
+#
+# Both platforms bundle the exact same React frontend, so the desktop apps are
+# identical to the web app and to each other. (On Windows the WebView is
+# WebView2 / Chromium; on macOS it is WebKit — both render this design the same.)
 #
 # Trigger by pushing a tag like `desktop-v0.1.0`, or run it by hand from the
 # Actions tab. It creates a DRAFT release you review before publishing.
 #
-# The build is UNSIGNED (no Apple Developer account). macOS Gatekeeper will
-# therefore refuse it on first open. To install a downloaded build:
-#   right-click Pharos.app → Open  (once),  or:
-#   xattr -cr /Applications/Pharos.app
-# Proper code-signing + notarization (removes the warning entirely) needs an
-# Apple Developer account and is a later step — see desktop/README.md.
+# The builds are UNSIGNED (no Apple / Windows code-signing certificate):
+#   - macOS  : right-click Pharos.app -> Open, or `xattr -cr /Applications/Pharos.app`
+#   - Windows: SmartScreen says "Windows protected your PC" -> More info -> Run anyway
+# Proper signing/notarization removes both warnings and is a later step — see
+# desktop/README.md.
 
-name: Desktop release (macOS)
+name: Desktop release (macOS · Windows)
 
 on:
   push:
@@ -22,9 +26,25 @@ on:
 permissions:
   contents: write
 
+# A newer build supersedes an in-flight one for the same tag rather than racing
+# it to upload assets to the same release.
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-macos:
-    runs-on: macos-latest
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: windows-latest
+            args: ""
+            rust_targets: ""
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,10 +58,10 @@ jobs:
             frontend/package-lock.json
             desktop/package-lock.json
 
-      - name: Set up Rust (universal macOS targets)
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.rust_targets }}
 
       - name: Cache Rust build
         uses: swatinem/rust-cache@v2
@@ -49,13 +69,13 @@ jobs:
           workspaces: ./desktop/src-tauri -> target
 
       - name: Install frontend deps
-        run: npm ci --prefix frontend || npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: Install desktop deps (Tauri CLI)
         working-directory: desktop
         run: npm install
 
-      - name: Build & release the .dmg
+      - name: Build & attach installers
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -68,14 +88,17 @@ jobs:
           VITE_API_BASE: http://127.0.0.1:8848/api
         with:
           projectPath: desktop
-          args: --target universal-apple-darwin
+          args: ${{ matrix.args }}
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-v__VERSION__' }}
           releaseName: "Pharos 桌面版 v__VERSION__"
           releaseBody: |
-            Pharos 桌面版（macOS，通用二进制，Apple Silicon 与 Intel 通用）。
+            Pharos 桌面版 —— 与网页版同一套界面，连接你运行的 Pharos 后端。
 
-            下载下方的 `.dmg`，拖入「应用程序」。首次打开若提示「已损坏 / 无法验证」，
+            **macOS**：下载 `.dmg`，拖入「应用程序」。首次打开若提示「已损坏 / 无法验证」，
             这是因为应用未做 Apple 签名（开源免费分发）——右键点 Pharos.app 选「打开」，
-            或在终端运行 `xattr -cr /Applications/Pharos.app` 即可。
+            或终端运行 `xattr -cr /Applications/Pharos.app`。Apple Silicon 与 Intel 通用。
+
+            **Windows**：下载 `.msi` 或 `-setup.exe` 安装。首次运行 SmartScreen 若提示
+            「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」即可（同样是未签名所致）。
           releaseDraft: true
           prerelease: false

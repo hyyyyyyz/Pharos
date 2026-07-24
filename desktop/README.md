@@ -64,26 +64,34 @@ allowed to reach — add the production origin there when it exists.
 ## Build a distributable
 
 ```bash
+# macOS — universal .dmg (Apple Silicon + Intel in one download)
 npm run build:universal   # -> src-tauri/target/universal-apple-darwin/release/bundle/dmg/Pharos_*.dmg
+
+# Windows — build on a Windows machine (produces .msi + .exe/NSIS)
+npm run build             # -> src-tauri/target/release/bundle/{msi,nsis}/Pharos_*
 ```
 
-CI (`.github/workflows/desktop-release.yml`) does this on a macOS runner and
-attaches the universal `.dmg` to a **draft** GitHub Release. Trigger it by
-pushing a tag like `desktop-v0.1.0`, or run it by hand from the Actions tab.
+CI (`.github/workflows/desktop-release.yml`) builds **both macOS and Windows** in
+one matrix run and attaches all installers to a single **draft** GitHub Release.
+Trigger it by pushing a tag like `desktop-v0.1.0`, or run it by hand from the
+Actions tab. On Windows, Tauri uses the system WebView2 (Chromium), so the app
+renders identically to the web version there. (Linux/AppImage is one more matrix
+entry plus an apt step for `libwebkit2gtk-4.1-dev` — add it when you want it.)
 
-## Installing an unsigned build (Gatekeeper)
+## Installing an unsigned build
 
-The `.dmg` is **unsigned** — there is no Apple Developer account ($99/yr). macOS
-Gatekeeper will refuse it on first open ("Pharos is damaged / cannot be
-verified"). To install anyway:
+The installers are **unsigned** — there is no Apple ($99/yr) or Windows
+code-signing certificate yet. Each OS warns on first open; neither warning is
+about the app being unsafe, only about it not being signed by a paid identity.
 
-- **right-click** `Pharos.app` → **Open** (once), or
-- `xattr -cr /Applications/Pharos.app`
+- **macOS** (Gatekeeper: "Pharos is damaged / cannot be verified"):
+  right-click `Pharos.app` → **Open** once, or `xattr -cr /Applications/Pharos.app`.
+- **Windows** (SmartScreen: "Windows protected your PC"):
+  click **More info** → **Run anyway**.
 
-Neither is a security bypass of the app itself — it just tells macOS you trust a
-build that wasn't notarized by Apple. Proper code-signing + notarization (which
-removes the warning entirely) is a later step and needs an Apple Developer
-account; wire the certificate/notarization secrets into the CI action then.
+Proper code-signing + notarization removes both warnings and is a later step:
+add an Apple Developer cert + notarization secrets, and a Windows signing
+certificate, to the CI action.
 
 ## What the desktop shell can add later (without changing the UI)
 
