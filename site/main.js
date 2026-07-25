@@ -23,13 +23,22 @@
     revealItems.forEach((item) => revealObserver.observe(item));
   }
 
-  /* Header state is the only scroll listener on the page. It is rAF-gated and
-     does not read layout, so the main visual work stays pointer/observer driven. */
+  /* Header state is rAF-gated. The dark-surface boundary is cached so scrolling
+     can switch treatments without forcing layout on every frame. */
   const header = document.querySelector("[data-header]");
+  const darkHeaderSurface = document.querySelector("[data-beacon-hero]");
+  let darkHeaderBoundary = 0;
   let headerTicking = false;
+  const refreshHeaderBoundary = () => {
+    darkHeaderBoundary = darkHeaderSurface
+      ? darkHeaderSurface.offsetTop + darkHeaderSurface.offsetHeight - 76
+      : 0;
+  };
   const updateHeader = () => {
     headerTicking = false;
-    header?.classList.toggle("is-scrolled", window.scrollY > 22);
+    const scrollPosition = window.scrollY;
+    header?.classList.toggle("is-scrolled", scrollPosition > 22);
+    header?.classList.toggle("is-over-dark", scrollPosition < darkHeaderBoundary);
   };
   window.addEventListener(
     "scroll",
@@ -40,6 +49,14 @@
     },
     { passive: true },
   );
+  window.addEventListener("resize", refreshHeaderBoundary, { passive: true });
+  if (darkHeaderSurface && "ResizeObserver" in window) {
+    new ResizeObserver(() => {
+      refreshHeaderBoundary();
+      updateHeader();
+    }).observe(darkHeaderSurface);
+  }
+  refreshHeaderBoundary();
   updateHeader();
 
   /* Signature interaction: one lighthouse beam controls both the visible light
@@ -252,5 +269,18 @@
     posterFrame.addEventListener("pointerleave", () => {
       posterImage.style.transform = "";
     });
+  }
+
+  /* The cinematic lighthouse is progressive enhancement. The existing HTML and
+     CSS fallback remain complete if WebGL, the dynamic chunk, or the GPU fails. */
+  const beaconHero = document.querySelector("[data-beacon-hero]");
+  const beaconCanvas = beaconHero?.querySelector("[data-lighthouse-canvas]");
+  const saveData = navigator.connection?.saveData === true;
+  if (beaconHero && beaconCanvas && !reduceMotion && !saveData) {
+    import("./lighthouse.js")
+      .then(({ initLighthouseScene }) => initLighthouseScene({ root: beaconHero, canvas: beaconCanvas }))
+      .catch(() => {
+        beaconHero.classList.remove("is-scene-ready");
+      });
   }
 })();

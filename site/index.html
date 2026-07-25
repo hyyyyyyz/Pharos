@@ -47,7 +47,21 @@
   </header>
 
   <main id="main">
-    <section class="hero" id="top">
+    <section class="hero beacon-hero" id="top" data-beacon-hero>
+      <div class="hero-scene" data-lighthouse-scene aria-hidden="true">
+        <canvas class="hero-scene__canvas" data-lighthouse-canvas></canvas>
+        <div class="hero-scene__fallback">
+          <span class="hero-scene__moon"></span>
+          <span class="hero-scene__fallback-beam"></span>
+          <div class="hero-scene__fallback-island">
+            <span class="hero-scene__fallback-tower">
+              <i></i><i></i><i></i>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="hero__scrim" aria-hidden="true"></div>
+
       <div class="hero__orbit" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>
@@ -64,8 +78,8 @@
           </p>
 
           <div class="hero__actions reveal reveal--delay-3">
-            <a class="button button--primary" href="#workbench">
-              继续看完整演示 <span aria-hidden="true">↓</span>
+            <a class="button button--primary" href="#translation">
+              驶向产品演示 <span aria-hidden="true">↓</span>
             </a>
             <a class="button button--quiet" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">
               查看源码与本地运行 <span aria-hidden="true">↗</span>
@@ -80,7 +94,46 @@
           </div>
         </div>
 
-        <div class="hero__demo reveal reveal--delay-2" id="translation">
+        <aside class="hero__telemetry reveal reveal--delay-3" aria-label="灯塔场景状态">
+          <div class="hero__telemetry-head">
+            <span>LIVE SCENE · 01</span>
+            <b>灯塔正在扫描文献之海</b>
+          </div>
+          <div class="hero__signals" aria-hidden="true">
+            <span data-beacon-signal="0"><i></i>发现</span>
+            <span data-beacon-signal="1"><i></i>精读</span>
+            <span data-beacon-signal="2"><i></i>构建</span>
+          </div>
+          <p data-beacon-status>移动指针改变视角 · 滚动靠近灯塔</p>
+        </aside>
+      </div>
+
+      <div class="shell proof-ribbon reveal">
+        <span class="proof-ribbon__label">NOW SHIPPING</span>
+        <span>保留排版翻译</span>
+        <span>pdf.js 真文本层</span>
+        <span>每日 arXiv</span>
+        <span>Zotero 元数据导入</span>
+        <span>约 400 项后端测试</span>
+      </div>
+
+      <div class="hero__scroll-cue" aria-hidden="true"><span></span>SCROLL TO ENTER</div>
+    </section>
+
+    <section class="translation-section" id="translation">
+      <div class="shell translation-section__inner">
+        <div class="translation-section__head reveal">
+          <div>
+            <p class="kicker">THE BEAM BECOMES A READING TOOL</p>
+            <h2>远处是一盏灯。<br />落到纸上，就是<span>原位翻译</span>。</h2>
+          </div>
+          <div class="translation-section__intro">
+            <p>移动光束，中文只在照亮的位置出现。翻译不是把论文拍扁成图片，而是尽量守住双栏、公式与图表的原始位置。</p>
+            <div><span>01 · 版面</span><span>02 · 公式</span><span>03 · 图表</span></div>
+          </div>
+        </div>
+
+        <div class="hero__demo reveal reveal--delay-2">
           <div class="translation-demo" data-translation-demo>
             <div class="demo-toolbar">
               <div class="demo-toolbar__traffic" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -177,15 +230,6 @@
             <span>03</span> 图表位置保留
           </div>
         </div>
-      </div>
-
-      <div class="shell proof-ribbon reveal">
-        <span class="proof-ribbon__label">NOW SHIPPING</span>
-        <span>保留排版翻译</span>
-        <span>pdf.js 真文本层</span>
-        <span>每日 arXiv</span>
-        <span>Zotero 元数据导入</span>
-        <span>约 400 项后端测试</span>
       </div>
     </section>
 
@@ -482,7 +526,11 @@
     <div class="shell site-footer__inner">
       <div class="site-footer__brand"><img src="assets/mark.png" alt="" /><b>Pharos</b><span>research workbench</span></div>
       <p>开源 · 本地运行 · AGPL-3.0</p>
-      <div><a href="#top">回到顶部 ↑</a><a href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div>
+      <div>
+        <a href="#top">回到顶部 ↑</a>
+        <a href="THIRD_PARTY_NOTICES.txt">第三方许可</a>
+        <a href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </div>
     </div>
   </footer>
 
