@@ -61,6 +61,84 @@
   refreshHeaderBoundary();
   updateHeader();
 
+  /* Repository status is progressively enhanced: the verified count in the
+     HTML remains usable offline, while a short-lived cache avoids spending a
+     public GitHub API request on every page view. */
+  const githubStars = document.querySelector("[data-github-stars]");
+  const githubStarsLink = document.querySelector("[data-github-stars-link]");
+
+  if (githubStars && githubStarsLink) {
+    const cacheKey = "pharos:github-stars:v1";
+    const cacheLifetime = 15 * 60 * 1000;
+    const compactNumber = new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    });
+
+    const renderGithubStars = (count) => {
+      if (!Number.isFinite(count) || count < 0) return;
+      const roundedCount = Math.round(count);
+      const starLabel = roundedCount === 1 ? "Star" : "Stars";
+      githubStars.textContent = compactNumber.format(roundedCount);
+      githubStarsLink.setAttribute(
+        "aria-label",
+        `查看 Pharos 的 GitHub Stars（当前 ${roundedCount.toLocaleString("en-US")} 个）`,
+      );
+      githubStarsLink.title = `Pharos 在 GitHub 上有 ${roundedCount.toLocaleString("en-US")} 个 ${starLabel}`;
+    };
+
+    let cachedGithubStars = null;
+    try {
+      const cachedValue = window.localStorage.getItem(cacheKey);
+      const parsedValue = cachedValue ? JSON.parse(cachedValue) : null;
+      if (
+        parsedValue
+        && Number.isFinite(parsedValue.count)
+        && parsedValue.count >= 0
+        && Number.isFinite(parsedValue.fetchedAt)
+      ) {
+        cachedGithubStars = parsedValue;
+        renderGithubStars(parsedValue.count);
+      }
+    } catch {
+      cachedGithubStars = null;
+    }
+
+    const cacheIsFresh = cachedGithubStars
+      && Date.now() - cachedGithubStars.fetchedAt < cacheLifetime;
+
+    if (!cacheIsFresh && "fetch" in window) {
+      const controller = "AbortController" in window ? new AbortController() : null;
+      const timeoutId = window.setTimeout(() => controller?.abort(), 4000);
+
+      fetch("https://api.github.com/repos/hyyyyyyz/Pharos", {
+        headers: { Accept: "application/vnd.github+json" },
+        signal: controller?.signal,
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
+          return response.json();
+        })
+        .then((repository) => {
+          const count = Number(repository?.stargazers_count);
+          if (!Number.isFinite(count) || count < 0) return;
+          renderGithubStars(count);
+          try {
+            window.localStorage.setItem(
+              cacheKey,
+              JSON.stringify({ count, fetchedAt: Date.now() }),
+            );
+          } catch {
+            // Private browsing and storage policies must not affect navigation.
+          }
+        })
+        .catch(() => {
+          // The verified HTML value or the last cache remains visible offline.
+        })
+        .finally(() => window.clearTimeout(timeoutId));
+    }
+  }
+
   /* Signature interaction: one lighthouse beam controls both the visible light
      cone and the circular Chinese layer on the identically laid-out paper. */
   const demo = document.querySelector("[data-translation-demo]");
