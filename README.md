@@ -35,8 +35,14 @@ get back a **Chinese version that keeps the original layout** — columns,
 figures, tables and math stay exactly where they were; only the prose is
 translated. You get both a **Chinese-only** and a **bilingual side-by-side**
 PDF, in a reader you can zoom, pan, select, search and highlight. Around it sit
-the library, the 领航 reading companion and the daily digest; **a writing
-assistant is next** — reading and writing under the same light.
+the library, the 领航 reading companion and the daily digest. The v1 workbench
+also includes **live literature discovery and durable research projects**:
+search across arXiv/OpenAlex, keep the useful sources with a reason, and carry
+hypotheses, experiment plans, results, claims, drafts and reviews through a
+visible research process.
+
+The four live modules are **文库 · 每日论文 · 文献探索 · 研究项目**. Automated
+experiment execution and evidence-constrained writing remain roadmap work.
 
 <div align="center">
 <img src="assets/brand/poster.png" alt="Pharos — a workshop of small robots reading, translating and charting papers around a central lighthouse" width="620" />
@@ -59,6 +65,15 @@ assistant is next** — reading and writing under the same light.
   the fields **you** define, each with a Chinese summary, key-point breakdown
   and relevance score. Keywords are per-user and editable; matching happens at
   read time, so editing a direction re-ranks your feed instantly.
+- 🌐 **文献探索 · live literature discovery** — query arXiv and OpenAlex,
+  de-duplicate overlapping records, reopen persisted search history, and keep
+  honest partial results when one provider is unavailable. Results start with
+  labelled title/abstract heuristics and can be upgraded with an optional,
+  model-attributed AI abstract reading — neither is presented as full-PDF analysis.
+- 🧪 **研究项目 · durable research records** — collect selected sources with a
+  note explaining why they matter, move through nine visible stages, and keep
+  hypotheses, experiment plans, results, claims, drafts and reviews. These are
+  researcher-owned records; v1 does not pretend to run experiments for you.
 - 📚 **A library that is actually yours** — Zotero-style category tree, item
   list and detail; collections, tags, full-text search (SQLite FTS5), and
   bibliographic metadata extracted from the PDF and reconciled against
@@ -118,10 +133,18 @@ Open `http://localhost:5173`, create an account, and drop in a PDF.
 - [x] 每日论文 — daily arXiv digest with user-defined research directions
 - [x] Full-text search, collections & tags, metadata extraction
 - [x] Zotero Web API sync
+- [x] **文献探索 v1** — live arXiv/OpenAlex search, cross-source de-duplication,
+  honest partial failure, rule analysis, optional AI abstract reading and persisted history
+- [x] **研究项目 v1** — saved sources and rationale notes, nine-stage workflow,
+  persistent hypothesis / plan / result / claim / draft / review records
+- [x] **Research OS workflow specification** — current boundary and future
+  evidence/execution contract in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)
 - [ ] **领航 chat backend** — LLM Q&A over the paper *(needs an API key)*
 - [ ] Translation quality: DeepSeek + scientific glossary prompt
-- [ ] **写作助手 — writing assistant** — from outline to draft, grounded in your library
-- [ ] **文献检索 — cross-database discovery** — search arXiv & journals, import in one click
+- [ ] Page-grounded Evidence Ledger and model-assisted Idea Lab
+- [ ] Sandboxed experiment execution and verified Claim bindings
+- [ ] **研究项目 · Claim & Publication** — evidence-constrained publication
+  workflow over verified project records
 - [ ] Public deployment (same-origin, HTTPS, httpOnly-cookie auth)
 - [ ] Desktop (Tauri) & mobile clients on the same backend
 

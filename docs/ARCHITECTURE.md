@@ -12,9 +12,12 @@ flow, figures, tables, and mathematics stay in place; only the prose is
 translated. Output both a Chinese-only (`mono`) PDF and a bilingual
 side-by-side (`dual`) PDF.
 
-**Long-term:** grow into a full research-reading assistant — AI summary/Q&A,
-highlights & notes, a terminology glossary, arXiv import — served from a single
-backend to web, desktop (macOS/Windows), and mobile clients.
+**Long-term:** grow from a research-reading assistant into an evidence-first
+Research OS: discover and read papers, turn page-addressable evidence into
+testable ideas, plan and execute bounded experiments, and carry verified claims
+into writing. It remains one backend serving web, desktop (macOS/Windows), and
+mobile clients. The detailed workflow, schemas, checkpoints, and safety contract
+live in [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
 
 ## 2. Engine choice
 
@@ -64,13 +67,20 @@ Guard `result.no_watermark_*` for `None` before storing (use `getattr`).
 frontend/                 React 18 + Vite + TypeScript, pdf.js
    │  REST + SSE
 backend/                  FastAPI + Uvicorn (native arm64, Python 3.13)
-   ├── api/               routers (papers, jobs, glossary)
-   ├── services/          LibraryService, TranslationService, GlossaryService
+   ├── api/               routers (papers, jobs, daily, discovery, projects)
+   ├── services/          library, translation, search, discovery, research projects
    ├── engines/           TranslationEngine protocol + BabelDocEngine
    ├── db/                SQLAlchemy 2.x models over SQLite (WAL, busy_timeout)
    └── storage/           content-addressed blob store: files/<sha256>/{original,mono,dual}.pdf
 backend/engine_worker/    runs in the osx-64 engine env; emits NDJSON progress
 ```
+
+The research v1 is implemented in the same FastAPI application: discovery
+adapters query arXiv/OpenAlex, normalise and deduplicate results, and project
+services persist the user's sources and stage records in SQLite. It deliberately
+does not introduce Dify, LangGraph, Neo4j, or another workflow control plane.
+The current stage flow is user-driven; future automated stages must remain
+explicit, persisted, and independently testable.
 
 ### Request flow
 
@@ -86,6 +96,26 @@ backend/engine_worker/    runs in the osx-64 engine env; emits NDJSON progress
 
 A translation takes **2–4 minutes** — it must **never** run inside a request
 handler.
+
+### Research v1 flow
+
+1. `POST /discovery/search` queries selected arXiv/OpenAlex providers, merges
+   duplicate records, interleaves source results, performs clearly-labelled
+   title/abstract rule extraction, and persists the search plus per-provider
+   errors.
+2. `POST /discovery/results/{id}/analyze` optionally upgrades one result with a
+   validated LLM reading of its title/abstract. It records the model but remains
+   explicitly abstract-only and leaves the rule result intact on failure.
+3. A user saves selected `LiteratureResult` rows into a `ResearchProject` as
+   `ProjectSource` rows. The source note records why the paper belongs and what
+   still needs checking.
+4. The user advances the project through nine research stages and persists
+   `ProjectArtifact` records for hypotheses, experiment plans, results, claims,
+   drafts, and reviews.
+
+The final step records human research work; it does **not** execute experiments
+or independently verify a result. See
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md) for the exact capability boundary.
 
 ## 5. macOS / Apple-Silicon reality (the `hyperscan` gotcha)
 
@@ -137,21 +167,56 @@ repo public. The subprocess boundary is retained regardless, as good hygiene and
 to keep future licensing options open. A proprietary/hosted product would need a
 funstory-ai commercial license.
 
-## 8. Data model (MVP + stubs)
+## 8. Data model
 
-- `Paper(id, title, authors, source[upload|arxiv], arxiv_id, orig_lang,
-  added_at, orig_sha256, orig_path, page_count)`
+- `User` / `ZoteroLink` — account isolation, preferences, and optional Zotero
+  credentials/sync state.
+- `Paper(id, user_id, title, authors, source[upload|arxiv], arxiv_id,
+  source_lang, full_text, bibliographic fields, added_at, orig_sha256,
+  page_count)`
 - `TranslationJob(id, paper_id, status, engine, target_lang, progress, stage,
   mono_path, dual_path, error, started_at, finished_at)`
-- `Glossary(id, name)` / `GlossaryTerm(id, glossary_id, source, target)`
-- *Stubs (created, unused in MVP):* `Highlight`, `Note`, `Chunk(page, text,
-  embedding)` — for reader annotations and future RAG/Q&A.
+- `Collection` / `Tag` / `Highlight` / `Note` — owner-scoped organisation and
+  reader annotations.
+- `DailyPaper` / `DailyRun` / `UserDirection` / `UserDailyConfig` — shared paper
+  fetch/reading data plus per-user feed matching and settings.
+- `ResearchProject(id, user_id, name, description, research_question, status,
+  stage, created_at, updated_at)`
+- `LiteratureSearch(id, user_id, project_id, query, sources, status, errors,
+  result_count, created_at, completed_at)`
+- `LiteratureResult(search_id, bibliographic fields, source_ids, rank,
+  analysis_mode, analysis_model, summary_zh, contribution, core_trick, method,
+  results, limitations)`
+- `ProjectSource(project_id, result_id, note, added_at)` — explicit admission to
+  a project plus the researcher's evidence/rationale note.
+- `ProjectArtifact(project_id, stage, type, title, body, status)` — durable
+  human-authored research records, not proof that an automated experiment ran.
+
+Future page-addressable evidence, automatic Idea review, experiment execution,
+and Claim bindings require new entities; they are not implied by the current
+generic artifact row. Their ordering and evidence contract are defined in
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
 
 ## 9. Extensibility seams
 
 - `TranslationEngine` protocol → a future `MinerUEngine` can also populate
-  `Chunk` rows, with `api/` and `frontend/` unchanged.
-- `Chunk` + a vector index (sqlite-vec / FAISS) → RAG/Q&A over papers.
+  page-addressable `PaperChunk` rows, with translation APIs unchanged.
+- Future `PaperChunk` + a vector index (sqlite-vec / FAISS) → grounded RAG/Q&A
+  and Evidence Ledger over papers.
 - pdf.js text layer + `Highlight`/`Note` → coordinate-anchored annotations.
 - Tauri desktop wrap reuses the exact FastAPI + SPA as a sidecar; SQLite +
   on-disk blobs make the whole library portable.
+- Discovery providers sit behind normalising adapters. A provider can fail while
+  the run persists successful results from another provider as `partial`.
+- Default result analysis is deterministic extraction from title/abstract and is
+  labelled `rules`. A user may request a validated model reading, labelled `llm`
+  with its model name. Both are abstract-only and must never be presented as a
+  full-paper reading.
+- Future model-backed stages must validate typed output and store concise
+  rationale/source bindings, never raw chain-of-thought.
+- Novelty is a search report, not a truth oracle: the product may report
+  `likely_distinct`, `likely_overlap`, or `search_incomplete`, but never claim
+  that an external search has confirmed originality.
+- SQLite remains the source of truth until measured requirements justify a
+  vector index or graph store. Adding retrieval infrastructure must not leak a
+  user's papers, profile, notes, ideas, or experiment history across accounts.
