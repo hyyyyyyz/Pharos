@@ -227,11 +227,37 @@ def test_ai_analysis_unavailable_keeps_rule_fields_unchanged(
         assert stored.core_trick == result["core_trick"]
 
 
+def test_invalid_ai_core_trick_does_not_overwrite_rule_fields(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(discovery, "discover", lambda query, sources, limit: _batch())
+    result = client.post(
+        "/api/discovery/search", json={"query": "robot learning", "sources": ["arxiv"]}
+    ).json()["results"][0]
+
+    def invalid(*args, **kwargs):
+        raise reader.InvalidReading("highlights.innovation is not Chinese")
+
+    monkeypatch.setattr(reader, "read_paper", invalid)
+    response = client.post(f"/api/discovery/results/{result['id']}/analyze")
+    assert response.status_code == 503
+
+    with session_scope() as session:
+        stored = session.get(LiteratureResult, result["id"])
+        assert stored.title == result["title"]
+        assert stored.analysis_mode == "rules"
+        assert stored.analysis_model is None
+        assert stored.core_trick == result["core_trick"]
+        assert stored.method == result["method"]
+        assert stored.results == result["results"]
+
+
 def test_ai_analysis_maps_only_a_validated_real_reading(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(discovery, "discover", lambda query, sources, limit: _batch())
     result = client.post(
         "/api/discovery/search", json={"query": "robot learning", "sources": ["arxiv"]}
     ).json()["results"][0]
+    original_title = result["title"]
     monkeypatch.setattr(
         reader,
         "read_paper",
@@ -254,5 +280,8 @@ def test_ai_analysis_maps_only_a_validated_real_reading(client: TestClient, monk
     analyzed = response.json()
     assert analyzed["analysis_mode"] == "llm"
     assert analyzed["analysis_model"] == "test-real-provider-model"
+    assert analyzed["title"] == original_title
     assert analyzed["summary_zh"].startswith("这篇工作")
     assert analyzed["core_trick"] == "将校准检索接入策略决策。"
+    assert len(analyzed["core_trick"]) <= 180
+    assert any("一" <= char <= "鿿" for char in analyzed["core_trick"])

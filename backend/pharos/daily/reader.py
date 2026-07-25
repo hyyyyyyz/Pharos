@@ -47,6 +47,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 import urllib.error
 import urllib.request
@@ -123,6 +124,16 @@ _MIN_CJK_CHARS = 8
 _MIN_SUMMARY_CHARS = 30
 _MAX_SUMMARY_CHARS = 1200
 
+# ``innovation`` is reused by the discovery workspace as the card's one-line
+# core Trick. Unlike the longer daily summary, it must stay glanceable.
+_MAX_CORE_TRICK_CHARS = 180
+_CORE_TRICK_SENTENCES = re.compile(
+    r"[。！？!?]+|(?<!\d)\.(?=\s*[A-Z\u4e00-\u9fff]|$)"
+)
+_CORE_TRICK_LIST_MARKER = re.compile(
+    r"(?:^|[;；])\s*(?:[-*•▪◦]|\d+[.)、])\s*"
+)
+
 
 SYSTEM_PROMPT = """\
 你是一位资深研究者，正在帮同事做每日 arXiv 论文速读。
@@ -143,7 +154,7 @@ SYSTEM_PROMPT = """\
   "summary_zh": "中文 2-4 句：动机 → 方法 → 结果。",
   "highlights": {
     "contribution": "核心贡献",
-    "innovation":   "创新点",
+    "innovation":   "核心 Trick：简洁中文 1-2 句，最多 180 字",
     "method":       "方法概要",
     "results":      "关键结果"
   },
@@ -162,7 +173,9 @@ SYSTEM_PROMPT = """\
 专有名词（模型名、benchmark 名、指标名）保留英文原文，不要硬译。
 - **highlights**：四条，每条 1-3 句中文。
   - `contribution`：作者声称解决了什么，一句话讲清楚。
-  - `innovation`：相对已有工作的关键差异，取最关键的 1-2 点。
+  - `innovation`：这是卡片唯一正文所使用的**核心 Trick**。只输出 1-2 句简洁中文，\
+最多 180 字，只讲关键机制与相对已有工作的本质差异。模型名、方法名、benchmark 等\
+专有名词可以保留英文；禁止复述研究背景、罗列实验结果、重复论文标题、使用列表或换行。
   - `method`：实际怎么做的 —— 输入 / 模型 / 损失 / 训练设置。**不要写公式**，\
 写读者要点。
   - `results`：在哪个 benchmark 上、提升了多少、是否 SOTA。摘要里有具体数字就\
@@ -564,6 +577,27 @@ def _clean_text(value: Any, label: str) -> str:
     return cleaned
 
 
+def _clean_core_trick(value: Any) -> str:
+    """Validate the discovery card's concise Chinese core mechanism."""
+    if isinstance(value, str) and ("\n" in value or "\r" in value):
+        raise InvalidReading("highlights.innovation must not contain line breaks")
+    cleaned = _clean_text(value, "highlights.innovation")
+    if len(cleaned) > _MAX_CORE_TRICK_CHARS:
+        raise InvalidReading(
+            "highlights.innovation is too long for a core Trick "
+            f"({len(cleaned)} chars; maximum {_MAX_CORE_TRICK_CHARS})"
+        )
+    if _CORE_TRICK_LIST_MARKER.search(cleaned):
+        raise InvalidReading("highlights.innovation must not use a bullet or numbered list")
+    sentences = [
+        part.strip() for part in _CORE_TRICK_SENTENCES.split(cleaned) if part.strip()
+    ]
+    if not 1 <= len(sentences) <= 2:
+        raise InvalidReading("highlights.innovation must contain 1-2 sentences")
+    _require_chinese(cleaned, "highlights.innovation", _MIN_CJK_RATIO_HIGHLIGHTS)
+    return cleaned
+
+
 def _coerce_score(value: Any, label: str) -> float:
     """Coerce one score to a float in ``[0, 10]``, rounded to one decimal.
 
@@ -609,7 +643,12 @@ def _validate(payload: dict[str, Any], model: str) -> Reading:
     if not isinstance(raw_highlights, dict):
         raise InvalidReading("highlights must be an object")
     highlights = {
-        key: _clean_text(raw_highlights.get(key), f"highlights.{key}") for key in HIGHLIGHT_KEYS
+        key: (
+            _clean_core_trick(raw_highlights.get(key))
+            if key == "innovation"
+            else _clean_text(raw_highlights.get(key), f"highlights.{key}")
+        )
+        for key in HIGHLIGHT_KEYS
     }
     # Checked jointly rather than per-field: a single highlight can be short
     # and term-heavy ("首个开源 VLA benchmark"), but all four in English is the

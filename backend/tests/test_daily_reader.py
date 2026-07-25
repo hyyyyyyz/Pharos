@@ -450,6 +450,20 @@ def test_prompt_forbids_inventing_numbers(
     assert "不要编造" in calls[0].system_prompt
 
 
+def test_prompt_defines_innovation_as_a_concise_chinese_core_trick(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    calls = serve(_card_response())
+    _read()
+    system = calls[0].system_prompt
+    assert "核心 Trick" in system
+    assert "1-2 句简洁中文" in system
+    assert "最多 180 字" in system
+    assert "禁止复述研究背景" in system
+    assert "重复论文标题" in system
+    assert "使用列表或换行" in system
+
+
 def test_scores_are_rounded_to_one_decimal(
     provider: LLMProvider, serve: Callable[..., list[_Call]]
 ) -> None:
@@ -713,6 +727,77 @@ def test_all_english_highlights_are_rejected(
     serve(_card_response(highlights=english))
     with pytest.raises(InvalidReading, match="highlights"):
         _read()
+
+
+def test_english_core_trick_is_rejected_even_when_other_highlights_are_chinese(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    highlights = {
+        **_HIGHLIGHTS,
+        "innovation": (
+            "Uses layer-aware KV cache pruning and dynamically allocates the token budget."
+        ),
+    }
+    serve(_card_response(highlights=highlights))
+    with pytest.raises(InvalidReading, match="highlights.innovation.*not Chinese"):
+        _read()
+
+
+def test_overlong_chinese_core_trick_is_rejected(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    innovation = "通过分层重要性动态压缩 KV Cache，并保持关键 token。" * 12
+    assert len(innovation) > 180
+    serve(_card_response(highlights={**_HIGHLIGHTS, "innovation": innovation}))
+    with pytest.raises(InvalidReading, match="too long for a core Trick"):
+        _read()
+
+
+def test_exactly_180_character_core_trick_is_accepted(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    innovation = "核" * 179 + "。"
+    assert len(innovation) == 180
+    serve(_card_response(highlights={**_HIGHLIGHTS, "innovation": innovation}))
+    assert _read().highlights["innovation"] == innovation
+
+
+def test_three_sentence_core_trick_is_rejected(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    innovation = "先估计层重要性。再压缩 KV Cache。最后动态分配 token 预算。"
+    serve(_card_response(highlights={**_HIGHLIGHTS, "innovation": innovation}))
+    with pytest.raises(InvalidReading, match="1-2 sentences"):
+        _read()
+
+
+@pytest.mark.parametrize(
+    "innovation",
+    [
+        "先估计层重要性。\n再动态压缩 KV Cache。",
+        "• 估计层重要性；• 动态压缩 KV Cache。",
+        "1) 估计层重要性；2) 动态压缩 KV Cache。",
+    ],
+)
+def test_multiline_or_list_core_trick_is_rejected(
+    provider: LLMProvider,
+    serve: Callable[..., list[_Call]],
+    innovation: str,
+) -> None:
+    serve(_card_response(highlights={**_HIGHLIGHTS, "innovation": innovation}))
+    with pytest.raises(InvalidReading, match="line breaks|bullet|numbered list"):
+        _read()
+
+
+def test_concise_chinese_core_trick_with_technical_terms_is_accepted(
+    provider: LLMProvider, serve: Callable[..., list[_Call]]
+) -> None:
+    innovation = (
+        "用 KV Cache token pruning 替代 full attention，"
+        "并按 layer importance 动态分配预算。"
+    )
+    serve(_card_response(highlights={**_HIGHLIGHTS, "innovation": innovation}))
+    assert _read().highlights["innovation"] == innovation
 
 
 def test_chinese_heavy_in_technical_english_is_accepted(
