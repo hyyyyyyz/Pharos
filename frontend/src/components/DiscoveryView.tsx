@@ -45,9 +45,26 @@ function fmtTime(value: string | null): string {
   }).format(date);
 }
 
-function paperMeta(result: LiteratureResult): string {
-  const bits = [result.year?.toString(), result.venue, result.citation_count === null ? null : `被引 ${result.citation_count}`];
-  return bits.filter((v): v is string => v !== null && v !== undefined && v !== "").join(" · ");
+const SOURCE_NAMES: Record<string, string> = {
+  arxiv: "arXiv",
+  openalex: "OpenAlex",
+};
+
+function sourceName(source: string): string {
+  return SOURCE_NAMES[source.toLowerCase()] ?? source;
+}
+
+function sourceList(sources: string[]): string {
+  return sources.length === 0 ? "来源未知" : sources.map(sourceName).join("、");
+}
+
+function paperMeta(result: LiteratureResult): string[] {
+  const bits: string[] = [];
+  if (result.year !== null) bits.push(`${result.year} 年`);
+  if (result.sources.length > 0) bits.push(`来源：${sourceList(result.sources)}`);
+  if (result.venue !== null && result.venue !== "") bits.push(`刊载：${result.venue}`);
+  if (result.citation_count !== null) bits.push(`引用 ${result.citation_count} 次`);
+  return bits;
 }
 
 interface ArchiveAction {
@@ -66,10 +83,10 @@ interface ArchiveOutcome {
 
 function analysisErrText(error: unknown): string {
   if (error instanceof ApiError && error.status === 409) {
-    return "尚未配置 Chat Provider；规则提取结果已保留。配置服务端模型后可再次深读。";
+    return "尚未配置 Chat Provider；规则提取结果已保留。配置服务端模型后可生成中文核心思路。";
   }
   if (error instanceof ApiError && error.status === 503) {
-    return "AI 深读服务暂时不可用；规则提取结果未被覆盖，可稍后重试。";
+    return "中文核心思路暂时生成失败；规则提取结果未被覆盖，可稍后重试。";
   }
   return errText(error);
 }
@@ -96,7 +113,7 @@ function SearchHistoryItem({
       <span className="ph-disc-history-meta">
         {fmtTime(search.created_at)} · {search.result_count} 篇
       </span>
-      <span className="ph-disc-history-sources">{search.sources.join(" + ") || "未记录来源"}</span>
+      <span className="ph-disc-history-sources">{sourceList(search.sources)}</span>
     </button>
   );
 }
@@ -118,13 +135,11 @@ function ResultCard({
   onToggle: () => void;
   onAnalyze: () => void;
 }): JSX.Element {
-  const analysisLabel = result.analysis_mode === "llm" ? "AI 深读" : "仅基于摘要提取";
-  const warningText =
-    result.analysis_warning === null
-      ? null
-      : result.analysis_mode === "rules"
-        ? "当前仅基于题名和摘要做规则提取；配置 Chat Provider 后可运行 AI 深读。"
-        : result.analysis_warning;
+  const generated = result.analysis_mode === "llm";
+  const trick = generated
+    ? result.core_trick.trim() || "AI 未返回中文核心思路"
+    : "尚未生成中文核心思路";
+  const analysisLabel = generated ? "AI 中文解读" : "仅摘要规则";
   return (
     <article className={cx("ph-disc-result", selected && "is-selected")}>
       <div className="ph-disc-result-select">
@@ -132,31 +147,10 @@ function ResultCard({
           <input type="checkbox" checked={selected} onChange={onToggle} />
           <span />
         </label>
+        <span className="ph-disc-rank">{String(result.rank).padStart(2, "0")}</span>
       </div>
 
       <div className="ph-disc-result-body">
-        <div className="ph-disc-result-eyebrow">
-          <span className="ph-disc-rank">#{result.rank}</span>
-          {result.sources.map((source) => (
-            <span key={source} className="ph-disc-source-chip">
-              {source}
-            </span>
-          ))}
-          <span className={cx("ph-disc-analysis-chip", result.analysis_mode === "llm" && "is-ai")}>
-            {result.analysis_model === null ? analysisLabel : `${analysisLabel} · ${result.analysis_model}`}
-          </span>
-          {filed && <span className="ph-disc-filed-chip">已在当前项目</span>}
-          <button
-            type="button"
-            className="ph-disc-analyze-btn"
-            onClick={onAnalyze}
-            disabled={analyzing}
-          >
-            <Icons.spark size={13} />
-            {analyzing ? "深读中…" : result.analysis_mode === "llm" ? "重新深读" : "AI 深读"}
-          </button>
-        </div>
-
         <div className="ph-disc-result-title-row">
           {result.url !== null ? (
             <a href={result.url} target="_blank" rel="noreferrer" className="ph-disc-result-title">
@@ -165,28 +159,16 @@ function ResultCard({
           ) : (
             <h3 className="ph-disc-result-title">{result.title}</h3>
           )}
-          {result.pdf_url !== null && (
-            <a className="ph-disc-pdf-link" href={result.pdf_url} target="_blank" rel="noreferrer">
-              PDF
-            </a>
-          )}
         </div>
 
         <div className="ph-disc-paper-meta">
-          <span>{result.authors.length > 0 ? result.authors.slice(0, 4).join("、") : "作者未知"}</span>
-          {paperMeta(result) !== "" && <span>{paperMeta(result)}</span>}
+          {paperMeta(result).map((item) => <span key={item}>{item}</span>)}
         </div>
 
-        {result.summary_zh !== "" && <p className="ph-disc-summary-zh">{result.summary_zh}</p>}
-
-        {result.abstract !== "" && <p className="ph-disc-abstract">{result.abstract}</p>}
-
-        {warningText !== null && (
-          <div className="ph-disc-analysis-warning">
-            <Icons.alert size={15} />
-            <span title={result.analysis_warning ?? undefined}>{warningText}</span>
-          </div>
-        )}
+        <div className={cx("ph-disc-trick", !generated && "is-pending")}>
+          <span>核心思路</span>
+          <p>{trick}</p>
+        </div>
 
         {analysisError !== null && (
           <div className="ph-disc-analysis-warning is-error">
@@ -195,38 +177,33 @@ function ResultCard({
           </div>
         )}
 
-        <div className="ph-disc-insight-grid">
-          <section className="ph-disc-insight is-trick">
-            <span>核心 Trick</span>
-            <p>{result.core_trick || "尚未提取"}</p>
-          </section>
-          <section className="ph-disc-insight">
-            <span>主要贡献</span>
-            <p>{result.contribution || "尚未提取"}</p>
-          </section>
-          <section className="ph-disc-insight">
-            <span>方法特点</span>
-            <p>{result.method || "尚未提取"}</p>
-          </section>
-          <section className="ph-disc-insight">
-            <span>关键结果</span>
-            <p>{result.results || "尚未提取"}</p>
-          </section>
-          <section className="ph-disc-insight is-limit">
-            <span>局限</span>
-            <p>{result.limitations || "尚未提取"}</p>
-          </section>
+        <div className="ph-disc-result-footer">
+          <div className="ph-disc-result-state">
+            <span
+              className={cx("ph-disc-analysis-chip", generated && "is-ai")}
+              title={result.analysis_model ?? result.analysis_warning ?? undefined}
+            >
+              {analysisLabel}
+            </span>
+            {filed && <span className="ph-disc-filed-chip">已在当前项目</span>}
+          </div>
+          <div className="ph-disc-result-actions">
+            <button
+              type="button"
+              className="ph-disc-analyze-btn"
+              onClick={onAnalyze}
+              disabled={analyzing}
+            >
+              <Icons.spark size={12} />
+              {analyzing ? "生成中…" : generated ? "重新生成" : "生成核心思路"}
+            </button>
+            {result.pdf_url !== null && (
+              <a className="ph-disc-pdf-link" href={result.pdf_url} target="_blank" rel="noreferrer">
+                查看 PDF
+              </a>
+            )}
+          </div>
         </div>
-
-        {(result.doi !== null || Object.keys(result.source_ids).length > 0) && (
-          <details className="ph-disc-identifiers">
-            <summary>来源标识</summary>
-            {result.doi !== null && <span>DOI · {result.doi}</span>}
-            {Object.entries(result.source_ids).map(([source, id]) => (
-              <span key={source}>{source} · {id}</span>
-            ))}
-          </details>
-        )}
       </div>
     </article>
   );
@@ -385,7 +362,7 @@ export function DiscoveryView(): JSX.Element {
       void qc.invalidateQueries({ queryKey: ["research-projects"] });
       void qc.invalidateQueries({ queryKey: ["research-project"] });
       setAnalysisError(null);
-      setNotice(`「${updated.title}」已完成 AI 深读`);
+      setNotice(`「${updated.title}」已生成中文核心思路`);
     },
     onError: (error, resultId) => {
       setAnalysisError({ id: resultId, message: analysisErrText(error) });
@@ -587,7 +564,7 @@ export function DiscoveryView(): JSX.Element {
                 </span>
                 <h2>{activeSearch.query}</h2>
                 <p>
-                  {activeSearch.result_count} 篇 · {activeSearch.sources.join(" + ") || "来源未记录"} · {fmtTime(activeSearch.completed_at ?? activeSearch.created_at)}
+                  {activeSearch.result_count} 篇 · {sourceList(activeSearch.sources)} · {fmtTime(activeSearch.completed_at ?? activeSearch.created_at)}
                 </p>
               </div>
               <button type="button" className="ph-disc-quiet-btn" onClick={reuseSearch}>复用条件</button>
@@ -597,7 +574,7 @@ export function DiscoveryView(): JSX.Element {
               <div className="ph-disc-source-errors">
                 <strong>{activeSearch.status === "partial" ? "部分来源未返回" : "来源错误"}</strong>
                 {Object.entries(activeSearch.errors).map(([source, message]) => (
-                  <p key={source}><span>{source}</span>{message}</p>
+                  <p key={source}><span>{sourceName(source)}</span>{message}</p>
                 ))}
               </div>
             )}
