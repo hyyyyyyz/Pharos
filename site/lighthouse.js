@@ -2,6 +2,13 @@ import * as THREE from "three";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
 const SIGNAL_NAMES = ["发现", "精读", "构建"];
+const STORY_BEATS = [
+  { key: "horizon", from: 0, to: 0.16, signal: -1 },
+  { key: "discover", from: 0.16, to: 0.4, signal: 0 },
+  { key: "read", from: 0.4, to: 0.64, signal: 1 },
+  { key: "build", from: 0.64, to: 0.84, signal: 2 },
+  { key: "handoff", from: 0.84, to: 1.01, signal: -1 },
+];
 const BEAM_COLOR = new THREE.Color(0xffd978);
 const LIGHTHOUSE_POSITION = new THREE.Vector3(10, 0, -4);
 
@@ -442,7 +449,7 @@ function addFacadePanel(group, material, frameMaterial, y, angle, width, height,
 }
 
 function createBeamMaterial(opacity, intensity) {
-  return new THREE.ShaderMaterial({
+  const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -483,6 +490,9 @@ function createBeamMaterial(opacity, intensity) {
       }
     `,
   });
+  material.userData.baseOpacity = opacity;
+  material.userData.baseIntensity = intensity;
+  return material;
 }
 
 function createBeamPlaneGeometry(length, farRadius, nearRadius = 0.18) {
@@ -901,7 +911,6 @@ export async function initLighthouseScene({ root, canvas }) {
     createSignal(scene, new THREE.Vector3(-22, 0.18, -43), 1, quality, textures),
     createSignal(scene, new THREE.Vector3(60, 0.16, 12), 2, quality, textures),
   ];
-  const signalElements = [...root.querySelectorAll("[data-beacon-signal]")];
   const statusElement = root.querySelector("[data-beacon-status]");
 
   const cameraPath = new THREE.CatmullRomCurve3(
@@ -942,6 +951,13 @@ export async function initLighthouseScene({ root, canvas }) {
   let frameId = 0;
   let hasRendered = false;
   let activeSignal = -1;
+  let activeSignalSource = "none";
+  let activeStoryBeat = -1;
+  let previewSignal = -1;
+  let pinnedSignal = -1;
+  let pinnedUntil = 0;
+  let beamAngleState = -0.45;
+  let guidedStrength = 0;
   let pointerTargetX = 0;
   let pointerTargetY = 0;
   let pointerX = 0;
@@ -953,6 +969,8 @@ export async function initLighthouseScene({ root, canvas }) {
   const cameraTarget = new THREE.Vector3();
   const spotTargetPosition = new THREE.Vector3();
   const cameraInBeamSpace = new THREE.Vector3();
+  const signalHeading = new THREE.Vector2();
+  const beamHeading = new THREE.Vector2();
 
   const refreshBounds = () => {
     const rect = root.getBoundingClientRect();
@@ -991,16 +1009,66 @@ export async function initLighthouseScene({ root, canvas }) {
     updateScrollProgress();
   };
 
-  const setActiveSignal = (index) => {
-    if (activeSignal === index) return;
+  const setStoryBeat = (index) => {
+    if (activeStoryBeat === index) return;
+    activeStoryBeat = index;
+    const beat = STORY_BEATS[index] ?? STORY_BEATS[0];
+    root.dataset.storyBeat = beat.key;
+    root.dispatchEvent(new CustomEvent("pharos:story-active", {
+      detail: { index, key: beat.key },
+    }));
+    if (statusElement && beat.signal < 0) {
+      statusElement.textContent = index === STORY_BEATS.length - 1
+        ? "继续滚动，让灯塔光束落向论文"
+        : "移动指针操控视角与光束 · 滚动进入航线";
+    }
+  };
+
+  const setActiveSignal = (index, source = "none") => {
+    if (activeSignal === index && activeSignalSource === source) return;
     activeSignal = index;
-    signalElements.forEach((element, elementIndex) => {
-      element.classList.toggle("is-active", elementIndex === index);
-    });
+    activeSignalSource = source;
+    root.dispatchEvent(new CustomEvent("pharos:signal-active", {
+      detail: { index, source },
+    }));
     if (!statusElement) return;
-    statusElement.textContent = index >= 0
-      ? `光束已连接「${SIGNAL_NAMES[index]}」节点`
-      : "移动指针改变视角 · 滚动靠近灯塔";
+    if (source === "scan") return;
+    if (source === "preview") statusElement.textContent = `正在预览「${SIGNAL_NAMES[index]}」节点 · 点击即可锁定`;
+    else if (source === "pinned") statusElement.textContent = `光束已锁定「${SIGNAL_NAMES[index]}」节点 · 5 秒后恢复航线`;
+    else if (source === "story") statusElement.textContent = `滚动航线正在连接「${SIGNAL_NAMES[index]}」节点`;
+    else if (activeStoryBeat === STORY_BEATS.length - 1) statusElement.textContent = "继续滚动，让灯塔光束落向论文";
+    else if (index < 0) statusElement.textContent = "移动指针操控视角与光束 · 滚动进入航线";
+  };
+
+  const onSignalRequest = (event) => {
+    const index = Number(event.detail?.index);
+    if (!Number.isInteger(index) || index < 0 || index >= signals.length) return;
+    if (event.detail?.mode === "pin") {
+      pinnedSignal = index;
+      pinnedUntil = performance.now() + 5200;
+      previewSignal = -1;
+    } else {
+      previewSignal = index;
+    }
+    start();
+  };
+
+  const onSignalRelease = (event) => {
+    if (event.detail?.mode !== "preview") return;
+    const index = Number(event.detail?.index);
+    if (previewSignal !== index) return;
+    previewSignal = -1;
+    if (!statusElement) return;
+    if (pinnedSignal >= 0 && performance.now() < pinnedUntil) {
+      statusElement.textContent = `光束已锁定「${SIGNAL_NAMES[pinnedSignal]}」节点 · 5 秒后恢复航线`;
+      return;
+    }
+    const storySignal = STORY_BEATS[activeStoryBeat]?.signal ?? -1;
+    statusElement.textContent = storySignal >= 0
+      ? `滚动航线正在连接「${SIGNAL_NAMES[storySignal]}」节点`
+      : activeStoryBeat === STORY_BEATS.length - 1
+        ? "继续滚动，让灯塔光束落向论文"
+        : "移动指针操控视角与光束 · 滚动进入航线";
   };
 
   const onPointerMove = (event) => {
@@ -1035,6 +1103,8 @@ export async function initLighthouseScene({ root, canvas }) {
     const delta = Math.min(timer.getDelta(), 0.05);
     const elapsed = timer.getElapsed();
     currentProgress = THREE.MathUtils.damp(currentProgress, targetProgress, 3.2, delta);
+    const storyBeatIndex = STORY_BEATS.findIndex((beat) => currentProgress >= beat.from && currentProgress < beat.to);
+    setStoryBeat(storyBeatIndex >= 0 ? storyBeatIndex : STORY_BEATS.length - 1);
     pointerX = THREE.MathUtils.damp(pointerX, pointerTargetX, 4.1, delta);
     pointerY = THREE.MathUtils.damp(pointerY, pointerTargetY, 4.1, delta);
 
@@ -1049,7 +1119,36 @@ export async function initLighthouseScene({ root, canvas }) {
     camera.lookAt(cameraTarget);
     camera.rotation.z += pointerX * -0.006 + Math.sin(elapsed * 0.17) * 0.0015;
 
-    const beamAngle = elapsed * 0.145 + pointerX * 0.12 - 0.45;
+    if (pinnedSignal >= 0 && performance.now() >= pinnedUntil) pinnedSignal = -1;
+    const storySignal = STORY_BEATS[activeStoryBeat]?.signal ?? -1;
+    const guidedSignal = previewSignal >= 0
+      ? previewSignal
+      : pinnedSignal >= 0
+        ? pinnedSignal
+        : storySignal;
+    const guidedSource = previewSignal >= 0
+      ? "preview"
+      : pinnedSignal >= 0
+        ? "pinned"
+        : storySignal >= 0
+          ? "story"
+          : "scan";
+    let desiredBeamAngle = elapsed * 0.145 + pointerX * 0.78 - 0.45;
+    if (guidedSignal >= 0) {
+      const target = signals[guidedSignal].position;
+      desiredBeamAngle = Math.atan2(
+        -(target.z - LIGHTHOUSE_POSITION.z),
+        target.x - LIGHTHOUSE_POSITION.x,
+      );
+    }
+    const angleDelta = Math.atan2(
+      Math.sin(desiredBeamAngle - beamAngleState),
+      Math.cos(desiredBeamAngle - beamAngleState),
+    );
+    const angleResponse = 1 - Math.exp(-(guidedSignal >= 0 ? 5.4 : 2.6) * delta);
+    beamAngleState += angleDelta * angleResponse;
+    guidedStrength = THREE.MathUtils.damp(guidedStrength, guidedSignal >= 0 ? 1 : 0, 4.8, delta);
+    const beamAngle = beamAngleState;
     lighthouse.beamRig.rotation.y = beamAngle;
     lighthouse.beamRig.rotation.z = -0.035;
     lighthouse.beamRig.updateWorldMatrix(true, false);
@@ -1064,16 +1163,23 @@ export async function initLighthouseScene({ root, canvas }) {
     water.material.uniforms.time.value = elapsed;
     water.material.uniforms.beamOrigin.value.copy(beamOrigin);
     water.material.uniforms.beamDirection.value.copy(beamDirection);
-    water.material.uniforms.beamIntensity.value = 0.9 + Math.sin(elapsed * 0.74) * 0.08;
+    water.material.uniforms.beamIntensity.value = 0.9 + guidedStrength * 0.28 + Math.sin(elapsed * 0.74) * 0.08;
     lighthouse.beamMaterials.forEach((material) => {
       material.uniforms.time.value = elapsed;
+      material.uniforms.opacity.value = material.userData.baseOpacity * (1 + guidedStrength * 0.32);
+      material.uniforms.intensity.value = material.userData.baseIntensity * (1 + guidedStrength * 0.2);
     });
 
     spotTargetPosition.copy(beamOrigin).addScaledVector(beamDirection, 88);
     lighthouse.spotTarget.position.copy(spotTargetPosition);
     lighthouse.spotTarget.updateMatrixWorld();
 
-    lighthouse.lampGlow.material.opacity = 0.65 + Math.sin(elapsed * 1.7) * 0.055;
+    lighthouse.lampGlow.material.opacity = 0.65 + guidedStrength * 0.12 + Math.sin(elapsed * 1.7) * 0.055;
+    const lampGlowScale = 10 + guidedStrength * 2.4;
+    lighthouse.lampGlow.scale.set(lampGlowScale, lampGlowScale, 1);
+    lighthouse.spot.intensity = (quality === "high" ? 190 : 120) * (1 + guidedStrength * 0.28);
+    if (bloomPass) bloomPass.strength = 0.2 + guidedStrength * 0.07;
+    root.classList.toggle("is-beam-guided", guidedStrength > 0.08);
     if ("emissiveIntensity" in lighthouse.lensMaterial) {
       lighthouse.lensMaterial.emissiveIntensity = (quality === "high" ? 10 : 7) + Math.sin(elapsed * 1.7) * 0.8;
     }
@@ -1098,18 +1204,22 @@ export async function initLighthouseScene({ root, canvas }) {
 
     let strongestSignal = -1;
     let strongestAlignment = 0;
+    beamHeading.set(beamDirection.x, beamDirection.z).normalize();
     signals.forEach((signal, index) => {
-      const targetDirection = new THREE.Vector2(
+      signalHeading.set(
         signal.position.x - beamOrigin.x,
         signal.position.z - beamOrigin.z,
       ).normalize();
-      const alignment = targetDirection.dot(new THREE.Vector2(beamDirection.x, beamDirection.z).normalize());
+      const alignment = signalHeading.dot(beamHeading);
       if (alignment > 0.988 && alignment > strongestAlignment) {
         strongestAlignment = alignment;
         strongestSignal = index;
       }
 
-      const targetActivation = alignment > 0.982 ? clamp((alignment - 0.982) / 0.018, 0, 1) : 0;
+      const sweepActivation = alignment > 0.982 ? clamp((alignment - 0.982) / 0.018, 0, 1) : 0;
+      const targetActivation = index === guidedSignal
+        ? Math.max(sweepActivation, 0.78 + guidedStrength * 0.22)
+        : sweepActivation;
       signal.userData.activation = THREE.MathUtils.damp(signal.userData.activation, targetActivation, 5.2, delta);
       const activation = signal.userData.activation;
       signal.position.y = signal.userData.baseY + Math.sin(elapsed * 0.72 + index * 2.1) * 0.18;
@@ -1119,7 +1229,7 @@ export async function initLighthouseScene({ root, canvas }) {
       const glowScale = 3.6 + activation * 3.8;
       signal.userData.glow.scale.set(glowScale, glowScale, 1);
     });
-    setActiveSignal(strongestSignal);
+    setActiveSignal(guidedSignal >= 0 ? guidedSignal : strongestSignal, guidedSignal >= 0 ? guidedSource : "scan");
 
     renderer.render(scene, camera);
     if (!hasRendered) {
@@ -1145,6 +1255,8 @@ export async function initLighthouseScene({ root, canvas }) {
   window.addEventListener("scroll", onScroll, { passive: true });
   root.addEventListener("pointermove", onPointerMove, { passive: true });
   root.addEventListener("pointerleave", onPointerLeave, { passive: true });
+  root.addEventListener("pharos:signal-request", onSignalRequest);
+  root.addEventListener("pharos:signal-release", onSignalRelease);
 
   const onVisibilityChange = () => {
     if (document.hidden) stop();
@@ -1155,6 +1267,7 @@ export async function initLighthouseScene({ root, canvas }) {
   const onContextLost = (event) => {
     event.preventDefault();
     stop();
+    hasRendered = false;
     root.classList.remove("is-scene-ready");
   };
   const onContextRestored = () => {
@@ -1173,6 +1286,8 @@ export async function initLighthouseScene({ root, canvas }) {
     window.removeEventListener("scroll", onScroll);
     root.removeEventListener("pointermove", onPointerMove);
     root.removeEventListener("pointerleave", onPointerLeave);
+    root.removeEventListener("pharos:signal-request", onSignalRequest);
+    root.removeEventListener("pharos:signal-release", onSignalRelease);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     canvas.removeEventListener("webglcontextlost", onContextLost);
     canvas.removeEventListener("webglcontextrestored", onContextRestored);
@@ -1181,6 +1296,8 @@ export async function initLighthouseScene({ root, canvas }) {
     disposeScene(scene);
     renderer.dispose();
     root.classList.remove("is-scene-ready");
+    root.classList.remove("is-beam-guided");
+    delete root.dataset.storyBeat;
   };
 
   resize();

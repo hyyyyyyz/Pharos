@@ -669,7 +669,7 @@ button {
 }
 
 .hero__telemetry {
-  width: min(360px, 100%);
+  width: min(380px, 100%);
   align-self: end;
   justify-self: end;
   margin-bottom: 36px;
@@ -710,43 +710,82 @@ button {
   margin-top: 15px;
 }
 
-.hero__signals span {
+.hero__signals button {
+  appearance: none;
   display: flex;
   min-height: 34px;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  padding: 0 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 7px;
   color: rgba(225, 233, 231, 0.52);
+  background: rgba(255, 255, 255, 0.018);
+  font: inherit;
   font-size: 9px;
+  cursor: pointer;
   transition: color 0.25s ease, border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
 }
 
-.hero__signals i {
+.hero__signals button:hover,
+.hero__signals button:focus-visible {
+  color: rgba(255, 248, 226, 0.9);
+  border-color: rgba(248, 192, 64, 0.28);
+  background: rgba(248, 192, 64, 0.06);
+}
+
+.hero__signals button:focus-visible {
+  outline: 1px solid var(--gold-400);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(248, 192, 64, 0.09);
+}
+
+.hero__signals button i {
   width: 5px;
   height: 5px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: #5f7480;
   transition: background 0.25s ease, box-shadow 0.25s ease;
 }
 
-.hero__signals span.is-active {
+.hero__signals button.is-active {
   color: #fff4d3;
   border-color: rgba(248, 192, 64, 0.42);
   background: rgba(248, 192, 64, 0.1);
   box-shadow: inset 0 0 20px rgba(248, 192, 64, 0.06);
 }
 
-.hero__signals span.is-active i {
+.hero__signals button.is-active i {
   background: var(--gold-400);
   box-shadow: 0 0 10px var(--gold-500);
 }
 
-.hero__telemetry p {
+.hero__telemetry .hero__signal-detail {
+  min-height: 3.2em;
   margin: 14px 0 0;
-  color: rgba(210, 222, 222, 0.45);
+  color: rgba(230, 237, 233, 0.72);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.62;
+  transition: color 0.25s ease;
+}
+
+.hero__telemetry .hero__telemetry-status {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(220, 230, 228, 0.66);
+  font-size: 10px;
+  letter-spacing: 0.035em;
   line-height: 1.6;
+}
+
+.hero.is-beam-guided .hero__telemetry {
+  border-color: rgba(248, 192, 64, 0.22);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25), inset 0 0 38px rgba(248, 192, 64, 0.035);
 }
 
 .hero__scroll-cue {
@@ -846,7 +885,9 @@ button {
 }
 
 .translation-section__head h2 span {
+  display: inline-block;
   color: var(--gold-600);
+  white-space: nowrap;
 }
 
 .translation-section__intro > p {

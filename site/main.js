@@ -271,9 +271,84 @@
     });
   }
 
+  /* The three research signals remain useful even without WebGL: they explain
+     the workflow in HTML, while the scene listens for the same custom events
+     and turns the lighthouse toward the requested node when it is available. */
+  const beaconHero = document.querySelector("[data-beacon-hero]");
+  const beaconSignalControls = [...document.querySelectorAll("[data-beacon-signal]")];
+  const beaconDetail = beaconHero?.querySelector("[data-beacon-detail]");
+  const beaconChapter = beaconHero?.querySelector("[data-beacon-chapter]");
+  const beaconHeadline = beaconHero?.querySelector("[data-beacon-headline]");
+  const signalCopy = [
+    "每天跟进自定义方向，从相关论文中找到真正值得深入的一篇。",
+    "保留双栏、公式与图表位置，用中文进入真正的论文精读。",
+    "把读过的论文、标注与元数据收回自己的研究文库。",
+  ];
+  const storyCopy = [
+    ["LIVE SCENE · 01 / HORIZON", "灯塔正在扫描文献之海"],
+    ["LIVE SCENE · 02 / DISCOVER", "从研究方向中发现相关论文"],
+    ["LIVE SCENE · 03 / READ", "让复杂论文变成可以精读的文本"],
+    ["LIVE SCENE · 04 / BUILD", "把阅读证据收回自己的文库"],
+    ["LIVE SCENE · 05 / HANDOFF", "第一束光，正在落向论文"],
+  ];
+
+  const setSignalPresentation = (index, source = "story") => {
+    beaconSignalControls.forEach((control, controlIndex) => {
+      const active = controlIndex === index;
+      control.classList.toggle("is-active", active);
+      control.setAttribute("aria-pressed", String(active && source === "pinned"));
+    });
+    if (beaconDetail) {
+      beaconDetail.textContent = index >= 0
+        ? signalCopy[index]
+        : "从一个研究方向出发，让光束依次连接发现、精读与构建。";
+    }
+  };
+
+  const setStoryPresentation = (index) => {
+    const copy = storyCopy[index] ?? storyCopy[0];
+    if (beaconChapter) beaconChapter.textContent = copy[0];
+    if (beaconHeadline) beaconHeadline.textContent = copy[1];
+  };
+
+  if (beaconHero && beaconSignalControls.length) {
+    beaconSignalControls.forEach((control, index) => {
+      const requestSignal = (mode) => {
+        setSignalPresentation(index, mode === "pin" ? "pinned" : "preview");
+        beaconHero.dispatchEvent(new CustomEvent("pharos:signal-request", {
+          detail: { index, mode },
+        }));
+      };
+      const releaseSignal = () => {
+        beaconHero.dispatchEvent(new CustomEvent("pharos:signal-release", {
+          detail: { index, mode: "preview" },
+        }));
+      };
+
+      control.addEventListener("pointerenter", (event) => {
+        if (event.pointerType !== "touch") requestSignal("preview");
+      });
+      control.addEventListener("pointerleave", (event) => {
+        if (event.pointerType !== "touch") releaseSignal();
+      });
+      control.addEventListener("focus", () => requestSignal("preview"));
+      control.addEventListener("blur", releaseSignal);
+      control.addEventListener("click", () => requestSignal("pin"));
+    });
+
+    beaconHero.addEventListener("pharos:signal-active", (event) => {
+      const { index = -1, source = "story" } = event.detail ?? {};
+      setSignalPresentation(index, source);
+    });
+    beaconHero.addEventListener("pharos:story-active", (event) => {
+      setStoryPresentation(event.detail?.index ?? 0);
+    });
+    setStoryPresentation(0);
+    setSignalPresentation(-1);
+  }
+
   /* The cinematic lighthouse is progressive enhancement. The existing HTML and
      CSS fallback remain complete if WebGL, the dynamic chunk, or the GPU fails. */
-  const beaconHero = document.querySelector("[data-beacon-hero]");
   const beaconCanvas = beaconHero?.querySelector("[data-lighthouse-canvas]");
   const saveData = navigator.connection?.saveData === true;
   if (beaconHero && beaconCanvas && !reduceMotion && !saveData) {

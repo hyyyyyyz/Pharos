@@ -96,15 +96,16 @@
 
         <aside class="hero__telemetry reveal reveal--delay-3" aria-label="灯塔场景状态">
           <div class="hero__telemetry-head">
-            <span>LIVE SCENE · 01</span>
-            <b>灯塔正在扫描文献之海</b>
+            <span data-beacon-chapter>LIVE SCENE · 01 / HORIZON</span>
+            <b data-beacon-headline>灯塔正在扫描文献之海</b>
           </div>
-          <div class="hero__signals" aria-hidden="true">
-            <span data-beacon-signal="0"><i></i>发现</span>
-            <span data-beacon-signal="1"><i></i>精读</span>
-            <span data-beacon-signal="2"><i></i>构建</span>
+          <div class="hero__signals" role="group" aria-label="选择灯塔要连接的研究节点">
+            <button type="button" data-beacon-signal="0" aria-pressed="false"><i aria-hidden="true"></i><span>发现</span></button>
+            <button type="button" data-beacon-signal="1" aria-pressed="false"><i aria-hidden="true"></i><span>精读</span></button>
+            <button type="button" data-beacon-signal="2" aria-pressed="false"><i aria-hidden="true"></i><span>构建</span></button>
           </div>
-          <p data-beacon-status>移动指针改变视角 · 滚动靠近灯塔</p>
+          <p class="hero__signal-detail" data-beacon-detail>从一个研究方向出发，让光束依次连接发现、精读与构建。</p>
+          <p class="hero__telemetry-status" data-beacon-status aria-live="polite">移动指针操控视角与光束 · 滚动进入航线</p>
         </aside>
       </div>
 
@@ -124,8 +125,8 @@
       <div class="shell translation-section__inner">
         <div class="translation-section__head reveal">
           <div>
-            <p class="kicker">THE BEAM BECOMES A READING TOOL</p>
-            <h2>远处是一盏灯。<br />落到纸上，就是<span>原位翻译</span>。</h2>
+            <p class="kicker">FROM SIGNAL TO EVIDENCE</p>
+            <h2>远处是一盏灯。<br />落到纸上，就是<br /><span>原位翻译</span>。</h2>
           </div>
           <div class="translation-section__intro">
             <p>移动光束，中文只在照亮的位置出现。翻译不是把论文拍扁成图片，而是尽量守住双栏、公式与图表的原始位置。</p>
