@@ -3,24 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pharos — 保留排版的论文翻译与科研阅读工作台</title>
-  <meta name="description" content="Pharos 是面向中文科研工作者的开源、自托管研究工作台：保留排版翻译、可交互精读、每日 arXiv 与个人文库，收进同一盏灯下。" />
+  <title>Pharos — 从一个想法，到一项经得起验证的研究</title>
+  <meta name="description" content="Pharos 是开源、自托管的一体化科研平台。当前已开放文献发现、深度阅读与个人文库，并持续接通从 Idea、实验推进到论文写作的完整研究路径。" />
   <meta name="theme-color" content="#F7F2E9" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-round-32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-round-16.png" />
   <link rel="apple-touch-icon" href="assets/favicon-180.png" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Pharos — 保留排版的论文翻译与科研阅读工作台" />
-  <meta property="og:description" content="翻译文字，尽量保留原版面。从发现、精读到整理，科研的一整条路，一盏灯照到底。" />
+  <meta property="og:title" content="Pharos — 一体化智能科研平台" />
+  <meta property="og:description" content="让文献、判断与研究进展停留在同一个上下文中。从一个想法，到一项经得起验证的研究。" />
   <meta property="og:image" content="https://hyyyyyyz.github.io/Pharos/assets/poster.webp" />
   <meta property="og:url" content="https://hyyyyyyz.github.io/Pharos/" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Pharos — 科研的一整条路，一盏灯照到底" />
-  <meta name="twitter:description" content="保留排版翻译、可交互精读、每日 arXiv 与个人文库。" />
+  <meta name="twitter:title" content="Pharos — 一体化科研平台" />
+  <meta name="twitter:description" content="从文献发现与深度阅读出发，持续接通 Idea、实验推进与论文写作。" />
   <meta name="twitter:image" content="https://hyyyyyyz.github.io/Pharos/assets/poster.webp" />
 
-  <script>document.documentElement.classList.add("js");</script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -36,9 +35,9 @@
       </a>
 
       <nav class="site-nav" aria-label="主要导航">
-        <a href="#translation">翻译演示</a>
-        <a href="#workbench">工作台</a>
-        <a href="#roadmap">路线图</a>
+        <a href="#journey">科研工作流</a>
+        <a href="#workbench">阅读工作台</a>
+        <a href="#roadmap">架构与路线</a>
         <a class="site-nav__github" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">
           GitHub <span aria-hidden="true">↗</span>
         </a>
@@ -68,54 +67,55 @@
 
       <div class="shell hero__grid">
         <div class="hero__copy">
-          <p class="kicker reveal">OPEN SOURCE · SELF-HOSTED</p>
+          <p class="kicker reveal">PHAROS · ONE CONTINUOUS RESEARCH SYSTEM</p>
           <h1 class="hero__title reveal reveal--delay-1">
-            科研的一整条路，<br />
-            <span>一盏灯</span>照到底。
+            从一个想法，<br />
+            到一项<span>经得起验证</span><br />
+            的研究。
           </h1>
           <p class="hero__lead reveal reveal--delay-2">
-            把英文论文尽量按原版式翻成中文，在真正的阅读器里精读；每天跟进你的方向，再把读过的一切收回自己的文库。
+            Pharos 把分散在工具之间的研究上下文重新连接，让文献、判断与进展持续积累，而不是在每个阶段重新开始。
           </p>
 
           <div class="hero__actions reveal reveal--delay-3">
-            <a class="button button--primary" href="#translation">
-              驶向产品演示 <span aria-hidden="true">↓</span>
+            <a class="button button--primary" href="#journey">
+              探索研究路径 <span aria-hidden="true">↓</span>
             </a>
-            <a class="button button--quiet" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">
-              查看源码与本地运行 <span aria-hidden="true">↗</span>
+            <a class="button button--quiet" href="#workbench">
+              查看当前能力 <span aria-hidden="true">↓</span>
             </a>
           </div>
 
           <div class="hero__status reveal reveal--delay-4">
             <span class="status-dot" aria-hidden="true"></span>
-            核心阅读工作流已可用
+            核心阅读与文库链路已可用
             <span class="hero__status-sep" aria-hidden="true"></span>
-            领航与写作正在接通
+            研究推进与写作正在接通
           </div>
         </div>
 
         <aside class="hero__telemetry reveal reveal--delay-3" aria-label="灯塔场景状态">
           <div class="hero__telemetry-head">
-            <span data-beacon-chapter>LIVE SCENE · 01 / HORIZON</span>
-            <b data-beacon-headline>灯塔正在扫描文献之海</b>
+            <span data-beacon-chapter>PRODUCT VISION · 01 / ORIENT</span>
+            <b data-beacon-headline>研究航线正在展开</b>
           </div>
           <div class="hero__signals" role="group" aria-label="选择灯塔要连接的研究节点">
-            <button type="button" data-beacon-signal="0" aria-pressed="false"><i aria-hidden="true"></i><span>发现</span></button>
-            <button type="button" data-beacon-signal="1" aria-pressed="false"><i aria-hidden="true"></i><span>精读</span></button>
-            <button type="button" data-beacon-signal="2" aria-pressed="false"><i aria-hidden="true"></i><span>构建</span></button>
+            <button type="button" data-beacon-signal="0" aria-pressed="false"><i aria-hidden="true"></i><span>问题</span></button>
+            <button type="button" data-beacon-signal="1" aria-pressed="false"><i aria-hidden="true"></i><span>证据</span></button>
+            <button type="button" data-beacon-signal="2" aria-pressed="false"><i aria-hidden="true"></i><span>推进</span></button>
           </div>
-          <p class="hero__signal-detail" data-beacon-detail>从一个研究方向出发，让光束依次连接发现、精读与构建。</p>
+          <p class="hero__signal-detail" data-beacon-detail>从提出问题开始，让证据、判断与研究进展始终留在同一条航线上。</p>
           <p class="hero__telemetry-status" data-beacon-status aria-live="polite">移动指针操控视角与光束 · 滚动进入航线</p>
         </aside>
       </div>
 
       <div class="shell proof-ribbon reveal">
-        <span class="proof-ribbon__label">NOW SHIPPING</span>
-        <span>保留排版翻译</span>
-        <span>pdf.js 真文本层</span>
-        <span>每日 arXiv</span>
-        <span>Zotero 元数据导入</span>
-        <span>约 400 项后端测试</span>
+        <span class="proof-ribbon__label">CURRENT FOUNDATION</span>
+        <span>文献发现</span>
+        <span>深度阅读</span>
+        <span>批注与文库</span>
+        <span>开源自托管</span>
+        <span>研究闭环 · CONTINUING</span>
       </div>
 
       <div class="hero__scroll-cue" aria-hidden="true"><span></span>SCROLL TO ENTER</div>
@@ -125,12 +125,12 @@
       <div class="shell translation-section__inner">
         <div class="translation-section__head reveal">
           <div>
-            <p class="kicker">FROM SIGNAL TO EVIDENCE</p>
-            <h2>远处是一盏灯。<br />落到纸上，就是<br /><span>原位翻译</span>。</h2>
+            <p class="kicker">CURRENT FOUNDATION · DEEP READING</p>
+            <h2>理解论文，<br />只是研究<span>真正开始</span><br />的地方。</h2>
           </div>
           <div class="translation-section__intro">
-            <p>移动光束，中文只在照亮的位置出现。翻译不是把论文拍扁成图片，而是尽量守住双栏、公式与图表的原始位置。</p>
-            <div><span>01 · 版面</span><span>02 · 公式</span><span>03 · 图表</span></div>
+            <p>版式感知的双语阅读降低语言阻力；检索、批注与归档继续留在同一条研究脉络中，让注意力回到方法、证据与结论。</p>
+            <div><span>01 · 原始结构</span><span>02 · 可操作文本</span><span>03 · 方法证据</span></div>
           </div>
         </div>
 
@@ -337,22 +337,22 @@
     <section class="journey-section" id="journey">
       <div class="shell journey-layout">
         <div class="journey-copy reveal">
-          <p class="kicker">ONE PAPER · ONE CONTINUOUS ROUTE</p>
-          <h2>同一篇论文，<br />不必在五个工具间漂流。</h2>
-          <p>从今天该读什么，到读懂、收好。发现、翻译与归档已经接通；写作是下一站。</p>
+          <p class="kicker">ONE QUESTION · ONE CONTINUOUS ROUTE</p>
+          <h2>同一个研究问题，<br />不必在五个工具间漂流。</h2>
+          <p>从问题形成、文献发现、证据精读到知识沉淀，研究应当在同一个上下文里持续推进。当前阅读与文库链路已经接通，实验与写作是下一段航程。</p>
 
           <div class="route-tabs" role="tablist" aria-label="科研工作流">
-            <button class="route-tab is-active" type="button" role="tab" aria-selected="true" data-route="daily">
-              <span>01</span><b>每日发现</b><small>方向一改，信息流立刻重排</small>
+            <button class="route-tab is-active" id="route-tab-daily" type="button" role="tab" aria-controls="route-panel-daily" aria-selected="true" data-route="daily">
+              <span>01</span><b>研究发现</b><small>围绕问题重排文献视野</small>
             </button>
-            <button class="route-tab" type="button" role="tab" aria-selected="false" data-route="translate">
-              <span>02</span><b>翻译精读</b><small>中文单版与中英双版</small>
+            <button class="route-tab" id="route-tab-translate" type="button" role="tab" aria-controls="route-panel-translate" aria-selected="false" data-route="translate">
+              <span>02</span><b>证据精读</b><small>在原始结构中读懂方法与结论</small>
             </button>
-            <button class="route-tab" type="button" role="tab" aria-selected="false" data-route="library">
-              <span>03</span><b>收入文库</b><small>分类、全文搜索、Zotero 元数据</small>
+            <button class="route-tab" id="route-tab-library" type="button" role="tab" aria-controls="route-panel-library" aria-selected="false" data-route="library">
+              <span>03</span><b>知识构建</b><small>让论文、标注与关系持续沉淀</small>
             </button>
-            <button class="route-tab route-tab--next" type="button" role="tab" aria-selected="false" data-route="writing">
-              <span>04</span><b>基于文库写作</b><small>NEXT · 正在接通</small>
+            <button class="route-tab route-tab--next" id="route-tab-writing" type="button" role="tab" aria-controls="route-panel-writing" aria-selected="false" data-route="writing">
+              <span>04</span><b>研究推进</b><small>实验、论证与写作 · NEXT</small>
             </button>
           </div>
         </div>
@@ -364,7 +364,7 @@
             <b>界面示意 · 示例数据</b>
           </div>
 
-          <div class="route-scene route-scene--daily is-active" data-scene="daily">
+          <div class="route-scene route-scene--daily is-active" id="route-panel-daily" role="tabpanel" aria-labelledby="route-tab-daily" aria-hidden="false" data-scene="daily">
             <div class="scene-sidebar">
               <span class="scene-sidebar__brand">P</span>
               <span class="is-on">今</span><span>库</span><span>搜</span>
@@ -386,7 +386,7 @@
             </div>
           </div>
 
-          <div class="route-scene route-scene--translate" data-scene="translate">
+          <div class="route-scene route-scene--translate" id="route-panel-translate" role="tabpanel" aria-labelledby="route-tab-translate" aria-hidden="true" data-scene="translate">
             <div class="translate-job">
               <div class="translate-job__paper">
                 <div class="job-page job-page--en"><span>EN</span><i></i><i></i><i></i><b>E = mc²</b><i></i><i></i></div>
@@ -403,7 +403,7 @@
             </div>
           </div>
 
-          <div class="route-scene route-scene--library" data-scene="library">
+          <div class="route-scene route-scene--library" id="route-panel-library" role="tabpanel" aria-labelledby="route-tab-library" aria-hidden="true" data-scene="library">
             <div class="library-scene">
               <aside>
                 <h4>我的文库</h4>
@@ -426,13 +426,13 @@
             </div>
           </div>
 
-          <div class="route-scene route-scene--writing" data-scene="writing">
+          <div class="route-scene route-scene--writing" id="route-panel-writing" role="tabpanel" aria-labelledby="route-tab-writing" aria-hidden="true" data-scene="writing">
             <div class="writing-scene">
               <div class="writing-scene__future">NEXT</div>
-              <p>未来的一段航程</p>
-              <h3>从你的文库出发，<br />把读过的变成写得出的。</h3>
-              <div class="writing-outline"><span>01　研究问题</span><span>02　相关工作</span><span>03　方法与证据</span><span>04　引用核验</span></div>
-              <small>领航后端、研究知识库与写作助手正在规划中；当前页面不会把它们包装成已上线功能。</small>
+              <p>下一段研究航程</p>
+              <h3>让证据继续前进，<br />直到形成可检验的工作。</h3>
+              <div class="writing-outline"><span>01　研究问题</span><span>02　实验设计</span><span>03　证据与结论</span><span>04　论文结构</span></div>
+              <small>研究项目、实验编排与学术写作闭环正在接通；当前页面不会把它们包装成已经上线的能力。</small>
             </div>
           </div>
         </div>
@@ -442,18 +442,18 @@
     <section class="poster-section">
       <div class="shell">
         <div class="poster-frame reveal" data-poster-frame>
-          <img src="assets/poster.webp" loading="lazy" decoding="async" alt="小机器人围绕中央灯塔阅读、翻译、整理与写作论文的 Pharos 研究工坊" />
+          <img src="assets/poster.webp" loading="lazy" decoding="async" alt="围绕中央灯塔连接发现、精读、知识、实验与写作的 Pharos 一体化研究工坊" />
           <div class="poster-frame__shade" aria-hidden="true"></div>
           <div class="poster-copy">
             <p class="kicker kicker--gold">THE WORKSHOP AROUND THE LIGHT</p>
-            <h2>不是一个翻译插件。<br />是一座属于你的<span>研究工坊</span>。</h2>
-            <p>上传、arXiv 与 Zotero 元数据是进入文库的航线；翻译、精读、整理与未来写作，是灯塔周围相互连接的工作站。</p>
+            <h2>不是零散工具的拼盘。<br />是一座围绕问题运转的<span>研究工坊</span>。</h2>
+            <p>发现、精读、知识、实验与写作共享同一份研究上下文。每一次阅读都不再孤立，而会成为下一步判断、实验和论证的基础。</p>
           </div>
           <div class="poster-hotspot poster-hotspot--discover"><i></i><span>发现</span></div>
-          <div class="poster-hotspot poster-hotspot--read"><i></i><span>精读</span></div>
-          <div class="poster-hotspot poster-hotspot--translate"><i></i><span>翻译</span></div>
-          <div class="poster-hotspot poster-hotspot--library"><i></i><span>文库</span></div>
-          <div class="poster-hotspot poster-hotspot--write"><i></i><span>写作 · NEXT</span></div>
+          <div class="poster-hotspot poster-hotspot--read"><i></i><span>证据</span></div>
+          <div class="poster-hotspot poster-hotspot--translate"><i></i><span>知识</span></div>
+          <div class="poster-hotspot poster-hotspot--library"><i></i><span>实验 · NEXT</span></div>
+          <div class="poster-hotspot poster-hotspot--write"><i></i><span>论文 · NEXT</span></div>
         </div>
       </div>
     </section>
@@ -500,7 +500,8 @@
               <li>领航问答后端与论文上下文检索</li>
               <li>跨数据库文献发现</li>
               <li>研究知识库</li>
-              <li>基于个人文库的写作助手</li>
+              <li>研究项目与实验推进</li>
+              <li>证据驱动的学术写作</li>
               <li>桌面与移动客户端</li>
             </ul>
           </div>
@@ -512,9 +513,9 @@
       <div class="finale__beam" aria-hidden="true"></div>
       <div class="shell finale__inner reveal">
         <img src="assets/mark.png" alt="Pharos" />
-        <p class="kicker kicker--gold">PHAROS · 灯塔照亮文献之海</p>
-        <h2>把下一篇读不动的论文，<br />带到灯下。</h2>
-        <p>Pharos 仍在积极开发中。现在可以在 macOS / Apple Silicon 上本地运行核心阅读工作流，也欢迎一起把下一段航程接通。</p>
+        <p class="kicker kicker--gold">BUILD THE RESEARCH LOOP</p>
+        <h2>别让下一项研究，<br />再从零开始。</h2>
+        <p>从当前可用的发现、阅读与文库开始；Idea、实验和写作将在同一研究上下文中持续接通。</p>
         <div class="finale__actions">
           <a class="button button--primary" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">查看 GitHub <span aria-hidden="true">↗</span></a>
           <a class="button button--dark" href="https://github.com/hyyyyyyz/Pharos#quick-start-macos--apple-silicon" target="_blank" rel="noopener noreferrer">本地运行说明</a>

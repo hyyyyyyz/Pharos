@@ -280,16 +280,16 @@
   const beaconChapter = beaconHero?.querySelector("[data-beacon-chapter]");
   const beaconHeadline = beaconHero?.querySelector("[data-beacon-headline]");
   const signalCopy = [
-    "每天跟进自定义方向，从相关论文中找到真正值得深入的一篇。",
-    "保留双栏、公式与图表位置，用中文进入真正的论文精读。",
-    "把读过的论文、标注与元数据收回自己的研究文库。",
+    "把模糊的想法整理为可以检索、讨论与验证的研究问题。",
+    "围绕问题汇聚论文，在方法、实验与结论之间建立证据链。",
+    "让证据继续流向研究判断、实验计划与最终成果。",
   ];
   const storyCopy = [
-    ["LIVE SCENE · 01 / HORIZON", "灯塔正在扫描文献之海"],
-    ["LIVE SCENE · 02 / DISCOVER", "从研究方向中发现相关论文"],
-    ["LIVE SCENE · 03 / READ", "让复杂论文变成可以精读的文本"],
-    ["LIVE SCENE · 04 / BUILD", "把阅读证据收回自己的文库"],
-    ["LIVE SCENE · 05 / HANDOFF", "第一束光，正在落向论文"],
+    ["PRODUCT VISION · 01 / ORIENT", "研究航线正在展开"],
+    ["PRODUCT VISION · 02 / QUESTION", "让想法成为可以探索的问题"],
+    ["PRODUCT VISION · 03 / EVIDENCE", "让相关证据在同一上下文中汇聚"],
+    ["PRODUCT VISION · 04 / OUTCOME", "让研究路径向实验与论文延伸"],
+    ["CURRENT FOUNDATION · 05 / READING", "第一束光，落向当前可用的深度阅读"],
   ];
 
   const setSignalPresentation = (index, source = "story") => {
@@ -301,7 +301,7 @@
     if (beaconDetail) {
       beaconDetail.textContent = index >= 0
         ? signalCopy[index]
-        : "从一个研究方向出发，让光束依次连接发现、精读与构建。";
+        : "从提出问题开始，让证据、判断与研究进展始终留在同一条航线上。";
     }
   };
 

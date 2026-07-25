@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
-const SIGNAL_NAMES = ["发现", "精读", "构建"];
+const SIGNAL_NAMES = ["问题", "证据", "推进"];
 const STORY_BEATS = [
   { key: "horizon", from: 0, to: 0.16, signal: -1 },
   { key: "discover", from: 0.16, to: 0.4, signal: 0 },
@@ -313,17 +313,21 @@ function createWater(scene, quality) {
         vec2 beamRay = beamVector / beamDistance;
         vec2 beamHeading = normalize(beamDirection.xz);
         float alignment = max(dot(beamRay, beamHeading), 0.0);
-        float beamCone = pow(alignment, 155.0);
+        float beamCone = pow(alignment, 190.0);
         float beamReach = 1.0 - smoothstep(18.0, 118.0, beamDistance);
         float beamRipple = 0.82 + 0.18 * sin(beamDistance * 0.28 - time * 1.8 + vCrest * 3.0);
-        float beamLight = beamCone * beamReach * beamRipple * beamIntensity;
+        // A nearly horizontal lighthouse beam does not directly illuminate the
+        // foreground water. Keep only a faint, distant grazing reflection once
+        // the expanding cone approaches the sea surface.
+        float surfaceContact = smoothstep(78.0, 108.0, beamDistance);
+        float beamLight = beamCone * beamReach * beamRipple * beamIntensity * surfaceContact;
 
         float crest = smoothstep(0.52, 0.96, vCrest) * (0.15 + fresnel * 0.35);
         vec3 color = mix(deepColor, surfaceColor, 0.22 + fresnel * 0.78);
         color = mix(color, horizonColor, fresnel * 0.24);
         color += vec3(0.47, 0.65, 0.68) * moonSpecular * 1.9;
         color += vec3(0.34, 0.48, 0.5) * crest;
-        color += beamColor * beamLight * (1.5 + fresnel * 1.1);
+        color += beamColor * beamLight * (0.16 + fresnel * 0.18);
         color += surfaceColor * facing * 0.06;
 
         float distanceToCamera = length(cameraPosition - vWorldPosition);
@@ -1163,7 +1167,7 @@ export async function initLighthouseScene({ root, canvas }) {
     water.material.uniforms.time.value = elapsed;
     water.material.uniforms.beamOrigin.value.copy(beamOrigin);
     water.material.uniforms.beamDirection.value.copy(beamDirection);
-    water.material.uniforms.beamIntensity.value = 0.9 + guidedStrength * 0.28 + Math.sin(elapsed * 0.74) * 0.08;
+    water.material.uniforms.beamIntensity.value = 0.42 + guidedStrength * 0.08 + Math.sin(elapsed * 0.74) * 0.035;
     lighthouse.beamMaterials.forEach((material) => {
       material.uniforms.time.value = elapsed;
       material.uniforms.opacity.value = material.userData.baseOpacity * (1 + guidedStrength * 0.32);
