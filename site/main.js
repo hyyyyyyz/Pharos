@@ -139,61 +139,90 @@
     }
   }
 
-  /* Signature interaction: one lighthouse beam controls both the visible light
-     cone and the circular Chinese layer on the identically laid-out paper. */
+  /* Signature interaction: a real source page and its pixel-aligned Chinese
+     layer share one magnifying lens. The lens is also the lighthouse beam's
+     endpoint, so the visual metaphor remains continuous without faking a PDF. */
   const demo = document.querySelector("[data-translation-demo]");
   const stage = document.querySelector("[data-paper-stage]");
+  const attentionPage = stage?.querySelector("[data-attention-page]");
+  const attentionOriginal = attentionPage?.querySelector(".attention-paper__original");
+  const attentionLens = stage?.querySelector("[data-attention-lens]");
+  const attentionTranslation = stage?.querySelector("[data-attention-translation]");
 
-  if (reduceMotion && stage) {
-    stage.removeAttribute("tabindex");
-    stage.setAttribute("aria-label", "英文与中文的静态对照；中文显示在论文右半侧");
-  }
-
-  if (demo && stage && !reduceMotion) {
-    const translatedPaper = stage.querySelector(".paper-sheet--zh");
+  if (demo && stage && attentionPage && attentionOriginal && attentionLens && attentionTranslation) {
     let stageRect = stage.getBoundingClientRect();
-    let stageLeft = stageRect.left;
-    let stageDocumentTop = window.scrollY + stageRect.top;
-    let paperOffset = {
-      left: translatedPaper?.offsetLeft ?? 0,
-      top: translatedPaper?.offsetTop ?? 0,
-    };
+    let pageRect = attentionOriginal.getBoundingClientRect();
+    let pageOffsetX = pageRect.left - stageRect.left;
+    let pageOffsetY = pageRect.top - stageRect.top;
+    let lensRadius = attentionLens.getBoundingClientRect().width / 2;
+    let lensZoom = pageRect.width < 370 ? 1.78 : 1.56;
     let userUntil = 0;
     let demoVisible = true;
+    let lensReady = false;
     let rafId = 0;
-    let beamPosition = { x: stageRect.width * 0.68, y: stageRect.height * 0.42 };
+    let beamRatio = { x: 0.48, y: 0.69 };
+    let beamPosition = {
+      x: pageOffsetX + pageRect.width * beamRatio.x,
+      y: pageOffsetY + pageRect.height * beamRatio.y,
+    };
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-    const refreshStageRect = () => {
-      stageRect = stage.getBoundingClientRect();
-      stageLeft = stageRect.left;
-      stageDocumentTop = window.scrollY + stageRect.top;
-      paperOffset = {
-        left: translatedPaper?.offsetLeft ?? 0,
-        top: translatedPaper?.offsetTop ?? 0,
-      };
-    };
-
-    const placeBeam = (x, y) => {
-      const width = stageRect.width;
-      const height = stageRect.height;
-      const safeX = clamp(x, 28, Math.max(29, width - 28));
-      const safeY = clamp(y, 30, Math.max(31, height - 52));
-      beamPosition = { x: safeX, y: safeY };
-      const originX = width / 2;
-      const originY = height - 13;
-      const dx = safeX - originX;
-      const dy = safeY - originY;
+    const syncLens = () => {
+      if (!pageRect.width || !pageRect.height) return;
+      const localX = pageRect.width * beamRatio.x;
+      const localY = pageRect.height * beamRatio.y;
+      const stageX = pageOffsetX + localX;
+      const stageY = pageOffsetY + localY;
+      const originX = stageRect.width / 2;
+      const originY = stageRect.height - 13;
+      const dx = stageX - originX;
+      const dy = stageY - originY;
       const angle = Math.atan2(dy, dx) * (180 / Math.PI);
       const distance = Math.hypot(dx, dy);
 
-      stage.style.setProperty("--beam-x", `${safeX.toFixed(1)}px`);
-      stage.style.setProperty("--beam-y", `${safeY.toFixed(1)}px`);
-      stage.style.setProperty("--paper-beam-x", `${(safeX - paperOffset.left).toFixed(1)}px`);
-      stage.style.setProperty("--paper-beam-y", `${(safeY - paperOffset.top).toFixed(1)}px`);
+      beamPosition = { x: stageX, y: stageY };
+      stage.style.setProperty("--beam-x", `${stageX.toFixed(1)}px`);
+      stage.style.setProperty("--beam-y", `${stageY.toFixed(1)}px`);
       stage.style.setProperty("--beam-angle", `${angle.toFixed(2)}deg`);
       stage.style.setProperty("--beam-distance", `${distance.toFixed(1)}px`);
+
+      attentionTranslation.style.width = `${pageRect.width.toFixed(1)}px`;
+      attentionTranslation.style.height = `${pageRect.height.toFixed(1)}px`;
+      attentionTranslation.style.left = `${(lensRadius - localX * lensZoom).toFixed(1)}px`;
+      attentionTranslation.style.top = `${(lensRadius - localY * lensZoom).toFixed(1)}px`;
+      attentionTranslation.style.transform = `scale(${lensZoom.toFixed(2)})`;
+    };
+
+    const refreshGeometry = () => {
+      stageRect = stage.getBoundingClientRect();
+      pageRect = attentionOriginal.getBoundingClientRect();
+      pageOffsetX = pageRect.left - stageRect.left;
+      pageOffsetY = pageRect.top - stageRect.top;
+      lensRadius = attentionLens.getBoundingClientRect().width / 2;
+      lensZoom = pageRect.width < 370 ? 1.78 : 1.56;
+      syncLens();
+    };
+
+    const placeLens = (x, y) => {
+      const contentRadius = lensRadius / lensZoom + 2;
+      const minX = Math.min(pageRect.width / 2, contentRadius);
+      const minY = Math.min(pageRect.height / 2, contentRadius);
+      const localX = clamp(
+        x - pageOffsetX,
+        minX,
+        Math.max(minX, pageRect.width - minX),
+      );
+      const localY = clamp(
+        y - pageOffsetY,
+        minY,
+        Math.max(minY, pageRect.height - minY),
+      );
+      beamRatio = {
+        x: localX / pageRect.width,
+        y: localY / pageRect.height,
+      };
+      syncLens();
     };
 
     const autoBeam = (time) => {
@@ -202,12 +231,10 @@
         return;
       }
       if (time > userUntil) {
-        const width = stageRect.width;
-        const height = stageRect.height;
         const t = time / 1700;
-        const x = width * (0.5 + Math.sin(t * 0.72) * 0.27);
-        const y = height * (0.4 + Math.sin(t * 0.93 + 1.2) * 0.16);
-        placeBeam(x, y);
+        const x = pageOffsetX + pageRect.width * (0.47 + Math.sin(t * 0.72) * 0.14);
+        const y = pageOffsetY + pageRect.height * (0.7 + Math.sin(t * 0.93 + 1.2) * 0.12);
+        placeLens(x, y);
       }
       rafId = requestAnimationFrame(autoBeam);
     };
@@ -215,72 +242,108 @@
     const engageAtPointer = (event) => {
       userUntil = performance.now() + 2300;
       demo.classList.add("is-engaged");
-      placeBeam(
-        event.clientX - stageLeft,
-        event.clientY - (stageDocumentTop - window.scrollY),
+      placeLens(
+        event.clientX - stageRect.left,
+        event.clientY - stageRect.top,
       );
     };
 
-    stage.addEventListener("pointermove", engageAtPointer, { passive: true });
-    stage.addEventListener(
-      "pointerdown",
-      (event) => {
-        stage.focus({ preventScroll: true });
-        engageAtPointer(event);
-      },
-      { passive: true },
-    );
-    stage.addEventListener("pointerleave", () => demo.classList.remove("is-engaged"));
-    stage.addEventListener("keydown", (event) => {
-      const movement = {
-        ArrowLeft: [-18, 0],
-        ArrowRight: [18, 0],
-        ArrowUp: [0, -18],
-        ArrowDown: [0, 18],
-      }[event.key];
-      if (!movement) return;
-      event.preventDefault();
-      userUntil = performance.now() + 2800;
-      demo.classList.add("is-engaged");
-      placeBeam(beamPosition.x + movement[0], beamPosition.y + movement[1]);
-    });
-
-    window.addEventListener("resize", refreshStageRect, { passive: true });
+    window.addEventListener("resize", refreshGeometry, { passive: true });
     if ("ResizeObserver" in window) {
-      new ResizeObserver(refreshStageRect).observe(stage);
+      const paperResizeObserver = new ResizeObserver(refreshGeometry);
+      paperResizeObserver.observe(stage);
+      paperResizeObserver.observe(attentionOriginal);
+      paperResizeObserver.observe(attentionLens);
     }
 
-    if ("IntersectionObserver" in window) {
-      const beamObserver = new IntersectionObserver(
-        ([entry]) => {
-          demoVisible = Boolean(entry?.isIntersecting);
-          if (demoVisible) {
-            refreshStageRect();
-            if (!rafId) rafId = requestAnimationFrame(autoBeam);
-          } else if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = 0;
-          }
+    refreshGeometry();
+
+    if (reduceMotion) {
+      stage.removeAttribute("tabindex");
+      stage.setAttribute("aria-label", "Attention Is All You Need 真实论文页面；放大镜内静态显示中文演示译文");
+    } else {
+      stage.addEventListener("pointermove", engageAtPointer, { passive: true });
+      stage.addEventListener(
+        "pointerdown",
+        (event) => {
+          stage.focus({ preventScroll: true });
+          engageAtPointer(event);
         },
-        { threshold: 0.01 },
+        { passive: true },
       );
-      beamObserver.observe(demo);
+      stage.addEventListener("pointerleave", () => demo.classList.remove("is-engaged"));
+      stage.addEventListener("keydown", (event) => {
+        const movement = {
+          ArrowLeft: [-18, 0],
+          ArrowRight: [18, 0],
+          ArrowUp: [0, -18],
+          ArrowDown: [0, 18],
+        }[event.key];
+        if (!movement) return;
+        event.preventDefault();
+        userUntil = performance.now() + 2800;
+        demo.classList.add("is-engaged");
+        placeLens(beamPosition.x + movement[0], beamPosition.y + movement[1]);
+      });
+
+      if ("IntersectionObserver" in window) {
+        const beamObserver = new IntersectionObserver(
+          ([entry]) => {
+            demoVisible = Boolean(entry?.isIntersecting);
+            if (demoVisible) {
+              refreshGeometry();
+              if (lensReady && !rafId) rafId = requestAnimationFrame(autoBeam);
+            } else if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = 0;
+            }
+          },
+          { threshold: 0.01 },
+        );
+        beamObserver.observe(demo);
+      }
+
+      const pauseAutoBeam = () => {
+        if (!rafId) return;
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      };
+      window.addEventListener("pagehide", pauseAutoBeam);
+      window.addEventListener("pageshow", (event) => {
+        if (!event.persisted || !demoVisible || rafId) return;
+        refreshGeometry();
+        if (lensReady) rafId = requestAnimationFrame(autoBeam);
+      });
     }
 
-    placeBeam(stageRect.width * 0.68, stageRect.height * 0.42);
-    rafId = requestAnimationFrame(autoBeam);
-
-    const pauseAutoBeam = () => {
-      if (!rafId) return;
-      cancelAnimationFrame(rafId);
-      rafId = 0;
+    const waitForImage = (image) => {
+      if (image.complete) {
+        if (!image.naturalWidth) return Promise.reject(new Error("Image failed to load"));
+        return typeof image.decode === "function"
+          ? image.decode().catch(() => undefined)
+          : Promise.resolve();
+      }
+      return new Promise((resolve, reject) => {
+        image.addEventListener("load", resolve, { once: true });
+        image.addEventListener("error", reject, { once: true });
+      });
     };
-    window.addEventListener("pagehide", pauseAutoBeam);
-    window.addEventListener("pageshow", (event) => {
-      if (!event.persisted || !demoVisible || rafId) return;
-      refreshStageRect();
-      rafId = requestAnimationFrame(autoBeam);
-    });
+
+    Promise.all([
+      waitForImage(attentionOriginal),
+      waitForImage(attentionTranslation),
+    ])
+      .then(() => {
+        lensReady = true;
+        demo.classList.add("is-lens-ready");
+        refreshGeometry();
+        if (!reduceMotion && demoVisible && !rafId) {
+          rafId = requestAnimationFrame(autoBeam);
+        }
+      })
+      .catch(() => {
+        stage.setAttribute("aria-label", "Attention Is All You Need 真实论文页面；中文译文演示图暂时无法加载");
+      });
   }
 
   /* The workflow is a tabbed product scene, not four separate feature cards.

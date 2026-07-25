@@ -24,3 +24,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+Attention Is All You Need — demonstration excerpt
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. NeurIPS 2017.
+
+Official paper page:
+https://proceedings.neurips.cc/paper_files/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html
+
+Page 3 is reproduced with attribution as a limited product demonstration.
+No ownership of the paper or separate reuse license is claimed. The Chinese
+natural-language layer is a Pharos website demonstration translation; the
+architecture figure and page geometry remain aligned with the cited source.

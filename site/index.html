@@ -167,70 +167,44 @@
                 <span class="demo-file-icon" aria-hidden="true">PDF</span>
                 attention-is-all-you-need.pdf
               </div>
-              <div class="demo-toolbar__mode"><span></span> 原位翻译</div>
+              <div class="demo-toolbar__mode"><span></span> 真实论文 · 译文演示</div>
             </div>
 
-            <div class="paper-stage" data-paper-stage tabindex="0" aria-label="互动翻译演示：使用鼠标、触摸或方向键移动光束，光束内显示中文翻译">
+            <div class="paper-stage" data-paper-stage tabindex="0" aria-label="真实论文互动翻译演示：使用鼠标、触摸或方向键移动放大镜，镜内显示中文演示译文">
               <div class="beam-arm" aria-hidden="true"></div>
-              <div class="beam-focus" aria-hidden="true"></div>
-              <div class="paper-shadow" aria-hidden="true"></div>
-
-              <div class="paper-sheet paper-sheet--en" aria-label="英文论文原文">
-                <div class="paper-meta"><span>NEURAL INFORMATION PROCESSING SYSTEMS</span><span>01 / 15</span></div>
-                <h2>Attention Is All You Need</h2>
-                <p class="paper-authors">Ashish Vaswani · Noam Shazeer · Niki Parmar · Jakob Uszkoreit</p>
-                <div class="paper-rule"></div>
-                <div class="paper-columns">
-                  <div>
-                    <h3>Abstract</h3>
-                    <p>Earlier sequence systems commonly rely on recurrence or convolution, pairing an encoder with a decoder.</p>
-                    <p>This paper introduces the Transformer, a simpler architecture built around attention.</p>
-                    <div class="paper-formula">Attention(Q,K,V) = softmax(QKᵀ/√dₖ)V</div>
-                    <p>The model improves quality while allowing substantially more parallel computation.</p>
-                  </div>
-                  <div>
-                    <h3>1 · Introduction</h3>
-                    <p>Recurrent networks have long been a standard choice for sequence modeling and transduction.</p>
-                    <div class="paper-figure" aria-hidden="true">
-                      <span class="node n1">Q</span><span class="node n2">K</span><span class="node n3">V</span>
-                      <span class="node n4">Attention</span>
-                      <svg viewBox="0 0 180 92" role="presentation">
-                        <path d="M28 25 C68 25 69 45 93 45 M28 46 C63 46 67 46 93 46 M28 67 C68 67 69 48 93 48 M129 46 H166" />
-                      </svg>
-                    </div>
-                    <p class="paper-caption">Figure 1 · Scaled Dot-Product Attention</p>
-                    <p>Attention can connect distant positions directly instead of stepping through a sequence one token at a time.</p>
-                  </div>
-                </div>
+              <div class="attention-paper" data-attention-page>
+                <img
+                  class="attention-paper__original"
+                  src="assets/demo/attention-page-3-original.webp"
+                  width="1530"
+                  height="1980"
+                  loading="lazy"
+                  decoding="async"
+                  draggable="false"
+                  alt="Attention Is All You Need 论文真实第 3 页，包含 Transformer 模型架构图"
+                />
               </div>
 
-              <div class="paper-sheet paper-sheet--zh" aria-hidden="true">
-                <div class="paper-meta"><span>神经信息处理系统大会</span><span>01 / 15</span></div>
-                <h2>注意力机制就是你所需要的一切</h2>
-                <p class="paper-authors">Ashish Vaswani · Noam Shazeer · Niki Parmar · Jakob Uszkoreit</p>
-                <div class="paper-rule"></div>
-                <div class="paper-columns">
-                  <div>
-                    <h3>摘要</h3>
-                    <p>主流的序列转换模型依赖复杂的循环或卷积神经网络，并由编码器与解码器组成。</p>
-                    <p>我们提出一种全新的简洁网络架构 Transformer，它完全建立在注意力机制之上。</p>
-                    <div class="paper-formula">Attention(Q,K,V) = softmax(QKᵀ/√dₖ)V</div>
-                    <p>实验表明，该模型质量更高，同时具备更强的并行计算能力。</p>
-                  </div>
-                  <div>
-                    <h3>1 · 引言</h3>
-                    <p>循环神经网络长期以来一直是序列建模与序列转换问题中的主流方法。</p>
-                    <div class="paper-figure" aria-hidden="true">
-                      <span class="node n1">Q</span><span class="node n2">K</span><span class="node n3">V</span>
-                      <span class="node n4">注意力</span>
-                      <svg viewBox="0 0 180 92" role="presentation">
-                        <path d="M28 25 C68 25 69 45 93 45 M28 46 C63 46 67 46 93 46 M28 67 C68 67 69 48 93 48 M129 46 H166" />
-                      </svg>
-                    </div>
-                    <p class="paper-caption">图 1 · 缩放点积注意力</p>
-                    <p>注意力机制可以直接建模依赖关系，而不受输入或输出序列中距离的限制。</p>
-                  </div>
+              <div class="attention-lens" data-attention-lens aria-hidden="true">
+                <div class="attention-lens__viewport">
+                  <img
+                    class="attention-lens__translation"
+                    data-attention-translation
+                    src="assets/demo/attention-page-3-zh.webp"
+                    width="1530"
+                    height="1980"
+                    decoding="async"
+                    draggable="false"
+                    alt=""
+                  />
+                  <span class="attention-lens__glint"></span>
                 </div>
+                <span class="attention-lens__handle"></span>
+              </div>
+
+              <div class="attention-paper__badge" aria-hidden="true">
+                <span>REAL PAPER</span>
+                <b>03 / 11</b>
               </div>
 
               <div class="beacon-emitter" aria-hidden="true">
@@ -241,19 +215,21 @@
             </div>
 
             <div class="demo-footer">
-              <p><span class="mouse-glyph" aria-hidden="true"></span> 移动光束，查看原位翻译</p>
-              <div class="demo-legend"><span class="legend-en"></span>原文 <span class="legend-zh"></span>中文</div>
+              <p><span class="mouse-glyph" aria-hidden="true"></span> 移动放大镜，查看同版式中文译文演示</p>
+              <a class="demo-source" href="https://proceedings.neurips.cc/paper_files/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html" target="_blank" rel="noopener noreferrer">
+                Vaswani et al. · NeurIPS 2017 · p.3 <span aria-hidden="true">↗</span>
+              </a>
             </div>
           </div>
 
           <div class="hero__annotation hero__annotation--layout" aria-hidden="true">
-            <span>01</span> 双栏尽量保留
+            <span>01</span> NeurIPS 原始页面
           </div>
           <div class="hero__annotation hero__annotation--formula" aria-hidden="true">
-            <span>02</span> 公式位置保留
+            <span>02</span> 图表保持原位
           </div>
           <div class="hero__annotation hero__annotation--figure" aria-hidden="true">
-            <span>03</span> 图表位置保留
+            <span>03</span> 镜内中文译文
           </div>
         </div>
       </div>
