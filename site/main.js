@@ -151,6 +151,8 @@
 
   if (demo && stage && attentionPage && attentionOriginal && attentionLens && attentionTranslation) {
     let stageRect = stage.getBoundingClientRect();
+    let stageDocumentLeft = stageRect.left + window.scrollX;
+    let stageDocumentTop = stageRect.top + window.scrollY;
     let pageRect = attentionOriginal.getBoundingClientRect();
     let pageOffsetX = pageRect.left - stageRect.left;
     let pageOffsetY = pageRect.top - stageRect.top;
@@ -196,6 +198,8 @@
 
     const refreshGeometry = () => {
       stageRect = stage.getBoundingClientRect();
+      stageDocumentLeft = stageRect.left + window.scrollX;
+      stageDocumentTop = stageRect.top + window.scrollY;
       pageRect = attentionOriginal.getBoundingClientRect();
       pageOffsetX = pageRect.left - stageRect.left;
       pageOffsetY = pageRect.top - stageRect.top;
@@ -243,8 +247,8 @@
       userUntil = performance.now() + 2300;
       demo.classList.add("is-engaged");
       placeLens(
-        event.clientX - stageRect.left,
-        event.clientY - stageRect.top,
+        event.pageX - stageDocumentLeft,
+        event.pageY - stageDocumentTop,
       );
     };
 
@@ -262,11 +266,13 @@
       stage.removeAttribute("tabindex");
       stage.setAttribute("aria-label", "Attention Is All You Need 真实论文页面；放大镜内静态显示中文演示译文");
     } else {
+      stage.addEventListener("pointerenter", refreshGeometry, { passive: true });
       stage.addEventListener("pointermove", engageAtPointer, { passive: true });
       stage.addEventListener(
         "pointerdown",
         (event) => {
           stage.focus({ preventScroll: true });
+          refreshGeometry();
           engageAtPointer(event);
         },
         { passive: true },
