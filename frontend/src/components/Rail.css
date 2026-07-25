@@ -1,8 +1,7 @@
-/* Far-left module rail — collapsed 44px / expanded 178px.
-   Ported verbatim from the design prototype (railStyle / brandRowStyle /
-   navListStyle / brandBtnStyle / navRail item styles). */
+/* Far-left module rail — collapsed 44px / expanded 144–280px (178px default). */
 
 .ph-rail {
+  position: relative;
   flex: none;
   background: var(--c-rail);
   border-right: 1px solid var(--c-bd);
@@ -10,17 +9,63 @@
   flex-direction: column;
   gap: 2px;
   transition: width 0.16s ease;
-  overflow: hidden;
+  overflow: visible;
 }
+.ph-rail--resizing { transition: none; }
 .ph-rail--exp {
   width: 178px;
   align-items: stretch;
   padding: 9px 8px 8px;
 }
 .ph-rail--col {
-  width: 44px;
+  width: 44px !important;
   align-items: center;
   padding: 9px 0 8px;
+}
+
+/* A full-height hit target with only a short visible notch: discoverable at
+   the boundary, but quieter than any navigation icon. */
+.ph-rail-resize-handle {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.ph-rail-resize-handle span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 34px;
+  border-radius: 2px;
+  background: var(--c-bds);
+  opacity: 0.48;
+  transform: translate(-50%, -50%);
+  transition:
+    height 0.12s,
+    opacity 0.12s,
+    background 0.12s,
+    box-shadow 0.12s;
+}
+.ph-rail-resize-handle:hover span,
+.ph-rail-resize-handle:focus-visible span,
+.ph-rail--resizing .ph-rail-resize-handle span {
+  height: 48px;
+  background: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-acs);
+  opacity: 0.9;
+}
+
+html.ph-rail-resizing,
+html.ph-rail-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 /* ------------------------------------------------------------ brand row */

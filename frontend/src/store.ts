@@ -12,6 +12,11 @@ export type SettingsTab = "account" | "appearance" | "daily";
 export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
+export const RAIL_MIN_WIDTH = 144;
+export const RAIL_DEFAULT_WIDTH = 178;
+export const RAIL_MAX_WIDTH = 280;
+const RAIL_WIDTH_KEY = "ph-rail-width";
+
 /** An open tab in the 文库 module: the library itself, or one paper. */
 export type Tab =
   | { id: "library"; kind: "library" }
@@ -28,6 +33,17 @@ const save = (key: string, value: string) => {
   }
 };
 
+export function clampRailWidth(width: number): number {
+  return Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, Math.round(width)));
+}
+
+function initialRailWidth(): number {
+  const raw = ls(RAIL_WIDTH_KEY);
+  if (raw === null) return RAIL_DEFAULT_WIDTH;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? clampRailWidth(parsed) : RAIL_DEFAULT_WIDTH;
+}
+
 interface UIState {
   /* ---------------------------------------------------------- appearance */
   theme: ThemeMode;
@@ -40,6 +56,9 @@ interface UIState {
   setModule: (m: ModuleKey) => void;
   railExpanded: boolean;
   toggleRail: () => void;
+  railWidth: number;
+  setRailWidth: (width: number) => void;
+  resetRailWidth: () => void;
 
   /* ------------------------------------------------------- library: tree */
   selectedCol: string; // "lib" | "uncat" | "trash" | collection id
@@ -141,6 +160,16 @@ export const useUI = create<UIState>((set) => ({
       save("ph-rail", s.railExpanded ? "0" : "1");
       return { railExpanded: !s.railExpanded };
     }),
+  railWidth: initialRailWidth(),
+  setRailWidth: (width) => {
+    const railWidth = clampRailWidth(width);
+    save(RAIL_WIDTH_KEY, String(railWidth));
+    set({ railWidth });
+  },
+  resetRailWidth: () => {
+    save(RAIL_WIDTH_KEY, String(RAIL_DEFAULT_WIDTH));
+    set({ railWidth: RAIL_DEFAULT_WIDTH });
+  },
 
   selectedCol: "lib",
   selectCol: (selectedCol) => set({ selectedCol }),

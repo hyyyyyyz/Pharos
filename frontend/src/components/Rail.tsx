@@ -1,6 +1,18 @@
-import { useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Icons } from "../design/icons";
-import { useUI, type ModuleKey } from "../store";
+import {
+  RAIL_DEFAULT_WIDTH,
+  RAIL_MAX_WIDTH,
+  RAIL_MIN_WIDTH,
+  useUI,
+  type ModuleKey,
+} from "../store";
 import "./Rail.css";
 
 type IconComponent = (typeof Icons)["library"];
@@ -23,9 +35,31 @@ const NAV: NavDef[] = [
 
 const cx = (...parts: (string | false)[]): string => parts.filter(Boolean).join(" ");
 
+const SMALL_VIEWPORT = 760;
+const SMALL_RAIL_MAX = 220;
+
+function maxRailWidthForViewport(viewportWidth: number): number {
+  if (viewportWidth >= SMALL_VIEWPORT) return RAIL_MAX_WIDTH;
+  return Math.max(
+    RAIL_MIN_WIDTH,
+    Math.min(SMALL_RAIL_MAX, Math.floor(viewportWidth * 0.42)),
+  );
+}
+
+interface RailDrag {
+  pointerId: number;
+  startX: number;
+  startWidth: number;
+  currentWidth: number;
+}
+
 export function Rail(): JSX.Element {
   const railExpanded = useUI((s) => s.railExpanded);
   const toggleRail = useUI((s) => s.toggleRail);
+  const railWidth = useUI((s) => s.railWidth);
+  const setRailWidth = useUI((s) => s.setRailWidth);
+  const resetRailWidth = useUI((s) => s.resetRailWidth);
+  const winW = useUI((s) => s.winW);
   const activeModule = useUI((s) => s.activeModule);
   const setModule = useUI((s) => s.setModule);
   const openSettings = useUI((s) => s.openSettings);
@@ -33,11 +67,87 @@ export function Rail(): JSX.Element {
   // The brand button swaps its glyph on hover, so hover has to be observable
   // in JS — CSS alone cannot change which icon is rendered.
   const [brandHover, setBrandHover] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const [draftWidth, setDraftWidth] = useState<number | null>(null);
+  const drag = useRef<RailDrag | null>(null);
 
   const exp = railExpanded;
+  const resizeMax = maxRailWidthForViewport(winW);
+  const visibleWidth = Math.min(draftWidth ?? railWidth, resizeMax);
+
+  useEffect(() => {
+    if (!resizing) return;
+    document.documentElement.classList.add("ph-rail-resizing");
+    return () => document.documentElement.classList.remove("ph-rail-resizing");
+  }, [resizing]);
+
+  useEffect(() => {
+    if (exp) return;
+    drag.current = null;
+    setDraftWidth(null);
+    setResizing(false);
+  }, [exp]);
+
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: visibleWidth,
+      currentWidth: visibleWidth,
+    };
+    setResizing(true);
+  };
+
+  const moveResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const current = drag.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    const next = Math.min(
+      resizeMax,
+      Math.max(RAIL_MIN_WIDTH, current.startWidth + event.clientX - current.startX),
+    );
+    current.currentWidth = next;
+    setDraftWidth(next);
+  };
+
+  const finishResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const current = drag.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    drag.current = null;
+    setRailWidth(current.currentWidth);
+    setDraftWidth(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setResizing(false);
+  };
+
+  const resizeByKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const step = event.shiftKey ? 24 : 8;
+    let next: number | null = null;
+    if (event.key === "ArrowLeft") next = visibleWidth - step;
+    else if (event.key === "ArrowRight") next = visibleWidth + step;
+    else if (event.key === "Home") next = RAIL_MIN_WIDTH;
+    else if (event.key === "End") next = resizeMax;
+    if (next === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setRailWidth(Math.min(resizeMax, Math.max(RAIL_MIN_WIDTH, next)));
+  };
 
   return (
-    <nav className={cx("ph-rail", exp ? "ph-rail--exp" : "ph-rail--col")}>
+    <nav
+      className={cx(
+        "ph-rail",
+        exp ? "ph-rail--exp" : "ph-rail--col",
+        resizing && "ph-rail--resizing",
+      )}
+      style={exp ? { width: visibleWidth } : undefined}
+    >
       <div className={cx("ph-rail-brand", exp ? "ph-rail-brand--exp" : "ph-rail-brand--col")}>
         <button
           type="button"
@@ -106,6 +216,35 @@ export function Rail(): JSX.Element {
         >
           <Icons.user />
         </button>
+      )}
+
+      {exp && (
+        <div
+          className="ph-rail-resize-handle"
+          role="separator"
+          aria-label="调整侧栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={RAIL_MIN_WIDTH}
+          aria-valuemax={resizeMax}
+          aria-valuenow={visibleWidth}
+          aria-valuetext={`${visibleWidth} 像素`}
+          tabIndex={0}
+          title={`拖动调整宽度；双击恢复 ${RAIL_DEFAULT_WIDTH}px`}
+          onPointerDown={beginResize}
+          onPointerMove={moveResize}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onLostPointerCapture={finishResize}
+          onKeyDown={resizeByKeyboard}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setDraftWidth(null);
+            resetRailWidth();
+          }}
+        >
+          <span aria-hidden />
+        </div>
       )}
     </nav>
   );
