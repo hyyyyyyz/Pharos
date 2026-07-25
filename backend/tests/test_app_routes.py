@@ -33,7 +33,19 @@ os.environ.setdefault("PHAROS_AUTH_SECRET", "test-secret-test-secret-test-secret
 import pytest  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.routing import APIRoute  # noqa: E402
-from pharos.api import annotate, auth, daily, jobs, organise, papers, search, zotero  # noqa: E402
+from pharos.api import (  # noqa: E402
+    annotate,
+    auth,
+    daily,
+    directions,
+    discovery,
+    jobs,
+    organise,
+    papers,
+    projects,
+    search,
+    zotero,
+)
 from pharos.main import create_app  # noqa: E402
 
 #: Routes that are meant to be reachable without a token, and why.
@@ -53,6 +65,9 @@ ROUTERS = [
     search.router,
     organise.router,
     annotate.router,
+    projects.router,
+    discovery.router,
+    directions.router,
     daily.router,
     zotero.router,
 ]

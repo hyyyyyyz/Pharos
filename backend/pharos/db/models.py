@@ -8,9 +8,18 @@ reader annotations and RAG (created but unused in the MVP).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -19,7 +28,7 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -141,7 +150,7 @@ class Paper(Base):
     full_text: Mapped[str | None] = mapped_column(Text, default=None)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    jobs: Mapped[list["TranslationJob"]] = relationship(
+    jobs: Mapped[list[TranslationJob]] = relationship(
         back_populates="paper", cascade="all, delete-orphan", order_by="TranslationJob.created_at"
     )
 
@@ -287,7 +296,7 @@ class TranslationJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    paper: Mapped["Paper"] = relationship(back_populates="jobs")
+    paper: Mapped[Paper] = relationship(back_populates="jobs")
 
 
 # ---------------------------------------------------------------- organisation
@@ -417,3 +426,180 @@ class Note(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+# --------------------------------------------------------------- research lab
+
+
+class ResearchProject(Base):
+    """A user's durable research workspace.
+
+    The stage is deliberately stored separately from ``status``. ``status`` is
+    lifecycle state (active/archived); ``stage`` is where the work currently is
+    in the evidence-to-publication workflow and may move backwards when a
+    hypothesis is revised.
+    """
+
+    __tablename__ = "research_projects"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(256))
+    description: Mapped[str] = mapped_column(Text, default="")
+    research_question: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    stage: Mapped[str] = mapped_column(String(32), default="discovery", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    searches: Mapped[list[LiteratureSearch]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    sources: Mapped[list[ProjectSource]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    artifacts: Mapped[list[ProjectArtifact]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class LiteratureSearch(Base):
+    """One persisted multi-provider literature search and its outcome."""
+
+    __tablename__ = "literature_searches"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_projects.id", ondelete="CASCADE"), index=True, default=None
+    )
+    query: Mapped[str] = mapped_column(String(500))
+    #: JSON array of provider names requested for this run.
+    sources: Mapped[str] = mapped_column(Text, default="[]")
+    #: running | complete | partial | error
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: JSON object mapping a failed source name to a human-readable reason.
+    errors: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    project: Mapped[ResearchProject | None] = relationship(back_populates="searches")
+    results: Mapped[list[LiteratureResult]] = relationship(
+        back_populates="search", cascade="all, delete-orphan", order_by="LiteratureResult.rank"
+    )
+
+
+class LiteratureResult(Base):
+    """A canonical paper result, deduplicated across the providers in one search."""
+
+    __tablename__ = "literature_results"
+    __table_args__ = (
+        UniqueConstraint("search_id", "dedup_key", name="uq_literature_result_search_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    search_id: Mapped[str] = mapped_column(
+        ForeignKey("literature_searches.id", ondelete="CASCADE"), index=True
+    )
+    dedup_key: Mapped[str] = mapped_column(String(768))
+    title: Mapped[str] = mapped_column(Text)
+    #: JSON array; author names may themselves contain punctuation.
+    authors: Mapped[str] = mapped_column(Text, default="[]")
+    abstract: Mapped[str] = mapped_column(Text, default="")
+    year: Mapped[int | None] = mapped_column(Integer, default=None)
+    venue: Mapped[str | None] = mapped_column(String(512), default=None)
+    doi: Mapped[str | None] = mapped_column(String(256), default=None)
+    url: Mapped[str | None] = mapped_column(String(1024), default=None)
+    pdf_url: Mapped[str | None] = mapped_column(String(1024), default=None)
+    #: JSON array of every provider that returned this canonical result.
+    sources: Mapped[str] = mapped_column(Text, default="[]")
+    #: JSON object, e.g. {"arxiv": "2401.01234", "openalex": "W123"}.
+    source_ids: Mapped[str] = mapped_column(Text, default="{}")
+    citation_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+
+    #: ``rules`` until an explicitly configured LLM analysis replaces it.
+    analysis_mode: Mapped[str] = mapped_column(String(16), default="rules")
+    analysis_model: Mapped[str | None] = mapped_column(String(128), default=None)
+    analysis_warning: Mapped[str | None] = mapped_column(Text, default=None)
+    summary_zh: Mapped[str] = mapped_column(Text, default="")
+    contribution: Mapped[str] = mapped_column(Text, default="")
+    core_trick: Mapped[str] = mapped_column(Text, default="")
+    method: Mapped[str] = mapped_column(Text, default="")
+    results: Mapped[str] = mapped_column(Text, default="")
+    limitations: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    search: Mapped[LiteratureSearch] = relationship(back_populates="results")
+    project_sources: Mapped[list[ProjectSource]] = relationship(
+        back_populates="result", cascade="all, delete-orphan"
+    )
+
+
+class ProjectSource(Base):
+    """A saved literature result inside a project.
+
+    ``user_id`` is intentionally duplicated from the project and search. It
+    lets every lookup carry an owner predicate directly rather than trusting a
+    multi-hop relationship to remain consistent.
+    """
+
+    __tablename__ = "project_sources"
+    __table_args__ = (
+        UniqueConstraint("project_id", "result_id", name="uq_project_source_result"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id", ondelete="CASCADE"), index=True
+    )
+    result_id: Mapped[str] = mapped_column(
+        ForeignKey("literature_results.id", ondelete="CASCADE"), index=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    project: Mapped[ResearchProject] = relationship(back_populates="sources")
+    result: Mapped[LiteratureResult] = relationship(back_populates="project_sources")
+
+
+class ProjectArtifact(Base):
+    """A user-authored research record at one workflow stage.
+
+    These rows are records, not claims that an autonomous system ran an
+    experiment. A ``result`` artifact is unverified until a person deliberately
+    changes its status to ``verified`` and attaches whatever evidence they rely
+    on in the body.
+    """
+
+    __tablename__ = "project_artifacts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id", ondelete="CASCADE"), index=True
+    )
+    stage: Mapped[str] = mapped_column(String(32), index=True)
+    #: hypothesis | experiment_plan | result | claim | draft | review
+    type: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    body: Mapped[str] = mapped_column(Text, default="")
+    #: draft | ready | verified | rejected
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    project: Mapped[ResearchProject] = relationship(back_populates="artifacts")
