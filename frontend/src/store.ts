@@ -5,7 +5,7 @@ import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing";
 /** Modules that are actually built. Everything else falls through to <ComingSoon />. */
-export type LiveModuleKey = "library" | "daily";
+export type LiveModuleKey = "library" | "daily" | "search" | "kb";
 export type ReadMode = "zh" | "bilingual" | "original";
 export type OutlineMode = "outline" | "thumbs";
 export type SettingsTab = "account" | "appearance" | "daily";
@@ -72,6 +72,12 @@ interface UIState {
   /** DailyPaper.id of the expanded card; null = none open. */
   dailyPaperId: string | null;
   setDailyPaper: (id: string | null) => void;
+
+  /* ------------------------------------------------------------ projects */
+  /** Shared between 文献探索 and 研究项目 so a result can be filed without
+   *  making the user select the same project twice. */
+  activeProjectId: string | null;
+  setActiveProject: (id: string | null) => void;
 
   /* ---------------------------------------------------------------- tabs */
   tabs: Tab[];
@@ -187,6 +193,9 @@ export const useUI = create<UIState>((set) => ({
   setDailyDate: (dailyDate) => set({ dailyDate, dailyPaperId: null }),
   dailyPaperId: null,
   setDailyPaper: (dailyPaperId) => set({ dailyPaperId }),
+
+  activeProjectId: null,
+  setActiveProject: (activeProjectId) => set({ activeProjectId }),
 
   tabs: [{ id: "library", kind: "library" }],
   activeTabId: "library",

@@ -9,16 +9,6 @@ const MODULES: Record<
   Exclude<ModuleKey, LiveModuleKey>,
   { name: string; desc: string; Icon: IconComponent }
 > = {
-  search: {
-    name: "文献检索",
-    desc: "跨库检索论文，一键导入到文库并翻译。",
-    Icon: Icons.search,
-  },
-  kb: {
-    name: "研究知识库",
-    desc: "把论文、笔记与洞见沉淀为可检索的知识库。",
-    Icon: Icons.kb,
-  },
   writing: {
     name: "写作助手",
     desc: "基于文献库辅助综述与论文写作，规范引用。",

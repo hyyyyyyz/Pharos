@@ -20,10 +20,22 @@ import type {
   DirectionPatchBody,
   Job,
   LoginBody,
+  LiteratureResult,
+  LiteratureSearch,
+  LiteratureSearchBody,
   PasswordChangeBody,
   Paper,
   PdfKind,
+  ProjectArtifact,
+  ProjectArtifactCreateBody,
+  ProjectArtifactPatchBody,
+  ProjectSource,
+  ProjectSourceCreateBody,
+  ProjectSourcePatchBody,
   RegisterBody,
+  ResearchProject,
+  ResearchProjectCreateBody,
+  ResearchProjectPatchBody,
   SearchResponse,
   Tag,
   TagCreateBody,
@@ -466,6 +478,96 @@ export const api = {
       update: (data: DailyConfigPatchBody): Promise<DailyConfig> =>
         json<DailyConfig>("/daily/config", { method: "PATCH", ...body(data) }),
     },
+  },
+
+  /* ------------------------------------------------------ research workspace */
+
+  discovery: {
+    /** Search arXiv/OpenAlex and persist the complete run for later reopening. */
+    search: (data: LiteratureSearchBody): Promise<LiteratureSearch> =>
+      json<LiteratureSearch>("/discovery/search", { method: "POST", ...body(data) }),
+
+    /** Newest first; entries include results so history remains useful offline. */
+    listSearches: (): Promise<LiteratureSearch[]> =>
+      json<LiteratureSearch[]>("/discovery/searches"),
+
+    getSearch: (id: string): Promise<LiteratureSearch> =>
+      json<LiteratureSearch>(`/discovery/searches/${encodeURIComponent(id)}`),
+
+    /** Replace the rules-only digest with a provider-backed structured reading. */
+    analyzeResult: (id: string): Promise<LiteratureResult> =>
+      json<LiteratureResult>(
+        `/discovery/results/${encodeURIComponent(id)}/analyze`,
+        { method: "POST" },
+      ),
+  },
+
+  projects: {
+    list: (): Promise<ResearchProject[]> => json<ResearchProject[]>("/projects"),
+
+    create: (data: ResearchProjectCreateBody): Promise<ResearchProject> =>
+      json<ResearchProject>("/projects", { method: "POST", ...body(data) }),
+
+    get: (id: string): Promise<ResearchProject> =>
+      json<ResearchProject>(`/projects/${encodeURIComponent(id)}`),
+
+    update: (id: string, data: ResearchProjectPatchBody): Promise<ResearchProject> =>
+      json<ResearchProject>(`/projects/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        ...body(data),
+      }),
+
+    remove: (id: string): Promise<void> =>
+      empty(`/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+    advance: (id: string): Promise<ResearchProject> =>
+      json<ResearchProject>(`/projects/${encodeURIComponent(id)}/advance`, { method: "POST" }),
+
+    addSource: (id: string, data: ProjectSourceCreateBody): Promise<ProjectSource> =>
+      json<ProjectSource>(`/projects/${encodeURIComponent(id)}/sources`, {
+        method: "POST",
+        ...body(data),
+      }),
+
+    updateSource: (
+      id: string,
+      sourceId: string,
+      data: ProjectSourcePatchBody,
+    ): Promise<ProjectSource> =>
+      json<ProjectSource>(
+        `/projects/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}`,
+        { method: "PATCH", ...body(data) },
+      ),
+
+    removeSource: (id: string, sourceId: string): Promise<void> =>
+      empty(`/projects/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}`, {
+        method: "DELETE",
+      }),
+
+    listArtifacts: (id: string): Promise<ProjectArtifact[]> =>
+      json<ProjectArtifact[]>(`/projects/${encodeURIComponent(id)}/artifacts`),
+
+    createArtifact: (id: string, data: ProjectArtifactCreateBody): Promise<ProjectArtifact> =>
+      json<ProjectArtifact>(`/projects/${encodeURIComponent(id)}/artifacts`, {
+        method: "POST",
+        ...body(data),
+      }),
+
+    updateArtifact: (
+      id: string,
+      artifactId: string,
+      data: ProjectArtifactPatchBody,
+    ): Promise<ProjectArtifact> =>
+      json<ProjectArtifact>(
+        `/projects/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(artifactId)}`,
+        { method: "PATCH", ...body(data) },
+      ),
+
+    removeArtifact: (id: string, artifactId: string): Promise<void> =>
+      empty(
+        `/projects/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(artifactId)}`,
+        { method: "DELETE" },
+      ),
   },
 };
 

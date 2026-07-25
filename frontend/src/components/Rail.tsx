@@ -17,9 +17,8 @@ interface NavDef {
 const NAV: NavDef[] = [
   { key: "library", label: "文库", title: "文库", Icon: Icons.library, comingSoon: false },
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
-  { key: "search", label: "文献检索", title: "文献检索（即将）", Icon: Icons.search, comingSoon: true },
-  { key: "kb", label: "研究知识库", title: "研究知识库（即将）", Icon: Icons.kb, comingSoon: true },
-  { key: "writing", label: "写作助手", title: "写作助手（即将）", Icon: Icons.writing, comingSoon: true },
+  { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
+  { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
 ];
 
 const cx = (...parts: (string | false)[]): string => parts.filter(Boolean).join(" ");

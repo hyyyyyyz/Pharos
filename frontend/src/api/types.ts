@@ -477,3 +477,158 @@ export interface TagPatchBody {
   name?: string;
   color?: TagColor | null;
 }
+
+/* ------------------------------------------------------ research workspace */
+
+export type DiscoverySource = "arxiv" | "openalex";
+export type LiteratureSearchStatus = "running" | "complete" | "partial" | "error";
+export type LiteratureAnalysisMode = "rules" | "llm";
+
+/** One de-duplicated paper returned by a literature discovery run. */
+export interface LiteratureResult {
+  id: string;
+  search_id: string;
+  title: string;
+  authors: string[];
+  abstract: string;
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  url: string | null;
+  pdf_url: string | null;
+  /** A paper can be corroborated by both providers after de-duplication. */
+  sources: string[];
+  source_ids: Record<string, string>;
+  citation_count: number | null;
+  rank: number;
+  analysis_mode: LiteratureAnalysisMode;
+  analysis_model: string | null;
+  analysis_warning: string | null;
+  summary_zh: string;
+  contribution: string;
+  core_trick: string;
+  method: string;
+  results: string;
+  limitations: string;
+  created_at: string;
+}
+
+export interface LiteratureSearch {
+  id: string;
+  project_id: string | null;
+  query: string;
+  sources: string[];
+  status: LiteratureSearchStatus;
+  result_count: number;
+  /** Per-provider failures. A partial run keeps successful providers' results. */
+  errors: Record<string, string>;
+  created_at: string;
+  completed_at: string | null;
+  results: LiteratureResult[];
+}
+
+export interface LiteratureSearchBody {
+  query: string;
+  project_id?: string;
+  sources?: DiscoverySource[];
+  limit?: number;
+}
+
+export type ResearchProjectStatus = "active" | "archived";
+export type ResearchStage =
+  | "discovery"
+  | "ideation"
+  | "planning"
+  | "experimentation"
+  | "analysis"
+  | "claims"
+  | "drafting"
+  | "review"
+  | "complete";
+
+export type ProjectArtifactType =
+  | "hypothesis"
+  | "experiment_plan"
+  | "result"
+  | "claim"
+  | "draft"
+  | "review";
+export type ProjectArtifactStatus = "draft" | "ready" | "verified" | "rejected";
+
+export interface ProjectArtifact {
+  id: string;
+  project_id: string;
+  stage: ResearchStage;
+  type: ProjectArtifactType;
+  title: string;
+  body: string;
+  status: ProjectArtifactStatus;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ProjectSource {
+  id: string;
+  project_id: string;
+  result_id: string;
+  /** Why this paper belongs in the project. */
+  note: string | null;
+  added_at: string;
+  result: LiteratureResult;
+}
+
+export interface ResearchProject {
+  id: string;
+  name: string;
+  description: string;
+  research_question: string;
+  status: ResearchProjectStatus;
+  stage: ResearchStage;
+  created_at: string;
+  updated_at: string | null;
+  source_count: number;
+  artifact_count: number;
+  sources: ProjectSource[];
+  artifacts: ProjectArtifact[];
+  /** Backend-owned capability boundary: records are persisted, not executed. */
+  automation_notice: string;
+}
+
+export interface ResearchProjectCreateBody {
+  name: string;
+  description?: string;
+  research_question?: string;
+}
+
+export interface ResearchProjectPatchBody {
+  name?: string;
+  description?: string;
+  research_question?: string;
+  status?: ResearchProjectStatus;
+  stage?: ResearchStage;
+}
+
+export interface ProjectSourceCreateBody {
+  result_id: string;
+  note?: string;
+}
+
+export interface ProjectSourcePatchBody {
+  note: string | null;
+}
+
+export interface ProjectArtifactCreateBody {
+  stage: ResearchStage;
+  type: ProjectArtifactType;
+  title: string;
+  body: string;
+  status?: ProjectArtifactStatus;
+}
+
+export interface ProjectArtifactPatchBody {
+  stage?: ResearchStage;
+  type?: ProjectArtifactType;
+  title?: string;
+  body?: string;
+  status?: ProjectArtifactStatus;
+}

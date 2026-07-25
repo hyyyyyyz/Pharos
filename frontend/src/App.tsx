@@ -8,6 +8,8 @@ import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
 import { ReadingView } from "./components/ReadingView";
 import { DailyView } from "./components/DailyView";
+import { DiscoveryView } from "./components/DiscoveryView";
+import { ProjectsView } from "./components/ProjectsView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
 import "./App.css";
@@ -63,6 +65,10 @@ export default function App() {
           // 每日论文 is its own module, not a 文库 tab — it owns the whole main
           // area, so no <TabBar /> here.
           <DailyView />
+        ) : activeModule === "search" ? (
+          <DiscoveryView />
+        ) : activeModule === "kb" ? (
+          <ProjectsView />
         ) : (
           <ComingSoon module={activeModule} />
         )}
