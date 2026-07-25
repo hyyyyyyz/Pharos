@@ -1,12 +1,14 @@
 (() => {
   "use strict";
 
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const reduceMotion = reduceMotionQuery.matches;
   const finePointer = window.matchMedia("(pointer: fine)").matches;
 
   /* Reveal content only when JavaScript is available. If IntersectionObserver is
      missing, everything is shown immediately instead of remaining hidden. */
   const revealItems = [...document.querySelectorAll(".reveal")];
+  document.documentElement.classList.add("js-enhanced");
   if (reduceMotion || !("IntersectionObserver" in window)) {
     revealItems.forEach((item) => item.classList.add("is-visible"));
   } else {
@@ -72,6 +74,8 @@
   if (demo && stage && !reduceMotion) {
     const translatedPaper = stage.querySelector(".paper-sheet--zh");
     let stageRect = stage.getBoundingClientRect();
+    let stageLeft = stageRect.left;
+    let stageDocumentTop = window.scrollY + stageRect.top;
     let paperOffset = {
       left: translatedPaper?.offsetLeft ?? 0,
       top: translatedPaper?.offsetTop ?? 0,
@@ -85,6 +89,8 @@
 
     const refreshStageRect = () => {
       stageRect = stage.getBoundingClientRect();
+      stageLeft = stageRect.left;
+      stageDocumentTop = window.scrollY + stageRect.top;
       paperOffset = {
         left: translatedPaper?.offsetLeft ?? 0,
         top: translatedPaper?.offsetTop ?? 0,
@@ -129,10 +135,12 @@
     };
 
     const engageAtPointer = (event) => {
-      refreshStageRect();
       userUntil = performance.now() + 2300;
       demo.classList.add("is-engaged");
-      placeBeam(event.clientX - stageRect.left, event.clientY - stageRect.top);
+      placeBeam(
+        event.clientX - stageLeft,
+        event.clientY - (stageDocumentTop - window.scrollY),
+      );
     };
 
     stage.addEventListener("pointermove", engageAtPointer, { passive: true });
@@ -184,13 +192,17 @@
     placeBeam(stageRect.width * 0.68, stageRect.height * 0.42);
     rafId = requestAnimationFrame(autoBeam);
 
-    window.addEventListener(
-      "pagehide",
-      () => {
-        if (rafId) cancelAnimationFrame(rafId);
-      },
-      { once: true },
-    );
+    const pauseAutoBeam = () => {
+      if (!rafId) return;
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    };
+    window.addEventListener("pagehide", pauseAutoBeam);
+    window.addEventListener("pageshow", (event) => {
+      if (!event.persisted || !demoVisible || rafId) return;
+      refreshStageRect();
+      rafId = requestAnimationFrame(autoBeam);
+    });
   }
 
   /* The workflow is a tabbed product scene, not four separate feature cards.
@@ -215,6 +227,7 @@
       const active = scene.dataset.scene === name;
       scene.classList.toggle("is-active", active);
       scene.setAttribute("aria-hidden", String(!active));
+      scene.inert = !active;
     });
 
     routeProgress.forEach((bar, barIndex) => {
@@ -256,12 +269,16 @@
   const posterFrame = document.querySelector("[data-poster-frame]");
   const posterImage = posterFrame?.querySelector("img");
   if (posterFrame && posterImage && finePointer && !reduceMotion) {
+    let posterRect = posterFrame.getBoundingClientRect();
+    const refreshPosterRect = () => {
+      posterRect = posterFrame.getBoundingClientRect();
+    };
+    posterFrame.addEventListener("pointerenter", refreshPosterRect, { passive: true });
     posterFrame.addEventListener(
       "pointermove",
       (event) => {
-        const rect = posterFrame.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width - 0.5;
-        const y = (event.clientY - rect.top) / rect.height - 0.5;
+        const x = (event.clientX - posterRect.left) / posterRect.width - 0.5;
+        const y = (event.clientY - posterRect.top) / posterRect.height - 0.5;
         posterImage.style.transform = `translate3d(${(x * -9).toFixed(1)}px, ${(y * -7).toFixed(1)}px, 0) scale(1.018)`;
       },
       { passive: true },
@@ -269,6 +286,7 @@
     posterFrame.addEventListener("pointerleave", () => {
       posterImage.style.transform = "";
     });
+    if ("ResizeObserver" in window) new ResizeObserver(refreshPosterRect).observe(posterFrame);
   }
 
   /* The three research signals remain useful even without WebGL: they explain
@@ -350,12 +368,55 @@
   /* The cinematic lighthouse is progressive enhancement. The existing HTML and
      CSS fallback remain complete if WebGL, the dynamic chunk, or the GPU fails. */
   const beaconCanvas = beaconHero?.querySelector("[data-lighthouse-canvas]");
+  const beaconSignalGroup = beaconHero?.querySelector(".hero__signals");
+  const beaconStatus = beaconHero?.querySelector("[data-beacon-status]");
   const saveData = navigator.connection?.saveData === true;
-  if (beaconHero && beaconCanvas && !reduceMotion && !saveData) {
+
+  let lighthouseDestroy = null;
+  let lighthouseLaunchId = 0;
+  const setStaticBeacon = () => {
+    if (!beaconHero) return;
+    beaconHero.classList.remove("is-scene-ready", "is-beam-guided");
+    beaconHero.dataset.sceneMode = "static";
+    if (beaconChapter) beaconChapter.textContent = "STATIC SCENE · ACCESSIBLE FALLBACK";
+    if (beaconHeadline) beaconHeadline.textContent = "静态灯塔场景已就绪";
+    if (beaconStatus) beaconStatus.textContent = "已启用静态场景 · 下方仍可完整查看产品演示";
+    beaconSignalGroup?.setAttribute("aria-label", "查看研究工作流节点");
+  };
+
+  const launchLighthouse = () => {
+    if (!beaconHero || !beaconCanvas || saveData || reduceMotionQuery.matches) {
+      setStaticBeacon();
+      return;
+    }
+    const launchId = ++lighthouseLaunchId;
+    beaconHero.dataset.sceneMode = "loading";
     import("./lighthouse.js")
-      .then(({ initLighthouseScene }) => initLighthouseScene({ root: beaconHero, canvas: beaconCanvas }))
-      .catch(() => {
-        beaconHero.classList.remove("is-scene-ready");
-      });
+      .then(async ({ initLighthouseScene }) => {
+        const destroy = await initLighthouseScene({ root: beaconHero, canvas: beaconCanvas });
+        if (launchId !== lighthouseLaunchId || reduceMotionQuery.matches) {
+          destroy?.();
+          setStaticBeacon();
+          return;
+        }
+        lighthouseDestroy = destroy;
+        beaconHero.dataset.sceneMode = "interactive";
+        beaconSignalGroup?.setAttribute("aria-label", "选择灯塔要连接的研究节点");
+      })
+      .catch(setStaticBeacon);
+  };
+
+  if (beaconHero && beaconCanvas) {
+    launchLighthouse();
+    reduceMotionQuery.addEventListener?.("change", (event) => {
+      lighthouseLaunchId += 1;
+      if (event.matches) {
+        lighthouseDestroy?.();
+        lighthouseDestroy = null;
+        setStaticBeacon();
+      } else {
+        launchLighthouse();
+      }
+    });
   }
 })();

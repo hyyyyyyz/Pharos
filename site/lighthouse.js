@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
 const SIGNAL_NAMES = ["问题", "证据", "推进"];
 const STORY_BEATS = [
@@ -70,8 +69,9 @@ function makeMistTexture() {
   return texture;
 }
 
-function makeTowerTexture(renderer) {
-  const size = 512;
+function makeTowerTexture(renderer, quality) {
+  const size = quality === "low" ? 256 : quality === "medium" ? 384 : 512;
+  const speckleCount = quality === "low" ? 2500 : quality === "medium" ? 6000 : 11000;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -81,7 +81,7 @@ function makeTowerTexture(renderer) {
   context.fillStyle = "#d8d5c9";
   context.fillRect(0, 0, size, size);
 
-  for (let i = 0; i < 11000; i += 1) {
+  for (let i = 0; i < speckleCount; i += 1) {
     const shade = 188 + Math.floor(random() * 45);
     context.fillStyle = `rgba(${shade}, ${shade}, ${shade - 7}, ${0.025 + random() * 0.04})`;
     const radius = 0.3 + random() * 1.25;
@@ -89,18 +89,20 @@ function makeTowerTexture(renderer) {
   }
 
   context.lineWidth = 1;
-  for (let y = 24; y < size; y += 34) {
+  const courseHeight = size / 15;
+  const blockWidth = size / 6.75;
+  for (let y = courseHeight * 0.7; y < size; y += courseHeight) {
     context.strokeStyle = "rgba(66, 75, 77, 0.11)";
     context.beginPath();
     context.moveTo(0, y);
     context.lineTo(size, y + random() * 2 - 1);
     context.stroke();
 
-    const offset = Math.floor(y / 34) % 2 === 0 ? 0 : 38;
-    for (let x = offset; x < size; x += 76) {
+    const offset = Math.floor(y / courseHeight) % 2 === 0 ? 0 : blockWidth / 2;
+    for (let x = offset; x < size; x += blockWidth) {
       context.strokeStyle = "rgba(70, 77, 77, 0.07)";
       context.beginPath();
-      context.moveTo(x, y - 34);
+      context.moveTo(x, y - courseHeight);
       context.lineTo(x, y);
       context.stroke();
     }
@@ -855,6 +857,9 @@ export async function initLighthouseScene({ root, canvas }) {
   const quality = selectQuality();
   const random = mulberry32(20260725);
   const useBloom = quality === "high";
+  const bloomModule = useBloom
+    ? await import("three/addons/postprocessing/UnrealBloomPass.js")
+    : null;
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: quality !== "low",
@@ -880,7 +885,7 @@ export async function initLighthouseScene({ root, canvas }) {
   const textures = {
     glow: makeGlowTexture(),
     mist: makeMistTexture(),
-    tower: makeTowerTexture(renderer),
+    tower: makeTowerTexture(renderer, quality),
   };
 
   const sky = createSky(scene, quality, textures, random);
@@ -939,13 +944,14 @@ export async function initLighthouseScene({ root, canvas }) {
   );
 
   let bloomPass = null;
-  if (useBloom) {
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.38, 1.22);
+  if (bloomModule) {
+    bloomPass = new bloomModule.UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.38, 1.22);
     renderer.setEffects([bloomPass]);
   }
 
   let width = 1;
   let height = 1;
+  let heroLeft = 0;
   let heroTop = 0;
   let heroHeight = root.offsetHeight;
   let targetProgress = 0;
@@ -967,6 +973,7 @@ export async function initLighthouseScene({ root, canvas }) {
   let pointerX = 0;
   let pointerY = 0;
   let scrollTicking = false;
+  let lastRenderTimestamp = 0;
   const beamOrigin = new THREE.Vector3();
   const beamDirection = new THREE.Vector3();
   const cameraPosition = new THREE.Vector3();
@@ -978,6 +985,7 @@ export async function initLighthouseScene({ root, canvas }) {
 
   const refreshBounds = () => {
     const rect = root.getBoundingClientRect();
+    heroLeft = rect.left;
     heroTop = window.scrollY + rect.top;
     heroHeight = Math.max(root.offsetHeight, 1);
   };
@@ -1077,9 +1085,9 @@ export async function initLighthouseScene({ root, canvas }) {
 
   const onPointerMove = (event) => {
     if (event.pointerType === "touch") return;
-    const rect = root.getBoundingClientRect();
-    pointerTargetX = clamp(((event.clientX - rect.left) / rect.width) * 2 - 1, -1, 1);
-    pointerTargetY = clamp(((event.clientY - rect.top) / rect.height) * 2 - 1, -1, 1);
+    const heroViewportTop = heroTop - window.scrollY;
+    pointerTargetX = clamp(((event.clientX - heroLeft) / width) * 2 - 1, -1, 1);
+    pointerTargetY = clamp(((event.clientY - heroViewportTop) / height) * 2 - 1, -1, 1);
   };
 
   const onPointerLeave = () => {
@@ -1102,6 +1110,11 @@ export async function initLighthouseScene({ root, canvas }) {
   function renderFrame(timestamp) {
     frameId = 0;
     if (destroyed || !sceneVisible || document.hidden) return;
+    if (quality === "low" && lastRenderTimestamp && timestamp - lastRenderTimestamp < 32) {
+      frameId = requestAnimationFrame(renderFrame);
+      return;
+    }
+    lastRenderTimestamp = timestamp;
 
     timer.update(timestamp);
     const delta = Math.min(timer.getDelta(), 0.05);
@@ -1295,6 +1308,8 @@ export async function initLighthouseScene({ root, canvas }) {
     document.removeEventListener("visibilitychange", onVisibilityChange);
     canvas.removeEventListener("webglcontextlost", onContextLost);
     canvas.removeEventListener("webglcontextrestored", onContextRestored);
+    window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("pageshow", onPageShow);
     timer.dispose();
     if (bloomPass) bloomPass.dispose();
     disposeScene(scene);
@@ -1302,12 +1317,26 @@ export async function initLighthouseScene({ root, canvas }) {
     root.classList.remove("is-scene-ready");
     root.classList.remove("is-beam-guided");
     delete root.dataset.storyBeat;
+    delete root.dataset.sceneQuality;
   };
 
   resize();
   currentProgress = targetProgress;
   renderer.compileAsync(scene, camera).catch(() => {});
   start();
-  window.addEventListener("pagehide", destroy, { once: true });
+  const onPageHide = (event) => {
+    if (event.persisted) stop();
+    else destroy();
+  };
+  const onPageShow = (event) => {
+    if (!event.persisted || destroyed) return;
+    const rect = root.getBoundingClientRect();
+    sceneVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+    lastRenderTimestamp = 0;
+    resize();
+    start();
+  };
+  window.addEventListener("pagehide", onPageHide);
+  window.addEventListener("pageshow", onPageShow);
   return destroy;
 }
