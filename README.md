@@ -1,171 +1,370 @@
+<p align="center">
+  <strong>English</strong> · <a href="./README_CN.md">Simplified Chinese</a>
+</p>
+
 <div align="center">
 
 <img src="assets/brand/wordmark.png" alt="Pharos" width="360" />
 
-<br/>
+### An integrated, evidence-first research workbench
 
-**An integrated research platform — from reading papers to writing them, all under one light.**
+Discover literature, read and translate papers, organize evidence, and carry an
+idea through a durable research workflow — in one self-hosted platform.
 
-**一体化科研平台 —— 从读到写，检索、翻译、精读、领航问答、每日跟进、文献管理、写作，尽在一盏灯下。**
-
-> Named after the Pharos of Alexandria, the ancient lighthouse — a beam of
-> light guiding readers through the fog of dense literature.
-
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-0C2040.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-0C2040.svg)](LICENSE)
 &nbsp;![Status](https://img.shields.io/badge/status-active%20development-F8C040.svg)
 &nbsp;![Backend](https://img.shields.io/badge/backend-FastAPI%20·%20SQLite-189090.svg)
-&nbsp;![Frontend](https://img.shields.io/badge/frontend-React%20·%20Vite%20·%20TS-0C2040.svg)
+&nbsp;![Clients](https://img.shields.io/badge/clients-React%20·%20Tauri-0C2040.svg)
+
+[Website](https://hyyyyyyz.github.io/Pharos/) ·
+[Architecture](docs/ARCHITECTURE.md) ·
+[Research workflow](docs/RESEARCH_WORKFLOW.md) ·
+[Contributing](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-## What it is
+## What is Pharos?
 
-Pharos is an **integrated research platform** — one place for the whole arc of
-research work: **discover → read → understand → organize → write**. Not a
-reference manager with a translation plugin bolted on, and not "a PDF
-translator" — it is built from the ground up as the workbench a researcher lives
-in, with a clean client/server split so it grows in one place and ships to many:
-browser today, desktop and phone later, all talking to **one backend**.
+Pharos is an open-source research platform for the path from a question to a
+defensible research output. It brings literature discovery, layout-preserving
+paper translation, deep reading, annotations, personal library management,
+daily research monitoring, Zotero sync, and persistent research projects into
+one workbench.
 
-The **flagship module — and the proof the platform is real — is
-layout-preserving reading & translation.** Drop in an English paper (PDF) and
-get back a **Chinese version that keeps the original layout** — columns,
-figures, tables and math stay exactly where they were; only the prose is
-translated. You get both a **Chinese-only** and a **bilingual side-by-side**
-PDF, in a reader you can zoom, pan, select, search and highlight. Around it sit
-the library, the 领航 reading companion and the daily digest. The v1 workbench
-also includes **live literature discovery and durable research projects**:
-search across arXiv/OpenAlex, keep the useful sources with a reason, and carry
-hypotheses, experiment plans, results, claims, drafts and reviews through a
-visible research process.
+It is **not only a PDF translator**. Translation is an important foundation,
+but the product is organized around the wider research loop:
 
-The four live modules are **文库 · 每日论文 · 文献探索 · 研究项目**. Automated
-experiment execution and evidence-constrained writing remain roadmap work.
-
-<div align="center">
-<img src="assets/brand/poster.png" alt="Pharos — a workshop of small robots reading, translating and charting papers around a central lighthouse" width="620" />
-</div>
-
-## Highlights
-
-- 📄 **Layout-preserving translation** — English → Chinese with columns,
-  formulas, tables and figures kept in place. Mono + bilingual output. Powered
-  by [BabelDOC](https://github.com/funstory-ai/BabelDOC) run at arm's length in
-  its own process.
-- 🔍 **A real reader, not an image viewer** — pdf.js with a true text layer:
-  zoom, drag-to-pan, select & copy, in-document find, and passage highlights
-  with notes. Coordinates are stored in PDF points, so a highlight lands right
-  at any zoom or screen.
-- 🧭 **领航 · AI reading companion** — a chat alongside the paper for asking
-  about a paragraph instead of translating the whole thing. *(UI ready; wire an
-  LLM key to enable.)*
-- 📰 **每日论文 · daily arXiv digest** — a self-updating feed of new papers in
-  the fields **you** define, each with a Chinese summary, key-point breakdown
-  and relevance score. Keywords are per-user and editable; matching happens at
-  read time, so editing a direction re-ranks your feed instantly.
-- 🌐 **文献探索 · live literature discovery** — query arXiv and OpenAlex,
-  de-duplicate overlapping records, reopen persisted search history, and keep
-  honest partial results when one provider is unavailable. Results start with
-  labelled title/abstract heuristics and can be upgraded with an optional,
-  model-attributed AI abstract reading — neither is presented as full-PDF analysis.
-- 🧪 **研究项目 · durable research records** — collect selected sources with a
-  note explaining why they matter, move through nine visible stages, and keep
-  hypotheses, experiment plans, results, claims, drafts and reviews. These are
-  researcher-owned records; v1 does not pretend to run experiments for you.
-- 📚 **A library that is actually yours** — Zotero-style category tree, item
-  list and detail; collections, tags, full-text search (SQLite FTS5), and
-  bibliographic metadata extracted from the PDF and reconciled against
-  CrossRef / arXiv.
-- 🔗 **Zotero, as a source not a silo** — link your Zotero account and its
-  library syncs *into* Pharos; the 文库 is the home, Zotero is one way to fill it.
-- 👤 **Multi-user from the core** — email + password accounts (argon2id, JWT),
-  strict per-user isolation verified adversarially: another user's paper is
-  indistinguishable from one that does not exist.
-- 🎨 **Calm, brand-true theming** — a warm, paper-like palette drawn from the
-  logo, light & dark, with ten selectable accents. Whole-PDF translation is an
-  optional per-account setting — turn it off and the apparatus disappears
-  rather than greying out.
-
-## Architecture at a glance
-
-<div align="center">
-  <img src="assets/brand/architecture-overview.png" alt="Pharos architecture: thin clients connect to the FastAPI backend, which delegates PDF translation to an isolated BabelDOC worker and produces Chinese and bilingual PDFs." width="100%" />
-</div>
-
-The translation engine (BabelDOC) is **AGPL-3.0** and runs as a **separate
-process in its own environment** — never imported in-process. That boundary is
-also the AGPL aggregation seam and a quarantine for native dependencies. See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full reasoning (including
-the macOS Apple-Silicon `hyperscan` gotcha and the AGPL boundary).
-
-**Stack.** Backend: FastAPI · SQLAlchemy 2.x · SQLite (WAL) · sse-starlette,
-with ~400 tests. Frontend: React 18 · Vite · TypeScript (strict) · TanStack
-Query · Zustand · pdf.js. Engine: BabelDOC via `pdf2zh-next`, in a Rosetta
-`osx-64` conda env on Apple Silicon.
-
-## Quick start (macOS / Apple Silicon)
-
-> Requires: [conda](https://docs.conda.io/) (miniconda), Rosetta 2, Node 18+.
-
-```bash
-# 1. Set up the translation engine (isolated osx-64 / Rosetta conda env)
-bash scripts/setup_engine_env.sh
-
-# 2. Backend: install and run the API (SQLite is created on first run)
-pip install -e backend
-cp .env.example .env          # set PHAROS_AUTH_SECRET; add an LLM key when ready
-python -m uvicorn pharos.main:app --host 127.0.0.1 --port 8848
-
-# 3. Frontend: install and run the dev server (proxies /api to the backend)
-cd frontend && npm install && npm run dev
+```text
+discover → screen → read → organize → hypothesize → plan → record → claim → draft → review
 ```
 
-Open `http://localhost:5173`, create an account, and drop in a PDF.
+The public [GitHub Pages site](https://hyyyyyyz.github.io/Pharos/) is the
+marketing website. The actual product consists of the React web client (or the
+Tauri desktop shell), the FastAPI backend, SQLite storage, and an isolated PDF
+translation worker.
 
-## Roadmap
+<div align="center">
+  <img src="assets/brand/poster.png" alt="Small research robots reading and organizing papers around the Pharos lighthouse" width="620" />
+</div>
 
-- [x] Layout-preserving EN→ZH translation — mono + bilingual PDF
-- [x] FastAPI core: upload, async translate jobs, live progress (SSE), library
-- [x] React reader: zoom / pan / text layer / find / highlights & notes
-- [x] Accounts, per-user isolation, and a split-panel sign-in
-- [x] 每日论文 — daily arXiv digest with user-defined research directions
-- [x] Full-text search, collections & tags, metadata extraction
-- [x] Zotero Web API sync
-- [x] **文献探索 v1** — live arXiv/OpenAlex search, cross-source de-duplication,
-  honest partial failure, rule analysis, optional AI abstract reading and persisted history
-- [x] **研究项目 v1** — saved sources and rationale notes, nine-stage workflow,
-  persistent hypothesis / plan / result / claim / draft / review records
-- [x] **Research OS workflow specification** — current boundary and future
-  evidence/execution contract in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)
-- [ ] **领航 chat backend** — LLM Q&A over the paper *(needs an API key)*
-- [ ] Translation quality: DeepSeek + scientific glossary prompt
-- [ ] Page-grounded Evidence Ledger and model-assisted Idea Lab
-- [ ] Sandboxed experiment execution and verified Claim bindings
-- [ ] **研究项目 · Claim & Publication** — evidence-constrained publication
-  workflow over verified project records
-- [ ] Public deployment (same-origin, HTTPS, httpOnly-cookie auth)
-- [ ] Desktop (Tauri) & mobile clients on the same backend
+## What works today
+
+The four primary modules are functional and backed by persistent server-side
+data rather than static mockups.
+
+| Module | Current capabilities |
+| --- | --- |
+| **Library** | Import PDFs, preserve bibliographic metadata, translate papers, search full text, organize collections, annotate passages, attach notes to highlights, and import bibliographic metadata from Zotero. |
+| **Daily Papers** | Follow user-defined research directions, fetch new arXiv papers, rank them for each user, optionally generate model-backed abstract readings, and import useful papers into the library. |
+| **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
+| **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
+
+### Reading and translation
+
+- **Layout-preserving English-to-Chinese translation.** BabelDOC, invoked
+  through `pdf2zh-next`, produces a Chinese-only PDF and a bilingual PDF while
+  aiming to retain the original columns, figures, tables, and mathematics.
+- **A real PDF reader.** The React client uses pdf.js with a text layer, zoom,
+  drag-to-pan, text selection, copy, in-document search, and annotations.
+- **Coordinate-stable highlights.** Highlight locations are stored in PDF
+  coordinates so they remain attached at different zoom levels and window sizes.
+- **Optional translation providers.** Keyless Bing/Google translation and
+  configured DeepSeek/OpenAI-compatible providers share the same engine boundary.
+- **Per-account controls.** Whole-document translation can be disabled without
+  hiding previously generated translated files.
+
+### Discovery and research records
+
+- Search arXiv and OpenAlex in parallel and normalize them into one result model.
+- De-duplicate by DOI or normalized title and preserve all contributing sources.
+- Keep successful results when one provider is unavailable and persist the
+  provider-specific failure.
+- Show deterministic title/abstract extraction by default, with an optional
+  schema-validated model reading that is explicitly labelled as abstract-only.
+- Save a paper to a research project together with the reason it belongs there
+  and what still needs verification.
+- Move a project through nine explicit stages:
+
+```text
+discovery → ideation → planning → experimentation → analysis
+          → claims → drafting → review → complete
+```
+
+The current workflow stores researcher-owned records. It does **not** claim to
+run experiments, reproduce results, verify claims, or write a complete paper
+autonomously. Those capabilities require stronger evidence and execution
+contracts and remain future work.
+
+### Library, accounts, and integrations
+
+- Multi-user email/password accounts with Argon2id password hashing and signed
+  bearer tokens.
+- Owner-scoped papers, searches, projects, annotations, directions, and Zotero
+  credentials.
+- SQLite FTS5 full-text search and nested collection organization.
+- PDF metadata extraction with Crossref/arXiv reconciliation where possible.
+- One-way Zotero Web API metadata sync. It does not download attachments or
+  write Pharos translation/reading state back to Zotero.
+- An experimental Tauri 2 desktop shell for macOS and Windows that reuses the
+  exact React UI and connects to the same separately running backend.
+
+## Architecture
+
+<div align="center">
+  <img src="assets/brand/architecture-overview.png" alt="Pharos clients connect to one FastAPI core, which delegates PDF translation to an isolated BabelDOC worker" width="100%" />
+</div>
+
+The diagram above focuses on the PDF translation execution path. The current
+repository also contains Literature Discovery, Research Projects, and an
+experimental Tauri desktop shell.
+
+Pharos keeps one backend as the source of truth for every client.
+
+```text
+React web client / Tauri desktop client
+                  │
+                  │ REST + Server-Sent Events + bearer-token authentication
+                  ▼
+            FastAPI application
+ accounts · library · jobs · daily · discovery · projects · annotations · Zotero
+                  │
+                  │ arm's-length subprocess · NDJSON progress
+                  ▼
+      engine worker → pdf2zh-next → BabelDOC
+                    → mono PDF + bilingual PDF
+```
+
+- **Backend:** FastAPI, SQLAlchemy 2.x, SQLite in WAL mode, SSE, a
+  content-addressed PDF blob store, and background job managers.
+- **Web client:** React 18, TypeScript, Vite, TanStack Query, Zustand, and pdf.js.
+- **Desktop client:** Tauri 2 with the same frontend bundle; the backend and
+  translation engine remain separate services.
+- **Translation boundary:** BabelDOC runs in its own Python environment and OS
+  process. The backend consumes NDJSON progress and republishes it over SSE.
+- **External sources:** arXiv, OpenAlex, Crossref, Zotero, and optional
+  OpenAI-compatible model providers.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the engine boundary,
+storage model, request flow, licensing considerations, and the Apple-Silicon
+`hyperscan` workaround.
+
+## Repository layout
+
+```text
+Pharos/
+├── backend/                 FastAPI core, services, database, tests
+│   ├── pharos/              API, domain services, storage, engine adapter
+│   └── engine_worker/       isolated BabelDOC worker; emits NDJSON progress
+├── frontend/                React web product and PDF reader
+├── desktop/                 Tauri 2 desktop shell and release configuration
+├── site/                    Three.js/Vite GitHub Pages marketing site
+├── scripts/                 environment and engine setup utilities
+├── docs/                    architecture and research-workflow specifications
+└── assets/brand/            shared logos, poster, and architecture artwork
+```
+
+The `site/` project is independent of the research application. Running the
+marketing site does not start the FastAPI backend or the Pharos product UI.
+
+## Run Pharos locally
+
+### Requirements
+
+- Python **3.11 or newer**
+- Node.js **20 or newer** and npm
+- A modern browser
+- For PDF translation on macOS Apple Silicon: conda and Rosetta 2
+- For the desktop shell: Rust **1.77.2 or newer** and the platform build tools
+
+The documented engine bootstrap targets macOS Apple Silicon. Linux and Windows
+x86_64 have native engine wheels, but their full installation path is not yet
+wrapped by a repository setup script.
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/hyyyyyyz/Pharos.git
+cd Pharos
+cp .env.example .env
+```
+
+Generate a signing secret and place it in `.env` as `PHAROS_AUTH_SECRET`:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+The backend can generate an ephemeral secret for localhost development, but a
+configured secret keeps sessions valid across restarts and is mandatory before
+exposing the API beyond localhost.
+
+### 2. Prepare the translation engine (macOS Apple Silicon)
+
+```bash
+bash scripts/setup_engine_env.sh
+```
+
+The script creates an isolated `osx-64` conda environment named
+`pharos-engine`, installs `pdf2zh-next==2.9.0` and BabelDOC, and verifies the
+native dependencies under Rosetta. If conda is installed somewhere other than
+`~/miniconda3`, set `PHAROS_ENGINE_PYTHON` to the absolute interpreter path.
+
+You may skip this step while working only on library, discovery, project, or UI
+features; translation jobs will require the worker environment.
+
+### 3. Start the backend
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e "backend[dev]"
+python -m uvicorn pharos.main:app --host 127.0.0.1 --port 8848 --reload
+```
+
+On Windows, activate the environment with `.venv\Scripts\activate`.
+
+The database and blob directories are created under `data/` on first start.
+Check the API at `http://127.0.0.1:8848/api/health`.
+
+### 4. Start the web client
+
+In a second terminal:
+
+```bash
+npm ci --prefix frontend
+npm --prefix frontend run dev
+```
+
+Open `http://localhost:5173`. The Vite development server proxies `/api` to
+`http://127.0.0.1:8848`.
+
+## Run the desktop client
+
+The desktop application is a thin Tauri shell. It uses the same React frontend
+and expects the backend to be running separately.
+
+```bash
+npm ci --prefix frontend
+npm ci --prefix desktop
+npm --prefix desktop run dev
+```
+
+Production builds use `frontend/.env.desktop` (or the corresponding process
+environment) for `VITE_API_BASE`. The release workflow can build universal
+macOS installers and Windows MSI/NSIS installers, but current packages are
+unsigned. See [`desktop/README.md`](desktop/README.md).
+
+## Develop the marketing site
+
+The public website is a separate static Vite/Three.js project and does not need
+Python, the API, a database, or model keys.
+
+```bash
+npm ci --prefix site
+npm --prefix site run dev -- --port 5174
+```
+
+Use port `5174` when the product frontend is already using `5173`.
+
+```bash
+npm --prefix site run build
+npm --prefix site run preview
+```
+
+## Configuration
+
+The backend reads the repository-root `.env` file. The most important settings
+are:
+
+| Variable | Purpose |
+| --- | --- |
+| `PHAROS_AUTH_SECRET` | Signs access tokens. Use at least 32 random characters for any persistent or networked instance. |
+| `PHAROS_DATA_DIR` | Overrides the SQLite database and PDF blob root. Defaults to `data/`. |
+| `PHAROS_ENGINE_PYTHON` | Absolute path to the Python interpreter inside the isolated translation-engine environment. |
+| `PHAROS_TRANSLATOR_TYPE` | `bing`, `google`, `deepseek`, `openai`, or `custom`. |
+| `PHAROS_CHAT_PROVIDER` | Selects the configured provider used by optional model-backed reading tasks. |
+| `PHAROS_DEEPSEEK_*`, `PHAROS_OPENAI_*`, `PHAROS_CUSTOM_*` | API key, base URL, and model for named OpenAI-compatible providers. |
+| `PHAROS_CORS_ORIGINS` | Comma-separated allowed web origins. Set explicit origins in a real deployment. |
+
+The default translator is keyless Bing. Model-backed daily reading and
+abstract analysis remain unavailable until a usable provider key and model are
+configured; the rest of the application continues to work without one.
+
+## API basics
+
+- The API base path is `/api`.
+- `POST /api/auth/register` and `POST /api/auth/login` issue bearer tokens.
+- Business endpoints require `Authorization: Bearer <token>`; `/api/health` and
+  the authentication entry points are the main public exceptions.
+- Translation progress is available from
+  `GET /api/jobs/{job_id}/events` as an authenticated SSE stream.
+- FastAPI exposes interactive OpenAPI documentation at `http://127.0.0.1:8848/docs`
+  and the schema at `/openapi.json`.
+
+Representative endpoint groups include `/api/papers`, `/api/search`,
+`/api/daily`, `/api/discovery`, `/api/projects`, `/api/collections`,
+`/api/highlights`, and `/api/zotero`.
+
+## Verification
+
+From the repository root:
+
+```bash
+# Backend tests
+python -m pytest backend/tests
+
+# Product and marketing builds
+npm --prefix frontend run build
+npm --prefix site run build
+
+# Desktop Rust shell
+cargo check --manifest-path desktop/src-tauri/Cargo.toml
+```
+
+The live BabelDOC integration test is optional because it requires the isolated
+engine environment and a real PDF fixture.
+
+## Current boundaries and next directions
+
+Pharos deliberately distinguishes implemented records from automated research:
+
+- The **Navigator** reading-companion interface exists, but its streaming paper
+  Q&A backend is not yet mounted in the FastAPI application.
+- Literature Discovery reads search metadata and abstracts, not full papers.
+- Research Projects persist plans and results supplied by the researcher; they
+  do not run code, allocate GPUs, or validate metrics.
+- A `verified` project record is a user decision, not independent reproduction.
+- Tags, paper-level notes, direct arXiv-link import, and one-click
+  Discovery-to-Library download are not yet complete end-to-end frontend flows.
+- Zotero sync is metadata-only and one-way into Pharos.
+- The full product backend is currently self-hosted; GitHub Pages hosts only
+  the public marketing site.
+- The desktop shell exists, but signed/notarized public releases and a mobile
+  thin client remain future work.
+
+The next major workstreams are page-addressable evidence, grounded paper Q&A,
+an evidence-aware idea workflow, sandboxed experiment execution, claim-to-result
+bindings, and an evidence-constrained drafting/review pipeline. The detailed
+contract is recorded in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
 
 ## License
 
-Pharos is licensed under the **GNU Affero General Public License v3.0**
-([`LICENSE`](LICENSE)). This matches its AGPL-3.0 engine dependency and keeps
-the whole project free and open. If you run a modified Pharos as a network
-service, the AGPL requires you to offer your users its source.
+Pharos is licensed under the **GNU Affero General Public License v3.0 or later**.
+See [`LICENSE`](LICENSE). If you offer a modified Pharos to users over a network,
+the AGPL requires those users to be offered the corresponding source code.
 
 ## Acknowledgements
 
-The layout-preserving translation core is powered by
-[**BabelDOC**](https://github.com/funstory-ai/BabelDOC) and
-[**PDFMathTranslate / pdf2zh-next**](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
-by funstory.ai (AGPL-3.0). Pharos builds its own application, library, reading
-experience and daily digest around that engine.
+Layout-preserving translation is powered by
+[BabelDOC](https://github.com/funstory-ai/BabelDOC) and
+[PDFMathTranslate / pdf2zh-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next),
+both maintained by funstory.ai and distributed under AGPL-3.0.
 
 <div align="center">
-<br/>
-<img src="assets/brand/mark.png" alt="Pharos mark" width="72" />
-<br/>
-<sub><b>Pharos</b> · 灯塔照亮文献之海</sub>
+  <br />
+  <img src="assets/brand/mark.png" alt="Pharos lighthouse mark" width="72" />
+  <br />
+  <sub><strong>Pharos</strong> · A clear line through the literature</sub>
 </div>
