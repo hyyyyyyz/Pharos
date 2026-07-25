@@ -2,8 +2,9 @@
 # https://hyyyyyyz.github.io/Pharos/
 #
 # Uses the modern Actions-based Pages deployment (not the legacy gh-pages
-# branch). The page is static and self-contained — no build step, the site/
-# directory is served as-is. `configure-pages` with enablement: true turns
+# branch). The landing page has its own small Vite build so Three.js and future
+# visual modules are pinned, bundled, and cache-busted without a runtime CDN.
+# `configure-pages` with enablement: true turns
 # Pages on the first time this runs, so no manual Settings change is normally
 # needed; if the first run fails complaining Pages is not enabled, set
 # Settings → Pages → Source to "GitHub Actions" once and re-run.
@@ -43,6 +44,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Build the landing page
+        working-directory: site
+        run: |
+          npm ci
+          npm run build
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
@@ -52,7 +66,7 @@ jobs:
       - name: Upload the landing page
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: site/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
