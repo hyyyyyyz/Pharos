@@ -53,6 +53,7 @@ fi
 mkdir -p \
   "$ROOT/shared/data" \
   "$ROOT/shared/cache" \
+  "$ROOT/shared/config" \
   "$ROOT/shared/tmp" \
   "$ROOT/shared/backups" \
   "$ROOT/shared/secrets" \
@@ -106,6 +107,13 @@ for _ in $(seq 1 90); do
   fi
   sleep 2
 done
+
+if [[ "$healthy" -eq 1 ]]; then
+  if ! docker exec pharos-api /opt/pharos-engine/bin/python -c 'import pdf2zh_next' >/dev/null 2>&1; then
+    echo "Pharos API is healthy but the isolated translation engine cannot initialize" >&2
+    healthy=0
+  fi
+fi
 
 if [[ "$healthy" -ne 1 ]]; then
   echo "new Pharos release failed health checks" >&2

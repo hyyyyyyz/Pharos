@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
-      - "deploy/Dockerfile"
+      - "deploy/**"
       - ".dockerignore"
       - ".github/workflows/backend-image.yml"
   workflow_dispatch: {}
@@ -72,16 +72,24 @@ jobs:
           docker pull "$IMAGE"
           docker run -d --rm \
             --name pharos-smoke \
+            --read-only \
+            --tmpfs /data:rw,uid=1000,gid=1000,mode=700 \
+            --tmpfs /cache:rw,uid=1000,gid=1000,mode=700 \
+            --tmpfs /home/pharos/.config:rw,uid=1000,gid=1000,mode=700 \
+            --tmpfs /tmp:rw,uid=1000,gid=1000,mode=1777 \
             -e PHAROS_AUTH_SECRET=smoke-test-secret-smoke-test-secret-1234 \
             -e PHAROS_DAILY_ENABLED=0 \
             -p 127.0.0.1:18400:8400 \
             "$IMAGE"
           trap 'docker logs --tail 100 pharos-smoke || true; docker stop pharos-smoke || true' EXIT
+          healthy=0
           for attempt in $(seq 1 60); do
             if curl --fail --silent --show-error http://127.0.0.1:18400/api/health \
               | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"] == "ok"'; then
-              exit 0
+              healthy=1
+              break
             fi
             sleep 2
           done
-          exit 1
+          test "$healthy" = 1
+          docker exec pharos-smoke /opt/pharos-engine/bin/python -c 'import pdf2zh_next'
