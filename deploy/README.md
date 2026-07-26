@@ -14,7 +14,7 @@ This deployment is deliberately isolated from every existing service on
 ## Topology
 
 ```text
-pharos-api.selab.top
+pharos.selab.top
         │ Cloudflare Tunnel: pharos-prod
         ▼
 pharos-cloudflared ── pharos-net ── pharos-api:8400
@@ -54,7 +54,7 @@ deploy/pharosctl tunnel-create
 `tunnel-login` is the sole interactive step: Cloudflare prints a browser URL
 that must be approved by a user with access to the `selab.top` zone. After that,
 `tunnel-create` creates a new `pharos-prod` tunnel, creates/updates only the
-`pharos-api.selab.top` DNS record, pins the official cloudflared image by digest,
+`pharos.selab.top` DNS record, pins the official cloudflared image by digest,
 and starts `pharos-cloudflared` with `restart: unless-stopped`.
 
 ## Server data layout

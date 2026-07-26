@@ -71,7 +71,7 @@ case "$command" in
       "PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-login.sh'"
     ;;
   tunnel-create)
-    "${SSH[@]}" "export PHAROS_TUNNEL_NAME=pharos-prod PHAROS_PUBLIC_HOSTNAME=pharos-api.selab.top; PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-create.sh'"
+    "${SSH[@]}" "export PHAROS_TUNNEL_NAME=pharos-prod PHAROS_PUBLIC_HOSTNAME=pharos.selab.top; PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-create.sh'"
     ;;
   *)
     usage

@@ -5,7 +5,7 @@ umask 077
 ROOT=${PHAROS_ROOT:-"$HOME/pharos"}
 CF_DIR="$ROOT/shared/cloudflared"
 TUNNEL_NAME=${PHAROS_TUNNEL_NAME:-pharos-prod}
-HOSTNAME=${PHAROS_PUBLIC_HOSTNAME:-pharos-api.selab.top}
+HOSTNAME=${PHAROS_PUBLIC_HOSTNAME:-pharos.selab.top}
 export PHAROS_TUNNEL_NAME="$TUNNEL_NAME"
 CF_IMAGE=$(cat "$CF_DIR/image" 2>/dev/null || true)
 ACTIVE_IMAGE=$(cat "$ROOT/state/active-image" 2>/dev/null || true)
