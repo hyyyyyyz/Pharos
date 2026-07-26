@@ -63,6 +63,9 @@ services:
     container_name: pharos-cloudflared
     user: "1000:1000"
     restart: unless-stopped
+    read_only: true
+    environment:
+      HOME: /home/nonroot
     command:
       - --no-autoupdate
       - --config
