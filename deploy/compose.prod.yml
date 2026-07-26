@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
     read_only: true
     environment:
-      HOME: /home/nonroot
+      HOME: /tmp
     command:
       - --no-autoupdate
       - --config
@@ -74,6 +74,8 @@ services:
       - run
     volumes:
       - /home/winbeau/pharos/shared/cloudflared:/etc/cloudflared:ro
+    tmpfs:
+      - /tmp:size=16m,uid=1000,gid=1000,mode=700
     networks:
       - pharos-net
     depends_on:

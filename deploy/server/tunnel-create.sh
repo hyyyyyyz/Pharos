@@ -25,8 +25,9 @@ cf() {
   docker run --rm \
     --name pharos-cloudflared-admin \
     --user 1000:1000 \
-    -e HOME=/home/nonroot \
-    -v "$CF_DIR:/home/nonroot/.cloudflared" \
+    -e HOME=/tmp \
+    -w /tmp/.cloudflared \
+    -v "$CF_DIR:/tmp/.cloudflared" \
     "$CF_IMAGE" "$@"
 }
 
