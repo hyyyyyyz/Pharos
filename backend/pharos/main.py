@@ -34,6 +34,7 @@ from pharos.engines.babeldoc_engine import BabelDocEngine
 from pharos.services.library import LibraryService
 from pharos.services.translation import JobManager
 from pharos.storage.blobs import BlobStore
+from pharos.web import mount_web_app
 
 
 def create_app() -> FastAPI:
@@ -131,6 +132,14 @@ def create_app() -> FastAPI:
             "engine": engine.name,
             "translator": settings.translator_config().type,
         }
+
+    # This is intentionally last. API and documentation routes must win before
+    # the SPA catch-all, otherwise a typo such as /api/papaers would return an
+    # HTML document with status 200 and be almost impossible for clients to
+    # diagnose. Local development leaves web_dir unset and continues to use
+    # Vite; production supplies the compiled frontend directory in the image.
+    if settings.web_dir is not None:
+        mount_web_app(app, settings.web_dir)
 
     return app
 

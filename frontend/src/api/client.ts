@@ -45,8 +45,9 @@ import type {
   ZoteroStatus,
 } from "./types";
 
-// Dev: "/api" is proxied by Vite to the backend (127.0.0.1:8848 → SSH tunnel → ROG2).
-// Prod (github.io): set VITE_API_BASE to the backend's public URL.
+// Web production is same-origin, so "/api" reaches the FastAPI process that
+// also serves this bundle. Development proxies it through Vite; desktop builds
+// can still override VITE_API_BASE with their configured backend URL.
 const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 /**

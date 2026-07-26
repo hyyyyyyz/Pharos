@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # --- storage ---
     data_dir: Path = REPO_ROOT / "data"
 
+    # --- compiled web client -------------------------------------------
+    #: Optional Vite ``dist`` directory. Development normally leaves this
+    #: unset and uses Vite's own server; the production image points it at the
+    #: frontend bundle copied into the image.
+    web_dir: Path | None = None
+
     # --- auth -----------------------------------------------------------
     #: Signing key for access tokens. There is deliberately NO usable default:
     #: a hard-coded fallback would let anyone who read this open-source repo
@@ -196,9 +202,7 @@ class Settings(BaseSettings):
             return TranslatorConfig(type="bing")
 
         if provider.translator_type == "deepseek":
-            return TranslatorConfig(
-                type="deepseek", api_key=provider.api_key, model=provider.model
-            )
+            return TranslatorConfig(type="deepseek", api_key=provider.api_key, model=provider.model)
         return TranslatorConfig(
             type="openai_compatible",
             api_key=provider.api_key,

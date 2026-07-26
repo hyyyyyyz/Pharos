@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Deployed to GitHub Pages project site: https://hyyyyyyz.github.io/Pharos/
-// so production assets must live under the "/Pharos/" base path. In dev we
-// serve from "/" and proxy the API to the local (Mac) backend.
+// The actual product is served from https://pharos.selab.top/, so ordinary
+// production and desktop builds use the root base path. "pages" remains an
+// explicit legacy mode for anyone intentionally publishing this app under the
+// GitHub Pages /Pharos/ project path; the separate site/ project owns the real
+// marketing page.
 export default defineConfig(({ mode }) => ({
-  base: mode === "production" ? "/Pharos/" : "/",
+  base: mode === "pages" ? "/Pharos/" : "/",
   plugins: [react()],
   // Ensure a single React instance (avoids "Invalid hook call" from libraries
   // like @tanstack/react-query when Vite pre-bundles them separately).
