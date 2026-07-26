@@ -8,7 +8,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:universal": "tauri build --target universal-apple-darwin",
-    "icon": "tauri icon ../assets/brand/app-icon.svg",
+    "icon": "tauri icon ../assets/brand/app-icon.png",
     "tauri": "tauri"
   },
   "devDependencies": {

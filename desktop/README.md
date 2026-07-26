@@ -32,7 +32,7 @@ desktop/
     build.rs
     src/{main,lib}.rs    # the shell: opens the window, loads the web UI
     capabilities/default.json  # v2 permissions (window + open-external)
-    icons/               # generated from assets/brand/app-icon.svg
+    icons/               # generated from assets/brand/app-icon.png
 ```
 
 ## Run it
