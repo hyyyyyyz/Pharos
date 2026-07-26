@@ -45,7 +45,10 @@ protected_proxy_ids=$(docker ps --filter name=cli-proxy-api --format '{{.ID}}' |
 protected_proxy_count=$(printf '%s\n' "$protected_proxy_ids" | sed '/^$/d' | wc -l)
 protected_api_code=$(curl --connect-timeout 10 --max-time 20 -sS -o /dev/null -w '%{http_code}' https://api.selab.top/api/status)
 
-if [[ -z "$protected_new_id" || "$protected_proxy_count" -ne 11 || "$protected_api_code" != 200 ]]; then
+# The upstream proxy pool may be expanded independently of Pharos. Require the
+# known healthy floor, then pin the exact running container set for the duration
+# of this deployment so Pharos can neither hide nor cause a lifecycle change.
+if [[ -z "$protected_new_id" || "$protected_proxy_count" -lt 11 || "$protected_api_code" != 200 ]]; then
   echo "protected production baseline is unhealthy; refusing to deploy Pharos" >&2
   exit 70
 fi
