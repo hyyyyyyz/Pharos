@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Pharos application icon</title>
+  <desc id="desc">An ivory lighthouse monogram casting amber and teal beams on a deep navy macOS app-icon tile.</desc>
+
+  <defs>
+    <linearGradient id="tile" x1="154" y1="114" x2="876" y2="932" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#153b66" />
+      <stop offset="0.42" stop-color="#0d294b" />
+      <stop offset="1" stop-color="#071a32" />
+    </linearGradient>
+    <radialGradient id="upperGlow" cx="0" cy="0" r="1" gradientTransform="translate(342 244) rotate(42) scale(590 520)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#315f8d" stop-opacity="0.5" />
+      <stop offset="0.52" stop-color="#173b64" stop-opacity="0.13" />
+      <stop offset="1" stop-color="#0a203c" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="seaGlow" cx="0" cy="0" r="1" gradientTransform="translate(790 792) rotate(-142) scale(470 390)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#148f91" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#0a203c" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="ivory" x1="326" y1="248" x2="666" y2="790" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffaf1" />
+      <stop offset="0.55" stop-color="#f8f2e8" />
+      <stop offset="1" stop-color="#e8ddcd" />
+    </linearGradient>
+    <linearGradient id="amber" x1="554" y1="438" x2="790" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd66a" />
+      <stop offset="1" stop-color="#f4a91f" />
+    </linearGradient>
+    <linearGradient id="teal" x1="560" y1="502" x2="735" y2="574" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36c8ba" />
+      <stop offset="1" stop-color="#0f8e91" />
+    </linearGradient>
+    <filter id="tileShadow" x="18" y="24" width="988" height="998" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#020a14" flood-opacity="0.42" />
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#07101b" flood-opacity="0.36" />
+    </filter>
+    <filter id="markShadow" x="240" y="204" width="614" height="650" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="13" flood-color="#020a16" flood-opacity="0.34" />
+    </filter>
+    <filter id="beamGlow" x="510" y="350" width="330" height="300" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feBlend in="SourceGraphic" in2="blur" mode="screen" />
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="64" y="54" width="896" height="916" rx="218" />
+    </clipPath>
+  </defs>
+
+  <g filter="url(#tileShadow)">
+    <rect x="64" y="54" width="896" height="916" rx="218" fill="url(#tile)" />
+  </g>
+
+  <g clip-path="url(#tileClip)">
+    <rect x="64" y="54" width="896" height="916" rx="218" fill="url(#upperGlow)" />
+    <rect x="64" y="54" width="896" height="916" rx="218" fill="url(#seaGlow)" />
+    <path d="M122 144C232 78 370 57 511 57C703 57 855 105 936 218" fill="none" stroke="#ffffff" stroke-opacity="0.13" stroke-width="8" stroke-linecap="round" />
+    <path d="M93 744C194 903 367 949 535 949C728 949 876 887 946 771" fill="none" stroke="#020b17" stroke-opacity="0.22" stroke-width="18" stroke-linecap="round" />
+  </g>
+
+  <g filter="url(#markShadow)">
+    <path
+      fill="url(#ivory)"
+      fill-rule="evenodd"
+      d="M292 244H548C705 244 795 332 795 456C795 567 710 638 584 654H473V794H292V244ZM473 380V531H548C617 531 655 502 655 456C655 408 617 380 548 380H473Z"
+    />
+  </g>
+
+  <!-- Open the lighthouse chamber toward the sea before placing the beams. -->
+  <path d="M545 374L818 326V604L545 526Z" fill="#0b2443" />
+  <circle cx="548" cy="456" r="80" fill="#0b2443" />
+
+  <g filter="url(#beamGlow)">
+    <path d="M548 447L800 386V493L548 469Z" fill="url(#amber)" />
+    <path d="M559 501L746 548L704 625L559 528Z" fill="url(#teal)" />
+  </g>
+
+  <path d="M177 248L225 207" fill="none" stroke="#ffc64b" stroke-width="25" stroke-linecap="round" />
+  <path d="M789 806L838 762" fill="none" stroke="#20aaa6" stroke-width="25" stroke-linecap="round" />
+
+  <rect x="65.5" y="55.5" width="893" height="913" rx="216.5" fill="none" stroke="#79a3c8" stroke-opacity="0.23" stroke-width="3" />
+</svg>
