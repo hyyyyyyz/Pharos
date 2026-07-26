@@ -75,7 +75,6 @@ jobs:
             --read-only \
             --tmpfs /data:rw,uid=1000,gid=1000,mode=700 \
             --tmpfs /cache:rw,uid=1000,gid=1000,mode=700 \
-            --tmpfs /home/pharos/.config:rw,uid=1000,gid=1000,mode=700 \
             --tmpfs /tmp:rw,uid=1000,gid=1000,mode=1777 \
             -e PHAROS_AUTH_SECRET=smoke-test-secret-smoke-test-secret-1234 \
             -e PHAROS_DAILY_ENABLED=0 \

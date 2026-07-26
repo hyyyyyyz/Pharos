@@ -53,7 +53,6 @@ fi
 mkdir -p \
   "$ROOT/shared/data" \
   "$ROOT/shared/cache" \
-  "$ROOT/shared/config" \
   "$ROOT/shared/tmp" \
   "$ROOT/shared/backups" \
   "$ROOT/shared/secrets" \

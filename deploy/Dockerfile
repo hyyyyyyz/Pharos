@@ -45,11 +45,11 @@ ENV PATH=/opt/pharos-app/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PHAROS_DATA_DIR=/data \
     PHAROS_ENGINE_PYTHON=/opt/pharos-engine/bin/python \
-    HOME=/home/pharos \
-    XDG_CACHE_HOME=/cache \
-    XDG_CONFIG_HOME=/home/pharos/.config \
-    XDG_DATA_HOME=/cache/share \
-    HF_HOME=/cache/huggingface \
+    HOME=/cache/home \
+    XDG_CACHE_HOME=/cache/home/.cache \
+    XDG_CONFIG_HOME=/cache/home/.config \
+    XDG_DATA_HOME=/cache/home/.local/share \
+    HF_HOME=/cache/home/.cache/huggingface \
     HF_HUB_DISABLE_TELEMETRY=1
 
 RUN apt-get update \
@@ -62,7 +62,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 pharos \
     && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/pharos pharos \
-    && mkdir -p /app /data /cache /home/pharos/.config \
+    && mkdir -p /app /data /cache/home /home/pharos \
     && chown -R pharos:pharos /app /data /cache /home/pharos
 
 COPY --from=builder /opt/pharos-app /opt/pharos-app

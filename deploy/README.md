@@ -66,8 +66,7 @@ and starts `pharos-cloudflared` with `restart: unless-stopped`.
 ├── state/                    active/previous image and deployment lock
 └── shared/
     ├── data/                 SQLite and PDF blobs
-    ├── cache/                Hugging Face/BabelDOC assets
-    ├── config/               writable pdf2zh/BabelDOC configuration
+    ├── cache/                writable engine HOME, models, fonts and config
     ├── tmp/                  bounded Pharos work files
     ├── backups/              last eight online SQLite backups
     ├── secrets/backend.env   mode 0600, never committed

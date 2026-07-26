@@ -13,17 +13,16 @@ services:
       PHAROS_ENGINE_PYTHON: /opt/pharos-engine/bin/python
       PHAROS_MAX_CONCURRENT_JOBS: "1"
       PHAROS_QPS: "2"
-      HOME: /home/pharos
-      XDG_CACHE_HOME: /cache
-      XDG_CONFIG_HOME: /home/pharos/.config
-      XDG_DATA_HOME: /cache/share
-      HF_HOME: /cache/huggingface
+      HOME: /cache/home
+      XDG_CACHE_HOME: /cache/home/.cache
+      XDG_CONFIG_HOME: /cache/home/.config
+      XDG_DATA_HOME: /cache/home/.local/share
+      HF_HOME: /cache/home/.cache/huggingface
     ports:
       - "127.0.0.1:8400:8400"
     volumes:
       - /home/winbeau/pharos/shared/data:/data
       - /home/winbeau/pharos/shared/cache:/cache
-      - /home/winbeau/pharos/shared/config:/home/pharos/.config
       - /home/winbeau/pharos/shared/tmp:/tmp
     networks:
       - pharos-net
