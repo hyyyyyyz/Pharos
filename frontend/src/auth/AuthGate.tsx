@@ -115,7 +115,7 @@ export function AuthGate({ children }: AuthGateProps): JSX.Element {
           <div className="ph-auth-brand">
             <img className="ph-auth-wordmark-img" src={wordmark} alt="Pharos" />
           </div>
-          <div className="ph-auth-tagline">译读一体的研究文献工作台</div>
+          <div className="ph-auth-tagline">从文献发现到研究推进的一体化科研工作台</div>
 
           {verifying ? (
             <Restoring
