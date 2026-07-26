@@ -27,7 +27,6 @@ python3 "$ROOT/current/server/backup_db.py" \
   "$ROOT/shared/backups/pharos-$timestamp-before-manual-rollback.db"
 
 export PHAROS_IMAGE="$previous_image"
-export CLOUDFLARED_IMAGE=${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
 docker compose -p pharos -f "$COMPOSE" up -d --no-build --no-deps --force-recreate api
 
 for _ in $(seq 1 60); do

@@ -1,5 +1,17 @@
 # syntax=docker/dockerfile:1.7
 
+FROM node:22-bookworm-slim AS web-builder
+
+ENV npm_config_audit=false \
+    npm_config_fund=false
+
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend ./
+RUN npm run build
+
+
 FROM python:3.12-slim-bookworm AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -32,8 +44,8 @@ FROM python:3.12-slim-bookworm AS runtime
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 
-LABEL org.opencontainers.image.title="Pharos backend" \
-      org.opencontainers.image.description="FastAPI research platform with an isolated BabelDOC translation worker" \
+LABEL org.opencontainers.image.title="Pharos" \
+      org.opencontainers.image.description="Integrated research workbench with a React web client, FastAPI core, and isolated BabelDOC worker" \
       org.opencontainers.image.source="https://github.com/hyyyyyyz/Pharos" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.revision="${VCS_REF}" \
@@ -44,6 +56,7 @@ ENV PATH=/opt/pharos-app/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PHAROS_DATA_DIR=/data \
+    PHAROS_WEB_DIR=/app/frontend \
     PHAROS_ENGINE_PYTHON=/opt/pharos-engine/bin/python \
     HOME=/cache/home \
     XDG_CACHE_HOME=/cache/home/.cache \
@@ -62,11 +75,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 pharos \
     && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/pharos pharos \
-    && mkdir -p /app /data /cache/home /home/pharos \
+    && mkdir -p /app /app/frontend /data /cache/home /home/pharos \
     && chown -R pharos:pharos /app /data /cache /home/pharos
 
 COPY --from=builder /opt/pharos-app /opt/pharos-app
 COPY --from=builder /opt/pharos-engine /opt/pharos-engine
+COPY --from=web-builder --chown=pharos:pharos /src/frontend/dist /app/frontend
 COPY --chown=pharos:pharos backend /app/backend
 
 USER 1000:1000

@@ -94,7 +94,6 @@ echo "pulling immutable Pharos image $IMAGE"
 docker pull "$IMAGE"
 
 export PHAROS_IMAGE="$IMAGE"
-export CLOUDFLARED_IMAGE=${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
 docker compose -p pharos -f "$COMPOSE" up -d --no-build --no-deps --force-recreate api
 
 healthy=0

@@ -13,11 +13,9 @@ usage() {
 Usage: deploy/pharosctl COMMAND
 
 Commands:
-  deploy          upload deployment metadata and activate the current Git SHA
-  status          show Pharos plus protected-production health
+  deploy          activate the current Git SHA (web client + API + engine)
+  status          show Pharos, system cloudflared, and protected-production health
   rollback        roll Pharos back to the previously active image
-  tunnel-login    open the one-time Cloudflare browser authorization flow
-  tunnel-create   create pharos-prod, route DNS, and start the tunnel container
 EOF
 }
 
@@ -65,13 +63,6 @@ case "$command" in
     ;;
   rollback)
     "${SSH[@]}" "nohup env PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/rollback.sh' > '$REMOTE_ROOT/current/rollback.log' 2>&1 < /dev/null & echo \$!"
-    ;;
-  tunnel-login)
-    exec ssh -tt -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_HOST" \
-      "PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-login.sh'"
-    ;;
-  tunnel-create)
-    "${SSH[@]}" "export PHAROS_TUNNEL_NAME=pharos-prod PHAROS_PUBLIC_HOSTNAME=pharos.selab.top; PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-create.sh'"
     ;;
   *)
     usage

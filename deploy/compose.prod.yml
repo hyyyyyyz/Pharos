@@ -10,6 +10,7 @@ services:
       - /home/winbeau/pharos/shared/secrets/backend.env
     environment:
       PHAROS_DATA_DIR: /data
+      PHAROS_WEB_DIR: /app/frontend
       PHAROS_ENGINE_PYTHON: /opt/pharos-engine/bin/python
       PHAROS_MAX_CONCURRENT_JOBS: "1"
       PHAROS_QPS: "2"
@@ -57,47 +58,6 @@ services:
         max-file: "3"
     labels:
       io.pharos.role: api
-
-  tunnel:
-    image: ${CLOUDFLARED_IMAGE:?CLOUDFLARED_IMAGE must be pinned by digest}
-    container_name: pharos-cloudflared
-    user: "1000:1000"
-    restart: unless-stopped
-    read_only: true
-    environment:
-      HOME: /tmp
-    command:
-      - --no-autoupdate
-      - --config
-      - /etc/cloudflared/config.yml
-      - tunnel
-      - run
-    volumes:
-      - /home/winbeau/pharos/shared/cloudflared:/etc/cloudflared:ro
-    tmpfs:
-      - /tmp:size=16m,uid=1000,gid=1000,mode=700
-    networks:
-      - pharos-net
-    depends_on:
-      api:
-        condition: service_healthy
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 128m
-    memswap_limit: 160m
-    cpus: "0.25"
-    pids_limit: 64
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-    labels:
-      io.pharos.role: tunnel
-    profiles:
-      - tunnel
 
 networks:
   pharos-net:
