@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+DEPLOY_HOST=${PHAROS_DEPLOY_HOST:-winbeau@70.39.193.15}
+DEPLOY_PORT=${PHAROS_DEPLOY_PORT:-48687}
+REMOTE_ROOT=${PHAROS_REMOTE_ROOT:-/home/winbeau/pharos}
+SSH=(ssh -p "$DEPLOY_PORT" -o BatchMode=yes -o ServerAliveInterval=15 "$DEPLOY_HOST")
+SCP=(scp -P "$DEPLOY_PORT" -o BatchMode=yes)
+
+usage() {
+  cat <<'EOF'
+Usage: deploy/pharosctl COMMAND
+
+Commands:
+  deploy          upload deployment metadata and activate the current Git SHA
+  status          show Pharos plus protected-production health
+  rollback        roll Pharos back to the previously active image
+  tunnel-login    open the one-time Cloudflare browser authorization flow
+  tunnel-create   create pharos-prod, route DNS, and start the tunnel container
+EOF
+}
+
+command=${1:-}
+case "$command" in
+  deploy)
+    cd "$REPO_ROOT"
+    if [[ -n "$(git status --porcelain)" ]]; then
+      echo "the worktree must be clean because the image tag is a Git commit" >&2
+      exit 2
+    fi
+    full_sha=$(git rev-parse HEAD)
+    short_sha=${full_sha:0:12}
+    release_id="$(date -u +%Y%m%dT%H%M%SZ)-$short_sha"
+    image=${PHAROS_IMAGE:-"ghcr.io/hyyyyyyz/pharos:sha-$short_sha"}
+    archive=$(mktemp "${TMPDIR:-/tmp}/pharos-release.XXXXXX.tar.gz")
+    trap 'rm -f "$archive"' EXIT
+
+    tar -czf "$archive" -C "$REPO_ROOT/deploy" compose.prod.yml server
+    "${SSH[@]}" "mkdir -p '$REMOTE_ROOT/incoming' '$REMOTE_ROOT/releases/$release_id' '$REMOTE_ROOT/state'"
+    "${SCP[@]}" "$archive" "$DEPLOY_HOST:$REMOTE_ROOT/incoming/$release_id.tar.gz"
+    "${SSH[@]}" "tar -xzf '$REMOTE_ROOT/incoming/$release_id.tar.gz' -C '$REMOTE_ROOT/releases/$release_id' && rm -f '$REMOTE_ROOT/incoming/$release_id.tar.gz'"
+    "${SSH[@]}" "nohup env PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/releases/$release_id/server/deploy-release.sh' '$image' '$release_id' > '$REMOTE_ROOT/releases/$release_id/deploy.log' 2>&1 < /dev/null & echo \$! > '$REMOTE_ROOT/releases/$release_id/deploy.pid'"
+
+    echo "deployment dispatched: $release_id"
+    for _ in $(seq 1 180); do
+      state=$("${SSH[@]}" "cat '$REMOTE_ROOT/state/$release_id.status' 2>/dev/null || true")
+      case "$state" in
+        success)
+          "${SSH[@]}" "tail -n 30 '$REMOTE_ROOT/releases/$release_id/deploy.log'"
+          exit 0
+          ;;
+        failed:*)
+          "${SSH[@]}" "tail -n 80 '$REMOTE_ROOT/releases/$release_id/deploy.log'"
+          exit 1
+          ;;
+      esac
+      sleep 5
+    done
+    echo "deployment is still running; use deploy/pharosctl status" >&2
+    exit 124
+    ;;
+  status)
+    "${SSH[@]}" "PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/status.sh'"
+    ;;
+  rollback)
+    "${SSH[@]}" "nohup env PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/rollback.sh' > '$REMOTE_ROOT/current/rollback.log' 2>&1 < /dev/null & echo \$!"
+    ;;
+  tunnel-login)
+    exec ssh -tt -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_HOST" \
+      "PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-login.sh'"
+    ;;
+  tunnel-create)
+    "${SSH[@]}" "export PHAROS_TUNNEL_NAME=pharos-prod PHAROS_PUBLIC_HOSTNAME=pharos-api.selab.top; PHAROS_ROOT='$REMOTE_ROOT' bash '$REMOTE_ROOT/current/server/tunnel-create.sh'"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

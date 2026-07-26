@@ -1,0 +1,99 @@
+name: pharos
+
+services:
+  api:
+    image: ${PHAROS_IMAGE:?PHAROS_IMAGE must be an immutable image tag}
+    container_name: pharos-api
+    init: true
+    restart: unless-stopped
+    env_file:
+      - /home/winbeau/pharos/shared/secrets/backend.env
+    environment:
+      PHAROS_DATA_DIR: /data
+      PHAROS_ENGINE_PYTHON: /opt/pharos-engine/bin/python
+      PHAROS_MAX_CONCURRENT_JOBS: "1"
+      PHAROS_QPS: "2"
+      HOME: /home/pharos
+      XDG_CACHE_HOME: /cache
+      HF_HOME: /cache/huggingface
+    ports:
+      - "127.0.0.1:8400:8400"
+    volumes:
+      - /home/winbeau/pharos/shared/data:/data
+      - /home/winbeau/pharos/shared/cache:/cache
+      - /home/winbeau/pharos/shared/tmp:/tmp
+    networks:
+      - pharos-net
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1800m
+    memswap_limit: 2400m
+    cpus: "2.0"
+    pids_limit: 256
+    oom_score_adj: 500
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request;
+          r=urllib.request.urlopen('http://127.0.0.1:8400/api/health', timeout=3);
+          assert r.status == 200 and json.load(r).get('status') == 'ok'
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    labels:
+      io.pharos.role: api
+
+  tunnel:
+    image: ${CLOUDFLARED_IMAGE:?CLOUDFLARED_IMAGE must be pinned by digest}
+    container_name: pharos-cloudflared
+    user: "1000:1000"
+    restart: unless-stopped
+    command:
+      - --no-autoupdate
+      - --config
+      - /etc/cloudflared/config.yml
+      - tunnel
+      - run
+    volumes:
+      - /home/winbeau/pharos/shared/cloudflared:/etc/cloudflared:ro
+    networks:
+      - pharos-net
+    depends_on:
+      api:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    memswap_limit: 160m
+    cpus: "0.25"
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    labels:
+      io.pharos.role: tunnel
+    profiles:
+      - tunnel
+
+networks:
+  pharos-net:
+    name: pharos-net
+    labels:
+      io.pharos.role: internal
