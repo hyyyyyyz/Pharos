@@ -566,10 +566,11 @@ fn attachment_probe(library: &LibrarySpec, item: ApiItem) -> Option<AttachmentPr
     {
         return None;
     }
-    let parent_item = value_string(data, "parentItem")?;
-    if parent_item.is_empty() {
-        return None;
-    }
+    // A standalone PDF has no parent item and appears as a top-level Zotero
+    // item. Associate it with itself so it still becomes a readable row.
+    let parent_item = value_string(data, "parentItem")
+        .filter(|parent| !parent.is_empty())
+        .unwrap_or_else(|| item.key.clone());
     Some(AttachmentProbe {
         library: library.clone(),
         parent_item,
@@ -591,11 +592,24 @@ fn cached_paper(
 ) -> Option<CachedPaper> {
     let data = &item.data;
     let item_type = value_string(data, "itemType").unwrap_or_default();
-    if matches!(item_type.as_str(), "attachment" | "note" | "annotation") {
+    if matches!(item_type.as_str(), "note" | "annotation") {
         return None;
     }
-    let title = value_string(data, "title")?.trim().to_string();
-    if title.is_empty() {
+    let own_attachments = attachments.remove(&item.key).unwrap_or_default();
+    let title = value_string(data, "title")
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.trim().to_string())
+        .or_else(|| {
+            own_attachments.first().map(|attachment| {
+                attachment
+                    .filename
+                    .strip_suffix(".pdf")
+                    .unwrap_or(&attachment.filename)
+                    .to_string()
+            })
+        })?;
+    // A top-level non-PDF attachment is not a paper. A standalone PDF is.
+    if item_type == "attachment" && own_attachments.is_empty() {
         return None;
     }
     let venue = [
@@ -627,7 +641,7 @@ fn cached_paper(
         abstract_text: value_string(data, "abstractNote").filter(|value| !value.trim().is_empty()),
         url: value_string(data, "url").filter(|value| !value.trim().is_empty()),
         date_added: value_string(data, "dateAdded").filter(|value| !value.trim().is_empty()),
-        attachments: attachments.remove(&item.key).unwrap_or_default(),
+        attachments: own_attachments,
     })
 }
 
