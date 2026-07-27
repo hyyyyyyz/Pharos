@@ -6,7 +6,18 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
+import {
+  isLocalZoteroPaperId,
+  localZotero,
+} from "../lib/localZotero";
+import {
+  TRANSLATE_STAGES,
+  dash,
+  isJobActive,
+  localToVM,
+  stageIndex,
+  toVM,
+} from "../lib/model";
 import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
@@ -74,18 +85,31 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const aiOpen = useUI(isAiOpen);
   const toggleAI = useUI((s) => s.toggleAI);
   const pdfTx = useSession(pdfTranslationEnabled);
+  const isLocal = isLocalZoteroPaperId(paperId);
 
   /* --------------------------------------------------------- the paper */
   const { data: paper } = useQuery({
     queryKey: ["paper", paperId],
     queryFn: () => api.getPaper(paperId),
+    enabled: !isLocal,
     refetchInterval: (q) =>
       isJobActive((q.state.data as Paper | undefined)?.latest_job) ? 1500 : false,
   });
-  const vm = useMemo(() => (paper ? toVM(paper) : null), [paper]);
+  const { data: localPaper } = useQuery({
+    queryKey: ["zotero-local", "paper", paperId],
+    queryFn: () => localZotero.get(paperId),
+    enabled: isLocal,
+  });
+  const vm = useMemo(
+    () => (isLocal ? (localPaper ? localToVM(localPaper) : null) : paper ? toVM(paper) : null),
+    [isLocal, localPaper, paper],
+  );
 
   const translate = useMutation({
-    mutationFn: () => api.translate(paperId),
+    mutationFn: () => {
+      if (isLocal) throw new Error("请先把本地 PDF 导入 Pharos，再发起翻译。");
+      return api.translate(paperId);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["paper", paperId] });
@@ -123,16 +147,18 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
    * shows work already paid for and sitting on disk — hiding that would be
    * taking something away, which is not what "don't translate my PDFs" asks for.
    */
-  const effMode: ReadMode = pdfTx || isTranslated ? readMode : "original";
+  const effMode: ReadMode = isLocal ? "original" : pdfTx || isTranslated ? readMode : "original";
 
   /* The 中文/中英/原文 group. Off + untranslated leaves 原文 as the only member,
      and a one-button segmented control is noise pretending to be a choice — so
      the group goes entirely, per "the apparatus must genuinely disappear". */
-  const showModes = pdfTx || isTranslated;
+  const showModes = !isLocal && (pdfTx || isTranslated);
 
   // 原文 always wins: it is the only path to the source PDF before/after a
   // failed translation.
-  const showPdf = effMode === "original" || isTranslated;
+  const showPdf = isLocal
+    ? localPaper?.pdfAvailable === true
+    : effMode === "original" || isTranslated;
 
   /* Which PDF to show, as a plain string. Deliberately NOT the PdfSource object:
      this memo recomputes whenever `vm.job` gets a new identity (every /papers
@@ -141,27 +167,39 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
      equal, so the reload only happens when the file actually changes. */
   const pdfKind = useMemo<PdfKind | null>(() => {
     if (!showPdf) return null;
+    if (isLocal) return "original";
     let kind: PdfKind = effMode === "zh" ? "mono" : effMode === "bilingual" ? "dual" : "original";
     // The backend may produce a mono-only result; don't request a 404.
     if (kind === "dual" && vm?.job && !vm.job.has_dual) kind = "mono";
     return kind;
-  }, [showPdf, effMode, vm?.job]);
+  }, [showPdf, isLocal, effMode, vm?.job]);
+
+  const localPdfQuery = useQuery({
+    queryKey: ["zotero-local", "pdf", localPaper?.pdfAttachmentId],
+    queryFn: () => localZotero.pdfSource(localPaper!.pdfAttachmentId!),
+    enabled: isLocal && localPaper?.pdfAttachmentId !== null && localPaper?.pdfAttachmentId !== undefined,
+  });
+  const localPdfUrl = localPdfQuery.data?.url ?? null;
 
   /* -------------------------------------------------------- the pdf.js doc */
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
+  const effectiveDocError =
+    docError ?? (localPdfQuery.isError ? errMsg(localPdfQuery.error) : null);
 
   useEffect(() => {
     setDoc(null);
     setDocError(null);
-    if (!pdfKind) return;
+    if (!pdfKind || (isLocal && !localPdfUrl)) return;
     let cancelled = false;
     // pdfSource(), not pdfUrl(): /papers/{id}/pdf/{kind} requires a bearer token
     // like every other endpoint, and a bare URL cannot carry one. pdf.js issues
     // the requests itself, so httpHeaders rides along on the initial fetch and
     // on every range request. Built here rather than in the memo so the token
     // read is as late as possible.
-    const task = pdfjs.getDocument(api.pdfSource(paperId, pdfKind));
+    const task = pdfjs.getDocument(
+      isLocal ? { url: localPdfUrl!, httpHeaders: {} } : api.pdfSource(paperId, pdfKind),
+    );
     task.promise.then(
       (d) => {
         if (cancelled) return;
@@ -176,7 +214,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
       // Destroying the loading task destroys the document it produced.
       void task.destroy().catch(() => undefined);
     };
-  }, [pdfKind, paperId]);
+  }, [pdfKind, paperId, isLocal, localPdfUrl]);
 
   /* ------------------------------------------------------------ zoom / fit */
   const [zoom, setZoom] = useState(1);
@@ -340,16 +378,18 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
               })}
             </div>
           )}
-          <button
-            className={`ph-rv-ai-btn${aiOpen ? " is-on" : ""}`}
-            title="领航 AI"
-            onClick={toggleAI}
-          >
-            <span className="ph-rv-ico">
-              <Icons.spark />
-            </span>
-            领航
-          </button>
+          {!isLocal && (
+            <button
+              className={`ph-rv-ai-btn${aiOpen ? " is-on" : ""}`}
+              title="领航 AI"
+              onClick={toggleAI}
+            >
+              <span className="ph-rv-ico">
+                <Icons.spark />
+              </span>
+              领航
+            </button>
+          )}
         </div>
 
         <div className="ph-rv-body">
@@ -375,15 +415,15 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                 <div className="ph-rv-spacer" />
                 <span className="ph-rv-hint">Ctrl+滚轮缩放 · 拖动平移</span>
               </div>
-              {docError ? (
-                <div className="ph-rv-pdf-msg is-err">加载失败：{docError}</div>
+              {effectiveDocError ? (
+                <div className="ph-rv-pdf-msg is-err">加载失败：{effectiveDocError}</div>
               ) : (
                 <PdfCanvas
                   doc={doc}
                   paperId={paperId}
                   /* Highlights are stored per rendition: a mark drawn on the
                      bilingual PDF has no meaning on the original's page 3. */
-                  kind={pdfKind}
+                  kind={isLocal ? null : pdfKind}
                   zoom={zoom}
                   onZoom={handleZoom}
                   onFitScale={handleFitScale}
@@ -392,6 +432,20 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   onCurrentPage={onCurrentPage}
                 />
               )}
+            </div>
+          ) : isLocal ? (
+            <div className="ph-rv-state ph-scroll">
+              <div className="ph-rv-failed">
+                <div className="ph-rv-err-icon">
+                  <Icons.file />
+                </div>
+                <div className="ph-rv-err-title">本地 PDF 暂不可用</div>
+                <div className="ph-rv-err-msg">
+                  {localPdfQuery.isError
+                    ? String(localPdfQuery.error)
+                    : "请在 Zotero 中下载或打开附件，然后返回文库重新同步。缓存中的书目信息不会被删除。"}
+                </div>
+              </div>
             </div>
           ) : status === "translating" ? (
             <div className="ph-rv-state ph-scroll">
@@ -486,7 +540,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
         </div>
       </section>
 
-      {aiOpen && <AiPanel paperId={paperId} />}
+      {aiOpen && !isLocal && <AiPanel paperId={paperId} />}
     </div>
   );
 }

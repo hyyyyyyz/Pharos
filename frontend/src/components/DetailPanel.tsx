@@ -11,11 +11,133 @@ import { api } from "../api/client";
 import type { Paper } from "../api/types";
 import { Icons } from "../design/icons";
 import { dash, isJobActive, statusOf, toVM } from "../lib/model";
+import {
+  isLocalZoteroPaperId,
+  localZotero,
+  type LocalZoteroPaper,
+} from "../lib/localZotero";
 import { pdfTranslationEnabled, useSession, useUI } from "../store";
 import "./DetailPanel.css";
 
 /** Job error messages can be a whole stack trace; the panel only has room for a line. */
 const ERR_MAX = 120;
+
+function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element {
+  const openPaper = useUI((s) => s.openPaper);
+  const qc = useQueryClient();
+
+  const importPaper = useMutation({
+    mutationFn: async () => api.upload(await localZotero.pdfFile(paper)),
+    onSuccess: (imported) => {
+      void qc.invalidateQueries({ queryKey: ["papers"] });
+      void qc.invalidateQueries({ queryKey: ["collections"] });
+      openPaper(imported.id);
+    },
+  });
+
+  const abstract = paper.abstractText?.trim() ?? "";
+  return (
+    <aside className="ph-dp ph-scroll">
+      <div className="ph-dp-body">
+        <div className="ph-dp-title">{paper.title}</div>
+        <div className="ph-dp-sub">
+          本机 Zotero · {paper.libraryName}
+        </div>
+
+        <div className="ph-dp-actions">
+          <button
+            type="button"
+            className="ph-dp-primary"
+            disabled={!paper.pdfAvailable}
+            onClick={() => openPaper(paper.id)}
+          >
+            <span className="ph-dp-ic">
+              <Icons.open />
+            </span>
+            {paper.pdfAvailable ? "打开本地 PDF" : "PDF 未在本机"}
+          </button>
+          {paper.pdfAvailable && (
+            <button
+              type="button"
+              className="ph-dp-secondary"
+              disabled={importPaper.isPending}
+              title="复制并上传这份 PDF 到 Pharos，之后可翻译和跨设备访问"
+              onClick={() => importPaper.mutate()}
+            >
+              {importPaper.isPending ? "导入中…" : "导入 Pharos"}
+            </button>
+          )}
+        </div>
+
+        {!paper.pdfAvailable && (
+          <div className="ph-dp-error">
+            Zotero 中有附件记录，但文件尚未下载到这台 Mac。请先在 Zotero 中打开或下载附件，再重新同步。
+          </div>
+        )}
+        {importPaper.isError && (
+          <div className="ph-dp-error">导入失败：{String(importPaper.error)}</div>
+        )}
+
+        <div className="ph-dp-grid">
+          <span className="ph-dp-k">作者</span>
+          <span className="ph-dp-v">
+            {paper.authors.length > 0 ? paper.authors.join(" · ") : dash(null)}
+          </span>
+          <span className="ph-dp-k">来源</span>
+          <span className="ph-dp-v">{dash(paper.venue ?? paper.libraryName)}</span>
+          <span className="ph-dp-k">年份</span>
+          <span className="ph-dp-v">{dash(paper.year)}</span>
+          <span className="ph-dp-k">附件</span>
+          <span className="ph-dp-v">
+            {paper.pdfAttachmentCount > 0 ? `${paper.pdfAttachmentCount} 份本地 PDF` : "未下载"}
+          </span>
+          <span className="ph-dp-k">DOI</span>
+          {paper.doi ? (
+            <a
+              className="ph-dp-v-doi"
+              href={`https://doi.org/${paper.doi}`}
+              target="_blank"
+              rel="noreferrer"
+              title={paper.doi}
+            >
+              {paper.doi}
+            </a>
+          ) : (
+            <span className="ph-dp-v-doi">{dash(null)}</span>
+          )}
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label">摘要</div>
+          {abstract !== "" ? (
+            <div className="ph-dp-abstract">{abstract}</div>
+          ) : (
+            <div className="ph-dp-muted ph-dp-muted-ab">Zotero 中暂无摘要</div>
+          )}
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label ph-dp-label-7">附件</div>
+          <div className="ph-dp-file">
+            <span className="ph-dp-file-ic">
+              <Icons.file />
+            </span>
+            <span className="ph-dp-file-name">
+              {paper.pdfFilename ?? "附件未下载到本机"}
+            </span>
+          </div>
+        </div>
+
+        <div className="ph-dp-sec-last">
+          <div className="ph-dp-label ph-dp-label-7">存储策略</div>
+          <div className="ph-dp-muted">
+            当前直接读取 Zotero 原文件；只有点击“导入 Pharos”才会上传。
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
 
 export function DetailPanel(): JSX.Element {
   const selectedPaperId = useUI((s) => s.selectedPaperId);
@@ -23,16 +145,26 @@ export function DetailPanel(): JSX.Element {
   const pdfTx = useSession(pdfTranslationEnabled);
   const qc = useQueryClient();
   const id = selectedPaperId ?? "";
+  const isLocal = isLocalZoteroPaperId(id);
 
   // The list already holds ["papers"]; reading it here avoids an empty flash
   // while ["paper", id] loads after a selection change.
-  const papersQuery = useQuery({ queryKey: ["papers"], queryFn: api.listPapers });
+  const papersQuery = useQuery({
+    queryKey: ["papers"],
+    queryFn: api.listPapers,
+    enabled: !isLocal,
+  });
   const detailQuery = useQuery({
     queryKey: ["paper", id],
     queryFn: () => api.getPaper(id),
-    enabled: id !== "",
+    enabled: id !== "" && !isLocal,
     refetchInterval: (q) =>
       isJobActive((q.state.data as Paper | undefined)?.latest_job) ? 1500 : false,
+  });
+  const localDetailQuery = useQuery({
+    queryKey: ["zotero-local", "paper", id],
+    queryFn: () => localZotero.get(id),
+    enabled: id !== "" && isLocal,
   });
 
   const translate = useMutation({
@@ -45,6 +177,18 @@ export function DetailPanel(): JSX.Element {
 
   const paper: Paper | null =
     detailQuery.data ?? papersQuery.data?.find((p) => p.id === id) ?? null;
+
+  if (isLocal) {
+    const localPaper = localDetailQuery.data;
+    if (localPaper) return <LocalZoteroDetail paper={localPaper} />;
+    return (
+      <aside className="ph-dp ph-scroll">
+        <div className="ph-dp-empty">
+          {localDetailQuery.isError ? "无法读取本地 Zotero 条目" : "正在读取本地 Zotero…"}
+        </div>
+      </aside>
+    );
+  }
 
   if (!paper) {
     return (

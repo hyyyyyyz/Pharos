@@ -22,7 +22,20 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { api } from "../api/client";
 import type { CollectionNode, SearchField, SearchHit } from "../api/types";
 import { Icons } from "../design/icons";
-import { compactAuthors, dash, isJobActive, statusMeta, toVM, type PaperVM } from "../lib/model";
+import {
+  LOCAL_ZOTERO_COLLECTION_ID,
+  localZotero,
+  localZoteroAvailable,
+} from "../lib/localZotero";
+import {
+  compactAuthors,
+  dash,
+  isJobActive,
+  localToVM,
+  statusMeta,
+  toVM,
+  type PaperVM,
+} from "../lib/model";
 import { pdfTranslationEnabled, useSession, useUI, type SortCol } from "../store";
 import { PAPER_DRAG_MIME } from "./CollectionTree";
 import "./ItemList.css";
@@ -58,7 +71,7 @@ const FIELD_LABEL: Record<SearchField, string> = {
 };
 
 /** The built-in rail entries — anything else in `selectedCol` is a folder id. */
-const BUILTIN_COLS = new Set(["lib", "uncat", "trash"]);
+const BUILTIN_COLS = new Set(["lib", "uncat", "trash", LOCAL_ZOTERO_COLLECTION_ID]);
 
 /** The toolbar magnifier. The prototype does NOT reuse its `I.search` glyph
  *  here — it inlines a smaller one (circle r=4.6 at 8.5,8.5; handle 12.5→15.5)
@@ -205,7 +218,9 @@ export function ItemList(): JSX.Element {
   const openSettings = useUI((s) => s.openSettings);
   const pdfTx = useSession(pdfTranslationEnabled);
 
-  const cols = pdfTx ? COLS : COLS_NO_TX;
+  const localSelected = selectedCol === LOCAL_ZOTERO_COLLECTION_ID;
+
+  const cols = pdfTx && !localSelected ? COLS : COLS_NO_TX;
 
   /**
    * `sortCol` is persisted, so it can already be `"status"` when the setting is
@@ -215,7 +230,7 @@ export function ItemList(): JSX.Element {
    * actually on screen. Not written back to the store: turning translation on
    * again should restore the sort the user chose.
    */
-  const effSortCol: SortCol = !pdfTx && sortCol === "status" ? "year" : sortCol;
+  const effSortCol: SortCol = (!pdfTx || localSelected) && sortCol === "status" ? "year" : sortCol;
 
   /* ------------------------------------------------------------- searching */
 
@@ -247,7 +262,7 @@ export function ItemList(): JSX.Element {
     // The signal is React Query's: a superseded request is aborted rather than
     // left to land late and overwrite fresher results.
     queryFn: ({ signal }) => api.search(debounced, { limit: SEARCH_LIMIT, signal }),
-    enabled: searching,
+    enabled: searching && !localSelected,
     // Hold the previous hits while the next query is in flight, so the list
     // does not blink through an empty state on every keystroke.
     placeholderData: (prev) => prev,
@@ -261,6 +276,21 @@ export function ItemList(): JSX.Element {
     // Keep progress bars moving while any translation job is running.
     refetchInterval: (q) =>
       (q.state.data ?? []).some((p) => isJobActive(p.latest_job)) ? 1500 : false,
+  });
+
+  const localPapersQuery = useQuery({
+    queryKey: ["zotero-local", "papers"],
+    queryFn: localZotero.list,
+    enabled: localZoteroAvailable() && localSelected,
+  });
+
+  const syncLocal = useMutation({
+    mutationFn: localZotero.sync,
+    onSuccess: () => {
+      setNote("本地 Zotero 同步完成");
+      void qc.invalidateQueries({ queryKey: ["zotero-local", "status"] });
+      void qc.invalidateQueries({ queryKey: ["zotero-local", "papers"] });
+    },
   });
 
   const trashQuery = useQuery({
@@ -330,6 +360,10 @@ export function ItemList(): JSX.Element {
 
   const papers = useMemo(() => (papersQuery.data ?? []).map(toVM), [papersQuery.data]);
   const trashPapers = useMemo(() => (trashQuery.data ?? []).map(toVM), [trashQuery.data]);
+  const localPapers = useMemo(
+    () => (localPapersQuery.data ?? []).map(localToVM),
+    [localPapersQuery.data],
+  );
 
   const byId = useMemo(() => new Map(papers.map((p) => [p.id, p])), [papers]);
 
@@ -337,6 +371,18 @@ export function ItemList(): JSX.Element {
     // Search replaces the browse view entirely: it spans the whole library, so
     // intersecting it with the selected folder would quietly answer a different
     // question than the one the box asks.
+    if (searching && localSelected) {
+      const needle = debounced.toLocaleLowerCase();
+      return localPapers
+        .filter((paper) =>
+          [paper.title, paper.authors.join(" "), paper.abstract ?? "", paper.doi ?? ""]
+            .join("\n")
+            .toLocaleLowerCase()
+            .includes(needle),
+        )
+        .map((vm) => ({ id: vm.id, vm, hit: null, title: vm.title }));
+    }
+
     if (searching) {
       const hits = searchQuery.data?.hits ?? [];
       return hits.map((hit) => {
@@ -346,7 +392,8 @@ export function ItemList(): JSX.Element {
     }
 
     let list: PaperVM[];
-    if (selectedCol === "trash") list = trashPapers;
+    if (localSelected) list = localPapers;
+    else if (selectedCol === "trash") list = trashPapers;
     else if (selectedCol === "uncat") list = papers.filter((p) => !categorised.has(p.id));
     else if (inFolder) {
       const ids = new Set(folderQuery.data?.paper_ids ?? []);
@@ -356,8 +403,11 @@ export function ItemList(): JSX.Element {
     return list.map((vm) => ({ id: vm.id, vm, hit: null, title: vm.title }));
   }, [
     searching,
+    debounced,
     searchQuery.data,
     byId,
+    localSelected,
+    localPapers,
     selectedCol,
     inFolder,
     folderQuery.data,
@@ -407,36 +457,41 @@ export function ItemList(): JSX.Element {
 
   const arrow = sortDir === "asc" ? " ↑" : " ↓";
   const uploadError = upload.error instanceof Error ? upload.error.message : null;
-  const searchError = searchQuery.isError;
+  const searchError = !localSelected && searchQuery.isError;
 
   const listPending =
-    (searching && searchQuery.isPending) ||
-    (!searching && papersQuery.isPending) ||
+    (searching && !localSelected && searchQuery.isPending) ||
+    (localSelected && localPapersQuery.isPending) ||
+    (!localSelected && !searching && papersQuery.isPending) ||
     (selectedCol === "trash" && trashQuery.isPending) ||
     (inFolder && folderQuery.isPending) ||
     uncatPending;
 
   const showFirstUse =
     !searching &&
+    !localSelected &&
     selectedCol === "lib" &&
     !papersQuery.isPending &&
     !papersQuery.isError &&
     papers.length === 0;
 
-  const showEmptyList = !listPending && !papersQuery.isError && !showFirstUse && visible.length === 0;
+  const activeListError = localSelected ? localPapersQuery.isError : papersQuery.isError;
+  const showEmptyList = !listPending && !activeListError && !showFirstUse && visible.length === 0;
 
   const emptyText = searching
     ? searchError
       ? "搜索失败，请重试"
       : `没有找到与“${debounced}”匹配的内容`
-    : selectedCol === "trash"
+    : localSelected
+      ? "还没有本地 Zotero 缓存，请点击右上角同步"
+      : selectedCol === "trash"
       ? "回收站是空的"
       : "该分类下暂无条目";
 
   const hasRows = visible.length > 0;
 
   const total = searchQuery.data?.total ?? 0;
-  const truncated = searching && total > visible.length;
+  const truncated = searching && !localSelected && total > visible.length;
 
   return (
     <section className="ph-il">
@@ -459,28 +514,47 @@ export function ItemList(): JSX.Element {
         <div className="ph-il-spacer" />
         {selectedIds.length > 1 && <span className="ph-il-selcount">已选 {selectedIds.length}</span>}
         <div className="ph-il-actions">
-          <input
-            className="ph-il-arxiv"
-            value={arxivInput}
-            onChange={(e) => setArxivInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") importArxiv();
-            }}
-            placeholder="arXiv 链接 / ID"
-          />
-          <button className="ph-il-btn-ghost" title="导入 arXiv" onClick={importArxiv}>
-            导入
-          </button>
-          <button
-            className="ph-il-btn-primary"
-            title="上传 PDF"
-            onClick={() => fileRef.current?.click()}
-          >
-            <span>
-              <Icons.plus />
-            </span>
-            PDF
-          </button>
+          {localSelected ? (
+            <button
+              className="ph-il-btn-primary"
+              title="从本机 Zotero 重新读取文献和 PDF"
+              disabled={syncLocal.isPending}
+              onClick={() => {
+                setNote(null);
+                syncLocal.mutate();
+              }}
+            >
+              <span className={syncLocal.isPending ? "ph-il-sync is-spinning" : "ph-il-sync"}>
+                <Icons.sync />
+              </span>
+              {syncLocal.isPending ? "同步中" : "同步本地 Zotero"}
+            </button>
+          ) : (
+            <>
+              <input
+                className="ph-il-arxiv"
+                value={arxivInput}
+                onChange={(e) => setArxivInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") importArxiv();
+                }}
+                placeholder="arXiv 链接 / ID"
+              />
+              <button className="ph-il-btn-ghost" title="导入 arXiv" onClick={importArxiv}>
+                导入
+              </button>
+              <button
+                className="ph-il-btn-primary"
+                title="上传 PDF"
+                onClick={() => fileRef.current?.click()}
+              >
+                <span>
+                  <Icons.plus />
+                </span>
+                PDF
+              </button>
+            </>
+          )}
         </div>
         <input
           ref={fileRef}
@@ -496,6 +570,9 @@ export function ItemList(): JSX.Element {
 
       {note && <div className="ph-il-note">{note}</div>}
       {uploadError && <div className="ph-il-note is-error">上传失败：{uploadError}</div>}
+      {syncLocal.isError && (
+        <div className="ph-il-note is-error">同步失败：{String(syncLocal.error)}</div>
+      )}
       {/* The backend reports which engine answered. "like" means FTS5 is not
           available on this deployment and ranking is crude — worth saying once,
           quietly, rather than leaving the user to wonder why. */}
@@ -506,6 +583,7 @@ export function ItemList(): JSX.Element {
       <div
         className="ph-il-body ph-scroll"
         onDragOver={(e) => {
+          if (localSelected) return;
           // Only a file drag is an upload. Without this, dragging a row over the
           // list would raise the "松开以导入 PDF" overlay.
           if (!e.dataTransfer.types.includes("Files")) return;
@@ -516,6 +594,7 @@ export function ItemList(): JSX.Element {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
         }}
         onDrop={(e) => {
+          if (localSelected) return;
           if (!e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
           setDragOver(false);
@@ -528,12 +607,14 @@ export function ItemList(): JSX.Element {
           </div>
         )}
 
-        {papersQuery.isError && (
+        {activeListError && (
           <div className="ph-il-empty">
             <div className="ph-il-empty-text is-error">
-              无法连接到后端服务。
+              {localSelected ? "无法读取本地 Zotero 缓存。" : "无法连接到后端服务。"}
               <br />
-              请确认 Pharos 服务已启动后重试。
+              {localSelected
+                ? "请确认正在使用桌面客户端后重试。"
+                : "请确认 Pharos 服务已启动后重试。"}
             </div>
           </div>
         )}
@@ -593,7 +674,8 @@ export function ItemList(): JSX.Element {
             </div>
             {visible.map((r) => {
               const sel = selectedIds.includes(r.id);
-              const meta = r.vm === null || !pdfTx ? null : statusMeta(r.vm.status);
+              const meta =
+                r.vm === null || !pdfTx || r.vm.isLocalZotero ? null : statusMeta(r.vm.status);
               const row = (
                 <div
                   className={
@@ -601,8 +683,10 @@ export function ItemList(): JSX.Element {
                     (sel ? " is-selected" : "") +
                     (r.id === selectedPaperId ? " is-primary" : "")
                   }
-                  draggable
-                  onDragStart={(e) => onRowDragStart(e, r.id)}
+                  draggable={r.vm?.isLocalZotero !== true}
+                  onDragStart={(e) => {
+                    if (r.vm?.isLocalZotero !== true) onRowDragStart(e, r.id);
+                  }}
                   onClick={(e) =>
                     selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey })
                   }
@@ -610,11 +694,17 @@ export function ItemList(): JSX.Element {
                 >
                   <span className="ph-il-c-title">
                     {r.vm?.isZotero === true && (
-                      <span className="ph-il-zotero" title="来自 Zotero">
-                        <Icons.cloud size={13} />
+                      <span
+                        className="ph-il-zotero"
+                        title={r.vm.isLocalZotero ? "来自本机 Zotero" : "来自 Zotero 云端"}
+                      >
+                        {r.vm.isLocalZotero ? <Icons.library size={13} /> : <Icons.cloud size={13} />}
                       </span>
                     )}
                     <span className="ph-il-title">{r.title}</span>
+                    {r.vm?.isLocalZotero && !r.vm.pdfAvailable && (
+                      <span className="ph-il-local-missing">PDF 未在本机</span>
+                    )}
                   </span>
                   <span
                     className="ph-il-c-authors"
@@ -626,7 +716,7 @@ export function ItemList(): JSX.Element {
                   </span>
                   <span className="ph-il-c-year">{dash(r.vm?.year ?? null)}</span>
                   <span className="ph-il-c-pages">{dash(r.vm?.pages ?? null)}</span>
-                  {pdfTx && (
+                  {pdfTx && !localSelected && (
                     <span className="ph-il-c-status">
                       {meta !== null && (
                         <span className={`ph-il-pill ${meta.cls}`}>{meta.label}</span>

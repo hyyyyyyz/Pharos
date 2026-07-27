@@ -16,6 +16,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import type { CollectionNode } from "../api/types";
 import { Icons } from "../design/icons";
+import {
+  LOCAL_ZOTERO_COLLECTION_ID,
+  localZotero,
+  localZoteroAvailable,
+} from "../lib/localZotero";
 import { useUI } from "../store";
 import "./CollectionTree.css";
 
@@ -72,6 +77,12 @@ export function CollectionTree(): JSX.Element {
   const collections = useQuery({ queryKey: ["collections"], queryFn: api.collections.list });
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.tags.list });
   const trash = useQuery({ queryKey: ["papers", "trash"], queryFn: api.listTrash });
+  const localStatus = useQuery({
+    queryKey: ["zotero-local", "status"],
+    queryFn: localZotero.status,
+    enabled: localZoteroAvailable(),
+    staleTime: 5_000,
+  });
 
   const tree = useMemo(() => collections.data?.collections ?? [], [collections.data]);
 
@@ -317,6 +328,15 @@ export function CollectionTree(): JSX.Element {
     { id: "trash", label: "回收站", icon: <Icons.trash />, count: trash.data?.length },
   ];
 
+  const localBuiltin = localZoteroAvailable()
+    ? {
+        id: LOCAL_ZOTERO_COLLECTION_ID,
+        label: "本地 Zotero",
+        icon: <Icons.library />,
+        count: localStatus.data?.cachedPaperCount,
+      }
+    : null;
+
   const renderBuiltin = (b: (typeof builtins)[number]) => (
     <div
       key={b.id}
@@ -351,6 +371,8 @@ export function CollectionTree(): JSX.Element {
       </div>
 
       {renderBuiltin(builtins[0])}
+
+      {localBuiltin !== null && renderBuiltin(localBuiltin)}
 
       <div className="ph-tree-row" style={{ paddingLeft: 8 }} onClick={() => toggleGroup("favOpen")}>
         <span className="ph-tree-caret">{favOpen ? <Icons.caretD /> : <Icons.caretR />}</span>

@@ -88,6 +88,11 @@
   cursor: default;
 }
 
+.ph-dp-secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .ph-dp-ic {
   display: flex;
 }

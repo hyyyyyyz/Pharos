@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { Icons } from "../design/icons";
+import { isLocalZoteroPaperId, localZotero, localZoteroAvailable } from "../lib/localZotero";
 import { useUI } from "../store";
 import "./TabBar.css";
 
@@ -12,14 +13,24 @@ export function TabBar(): JSX.Element {
   const closeTab = useUI((s) => s.closeTab);
 
   const { data: papers } = useQuery({ queryKey: ["papers"], queryFn: api.listPapers });
+  const { data: localPapers } = useQuery({
+    queryKey: ["zotero-local", "papers"],
+    queryFn: localZotero.list,
+    enabled:
+      localZoteroAvailable() &&
+      tabs.some((tab) => tab.kind === "paper" && isLocalZoteroPaperId(tab.paperId)),
+  });
 
   return (
     <div className="ph-tabbar">
       {tabs.map((tab) => {
         const active = tab.id === activeTabId;
         const isLibTab = tab.kind === "library";
-        const paper = isLibTab ? undefined : papers?.find((p) => p.id === tab.paperId);
-        const title = isLibTab ? "文库" : (paper?.title ?? "论文");
+        const local = !isLibTab && isLocalZoteroPaperId(tab.paperId);
+        const paper = isLibTab || local ? undefined : papers?.find((p) => p.id === tab.paperId);
+        const localPaper =
+          isLibTab || !local ? undefined : localPapers?.find((p) => p.id === tab.paperId);
+        const title = isLibTab ? "文库" : (localPaper?.title ?? paper?.title ?? "论文");
         return (
           <div
             key={tab.id}

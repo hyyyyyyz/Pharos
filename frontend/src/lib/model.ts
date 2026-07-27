@@ -9,6 +9,7 @@
  * because tagging genuinely has no backend yet.
  */
 import type { Job, Paper } from "../api/types";
+import type { LocalZoteroPaper } from "./localZotero";
 
 export type PaperStatus = "untranslated" | "translating" | "translated" | "failed";
 
@@ -23,6 +24,8 @@ export interface PaperVM {
   progress: number;
   addedAt: string;
   isZotero: boolean;
+  isLocalZotero: boolean;
+  pdfAvailable: boolean;
   /** Empty when the backend could not extract authors confidently. */
   authors: string[];
   year: number | null;
@@ -57,6 +60,8 @@ export function toVM(p: Paper): PaperVM {
     progress: job?.progress ?? 0,
     addedAt: p.added_at,
     isZotero: p.source === "zotero",
+    isLocalZotero: false,
+    pdfAvailable: p.orig_filename !== "",
     authors: p.authors ?? [],
     year: p.year,
     venue: p.venue,
@@ -64,6 +69,28 @@ export function toVM(p: Paper): PaperVM {
     abstract: p.abstract,
     tags: [],
     job,
+  };
+}
+
+export function localToVM(p: LocalZoteroPaper): PaperVM {
+  return {
+    id: p.id,
+    title: p.title,
+    file: p.pdfFilename ?? "本地 PDF 未下载",
+    pages: null,
+    status: "untranslated",
+    progress: 0,
+    addedAt: p.dateAdded ?? "",
+    isZotero: true,
+    isLocalZotero: true,
+    pdfAvailable: p.pdfAvailable,
+    authors: p.authors,
+    year: p.year,
+    venue: p.venue,
+    doi: p.doi,
+    abstract: p.abstractText,
+    tags: [],
+    job: null,
   };
 }
 

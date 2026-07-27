@@ -311,6 +311,25 @@
   display: flex;
   color: var(--c-tx3, #8b93a1);
 }
+
+.ph-il-local-missing {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--c-hv);
+  color: var(--c-tx3);
+  font-size: 9.5px;
+  font-weight: 500;
+}
+
+.ph-il-sync {
+  display: flex;
+}
+
+.ph-il-sync.is-spinning {
+  animation: ph-spin 1s linear infinite;
+}
 .ph-il-title {
   min-width: 0;
   overflow: hidden;

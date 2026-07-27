@@ -5,6 +5,11 @@ import { ACCENTS, accentSwatch } from "../design/tokens";
 import type { ThemeMode } from "../design/tokens";
 import { api } from "../api/client";
 import type { AuthUser, ZoteroOAuthStart, ZoteroStatus } from "../api/types";
+import {
+  localZotero,
+  localZoteroAvailable,
+  type LocalZoteroStatus,
+} from "../lib/localZotero";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
 import { DirectionsSettings } from "./DirectionsSettings";
 import "./SettingsModal.css";
@@ -61,6 +66,11 @@ function fmtTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function fmtEpoch(ms: number | null): string {
+  if (ms === null) return "尚未同步";
+  return fmtTime(new Date(ms).toISOString());
 }
 
 /** Error text from a rejected mutation, without leaking a stack trace into the UI. */
@@ -122,6 +132,13 @@ export function SettingsModal(): JSX.Element | null {
     // A sync started here (or on another device) finishes server-side; poll
     // only while it is actually running, then stop.
     refetchInterval: (q) => (q.state.data?.status === "syncing" ? 1500 : false),
+  });
+
+  const localZoteroQuery = useQuery({
+    queryKey: ["zotero-local", "status"],
+    queryFn: (): Promise<LocalZoteroStatus> => localZotero.status(),
+    enabled: onAccount && localZoteroAvailable(),
+    staleTime: 2_000,
   });
 
   /* ------------------------------------------------------------ 显示名称 */
@@ -203,6 +220,14 @@ export function SettingsModal(): JSX.Element | null {
     // and invalidates again forever. This codebase has had that loop before.
     onSuccess: (status) => {
       qc.setQueryData(["zotero", "status"], status);
+    },
+  });
+
+  const syncLocal = useMutation({
+    mutationFn: (): Promise<LocalZoteroStatus> => localZotero.sync(),
+    onSuccess: (status) => {
+      qc.setQueryData(["zotero-local", "status"], status);
+      void qc.invalidateQueries({ queryKey: ["zotero-local", "papers"] });
     },
   });
 
@@ -297,6 +322,7 @@ export function SettingsModal(): JSX.Element | null {
 
   const me = meQuery.data;
   const zot = zoteroQuery.data;
+  const localZot = localZoteroQuery.data;
 
   /* The prototype's three branches, now driven by the server. */
   const connecting = oauthStart.isPending || link.isPending || zot?.status === "syncing";
@@ -469,12 +495,110 @@ export function SettingsModal(): JSX.Element | null {
               <div className="ph-set-zot">
                 <div className="ph-set-zot-head">
                   <span className="ph-set-ic ph-set-ic--tx2">
-                    <Icons.cloud />
+                    <Icons.library />
                   </span>
-                  <div className="ph-set-zot-title">Zotero 文献库</div>
+                  <div className="ph-set-zot-title">Zotero</div>
                 </div>
 
-                {zoteroOAuthResult && (
+                {localZoteroAvailable() && (
+                  <div className="ph-set-zot-channel">
+                    <div className="ph-set-zot-channel-head">
+                      <span className="ph-set-ic">
+                        <Icons.library />
+                      </span>
+                      <span>本机 Zotero</span>
+                      <span className="ph-set-zot-badge">推荐</span>
+                    </div>
+                    <div className="ph-set-zot-desc">
+                      直接读取这台 Mac 上的 Zotero 文库与 PDF，不需要 Zotero 云存储。文件默认留在本机，不会自动上传到 Pharos。
+                    </div>
+
+                    {localZoteroQuery.isPending && !localZot && (
+                      <div className="ph-set-zot-connecting">
+                        <span className="ph-set-ic ph-set-ic--spin">
+                          <Icons.sync />
+                        </span>
+                        正在检测本机 Zotero…
+                      </div>
+                    )}
+
+                    {localZoteroQuery.isError && (
+                      <div className="ph-set-err">
+                        无法读取本机 Zotero 状态：{errText(localZoteroQuery.error)}
+                      </div>
+                    )}
+
+                    {localZot && (
+                      <>
+                        <div className="ph-set-zot-card">
+                          <span
+                            className={cx(
+                              "ph-set-zot-check",
+                              !localZot.available && "ph-set-zot-check--err",
+                            )}
+                          >
+                            {localZot.available ? <Icons.check /> : <Icons.alert size={16} />}
+                          </span>
+                          <div className="ph-set-zot-card-text">
+                            <div className="ph-set-zot-card-title">
+                              {syncLocal.isPending
+                                ? "正在同步本机 Zotero"
+                                : localZot.available
+                                  ? "本机 Zotero 已连接"
+                                  : localZot.cachedPaperCount > 0
+                                    ? "Zotero 未运行 · 使用离线缓存"
+                                    : "等待本机 Zotero"}
+                            </div>
+                            <div className="ph-set-zot-card-sub">
+                              {localZot.cachedPaperCount} 条文献 · {localZot.pdfAvailableCount} 份可读 PDF
+                              {localZot.lastSuccessfulSyncMs
+                                ? ` · ${fmtEpoch(localZot.lastSuccessfulSyncMs)}`
+                                : ""}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="ph-set-btn"
+                            onClick={() => syncLocal.mutate()}
+                            disabled={!localZot.available || syncLocal.isPending}
+                          >
+                            {syncLocal.isPending ? "同步中…" : "同步"}
+                          </button>
+                        </div>
+                        {!localZot.available && (
+                          <div className="ph-set-zot-note">
+                            请启动 Zotero，并在“设置 → 高级”中开启“允许其他应用与 Zotero 通信”。已有缓存和已导入论文不会丢失。
+                          </div>
+                        )}
+                        {localZot.lastError && (
+                          <div className="ph-set-err">{localZot.lastError}</div>
+                        )}
+                        {syncLocal.isError && (
+                          <div className="ph-set-err">{errText(syncLocal.error)}</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div
+                  className={cx(
+                    "ph-set-zot-channel",
+                    localZoteroAvailable() && "ph-set-zot-channel--cloud",
+                  )}
+                >
+                  <div className="ph-set-zot-channel-head">
+                    <span className="ph-set-ic">
+                      <Icons.cloud />
+                    </span>
+                    <span>Zotero 云端</span>
+                    {localZoteroAvailable() && <span className="ph-set-zot-badge is-muted">可选</span>}
+                  </div>
+                  <div className="ph-set-zot-desc">
+                    用于网页端和跨设备同步书目元数据；只有已经上传到 Zotero 云端的附件才可能跨设备获得。
+                  </div>
+
+                  {zoteroOAuthResult && (
                   <div
                     className={cx(
                       "ph-set-zot-result",
@@ -485,7 +609,7 @@ export function SettingsModal(): JSX.Element | null {
                   >
                     {ZOTERO_RESULT_COPY[zoteroOAuthResult].text}
                   </div>
-                )}
+                  )}
 
                 {zoteroQuery.isPending && !zot && (
                   <div className="ph-set-zot-connecting">
@@ -611,7 +735,7 @@ export function SettingsModal(): JSX.Element | null {
                   </div>
                 )}
 
-                {!connecting && connected && zot && (
+                  {!connecting && connected && zot && (
                   <>
                     <div className="ph-set-zot-card">
                       <span
@@ -687,7 +811,8 @@ export function SettingsModal(): JSX.Element | null {
                       <div className="ph-set-err">{zot.last_error}</div>
                     )}
                   </>
-                )}
+                  )}
+                </div>
               </div>
             </>
           )}
