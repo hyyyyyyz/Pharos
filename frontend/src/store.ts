@@ -15,6 +15,7 @@ export type SortDir = "asc" | "desc";
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
 export const RAIL_MAX_WIDTH = 280;
+const RAIL_EXPANDED_KEY = "ph-rail-expanded-v2";
 const RAIL_WIDTH_KEY = "ph-rail-width";
 
 /** An open tab in the 文库 module: the library itself, or one paper. */
@@ -154,10 +155,13 @@ export const useUI = create<UIState>((set) => ({
 
   activeModule: "library",
   setModule: (activeModule) => set({ activeModule }),
-  railExpanded: ls("ph-rail") === "1",
+  // Versioned once to retire the old collapsed-by-default preference. Every
+  // existing browser receives the corrected expanded state on this release;
+  // after that, only an explicit user collapse ("0") starts compact.
+  railExpanded: ls(RAIL_EXPANDED_KEY) !== "0",
   toggleRail: () =>
     set((s) => {
-      save("ph-rail", s.railExpanded ? "0" : "1");
+      save(RAIL_EXPANDED_KEY, s.railExpanded ? "0" : "1");
       return { railExpanded: !s.railExpanded };
     }),
   railWidth: initialRailWidth(),

@@ -64,9 +64,6 @@ export function Rail(): JSX.Element {
   const setModule = useUI((s) => s.setModule);
   const openSettings = useUI((s) => s.openSettings);
 
-  // The brand button swaps its glyph on hover, so hover has to be observable
-  // in JS — CSS alone cannot change which icon is rendered.
-  const [brandHover, setBrandHover] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
   const drag = useRef<RailDrag | null>(null);
@@ -149,17 +146,35 @@ export function Rail(): JSX.Element {
       style={exp ? { width: visibleWidth } : undefined}
     >
       <div className={cx("ph-rail-brand", exp ? "ph-rail-brand--exp" : "ph-rail-brand--col")}>
-        <button
-          type="button"
-          onClick={toggleRail}
-          onMouseEnter={() => setBrandHover(true)}
-          onMouseLeave={() => setBrandHover(false)}
-          title={exp ? "收起侧栏" : "展开侧栏"}
-          className={cx("ph-rail-brand-btn", exp ? "ph-rail-brand-btn--exp" : "ph-rail-brand-btn--col")}
-        >
-          {brandHover ? <Icons.panelL /> : <Icons.brand />}
-        </button>
-        {exp && <span className="ph-rail-wordmark">Pharos</span>}
+        {exp ? (
+          <>
+            <span className="ph-rail-brand-mark" aria-hidden>
+              <Icons.brand />
+            </span>
+            <span className="ph-rail-wordmark">Pharos</span>
+            <button
+              type="button"
+              onClick={toggleRail}
+              title="收起侧栏"
+              aria-label="收起侧栏"
+              aria-expanded="true"
+              className="ph-rail-toggle ph-rail-toggle--exp"
+            >
+              <Icons.panelL />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={toggleRail}
+            title="展开侧栏"
+            aria-label="展开侧栏"
+            aria-expanded="false"
+            className="ph-rail-toggle ph-rail-toggle--col"
+          >
+            <Icons.panelR />
+          </button>
+        )}
       </div>
 
       <div className={cx("ph-rail-nav", exp ? "ph-rail-nav--exp" : "ph-rail-nav--col")}>

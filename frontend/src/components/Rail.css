@@ -76,15 +76,25 @@ html.ph-rail-resizing * {
 }
 .ph-rail-brand--exp {
   align-items: center;
-  gap: 8px;
-  padding: 0 4px;
+  gap: 7px;
+  padding: 0 0 0 4px;
   height: 34px;
 }
 .ph-rail-brand--col {
   justify-content: center;
 }
 
-.ph-rail-brand-btn {
+.ph-rail-brand-mark {
+  width: 24px;
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-ac);
+}
+
+.ph-rail-toggle {
   flex: none;
   border: none;
   cursor: pointer;
@@ -97,19 +107,26 @@ html.ph-rail-resizing * {
     background 0.12s,
     color 0.12s;
 }
-.ph-rail-brand-btn--exp {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+.ph-rail-toggle--exp {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  margin-right: -5px;
+  border-radius: 6px;
+  color: var(--c-tx3);
 }
-.ph-rail-brand-btn--col {
+.ph-rail-toggle--col {
   width: 32px;
   height: 32px;
   border-radius: 8px;
 }
-.ph-rail-brand-btn:hover {
+.ph-rail-toggle:hover {
   background: var(--c-hv);
   color: var(--c-tx2);
+}
+.ph-rail-toggle:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 1px;
 }
 
 .ph-rail-wordmark {
