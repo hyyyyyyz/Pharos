@@ -96,9 +96,14 @@ jobs:
 
           curl --fail --silent --show-error http://127.0.0.1:18400/ > /tmp/pharos-index.html
           grep -q '<div id="root"></div>' /tmp/pharos-index.html
+          grep -q '/favicon-round-v2-32.png' /tmp/pharos-index.html
+          ! grep -q 'href="/favicon.ico"' /tmp/pharos-index.html
           asset=$(grep -oE '/assets/[^" ]+\.(js|css)' /tmp/pharos-index.html | head -n 1)
           test -n "$asset"
           curl --fail --silent --show-error -o /dev/null "http://127.0.0.1:18400$asset"
+          curl --fail --silent --show-error -o /dev/null http://127.0.0.1:18400/favicon-round-v2.ico
+          curl --fail --silent --show-error -o /dev/null http://127.0.0.1:18400/favicon-round-v2-32.png
+          curl --fail --silent --show-error -o /dev/null http://127.0.0.1:18400/favicon-round-v2-16.png
 
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/library)" = 200
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/missing.js)" = 404
