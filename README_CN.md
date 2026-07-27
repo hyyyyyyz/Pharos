@@ -81,8 +81,17 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 - 论文、搜索、项目、批注、研究方向和 Zotero 凭据均按用户隔离。
 - SQLite FTS5 全文检索和嵌套分类管理。
 - 从 PDF 中提取元数据，并在可以识别 DOI 或 arXiv 编号时通过 Crossref/arXiv 补全。
-- 通过 Zotero Web API 单向同步书目元数据；当前不下载附件，也不把 Pharos 的翻译或阅读状态写回 Zotero。
+- 通过 Zotero Web API 单向同步书目元数据。服务器注册并配置 Zotero OAuth 应用后，用户可以在浏览器中一键授权；同时保留手动填写 API 密钥的备用方式。当前不下载 Zotero 附件，也不把 Pharos 的翻译或阅读状态写回 Zotero。
 - 已有实验性的 Tauri 2 桌面薄壳，可在 macOS 和 Windows 上复用同一套 React 界面并连接同一个后端。
+
+### 连接 Zotero
+
+自行部署时，需要先在 [Zotero OAuth 应用管理页面](https://www.zotero.org/oauth/apps) 注册网页应用：
+
+- 网站地址：`https://pharos.selab.top/`（请替换为自己的公开产品地址）
+- 回调地址：`https://pharos.selab.top/api/zotero/oauth/callback`
+
+OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。未配置 OAuth 时，账户设置仍会提供手动填写 Zotero 用户编号和 API 密钥的连接方式。两种方式都只会把个人文库的书目元数据单向导入 Pharos；当前不包含附件、群组文库、笔记或任何写回操作。
 
 ## 系统架构
 
@@ -230,6 +239,12 @@ npm --prefix site run preview
 | 变量 | 用途 |
 | --- | --- |
 | `PHAROS_AUTH_SECRET` | 用于签发访问令牌。持久化或联网运行时，应使用至少 32 个随机字符。 |
+| `PHAROS_CREDENTIAL_SECRET` | 独立用于加密已保存的 Zotero 凭据和临时 OAuth 密钥。至少使用 32 个随机字符，不要复用登录签名密钥或 OAuth 客户端密钥。 |
+| `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | 可选；轮换凭据加密密钥时，临时保留上一把密钥用于读取并迁移旧密文。 |
+| `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | 在 Zotero 注册 OAuth 应用后获得的服务端客户端编号。 |
+| `PHAROS_ZOTERO_OAUTH_CLIENT_SECRET` | Zotero OAuth 应用的服务端密钥；禁止放入任何 `VITE_*` 变量或提交到仓库。 |
+| `PHAROS_ZOTERO_OAUTH_CALLBACK_URL` | 在 Zotero 注册的精确公开回调地址，例如 `https://pharos.selab.top/api/zotero/oauth/callback`。 |
+| `PHAROS_ZOTERO_OAUTH_RETURN_URL` | 授权完成后返回的固定产品地址，例如 `https://pharos.selab.top/`。 |
 | `PHAROS_DATA_DIR` | 修改 SQLite 数据库和 PDF 文件存储根目录，默认为 `data/`。 |
 | `PHAROS_ENGINE_PYTHON` | 指向独立翻译引擎环境中的 Python 解释器绝对路径。 |
 | `PHAROS_TRANSLATOR_TYPE` | 可选 `bing`、`google`、`deepseek`、`openai` 或 `custom`。 |
@@ -243,7 +258,7 @@ npm --prefix site run preview
 
 - API 统一使用 `/api` 前缀。
 - `POST /api/auth/register` 和 `POST /api/auth/login` 用于注册、登录并获取 Bearer Token。
-- 业务接口需要携带 `Authorization: Bearer <token>`；`/api/health` 和认证入口是主要的公开例外。
+- 业务接口需要携带 `Authorization: Bearer <token>`；`/api/health` 和认证入口是主要的公开例外。Zotero OAuth 回调也必须公开，因为浏览器从 Zotero 跳回时不会携带 Bearer Token；后端通过短时、一次性的授权记录和安全浏览器 Cookie 保护这条回调。
 - 翻译任务进度可通过 `GET /api/jobs/{job_id}/events` 获取，该接口是需要鉴权的 SSE 流。
 - FastAPI 交互式接口文档位于 `http://127.0.0.1:8848/docs`，OpenAPI 描述文件位于 `/openapi.json`。
 
@@ -276,7 +291,7 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - 研究项目保存由研究者填写的计划和结果，不会自动运行代码、分配 GPU 或验证指标来源。
 - 项目记录中的“人工核验”是用户作出的状态判断，不代表平台已经独立复现。
 - 标签、论文级笔记、直接粘贴 arXiv 链接导入、从文献探索一键下载到文库等前端流程仍未完全闭环。
-- Zotero 当前只把书目元数据同步到 Pharos，不同步附件，也不会回写 Pharos 状态。
+- Zotero 当前只把书目元数据同步到 Pharos，不同步附件，也不会回写 Pharos 状态。一键网页授权还要求部署者注册并配置 Zotero OAuth 应用；未配置时仍可手动使用 API 密钥连接。
 - 完整产品后端目前需要自行部署；GitHub Pages 只托管公开宣传站。
 - 桌面薄壳已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 

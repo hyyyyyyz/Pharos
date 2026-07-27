@@ -105,10 +105,26 @@ contracts and remain future work.
   credentials.
 - SQLite FTS5 full-text search and nested collection organization.
 - PDF metadata extraction with Crossref/arXiv reconciliation where possible.
-- One-way Zotero Web API metadata sync. It does not download attachments or
-  write Pharos translation/reading state back to Zotero.
+- One-way Zotero Web API metadata sync. A server with a registered Zotero OAuth
+  application offers one-click browser authorization; manual API-key linking
+  remains available as a fallback. Pharos does not download Zotero attachments
+  or write translation/reading state back to Zotero.
 - An experimental Tauri 2 desktop shell for macOS and Windows that reuses the
   exact React UI and connects to the same separately running backend.
+
+### Connect Zotero
+
+For a self-hosted deployment, register a web application at
+[Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
+
+- Website: `https://pharos.selab.top/` (replace this with your own public URL)
+- Callback: `https://pharos.selab.top/api/zotero/oauth/callback`
+
+Set the OAuth client key and secret only on the backend. When they are not
+configured, the account settings keep the manual Zotero user-ID/API-key flow
+available. Both connection methods grant Pharos a one-way, metadata-only import
+path for the user's personal library; attachments, group libraries, notes, and
+write-back are outside the current integration.
 
 ## Architecture
 
@@ -281,6 +297,12 @@ are:
 | Variable | Purpose |
 | --- | --- |
 | `PHAROS_AUTH_SECRET` | Signs access tokens. Use at least 32 random characters for any persistent or networked instance. |
+| `PHAROS_CREDENTIAL_SECRET` | Independently encrypts stored Zotero credentials and temporary OAuth secrets. Use at least 32 random characters and do not reuse the auth or OAuth secret. |
+| `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | Optional previous credential-encryption secret used temporarily during key rotation. |
+| `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | Server-side key from the registered Zotero OAuth application. |
+| `PHAROS_ZOTERO_OAUTH_CLIENT_SECRET` | Server-side secret from the registered Zotero OAuth application; never expose it through a `VITE_*` variable or commit it. |
+| `PHAROS_ZOTERO_OAUTH_CALLBACK_URL` | Exact public callback registered with Zotero, for example `https://pharos.selab.top/api/zotero/oauth/callback`. |
+| `PHAROS_ZOTERO_OAUTH_RETURN_URL` | Fixed product URL used after the callback completes, for example `https://pharos.selab.top/`. |
 | `PHAROS_DATA_DIR` | Overrides the SQLite database and PDF blob root. Defaults to `data/`. |
 | `PHAROS_ENGINE_PYTHON` | Absolute path to the Python interpreter inside the isolated translation-engine environment. |
 | `PHAROS_TRANSLATOR_TYPE` | `bing`, `google`, `deepseek`, `openai`, or `custom`. |
@@ -297,7 +319,10 @@ configured; the rest of the application continues to work without one.
 - The API base path is `/api`.
 - `POST /api/auth/register` and `POST /api/auth/login` issue bearer tokens.
 - Business endpoints require `Authorization: Bearer <token>`; `/api/health` and
-  the authentication entry points are the main public exceptions.
+  the authentication entry points are the main public exceptions. The Zotero
+  OAuth callback is also public because the browser redirect cannot carry the
+  bearer token; it is protected by a short-lived, one-use server flow and a
+  secure browser cookie.
 - Translation progress is available from
   `GET /api/jobs/{job_id}/events` as an authenticated SSE stream.
 - FastAPI exposes interactive OpenAPI documentation at `http://127.0.0.1:8848/docs`
@@ -338,7 +363,9 @@ Pharos deliberately distinguishes implemented records from automated research:
 - A `verified` project record is a user decision, not independent reproduction.
 - Tags, paper-level notes, direct arXiv-link import, and one-click
   Discovery-to-Library download are not yet complete end-to-end frontend flows.
-- Zotero sync is metadata-only and one-way into Pharos.
+- Zotero sync is metadata-only and one-way into Pharos. One-click authorization
+  additionally requires the deployment owner to register and configure a
+  Zotero OAuth application; manual API-key linking remains available.
 - The full product backend is currently self-hosted; GitHub Pages hosts only
   the public marketing site.
 - The desktop shell exists, but signed/notarized public releases and a mobile
