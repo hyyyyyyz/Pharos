@@ -326,6 +326,34 @@ button {
   background: rgba(12, 32, 64, 0.06);
 }
 
+.site-nav > a.site-nav__download {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(220, 160, 32, 0.34);
+  color: #7e5700;
+  background: rgba(248, 192, 64, 0.11);
+}
+
+.site-nav > a.site-nav__download:hover,
+.site-nav > a.site-nav__download[aria-current="page"] {
+  border-color: rgba(220, 160, 32, 0.56);
+  color: #4e3500;
+  background: rgba(248, 192, 64, 0.24);
+}
+
+.site-header.is-over-dark .site-nav > a.site-nav__download {
+  border-color: rgba(255, 217, 120, 0.28);
+  color: var(--gold-400);
+  background: rgba(248, 192, 64, 0.1);
+}
+
+.site-header.is-over-dark .site-nav > a.site-nav__download:hover,
+.site-header.is-over-dark .site-nav > a.site-nav__download[aria-current="page"] {
+  border-color: rgba(255, 217, 120, 0.5);
+  color: #fff4cf;
+  background: rgba(248, 192, 64, 0.18);
+}
+
 .github-status {
   display: flex;
   align-items: stretch;
@@ -3350,6 +3378,10 @@ button {
 
   .site-nav > a {
     display: none;
+  }
+
+  .site-nav > a.site-nav__download {
+    display: inline-flex;
   }
 
   .github-status {

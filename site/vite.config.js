@@ -1,4 +1,7 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+
+const siteRoot = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   base: "./",
@@ -8,6 +11,10 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 650,
     rollupOptions: {
+      input: {
+        main: `${siteRoot}index.html`,
+        download: `${siteRoot}download.html`,
+      },
       output: {
         assetFileNames: (assetInfo) => {
           const sourceName = assetInfo.names?.[0] ?? assetInfo.name ?? "";
