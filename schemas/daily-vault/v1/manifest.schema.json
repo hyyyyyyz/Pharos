@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hyyyyyyz/Pharos/main/schemas/daily-vault/v1/manifest.schema.json",
+  "title": "Pharos Daily Vault v1 manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "kind",
+    "format_version",
+    "vault_id",
+    "created_at",
+    "updated_at",
+    "generator",
+    "profile",
+    "days"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://raw.githubusercontent.com/hyyyyyyz/Pharos/main/schemas/daily-vault/v1/manifest.schema.json"
+    },
+    "kind": { "const": "pharos.daily.vault" },
+    "format_version": { "const": 1 },
+    "vault_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "generator": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "profile": { "$ref": "#/$defs/entry" },
+    "days": {
+      "type": "array",
+      "maxItems": 3660,
+      "items": { "$ref": "#/$defs/dayEntry" }
+    }
+  },
+  "$defs": {
+    "safePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^/]+(?:/[^/]+)*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/safePath" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dayEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "date", "paper_count"],
+      "properties": {
+        "path": { "$ref": "#/$defs/safePath" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "paper_count": { "type": "integer", "minimum": 0, "maximum": 500 }
+      }
+    }
+  }
+}

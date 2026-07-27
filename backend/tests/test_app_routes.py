@@ -37,6 +37,7 @@ from pharos.api import (  # noqa: E402
     annotate,
     auth,
     daily,
+    daily_vault,
     directions,
     discovery,
     jobs,
@@ -72,6 +73,7 @@ ROUTERS = [
     projects.router,
     discovery.router,
     directions.router,
+    daily_vault.router,
     daily.router,
     zotero.router,
 ]

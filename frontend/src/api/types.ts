@@ -290,6 +290,97 @@ export interface DailyStatus {
   sweeping: string | null;
 }
 
+/* --------------------------------------- portable Daily Vault (version 1) */
+
+export interface DailyVaultSettings {
+  kind: "pharos.daily.settings";
+  schema_version: 1;
+  categories: string[];
+  max_per_day: number;
+  enabled: boolean;
+}
+
+export interface DailyVaultDirection {
+  name: string;
+  keywords: string[];
+  enabled: boolean;
+  position: number;
+}
+
+export interface DailyVaultProfile {
+  kind: "pharos.daily.profile";
+  schema_version: 1;
+  /** Filled by the client before a directory snapshot is written. */
+  timezone: string | null;
+  settings: DailyVaultSettings;
+  directions: DailyVaultDirection[];
+  updated_at: string | null;
+}
+
+export interface DailyVaultRun {
+  status: DailyRunStatus;
+  fetched: number;
+  read_done: number;
+  read_failed: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+/** A portable paper snapshot contains no DB, account, or private-library id. */
+export interface DailyVaultPaper {
+  kind: "pharos.daily.paper";
+  schema_version: 1;
+  arxiv_id: string;
+  date: string;
+  rank: number;
+  title: string;
+  authors: string[];
+  abstract: string | null;
+  categories: string[];
+  matched_direction: string | null;
+  matched_keywords: string[];
+  arxiv_url: string | null;
+  pdf_url: string | null;
+  published_at: string | null;
+  venue: string | null;
+  read_status: DailyReadStatus;
+  summary_zh: string | null;
+  highlights: DailyHighlights | null;
+  scores: DailyScores | null;
+  read_model: string | null;
+  read_at: string | null;
+  read_error: string | null;
+  created_at: string;
+}
+
+export interface DailyVaultDay {
+  kind: "pharos.daily.issue";
+  schema_version: 1;
+  date: string;
+  run: DailyVaultRun | null;
+  papers: DailyVaultPaper[];
+}
+
+export interface DailyVaultArchive {
+  kind: "pharos.daily.archive";
+  schema_version: 1;
+  vault_id: string | null;
+  exported_at: string;
+  generator: string;
+  profile: DailyVaultProfile;
+  days: DailyVaultDay[];
+}
+
+export interface DailyVaultImportResult {
+  days_seen: number;
+  papers_added: number;
+  papers_updated: number;
+  papers_unchanged: number;
+  directions_restored: number;
+  profile_restored: boolean;
+}
+
 /* ------------------------------------------- 每日论文 settings (per-user) */
 
 /**

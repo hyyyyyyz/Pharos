@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window controls plus opening external links in the system browser. Deliberately minimal — the app is a thin shell over the web UI and needs no filesystem or shell access beyond that.",
+  "description": "Core window controls, external links, and user-selected Daily Vault directories.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:allow-open",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-rename"
+  ]
 }

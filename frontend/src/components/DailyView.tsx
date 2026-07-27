@@ -30,12 +30,28 @@
  *     at an empty list with no idea their own configuration caused it, so the
  *     empty states below are deliberately separate and each names its own fix.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import type { DailyHighlights, DailyPaper, DailyScores } from "../api/types";
 import { Icons } from "../design/icons";
+import {
+  chooseDailyVaultDirectory,
+  chooseDailyVaultJson,
+  downloadDailyVaultJson,
+  ensureDailyVaultPermission,
+  forgetDailyVaultConnection,
+  isTrustedDailyVault,
+  loadRememberedDailyVault,
+  readDailyVault,
+  readDailyVaultManifest,
+  trustDailyVault,
+  writableDailyDirectorySupported,
+  writeDailyVault,
+  type DailyVaultLocation,
+  type DailyVaultManifest,
+} from "../lib/dailyVault";
 import { dash } from "../lib/model";
 import { useUI, type SettingsTab } from "../store";
 import "./DailyView.css";
@@ -89,6 +105,12 @@ const SCORE_ROWS: { key: keyof DailyScores; label: string; hint: string }[] = [
 ];
 
 const clip = (s: string): string => (s.length > ERR_MAX ? `${s.slice(0, ERR_MAX)}…` : s);
+
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : "发生了未知错误";
+
+const manifestPaperCount = (manifest: DailyVaultManifest | null): number =>
+  manifest?.days.reduce((total, day) => total + day.paper_count, 0) ?? 0;
 
 /** One decimal, matching the scale the reading prompt scores on. */
 const fmtScore = (v: number | null | undefined): string =>
@@ -163,6 +185,16 @@ export function DailyView(): JSX.Element {
 
   const [sort, setSort] = useState<SortKey>("score");
   const [domain, setDomain] = useState<string | null>(null);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [vaultLocation, setVaultLocation] = useState<DailyVaultLocation | null>(null);
+  const [vaultManifest, setVaultManifest] = useState<DailyVaultManifest | null>(null);
+  const [vaultNeedsRestore, setVaultNeedsRestore] = useState(false);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [vaultMessage, setVaultMessage] = useState("尚未选择数据目录");
+  const [vaultError, setVaultError] = useState<string | null>(null);
+  const locationRef = useRef<DailyVaultLocation | null>(null);
+  const manifestRef = useRef<DailyVaultManifest | null>(null);
+  const vaultSyncingRef = useRef(false);
 
   // Declared before the queries because the status poll reads `isPending` to
   // keep polling across the gap between "POST accepted" and "run row says running".
@@ -246,6 +278,226 @@ export function DailyView(): JSX.Element {
       void qc.invalidateQueries({ queryKey: ["papers"] });
     },
   });
+
+  const setLocation = (location: DailyVaultLocation | null): void => {
+    locationRef.current = location;
+    setVaultLocation(location);
+  };
+
+  const setManifest = (manifest: DailyVaultManifest | null): void => {
+    manifestRef.current = manifest;
+    setVaultManifest(manifest);
+  };
+
+  const acceptTrustedVault = (
+    location: DailyVaultLocation,
+    manifest: DailyVaultManifest,
+  ): void => {
+    const trusted = trustDailyVault(location, manifest);
+    setLocation(trusted);
+    setManifest(manifest);
+    setVaultNeedsRestore(false);
+  };
+
+  /** Export the current online working copy into an already trusted directory. */
+  const syncTrustedVault = async (silent = false): Promise<void> => {
+    const location = locationRef.current;
+    const previous = manifestRef.current;
+    if (
+      location === null ||
+      previous === null ||
+      !isTrustedDailyVault(location, previous) ||
+      vaultSyncingRef.current
+    ) {
+      return;
+    }
+    vaultSyncingRef.current = true;
+    if (!silent) setVaultBusy(true);
+    setVaultError(null);
+    try {
+      // Automatic saves may check an existing permission but never summon a
+      // browser prompt without a user gesture.
+      if (!(await ensureDailyVaultPermission(location, !silent))) {
+        setVaultMessage("目录需要重新授权；打开“数据目录”后点击立即同步");
+        return;
+      }
+      const archive = await api.daily.vault.export();
+      const manifest = await writeDailyVault(location, archive, previous);
+      acceptTrustedVault(location, manifest);
+      setVaultMessage(`已自动保存 · ${manifest.days.length} 天 · ${manifestPaperCount(manifest)} 篇`);
+    } catch (error) {
+      setVaultError(errorText(error));
+      setVaultMessage("本地目录尚未同步");
+    } finally {
+      vaultSyncingRef.current = false;
+      if (!silent) setVaultBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const location = await loadRememberedDailyVault();
+      if (!alive || location === null) return;
+      setLocation(location);
+      try {
+        if (!(await ensureDailyVaultPermission(location, false))) {
+          setVaultMessage("已记住目录；需要点击“立即同步”恢复授权");
+          return;
+        }
+        const manifest = await readDailyVaultManifest(location);
+        if (!alive) return;
+        setManifest(manifest);
+        if (manifest !== null && isTrustedDailyVault(location, manifest)) {
+          setVaultMessage(
+            `已连接 ${location.name} · ${manifest.days.length} 天 · ${manifestPaperCount(manifest)} 篇`,
+          );
+        } else if (manifest !== null) {
+          // A path can be reused or replaced outside Pharos. Never overwrite a
+          // manifest whose vault id no longer matches the remembered one.
+          setVaultNeedsRestore(true);
+          setVaultMessage("目录内容已变化；自动保存暂停，等待确认恢复");
+        } else {
+          setVaultMessage("已记住目录，但清单不存在；点击立即同步重新创建");
+        }
+      } catch (error) {
+        if (alive) setVaultError(errorText(error));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Save after a sweep/read changes the visible Daily queries. The timeout
+  // coalesces the status/date/day invalidations into one complete archive.
+  useEffect(() => {
+    if (busy) return;
+    const timer = window.setTimeout(() => void syncTrustedVault(true), 1_200);
+    return () => window.clearTimeout(timer);
+  }, [busy, datesQuery.dataUpdatedAt, papersQuery.dataUpdatedAt, statusQuery.dataUpdatedAt]);
+
+  // Direction/config edits can happen in Settings without changing the open
+  // day's query timestamp. A low-frequency full snapshot keeps the profile in
+  // the Vault too, while the page is open; no web client promises background
+  // writes after the tab/app has been closed.
+  useEffect(() => {
+    const timer = window.setInterval(() => void syncTrustedVault(true), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const chooseDirectory = async (): Promise<void> => {
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      const location = await chooseDailyVaultDirectory();
+      const manifest = await readDailyVaultManifest(location);
+      setLocation(location);
+      setManifest(manifest);
+      if (manifest !== null) {
+        setVaultNeedsRestore(true);
+        setVaultMessage("检测到已有 Daily Vault；为避免覆盖，请先选择恢复或覆盖");
+        return;
+      }
+      const archive = await api.daily.vault.export();
+      const created = await writeDailyVault(location, archive, null);
+      acceptTrustedVault(location, created);
+      setVaultMessage(`目录已初始化 · ${created.days.length} 天 · ${manifestPaperCount(created)} 篇`);
+    } catch (error) {
+      if (errorText(error) !== "未选择目录") setVaultError(errorText(error));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const restoreDirectory = async (): Promise<void> => {
+    const location = locationRef.current;
+    if (location === null) return;
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      const archive = await readDailyVault(location);
+      const result = await api.daily.vault.restore(archive, true);
+      const manifest = await readDailyVaultManifest(location);
+      if (manifest === null) throw new Error("恢复后无法重新读取 Vault 清单");
+      acceptTrustedVault(location, manifest);
+      await qc.invalidateQueries({ queryKey: ["daily"] });
+      setVaultMessage(
+        `恢复完成 · 新增 ${result.papers_added} 篇 · 更新 ${result.papers_updated} 篇 · ` +
+          `保留 ${result.papers_unchanged} 篇`,
+      );
+    } catch (error) {
+      setVaultError(errorText(error));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const overwriteDirectory = async (): Promise<void> => {
+    const location = locationRef.current;
+    if (location === null) return;
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      const archive = await api.daily.vault.export();
+      const manifest = await writeDailyVault(location, archive, manifestRef.current);
+      acceptTrustedVault(location, manifest);
+      setVaultMessage(`已用当前账户数据更新目录 · ${manifest.days.length} 天`);
+    } catch (error) {
+      setVaultError(errorText(error));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const exportJson = async (): Promise<void> => {
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      downloadDailyVaultJson(await api.daily.vault.export());
+      setVaultMessage("JSON 备份已下载");
+    } catch (error) {
+      setVaultError(errorText(error));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const restoreJson = async (): Promise<void> => {
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      const archive = await chooseDailyVaultJson();
+      const papers = archive.days.reduce((total, day) => total + day.papers.length, 0);
+      if (
+        !window.confirm(
+          `将恢复 ${archive.days.length} 天、${papers} 篇论文，并替换当前账户的每日论文方向设置。继续吗？`,
+        )
+      ) {
+        return;
+      }
+      const result = await api.daily.vault.restore(archive, true);
+      await qc.invalidateQueries({ queryKey: ["daily"] });
+      setVaultMessage(
+        `JSON 恢复完成 · 新增 ${result.papers_added} 篇 · 更新 ${result.papers_updated} 篇`,
+      );
+      // If a trusted directory is connected, the query invalidation above will
+      // cause the merged working copy to be written there automatically.
+    } catch (error) {
+      if (errorText(error) !== "未选择备份文件") setVaultError(errorText(error));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const disconnectVault = async (): Promise<void> => {
+    await forgetDailyVaultConnection();
+    setLocation(null);
+    setManifest(null);
+    setVaultNeedsRestore(false);
+    setVaultError(null);
+    setVaultMessage("已解除目录连接；本地文件没有被删除");
+  };
 
   /**
    * Filter chips: the caller's own directions that actually matched today.
@@ -380,6 +632,19 @@ export function DailyView(): JSX.Element {
               时间
             </button>
           </div>
+          <button
+            className={vaultNeedsRestore ? "ph-dv-vault is-warn" : "ph-dv-vault"}
+            onClick={() => setVaultOpen(true)}
+            title={vaultMessage}
+          >
+            <span className="ph-dv-vault-ic">
+              <Icons.folder />
+            </span>
+            {vaultBusy ? "同步中" : vaultNeedsRestore ? "待恢复" : "数据目录"}
+            {vaultLocation !== null && !vaultNeedsRestore && (
+              <span className="ph-dv-vault-dot" aria-label="已连接" />
+            )}
+          </button>
           <button
             className="ph-dv-refresh"
             disabled={busy}
@@ -617,6 +882,99 @@ export function DailyView(): JSX.Element {
           />
         )}
       </aside>
+
+      {vaultOpen && (
+        <div className="ph-dv-vault-layer" role="presentation" onMouseDown={() => setVaultOpen(false)}>
+          <section
+            className="ph-dv-vault-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="daily-vault-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="ph-dv-vault-head">
+              <div>
+                <div className="ph-dv-vault-eyebrow">PHAROS DAILY VAULT · V1</div>
+                <h2 id="daily-vault-title">每日论文数据目录</h2>
+              </div>
+              <button className="ph-dv-vault-close" onClick={() => setVaultOpen(false)} aria-label="关闭">
+                <Icons.close />
+              </button>
+            </header>
+
+            <div className="ph-dv-vault-summary">
+              <span className={vaultLocation ? "ph-dv-vault-state is-on" : "ph-dv-vault-state"}>
+                {vaultLocation ? <Icons.folder /> : <Icons.cloud />}
+              </span>
+              <div>
+                <strong>{vaultLocation?.name ?? "尚未连接本地目录"}</strong>
+                <p>{vaultMessage}</p>
+              </div>
+            </div>
+
+            {vaultNeedsRestore && vaultManifest !== null && (
+              <div className="ph-dv-vault-restore">
+                <strong>这个目录已经包含一份 Daily Vault</strong>
+                <p>
+                  共 {vaultManifest.days.length} 天、{manifestPaperCount(vaultManifest)} 篇，最后更新于
+                  {" "}{new Date(vaultManifest.updated_at).toLocaleString()}。自动保存已暂停，防止新设备上的空数据覆盖它。
+                </p>
+                <div className="ph-dv-vault-restore-actions">
+                  <button className="ph-dv-vault-primary" disabled={vaultBusy} onClick={() => void restoreDirectory()}>
+                    从此目录恢复
+                  </button>
+                  <button className="ph-dv-vault-danger" disabled={vaultBusy} onClick={() => void overwriteDirectory()}>
+                    用当前账户覆盖目录
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {vaultError !== null && <div className="ph-dv-vault-error">{vaultError}</div>}
+
+            <div className="ph-dv-vault-grid">
+              <button disabled={vaultBusy} onClick={() => void chooseDirectory()}>
+                <span><Icons.folder /></span>
+                <strong>{vaultLocation ? "更换目录" : "选择目录"}</strong>
+                <small>
+                  {writableDailyDirectorySupported()
+                    ? "桌面客户端、Chrome 与 Edge 可持续自动保存"
+                    : "当前浏览器不支持持续目录写入"}
+                </small>
+              </button>
+              <button
+                disabled={vaultBusy || vaultLocation === null || vaultNeedsRestore}
+                onClick={() => void syncTrustedVault(false)}
+              >
+                <span><Icons.sync /></span>
+                <strong>立即同步</strong>
+                <small>把服务器上的完整每日论文快照写入已连接目录</small>
+              </button>
+              <button disabled={vaultBusy} onClick={() => void exportJson()}>
+                <span><Icons.file /></span>
+                <strong>导出 JSON</strong>
+                <small>Safari、Firefox 与临时迁移使用的单文件备份</small>
+              </button>
+              <button disabled={vaultBusy} onClick={() => void restoreJson()}>
+                <span><Icons.open /></span>
+                <strong>导入 JSON</strong>
+                <small>校验后合并论文，并恢复当前账户的方向设置</small>
+              </button>
+            </div>
+
+            <div className="ph-dv-vault-note">
+              目录保存论文快照、中文核心解读、评分、日期与研究方向；不会保存登录密码、JWT、LLM Key、Zotero Token 或管理员信息。
+              桌面端会记住授权；网页端仅在页面打开且目录获准访问时自动写入。
+            </div>
+
+            {vaultLocation !== null && (
+              <button className="ph-dv-vault-disconnect" onClick={() => void disconnectVault()}>
+                解除连接（不删除本地文件）
+              </button>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

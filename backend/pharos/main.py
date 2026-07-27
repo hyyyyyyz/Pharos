@@ -17,6 +17,7 @@ from pharos.api import (
     annotate,
     auth,
     daily,
+    daily_vault,
     directions,
     discovery,
     jobs,
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     # view and answer 422 "not a date" instead of listing directions, which is a
     # confusing failure to debug from the frontend.
     app.include_router(directions.router)
+    app.include_router(daily_vault.router)
     app.include_router(daily.router)
     app.include_router(zotero.router)
 

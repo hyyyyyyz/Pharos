@@ -11,6 +11,11 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Register fs before persisted-scope: the latter serialises and restores
+        // the former's user-approved runtime scope across app launches.
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_persisted_scope::init())
+        .plugin(tauri_plugin_dialog::init())
         // Open external links (GitHub, DOI, arXiv) in the system browser.
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

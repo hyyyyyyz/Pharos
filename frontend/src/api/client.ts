@@ -16,6 +16,8 @@ import type {
   DailyPaper,
   DailyRun,
   DailyStatus,
+  DailyVaultArchive,
+  DailyVaultImportResult,
   DirectionCreateBody,
   DirectionPatchBody,
   Job,
@@ -425,6 +427,22 @@ export const api = {
     /** Pull the paper into 文库; returns the new 文库 paper id. */
     import: (id: string): Promise<{ paper_id: string }> =>
       json<{ paper_id: string }>(`/daily/papers/${id}/import`, { method: "POST" }),
+
+    vault: {
+      /** Stable, id-free DTO used by both directory snapshots and JSON fallback. */
+      export: (): Promise<DailyVaultArchive> =>
+        json<DailyVaultArchive>("/daily/vault/export"),
+
+      /** Merge is idempotent; profile replacement is explicit and user-scoped. */
+      restore: (
+        archive: DailyVaultArchive,
+        restoreProfile = true,
+      ): Promise<DailyVaultImportResult> =>
+        json<DailyVaultImportResult>("/daily/vault/import", {
+          method: "POST",
+          ...body({ archive, restore_profile: restoreProfile }),
+        }),
+    },
 
     /**
      * The caller's own research directions — what they see, under which badge,
