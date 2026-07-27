@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>下载 Pharos — 把研究工作台带到你的设备</title>
-  <meta name="description" content="下载 Pharos 的 Windows、macOS、Linux、iOS 与 Android 客户端。页面自动读取 GitHub Releases 中的最新公开安装包。" />
-  <meta name="theme-color" content="#06131f" />
+  <title>下载 Pharos</title>
+  <meta name="description" content="下载 Pharos 的 Windows、macOS、Linux、iOS 与 Android 客户端。" />
+  <meta name="theme-color" content="#071a2e" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-round-32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-round-16.png" />
   <link rel="apple-touch-icon" href="assets/favicon-180.png" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="下载 Pharos" />
-  <meta property="og:description" content="在桌面与移动设备上继续同一条研究航线。" />
+  <meta property="og:description" content="选择你的平台，获取 Pharos 最新公开安装包。" />
   <meta property="og:image" content="https://hyyyyyyz.github.io/Pharos/assets/poster.webp" />
   <meta property="og:url" content="https://hyyyyyyz.github.io/Pharos/download.html" />
 
@@ -20,242 +20,108 @@
   <link rel="stylesheet" href="download.css" />
 </head>
 <body class="download-page">
-  <a class="skip-link" href="#main">跳到主要内容</a>
+  <a class="skip-link" href="#downloads">跳到下载选项</a>
   <div class="paper-grain" aria-hidden="true"></div>
 
-  <header class="site-header is-over-dark is-scrolled download-header" data-header>
-    <div class="shell site-header__inner">
-      <a class="brand" href="./index.html" aria-label="返回 Pharos 首页">
-        <span class="brand__mark"><img src="assets/mark.png" alt="" /></span>
-        <span class="brand__name">Pharos</span>
-        <span class="brand__descriptor">research workbench</span>
+  <header class="download-topbar">
+    <div class="shell download-topbar__inner">
+      <a class="download-brand-link" href="./index.html" aria-label="返回 Pharos 首页">
+        <span><img src="assets/mark.png" alt="" /></span>
+        <b>Pharos</b>
       </a>
-
-      <nav class="site-nav" aria-label="主要导航">
-        <a href="./index.html#journey">科研工作流</a>
+      <nav class="download-topbar__nav" aria-label="下载页导航">
+        <a href="./index.html">项目主页</a>
         <a href="https://pharos.selab.top/" target="_blank" rel="noopener noreferrer">浏览器客户端</a>
-        <a class="site-nav__download" href="./download.html" aria-current="page">软件下载</a>
-        <div class="github-status" data-github-status aria-label="Pharos GitHub 仓库状态">
-          <a
-            class="github-status__repo"
-            href="https://github.com/hyyyyyyz/Pharos"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="在 GitHub 打开 Pharos 仓库（新窗口）"
-          >
-            <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" focusable="false">
-              <path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.84.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.2-3.64-.91-3.64-4.01 0-.89.31-1.62.82-2.19-.08-.2-.36-1.03.08-2.16 0 0 .67-.22 2.2.84A7.35 7.35 0 0 1 8 3.58c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.13.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.11-1.87 3.81-3.65 4.01.29.25.54.74.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.15.47.55.39A8.15 8.15 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z" />
-            </svg>
-            <span class="github-status__label">GitHub</span>
-          </a>
-          <a
-            class="github-status__stars"
-            href="https://github.com/hyyyyyyz/Pharos/stargazers"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="查看 Pharos 的 GitHub Stars"
-            data-github-stars-link
-          >
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
-              <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Zm0 2.445L6.615 5.498a.75.75 0 0 1-.564.41l-3.093.45 2.238 2.181a.75.75 0 0 1 .216.664l-.528 3.08 2.766-1.454a.75.75 0 0 1 .698 0l2.766 1.455-.528-3.081a.75.75 0 0 1 .216-.664l2.238-2.182-3.093-.449a.75.75 0 0 1-.564-.41L8 2.695Z" />
-            </svg>
-            <span data-github-stars aria-live="polite" aria-atomic="true">—</span>
-          </a>
-        </div>
+        <a class="download-topbar__github" href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Pharos 仓库">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.84.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.2-3.64-.91-3.64-4.01 0-.89.31-1.62.82-2.19-.08-.2-.36-1.03.08-2.16 0 0 .67-.22 2.2.84A7.35 7.35 0 0 1 8 3.58c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.13.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.11-1.87 3.81-3.65 4.01.29.25.54.74.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.15.47.55.39A8.15 8.15 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z" />
+          </svg>
+          <span>GitHub</span>
+        </a>
       </nav>
     </div>
   </header>
 
-  <main id="main">
-    <section class="download-hero">
-      <div class="download-hero__grid" aria-hidden="true"></div>
-      <div class="download-hero__beam" aria-hidden="true"></div>
-      <div class="download-beacon" aria-hidden="true">
-        <span class="download-beacon__halo"></span>
-        <span class="download-beacon__lamp"></span>
-        <span class="download-beacon__roof"></span>
-        <span class="download-beacon__tower"></span>
-        <span class="download-beacon__island"></span>
-      </div>
+  <main class="download-stage" id="downloads">
+    <div class="download-stage__grid" aria-hidden="true"></div>
+    <div class="download-stage__glow" aria-hidden="true"></div>
+    <div class="download-stage__beam" aria-hidden="true"></div>
 
-      <div class="shell download-hero__inner">
-        <div class="download-hero__copy">
-          <p class="kicker kicker--gold">PHAROS · NATIVE CLIENTS</p>
-          <h1>把研究工作台，<br />带到你的<span>每一台设备</span>。</h1>
-          <p>
-            桌面端面向本地文件、长时间阅读与可携带的研究数据目录；浏览器端则让你无需安装即可进入同一套科研工作流。
-          </p>
-          <div class="download-hero__actions">
-            <a class="button button--primary" href="#platforms">选择你的平台 <span aria-hidden="true">↓</span></a>
-            <a class="button button--dark" href="https://pharos.selab.top/" target="_blank" rel="noopener noreferrer">直接使用网页版 <span aria-hidden="true">↗</span></a>
-          </div>
-        </div>
-
-        <aside class="release-console" aria-label="最新版本状态">
-          <div class="release-console__topline">
-            <span class="release-console__signal" data-release-signal aria-hidden="true"></span>
-            <span data-release-eyebrow>正在连接 GitHub Releases</span>
-            <b>LIVE</b>
-          </div>
-          <div class="release-console__version" data-release-version>读取中…</div>
-          <p data-release-summary aria-live="polite">正在核对最新公开版本及各平台安装包。</p>
-          <dl>
-            <div><dt>发布状态</dt><dd data-release-state>同步中</dd></div>
-            <div><dt>发布时间</dt><dd data-release-date>—</dd></div>
-            <div><dt>数据来源</dt><dd>GitHub API</dd></div>
-          </dl>
-          <a class="release-console__link" data-release-link href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
-            查看所有 Releases <span aria-hidden="true">↗</span>
-          </a>
-        </aside>
-      </div>
-    </section>
-
-    <section class="platform-section" id="platforms">
-      <div class="shell">
-        <header class="platform-section__head">
-          <div>
-            <p class="kicker">DOWNLOAD MATRIX · AUTO UPDATED</p>
-            <h2>选择运行 Pharos 的平台。</h2>
-          </div>
-          <p>
-            安装包状态由最新公开 GitHub Release 自动解析。草稿版本不会出现在这里；没有正式构建的平台会明确标记为“即将推出”。
-          </p>
-        </header>
-
-        <div class="platform-grid">
-          <article class="download-card" data-platform-card data-platform="windows">
-            <div class="download-card__top">
-              <span class="platform-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path d="M5 8.5 22 6v16H5V8.5Zm19-2.8L43 3v19H24V5.7ZM5 25h17v16L5 38.5V25Zm19 0h19v20l-19-2.7V25Z" /></svg>
-              </span>
-              <span class="download-card__index">01</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>DESKTOP</p><h3>Windows 11 / 10</h3></div>
-              <span class="availability availability--loading" data-platform-status>正在核对</span>
-            </div>
-            <p class="download-card__description">面向 64 位 Windows 的桌面安装包；Release 中存在 MSI 或 EXE 时自动提供下载。</p>
-            <div class="download-card__artifacts" data-platform-assets aria-live="polite"><span class="artifact-loading">读取安装包…</span></div>
-          </article>
-
-          <article class="download-card" data-platform-card data-platform="macos">
-            <div class="download-card__top">
-              <span class="platform-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path d="M31.8 8.4c2.2-2.6 2-5 1.9-5.9-2.3.1-5 1.6-6.5 3.3-1.4 1.6-2.5 4-2.3 6.3 2.5.2 4.8-1.1 6.9-3.7ZM39.5 27c0-6.1 5-9 5.2-9.1-2.8-4.2-7.3-4.7-8.9-4.8-3.8-.4-7.4 2.2-9.3 2.2-2 0-5-2.1-8.2-2-4.2.1-8.1 2.4-10.3 6.1-4.4 7.6-1.1 18.9 3.1 25.1 2.1 3 4.6 6.4 7.9 6.3 3.2-.1 4.4-2 8.2-2s5 2 8.4 1.9c3.5-.1 5.7-3 7.8-6 2.4-3.5 3.4-6.9 3.4-7.1-.1 0-7.3-2.8-7.3-10.6Z" transform="translate(-2 -2) scale(.94)" /></svg>
-              </span>
-              <span class="download-card__index">02</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>DESKTOP</p><h3>macOS</h3></div>
-              <span class="availability availability--loading" data-platform-status>正在核对</span>
-            </div>
-            <p class="download-card__description">优先识别 Universal、Apple Silicon 与 Intel 的 DMG / PKG 安装包，并保留具体架构名称。</p>
-            <div class="download-card__artifacts" data-platform-assets aria-live="polite"><span class="artifact-loading">读取安装包…</span></div>
-          </article>
-
-          <article class="download-card" data-platform-card data-platform="linux">
-            <div class="download-card__top">
-              <span class="platform-icon platform-icon--linux" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path d="M24 4c-6.7 0-10.5 6.3-10.5 14.2 0 2.5.4 4.8 1.2 6.8-3 2.2-5.7 6.4-5.7 10.2 0 2.2 1.3 4 3.4 4.7 2.2.8 4.3-.2 6-1.8 1.7 2.5 3.5 4.1 5.6 4.1s3.9-1.6 5.6-4.1c1.7 1.6 3.8 2.6 6 1.8 2.1-.7 3.4-2.5 3.4-4.7 0-3.8-2.7-8-5.7-10.2.8-2 1.2-4.3 1.2-6.8C34.5 10.3 30.7 4 24 4Zm-4.3 12.1c-1.2 0-2.1-1.1-2.1-2.5s.9-2.5 2.1-2.5c1.1 0 2 1.1 2 2.5s-.9 2.5-2 2.5Zm8.6 0c-1.1 0-2-1.1-2-2.5s.9-2.5 2-2.5c1.2 0 2.1 1.1 2.1 2.5s-.9 2.5-2.1 2.5ZM24 17.2c2.7 0 4.9 1.5 4.9 3.3s-2.2 3.2-4.9 3.2-4.9-1.4-4.9-3.2 2.2-3.3 4.9-3.3Z" /></svg>
-              </span>
-              <span class="download-card__index">03</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>DESKTOP</p><h3>Linux</h3></div>
-              <span class="availability availability--loading" data-platform-status>正在核对</span>
-            </div>
-            <p class="download-card__description">自动识别 AppImage、DEB、RPM 与明确标注 Linux 的归档包，方便选择适合发行版的格式。</p>
-            <div class="download-card__artifacts" data-platform-assets aria-live="polite"><span class="artifact-loading">读取安装包…</span></div>
-          </article>
-
-          <article class="download-card" data-platform-card data-platform="ios">
-            <div class="download-card__top">
-              <span class="platform-icon platform-icon--mobile" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><rect x="13" y="3" width="22" height="42" rx="5" /><path class="platform-icon__cutout" d="M17 8h14v31H17z" /><circle class="platform-icon__cutout" cx="24" cy="42" r="1.4" /></svg>
-              </span>
-              <span class="download-card__index">04</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>MOBILE</p><h3>iOS / iPadOS</h3></div>
-              <span class="availability availability--loading" data-platform-status>正在核对</span>
-            </div>
-            <p class="download-card__description">移动阅读与研究资料接续入口。只有正式公开 IPA 构建出现后才会开放下载。</p>
-            <div class="download-card__artifacts" data-platform-assets aria-live="polite"><span class="artifact-loading">读取安装包…</span></div>
-          </article>
-
-          <article class="download-card" data-platform-card data-platform="android">
-            <div class="download-card__top">
-              <span class="platform-icon platform-icon--mobile" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path d="m15 15-3.2-5.4 1.8-1 3.4 5.7a17 17 0 0 1 14 0l3.4-5.7 1.8 1L33 15c4.2 2.5 7 7 7 12H8c0-5 2.8-9.5 7-12Z" /><circle class="platform-icon__cutout" cx="17" cy="21" r="1.5" /><circle class="platform-icon__cutout" cx="31" cy="21" r="1.5" /><path d="M8 29h32v11a5 5 0 0 1-5 5H13a5 5 0 0 1-5-5V29Z" /></svg>
-              </span>
-              <span class="download-card__index">05</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>MOBILE</p><h3>Android</h3></div>
-              <span class="availability availability--loading" data-platform-status>正在核对</span>
-            </div>
-            <p class="download-card__description">适配平板与手机的移动端入口。Release 中出现 APK 或 AAB 后自动列出对应构建。</p>
-            <div class="download-card__artifacts" data-platform-assets aria-live="polite"><span class="artifact-loading">读取安装包…</span></div>
-          </article>
-
-          <article class="download-card download-card--history">
-            <div class="download-card__top">
-              <span class="platform-icon platform-icon--history" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path fill-rule="evenodd" d="M24 6a18 18 0 1 1-15.8 9.4l-2.8-1.7a2 2 0 0 1-.2-3.3l8.2-6.2a2 2 0 0 1 3.2 1.6l-.2 10.2a2 2 0 0 1-3 1.7l-2-1.2A14 14 0 1 0 24 10V6Zm2 9v8.2l6.1 4.1-2.2 3.4-7-4.7a2 2 0 0 1-.9-1.7V15h4Z" clip-rule="evenodd" /></svg>
-              </span>
-              <span class="download-card__index">06</span>
-            </div>
-            <div class="download-card__heading">
-              <div><p>ARCHIVE</p><h3>历史版本</h3></div>
-              <span class="availability availability--archive">完整记录</span>
-            </div>
-            <p class="download-card__description">查看全部公开版本、发行说明和过往安装包。回退前请同时核对数据格式与服务端兼容性。</p>
-            <div class="download-card__artifacts">
-              <a class="artifact-link artifact-link--archive" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
-                <span><b>打开 Releases</b><small>github.com/hyyyyyyz/Pharos</small></span>
-                <i aria-hidden="true">↗</i>
-              </a>
-            </div>
-          </article>
-        </div>
-
-        <aside class="download-note">
-          <div class="download-note__mark"><img src="assets/mark.png" alt="" /></div>
-          <div>
-            <p>发布说明</p>
-            <h3>下载页不会把开发中的构建包装成正式产品。</h3>
-          </div>
-          <p>当前桌面端仍处于快速迭代阶段。签名、公证、自动更新与移动端分发状态，请以每个 Release 的说明为准。</p>
-          <a href="https://github.com/hyyyyyyz/Pharos/issues" target="_blank" rel="noopener noreferrer">报告安装问题 <span aria-hidden="true">↗</span></a>
-        </aside>
-      </div>
-    </section>
-
-    <section class="download-finale">
-      <div class="download-finale__rings" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="shell download-finale__inner">
-        <p class="kicker kicker--gold">NO INSTALLATION REQUIRED</p>
-        <h2>现在就进入 Pharos，<br />继续你的研究航线。</h2>
+    <div class="shell download-stage__inner">
+      <div class="download-lockup">
+        <span class="download-lockup__mark"><img src="assets/mark.png" alt="" /></span>
         <div>
-          <a class="button button--primary" href="https://pharos.selab.top/" target="_blank" rel="noopener noreferrer">开始体验 <span aria-hidden="true">↗</span></a>
-          <a class="button button--dark" href="./index.html">返回项目主页</a>
+          <h1>Pharos</h1>
+          <p>OFFICIAL DOWNLOADS</p>
         </div>
       </div>
-    </section>
-  </main>
 
-  <footer class="site-footer">
-    <div class="shell site-footer__inner">
-      <div class="site-footer__brand"><img src="assets/mark.png" alt="" /><b>Pharos</b><span>research workbench</span></div>
-      <p>开源 · 自托管 · AGPL-3.0</p>
-      <div>
-        <a href="./index.html">项目主页</a>
-        <a href="https://pharos.selab.top/" target="_blank" rel="noopener noreferrer">浏览器客户端 ↗</a>
-        <a href="https://github.com/hyyyyyyz/Pharos" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      <a class="release-row" data-release-link href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+        <span class="release-row__indicator" data-release-indicator aria-hidden="true"></span>
+        <span class="release-row__copy">
+          <b data-release-title>正在读取最新版本</b>
+          <small data-release-summary aria-live="polite">正在连接 GitHub Releases…</small>
+        </span>
+        <time data-release-date>—</time>
+        <i aria-hidden="true">↗</i>
+      </a>
+
+      <div class="platform-downloads" aria-label="选择下载平台">
+        <a class="platform-download" data-platform-card data-platform="windows" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M5 8.5 22 6v16H5V8.5Zm19-2.8L43 3v19H24V5.7ZM5 25h17v16L5 38.5V25Zm19 0h19v20l-19-2.7V25Z" /></svg>
+          </span>
+          <b>Windows</b>
+          <small data-platform-status>正在核对</small>
+        </a>
+
+        <a class="platform-download" data-platform-card data-platform="macos" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M31.8 8.4c2.2-2.6 2-5 1.9-5.9-2.3.1-5 1.6-6.5 3.3-1.4 1.6-2.5 4-2.3 6.3 2.5.2 4.8-1.1 6.9-3.7ZM39.5 27c0-6.1 5-9 5.2-9.1-2.8-4.2-7.3-4.7-8.9-4.8-3.8-.4-7.4 2.2-9.3 2.2-2 0-5-2.1-8.2-2-4.2.1-8.1 2.4-10.3 6.1-4.4 7.6-1.1 18.9 3.1 25.1 2.1 3 4.6 6.4 7.9 6.3 3.2-.1 4.4-2 8.2-2s5 2 8.4 1.9c3.5-.1 5.7-3 7.8-6 2.4-3.5 3.4-6.9 3.4-7.1-.1 0-7.3-2.8-7.3-10.6Z" transform="translate(-2 -2) scale(.94)" /></svg>
+          </span>
+          <b>macOS</b>
+          <small data-platform-status>正在核对</small>
+        </a>
+
+        <a class="platform-download" data-platform-card data-platform="linux" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon platform-download__icon--linux" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M24 4c-6.7 0-10.5 6.3-10.5 14.2 0 2.5.4 4.8 1.2 6.8-3 2.2-5.7 6.4-5.7 10.2 0 2.2 1.3 4 3.4 4.7 2.2.8 4.3-.2 6-1.8 1.7 2.5 3.5 4.1 5.6 4.1s3.9-1.6 5.6-4.1c1.7 1.6 3.8 2.6 6 1.8 2.1-.7 3.4-2.5 3.4-4.7 0-3.8-2.7-8-5.7-10.2.8-2 1.2-4.3 1.2-6.8C34.5 10.3 30.7 4 24 4Zm-4.3 12.1c-1.2 0-2.1-1.1-2.1-2.5s.9-2.5 2.1-2.5c1.1 0 2 1.1 2 2.5s-.9 2.5-2 2.5Zm8.6 0c-1.1 0-2-1.1-2-2.5s.9-2.5 2-2.5c1.2 0 2.1 1.1 2.1 2.5s-.9 2.5-2.1 2.5ZM24 17.2c2.7 0 4.9 1.5 4.9 3.3s-2.2 3.2-4.9 3.2-4.9-1.4-4.9-3.2 2.2-3.3 4.9-3.3Z" /></svg>
+          </span>
+          <b>Linux</b>
+          <small data-platform-status>正在核对</small>
+        </a>
+
+        <a class="platform-download" data-platform-card data-platform="ios" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><rect x="13" y="3" width="22" height="42" rx="5" /><path class="platform-download__cutout" d="M17 8h14v31H17z" /><circle class="platform-download__cutout" cx="24" cy="42" r="1.4" /></svg>
+          </span>
+          <b>iOS</b>
+          <small data-platform-status>正在核对</small>
+        </a>
+
+        <a class="platform-download" data-platform-card data-platform="android" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="m15 15-3.2-5.4 1.8-1 3.4 5.7a17 17 0 0 1 14 0l3.4-5.7 1.8 1L33 15c4.2 2.5 7 7 7 12H8c0-5 2.8-9.5 7-12Z" /><circle class="platform-download__cutout" cx="17" cy="21" r="1.5" /><circle class="platform-download__cutout" cx="31" cy="21" r="1.5" /><path d="M8 29h32v11a5 5 0 0 1-5 5H13a5 5 0 0 1-5-5V29Z" /></svg>
+          </span>
+          <b>Android</b>
+          <small data-platform-status>正在核对</small>
+        </a>
+
+        <a class="platform-download platform-download--history" href="https://github.com/hyyyyyyz/Pharos/releases" target="_blank" rel="noopener noreferrer">
+          <span class="platform-download__icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path fill-rule="evenodd" d="M24 6a18 18 0 1 1-15.8 9.4l-2.8-1.7a2 2 0 0 1-.2-3.3l8.2-6.2a2 2 0 0 1 3.2 1.6l-.2 10.2a2 2 0 0 1-3 1.7l-2-1.2A14 14 0 1 0 24 10V6Zm2 9v8.2l6.1 4.1-2.2 3.4-7-4.7a2 2 0 0 1-.9-1.7V15h4Z" clip-rule="evenodd" /></svg>
+          </span>
+          <b>历史版本</b>
+          <small>全部 Releases</small>
+        </a>
+      </div>
+
+      <div class="download-stage__footer">
+        <span>公开安装包由 GitHub Releases 提供</span>
+        <a href="https://github.com/hyyyyyyz/Pharos/issues" target="_blank" rel="noopener noreferrer">安装问题 ↗</a>
       </div>
     </div>
-  </footer>
+  </main>
 
   <script type="module" src="download.js"></script>
 </body>

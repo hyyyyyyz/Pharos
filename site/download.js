@@ -1,224 +1,140 @@
 const REPOSITORY = "hyyyyyyz/Pharos";
 const RELEASES_URL = `https://github.com/${REPOSITORY}/releases`;
 const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
-const REPOSITORY_API = `https://api.github.com/repos/${REPOSITORY}`;
-const CACHE_KEY = "pharos.public-release.v1";
-const REPOSITORY_CACHE_KEY = "pharos.repository-summary.v1";
+const CACHE_KEY = "pharos.public-release.v2";
 const CACHE_TTL = 15 * 60 * 1000;
 const REQUEST_TIMEOUT = 6500;
 
 const platformRules = {
   windows: {
-    label: "Windows",
     test: (name) => /\.(?:msi|exe)$/i.test(name),
     score: (name) => scoreName(name, ["windows", "win", "x64", "setup", "msi"]),
   },
   macos: {
-    label: "macOS",
     test: (name) => /\.(?:dmg|pkg)$/i.test(name),
     score: (name) => scoreName(name, ["universal", "aarch64", "arm64", "macos", "mac", "dmg"]),
   },
   linux: {
-    label: "Linux",
     test: (name) => /\.(?:appimage|deb|rpm)$/i.test(name) || (/linux/i.test(name) && /\.(?:tar\.gz|tgz)$/i.test(name)),
     score: (name) => scoreName(name, ["appimage", "amd64", "x86_64", "linux", "deb", "rpm"]),
   },
   ios: {
-    label: "iOS",
     test: (name) => /\.ipa$/i.test(name),
     score: (name) => scoreName(name, ["ios", "iphone", "ipad", "universal"]),
   },
   android: {
-    label: "Android",
-    test: (name) => /\.(?:apk|aab)$/i.test(name),
+    test: (name) => /\.apk$/i.test(name),
     score: (name) => scoreName(name, ["android", "universal", "arm64", "apk"]),
   },
 };
 
-const releaseVersion = document.querySelector("[data-release-version]");
+const releaseTitle = document.querySelector("[data-release-title]");
 const releaseSummary = document.querySelector("[data-release-summary]");
-const releaseState = document.querySelector("[data-release-state]");
 const releaseDate = document.querySelector("[data-release-date]");
-const releaseEyebrow = document.querySelector("[data-release-eyebrow]");
-const releaseSignal = document.querySelector("[data-release-signal]");
+const releaseIndicator = document.querySelector("[data-release-indicator]");
 const releaseLink = document.querySelector("[data-release-link]");
 
 markCurrentPlatform();
-void Promise.allSettled([loadLatestRelease(), loadRepositorySummary()]);
+void loadLatestRelease();
 
 async function loadLatestRelease() {
   try {
-    const release = await fetchCachedJson(CACHE_KEY, RELEASE_API);
+    const release = await fetchCachedRelease();
     if (!release || !Array.isArray(release.assets)) {
-      throw new Error("GitHub 返回的 Release 数据不完整");
+      throw new Error("GitHub returned incomplete release data");
     }
     renderRelease(release);
   } catch (error) {
-    const noPublishedRelease = error instanceof HttpError && error.status === 404;
-    renderReleaseUnavailable(noPublishedRelease);
-  }
-}
-
-async function loadRepositorySummary() {
-  try {
-    const repository = await fetchCachedJson(REPOSITORY_CACHE_KEY, REPOSITORY_API);
-    const stars = Number(repository?.stargazers_count);
-    if (!Number.isFinite(stars)) return;
-
-    document.querySelectorAll("[data-github-stars]").forEach((node) => {
-      node.textContent = formatCount(stars);
-    });
-    document.querySelectorAll("[data-github-stars-link]").forEach((node) => {
-      node.setAttribute("aria-label", `查看 Pharos 的 GitHub Stars（当前 ${stars} 个）`);
-      node.setAttribute("title", `Pharos 在 GitHub 上有 ${stars} 个 Star`);
-    });
-  } catch {
-    document.querySelectorAll("[data-github-stars]").forEach((node) => {
-      node.textContent = "—";
-    });
+    renderUnavailable(error instanceof HttpError && error.status === 404);
   }
 }
 
 function renderRelease(release) {
   const tag = textValue(release.tag_name) || textValue(release.name) || "最新版本";
-  const publishedAt = textValue(release.published_at);
   const releaseUrl = isSafeReleaseUrl(release.html_url) ? release.html_url : RELEASES_URL;
-  const safeAssets = release.assets.filter(isSafeAsset);
-
-  releaseVersion.textContent = tag;
-  releaseSummary.textContent = safeAssets.length
-    ? `已找到 ${safeAssets.length} 个公开构建文件；下面仅显示可识别的平台安装包。`
-    : "最新公开版本暂未附带可下载构建，请查看发行说明。";
-  releaseState.textContent = release.prerelease ? "预发布" : "已发布";
-  releaseDate.textContent = publishedAt ? formatDate(publishedAt) : "未提供";
-  releaseEyebrow.textContent = "GitHub Releases 已同步";
-  releaseSignal.classList.add("is-ready");
-  releaseLink.href = releaseUrl;
-  releaseLink.firstChild.textContent = "查看本次 Release ";
+  const assets = release.assets.filter(isSafeAsset);
+  const availablePlatforms = [];
 
   Object.entries(platformRules).forEach(([platform, rule]) => {
-    const matches = safeAssets
+    const matches = assets
       .filter((asset) => rule.test(asset.name))
       .sort((a, b) => rule.score(b.name) - rule.score(a.name));
-    renderPlatform(platform, matches, tag, releaseUrl);
+    if (matches.length) availablePlatforms.push(platform);
+    renderPlatform(platform, matches[0], tag, releaseUrl);
   });
+
+  releaseTitle.textContent = `${tag}${release.prerelease ? " · 预发布" : ""}`;
+  releaseSummary.textContent = availablePlatforms.length
+    ? `${availablePlatforms.length} 个平台已有公开安装包`
+    : "此版本暂未附带可识别的安装包";
+  releaseDate.textContent = formatDate(release.published_at);
+  releaseLink.href = releaseUrl;
+  releaseIndicator.classList.add("is-ready");
 }
 
-function renderReleaseUnavailable(noPublishedRelease) {
-  releaseVersion.textContent = noPublishedRelease ? "尚未公开" : "暂时离线";
+function renderUnavailable(noPublishedRelease) {
+  releaseTitle.textContent = noPublishedRelease ? "暂无公开安装包" : "暂未发现公开安装包";
   releaseSummary.textContent = noPublishedRelease
-    ? "仓库目前没有 GitHub API 可见的公开 Release；开发中的草稿构建不会在此展示。"
-    : "暂时无法连接 GitHub API。你仍可前往 Releases 页面检查最新发布。";
-  releaseState.textContent = noPublishedRelease ? "等待首个版本" : "无法核对";
+    ? "首个公开版本发布后，这里会自动提供下载"
+    : "可前往 GitHub Releases 查看当前状态";
   releaseDate.textContent = "—";
-  releaseEyebrow.textContent = noPublishedRelease ? "暂无公开安装包" : "GitHub API 暂不可用";
-  releaseSignal.classList.add("is-idle");
+  releaseIndicator.classList.add("is-idle");
 
   Object.keys(platformRules).forEach((platform) => {
-    renderPlatformUnavailable(platform, noPublishedRelease);
+    renderPlatform(platform, null, "", RELEASES_URL);
   });
 }
 
-function renderPlatform(platform, assets, tag, releaseUrl) {
+function renderPlatform(platform, asset, tag, releaseUrl) {
   const card = document.querySelector(`[data-platform-card][data-platform="${platform}"]`);
   if (!card) return;
   const status = card.querySelector("[data-platform-status]");
-  const container = card.querySelector("[data-platform-assets]");
 
-  if (!assets.length) {
-    setAvailability(status, "即将推出", "soon");
-    renderEmpty(container, `最新版本 ${tag} 暂无此平台安装包。`, releaseUrl, "查看发行说明");
+  if (!asset) {
+    card.href = releaseUrl;
+    card.target = "_blank";
+    card.rel = "noopener noreferrer";
+    card.classList.remove("is-available");
+    status.textContent = "即将推出";
     return;
   }
 
-  setAvailability(status, assets.length > 1 ? `${assets.length} 个构建` : "可下载", "ready");
-  container.replaceChildren(...assets.slice(0, 4).map((asset) => createArtifactLink(asset, tag)));
+  card.href = asset.browser_download_url;
+  card.removeAttribute("target");
+  card.removeAttribute("rel");
+  card.classList.add("is-available");
+  card.setAttribute("aria-label", `下载 ${asset.name}`);
+  card.title = asset.name;
+  status.textContent = `${tag} · ${formatBytes(asset.size)}`;
 }
 
-function renderPlatformUnavailable(platform, noPublishedRelease) {
-  const card = document.querySelector(`[data-platform-card][data-platform="${platform}"]`);
-  if (!card) return;
-  const status = card.querySelector("[data-platform-status]");
-  const container = card.querySelector("[data-platform-assets]");
-
-  setAvailability(status, noPublishedRelease ? "即将推出" : "待核对", "soon");
-  renderEmpty(
-    container,
-    noPublishedRelease ? "目前没有公开安装包。" : "暂时无法自动核对安装包。",
-    RELEASES_URL,
-    "前往 Releases",
-  );
-}
-
-function createArtifactLink(asset, tag) {
-  const link = document.createElement("a");
-  link.className = "artifact-link";
-  link.href = asset.browser_download_url;
-  link.setAttribute("aria-label", `下载 ${asset.name}`);
-
-  const copy = document.createElement("span");
-  const title = document.createElement("b");
-  const meta = document.createElement("small");
-  const arrow = document.createElement("i");
-
-  title.textContent = asset.name;
-  meta.textContent = `${tag} · ${formatBytes(asset.size)}`;
-  arrow.textContent = "↓";
-  arrow.setAttribute("aria-hidden", "true");
-  copy.append(title, meta);
-  link.append(copy, arrow);
-  return link;
-}
-
-function renderEmpty(container, message, href, label) {
-  const empty = document.createElement("div");
-  empty.className = "artifact-empty";
-
-  const wrapper = document.createElement("span");
-  const text = document.createTextNode(message);
-  const link = document.createElement("a");
-  link.href = isSafeReleaseUrl(href) ? href : RELEASES_URL;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = `${label} ↗`;
-  wrapper.append(text, document.createElement("br"), link);
-  empty.append(wrapper);
-  container.replaceChildren(empty);
-}
-
-function setAvailability(node, label, variant) {
-  node.textContent = label;
-  node.className = `availability availability--${variant}`;
-}
-
-async function fetchCachedJson(cacheKey, url) {
-  const cached = readCache(cacheKey);
+async function fetchCachedRelease() {
+  const cached = readCache();
   if (cached) return cached;
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
   try {
-    const response = await fetch(url, {
+    const response = await fetch(RELEASE_API, {
       headers: { Accept: "application/vnd.github+json" },
       signal: controller.signal,
     });
     if (!response.ok) throw new HttpError(response.status);
-    const value = await response.json();
-    writeCache(cacheKey, value);
-    return value;
+    const release = await response.json();
+    writeCache(release);
+    return release;
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
-function readCache(key) {
+function readCache() {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const cached = JSON.parse(raw);
     if (!cached || typeof cached.savedAt !== "number" || Date.now() - cached.savedAt > CACHE_TTL) {
-      localStorage.removeItem(key);
+      localStorage.removeItem(CACHE_KEY);
       return null;
     }
     return cached.value;
@@ -227,19 +143,18 @@ function readCache(key) {
   }
 }
 
-function writeCache(key, value) {
+function writeCache(value) {
   try {
-    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), value }));
   } catch {
-    // Private browsing or storage policies can disable localStorage; the page still works.
+    // Storage may be unavailable in private browsing; network loading still works.
   }
 }
 
 function markCurrentPlatform() {
   const platform = detectPlatform();
   if (!platform) return;
-  const card = document.querySelector(`[data-platform-card][data-platform="${platform}"]`);
-  card?.classList.add("is-current");
+  document.querySelector(`[data-platform-card][data-platform="${platform}"]`)?.classList.add("is-current");
 }
 
 function detectPlatform() {
@@ -264,7 +179,7 @@ function isSafeAsset(asset) {
 }
 
 function isSafeReleaseUrl(value) {
-  return typeof value === "string" && value.startsWith(`https://github.com/${REPOSITORY}/releases`);
+  return typeof value === "string" && value.startsWith(RELEASES_URL);
 }
 
 function scoreName(name, preferences) {
@@ -283,18 +198,8 @@ function formatBytes(value) {
 
 function formatDate(value) {
   const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "未提供";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-}
-
-function formatCount(value) {
-  if (value < 1000) return String(value);
-  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`;
-  return `${(value / 1_000_000).toFixed(1)}m`;
+  if (Number.isNaN(date.valueOf())) return "—";
+  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function textValue(value) {
