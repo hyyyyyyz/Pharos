@@ -40,6 +40,10 @@ from pharos.web import mount_web_app
 def create_app() -> FastAPI:
     settings = get_settings()
     init_engine(settings.db_path)
+    # Existing installations stored Zotero API keys as plaintext. Once a stable
+    # credential secret is available, upgrade them before any background sync
+    # can read one; the migration is idempotent and also completes key rotation.
+    zotero.migrate_stored_credentials(settings)
 
     blobs = BlobStore(settings.files_dir)
     engine = BabelDocEngine(

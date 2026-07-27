@@ -53,6 +53,10 @@ PUBLIC = {
     ("GET", "/api/health"),  # liveness probe; returns no user data
     ("POST", "/api/auth/register"),  # creating the account that gets a token
     ("POST", "/api/auth/login"),  # exchanging a password for a token
+    # Browser redirect from Zotero cannot carry the localStorage Bearer token;
+    # the callback is instead bound to a one-use request token plus HttpOnly
+    # browser state and never accepts a user id from the request.
+    ("GET", "/api/zotero/oauth/callback"),
 }
 
 #: Every router the application is supposed to mount. Listing them here rather

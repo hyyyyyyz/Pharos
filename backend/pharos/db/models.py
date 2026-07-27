@@ -95,7 +95,10 @@ class ZoteroLink(Base):
     )
     #: Numeric Zotero user id (their "userID" in Zotero's settings).
     zotero_user_id: Mapped[str] = mapped_column(String(32))
-    api_key: Mapped[str] = mapped_column(String(128))
+    #: Stored as ``fernet:v1:<ciphertext>`` when a stable credential secret is
+    #: configured. SQLite does not enforce VARCHAR lengths, but 512 also keeps a
+    #: fresh schema honest about the encrypted value's real upper bound.
+    api_key: Mapped[str] = mapped_column(String(512))
     #: Zotero's library version, so syncs can be incremental rather than full.
     library_version: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="linked")  # linked|syncing|error
@@ -103,6 +106,32 @@ class ZoteroLink(Base):
     last_error: Mapped[str | None] = mapped_column(Text, default=None)
     item_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ZoteroOAuthAttempt(Base):
+    """One short-lived, one-use OAuth 1.0a handshake.
+
+    Zotero redirects through a normal browser navigation, so the callback cannot
+    carry Pharos's localStorage Bearer token. The random ``state`` and request
+    token bind that callback to the authenticated user who started it. The token
+    secret is itself encrypted because it can complete the exchange while live.
+    """
+
+    __tablename__ = "zotero_oauth_attempts"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    #: SHA-256 hex digests only. The callback supplies both original values;
+    #: keeping their hashes is enough to bind it without leaving replay material
+    #: in a database backup.
+    request_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    browser_state_hash: Mapped[str] = mapped_column(String(64))
+    request_token_secret: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 class Paper(Base):

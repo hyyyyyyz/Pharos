@@ -26,6 +26,12 @@ dependencies = [
     # future mobile clients both use.
     "argon2-cffi>=23.1",
     "pyjwt>=2.9",
+    # Zotero OAuth exchanges a short-lived request token for a long-lived API
+    # key. Fernet gives that bearer secret authenticated encryption at rest;
+    # the key material itself stays in PHAROS_CREDENTIAL_SECRET.
+    "cryptography>=43.0",
+    # Mature RFC 5849 normalization/signing for Zotero's OAuth 1.0a handshake.
+    "oauthlib>=3.2",
 ]
 
 [project.optional-dependencies]

@@ -8,13 +8,14 @@ must never leak into another, and no code path may expose a key.
 from __future__ import annotations
 
 import pytest
-
 from pharos.config import Settings
 
 
 def make(**env: str) -> Settings:
     """A Settings built only from the given vars — never the developer's .env."""
-    return Settings(_env_file=None, **{k.removeprefix("PHAROS_").lower(): v for k, v in env.items()})
+    return Settings(
+        _env_file=None, **{k.removeprefix("PHAROS_").lower(): v for k, v in env.items()}
+    )
 
 
 def test_works_with_no_credentials() -> None:
@@ -88,3 +89,14 @@ def test_redacted_never_exposes_the_key() -> None:
     assert provider is not None
     assert secret not in str(provider.redacted())
     assert provider.redacted()["configured"] is True
+
+
+def test_zotero_oauth_requires_a_dedicated_credential_secret() -> None:
+    common = {
+        "PHAROS_AUTH_SECRET": "a" * 48,
+        "PHAROS_ZOTERO_OAUTH_CLIENT_KEY": "client",
+        "PHAROS_ZOTERO_OAUTH_CLIENT_SECRET": "secret",
+        "PHAROS_ZOTERO_OAUTH_CALLBACK_URL": "https://pharos.example/api/zotero/oauth/callback",
+    }
+    assert make(**common).zotero_oauth_configured is False
+    assert make(**common, PHAROS_CREDENTIAL_SECRET="b" * 48).zotero_oauth_configured is True

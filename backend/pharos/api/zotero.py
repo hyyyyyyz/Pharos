@@ -2,9 +2,10 @@
 
 A Pharos account is *not* a Zotero account. Signing in to Pharos gets you a
 library; linking Zotero is an optional, revocable extra that pulls bibliographic
-records out of Zotero's cloud and into that library. Every route here requires a
-signed-in user and touches only that user's own rows — an unfiltered query in
-this file would show one researcher another's reading list.
+records out of Zotero's cloud and into that library. Every route except the
+one-time OAuth callback requires a signed-in user and touches only that user's
+own rows — an unfiltered query in this file would show one researcher another's
+reading list.
 
 Three things are worth reading the code for.
 
@@ -29,21 +30,30 @@ honest representation matters.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import secrets
+import urllib.parse
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from pharos.api.deps import current_user, get_session
+from pharos.api.deps import get_settings as get_runtime_settings
 from pharos.api.schemas import as_utc
-from pharos.db.models import Paper, User, ZoteroLink
+from pharos.config import Settings
+from pharos.config import get_settings as get_app_settings
+from pharos.db.models import Paper, User, ZoteroLink, ZoteroOAuthAttempt
 from pharos.db.session import session_scope
 from pharos.services import zotero as client
+from pharos.services import zotero_oauth
+from pharos.services.credentials import CredentialCipher, CredentialError
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +81,11 @@ _MAX_REMEMBERED_RUNS = 512
 #: adjacent code paths and out of the columns.
 _MAX_USER_ID = 32
 _MAX_API_KEY = 128
+
+#: Only fixed result codes cross the unauthenticated OAuth callback into the
+#: frontend URL. Provider text never does: it can be attacker-controlled and a
+#: query string is copied into history, analytics, and referrer headers.
+_OAUTH_RESULTS = {"connected", "cancelled", "expired", "invalid", "busy", "error"}
 
 
 # --------------------------------------------------------------------------- #
@@ -130,6 +145,17 @@ class ZoteroStatusOut(BaseModel):
     library_version: int | None = None
     #: The in-flight or most recent run, when this process knows of one.
     sync: SyncSummary | None = None
+    #: Whether this server has a registered Zotero OAuth application and a
+    #: stable credential-encryption secret. False keeps the manual fallback
+    #: usable without rendering a dead one-click button.
+    oauth_available: bool = False
+
+
+class OAuthStartOut(BaseModel):
+    """The Zotero consent URL created for this signed-in user."""
+
+    authorize_url: str
+    expires_at: datetime
 
 
 class UnlinkResult(BaseModel):
@@ -161,7 +187,7 @@ class _Run:
     )
 
     def __init__(self) -> None:
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = datetime.now(UTC)
         self.finished_at: datetime | None = None
         self.added: int | None = None
         self.updated: int | None = None
@@ -283,17 +309,17 @@ class ZoteroSyncer:
             # designed repair for a link left at "syncing", so failing here
             # costs one status correction on the next poll, and nothing else.
             run.error = "the sync was interrupted"
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             _try_record_failure(user_id, run.error)
             raise
         except Exception as exc:  # noqa: BLE001 — nothing awaits this task's result
             log.exception("zotero sync failed for a user")
             run.error = _clean_error(exc)
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             await asyncio.to_thread(_try_record_failure, user_id, run.error)
         finally:
             if run.finished_at is None:
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
             self._tasks.pop(user_id, None)
 
     async def aclose(self) -> None:
@@ -321,7 +347,90 @@ syncer = ZoteroSyncer()
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
+
+
+def _cipher(settings: Settings | None = None) -> CredentialCipher:
+    return CredentialCipher.from_settings(settings or get_app_settings())
+
+
+def _safe_http_url(value: str | None) -> bool:
+    """Require HTTPS, except loopback HTTP for local development."""
+    if not value:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError:
+        return False
+    if parsed.username or parsed.password or not parsed.hostname:
+        return False
+    if parsed.scheme == "https":
+        return True
+    return parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+
+
+def _oauth_ready(settings: Settings) -> bool:
+    return bool(
+        settings.zotero_oauth_configured
+        and _safe_http_url(settings.zotero_oauth_callback_url)
+        and (
+            settings.zotero_oauth_return_url is None
+            or _safe_http_url(settings.zotero_oauth_return_url)
+        )
+    )
+
+
+def _url_with_query(url: str, **updates: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(updates)
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), parsed.fragment)
+    )
+
+
+def _callback_url(settings: Settings, state: str) -> str:
+    # _oauth_ready has already checked the value.
+    return _url_with_query(str(settings.zotero_oauth_callback_url), state=state)
+
+
+def _return_url(settings: Settings, result: str) -> str:
+    if result not in _OAUTH_RESULTS:  # pragma: no cover - all callers use constants
+        result = "error"
+    base = settings.zotero_oauth_return_url
+    if not base:
+        callback = urllib.parse.urlsplit(str(settings.zotero_oauth_callback_url))
+        base = urllib.parse.urlunsplit((callback.scheme, callback.netloc, "/", "", ""))
+    return _url_with_query(base, zotero=result)
+
+
+def _oauth_redirect(settings: Settings, result: str) -> RedirectResponse:
+    response = RedirectResponse(
+        _return_url(settings, result), status_code=status.HTTP_303_SEE_OTHER
+    )
+    name, secure = _oauth_cookie(settings)
+    response.delete_cookie(name, path="/", secure=secure, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _oauth_cookie(settings: Settings) -> tuple[str, bool]:
+    callback = urllib.parse.urlsplit(str(settings.zotero_oauth_callback_url))
+    secure = callback.scheme == "https"
+    return ("__Host-pharos-zotero-state" if secure else "pharos-zotero-state", secure)
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _single_query(request: Request, name: str, *, max_length: int = 512) -> str | None:
+    """One bounded callback parameter; duplicates are rejected, not guessed."""
+    values = request.query_params.getlist(name)
+    if len(values) != 1 or not values[0] or len(values[0]) > max_length:
+        return None
+    return values[0]
 
 
 def _clean_error(exc: Exception) -> str:
@@ -361,6 +470,29 @@ def _paper_count(session: Session, user_id: str) -> int:
     )
 
 
+def _replace_link(
+    session: Session,
+    *,
+    user_id: str,
+    zotero_user_id: str,
+    api_key: str,
+    settings: Settings,
+) -> ZoteroLink:
+    """Atomically replace one user's verified Zotero credential."""
+    link = _link_for(session, user_id)
+    if link is None:
+        link = ZoteroLink(user_id=user_id)
+        session.add(link)
+    link.zotero_user_id = zotero_user_id
+    link.api_key = _cipher(settings).protect(api_key)
+    link.library_version = 0
+    link.status = "linked"
+    link.last_error = None
+    link.last_sync_at = None
+    link.item_count = _paper_count(session, user_id)
+    return link
+
+
 def _reconcile_stale(session: Session, link: ZoteroLink | None) -> ZoteroLink | None:
     """Repair a link stuck at ``syncing`` with no task behind it.
 
@@ -384,10 +516,16 @@ def _reconcile_stale(session: Session, link: ZoteroLink | None) -> ZoteroLink | 
     return link
 
 
-def _status_out(session: Session, user_id: str) -> ZoteroStatusOut:
+def _status_out(
+    session: Session, user_id: str, *, oauth_available: bool | None = None
+) -> ZoteroStatusOut:
+    if oauth_available is None:
+        oauth_available = _oauth_ready(get_app_settings())
     link = _reconcile_stale(session, _link_for(session, user_id))
     if link is None:
-        return ZoteroStatusOut(linked=False, sync=syncer.summary(user_id))
+        return ZoteroStatusOut(
+            linked=False, sync=syncer.summary(user_id), oauth_available=oauth_available
+        )
     # A live task outranks the stored status. ``POST /sync`` returns before the
     # background task's first write has landed, so the row can still say
     # "linked" for a sync that is demonstrably underway — and answering "linked"
@@ -406,6 +544,7 @@ def _status_out(session: Session, user_id: str) -> ZoteroStatusOut:
         last_error=None if live else link.last_error,
         library_version=link.library_version,
         sync=syncer.summary(user_id),
+        oauth_available=oauth_available,
         # NOTE: link.api_key is deliberately not referenced. Anything added to
         # this constructor must be checked against that rule.
     )
@@ -421,6 +560,147 @@ def _sync_precondition(user_id: str) -> bool:
     """Whether this user has a link to sync, repairing a stale one on the way."""
     with session_scope() as session:
         return _reconcile_stale(session, _link_for(session, user_id)) is not None
+
+
+def migrate_stored_credentials(settings: Settings | None = None) -> int:
+    """Encrypt legacy plaintext and rotate ciphertext at application startup.
+
+    The migration is deliberately best-effort per row: one corrupt credential
+    must not prevent Pharos from booting, and no exception or log message ever
+    includes the stored value. A bad row will surface as a reconnect prompt when
+    its owner next syncs.
+    """
+    cipher = _cipher(settings)
+    if not cipher.configured:
+        return 0
+    changed = 0
+    with session_scope() as session:
+        values: list[tuple[object, str]] = [
+            *((link, "api_key") for link in session.scalars(select(ZoteroLink)).all()),
+            *(
+                (attempt, "request_token_secret")
+                for attempt in session.scalars(select(ZoteroOAuthAttempt)).all()
+            ),
+        ]
+        for row, attribute in values:
+            stored = str(getattr(row, attribute))
+            try:
+                normalized = cipher.normalize(stored)
+            except CredentialError:
+                log.error("zotero: one stored credential could not be migrated")
+                continue
+            if normalized != stored:
+                setattr(row, attribute, normalized)
+                changed += 1
+    if changed:
+        log.info("zotero: encrypted or rotated %d stored credential(s)", changed)
+    return changed
+
+
+def _create_oauth_attempt(
+    *,
+    user_id: str,
+    state: str,
+    browser_secret: str,
+    request_token: zotero_oauth.RequestToken,
+    expires_at: datetime,
+    settings: Settings,
+) -> None:
+    cipher = _cipher(settings)
+    if not cipher.configured:  # guarded by _oauth_ready; fail closed anyway
+        raise RuntimeError("A stable credential secret is required for Zotero OAuth.")
+    with session_scope() as session:
+        # The newest click wins. It overwrites the browser cookie too, so older
+        # consent tabs can no longer bind successfully to this account.
+        session.execute(delete(ZoteroOAuthAttempt).where(ZoteroOAuthAttempt.user_id == user_id))
+        session.add(
+            ZoteroOAuthAttempt(
+                state=state,
+                user_id=user_id,
+                request_token_hash=_digest(request_token.token),
+                browser_state_hash=_digest(browser_secret),
+                request_token_secret=cipher.protect(request_token.secret),
+                expires_at=expires_at,
+            )
+        )
+
+
+class _OAuthAttemptClaim:
+    __slots__ = ("request_token_secret", "user_id")
+
+    def __init__(self, user_id: str, request_token_secret: str) -> None:
+        self.user_id = user_id
+        self.request_token_secret = request_token_secret
+
+
+def _claim_oauth_attempt(
+    *, state: str, request_token: str, browser_secret: str, settings: Settings
+) -> tuple[str, _OAuthAttemptClaim | None]:
+    """Atomically consume an OAuth attempt.
+
+    Returns a fixed result code and, only for a valid live attempt, the material
+    needed for the access exchange. A repeated callback loses the conditional
+    update and therefore cannot replay the verifier.
+    """
+    now = _now()
+    with session_scope() as session:
+        attempt = session.scalar(
+            select(ZoteroOAuthAttempt).where(ZoteroOAuthAttempt.state == state)
+        )
+        if attempt is None:
+            return "invalid", None
+        if not secrets.compare_digest(attempt.request_token_hash, _digest(request_token)):
+            return "invalid", None
+        if not secrets.compare_digest(attempt.browser_state_hash, _digest(browser_secret)):
+            return "invalid", None
+        if as_utc(attempt.expires_at) <= now:
+            attempt.used_at = now
+            return "expired", None
+        claimed = session.execute(
+            update(ZoteroOAuthAttempt)
+            .where(
+                ZoteroOAuthAttempt.state == state,
+                ZoteroOAuthAttempt.used_at.is_(None),
+            )
+            .values(used_at=now)
+        )
+        if claimed.rowcount != 1:
+            return "invalid", None
+        try:
+            token_secret = _cipher(settings).reveal(attempt.request_token_secret)
+        except CredentialError:
+            log.error("zotero: OAuth request secret could not be decrypted")
+            return "error", None
+        return "ok", _OAuthAttemptClaim(attempt.user_id, token_secret)
+
+
+def _verified_oauth_identity(
+    access: zotero_oauth.AccessToken,
+) -> client.ZoteroIdentity:
+    """Verify the returned API key and its actual least-privilege access."""
+    identity = client.verify(access.user_id, access.api_key)
+    if identity is None:
+        raise zotero_oauth.ZoteroOAuthError("Zotero rejected the newly issued API key.")
+    if not identity.matches_claim:
+        raise zotero_oauth.ZoteroOAuthError("Zotero returned inconsistent account identity.")
+    if not identity.library_read:
+        raise zotero_oauth.ZoteroOAuthError("The Zotero authorization lacks library read access.")
+    return identity
+
+
+def _store_oauth_link(
+    *, user_id: str, zotero_user_id: str, api_key: str, settings: Settings
+) -> None:
+    if syncer.is_running(user_id):
+        raise RuntimeError("syncing")
+    with session_scope() as session:
+        _replace_link(
+            session,
+            user_id=user_id,
+            zotero_user_id=zotero_user_id,
+            api_key=api_key,
+            settings=settings,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -442,9 +722,18 @@ def _begin_sync(user_id: str) -> tuple[str, str, int]:
         link = _link_for(session, user_id)
         if link is None:
             raise LookupError("no Zotero account is linked")
+        try:
+            api_key = _cipher().reveal(link.api_key)
+            normalized = _cipher().normalize(link.api_key)
+        except CredentialError:
+            link.status = "error"
+            link.last_error = "Stored Zotero credentials are unavailable. Reconnect Zotero."
+            raise client.ZoteroCredentialsError(link.last_error) from None
+        if normalized != link.api_key:
+            link.api_key = normalized
         link.status = "syncing"
         link.last_error = None
-        return link.zotero_user_id, link.api_key, int(link.library_version or 0)
+        return link.zotero_user_id, api_key, int(link.library_version or 0)
 
 
 def _record_failure(user_id: str, message: str) -> None:
@@ -636,12 +925,163 @@ async def _sync_user(user_id: str, run: _Run) -> None:
 def get_status(
     user: Annotated[User, Depends(current_user)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
 ) -> ZoteroStatusOut:
     """Whether Zotero is linked, and what the last sync did.
 
     The first thing the UI asks. Never includes the API key in any form.
     """
-    return _status_out(session, user.id)
+    return _status_out(session, user.id, oauth_available=_oauth_ready(settings))
+
+
+@router.post("/oauth/start", response_model=OAuthStartOut)
+def start_oauth(
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
+) -> OAuthStartOut:
+    """Create a one-use flow and send the browser to Zotero's consent page."""
+    if not _oauth_ready(settings):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zotero one-click authorization is not configured on this server.",
+        )
+    if syncer.is_running(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A sync is running. Wait for it to finish before reconnecting Zotero.",
+        )
+
+    state_value = secrets.token_urlsafe(32)
+    browser_secret = secrets.token_urlsafe(32)
+    ttl = max(60, min(int(settings.zotero_oauth_attempt_ttl_seconds), 3600))
+    expires_at = _now() + timedelta(seconds=ttl)
+    try:
+        temporary = zotero_oauth.request_token(
+            str(settings.zotero_oauth_client_key),
+            str(settings.zotero_oauth_client_secret),
+            _callback_url(settings, state_value),
+        )
+        _create_oauth_attempt(
+            user_id=user.id,
+            state=state_value,
+            browser_secret=browser_secret,
+            request_token=temporary,
+            expires_at=expires_at,
+            settings=settings,
+        )
+    except zotero_oauth.ZoteroOAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start Zotero authorization. Try again.",
+        ) from exc
+    except Exception as exc:
+        log.error("zotero: could not persist OAuth attempt (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not start Zotero authorization. Try again.",
+        ) from None
+
+    cookie_name, secure = _oauth_cookie(settings)
+    response.set_cookie(
+        cookie_name,
+        browser_secret,
+        max_age=ttl,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return OAuthStartOut(
+        authorize_url=zotero_oauth.authorization_url(temporary.token),
+        expires_at=expires_at,
+    )
+
+
+@router.get("/oauth/callback", response_class=RedirectResponse)
+async def finish_oauth(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
+) -> RedirectResponse:
+    """Consume Zotero's browser callback and return to the Pharos library."""
+    if not settings.zotero_oauth_callback_url or not _safe_http_url(
+        settings.zotero_oauth_callback_url
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zotero one-click authorization is not configured on this server.",
+        )
+    if not _oauth_ready(settings):
+        return _oauth_redirect(settings, "error")
+
+    state_value = _single_query(request, "state", max_length=128)
+    oauth_token = _single_query(request, "oauth_token")
+    denied = _single_query(request, "denied")
+    oauth_problem = _single_query(request, "oauth_problem", max_length=128)
+    request_token_value = oauth_token or denied
+    cookie_name, _secure = _oauth_cookie(settings)
+    browser_secret = request.cookies.get(cookie_name)
+    if (
+        state_value is None
+        or request_token_value is None
+        or browser_secret is None
+        or len(browser_secret) > 512
+        or (oauth_token is not None and denied is not None)
+    ):
+        return _oauth_redirect(settings, "invalid")
+
+    claim_result, claim = await asyncio.to_thread(
+        _claim_oauth_attempt,
+        state=state_value,
+        request_token=request_token_value,
+        browser_secret=browser_secret,
+        settings=settings,
+    )
+    if claim is None:
+        return _oauth_redirect(settings, claim_result)
+    if denied is not None or oauth_problem == "user_refused":
+        return _oauth_redirect(settings, "cancelled")
+
+    verifier = _single_query(request, "oauth_verifier")
+    if verifier is None:
+        return _oauth_redirect(settings, "invalid")
+
+    try:
+        access = await asyncio.to_thread(
+            zotero_oauth.access_token,
+            str(settings.zotero_oauth_client_key),
+            str(settings.zotero_oauth_client_secret),
+            request_token_value,
+            claim.request_token_secret,
+            verifier,
+        )
+        identity = await asyncio.to_thread(_verified_oauth_identity, access)
+        await asyncio.to_thread(
+            _store_oauth_link,
+            user_id=claim.user_id,
+            zotero_user_id=identity.user_id,
+            api_key=access.api_key,
+            settings=settings,
+        )
+    except RuntimeError as exc:
+        if str(exc) == "syncing":
+            return _oauth_redirect(settings, "busy")
+        log.error("zotero: OAuth link storage failed (%s)", type(exc).__name__)
+        return _oauth_redirect(settings, "error")
+    except (zotero_oauth.ZoteroOAuthError, client.ZoteroError) as exc:
+        log.warning("zotero: OAuth exchange failed (%s)", type(exc).__name__)
+        return _oauth_redirect(settings, "error")
+    except Exception as exc:  # no provider/credential text reaches the log
+        log.error("zotero: OAuth callback failed (%s)", type(exc).__name__)
+        return _oauth_redirect(settings, "error")
+
+    # The callback runs on the event loop, so it can start the existing
+    # background syncer directly. A status poll after the 303 sees "syncing".
+    syncer.submit(claim.user_id)
+    log.info("zotero: account linked through OAuth")
+    return _oauth_redirect(settings, "connected")
 
 
 @router.post("/link", response_model=ZoteroStatusOut)
@@ -649,6 +1089,7 @@ def link_zotero(
     payload: LinkRequest,
     user: Annotated[User, Depends(current_user)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
 ) -> ZoteroStatusOut:
     """Verify Zotero credentials, then store them. Replaces any existing link.
 
@@ -726,17 +1167,13 @@ def link_zotero(
             ),
         )
 
-    link = _link_for(session, user.id)
-    if link is None:
-        link = ZoteroLink(user_id=user.id)
-        session.add(link)
-    link.zotero_user_id = zotero_user_id
-    link.api_key = api_key
-    link.library_version = 0
-    link.status = "linked"
-    link.last_error = None
-    link.last_sync_at = None
-    link.item_count = _paper_count(session, user.id)
+    _replace_link(
+        session,
+        user_id=user.id,
+        zotero_user_id=zotero_user_id,
+        api_key=api_key,
+        settings=settings,
+    )
     try:
         session.flush()
     except Exception as exc:
@@ -755,7 +1192,7 @@ def link_zotero(
         ) from None
 
     log.info("zotero: account linked")  # no id, no key — neither belongs in a log
-    return _status_out(session, user.id)
+    return _status_out(session, user.id, oauth_available=_oauth_ready(settings))
 
 
 @router.delete("/link", response_model=UnlinkResult)
@@ -780,6 +1217,7 @@ def unlink_zotero(
     """
     link = _link_for(session, user.id)
     kept = _paper_count(session, user.id)
+    session.execute(delete(ZoteroOAuthAttempt).where(ZoteroOAuthAttempt.user_id == user.id))
     if link is None:
         return UnlinkResult(unlinked=False, papers_kept=kept)
     session.delete(link)

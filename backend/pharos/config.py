@@ -87,9 +87,48 @@ class Settings(BaseSettings):
     #: auth; once tokens exist, list the real frontend origins.
     cors_origins: str = "*"
 
+    # --- encrypted third-party credentials -------------------------------
+    #: Stable secret used to encrypt bearer credentials stored in SQLite.
+    #: It is deliberately independent from PHAROS_AUTH_SECRET: rotating login
+    #: tokens must never make an external account credential unreadable. Local
+    #: development may omit it and keep the manual-key fallback in plaintext.
+    credential_secret: str | None = None
+    #: Set temporarily while rotating PHAROS_CREDENTIAL_SECRET. Values that
+    #: decrypt only with this key are re-encrypted with the primary key on boot.
+    credential_secret_previous: str | None = None
+
+    # --- Zotero OAuth 1.0a key exchange ----------------------------------
+    #: Register the application at https://www.zotero.org/oauth/apps. OAuth is
+    #: offered only when every required value below and a stable credential
+    #: secret are present; the manual API-key path remains available otherwise.
+    zotero_oauth_client_key: str | None = None
+    zotero_oauth_client_secret: str | None = None
+    zotero_oauth_callback_url: str | None = None
+    zotero_oauth_return_url: str | None = None
+    zotero_oauth_attempt_ttl_seconds: int = 10 * 60
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def stable_credential_secret(self) -> str | None:
+        """The stable key source for encrypted stored credentials, if any."""
+        value = self.credential_secret
+        return value if value and len(value) >= 32 else None
+
+    @property
+    def zotero_oauth_configured(self) -> bool:
+        """Whether the server has everything required for a safe OAuth run."""
+        return bool(
+            self.zotero_oauth_client_key
+            and self.zotero_oauth_client_secret
+            and self.zotero_oauth_callback_url
+            # OAuth creates a long-lived credential on behalf of another
+            # service, so require a dedicated key.
+            and self.credential_secret
+            and len(self.credential_secret) >= 32
+        )
 
     # --- translation engine (subprocess in the engine env) ---
     engine_python: Path = Path.home() / "miniconda3" / "envs" / "pharos-engine" / "bin" / "python"
