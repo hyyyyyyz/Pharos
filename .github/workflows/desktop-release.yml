@@ -21,7 +21,12 @@ name: Desktop release (macOS · Windows)
 on:
   push:
     tags: ["desktop-v*"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (must match desktop app version)"
+        required: true
+        default: "desktop-v0.2.0"
 
 permissions:
   contents: write
@@ -58,6 +63,18 @@ jobs:
             frontend/package-lock.json
             desktop/package-lock.json
 
+      - name: Verify release tag matches app version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          APP_VERSION="$(node -p "require('./desktop/package.json').version")"
+          EXPECTED_TAG="desktop-v${APP_VERSION}"
+          if [ "$RELEASE_TAG" != "$EXPECTED_TAG" ]; then
+            echo "Release tag $RELEASE_TAG does not match app version $APP_VERSION."
+            exit 1
+          fi
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -85,7 +102,7 @@ jobs:
         with:
           projectPath: desktop
           args: ${{ matrix.args }}
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-v__VERSION__' }}
+          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           releaseName: "Pharos 桌面版 v__VERSION__"
           releaseBody: |
             Pharos 桌面版 —— 与网页版保持功能同步，并增加本地 Zotero 文库、
@@ -98,5 +115,5 @@ jobs:
 
             **Windows**：下载 `.msi` 或 `-setup.exe` 安装。首次运行 SmartScreen 若提示
             「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」即可（同样是未签名所致）。
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
