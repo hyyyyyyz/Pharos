@@ -55,11 +55,10 @@ the app hits the backend through Vite's `/api` proxy — exactly like the browse
 
 ## Which backend does it talk to?
 
-A production build bakes `VITE_API_BASE` from `frontend/.env.desktop` (default
-`http://127.0.0.1:8848/api` — the local backend). Change that file to point at a
-deployed backend, or make it runtime-configurable in Settings later. The CSP in
-`tauri.conf.json` (`connect-src`) must list every backend origin the app is
-allowed to reach — add the production origin there when it exists.
+A production build bakes `VITE_API_BASE` from `frontend/.env.desktop`, which is
+tracked as `https://pharos.selab.top/api`. Plain `npm run dev` still uses Vite's
+local `/api` proxy for backend development. The CSP in `tauri.conf.json`
+(`connect-src`) lists both the production service and local development origins.
 
 ## Build a distributable
 
@@ -73,7 +72,7 @@ npm run build             # -> src-tauri/target/release/bundle/{msi,nsis}/Pharos
 
 CI (`.github/workflows/desktop-release.yml`) builds **both macOS and Windows** in
 one matrix run and attaches all installers to a single **draft** GitHub Release.
-Trigger it by pushing a tag like `desktop-v0.1.0`, or run it by hand from the
+Trigger it by pushing a tag like `desktop-v0.2.0`, or run it by hand from the
 Actions tab. On Windows, Tauri uses the system WebView2 (Chromium), so the app
 renders identically to the web version there. (Linux/AppImage is one more matrix
 entry plus an apt step for `libwebkit2gtk-4.1-dev` — add it when you want it.)

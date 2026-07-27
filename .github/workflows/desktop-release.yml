@@ -7,7 +7,7 @@
 # identical to the web app and to each other. (On Windows the WebView is
 # WebView2 / Chromium; on macOS it is WebKit — both render this design the same.)
 #
-# Trigger by pushing a tag like `desktop-v0.1.0`, or run it by hand from the
+# Trigger by pushing a tag like `desktop-v0.2.0`, or run it by hand from the
 # Actions tab. It creates a DRAFT release you review before publishing.
 #
 # The builds are UNSIGNED (no Apple / Windows code-signing certificate):
@@ -73,26 +73,24 @@ jobs:
 
       - name: Install desktop deps (Tauri CLI)
         working-directory: desktop
-        run: npm install
+        run: npm ci
 
       - name: Build & attach installers
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Which backend the bundled app talks to. Vite reads VITE_* from the
-          # process env, so this reaches the build without a committed .env file
-          # (frontend/.env.desktop is a local-dev convenience and is gitignored).
-          # localhost is the honest default for now — the app connects to a
-          # backend you run; change this once the backend is publicly deployed
-          # (and add that origin to connect-src in tauri.conf.json).
-          VITE_API_BASE: http://127.0.0.1:8848/api
+          # The release app is a real client of the deployed Pharos service.
+          # This explicit value also overrides any runner-local Vite env file.
+          VITE_API_BASE: https://pharos.selab.top/api
         with:
           projectPath: desktop
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-v__VERSION__' }}
           releaseName: "Pharos 桌面版 v__VERSION__"
           releaseBody: |
-            Pharos 桌面版 —— 与网页版同一套界面，连接你运行的 Pharos 后端。
+            Pharos 桌面版 —— 与网页版保持功能同步，并增加本地 Zotero 文库、
+            本地 PDF 直读和每日论文目录等桌面能力。默认连接 Pharos 官方服务，
+            本地 Zotero 文件不会自动上传；只有明确点击“导入 Pharos”才会复制上传。
 
             **macOS**：下载 `.dmg`，拖入「应用程序」。首次打开若提示「已损坏 / 无法验证」，
             这是因为应用未做 Apple 签名（开源免费分发）——右键点 Pharos.app 选「打开」，

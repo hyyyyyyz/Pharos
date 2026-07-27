@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Pharos — layout-preserving paper reading & translation UI",
+  "description": "Pharos — an all-in-one research workbench",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

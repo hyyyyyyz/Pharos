@@ -1,8 +1,8 @@
 {
   "name": "pharos-desktop",
   "private": true,
-  "version": "0.1.0",
-  "description": "Pharos desktop shell (Tauri) — the exact same React frontend in a native window.",
+  "version": "0.2.0",
+  "description": "Pharos desktop — an all-in-one, local-first research workbench.",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",

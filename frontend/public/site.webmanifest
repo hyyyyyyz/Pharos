@@ -1,7 +1,7 @@
 {
   "name": "Pharos",
   "short_name": "Pharos",
-  "description": "保留排版的科研论文翻译与阅读，附 AI 领航问答",
+  "description": "覆盖文献发现、知识沉淀、PDF 精读与研究推进的一体化科研工作台",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

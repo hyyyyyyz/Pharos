@@ -15,6 +15,9 @@ venv/
 .env
 .env.*
 !.env.example
+# Desktop's public API origin is build configuration, not a secret. Tracking it
+# keeps local and CI installers pointed at the same deployed Pharos service.
+!frontend/.env.desktop
 
 # --- Node / frontend ---
 node_modules/

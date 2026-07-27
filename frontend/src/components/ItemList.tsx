@@ -627,9 +627,9 @@ export function ItemList(): JSX.Element {
               </div>
               <div className="ph-il-firstuse-title">欢迎使用 Pharos</div>
               <div className="ph-il-firstuse-desc">
-                把英文论文翻译成中文，完整保留原始排版。
+                从文献发现、每日追踪到精读、知识沉淀与研究推进，都在同一个工作台完成。
                 <br />
-                拖入 PDF、粘贴 arXiv 链接，或连接 Zotero 开始。
+                拖入 PDF、粘贴 arXiv 链接，或连接本地与云端 Zotero 开始。
               </div>
               <div className="ph-il-firstuse-cta">
                 <button className="ph-il-cta-primary" onClick={() => fileRef.current?.click()}>

@@ -373,7 +373,7 @@ export function SettingsModal(): JSX.Element | null {
           </div>
           <div className="ph-set-nav-spacer" />
           <div className="ph-set-nav-foot">
-            Pharos v0.1
+            Pharos v0.2
             <br />
             开源 · AGPL-3.0
           </div>
@@ -629,7 +629,7 @@ export function SettingsModal(): JSX.Element | null {
                 {!zoteroQuery.isPending && !connecting && !connected && zot && (
                   <>
                     <div className="ph-set-zot-desc">
-                      把 Zotero 个人文库的书目元数据单向导入 Pharos。当前不下载附件，也不会把翻译、阅读状态或批注写回 Zotero。
+                      授权范围仅包含个人文库的只读访问；Pharos 不会把翻译、阅读状态或批注写回 Zotero。
                     </div>
 
                     {oauthConfigured ? (

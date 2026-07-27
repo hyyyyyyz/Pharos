@@ -1,7 +1,7 @@
 [package]
 name = "pharos-desktop"
-version = "0.1.0"
-description = "Pharos — a research reading & translation workbench"
+version = "0.2.0"
+description = "Pharos — an all-in-one, local-first research workbench"
 authors = ["Pharos contributors"]
 license = "AGPL-3.0-or-later"
 edition = "2021"

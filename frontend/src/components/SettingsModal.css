@@ -274,6 +274,10 @@
   margin-top: 10px;
 }
 
+.ph-set-zot-channel .ph-set-zot-card {
+  background: var(--c-sf);
+}
+
 .ph-set-zot-channel-head {
   display: flex;
   align-items: center;

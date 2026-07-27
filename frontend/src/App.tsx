@@ -13,6 +13,7 @@ import { ProjectsView } from "./components/ProjectsView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
 import { DesktopOAuthBridge } from "./components/DesktopOAuthBridge";
+import { DesktopExternalLinks } from "./components/DesktopExternalLinks";
 import "./App.css";
 
 /**
@@ -78,6 +79,7 @@ export default function App() {
           <ComingSoon module={activeModule} />
         )}
       </main>
+      <DesktopExternalLinks />
       <DesktopOAuthBridge />
       <SettingsModal />
     </div>
