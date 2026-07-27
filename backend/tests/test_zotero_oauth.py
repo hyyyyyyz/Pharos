@@ -133,6 +133,16 @@ def test_authorization_url_requests_read_only_personal_library() -> None:
     }
 
 
+def test_item_query_uses_a_supported_negative_type_filter() -> None:
+    parsed = urllib.parse.urlsplit(zotero_client._items_url("12345", start=0))
+    query = urllib.parse.parse_qs(parsed.query)
+
+    assert query["itemType"] == ["-attachment"]
+    assert query["format"] == ["json"]
+    assert query["limit"] == ["100"]
+    assert query["start"] == ["0"]
+
+
 def test_status_reports_when_one_click_oauth_is_available(app_client: TestClient) -> None:
     response = app_client.get("/api/zotero/status")
     assert response.status_code == 200

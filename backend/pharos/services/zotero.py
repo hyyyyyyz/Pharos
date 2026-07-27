@@ -648,10 +648,11 @@ def _items_url(zotero_user_id: str, *, start: int) -> str:
     query = urllib.parse.urlencode(
         {
             "format": "json",
-            # Zotero's search syntax: "-" negates, "||" is OR. Attachments and
-            # standalone notes are not papers and would otherwise dominate a
-            # typical library's item count.
-            "itemType": "-attachment||note",
+            # Zotero accepts one negated item type, but rejects a negated union
+            # such as ``-attachment||note`` with HTTP 400. Attachments dominate
+            # many libraries, so exclude those server-side; ``_map_item`` still
+            # drops notes and annotations defensively after the response arrives.
+            "itemType": "-attachment",
             "limit": _PAGE_LIMIT,
             "start": start,
         }
