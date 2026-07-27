@@ -16,6 +16,7 @@
 &nbsp;![客户端](https://img.shields.io/badge/客户端-React%20·%20Tauri-0C2040.svg)
 
 [项目官网](https://hyyyyyyz.github.io/Pharos/) ·
+[浏览器客户端](https://pharos.selab.top/) ·
 [架构说明](docs/ARCHITECTURE.md) ·
 [科研工作流](docs/RESEARCH_WORKFLOW.md) ·
 [参与贡献](CONTRIBUTING.md)

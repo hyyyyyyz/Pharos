@@ -16,7 +16,8 @@ idea through a durable research workflow — in one self-hosted platform.
 &nbsp;![Backend](https://img.shields.io/badge/backend-FastAPI%20·%20SQLite-189090.svg)
 &nbsp;![Clients](https://img.shields.io/badge/clients-React%20·%20Tauri-0C2040.svg)
 
-[Website](https://hyyyyyyz.github.io/Pharos/) ·
+[Official Website](https://hyyyyyyz.github.io/Pharos/) ·
+[Web App](https://pharos.selab.top/) ·
 [Architecture](docs/ARCHITECTURE.md) ·
 [Research workflow](docs/RESEARCH_WORKFLOW.md) ·
 [Contributing](CONTRIBUTING.md)
