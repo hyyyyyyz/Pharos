@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AccentKey, ThemeMode } from "./design/tokens";
 import type { AuthUser } from "./api/types";
+import type { ZoteroOAuthResult } from "./lib/zoteroOAuth";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing";
@@ -122,6 +123,8 @@ interface UIState {
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
   settingsTab: SettingsTab;
+  zoteroOAuthResult: ZoteroOAuthResult | null;
+  setZoteroOAuthResult: (result: ZoteroOAuthResult | null) => void;
   openSettings: (tab?: SettingsTab) => void;
   closeSettings: () => void;
   setSettingsTab: (t: SettingsTab) => void;
@@ -268,6 +271,8 @@ export const useUI = create<UIState>((set) => ({
 
   settingsOpen: false,
   settingsTab: "account",
+  zoteroOAuthResult: null,
+  setZoteroOAuthResult: (zoteroOAuthResult) => set({ zoteroOAuthResult }),
   openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? "account" }),
   closeSettings: () => set({ settingsOpen: false }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),

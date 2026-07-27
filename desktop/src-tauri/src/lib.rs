@@ -12,7 +12,19 @@ use tauri::Manager;
 /// and the mobile entry point, so both platforms start the same app.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         // Register fs before persisted-scope: the latter serialises and restores
         // the former's user-approved runtime scope across app launches.
         .plugin(tauri_plugin_fs::init())

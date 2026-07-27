@@ -4,12 +4,16 @@ import { Icons } from "../design/icons";
 import { ACCENTS, accentSwatch } from "../design/tokens";
 import type { ThemeMode } from "../design/tokens";
 import { api } from "../api/client";
-import type { AuthUser, ZoteroOAuthStart, ZoteroStatus } from "../api/types";
+import type { AuthUser, ZoteroStatus } from "../api/types";
 import {
   localZotero,
   localZoteroAvailable,
   type LocalZoteroStatus,
 } from "../lib/localZotero";
+import {
+  desktopZoteroOAuth,
+  type ZoteroOAuthResult,
+} from "../lib/zoteroOAuth";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
 import { DirectionsSettings } from "./DirectionsSettings";
 import "./SettingsModal.css";
@@ -76,14 +80,6 @@ function fmtEpoch(ms: number | null): string {
 /** Error text from a rejected mutation, without leaking a stack trace into the UI. */
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-type ZoteroOAuthResult =
-  | "connected"
-  | "cancelled"
-  | "expired"
-  | "invalid"
-  | "busy"
-  | "error";
-
 const ZOTERO_RESULT_COPY: Record<
   ZoteroOAuthResult,
   { tone: "ok" | "neutral" | "error"; text: string }
@@ -105,6 +101,8 @@ export function SettingsModal(): JSX.Element | null {
   const openSettings = useUI((s) => s.openSettings);
   const setSettingsTab = useUI((s) => s.setSettingsTab);
   const closeSettings = useUI((s) => s.closeSettings);
+  const zoteroOAuthResult = useUI((s) => s.zoteroOAuthResult);
+  const setZoteroOAuthResult = useUI((s) => s.setZoteroOAuthResult);
   const theme = useUI((s) => s.theme);
   const setTheme = useUI((s) => s.setTheme);
   const accent = useUI((s) => s.accent);
@@ -175,10 +173,13 @@ export function SettingsModal(): JSX.Element | null {
   const [zApiKey, setZApiKey] = useState("");
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [manualZoteroOpen, setManualZoteroOpen] = useState(false);
-  const [zoteroOAuthResult, setZoteroOAuthResult] = useState<ZoteroOAuthResult | null>(null);
-
   const oauthStart = useMutation({
-    mutationFn: async (): Promise<ZoteroOAuthStart> => {
+    mutationFn: async (): Promise<void> => {
+      if (desktopZoteroOAuth.available()) {
+        const start = await api.zotero.oauthDesktopStart();
+        await desktopZoteroOAuth.start(start);
+        return;
+      }
       const start = await api.zotero.oauthStart();
       const authorize = new URL(start.authorize_url);
       if (
@@ -188,10 +189,9 @@ export function SettingsModal(): JSX.Element | null {
       ) {
         throw new Error("服务器返回了无效的 Zotero 授权地址。");
       }
-      return start;
+      window.location.assign(start.authorize_url);
     },
     onMutate: () => setZoteroOAuthResult(null),
-    onSuccess: ({ authorize_url }) => window.location.assign(authorize_url),
   });
 
   const link = useMutation({
@@ -278,7 +278,7 @@ export function SettingsModal(): JSX.Element | null {
     openSettings("account");
     void qc.invalidateQueries({ queryKey: ["zotero", "status"] });
     void qc.invalidateQueries({ queryKey: ["papers"] });
-  }, [openSettings, qc]);
+  }, [openSettings, qc, setZoteroOAuthResult]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -316,7 +316,7 @@ export function SettingsModal(): JSX.Element | null {
     const wasOpen = settingsWasOpen.current;
     settingsWasOpen.current = settingsOpen;
     if (wasOpen && !settingsOpen) setZoteroOAuthResult(null);
-  }, [settingsOpen]);
+  }, [settingsOpen, setZoteroOAuthResult]);
 
   if (!settingsOpen) return null;
 
@@ -642,7 +642,9 @@ export function SettingsModal(): JSX.Element | null {
                         <span className="ph-set-ic">
                           <Icons.open />
                         </span>
-                        前往 Zotero 授权
+                        {desktopZoteroOAuth.available()
+                          ? "在浏览器中授权 Zotero"
+                          : "前往 Zotero 授权"}
                       </button>
                     ) : (
                       <div className="ph-set-zot-unavailable" role="note">

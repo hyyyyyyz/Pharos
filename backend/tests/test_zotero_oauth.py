@@ -252,6 +252,162 @@ def test_oauth_callback_requires_the_starting_browser_cookie(
         assert session.scalar(select(ZoteroLink).where(ZoteroLink.user_id == USER_ID)) is None
 
 
+def test_desktop_oauth_uses_a_bound_one_time_handoff(
+    app_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str] = {}
+    submitted: list[str] = []
+
+    def _request_token(_key: str, _secret: str, callback: str) -> zotero_oauth.RequestToken:
+        captured["callback"] = callback
+        return zotero_oauth.RequestToken("desktop-token", "desktop-token-secret")
+
+    monkeypatch.setattr(zotero_oauth, "request_token", _request_token)
+    monkeypatch.setattr(
+        zotero_oauth,
+        "access_token",
+        lambda *_args, **_kwargs: zotero_oauth.AccessToken(API_KEY, "12345", "researcher"),
+    )
+    monkeypatch.setattr(zotero_client, "verify", lambda *_args, **_kwargs: _identity())
+    monkeypatch.setattr(
+        zotero_api.syncer,
+        "submit",
+        lambda user_id: submitted.append(user_id) or object(),
+    )
+
+    started = app_client.post("/api/zotero/oauth/desktop/start")
+    assert started.status_code == 200
+    desktop_secret = started.json()["desktop_secret"]
+    callback_query = urllib.parse.parse_qs(
+        urllib.parse.urlsplit(captured["callback"]).query
+    )
+    assert callback_query["flow"] == ["desktop"]
+    assert desktop_secret not in captured["callback"]
+    assert desktop_secret not in started.json()["authorize_url"]
+
+    callback = app_client.get(
+        "/api/zotero/oauth/callback",
+        params={
+            "flow": "desktop",
+            "state": callback_query["state"][0],
+            "oauth_token": "desktop-token",
+            "oauth_verifier": "desktop-verifier",
+        },
+        follow_redirects=False,
+    )
+    assert callback.status_code == 303
+    location = callback.headers["location"]
+    parsed_location = urllib.parse.urlsplit(location)
+    handoff_query = urllib.parse.parse_qs(parsed_location.query)
+    assert (parsed_location.scheme, parsed_location.netloc, parsed_location.path) == (
+        "pharos",
+        "oauth",
+        "/zotero",
+    )
+    code = handoff_query["code"][0]
+    for secret in (
+        API_KEY,
+        desktop_secret,
+        "desktop-token",
+        "desktop-token-secret",
+        "desktop-verifier",
+    ):
+        assert secret not in location
+
+    with session_scope() as session:
+        attempt = session.scalar(select(ZoteroOAuthAttempt))
+        assert attempt is not None
+        assert attempt.flow_kind == "desktop"
+        assert attempt.browser_state_hash != desktop_secret
+        assert attempt.handoff_code_hash != code
+        assert attempt.handoff_api_key is not None
+        assert API_KEY not in attempt.handoff_api_key
+        assert session.scalar(select(ZoteroLink).where(ZoteroLink.user_id == USER_ID)) is None
+
+    finished = app_client.post(
+        "/api/zotero/oauth/desktop/finish",
+        json={"code": code, "desktop_secret": desktop_secret},
+    )
+    assert finished.status_code == 200
+    assert finished.json()["linked"] is True
+    assert submitted == [USER_ID]
+
+    with session_scope() as session:
+        link = session.scalar(select(ZoteroLink).where(ZoteroLink.user_id == USER_ID))
+        attempt = session.scalar(select(ZoteroOAuthAttempt))
+        assert link is not None and attempt is not None
+        assert API_KEY not in link.api_key
+        assert attempt.handoff_api_key is None
+        assert attempt.handoff_code_hash is None
+
+    replay = app_client.post(
+        "/api/zotero/oauth/desktop/finish",
+        json={"code": code, "desktop_secret": desktop_secret},
+    )
+    assert replay.status_code == 400
+
+
+def test_desktop_handoff_is_bound_to_the_starting_pharos_user(
+    app_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str] = {}
+    other_id = "oauth-other-user"
+
+    def _request_token(_key: str, _secret: str, callback: str) -> zotero_oauth.RequestToken:
+        captured["callback"] = callback
+        return zotero_oauth.RequestToken("bound-token", "bound-secret")
+
+    monkeypatch.setattr(zotero_oauth, "request_token", _request_token)
+    monkeypatch.setattr(
+        zotero_oauth,
+        "access_token",
+        lambda *_args, **_kwargs: zotero_oauth.AccessToken(API_KEY, "12345", "researcher"),
+    )
+    monkeypatch.setattr(zotero_client, "verify", lambda *_args, **_kwargs: _identity())
+
+    started = app_client.post("/api/zotero/oauth/desktop/start")
+    callback_query = urllib.parse.parse_qs(
+        urllib.parse.urlsplit(captured["callback"]).query
+    )
+    callback = app_client.get(
+        "/api/zotero/oauth/callback",
+        params={
+            "flow": "desktop",
+            "state": callback_query["state"][0],
+            "oauth_token": "bound-token",
+            "oauth_verifier": "verified",
+        },
+        follow_redirects=False,
+    )
+    code = urllib.parse.parse_qs(urllib.parse.urlsplit(callback.headers["location"]).query)[
+        "code"
+    ][0]
+
+    with session_scope() as session:
+        other = session.scalar(select(User).where(User.id == other_id))
+        if other is None:
+            session.add(
+                User(id=other_id, email="oauth-other@example.test", password_hash="x")
+            )
+
+    def _other_user() -> Iterator[User]:
+        with session_scope() as session:
+            yield session.scalar(select(User).where(User.id == other_id))
+
+    original_override = app_client.app.dependency_overrides[current_user]
+    app_client.app.dependency_overrides[current_user] = _other_user
+    try:
+        stolen = app_client.post(
+            "/api/zotero/oauth/desktop/finish",
+            json={"code": code, "desktop_secret": started.json()["desktop_secret"]},
+        )
+    finally:
+        app_client.app.dependency_overrides[current_user] = original_override
+    assert stolen.status_code == 400
+    with session_scope() as session:
+        assert session.scalar(select(ZoteroLink).where(ZoteroLink.user_id == other_id)) is None
+
+
 def test_manual_link_is_still_supported_and_encrypted(
     app_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -44,6 +44,8 @@ import type {
   TagPatchBody,
   UserDirection,
   ZoteroLinkBody,
+  ZoteroDesktopOAuthFinishBody,
+  ZoteroDesktopOAuthStart,
   ZoteroOAuthStart,
   ZoteroStatus,
 } from "./types";
@@ -225,6 +227,16 @@ export const api = {
     /** Create a one-use server flow, then let the browser visit authorize_url. */
     oauthStart: (): Promise<ZoteroOAuthStart> =>
       json<ZoteroOAuthStart>("/zotero/oauth/start", { method: "POST" }),
+
+    /** System-browser OAuth for Tauri; the one-use binding never enters a URL. */
+    oauthDesktopStart: (): Promise<ZoteroDesktopOAuthStart> =>
+      json<ZoteroDesktopOAuthStart>("/zotero/oauth/desktop/start", { method: "POST" }),
+
+    oauthDesktopFinish: (data: ZoteroDesktopOAuthFinishBody): Promise<ZoteroStatus> =>
+      json<ZoteroStatus>("/zotero/oauth/desktop/finish", {
+        method: "POST",
+        ...body(data),
+      }),
 
     /** Verify and store manually created credentials. Sync remains explicit. */
     link: (data: ZoteroLinkBody): Promise<ZoteroStatus> =>

@@ -86,6 +86,7 @@ _MAX_API_KEY = 128
 #: frontend URL. Provider text never does: it can be attacker-controlled and a
 #: query string is copied into history, analytics, and referrer headers.
 _OAUTH_RESULTS = {"connected", "cancelled", "expired", "invalid", "busy", "error"}
+_DESKTOP_HANDOFF_TTL_SECONDS = 5 * 60
 
 
 # --------------------------------------------------------------------------- #
@@ -156,6 +157,21 @@ class OAuthStartOut(BaseModel):
 
     authorize_url: str
     expires_at: datetime
+
+
+class DesktopOAuthStartOut(OAuthStartOut):
+    """Desktop consent URL plus an app-held, short-lived binding secret."""
+
+    desktop_secret: str
+
+
+class DesktopOAuthFinishRequest(BaseModel):
+    """Consume the one-use code delivered through ``pharos://``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: Annotated[str, Field(min_length=32, max_length=256)]
+    desktop_secret: Annotated[str, Field(min_length=32, max_length=256)]
 
 
 class UnlinkResult(BaseModel):
@@ -394,6 +410,14 @@ def _callback_url(settings: Settings, state: str) -> str:
     return _url_with_query(str(settings.zotero_oauth_callback_url), state=state)
 
 
+def _desktop_callback_url(settings: Settings, state: str) -> str:
+    # Keep Zotero's registered HTTPS callback. Only the final, Pharos-generated
+    # handoff crosses the custom protocol boundary.
+    return _url_with_query(
+        str(settings.zotero_oauth_callback_url), state=state, flow="desktop"
+    )
+
+
 def _return_url(settings: Settings, result: str) -> str:
     if result not in _OAUTH_RESULTS:  # pragma: no cover - all callers use constants
         result = "error"
@@ -410,6 +434,22 @@ def _oauth_redirect(settings: Settings, result: str) -> RedirectResponse:
     )
     name, secure = _oauth_cookie(settings)
     response.delete_cookie(name, path="/", secure=secure, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _desktop_oauth_redirect(result: str, *, code: str | None = None) -> RedirectResponse:
+    """Return to the installed app without putting provider credentials in URL."""
+    if code is not None:
+        query = urllib.parse.urlencode({"code": code})
+    else:
+        if result not in _OAUTH_RESULTS:  # pragma: no cover - callers use constants
+            result = "error"
+        query = urllib.parse.urlencode({"result": result})
+    response = RedirectResponse(
+        f"pharos://oauth/zotero?{query}", status_code=status.HTTP_303_SEE_OTHER
+    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
@@ -581,6 +621,11 @@ def migrate_stored_credentials(settings: Settings | None = None) -> int:
                 (attempt, "request_token_secret")
                 for attempt in session.scalars(select(ZoteroOAuthAttempt)).all()
             ),
+            *(
+                (attempt, "handoff_api_key")
+                for attempt in session.scalars(select(ZoteroOAuthAttempt)).all()
+                if attempt.handoff_api_key
+            ),
         ]
         for row, attribute in values:
             stored = str(getattr(row, attribute))
@@ -605,6 +650,7 @@ def _create_oauth_attempt(
     request_token: zotero_oauth.RequestToken,
     expires_at: datetime,
     settings: Settings,
+    flow_kind: str = "browser",
 ) -> None:
     cipher = _cipher(settings)
     if not cipher.configured:  # guarded by _oauth_ready; fail closed anyway
@@ -620,6 +666,7 @@ def _create_oauth_attempt(
                 request_token_hash=_digest(request_token.token),
                 browser_state_hash=_digest(browser_secret),
                 request_token_secret=cipher.protect(request_token.secret),
+                flow_kind=flow_kind,
                 expires_at=expires_at,
             )
         )
@@ -649,6 +696,8 @@ def _claim_oauth_attempt(
         )
         if attempt is None:
             return "invalid", None
+        if attempt.flow_kind not in (None, "browser"):
+            return "invalid", None
         if not secrets.compare_digest(attempt.request_token_hash, _digest(request_token)):
             return "invalid", None
         if not secrets.compare_digest(attempt.browser_state_hash, _digest(browser_secret)):
@@ -672,6 +721,146 @@ def _claim_oauth_attempt(
             log.error("zotero: OAuth request secret could not be decrypted")
             return "error", None
         return "ok", _OAuthAttemptClaim(attempt.user_id, token_secret)
+
+
+def _claim_desktop_oauth_attempt(
+    *, state: str, request_token: str, settings: Settings
+) -> tuple[str, _OAuthAttemptClaim | None]:
+    """Consume the provider callback for a desktop flow.
+
+    The app-held binding secret is intentionally *not* present in the system
+    browser. It is checked later when the installed app consumes the handoff.
+    """
+    now = _now()
+    with session_scope() as session:
+        attempt = session.scalar(
+            select(ZoteroOAuthAttempt).where(ZoteroOAuthAttempt.state == state)
+        )
+        if attempt is None or attempt.flow_kind != "desktop":
+            return "invalid", None
+        if not secrets.compare_digest(attempt.request_token_hash, _digest(request_token)):
+            return "invalid", None
+        if as_utc(attempt.expires_at) <= now:
+            attempt.used_at = now
+            return "expired", None
+        claimed = session.execute(
+            update(ZoteroOAuthAttempt)
+            .where(
+                ZoteroOAuthAttempt.state == state,
+                ZoteroOAuthAttempt.flow_kind == "desktop",
+                ZoteroOAuthAttempt.used_at.is_(None),
+            )
+            .values(used_at=now)
+        )
+        if claimed.rowcount != 1:
+            return "invalid", None
+        try:
+            token_secret = _cipher(settings).reveal(attempt.request_token_secret)
+        except CredentialError:
+            log.error("zotero: desktop OAuth request secret could not be decrypted")
+            return "error", None
+        return "ok", _OAuthAttemptClaim(attempt.user_id, token_secret)
+
+
+def _complete_desktop_handoff(
+    *,
+    state: str,
+    user_id: str,
+    zotero_user_id: str,
+    api_key: str,
+    code: str,
+    settings: Settings,
+) -> None:
+    """Store an encrypted, user-bound handoff after Zotero verifies consent."""
+    expires_at = _now() + timedelta(seconds=_DESKTOP_HANDOFF_TTL_SECONDS)
+    protected_key = _cipher(settings).protect(api_key)
+    with session_scope() as session:
+        completed = session.execute(
+            update(ZoteroOAuthAttempt)
+            .where(
+                ZoteroOAuthAttempt.state == state,
+                ZoteroOAuthAttempt.user_id == user_id,
+                ZoteroOAuthAttempt.flow_kind == "desktop",
+                ZoteroOAuthAttempt.used_at.is_not(None),
+                ZoteroOAuthAttempt.handoff_code_hash.is_(None),
+            )
+            .values(
+                handoff_code_hash=_digest(code),
+                handoff_zotero_user_id=zotero_user_id,
+                handoff_api_key=protected_key,
+                handoff_expires_at=expires_at,
+            )
+        )
+        if completed.rowcount != 1:
+            raise RuntimeError("handoff")
+
+
+class _DesktopHandoffClaim:
+    __slots__ = ("api_key", "state", "zotero_user_id")
+
+    def __init__(self, state: str, zotero_user_id: str, api_key: str) -> None:
+        self.state = state
+        self.zotero_user_id = zotero_user_id
+        self.api_key = api_key
+
+
+def _claim_desktop_handoff(
+    *, code: str, desktop_secret: str, user_id: str, settings: Settings
+) -> tuple[str, _DesktopHandoffClaim | None]:
+    """Atomically consume a handoff for the same signed-in Pharos user."""
+    now = _now()
+    code_hash = _digest(code)
+    with session_scope() as session:
+        attempt = session.scalar(
+            select(ZoteroOAuthAttempt).where(
+                ZoteroOAuthAttempt.handoff_code_hash == code_hash,
+                ZoteroOAuthAttempt.user_id == user_id,
+                ZoteroOAuthAttempt.flow_kind == "desktop",
+            )
+        )
+        if attempt is None:
+            return "invalid", None
+        if not secrets.compare_digest(
+            attempt.browser_state_hash, _digest(desktop_secret)
+        ):
+            return "invalid", None
+        if (
+            attempt.handoff_expires_at is None
+            or as_utc(attempt.handoff_expires_at) <= now
+        ):
+            attempt.handoff_used_at = now
+            return "expired", None
+        if not attempt.handoff_zotero_user_id or not attempt.handoff_api_key:
+            return "invalid", None
+        claimed = session.execute(
+            update(ZoteroOAuthAttempt)
+            .where(
+                ZoteroOAuthAttempt.state == attempt.state,
+                ZoteroOAuthAttempt.handoff_code_hash == code_hash,
+                ZoteroOAuthAttempt.handoff_used_at.is_(None),
+            )
+            .values(handoff_used_at=now)
+        )
+        if claimed.rowcount != 1:
+            return "invalid", None
+        try:
+            api_key = _cipher(settings).reveal(attempt.handoff_api_key)
+        except CredentialError:
+            log.error("zotero: desktop OAuth handoff key could not be decrypted")
+            return "error", None
+        return "ok", _DesktopHandoffClaim(
+            attempt.state, attempt.handoff_zotero_user_id, api_key
+        )
+
+
+def _clear_desktop_handoff(state: str) -> None:
+    """Remove temporary provider credentials after they reach ZoteroLink."""
+    with session_scope() as session:
+        session.execute(
+            update(ZoteroOAuthAttempt)
+            .where(ZoteroOAuthAttempt.state == state)
+            .values(handoff_code_hash=None, handoff_api_key=None)
+        )
 
 
 def _verified_oauth_identity(
@@ -1000,12 +1189,70 @@ def start_oauth(
     )
 
 
+@router.post("/oauth/desktop/start", response_model=DesktopOAuthStartOut)
+def start_desktop_oauth(
+    response: Response,
+    user: Annotated[User, Depends(current_user)],
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
+) -> DesktopOAuthStartOut:
+    """Create a system-browser flow bound to the installed Pharos app."""
+    if not _oauth_ready(settings):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zotero one-click authorization is not configured on this server.",
+        )
+    if syncer.is_running(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A sync is running. Wait for it to finish before reconnecting Zotero.",
+        )
+
+    state_value = secrets.token_urlsafe(32)
+    desktop_secret = secrets.token_urlsafe(32)
+    ttl = max(60, min(int(settings.zotero_oauth_attempt_ttl_seconds), 3600))
+    expires_at = _now() + timedelta(seconds=ttl)
+    try:
+        temporary = zotero_oauth.request_token(
+            str(settings.zotero_oauth_client_key),
+            str(settings.zotero_oauth_client_secret),
+            _desktop_callback_url(settings, state_value),
+        )
+        _create_oauth_attempt(
+            user_id=user.id,
+            state=state_value,
+            browser_secret=desktop_secret,
+            request_token=temporary,
+            expires_at=expires_at,
+            settings=settings,
+            flow_kind="desktop",
+        )
+    except zotero_oauth.ZoteroOAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start Zotero authorization. Try again.",
+        ) from exc
+    except Exception as exc:
+        log.error("zotero: could not persist desktop OAuth attempt (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not start Zotero authorization. Try again.",
+        ) from None
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return DesktopOAuthStartOut(
+        authorize_url=zotero_oauth.authorization_url(temporary.token),
+        expires_at=expires_at,
+        desktop_secret=desktop_secret,
+    )
+
+
 @router.get("/oauth/callback", response_class=RedirectResponse)
 async def finish_oauth(
     request: Request,
     settings: Annotated[Settings, Depends(get_runtime_settings)],
 ) -> RedirectResponse:
-    """Consume Zotero's browser callback and return to the Pharos library."""
+    """Consume Zotero's HTTPS callback for either web or desktop clients."""
     if not settings.zotero_oauth_callback_url or not _safe_http_url(
         settings.zotero_oauth_callback_url
     ):
@@ -1013,40 +1260,55 @@ async def finish_oauth(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Zotero one-click authorization is not configured on this server.",
         )
-    if not _oauth_ready(settings):
-        return _oauth_redirect(settings, "error")
+    flow = _single_query(request, "flow", max_length=16)
+    desktop_flow = flow == "desktop"
+    redirect = (
+        (lambda result: _desktop_oauth_redirect(result))
+        if desktop_flow
+        else (lambda result: _oauth_redirect(settings, result))
+    )
+    if flow not in (None, "desktop") or not _oauth_ready(settings):
+        return redirect("error")
 
     state_value = _single_query(request, "state", max_length=128)
     oauth_token = _single_query(request, "oauth_token")
     denied = _single_query(request, "denied")
     oauth_problem = _single_query(request, "oauth_problem", max_length=128)
     request_token_value = oauth_token or denied
-    cookie_name, _secure = _oauth_cookie(settings)
-    browser_secret = request.cookies.get(cookie_name)
     if (
         state_value is None
         or request_token_value is None
-        or browser_secret is None
-        or len(browser_secret) > 512
         or (oauth_token is not None and denied is not None)
     ):
-        return _oauth_redirect(settings, "invalid")
+        return redirect("invalid")
 
-    claim_result, claim = await asyncio.to_thread(
-        _claim_oauth_attempt,
-        state=state_value,
-        request_token=request_token_value,
-        browser_secret=browser_secret,
-        settings=settings,
-    )
+    if desktop_flow:
+        claim_result, claim = await asyncio.to_thread(
+            _claim_desktop_oauth_attempt,
+            state=state_value,
+            request_token=request_token_value,
+            settings=settings,
+        )
+    else:
+        cookie_name, _secure = _oauth_cookie(settings)
+        browser_secret = request.cookies.get(cookie_name)
+        if browser_secret is None or len(browser_secret) > 512:
+            return _oauth_redirect(settings, "invalid")
+        claim_result, claim = await asyncio.to_thread(
+            _claim_oauth_attempt,
+            state=state_value,
+            request_token=request_token_value,
+            browser_secret=browser_secret,
+            settings=settings,
+        )
     if claim is None:
-        return _oauth_redirect(settings, claim_result)
+        return redirect(claim_result)
     if denied is not None or oauth_problem == "user_refused":
-        return _oauth_redirect(settings, "cancelled")
+        return redirect("cancelled")
 
     verifier = _single_query(request, "oauth_verifier")
     if verifier is None:
-        return _oauth_redirect(settings, "invalid")
+        return redirect("invalid")
 
     try:
         access = await asyncio.to_thread(
@@ -1058,30 +1320,98 @@ async def finish_oauth(
             verifier,
         )
         identity = await asyncio.to_thread(_verified_oauth_identity, access)
-        await asyncio.to_thread(
-            _store_oauth_link,
-            user_id=claim.user_id,
-            zotero_user_id=identity.user_id,
-            api_key=access.api_key,
-            settings=settings,
-        )
+        if desktop_flow:
+            handoff_code = secrets.token_urlsafe(32)
+            await asyncio.to_thread(
+                _complete_desktop_handoff,
+                state=state_value,
+                user_id=claim.user_id,
+                zotero_user_id=identity.user_id,
+                api_key=access.api_key,
+                code=handoff_code,
+                settings=settings,
+            )
+        else:
+            await asyncio.to_thread(
+                _store_oauth_link,
+                user_id=claim.user_id,
+                zotero_user_id=identity.user_id,
+                api_key=access.api_key,
+                settings=settings,
+            )
     except RuntimeError as exc:
         if str(exc) == "syncing":
-            return _oauth_redirect(settings, "busy")
+            return redirect("busy")
         log.error("zotero: OAuth link storage failed (%s)", type(exc).__name__)
-        return _oauth_redirect(settings, "error")
+        return redirect("error")
     except (zotero_oauth.ZoteroOAuthError, client.ZoteroError) as exc:
         log.warning("zotero: OAuth exchange failed (%s)", type(exc).__name__)
-        return _oauth_redirect(settings, "error")
+        return redirect("error")
     except Exception as exc:  # no provider/credential text reaches the log
         log.error("zotero: OAuth callback failed (%s)", type(exc).__name__)
-        return _oauth_redirect(settings, "error")
+        return redirect("error")
+
+    if desktop_flow:
+        log.info("zotero: desktop OAuth provider step completed")
+        return _desktop_oauth_redirect("connected", code=handoff_code)
 
     # The callback runs on the event loop, so it can start the existing
     # background syncer directly. A status poll after the 303 sees "syncing".
     syncer.submit(claim.user_id)
     log.info("zotero: account linked through OAuth")
     return _oauth_redirect(settings, "connected")
+
+
+@router.post("/oauth/desktop/finish", response_model=ZoteroStatusOut)
+def finish_desktop_oauth(
+    payload: DesktopOAuthFinishRequest,
+    user: Annotated[User, Depends(current_user)],
+    settings: Annotated[Settings, Depends(get_runtime_settings)],
+) -> ZoteroStatusOut:
+    """Bind the system-browser result to the installed, signed-in client."""
+    claim_result, claim = _claim_desktop_handoff(
+        code=payload.code,
+        desktop_secret=payload.desktop_secret,
+        user_id=user.id,
+        settings=settings,
+    )
+    if claim is None:
+        detail = (
+            "The Zotero authorization expired. Start it again."
+            if claim_result == "expired"
+            else "The Zotero authorization is invalid or has already been used."
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    try:
+        _store_oauth_link(
+            user_id=user.id,
+            zotero_user_id=claim.zotero_user_id,
+            api_key=claim.api_key,
+            settings=settings,
+        )
+    except RuntimeError as exc:
+        if str(exc) == "syncing":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A sync is running. Wait for it to finish before reconnecting Zotero.",
+            ) from None
+        log.error("zotero: desktop OAuth link storage failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the Zotero link. Try again.",
+        ) from None
+    except Exception as exc:
+        log.error("zotero: desktop OAuth link storage failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the Zotero link. Try again.",
+        ) from None
+    finally:
+        _clear_desktop_handoff(claim.state)
+
+    syncer.submit(user.id)
+    log.info("zotero: account linked through desktop OAuth")
+    return _status_snapshot(user.id)
 
 
 @router.post("/link", response_model=ZoteroStatusOut)

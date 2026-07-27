@@ -129,6 +129,23 @@ class ZoteroOAuthAttempt(Base):
     request_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     browser_state_hash: Mapped[str] = mapped_column(String(64))
     request_token_secret: Mapped[str] = mapped_column(Text)
+    #: ``NULL`` is treated as ``browser`` for rows created before desktop OAuth
+    #: existed. New rows always write either ``browser`` or ``desktop``.
+    flow_kind: Mapped[str | None] = mapped_column(String(16), default=None)
+    #: Desktop OAuth completes in the system browser, then hands a one-use code
+    #: back to the app. Only hashes of that code and of the app-held binding
+    #: secret are stored; the temporary Zotero key stays encrypted at rest.
+    handoff_code_hash: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, default=None
+    )
+    handoff_zotero_user_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    handoff_api_key: Mapped[str | None] = mapped_column(Text, default=None)
+    handoff_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None, index=True
+    )
+    handoff_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

@@ -103,6 +103,16 @@ export interface ZoteroOAuthStart {
   expires_at: string;
 }
 
+export interface ZoteroDesktopOAuthStart extends ZoteroOAuthStart {
+  /** Short-lived app binding; never placed in the system-browser URL. */
+  desktop_secret: string;
+}
+
+export interface ZoteroDesktopOAuthFinishBody {
+  code: string;
+  desktop_secret: string;
+}
+
 export interface ZoteroLinkBody {
   zotero_user_id: string;
   api_key: string;
