@@ -29,6 +29,13 @@ tauri-plugin-fs = "2"
 tauri-plugin-persisted-scope = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The desktop client talks to Zotero's loopback-only Local API. TLS is not
+# needed for that fixed `127.0.0.1` endpoint, so keep reqwest's heavyweight TLS
+# stack out of the native bundle.
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+futures-util = "0.3"
+sha2 = "0.10"
+hex = "0.4"
 
 # Release profile tuned for a small, fast binary — the whole point of Tauri.
 [profile.release]

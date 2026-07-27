@@ -1,10 +1,12 @@
 //! The Pharos desktop shell.
 //!
-//! This is deliberately thin. The entire UI is the same React app that ships
-//! to the browser (`frontend/`), loaded from the bundle; the Rust side only
-//! opens the window and wires the few native niceties a desktop app should
-//! have. Keeping logic out of here is what guarantees the desktop and web
-//! clients stay identical — there is only one UI codebase.
+//! The interface remains the same React app as the browser build. Native-only
+//! capabilities live behind narrow commands: today that includes user-approved
+//! Daily Vault folders and the loopback-only Zotero Local API.
+
+mod zotero_local;
+
+use tauri::Manager;
 
 /// Builds and runs the application. Shared by the desktop launcher (`main.rs`)
 /// and the mobile entry point, so both platforms start the same app.
@@ -18,6 +20,24 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Open external links (GitHub, DOI, arXiv) in the system browser.
         .plugin(tauri_plugin_opener::init())
+        // Local PDFs are addressed by opaque attachment IDs. The protocol
+        // resolves those IDs inside Rust and supports byte ranges for pdf.js;
+        // no filesystem path crosses into the WebView.
+        .register_uri_scheme_protocol("pharos-local", |ctx, request| {
+            zotero_local::protocol_response(ctx.app_handle(), request)
+        })
+        .setup(|app| {
+            app.manage(zotero_local::LocalZoteroState::load(app.handle()));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            zotero_local::zotero_local_status,
+            zotero_local::zotero_local_sync,
+            zotero_local::zotero_local_list,
+            zotero_local::zotero_local_get,
+            zotero_local::zotero_local_pdf_url,
+            zotero_local::zotero_local_pdf_bytes,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Pharos desktop app");
 }
