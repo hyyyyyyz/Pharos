@@ -13,8 +13,8 @@
 
 use std::{
     collections::HashMap,
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    fs::{self, File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -31,11 +31,12 @@ use sha2::{Digest, Sha256};
 use tauri::{http, AppHandle, Manager, State};
 
 const LOCAL_API: &str = "http://127.0.0.1:23119/api";
-const CACHE_SCHEMA: u32 = 1;
+const CACHE_SCHEMA: u32 = 2;
 const PAGE_SIZE: usize = 100;
 const MAX_ITEMS: usize = 100_000;
 const ATTACHMENT_PROBES: usize = 12;
 const USER_LIBRARY_ID: &str = "0";
+const MAX_IPC_IMPORT_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -106,8 +107,12 @@ struct CachedAttachment {
     id: String,
     item_key: String,
     item_version: u64,
+    title: String,
     filename: String,
+    content_type: String,
     link_mode: Option<String>,
+    order: usize,
+    size_bytes: Option<u64>,
     /// Private native locator. This field is never copied into a command
     /// response, and therefore never crosses into JavaScript or FastAPI.
     local_path: Option<PathBuf>,
@@ -158,16 +163,42 @@ pub struct LocalZoteroPaper {
     pdf_attachment_id: Option<String>,
     pdf_filename: Option<String>,
     pdf_attachment_count: usize,
+    pdf_available_count: usize,
+    pdf_attachments: Vec<LocalZoteroAttachment>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalZoteroAttachment {
+    id: String,
+    title: String,
+    filename: String,
+    available: bool,
+    size_bytes: Option<u64>,
 }
 
 impl From<&CachedPaper> for LocalZoteroPaper {
     fn from(paper: &CachedPaper) -> Self {
-        let available: Vec<&CachedAttachment> = paper
+        let primary = paper
+            .attachments
+            .iter()
+            .find(|attachment| attachment_available(attachment));
+        let pdf_available_count = paper
             .attachments
             .iter()
             .filter(|attachment| attachment_available(attachment))
+            .count();
+        let pdf_attachments = paper
+            .attachments
+            .iter()
+            .map(|attachment| LocalZoteroAttachment {
+                id: attachment.id.clone(),
+                title: attachment.title.clone(),
+                filename: attachment.filename.clone(),
+                available: attachment_available(attachment),
+                size_bytes: attachment.size_bytes,
+            })
             .collect();
-        let primary = available.first().copied();
         Self {
             id: paper.id.clone(),
             library_id: paper.library_id.clone(),
@@ -187,7 +218,9 @@ impl From<&CachedPaper> for LocalZoteroPaper {
             pdf_available: primary.is_some(),
             pdf_attachment_id: primary.map(|attachment| attachment.id.clone()),
             pdf_filename: primary.map(|attachment| attachment.filename.clone()),
-            pdf_attachment_count: available.len(),
+            pdf_attachment_count: paper.attachments.len(),
+            pdf_available_count,
+            pdf_attachments,
         }
     }
 }
@@ -246,16 +279,12 @@ impl LocalZoteroState {
                 .iter()
                 .filter(|attachment| attachment_available(attachment))
                 .count();
-            if pdf > 0 {
-                pdf_available_count += 1;
-            }
+            pdf_available_count += pdf;
             let counts = per_library
                 .entry((&paper.library_id, paper.library_kind, &paper.library_name))
                 .or_default();
             counts.0 += 1;
-            if pdf > 0 {
-                counts.1 += 1;
-            }
+            counts.1 += pdf;
         }
         let mut libraries: Vec<LocalZoteroLibrary> = cache
             .libraries
@@ -365,8 +394,11 @@ struct AttachmentProbe {
     parent_item: String,
     item_key: String,
     item_version: u64,
+    title: String,
     filename: String,
+    content_type: String,
     link_mode: Option<String>,
+    order: usize,
 }
 
 fn client() -> Result<Client, String> {
@@ -487,14 +519,23 @@ async fn resolve_attachment(client: &Client, probe: AttachmentProbe) -> (String,
             .filter(|path| path.is_file()),
         _ => None,
     };
+    let size_bytes = local_path
+        .as_deref()
+        .and_then(|path| fs::metadata(path).ok())
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len());
     (
         probe.parent_item,
         CachedAttachment {
             id: stable_id("attachment", &probe.library, &probe.item_key),
             item_key: probe.item_key,
             item_version: probe.item_version,
+            title: probe.title,
             filename: probe.filename,
+            content_type: probe.content_type,
             link_mode: probe.link_mode,
+            order: probe.order,
+            size_bytes,
             local_path,
         },
     )
@@ -518,7 +559,8 @@ async fn scan(client: &Client) -> Result<Cache, String> {
 
         let probes: Vec<AttachmentProbe> = attachments
             .into_iter()
-            .filter_map(|attachment| attachment_probe(&library, attachment))
+            .enumerate()
+            .filter_map(|(order, attachment)| attachment_probe(&library, attachment, order))
             .collect();
         let resolved: Vec<(String, CachedAttachment)> = stream::iter(probes)
             .map(|attachment| resolve_attachment(client, attachment))
@@ -528,6 +570,19 @@ async fn scan(client: &Client) -> Result<Cache, String> {
         let mut by_parent: HashMap<String, Vec<CachedAttachment>> = HashMap::new();
         for (parent, attachment) in resolved {
             by_parent.entry(parent).or_default().push(attachment);
+        }
+        for attachments in by_parent.values_mut() {
+            attachments.sort_by(|left, right| {
+                (!attachment_available(left))
+                    .cmp(&(!attachment_available(right)))
+                    .then_with(|| is_supplement(left).cmp(&is_supplement(right)))
+                    .then_with(|| left.order.cmp(&right.order))
+                    .then_with(|| {
+                        left.filename
+                            .to_lowercase()
+                            .cmp(&right.filename.to_lowercase())
+                    })
+            });
         }
 
         for item in items {
@@ -557,7 +612,7 @@ async fn scan(client: &Client) -> Result<Cache, String> {
     })
 }
 
-fn attachment_probe(library: &LibrarySpec, item: ApiItem) -> Option<AttachmentProbe> {
+fn attachment_probe(library: &LibrarySpec, item: ApiItem, order: usize) -> Option<AttachmentProbe> {
     let data = &item.data;
     let content_type = value_string(data, "contentType").unwrap_or_default();
     let filename = value_string(data, "filename").unwrap_or_default();
@@ -576,12 +631,17 @@ fn attachment_probe(library: &LibrarySpec, item: ApiItem) -> Option<AttachmentPr
         parent_item,
         item_key: item.key,
         item_version: item.version,
+        title: value_string(data, "title")
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or_else(|| filename.clone()),
         filename: if filename.is_empty() {
             "paper.pdf".to_string()
         } else {
             filename
         },
+        content_type,
         link_mode: value_string(data, "linkMode"),
+        order,
     })
 }
 
@@ -709,6 +769,20 @@ fn attachment_available(attachment: &CachedAttachment) -> bool {
     attachment.local_path.as_deref().is_some_and(Path::is_file)
 }
 
+fn is_supplement(attachment: &CachedAttachment) -> bool {
+    let value = format!("{} {}", attachment.title, attachment.filename).to_ascii_lowercase();
+    [
+        "supplement",
+        "supporting information",
+        "supporting material",
+        "appendix",
+        "附录",
+        "补充",
+    ]
+    .iter()
+    .any(|needle| value.contains(needle))
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -722,10 +796,35 @@ fn persist_cache(path: &Path, cache: &Cache) -> Result<(), String> {
         .parent()
         .ok_or_else(|| "本地 Zotero 缓存路径无效。".to_string())?;
     fs::create_dir_all(parent).map_err(|_| "无法创建本地 Zotero 缓存目录。".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+            .map_err(|_| "无法保护本地 Zotero 缓存目录。".to_string())?;
+    }
     let temp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec(cache).map_err(|_| "无法编码本地 Zotero 缓存。".to_string())?;
-    fs::write(&temp, bytes).map_err(|_| "无法写入本地 Zotero 缓存。".to_string())?;
-    fs::rename(&temp, path).map_err(|_| "无法保存本地 Zotero 缓存。".to_string())
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temp)
+        .map_err(|_| "无法写入本地 Zotero 缓存。".to_string())?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "无法写入本地 Zotero 缓存。".to_string())?;
+    fs::rename(&temp, path).map_err(|_| "无法保存本地 Zotero 缓存。".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|_| "无法保护本地 Zotero 缓存。".to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -818,7 +917,10 @@ pub fn zotero_local_pdf_bytes(
     let path = state
         .attachment_path(&attachment_id)
         .ok_or_else(|| "这份 PDF 尚未下载到本机 Zotero。".to_string())?;
-    validate_pdf(&path)?;
+    let size = validate_pdf(&path)?;
+    if size > MAX_IPC_IMPORT_BYTES {
+        return Err("这份 PDF 超过 256 MB，请先压缩文件，或在 Pharos 中直接上传。".to_string());
+    }
     let bytes = fs::read(path).map_err(|_| "无法读取本地 Zotero PDF。".to_string())?;
     Ok(tauri::ipc::Response::new(bytes))
 }
@@ -880,12 +982,32 @@ fn parse_range(raw: Option<&str>, len: u64) -> Result<Option<ByteRange>, ()> {
     Ok(Some(range))
 }
 
-fn response_builder(status: StatusCode) -> http::response::Builder {
-    http::Response::builder()
+fn allowed_origin(request: &http::Request<Vec<u8>>) -> Option<&str> {
+    let origin = request.headers().get(header::ORIGIN)?.to_str().ok()?;
+    matches!(
+        origin,
+        "tauri://localhost"
+            | "http://tauri.localhost"
+            | "https://tauri.localhost"
+            | "http://localhost:5173"
+    )
+    .then_some(origin)
+}
+
+fn response_builder(status: StatusCode, origin: Option<&str>) -> http::response::Builder {
+    let mut builder = http::Response::builder()
         .status(status.as_u16())
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN.as_str(), "*")
         .header(header::CACHE_CONTROL.as_str(), "private, no-store")
         .header("X-Content-Type-Options", "nosniff")
+        .header(header::VARY.as_str(), "Origin")
+        .header(
+            header::ACCESS_CONTROL_EXPOSE_HEADERS.as_str(),
+            "Accept-Ranges, Content-Length, Content-Range",
+        );
+    if let Some(origin) = origin {
+        builder = builder.header(header::ACCESS_CONTROL_ALLOW_ORIGIN.as_str(), origin);
+    }
+    builder
 }
 
 /// Serve one cached attachment through a range-aware, path-free protocol.
@@ -893,8 +1015,9 @@ pub fn protocol_response(
     app: &AppHandle,
     request: http::Request<Vec<u8>>,
 ) -> http::Response<Vec<u8>> {
+    let origin = allowed_origin(&request);
     if request.method() == http::Method::OPTIONS {
-        return response_builder(StatusCode::NO_CONTENT)
+        return response_builder(StatusCode::NO_CONTENT, origin)
             .header(
                 header::ACCESS_CONTROL_ALLOW_METHODS.as_str(),
                 "GET, HEAD, OPTIONS",
@@ -904,12 +1027,12 @@ pub fn protocol_response(
             .unwrap();
     }
     if request.method() != http::Method::GET && request.method() != http::Method::HEAD {
-        return response_builder(StatusCode::METHOD_NOT_ALLOWED)
+        return response_builder(StatusCode::METHOD_NOT_ALLOWED, origin)
             .body(Vec::new())
             .unwrap();
     }
     let Some(attachment_id) = request.uri().path().strip_prefix("/zotero/") else {
-        return response_builder(StatusCode::NOT_FOUND)
+        return response_builder(StatusCode::NOT_FOUND, origin)
             .body(Vec::new())
             .unwrap();
     };
@@ -918,18 +1041,18 @@ pub fn protocol_response(
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
     {
-        return response_builder(StatusCode::BAD_REQUEST)
+        return response_builder(StatusCode::BAD_REQUEST, origin)
             .body(Vec::new())
             .unwrap();
     }
     let state = app.state::<LocalZoteroState>();
     let Some(path) = state.attachment_path(attachment_id) else {
-        return response_builder(StatusCode::NOT_FOUND)
+        return response_builder(StatusCode::NOT_FOUND, origin)
             .body(Vec::new())
             .unwrap();
     };
     let Ok(len) = validate_pdf(&path) else {
-        return response_builder(StatusCode::NOT_FOUND)
+        return response_builder(StatusCode::NOT_FOUND, origin)
             .body(Vec::new())
             .unwrap();
     };
@@ -940,7 +1063,7 @@ pub fn protocol_response(
     let range = match parse_range(raw_range, len) {
         Ok(range) => range,
         Err(()) => {
-            return response_builder(StatusCode::RANGE_NOT_SATISFIABLE)
+            return response_builder(StatusCode::RANGE_NOT_SATISFIABLE, origin)
                 .header(header::CONTENT_RANGE.as_str(), format!("bytes */{len}"))
                 .body(Vec::new())
                 .unwrap()
@@ -960,7 +1083,7 @@ pub fn protocol_response(
             Ok(())
         });
         if result.is_err() || body.len() as u64 != count {
-            return response_builder(StatusCode::INTERNAL_SERVER_ERROR)
+            return response_builder(StatusCode::INTERNAL_SERVER_ERROR, origin)
                 .body(Vec::new())
                 .unwrap();
         }
@@ -970,7 +1093,7 @@ pub fn protocol_response(
     } else {
         StatusCode::OK
     };
-    let mut builder = response_builder(status)
+    let mut builder = response_builder(status, origin)
         .header(header::CONTENT_TYPE.as_str(), "application/pdf")
         .header(header::ACCEPT_RANGES.as_str(), "bytes")
         .header(header::CONTENT_LENGTH.as_str(), count.to_string());
@@ -1058,8 +1181,12 @@ mod tests {
                 id: "a".to_string(),
                 item_key: "ATTACH".to_string(),
                 item_version: 1,
+                title: "Paper PDF".to_string(),
                 filename: "paper.pdf".to_string(),
+                content_type: "application/pdf".to_string(),
                 link_mode: Some("imported_file".to_string()),
+                order: 0,
+                size_bytes: Some(10),
                 local_path: Some(PathBuf::from("/Users/private/Zotero/storage/paper.pdf")),
             }],
         };
@@ -1080,11 +1207,23 @@ mod tests {
             .iter()
             .filter(|paper| paper.attachments.iter().any(attachment_available))
             .count();
+        let attachments = cache
+            .papers
+            .iter()
+            .map(|paper| paper.attachments.len())
+            .sum::<usize>();
+        let multi_pdf_papers = cache
+            .papers
+            .iter()
+            .filter(|paper| paper.attachments.len() > 1)
+            .count();
         eprintln!(
-            "local Zotero scan: libraries={} papers={} pdf_available={}",
+            "local Zotero scan: libraries={} papers={} pdf_available={} pdf_attachments={} multi_pdf_papers={}",
             cache.libraries.len(),
             cache.papers.len(),
-            available
+            available,
+            attachments,
+            multi_pdf_papers,
         );
         assert_eq!(cache.schema_version, CACHE_SCHEMA);
     }

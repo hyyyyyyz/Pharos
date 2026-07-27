@@ -52,7 +52,11 @@ export default function App() {
           <>
             <TabBar />
             {activeTab && activeTab.kind === "paper" ? (
-              <ReadingView key={activeTab.paperId} paperId={activeTab.paperId} />
+              <ReadingView
+                key={activeTab.id}
+                paperId={activeTab.paperId}
+                initialLocalAttachmentId={activeTab.localAttachmentId}
+              />
             ) : (
               <div className="ph-libview">
                 <CollectionTree />

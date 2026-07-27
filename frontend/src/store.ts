@@ -21,7 +21,7 @@ const RAIL_WIDTH_KEY = "ph-rail-width";
 /** An open tab in the 文库 module: the library itself, or one paper. */
 export type Tab =
   | { id: "library"; kind: "library" }
-  | { id: string; kind: "paper"; paperId: string };
+  | { id: string; kind: "paper"; paperId: string; localAttachmentId?: string };
 
 const ls = (key: string): string | null =>
   typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
@@ -102,7 +102,7 @@ interface UIState {
   /* ---------------------------------------------------------------- tabs */
   tabs: Tab[];
   activeTabId: string;
-  openPaper: (paperId: string) => void;
+  openPaper: (paperId: string, localAttachmentId?: string) => void;
   setTab: (id: string) => void;
   closeTab: (id: string) => void;
 
@@ -232,12 +232,16 @@ export const useUI = create<UIState>((set) => ({
 
   tabs: [{ id: "library", kind: "library" }],
   activeTabId: "library",
-  openPaper: (paperId) =>
+  openPaper: (paperId, localAttachmentId) =>
     set((s) => {
-      const tabId = `t-${paperId}`;
+      const tabId = localAttachmentId
+        ? `t-${paperId}-${localAttachmentId}`
+        : `t-${paperId}`;
       const exists = s.tabs.some((t) => t.id === tabId);
       return {
-        tabs: exists ? s.tabs : [...s.tabs, { id: tabId, kind: "paper", paperId }],
+        tabs: exists
+          ? s.tabs
+          : [...s.tabs, { id: tabId, kind: "paper", paperId, localAttachmentId }],
         activeTabId: tabId,
       };
     }),

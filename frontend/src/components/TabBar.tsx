@@ -30,7 +30,15 @@ export function TabBar(): JSX.Element {
         const paper = isLibTab || local ? undefined : papers?.find((p) => p.id === tab.paperId);
         const localPaper =
           isLibTab || !local ? undefined : localPapers?.find((p) => p.id === tab.paperId);
-        const title = isLibTab ? "文库" : (localPaper?.title ?? paper?.title ?? "论文");
+        const localAttachment =
+          isLibTab || !local || !tab.localAttachmentId
+            ? undefined
+            : localPaper?.pdfAttachments.find(
+                (attachment) => attachment.id === tab.localAttachmentId,
+              );
+        const title = isLibTab
+          ? "文库"
+          : localAttachment?.filename ?? localPaper?.title ?? paper?.title ?? "论文";
         return (
           <div
             key={tab.id}

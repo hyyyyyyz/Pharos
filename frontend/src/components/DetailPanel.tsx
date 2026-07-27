@@ -14,6 +14,7 @@ import { dash, isJobActive, statusOf, toVM } from "../lib/model";
 import {
   isLocalZoteroPaperId,
   localZotero,
+  type LocalZoteroAttachment,
   type LocalZoteroPaper,
 } from "../lib/localZotero";
 import { pdfTranslationEnabled, useSession, useUI } from "../store";
@@ -27,7 +28,8 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
   const qc = useQueryClient();
 
   const importPaper = useMutation({
-    mutationFn: async () => api.upload(await localZotero.pdfFile(paper)),
+    mutationFn: async (attachment: LocalZoteroAttachment) =>
+      api.upload(await localZotero.pdfFile(paper, attachment.id)),
     onSuccess: (imported) => {
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["collections"] });
@@ -36,6 +38,14 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
   });
 
   const abstract = paper.abstractText?.trim() ?? "";
+  const defaultAttachment = paper.pdfAttachments.find(
+    (attachment) => attachment.id === paper.pdfAttachmentId,
+  );
+  const formatSize = (bytes: number | null): string => {
+    if (bytes === null) return "";
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  };
   return (
     <aside className="ph-dp ph-scroll">
       <div className="ph-dp-body">
@@ -48,25 +58,14 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
           <button
             type="button"
             className="ph-dp-primary"
-            disabled={!paper.pdfAvailable}
-            onClick={() => openPaper(paper.id)}
+            disabled={!defaultAttachment?.available}
+            onClick={() => openPaper(paper.id, defaultAttachment?.id)}
           >
             <span className="ph-dp-ic">
               <Icons.open />
             </span>
             {paper.pdfAvailable ? "打开本地 PDF" : "PDF 未在本机"}
           </button>
-          {paper.pdfAvailable && (
-            <button
-              type="button"
-              className="ph-dp-secondary"
-              disabled={importPaper.isPending}
-              title="复制并上传这份 PDF 到 Pharos，之后可翻译和跨设备访问"
-              onClick={() => importPaper.mutate()}
-            >
-              {importPaper.isPending ? "导入中…" : "导入 Pharos"}
-            </button>
-          )}
         </div>
 
         {!paper.pdfAvailable && (
@@ -89,7 +88,9 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
           <span className="ph-dp-v">{dash(paper.year)}</span>
           <span className="ph-dp-k">附件</span>
           <span className="ph-dp-v">
-            {paper.pdfAttachmentCount > 0 ? `${paper.pdfAttachmentCount} 份本地 PDF` : "未下载"}
+            {paper.pdfAttachmentCount > 0
+              ? `${paper.pdfAvailableCount}/${paper.pdfAttachmentCount} 份可读`
+              : "没有 PDF"}
           </span>
           <span className="ph-dp-k">DOI</span>
           {paper.doi ? (
@@ -118,13 +119,47 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
 
         <div className="ph-dp-sec">
           <div className="ph-dp-label ph-dp-label-7">附件</div>
-          <div className="ph-dp-file">
-            <span className="ph-dp-file-ic">
-              <Icons.file />
-            </span>
-            <span className="ph-dp-file-name">
-              {paper.pdfFilename ?? "附件未下载到本机"}
-            </span>
+          <div className="ph-dp-local-files">
+            {paper.pdfAttachments.length > 0 ? (
+              paper.pdfAttachments.map((attachment) => {
+                const importing =
+                  importPaper.isPending && importPaper.variables?.id === attachment.id;
+                return (
+                  <div className="ph-dp-local-file" key={attachment.id}>
+                    <span className="ph-dp-file-ic">
+                      <Icons.file />
+                    </span>
+                    <span className="ph-dp-local-file-main" title={attachment.filename}>
+                      <span className="ph-dp-file-name">{attachment.filename}</span>
+                      <span className="ph-dp-local-file-meta">
+                        {attachment.available
+                          ? ["本机可读", formatSize(attachment.sizeBytes)].filter(Boolean).join(" · ")
+                          : "尚未下载"}
+                      </span>
+                    </span>
+                    <span className="ph-dp-local-file-actions">
+                      <button
+                        type="button"
+                        disabled={!attachment.available}
+                        onClick={() => openPaper(paper.id, attachment.id)}
+                      >
+                        打开
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!attachment.available || importPaper.isPending}
+                        title="明确复制并上传这份 PDF，之后可使用翻译、领航与跨设备访问"
+                        onClick={() => importPaper.mutate(attachment)}
+                      >
+                        {importing ? "导入中" : "导入"}
+                      </button>
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="ph-dp-muted">这个 Zotero 条目没有 PDF 附件</div>
+            )}
           </div>
         </div>
 

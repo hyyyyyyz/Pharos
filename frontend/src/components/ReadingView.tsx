@@ -75,7 +75,13 @@ async function flattenOutline(doc: PDFDocumentProxy): Promise<OutlineEntry[]> {
   return out;
 }
 
-export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
+export function ReadingView({
+  paperId,
+  initialLocalAttachmentId,
+}: {
+  paperId: string;
+  initialLocalAttachmentId?: string;
+}): JSX.Element {
   const qc = useQueryClient();
   const readMode = useUI((s) => s.readMode);
   const setReadMode = useUI((s) => s.setReadMode);
@@ -100,6 +106,32 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     queryFn: () => localZotero.get(paperId),
     enabled: isLocal,
   });
+  const [localAttachmentId, setLocalAttachmentId] = useState<string | null>(
+    initialLocalAttachmentId ?? null,
+  );
+  useEffect(() => {
+    if (!localPaper) return;
+    setLocalAttachmentId((current) => {
+      if (current && localPaper.pdfAttachments.some((attachment) => attachment.id === current)) {
+        return current;
+      }
+      if (
+        initialLocalAttachmentId &&
+        localPaper.pdfAttachments.some(
+          (attachment) => attachment.id === initialLocalAttachmentId,
+        )
+      ) {
+        return initialLocalAttachmentId;
+      }
+      return localPaper.pdfAttachmentId ?? localPaper.pdfAttachments[0]?.id ?? null;
+    });
+  }, [initialLocalAttachmentId, localPaper]);
+  const localAttachment = useMemo(
+    () =>
+      localPaper?.pdfAttachments.find((attachment) => attachment.id === localAttachmentId) ??
+      null,
+    [localAttachmentId, localPaper],
+  );
   const vm = useMemo(
     () => (isLocal ? (localPaper ? localToVM(localPaper) : null) : paper ? toVM(paper) : null),
     [isLocal, localPaper, paper],
@@ -157,7 +189,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   // 原文 always wins: it is the only path to the source PDF before/after a
   // failed translation.
   const showPdf = isLocal
-    ? localPaper?.pdfAvailable === true
+    ? localAttachment?.available === true
     : effMode === "original" || isTranslated;
 
   /* Which PDF to show, as a plain string. Deliberately NOT the PdfSource object:
@@ -175,9 +207,9 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   }, [showPdf, isLocal, effMode, vm?.job]);
 
   const localPdfQuery = useQuery({
-    queryKey: ["zotero-local", "pdf", localPaper?.pdfAttachmentId],
-    queryFn: () => localZotero.pdfSource(localPaper!.pdfAttachmentId!),
-    enabled: isLocal && localPaper?.pdfAttachmentId !== null && localPaper?.pdfAttachmentId !== undefined,
+    queryKey: ["zotero-local", "pdf", localAttachment?.id],
+    queryFn: () => localZotero.pdfSource(localAttachment!.id),
+    enabled: isLocal && localAttachment?.available === true,
   });
   const localPdfUrl = localPdfQuery.data?.url ?? null;
 
@@ -320,6 +352,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
 
   /* ------------------------------------------------------------------ view */
   const pageCount = doc?.numPages ?? vm?.pages ?? 0;
+  const displayFilename = isLocal ? (localAttachment?.filename ?? vm?.file ?? "") : (vm?.file ?? "");
   const jobError = (vm?.job?.error ?? "").trim();
   const failMessage = jobError
     ? jobError.length > ERROR_MAX
@@ -353,7 +386,23 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
               <Icons.panelL />
             </button>
           )}
-          <div className="ph-rv-file">{vm?.file ?? ""}</div>
+          <div className="ph-rv-file" title={displayFilename}>{displayFilename}</div>
+          {isLocal && (localPaper?.pdfAttachments.length ?? 0) > 1 && (
+            <label className="ph-rv-local-attachment">
+              <span>附件</span>
+              <select
+                value={localAttachmentId ?? ""}
+                onChange={(event) => setLocalAttachmentId(event.target.value)}
+                aria-label="选择本地 Zotero PDF"
+              >
+                {localPaper?.pdfAttachments.map((attachment) => (
+                  <option key={attachment.id} value={attachment.id}>
+                    {attachment.filename}{attachment.available ? "" : "（未下载）"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="ph-rv-spacer" />
           {showModes && (
             <div className="ph-rv-seg">
@@ -443,7 +492,9 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                 <div className="ph-rv-err-msg">
                   {localPdfQuery.isError
                     ? String(localPdfQuery.error)
-                    : "请在 Zotero 中下载或打开附件，然后返回文库重新同步。缓存中的书目信息不会被删除。"}
+                    : localAttachment
+                      ? `“${localAttachment.filename}”尚未下载到这台 Mac。请在 Zotero 中下载或打开附件，然后返回文库重新同步。缓存中的书目信息不会被删除。`
+                      : "这个 Zotero 条目没有 PDF 附件。书目信息仍会保留在本地文库中。"}
                 </div>
               </div>
             </div>

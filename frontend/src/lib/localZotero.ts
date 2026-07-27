@@ -24,6 +24,14 @@ export interface LocalZoteroStatus {
   libraries: LocalZoteroLibrary[];
 }
 
+export interface LocalZoteroAttachment {
+  id: string;
+  title: string;
+  filename: string;
+  available: boolean;
+  sizeBytes: number | null;
+}
+
 export interface LocalZoteroPaper {
   id: string;
   libraryId: string;
@@ -44,6 +52,8 @@ export interface LocalZoteroPaper {
   pdfAttachmentId: string | null;
   pdfFilename: string | null;
   pdfAttachmentCount: number;
+  pdfAvailableCount: number;
+  pdfAttachments: LocalZoteroAttachment[];
 }
 
 export const localZoteroAvailable = (): boolean => isTauri();
@@ -82,11 +92,14 @@ export const localZotero = {
     return { url, httpHeaders: {} };
   },
 
-  pdfFile: async (paper: LocalZoteroPaper): Promise<File> => {
+  pdfFile: async (paper: LocalZoteroPaper, attachmentId?: string): Promise<File> => {
     desktopOnly();
-    if (!paper.pdfAttachmentId) throw new Error("这篇文献没有可用的本地 PDF。");
+    const selectedId = attachmentId ?? paper.pdfAttachmentId;
+    if (!selectedId) throw new Error("这篇文献没有可用的本地 PDF。");
+    const attachment = paper.pdfAttachments.find((candidate) => candidate.id === selectedId);
+    if (!attachment?.available) throw new Error("这份 PDF 尚未下载到本机 Zotero。");
     const raw = await invoke<ArrayBuffer | Uint8Array | number[]>("zotero_local_pdf_bytes", {
-      attachmentId: paper.pdfAttachmentId,
+      attachmentId: selectedId,
     });
     const bytes =
       raw instanceof ArrayBuffer
@@ -100,7 +113,7 @@ export const localZotero = {
     const owned = new Uint8Array(bytes.byteLength);
     owned.set(bytes);
     const fallback = `${paper.title || "paper"}.pdf`;
-    const filename = (paper.pdfFilename || fallback).replace(/[\\/:*?"<>|]/g, "_");
+    const filename = (attachment.filename || fallback).replace(/[\\/:*?"<>|]/g, "_");
     return new File([owned.buffer], filename, { type: "application/pdf" });
   },
 };

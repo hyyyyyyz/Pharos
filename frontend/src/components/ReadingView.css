@@ -55,11 +55,39 @@
 }
 
 .ph-rv-file {
+  min-width: 0;
+  max-width: min(36vw, 420px);
   font-size: 12px;
   color: var(--c-tx2, #5a616e);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ph-rv-local-attachment {
+  min-width: 0;
+  max-width: min(32vw, 360px);
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  color: var(--c-tx3, #8b93a1);
+  font-size: 10.5px;
+}
+
+.ph-rv-local-attachment select {
+  min-width: 0;
+  max-width: 280px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font: inherit;
+  font-size: 11px;
+  text-overflow: ellipsis;
 }
 
 /* read-mode segmented control */
