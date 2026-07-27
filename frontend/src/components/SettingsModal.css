@@ -270,6 +270,30 @@
   margin-bottom: 12px;
 }
 
+.ph-set-zot-result {
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--c-bd);
+  border-radius: 7px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ph-set-zot-result--ok {
+  border-color: color-mix(in oklab, var(--c-ok) 36%, var(--c-bd));
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+.ph-set-zot-result--neutral {
+  border-color: var(--c-acsb);
+  background: var(--c-acs);
+  color: var(--c-aclink);
+}
+.ph-set-zot-result--error {
+  border-color: color-mix(in oklab, var(--c-err) 32%, var(--c-bd));
+  background: var(--c-err-soft);
+  color: var(--c-err);
+}
+
 .ph-set-input {
   width: 100%;
   height: 30px;
@@ -301,6 +325,17 @@
   align-items: center;
   gap: 6px;
 }
+.ph-set-connect:hover:not(:disabled) {
+  background: var(--c-ach);
+}
+.ph-set-zot-oauth {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+}
+.ph-set-connect--manual {
+  margin-top: 1px;
+}
 /* Disabled until both the userID and the API key are filled in — an empty
    submit would only produce a round-trip and a backend error. */
 .ph-set-connect:disabled {
@@ -312,6 +347,51 @@
   margin-top: 8px;
   font-size: 11px;
   color: var(--c-tx3);
+  line-height: 1.55;
+}
+
+.ph-set-zot-unavailable {
+  padding: 9px 10px;
+  border: 1px solid var(--c-acsb);
+  border-radius: 7px;
+  background: var(--c-acs);
+  color: var(--c-tx2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.ph-set-zot-manual-toggle {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--c-tx3);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ph-set-zot-manual-toggle:hover {
+  color: var(--c-aclink);
+}
+
+.ph-set-zot-manual {
+  margin-top: 7px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-bd);
+}
+
+.ph-set-zot-link {
+  color: var(--c-aclink);
+  text-decoration: none;
+  font-weight: 600;
+}
+.ph-set-zot-link:hover {
+  text-decoration: underline;
 }
 
 .ph-set-zot-connecting {

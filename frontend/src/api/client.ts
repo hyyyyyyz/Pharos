@@ -42,6 +42,7 @@ import type {
   TagPatchBody,
   UserDirection,
   ZoteroLinkBody,
+  ZoteroOAuthStart,
   ZoteroStatus,
 } from "./types";
 
@@ -215,20 +216,15 @@ export const api = {
 
   /* ---------------------------------------------------------------- zotero */
 
-  /**
-   * The per-user Zotero link. Consumed by SettingsModal.
-   *
-   * Reconciled against `pharos/api/zotero.py` (prefix `/api/zotero`): the paths
-   * and payloads below match that router.
-   *
-   * NOTE: as of writing `main.py` does not `include_router(zotero.router)`, so
-   * these four all 404 against a running backend. That is a one-line backend
-   * fix, not a client one — do not "work around" it here.
-   */
+  /** The signed-in user's Zotero connection. Consumed by SettingsModal. */
   zotero: {
     status: (): Promise<ZoteroStatus> => json<ZoteroStatus>("/zotero/status"),
 
-    /** Store the credentials and kick off the first sync. */
+    /** Create a one-use server flow, then let the browser visit authorize_url. */
+    oauthStart: (): Promise<ZoteroOAuthStart> =>
+      json<ZoteroOAuthStart>("/zotero/oauth/start", { method: "POST" }),
+
+    /** Verify and store manually created credentials. Sync remains explicit. */
     link: (data: ZoteroLinkBody): Promise<ZoteroStatus> =>
       json<ZoteroStatus>("/zotero/link", { method: "POST", ...body(data) }),
 

@@ -4,7 +4,7 @@ import { Icons } from "../design/icons";
 import { ACCENTS, accentSwatch } from "../design/tokens";
 import type { ThemeMode } from "../design/tokens";
 import { api } from "../api/client";
-import type { AuthUser, ZoteroStatus } from "../api/types";
+import type { AuthUser, ZoteroOAuthStart, ZoteroStatus } from "../api/types";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
 import { DirectionsSettings } from "./DirectionsSettings";
 import "./SettingsModal.css";
@@ -66,9 +66,33 @@ function fmtTime(iso: string | null): string {
 /** Error text from a rejected mutation, without leaking a stack trace into the UI. */
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+type ZoteroOAuthResult =
+  | "connected"
+  | "cancelled"
+  | "expired"
+  | "invalid"
+  | "busy"
+  | "error";
+
+const ZOTERO_RESULT_COPY: Record<
+  ZoteroOAuthResult,
+  { tone: "ok" | "neutral" | "error"; text: string }
+> = {
+  connected: { tone: "ok", text: "Zotero 已授权，首次同步已启动。" },
+  cancelled: { tone: "neutral", text: "你取消了 Zotero 授权，现有连接没有改变。" },
+  expired: { tone: "error", text: "授权已过期，请重新发起。" },
+  invalid: { tone: "error", text: "授权状态无效或已使用，请重新连接。" },
+  busy: { tone: "error", text: "当前有同步任务运行，请完成后重试。" },
+  error: { tone: "error", text: "Zotero 授权未完成，请稍后重试；原有连接未被修改。" },
+};
+
+const isZoteroOAuthResult = (value: string): value is ZoteroOAuthResult =>
+  Object.prototype.hasOwnProperty.call(ZOTERO_RESULT_COPY, value);
+
 export function SettingsModal(): JSX.Element | null {
   const settingsOpen = useUI((s) => s.settingsOpen);
   const settingsTab = useUI((s) => s.settingsTab);
+  const openSettings = useUI((s) => s.openSettings);
   const setSettingsTab = useUI((s) => s.setSettingsTab);
   const closeSettings = useUI((s) => s.closeSettings);
   const theme = useUI((s) => s.theme);
@@ -133,17 +157,36 @@ export function SettingsModal(): JSX.Element | null {
   const [zUserId, setZUserId] = useState("");
   const [zApiKey, setZApiKey] = useState("");
   const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [manualZoteroOpen, setManualZoteroOpen] = useState(false);
+  const [zoteroOAuthResult, setZoteroOAuthResult] = useState<ZoteroOAuthResult | null>(null);
+
+  const oauthStart = useMutation({
+    mutationFn: async (): Promise<ZoteroOAuthStart> => {
+      const start = await api.zotero.oauthStart();
+      const authorize = new URL(start.authorize_url);
+      if (
+        authorize.protocol !== "https:" ||
+        authorize.hostname !== "www.zotero.org" ||
+        authorize.pathname !== "/oauth/authorize"
+      ) {
+        throw new Error("服务器返回了无效的 Zotero 授权地址。");
+      }
+      return start;
+    },
+    onMutate: () => setZoteroOAuthResult(null),
+    onSuccess: ({ authorize_url }) => window.location.assign(authorize_url),
+  });
 
   const link = useMutation({
     mutationFn: (): Promise<ZoteroStatus> =>
       api.zotero.link({ zotero_user_id: zUserId.trim(), api_key: zApiKey.trim() }),
-    onSuccess: () => {
+    onSuccess: (status) => {
       // The key is never echoed back by the backend and must not linger in
       // memory once it has been handed over.
       setZUserId("");
       setZApiKey("");
-      void qc.invalidateQueries({ queryKey: ["zotero", "status"] });
-      void qc.invalidateQueries({ queryKey: ["papers"] });
+      setManualZoteroOpen(false);
+      qc.setQueryData(["zotero", "status"], status);
     },
   });
 
@@ -187,6 +230,31 @@ export function SettingsModal(): JSX.Element | null {
     },
   });
 
+  /* Zotero returns to the product root because this app deliberately has no
+     client-side router. Consume its fixed result once, remove it from the URL
+     before the user copies or refreshes the page, and take them straight to
+     the connection they just acted on. React StrictMode runs this effect twice
+     in development; the first pass removes the parameter, so the second is a
+     no-op rather than a duplicate notification. */
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const rawResult = url.searchParams.get("zotero");
+    if (rawResult === null) return;
+
+    url.searchParams.delete("zotero");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    if (!isZoteroOAuthResult(rawResult)) return;
+
+    setZoteroOAuthResult(rawResult);
+    openSettings("account");
+    void qc.invalidateQueries({ queryKey: ["zotero", "status"] });
+    void qc.invalidateQueries({ queryKey: ["papers"] });
+  }, [openSettings, qc]);
+
   useEffect(() => {
     if (!settingsOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -212,6 +280,17 @@ export function SettingsModal(): JSX.Element | null {
     setEditingName(false);
     setZUserId("");
     setZApiKey("");
+    setManualZoteroOpen(false);
+  }, [settingsOpen]);
+
+  /* Do not clear the callback result on the component's initial closed render:
+     that render is exactly when the callback effect above opens the dialog.
+     Clear it only on a real open → closed edge. */
+  const settingsWasOpen = useRef(settingsOpen);
+  useEffect(() => {
+    const wasOpen = settingsWasOpen.current;
+    settingsWasOpen.current = settingsOpen;
+    if (wasOpen && !settingsOpen) setZoteroOAuthResult(null);
   }, [settingsOpen]);
 
   if (!settingsOpen) return null;
@@ -219,11 +298,11 @@ export function SettingsModal(): JSX.Element | null {
   const me = meQuery.data;
   const zot = zoteroQuery.data;
 
-  /* The prototype's three branches, now driven by the server. `connecting`
-     covers both halves of the wait: the link round-trip, and a sync the
-     backend reports as still running. */
-  const connecting = link.isPending || zot?.status === "syncing";
+  /* The prototype's three branches, now driven by the server. */
+  const connecting = oauthStart.isPending || link.isPending || zot?.status === "syncing";
   const connected = !!zot?.linked;
+  const oauthConfigured = zot?.oauth_available === true;
+  const showManualZotero = zot !== undefined && (!oauthConfigured || manualZoteroOpen);
 
   const signOut = () => {
     // Drop every cached answer as well as the token: a react-query cache that
@@ -395,57 +474,127 @@ export function SettingsModal(): JSX.Element | null {
                   <div className="ph-set-zot-title">Zotero 文献库</div>
                 </div>
 
-                {!connecting && !connected && (
+                {zoteroOAuthResult && (
+                  <div
+                    className={cx(
+                      "ph-set-zot-result",
+                      `ph-set-zot-result--${ZOTERO_RESULT_COPY[zoteroOAuthResult].tone}`,
+                    )}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {ZOTERO_RESULT_COPY[zoteroOAuthResult].text}
+                  </div>
+                )}
+
+                {zoteroQuery.isPending && !zot && (
+                  <div className="ph-set-zot-connecting">
+                    <span className="ph-set-ic ph-set-ic--spin">
+                      <Icons.sync />
+                    </span>
+                    正在读取 Zotero 连接状态…
+                  </div>
+                )}
+
+                {!zoteroQuery.isPending && zoteroQuery.isError && (
+                  <div className="ph-set-err">
+                    无法读取 Zotero 连接状态：{errText(zoteroQuery.error)}
+                  </div>
+                )}
+
+                {!zoteroQuery.isPending && !connecting && !connected && zot && (
                   <>
                     <div className="ph-set-zot-desc">
-                      连接你的 Zotero 账户，文献库的条目会同步进文库，翻译状态双向保留。
+                      把 Zotero 个人文库的书目元数据单向导入 Pharos。当前不下载附件，也不会把翻译、阅读状态或批注写回 Zotero。
                     </div>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        link.mutate();
-                      }}
-                    >
-                      <input
-                        className="ph-set-input"
-                        value={zUserId}
-                        onChange={(e) => setZUserId(e.target.value)}
-                        placeholder="Zotero 用户 ID（userID）"
-                        aria-label="Zotero 用户 ID"
-                        autoComplete="off"
-                      />
-                      <input
-                        className="ph-set-input"
-                        type="password"
-                        value={zApiKey}
-                        onChange={(e) => setZApiKey(e.target.value)}
-                        placeholder="Zotero API 密钥"
-                        aria-label="Zotero API 密钥"
-                        autoComplete="off"
-                      />
+
+                    {oauthConfigured ? (
                       <button
-                        type="submit"
-                        className="ph-set-connect"
-                        disabled={!zUserId.trim() || !zApiKey.trim()}
+                        type="button"
+                        className="ph-set-connect ph-set-zot-oauth"
+                        onClick={() => oauthStart.mutate()}
+                        disabled={oauthStart.isPending}
                       >
                         <span className="ph-set-ic">
-                          <Icons.link />
+                          <Icons.open />
                         </span>
-                        连接 Zotero
+                        前往 Zotero 授权
                       </button>
-                    </form>
-                    {link.isError && <div className="ph-set-err">{errText(link.error)}</div>}
-                    {/* An unreadable status falls through to this form, which
-                        looks exactly like "not linked yet" — say which it is,
-                        so a server fault is never mistaken for a clean slate. */}
-                    {zoteroQuery.isError && (
-                      <div className="ph-set-err">
-                        无法读取 Zotero 连接状态：{errText(zoteroQuery.error)}
+                    ) : (
+                      <div className="ph-set-zot-unavailable" role="note">
+                        当前服务器尚未配置一键授权，请暂时使用手动方式。
                       </div>
                     )}
-                    <div className="ph-set-zot-note">
-                      用户 ID 和私钥都在 zotero.org/settings/keys 生成 · 本版本只同步文献元数据，不下载 PDF 原文
-                    </div>
+
+                    {oauthStart.isError && (
+                      <div className="ph-set-err">{errText(oauthStart.error)}</div>
+                    )}
+
+                    {oauthConfigured && (
+                      <button
+                        type="button"
+                        className="ph-set-zot-manual-toggle"
+                        aria-expanded={manualZoteroOpen}
+                        onClick={() => setManualZoteroOpen((open) => !open)}
+                      >
+                        <span className="ph-set-ic">
+                          {manualZoteroOpen ? <Icons.caretD /> : <Icons.caretR />}
+                        </span>
+                        无法使用网页授权？改用 API Key
+                      </button>
+                    )}
+
+                    {showManualZotero && (
+                      <div className="ph-set-zot-manual">
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            link.mutate();
+                          }}
+                        >
+                          <input
+                            className="ph-set-input"
+                            value={zUserId}
+                            onChange={(e) => setZUserId(e.target.value)}
+                            placeholder="Zotero 用户 ID（userID）"
+                            aria-label="Zotero 用户 ID"
+                            autoComplete="off"
+                          />
+                          <input
+                            className="ph-set-input"
+                            type="password"
+                            value={zApiKey}
+                            onChange={(e) => setZApiKey(e.target.value)}
+                            placeholder="Zotero API 密钥"
+                            aria-label="Zotero API 密钥"
+                            autoComplete="off"
+                          />
+                          <button
+                            type="submit"
+                            className="ph-set-connect ph-set-connect--manual"
+                            disabled={!zUserId.trim() || !zApiKey.trim() || link.isPending}
+                          >
+                            <span className="ph-set-ic">
+                              <Icons.link />
+                            </span>
+                            使用 API Key 连接
+                          </button>
+                        </form>
+                        {link.isError && <div className="ph-set-err">{errText(link.error)}</div>}
+                        <div className="ph-set-zot-note">
+                          用户 ID 与只读密钥可在{" "}
+                          <a
+                            className="ph-set-zot-link"
+                            href="https://www.zotero.org/settings/keys"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Zotero 密钥页面
+                          </a>
+                          {" "}生成。
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -454,7 +603,11 @@ export function SettingsModal(): JSX.Element | null {
                     <span className="ph-set-ic ph-set-ic--spin">
                       <Icons.sync />
                     </span>
-                    正在连接并同步…
+                    {oauthStart.isPending
+                      ? "正在打开 Zotero 授权页…"
+                      : link.isPending
+                        ? "正在验证 Zotero API Key…"
+                        : "正在同步 Zotero 文献…"}
                   </div>
                 )}
 
@@ -471,12 +624,18 @@ export function SettingsModal(): JSX.Element | null {
                       </span>
                       <div className="ph-set-zot-card-text">
                         <div className="ph-set-zot-card-title">
-                          {zot.status === "error" ? "已连接 · 上次同步失败" : "已连接 · 同步完成"}
+                          {zot.status === "error"
+                            ? "已连接 · 上次同步失败"
+                            : zot.last_sync_at
+                              ? "已连接 · 同步完成"
+                              : "已连接 · 等待首次同步"}
                         </div>
                         <div className="ph-set-zot-card-sub">
                           {sync.isPending
                             ? "正在同步…"
-                            : `${zot.item_count} 条文献 · 上次同步 ${fmtTime(zot.last_sync_at)}`}
+                            : zot.last_sync_at
+                              ? `${zot.item_count} 条文献 · 上次同步 ${fmtTime(zot.last_sync_at)}`
+                              : `Zotero 用户 ${zot.zotero_user_id ?? "已验证"} · 尚未同步`}
                         </div>
                       </div>
                       <button

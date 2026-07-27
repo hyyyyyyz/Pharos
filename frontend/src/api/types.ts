@@ -74,6 +74,9 @@ export type ZoteroLinkStatus = "linked" | "syncing" | "error";
 export interface ZoteroStatus {
   /** False = no link row at all; every field below is then null/zero. */
   linked: boolean;
+  /** Whether this deployment has the server-side OAuth application and
+   * credential-encryption secret required for browser authorization. */
+  oauth_available: boolean;
   /**
    * The in-flight or most recent sync run, when the backend process knows of
    * one. Null after a backend restart — which is the truth, not a gap: that
@@ -92,6 +95,12 @@ export interface ZoteroStatus {
   /** The backend's recorded failure from the last sync; null once one succeeds. */
   last_error: string | null;
   item_count: number;
+}
+
+/** A short-lived Zotero consent URL created for the signed-in Pharos user. */
+export interface ZoteroOAuthStart {
+  authorize_url: string;
+  expires_at: string;
 }
 
 export interface ZoteroLinkBody {
