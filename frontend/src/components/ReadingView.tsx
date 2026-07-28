@@ -10,7 +10,7 @@ import {
   isLocalZoteroPaperId,
   localZotero,
 } from "../lib/localZotero";
-import { parseZoteroItemId, zotero } from "../lib/zotero";
+import { isZoteroPdfAttachment, parseZoteroItemId, zotero } from "../lib/zotero";
 import {
   TRANSLATE_STAGES,
   dash,
@@ -132,11 +132,7 @@ export function ReadingView({
     }
     if (!isMirrorLocal) return [];
     return (mirrorDetail?.attachments ?? [])
-      .filter(
-        (attachment) =>
-          attachment.contentType?.toLowerCase() === "application/pdf" ||
-          attachment.filename?.toLowerCase().endsWith(".pdf") === true,
-      )
+      .filter(isZoteroPdfAttachment)
       .map((attachment) => ({
         id: attachment.publicId,
         filename: attachment.filename ?? `Zotero PDF ${attachment.key}`,
@@ -159,6 +155,7 @@ export function ReadingView({
         return initialLocalAttachmentId;
       }
       if (isLegacyLocal && localPaper?.pdfAttachmentId) return localPaper.pdfAttachmentId;
+      if (isMirrorLocal) return null;
       return (
         localAttachments.find((attachment) => attachment.available)?.id ??
         localAttachments[0]?.id ??
@@ -546,7 +543,11 @@ export function ReadingView({
                     ? String(localPdfQuery.error)
                     : localAttachment
                       ? `“${localAttachment.filename}”尚未下载到这台 Mac。请在 Zotero 中下载或打开附件，然后返回文库重新同步。缓存中的书目信息不会被删除。`
-                      : "这个 Zotero 条目没有 PDF 附件。书目信息仍会保留在本地文库中。"}
+                      : isMirrorLocal && initialLocalAttachmentId
+                        ? "所选 PDF 附件已移动或删除。请返回文库重新同步，再从条目下选择具体附件。"
+                        : isMirrorLocal && localAttachments.length > 0
+                          ? "请返回文库，展开 Zotero 条目并双击具体 PDF 附件。"
+                          : "这个 Zotero 条目没有 PDF 附件。书目信息仍会保留在本地文库中。"}
                 </div>
               </div>
             </div>

@@ -28,11 +28,14 @@ import {
   localZoteroAvailable,
 } from "../lib/localZotero";
 import {
+  isZoteroPdfAttachment,
+  isZoteroSnapshotAttachment,
   parseZoteroCollectionNodeId,
   parseZoteroLibraryNodeId,
   parseZoteroSavedSearchNodeId,
   zotero,
   zoteroAvailable,
+  zoteroItemId,
 } from "../lib/zotero";
 import {
   compactAuthors,
@@ -44,6 +47,7 @@ import {
   zoteroToVM,
   type PaperVM,
 } from "../lib/model";
+import type { ZoteroAttachment, ZoteroItemDetail, ZoteroItemSummary } from "../types/zotero";
 import { pdfTranslationEnabled, useSession, useUI, type SortCol } from "../store";
 import { PAPER_DRAG_MIME } from "./CollectionTree";
 import "./ItemList.css";
@@ -198,6 +202,182 @@ interface Row {
   hit: SearchHit | null;
   /** Title to display: the paper's when known, else the one search returned. */
   title: string;
+  /** Kept intact so a Zotero parent can render its real child graph on demand. */
+  zoteroItem?: ZoteroItemSummary;
+}
+
+type ZoteroChildKind = "pdf" | "snapshot" | "note" | "attachment";
+
+interface ZoteroTreeChild {
+  id: string;
+  title: string;
+  kind: ZoteroChildKind;
+  attachment: ZoteroAttachment | null;
+}
+
+const zoteroItemRef = (item: ZoteroItemSummary) => ({
+  sourceId: item.sourceId,
+  libraryId: item.libraryId,
+  itemKey: item.key,
+});
+
+const zoteroChildKind = (
+  child: ZoteroItemSummary | null,
+  attachment: ZoteroAttachment | null,
+): ZoteroChildKind => {
+  if (attachment && isZoteroPdfAttachment(attachment)) return "pdf";
+  if (attachment && isZoteroSnapshotAttachment(attachment)) return "snapshot";
+  if (child?.itemType === "note") return "note";
+  return "attachment";
+};
+
+/** Join Zotero's child summaries to attachment records. The summary owns the
+ * human-facing title (for example “Preprint PDF” or “Snapshot”), while the
+ * attachment record owns the MIME type, local availability and public id used
+ * by the reader. */
+function zoteroTreeChildren(detail: ZoteroItemDetail): ZoteroTreeChild[] {
+  const attachments = new Map(detail.attachments.map((attachment) => [attachment.key, attachment]));
+  const seenAttachments = new Set<string>();
+  const rows = detail.children
+    .filter((child) => child.itemType !== "annotation")
+    .map((child): ZoteroTreeChild => {
+      const attachment = child.itemType === "attachment" ? attachments.get(child.key) ?? null : null;
+      if (attachment) seenAttachments.add(attachment.key);
+      const kind = zoteroChildKind(child, attachment);
+      const title =
+        child.title?.trim() ||
+        attachment?.filename ||
+        (kind === "pdf"
+          ? "PDF 附件"
+          : kind === "snapshot"
+            ? "网页快照"
+            : kind === "note"
+              ? "Zotero 笔记"
+              : "附件");
+      return {
+        id: zoteroItemId(zoteroItemRef(child)),
+        title,
+        kind,
+        attachment,
+      };
+    });
+
+  // A standalone or partially recovered attachment can exist in the attachment
+  // table without a matching child summary. Keep it visible instead of silently
+  // dropping a local file the user can still read.
+  for (const attachment of detail.attachments) {
+    if (seenAttachments.has(attachment.key)) continue;
+    const kind = zoteroChildKind(null, attachment);
+    rows.push({
+      id: zoteroItemId({
+        sourceId: attachment.sourceId,
+        libraryId: attachment.libraryId,
+        itemKey: attachment.key,
+      }),
+      title:
+        attachment.filename ||
+        (kind === "pdf" ? "PDF 附件" : kind === "snapshot" ? "网页快照" : "附件"),
+      kind,
+      attachment,
+    });
+  }
+  return rows;
+}
+
+const childKindLabel: Record<ZoteroChildKind, string> = {
+  pdf: "PDF",
+  snapshot: "网页快照",
+  note: "笔记",
+  attachment: "附件",
+};
+
+function ZoteroChildRows({
+  parentId,
+  item,
+  activeChildId,
+  onSelect,
+  onOpenPdf,
+}: {
+  parentId: string;
+  item: ZoteroItemSummary;
+  activeChildId: string | null;
+  onSelect: (childId: string) => void;
+  onOpenPdf: (attachment: ZoteroAttachment) => void;
+}): JSX.Element {
+  const ref = zoteroItemRef(item);
+  const detailQuery = useQuery({
+    queryKey: ["zotero-mirror", "item", ref.sourceId, ref.libraryId, ref.itemKey],
+    queryFn: () => zotero.item(ref),
+  });
+  const children = useMemo(
+    () => (detailQuery.data ? zoteroTreeChildren(detailQuery.data) : []),
+    [detailQuery.data],
+  );
+
+  if (detailQuery.isPending) {
+    return <div className="ph-il-tree-state">正在读取条目附件…</div>;
+  }
+  if (detailQuery.isError) {
+    return <div className="ph-il-tree-state is-error">无法读取这个 Zotero 条目的子项</div>;
+  }
+  if (children.length === 0) {
+    return <div className="ph-il-tree-state">这个条目没有附件或笔记</div>;
+  }
+
+  return (
+    <div className="ph-il-children" role="group" aria-label={`${item.title ?? "Zotero 条目"}的子项`}>
+      {children.map((child) => {
+        const selected = activeChildId === child.id;
+        const pdfUnavailable = child.kind === "pdf" && child.attachment?.available !== true;
+        const canOpen = child.kind === "pdf" && child.attachment?.available === true;
+        return (
+          <div
+            key={`${parentId}:${child.id}`}
+            className={
+              "ph-il-row ph-il-child" +
+              (selected ? " is-selected is-primary" : "") +
+              (pdfUnavailable ? " is-unavailable" : "")
+            }
+            title={
+              canOpen
+                ? "双击打开这份 PDF"
+                : pdfUnavailable
+                  ? "这份 PDF 尚未下载到本机 Zotero"
+                  : undefined
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(child.id);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              if (canOpen && child.attachment) onOpenPdf(child.attachment);
+            }}
+          >
+            <span className="ph-il-c-title">
+              <span className={`ph-il-child-icon is-${child.kind}`}>
+                {child.kind === "snapshot" ? (
+                  <Icons.link size={13} />
+                ) : child.kind === "note" ? (
+                  <Icons.spark size={13} />
+                ) : (
+                  <Icons.file size={13} />
+                )}
+              </span>
+              <span className="ph-il-title">{child.title}</span>
+              <span className={`ph-il-child-kind is-${child.kind}`}>
+                {childKindLabel[child.kind]}
+              </span>
+              {pdfUnavailable && <span className="ph-il-local-missing">未下载</span>}
+            </span>
+            <span className="ph-il-c-authors" />
+            <span className="ph-il-c-year" />
+            <span className="ph-il-c-pages" />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Every folder id in the tree, flattened. */
@@ -210,6 +390,11 @@ export function ItemList(): JSX.Element {
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [expandedZoteroIds, setExpandedZoteroIds] = useState<Set<string>>(() => new Set());
+  const [activeZoteroChild, setActiveZoteroChild] = useState<{
+    parentId: string;
+    childId: string;
+  } | null>(null);
 
   const query = useUI((s) => s.query);
   const setQuery = useUI((s) => s.setQuery);
@@ -236,6 +421,17 @@ export function ItemList(): JSX.Element {
     selectedZoteroCollection?.library ?? selectedZoteroSearch?.library ?? selectedZoteroLibrary;
   const mirrorSelected = mirrorLibrary !== null;
   const localSelected = legacyLocalSelected || mirrorSelected;
+
+  useEffect(() => {
+    setExpandedZoteroIds(new Set());
+    setActiveZoteroChild(null);
+  }, [selectedCol]);
+
+  useEffect(() => {
+    if (activeZoteroChild && selectedPaperId !== activeZoteroChild.parentId) {
+      setActiveZoteroChild(null);
+    }
+  }, [activeZoteroChild, selectedPaperId]);
 
   const cols = pdfTx && !localSelected ? COLS : COLS_NO_TX;
 
@@ -404,8 +600,12 @@ export function ItemList(): JSX.Element {
     () => (localPapersQuery.data ?? []).map(localToVM),
     [localPapersQuery.data],
   );
-  const mirrorPapers = useMemo(
-    () => (mirrorPapersQuery.data?.items ?? []).map(zoteroToVM),
+  const mirrorRows = useMemo<Row[]>(
+    () =>
+      (mirrorPapersQuery.data?.items ?? []).map((item) => {
+        const vm = zoteroToVM(item);
+        return { id: vm.id, vm, hit: null, title: vm.title, zoteroItem: item };
+      }),
     [mirrorPapersQuery.data],
   );
 
@@ -416,7 +616,7 @@ export function ItemList(): JSX.Element {
     // intersecting it with the selected folder would quietly answer a different
     // question than the one the box asks.
     if (mirrorSelected) {
-      return mirrorPapers.map((vm) => ({ id: vm.id, vm, hit: null, title: vm.title }));
+      return mirrorRows;
     }
 
     if (searching && legacyLocalSelected) {
@@ -455,7 +655,7 @@ export function ItemList(): JSX.Element {
     searchQuery.data,
     byId,
     mirrorSelected,
-    mirrorPapers,
+    mirrorRows,
     legacyLocalSelected,
     localPapers,
     selectedCol,
@@ -503,6 +703,42 @@ export function ItemList(): JSX.Element {
     }
     e.dataTransfer.setData(PAPER_DRAG_MIME, JSON.stringify(ids));
     e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const toggleZoteroRow = (id: string) => {
+    setActiveZoteroChild((current) => (current?.parentId === id ? null : current));
+    setExpandedZoteroIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openStandaloneZoteroAttachment = async (row: Row) => {
+    if (!row.zoteroItem) return;
+    setNote(null);
+    const ref = zoteroItemRef(row.zoteroItem);
+    try {
+      const detail = await qc.fetchQuery({
+        queryKey: ["zotero-mirror", "item", ref.sourceId, ref.libraryId, ref.itemKey],
+        queryFn: () => zotero.item(ref),
+      });
+      const attachment =
+        detail.attachments.find((candidate) => candidate.key === row.zoteroItem?.key) ??
+        detail.attachments[0];
+      if (!attachment || !isZoteroPdfAttachment(attachment)) {
+        setNote("这个独立 Zotero 附件不是 PDF，目前只能查看其元数据。");
+        return;
+      }
+      if (!attachment.available) {
+        setNote("这份 PDF 尚未下载到本机 Zotero，请在 Zotero 中下载后重新同步。");
+        return;
+      }
+      openPaper(row.id, attachment.publicId);
+    } catch (error) {
+      setNote(`无法读取这个 Zotero 附件：${String(error)}`);
+    }
   };
 
   const arrow = sortDir === "asc" ? " ↑" : " ↓";
@@ -731,7 +967,15 @@ export function ItemList(): JSX.Element {
               ))}
             </div>
             {visible.map((r) => {
-              const sel = selectedIds.includes(r.id);
+              const item = r.zoteroItem;
+              const canExpand =
+                item !== undefined &&
+                item.itemType !== "attachment" &&
+                (item.childCount > 0 || item.attachmentCount > 0);
+              const expanded = canExpand && expandedZoteroIds.has(r.id);
+              const activeChildId =
+                activeZoteroChild?.parentId === r.id ? activeZoteroChild.childId : null;
+              const sel = selectedIds.includes(r.id) && activeChildId === null;
               const meta =
                 r.vm === null || !pdfTx || r.vm.isLocalZotero ? null : statusMeta(r.vm.status);
               const row = (
@@ -745,12 +989,42 @@ export function ItemList(): JSX.Element {
                   onDragStart={(e) => {
                     if (r.vm?.isLocalZotero !== true) onRowDragStart(e, r.id);
                   }}
-                  onClick={(e) =>
-                    selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey })
-                  }
-                  onDoubleClick={() => openPaper(r.id)}
+                  onClick={(e) => {
+                    setActiveZoteroChild(null);
+                    selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
+                  }}
+                  onDoubleClick={() => {
+                    if (canExpand) {
+                      toggleZoteroRow(r.id);
+                      return;
+                    }
+                    if (item?.itemType === "attachment") {
+                      void openStandaloneZoteroAttachment(r);
+                      return;
+                    }
+                    if (r.vm?.isLocalZotero !== true) openPaper(r.id);
+                  }}
                 >
                   <span className="ph-il-c-title">
+                    {item !== undefined &&
+                      (canExpand ? (
+                        <button
+                          type="button"
+                          className="ph-il-disclosure"
+                          title={expanded ? "收起 Zotero 子项" : "展开 Zotero 子项"}
+                          aria-label={expanded ? "收起 Zotero 子项" : "展开 Zotero 子项"}
+                          aria-expanded={expanded}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleZoteroRow(r.id);
+                          }}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                        >
+                          {expanded ? <Icons.caretD size={12} /> : <Icons.caretR size={12} />}
+                        </button>
+                      ) : (
+                        <span className="ph-il-disclosure-placeholder" />
+                      ))}
                     {r.vm?.isZotero === true && (
                       <span
                         className="ph-il-zotero"
@@ -760,7 +1034,7 @@ export function ItemList(): JSX.Element {
                       </span>
                     )}
                     <span className="ph-il-title">{r.title}</span>
-                    {r.vm?.isLocalZotero && !r.vm.pdfAvailable && (
+                    {r.vm?.isLocalZotero && item === undefined && !r.vm.pdfAvailable && (
                       <span className="ph-il-local-missing">PDF 未在本机</span>
                     )}
                   </span>
@@ -789,7 +1063,28 @@ export function ItemList(): JSX.Element {
                 </div>
               );
 
-              if (r.hit === null) return <Fragment key={r.id}>{row}</Fragment>;
+              const children =
+                expanded && item !== undefined ? (
+                  <ZoteroChildRows
+                    parentId={r.id}
+                    item={item}
+                    activeChildId={activeChildId}
+                    onSelect={(childId) => {
+                      setActiveZoteroChild({ parentId: r.id, childId });
+                      selectRow(r.id, order, { meta: false, shift: false });
+                    }}
+                    onOpenPdf={(attachment) => openPaper(r.id, attachment.publicId)}
+                  />
+                ) : null;
+
+              if (r.hit === null) {
+                return (
+                  <Fragment key={r.id}>
+                    {row}
+                    {children}
+                  </Fragment>
+                );
+              }
 
               // A hit is the row plus a second line. The wrapper carries the
               // rule between results so the 28px row itself is untouched.

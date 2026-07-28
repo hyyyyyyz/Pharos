@@ -105,6 +105,16 @@ export const parseZoteroSavedSearchNodeId = (
 
 export const zoteroAvailable = (): boolean => isTauri();
 
+export const isZoteroPdfAttachment = (attachment: ZoteroAttachment): boolean =>
+  attachment.contentType?.toLowerCase() === "application/pdf" ||
+  attachment.filename?.toLowerCase().endsWith(".pdf") === true;
+
+export const isZoteroSnapshotAttachment = (attachment: ZoteroAttachment): boolean =>
+  attachment.contentType?.toLowerCase() === "text/html" ||
+  attachment.linkMode?.toLowerCase() === "imported_url" ||
+  attachment.filename?.toLowerCase().endsWith(".html") === true ||
+  attachment.filename?.toLowerCase().endsWith(".htm") === true;
+
 export const zotero = {
   status: async (): Promise<ZoteroConnectionStatus> => {
     desktopOnly();

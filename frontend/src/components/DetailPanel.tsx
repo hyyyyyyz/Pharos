@@ -17,7 +17,12 @@ import {
   type LocalZoteroAttachment,
   type LocalZoteroPaper,
 } from "../lib/localZotero";
-import { parseZoteroItemId, zotero } from "../lib/zotero";
+import {
+  isZoteroPdfAttachment,
+  isZoteroSnapshotAttachment,
+  parseZoteroItemId,
+  zotero,
+} from "../lib/zotero";
 import type { ZoteroAttachment, ZoteroItemDetail } from "../types/zotero";
 import { pdfTranslationEnabled, useSession, useUI } from "../store";
 import "./DetailPanel.css";
@@ -30,10 +35,6 @@ const formatSize = (bytes: number | null): string => {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
 };
-
-const isPdfAttachment = (attachment: ZoteroAttachment): boolean =>
-  attachment.contentType?.toLowerCase() === "application/pdf" ||
-  attachment.filename?.toLowerCase().endsWith(".pdf") === true;
 
 function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element {
   const openPaper = useUI((s) => s.openPaper);
@@ -194,9 +195,12 @@ function MirrorZoteroDetail({ detail }: { detail: ZoteroItemDetail }): JSX.Eleme
       (library) =>
         library.sourceId === detail.item.sourceId && library.libraryId === detail.item.libraryId,
     )?.name ?? "本地文库";
-  const pdfAttachments = detail.attachments.filter(isPdfAttachment);
-  const defaultAttachment =
-    pdfAttachments.find((attachment) => attachment.available) ?? pdfAttachments[0];
+  const pdfAttachments = detail.attachments.filter(isZoteroPdfAttachment);
+  const attachmentTitles = new Map(
+    detail.children
+      .filter((child) => child.itemType === "attachment")
+      .map((child) => [child.key, child.title?.trim() || null]),
+  );
   const notes = detail.children.filter((child) => child.itemType === "note");
 
   const importPaper = useMutation({
@@ -214,20 +218,6 @@ function MirrorZoteroDetail({ detail }: { detail: ZoteroItemDetail }): JSX.Eleme
       <div className="ph-dp-body">
         <div className="ph-dp-title">{vm.title}</div>
         <div className="ph-dp-sub">本机 Zotero · {libraryName}</div>
-
-        <div className="ph-dp-actions">
-          <button
-            type="button"
-            className="ph-dp-primary"
-            disabled={!defaultAttachment?.available}
-            onClick={() => openPaper(vm.id, defaultAttachment?.publicId)}
-          >
-            <span className="ph-dp-ic">
-              <Icons.open />
-            </span>
-            {defaultAttachment?.available ? "打开本地 PDF" : "PDF 未在本机"}
-          </button>
-        </div>
 
         {pdfAttachments.length > 0 && !pdfAttachments.some((attachment) => attachment.available) && (
           <div className="ph-dp-error">
@@ -283,9 +273,14 @@ function MirrorZoteroDetail({ detail }: { detail: ZoteroItemDetail }): JSX.Eleme
           <div className="ph-dp-local-files">
             {detail.attachments.length > 0 ? (
               detail.attachments.map((attachment) => {
-                const pdf = isPdfAttachment(attachment);
+                const pdf = isZoteroPdfAttachment(attachment);
+                const snapshot = isZoteroSnapshotAttachment(attachment);
                 const importing =
                   importPaper.isPending && importPaper.variables?.publicId === attachment.publicId;
+                const displayName =
+                  attachmentTitles.get(attachment.key) ??
+                  attachment.filename ??
+                  (snapshot ? "网页快照" : `Zotero 附件 ${attachment.key}`);
                 return (
                   <div className="ph-dp-local-file" key={attachment.publicId}>
                     <span className="ph-dp-file-ic">
@@ -293,11 +288,14 @@ function MirrorZoteroDetail({ detail }: { detail: ZoteroItemDetail }): JSX.Eleme
                     </span>
                     <span className="ph-dp-local-file-main" title={attachment.filename ?? undefined}>
                       <span className="ph-dp-file-name">
-                        {attachment.filename ?? `Zotero 附件 ${attachment.key}`}
+                        {displayName}
                       </span>
                       <span className="ph-dp-local-file-meta">
                         {attachment.available
-                          ? [pdf ? "PDF" : attachment.contentType ?? "附件", formatSize(attachment.sizeBytes)]
+                          ? [
+                              pdf ? "PDF" : snapshot ? "网页快照" : attachment.contentType ?? "附件",
+                              formatSize(attachment.sizeBytes),
+                            ]
                               .filter(Boolean)
                               .join(" · ")
                           : "尚未下载"}
