@@ -65,6 +65,7 @@ pub fn run() {
             zotero::commands::zotero_list_saved_searches,
             zotero::commands::zotero_get_fulltext,
             zotero::commands::zotero_get_attachment_url,
+            zotero::commands::zotero_attachment_bytes,
             zotero_local::zotero_local_status,
             zotero_local::zotero_local_sync,
             zotero_local::zotero_local_list,

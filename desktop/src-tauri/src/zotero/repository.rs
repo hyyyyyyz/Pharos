@@ -209,10 +209,12 @@ impl ZoteroMirror {
                 .ok_or_else(|| "这个 Zotero 条目已不在本地镜像中，请重新同步。".to_string())?;
             let attachments = read_attachments(connection, reference)?;
             let children = read_children(connection, reference)?;
+            let annotations = read_annotations(connection, reference)?;
             Ok(ZoteroItemDetail {
                 item,
                 attachments,
                 children,
+                annotations,
             })
         })
     }
@@ -417,6 +419,7 @@ fn item_filters(query: &ZoteroItemQuery) -> (String, Vec<SqlValue>) {
 
 fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ZoteroItemSummary> {
     let raw = parse_json(row.get::<_, String>(12)?);
+    let data = raw_data(&raw);
     Ok(ZoteroItemSummary {
         source_id: row.get(0)?,
         library_id: row.get(1)?,
@@ -426,6 +429,20 @@ fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ZoteroItemSumma
         parent_key: row.get(5)?,
         title: row.get(6)?,
         abstract_note: row.get(7)?,
+        year: raw_string(data, "date").as_deref().and_then(parse_year),
+        venue: [
+            "publicationTitle",
+            "proceedingsTitle",
+            "conferenceName",
+            "repository",
+            "university",
+        ]
+        .into_iter()
+        .find_map(|key| raw_string(data, key).filter(|value| !value.trim().is_empty())),
+        doi: raw_string(data, "DOI")
+            .map(|value| normalize_doi(&value))
+            .filter(|value| !value.is_empty()),
+        url: raw_string(data, "url").filter(|value| !value.trim().is_empty()),
         date_added: row.get(8)?,
         date_modified: row.get(9)?,
         creators: parse_json_vec(row.get::<_, String>(10)?),
@@ -557,6 +574,38 @@ fn read_attachments(
     rows.collect::<Result<Vec<_>, _>>().map_err(db_error)
 }
 
+fn read_annotations(
+    connection: &Connection,
+    reference: &ZoteroItemRef,
+) -> Result<Vec<ZoteroItemSummary>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT i.source_id, i.library_id, i.item_key, i.version, i.item_type,\n\
+                    i.parent_key, i.display_title, i.abstract_note, i.date_added,\n\
+                    i.date_modified, i.creators_json, i.relations_json, i.raw_json, i.deleted,\n\
+                    0, 0, 0\n\
+             FROM items i WHERE i.source_id = ?1 AND i.library_id = ?2\n\
+                AND i.item_type = 'annotation' AND i.deleted = 0\n\
+                AND i.parent_key IN (\n\
+                    SELECT a.item_key FROM attachments a WHERE a.source_id = ?1\n\
+                        AND a.library_id = ?2 AND (a.parent_key = ?3 OR a.item_key = ?3)\n\
+                )\n\
+             ORDER BY i.date_added, i.item_key",
+        )
+        .map_err(db_error)?;
+    let rows = statement
+        .query_map(
+            params![
+                reference.source_id,
+                reference.library_id,
+                reference.item_key
+            ],
+            summary_from_row,
+        )
+        .map_err(db_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(db_error)
+}
+
 fn raw_data(raw: &Value) -> &Value {
     raw.get("data").unwrap_or(raw)
 }
@@ -585,6 +634,28 @@ fn raw_collection_keys(raw: &Value) -> Vec<String> {
         .filter_map(Value::as_str)
         .map(ToString::to_string)
         .collect()
+}
+
+fn raw_string(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(ToString::to_string)
+}
+
+fn normalize_doi(raw: &str) -> String {
+    let value = raw.trim();
+    for prefix in ["https://doi.org/", "http://doi.org/", "doi:"] {
+        if value.to_ascii_lowercase().starts_with(prefix) {
+            return value[prefix.len()..].trim().to_string();
+        }
+    }
+    value.to_string()
+}
+
+fn parse_year(raw: &str) -> Option<i32> {
+    raw.as_bytes()
+        .windows(4)
+        .filter_map(|window| std::str::from_utf8(window).ok())
+        .filter_map(|window| window.parse::<i32>().ok())
+        .find(|year| (1000..=2999).contains(year))
 }
 
 fn parse_json(raw: String) -> Value {

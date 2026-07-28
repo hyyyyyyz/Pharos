@@ -1,6 +1,8 @@
 //! Provider-neutral Tauri commands and desktop sync orchestration.
 
 use std::{
+    fs::{self, File},
+    io::Read,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -21,6 +23,8 @@ use super::{
         ZoteroRefreshRequest, ZoteroSavedSearch, ZoteroSyncReport, ZoteroTag, LOCAL_SOURCE_ID,
     },
 };
+
+const MAX_IPC_IMPORT_BYTES: u64 = 256 * 1024 * 1024;
 
 pub struct ZoteroState {
     provider: Option<LocalApiProvider>,
@@ -367,10 +371,40 @@ pub fn zotero_get_attachment_url(
     let path = state
         .attachment_path(&attachment_id)
         .ok_or_else(|| "这份 Zotero 附件尚未下载到本机。".to_string())?;
-    if !path.is_file() {
-        return Err("这份 Zotero 附件已被移动或删除。".to_string());
-    }
+    validate_pdf(&path)?;
     Ok(format!("pharos-local://localhost/zotero/{attachment_id}"))
+}
+
+#[tauri::command]
+pub fn zotero_attachment_bytes(
+    attachment_id: String,
+    state: State<'_, ZoteroState>,
+) -> Result<tauri::ipc::Response, String> {
+    let path = state
+        .attachment_path(&attachment_id)
+        .ok_or_else(|| "这份 Zotero 附件尚未下载到本机。".to_string())?;
+    let size = validate_pdf(&path)?;
+    if size > MAX_IPC_IMPORT_BYTES {
+        return Err("这份 PDF 超过 256 MB，请先压缩文件，或在 Pharos 中直接上传。".to_string());
+    }
+    let bytes = fs::read(path).map_err(|_| "无法读取本地 Zotero PDF。".to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+fn validate_pdf(path: &std::path::Path) -> Result<u64, String> {
+    let metadata =
+        fs::metadata(path).map_err(|_| "本地 Zotero PDF 已被移动或删除。".to_string())?;
+    if !metadata.is_file() {
+        return Err("本地 Zotero PDF 路径不是文件。".to_string());
+    }
+    let mut file = File::open(path).map_err(|_| "无法打开本地 Zotero PDF。".to_string())?;
+    let mut magic = [0_u8; 5];
+    file.read_exact(&mut magic)
+        .map_err(|_| "本地附件不是有效的 PDF。".to_string())?;
+    if &magic != b"%PDF-" {
+        return Err("本地附件不是有效的 PDF。".to_string());
+    }
+    Ok(metadata.len())
 }
 
 fn now_ms() -> u64 {

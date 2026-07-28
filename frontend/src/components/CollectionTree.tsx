@@ -11,16 +11,22 @@
  * a user who has not made a folder yet.
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError } from "../api/client";
 import type { CollectionNode } from "../api/types";
 import { Icons } from "../design/icons";
 import {
-  LOCAL_ZOTERO_COLLECTION_ID,
-  localZotero,
-  localZoteroAvailable,
-} from "../lib/localZotero";
+  zotero,
+  zoteroAvailable,
+  zoteroCollectionNodeId,
+  zoteroLibraryNodeId,
+} from "../lib/zotero";
+import type {
+  ZoteroCollection,
+  ZoteroLibrary,
+  ZoteroSavedSearch,
+} from "../types/zotero";
 import { useUI } from "../store";
 import "./CollectionTree.css";
 
@@ -58,6 +64,7 @@ export function CollectionTree(): JSX.Element {
   const selectedCol = useUI((s) => s.selectedCol);
   const selectCol = useUI((s) => s.selectCol);
   const favOpen = useUI((s) => s.favOpen);
+  const zoteroOpen = useUI((s) => s.zoteroOpen);
   const toggleGroup = useUI((s) => s.toggleGroup);
 
   const [editing, setEditing] = useState<Editing>(null);
@@ -78,10 +85,36 @@ export function CollectionTree(): JSX.Element {
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.tags.list });
   const trash = useQuery({ queryKey: ["papers", "trash"], queryFn: api.listTrash });
   const localStatus = useQuery({
-    queryKey: ["zotero-local", "status"],
-    queryFn: localZotero.status,
-    enabled: localZoteroAvailable(),
+    queryKey: ["zotero-desktop", "status"],
+    queryFn: zotero.status,
+    enabled: zoteroAvailable(),
     staleTime: 5_000,
+  });
+  const zoteroLibraries = useQuery({
+    queryKey: ["zotero-mirror", "libraries"],
+    queryFn: zotero.libraries,
+    enabled: zoteroAvailable(),
+  });
+  const zoteroCollectionQueries = useQueries({
+    queries: (zoteroLibraries.data ?? []).map((library) => ({
+      queryKey: ["zotero-mirror", "collections", library.sourceId, library.libraryId],
+      queryFn: () => zotero.collections(library),
+      enabled: zoteroAvailable(),
+    })),
+  });
+  const zoteroSearchQueries = useQueries({
+    queries: (zoteroLibraries.data ?? []).map((library) => ({
+      queryKey: ["zotero-mirror", "saved-searches", library.sourceId, library.libraryId],
+      queryFn: () => zotero.savedSearches(library),
+      enabled: zoteroAvailable(),
+    })),
+  });
+  const zoteroCountQueries = useQueries({
+    queries: (zoteroLibraries.data ?? []).map((library) => ({
+      queryKey: ["zotero-mirror", "items", library.sourceId, library.libraryId, "count"],
+      queryFn: () => zotero.queryItems({ library, limit: 1 }),
+      enabled: zoteroAvailable(),
+    })),
   });
 
   const tree = useMemo(() => collections.data?.collections ?? [], [collections.data]);
@@ -312,6 +345,123 @@ export function CollectionTree(): JSX.Element {
       return rows;
     });
 
+  const renderZoteroCollections = (
+    library: ZoteroLibrary,
+    all: ZoteroCollection[],
+    parentKey: string | null,
+    depth: number,
+  ): JSX.Element[] => {
+    const knownKeys = new Set(all.map((collection) => collection.key));
+    return all
+      .filter((collection) => {
+        if (parentKey !== null) return collection.parentKey === parentKey;
+        return collection.parentKey === null || !knownKeys.has(collection.parentKey);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+      .flatMap((collection) => {
+        const nodeId = zoteroCollectionNodeId(library, collection.key);
+        const children = all.filter((candidate) => candidate.parentKey === collection.key);
+        const isCollapsed = collapsed.has(nodeId);
+        const row = (
+          <div
+            key={nodeId}
+            className={selectedCol === nodeId ? "ph-tree-row is-active" : "ph-tree-row"}
+            style={{ paddingLeft: 8 + depth * 15 }}
+            onClick={() => selectCol(nodeId)}
+            title={`${library.name} / ${collection.name}`}
+          >
+            <span
+              className="ph-tree-caret"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (children.length === 0) return;
+                setCollapsed((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(nodeId)) next.delete(nodeId);
+                  else next.add(nodeId);
+                  return next;
+                });
+              }}
+            >
+              {children.length > 0 && (isCollapsed ? <Icons.caretR /> : <Icons.caretD />)}
+            </span>
+            <span className="ph-tree-icon">
+              <Icons.folder />
+            </span>
+            <span className="ph-tree-text">{collection.name}</span>
+            <span className="ph-tree-count">{collection.itemCount}</span>
+          </div>
+        );
+        return isCollapsed
+          ? [row]
+          : [row, ...renderZoteroCollections(library, all, collection.key, depth + 1)];
+      });
+  };
+
+  const renderSavedSearches = (
+    library: ZoteroLibrary,
+    searches: ZoteroSavedSearch[],
+    depth: number,
+  ): JSX.Element[] =>
+    searches.map((search) => (
+      <div
+        key={`${library.sourceId}/${library.libraryId}/${search.key}`}
+        className="ph-tree-row"
+        style={{ paddingLeft: 8 + depth * 15, opacity: 0.68, cursor: "default" }}
+        title="已镜像检索定义；复杂条件将在 Connector 模式下执行"
+      >
+        <span className="ph-tree-caret" />
+        <span className="ph-tree-icon">
+          <Icons.search />
+        </span>
+        <span className="ph-tree-text">{search.name}</span>
+      </div>
+    ));
+
+  const renderZoteroLibrary = (library: ZoteroLibrary, index: number): JSX.Element => {
+    const nodeId = zoteroLibraryNodeId(library);
+    const libraryCollections = zoteroCollectionQueries[index]?.data ?? [];
+    const savedSearches = zoteroSearchQueries[index]?.data ?? [];
+    const count = zoteroCountQueries[index]?.data?.total;
+    const hasChildren = libraryCollections.length > 0 || savedSearches.length > 0;
+    const isCollapsed = collapsed.has(nodeId);
+    return (
+      <Fragment key={nodeId}>
+        <div
+          className={selectedCol === nodeId ? "ph-tree-row is-active" : "ph-tree-row"}
+          style={{ paddingLeft: 8 + 15 }}
+          onClick={() => selectCol(nodeId)}
+          title={library.kind === "group" ? `Zotero 群组文库 · ${library.name}` : "Zotero 个人文库"}
+        >
+          <span
+            className="ph-tree-caret"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!hasChildren) return;
+              setCollapsed((previous) => {
+                const next = new Set(previous);
+                if (next.has(nodeId)) next.delete(nodeId);
+                else next.add(nodeId);
+                return next;
+              });
+            }}
+          >
+            {hasChildren && (isCollapsed ? <Icons.caretR /> : <Icons.caretD />)}
+          </span>
+          <span className="ph-tree-icon">
+            {library.kind === "group" ? <Icons.cloud /> : <Icons.library />}
+          </span>
+          <span className="ph-tree-text" title={library.name}>
+            {library.name}
+          </span>
+          {count !== undefined && <span className="ph-tree-count">{count}</span>}
+        </div>
+        {!isCollapsed && renderZoteroCollections(library, libraryCollections, null, 2)}
+        {!isCollapsed && renderSavedSearches(library, savedSearches, 2)}
+      </Fragment>
+    );
+  };
+
   const builtins = [
     {
       id: "lib",
@@ -327,15 +477,6 @@ export function CollectionTree(): JSX.Element {
     },
     { id: "trash", label: "回收站", icon: <Icons.trash />, count: trash.data?.length },
   ];
-
-  const localBuiltin = localZoteroAvailable()
-    ? {
-        id: LOCAL_ZOTERO_COLLECTION_ID,
-        label: "本地 Zotero",
-        icon: <Icons.library />,
-        count: localStatus.data?.cachedPaperCount,
-      }
-    : null;
 
   const renderBuiltin = (b: (typeof builtins)[number]) => (
     <div
@@ -372,7 +513,47 @@ export function CollectionTree(): JSX.Element {
 
       {renderBuiltin(builtins[0])}
 
-      {localBuiltin !== null && renderBuiltin(localBuiltin)}
+      {zoteroAvailable() && (
+        <>
+          <div
+            className="ph-tree-row"
+            style={{ paddingLeft: 8 }}
+            onClick={() => toggleGroup("zoteroOpen")}
+            title={
+              localStatus.data?.available
+                ? "本机 Zotero 在线，条目与 PDF 保留在本地"
+                : localStatus.data?.itemCount
+                  ? "Zotero 未运行，正在使用上次同步的离线镜像"
+                  : "启动 Zotero 后即可同步完整文库"
+            }
+          >
+            <span className="ph-tree-caret">
+              {zoteroOpen ? <Icons.caretD /> : <Icons.caretR />}
+            </span>
+            <span className="ph-tree-icon">
+              <Icons.library />
+            </span>
+            <span className="ph-tree-text">
+              {localStatus.data?.available ? "本机 Zotero" : "Zotero 离线镜像"}
+            </span>
+            {localStatus.data && <span className="ph-tree-count">{localStatus.data.itemCount}</span>}
+          </div>
+          {zoteroOpen &&
+            (zoteroLibraries.data ?? []).map((library, index) =>
+              renderZoteroLibrary(library, index),
+            )}
+          {zoteroOpen && zoteroLibraries.isPending && (
+            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+              正在读取 Zotero…
+            </div>
+          )}
+          {zoteroOpen && zoteroLibraries.isError && (
+            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+              无法读取 Zotero 镜像
+            </div>
+          )}
+        </>
+      )}
 
       <div className="ph-tree-row" style={{ paddingLeft: 8 }} onClick={() => toggleGroup("favOpen")}>
         <span className="ph-tree-caret">{favOpen ? <Icons.caretD /> : <Icons.caretR />}</span>

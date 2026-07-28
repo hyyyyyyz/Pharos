@@ -5,11 +5,8 @@ import { ACCENTS, accentSwatch } from "../design/tokens";
 import type { ThemeMode } from "../design/tokens";
 import { api } from "../api/client";
 import type { AuthUser, ZoteroStatus } from "../api/types";
-import {
-  localZotero,
-  localZoteroAvailable,
-  type LocalZoteroStatus,
-} from "../lib/localZotero";
+import { zotero, zoteroAvailable } from "../lib/zotero";
+import type { ZoteroConnectionStatus, ZoteroSyncReport } from "../types/zotero";
 import {
   desktopZoteroOAuth,
   type ZoteroOAuthResult,
@@ -133,9 +130,9 @@ export function SettingsModal(): JSX.Element | null {
   });
 
   const localZoteroQuery = useQuery({
-    queryKey: ["zotero-local", "status"],
-    queryFn: (): Promise<LocalZoteroStatus> => localZotero.status(),
-    enabled: onAccount && localZoteroAvailable(),
+    queryKey: ["zotero-desktop", "status"],
+    queryFn: (): Promise<ZoteroConnectionStatus> => zotero.status(),
+    enabled: onAccount && zoteroAvailable(),
     staleTime: 2_000,
   });
 
@@ -224,10 +221,10 @@ export function SettingsModal(): JSX.Element | null {
   });
 
   const syncLocal = useMutation({
-    mutationFn: (): Promise<LocalZoteroStatus> => localZotero.sync(),
-    onSuccess: (status) => {
-      qc.setQueryData(["zotero-local", "status"], status);
-      void qc.invalidateQueries({ queryKey: ["zotero-local", "papers"] });
+    mutationFn: (): Promise<ZoteroSyncReport> => zotero.refresh(false),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["zotero-desktop"] });
+      void qc.invalidateQueries({ queryKey: ["zotero-mirror"] });
     },
   });
 
@@ -500,7 +497,7 @@ export function SettingsModal(): JSX.Element | null {
                   <div className="ph-set-zot-title">Zotero</div>
                 </div>
 
-                {localZoteroAvailable() && (
+                {zoteroAvailable() && (
                   <div className="ph-set-zot-channel">
                     <div className="ph-set-zot-channel-head">
                       <span className="ph-set-ic">
@@ -534,10 +531,10 @@ export function SettingsModal(): JSX.Element | null {
                           <span
                             className={cx(
                               "ph-set-zot-check",
-                              !localZot.available && "ph-set-zot-check--err",
+                              localZot.phase === "error" && "ph-set-zot-check--err",
                             )}
                           >
-                            {localZot.available ? <Icons.check /> : <Icons.alert size={16} />}
+                            {localZot.phase === "error" ? <Icons.alert size={16} /> : <Icons.check />}
                           </span>
                           <div className="ph-set-zot-card-text">
                             <div className="ph-set-zot-card-title">
@@ -545,12 +542,12 @@ export function SettingsModal(): JSX.Element | null {
                                 ? "正在同步本机 Zotero"
                                 : localZot.available
                                   ? "本机 Zotero 已连接"
-                                  : localZot.cachedPaperCount > 0
+                                  : localZot.itemCount > 0
                                     ? "Zotero 未运行 · 使用离线缓存"
                                     : "等待本机 Zotero"}
                             </div>
                             <div className="ph-set-zot-card-sub">
-                              {localZot.cachedPaperCount} 条文献 · {localZot.pdfAvailableCount} 份可读 PDF
+                              {localZot.libraryCount} 个文库 · {localZot.itemCount} 个完整条目
                               {localZot.lastSuccessfulSyncMs
                                 ? ` · ${fmtEpoch(localZot.lastSuccessfulSyncMs)}`
                                 : ""}
@@ -560,9 +557,9 @@ export function SettingsModal(): JSX.Element | null {
                             type="button"
                             className="ph-set-btn"
                             onClick={() => syncLocal.mutate()}
-                            disabled={!localZot.available || syncLocal.isPending}
+                            disabled={!localZot.available || localZot.syncing || syncLocal.isPending}
                           >
-                            {syncLocal.isPending ? "同步中…" : "同步"}
+                            {syncLocal.isPending || localZot.syncing ? "同步中…" : "同步"}
                           </button>
                         </div>
                         {!localZot.available && (
@@ -584,7 +581,7 @@ export function SettingsModal(): JSX.Element | null {
                 <div
                   className={cx(
                     "ph-set-zot-channel",
-                    localZoteroAvailable() && "ph-set-zot-channel--cloud",
+                    zoteroAvailable() && "ph-set-zot-channel--cloud",
                   )}
                 >
                   <div className="ph-set-zot-channel-head">
@@ -592,7 +589,7 @@ export function SettingsModal(): JSX.Element | null {
                       <Icons.cloud />
                     </span>
                     <span>Zotero 云端</span>
-                    {localZoteroAvailable() && <span className="ph-set-zot-badge is-muted">可选</span>}
+                    {zoteroAvailable() && <span className="ph-set-zot-badge is-muted">可选</span>}
                   </div>
                   <div className="ph-set-zot-desc">
                     用于网页端和跨设备同步书目元数据；只有已经上传到 Zotero 云端的附件才可能跨设备获得。

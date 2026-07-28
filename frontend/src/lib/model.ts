@@ -10,6 +10,8 @@
  */
 import type { Job, Paper } from "../api/types";
 import type { LocalZoteroPaper } from "./localZotero";
+import type { ZoteroItemDetail, ZoteroItemSummary } from "../types/zotero";
+import { zoteroItemId } from "./zotero";
 
 export type PaperStatus = "untranslated" | "translating" | "translated" | "failed";
 
@@ -90,6 +92,98 @@ export function localToVM(p: LocalZoteroPaper): PaperVM {
     doi: p.doi,
     abstract: p.abstractText,
     tags: [],
+    job: null,
+  };
+}
+
+const zoteroCreatorName = (creator: ZoteroItemSummary["creators"][number]): string | null => {
+  const direct = creator.name?.trim();
+  if (direct) return direct;
+  const joined = `${creator.firstName ?? ""} ${creator.lastName ?? ""}`.trim();
+  return joined || null;
+};
+
+export function zoteroToVM(item: ZoteroItemSummary): PaperVM {
+  return {
+    id: zoteroItemId({
+      sourceId: item.sourceId,
+      libraryId: item.libraryId,
+      itemKey: item.key,
+    }),
+    title: item.title?.trim() || "未命名 Zotero 条目",
+    file:
+      item.attachmentCount > 0
+        ? `${item.availableAttachmentCount}/${item.attachmentCount} 份本地附件`
+        : "没有 PDF 附件",
+    pages: null,
+    status: "untranslated",
+    progress: 0,
+    addedAt: item.dateAdded ?? item.dateModified ?? "",
+    isZotero: true,
+    isLocalZotero: true,
+    pdfAvailable: item.availableAttachmentCount > 0,
+    authors: item.creators.map(zoteroCreatorName).filter((value): value is string => value !== null),
+    year: item.year,
+    venue: item.venue,
+    doi: item.doi,
+    abstract: item.abstractNote,
+    tags: item.tags.map((tag) => tag.tag),
+    job: null,
+  };
+}
+
+const rawData = (raw: unknown): Record<string, unknown> => {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  const data = record.data;
+  return data !== null && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : record;
+};
+
+const rawString = (record: Record<string, unknown>, key: string): string | null =>
+  typeof record[key] === "string" ? (record[key] as string) : null;
+
+export function zoteroDetailToVM(detail: ZoteroItemDetail): PaperVM {
+  const data = rawData(detail.item.raw);
+  const date = rawString(data, "date") ?? "";
+  const yearMatch = date.match(/(?:^|\D)(\d{4})(?:\D|$)/);
+  const venue = [
+    "publicationTitle",
+    "proceedingsTitle",
+    "conferenceName",
+    "repository",
+    "university",
+  ]
+    .map((key) => rawString(data, key)?.trim() ?? "")
+    .find(Boolean);
+  const doi = rawString(data, "DOI")
+    ?.trim()
+    .replace(/^https?:\/\/doi\.org\//i, "")
+    .replace(/^doi:/i, "");
+  return {
+    id: zoteroItemId({
+      sourceId: detail.item.sourceId,
+      libraryId: detail.item.libraryId,
+      itemKey: detail.item.key,
+    }),
+    title: detail.item.title?.trim() || "未命名 Zotero 条目",
+    file: detail.attachments[0]?.filename ?? "没有 PDF 附件",
+    pages: null,
+    status: "untranslated",
+    progress: 0,
+    addedAt: detail.item.dateAdded ?? detail.item.dateModified ?? "",
+    isZotero: true,
+    isLocalZotero: true,
+    pdfAvailable: detail.attachments.some((attachment) => attachment.available),
+    authors: detail.item.creators
+      .map(zoteroCreatorName)
+      .filter((value): value is string => value !== null),
+    year: yearMatch ? Number(yearMatch[1]) : null,
+    venue: venue || null,
+    doi: doi || null,
+    abstract: detail.item.abstractNote,
+    tags: detail.item.tags.map((tag) => tag.tag),
     job: null,
   };
 }

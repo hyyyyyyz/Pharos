@@ -261,6 +261,10 @@ pub struct ZoteroItemSummary {
     pub parent_key: Option<String>,
     pub title: Option<String>,
     pub abstract_note: Option<String>,
+    pub year: Option<i32>,
+    pub venue: Option<String>,
+    pub doi: Option<String>,
+    pub url: Option<String>,
     pub date_added: Option<String>,
     pub date_modified: Option<String>,
     pub creators: Vec<ZoteroCreator>,
@@ -278,6 +282,7 @@ pub struct ZoteroItemDetail {
     pub item: ZoteroItem,
     pub attachments: Vec<ZoteroAttachment>,
     pub children: Vec<ZoteroItemSummary>,
+    pub annotations: Vec<ZoteroItemSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

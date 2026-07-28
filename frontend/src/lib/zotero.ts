@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   ZoteroCollection,
   ZoteroConnectionStatus,
+  ZoteroAttachment,
   ZoteroFulltext,
   ZoteroItemDetail,
   ZoteroItemQuery,
@@ -137,5 +138,31 @@ export const zotero = {
   attachmentUrl: async (attachmentId: string): Promise<string> => {
     desktopOnly();
     return invoke<string>("zotero_get_attachment_url", { attachmentId });
+  },
+
+  attachmentSource: async (
+    attachmentId: string,
+  ): Promise<{ url: string; httpHeaders: Record<string, string> }> => ({
+    url: await zotero.attachmentUrl(attachmentId),
+    httpHeaders: {},
+  }),
+
+  attachmentFile: async (attachment: ZoteroAttachment, fallbackTitle: string): Promise<File> => {
+    desktopOnly();
+    if (!attachment.available) throw new Error("这份 PDF 尚未下载到本机 Zotero。");
+    const raw = await invoke<ArrayBuffer | Uint8Array | number[]>("zotero_attachment_bytes", {
+      attachmentId: attachment.publicId,
+    });
+    const bytes =
+      raw instanceof ArrayBuffer
+        ? new Uint8Array(raw)
+        : raw instanceof Uint8Array
+          ? raw
+          : new Uint8Array(raw);
+    const owned = new Uint8Array(bytes.byteLength);
+    owned.set(bytes);
+    const fallback = `${fallbackTitle || "paper"}.pdf`;
+    const filename = (attachment.filename || fallback).replace(/[\\/:*?"<>|]/g, "_");
+    return new File([owned.buffer], filename, { type: "application/pdf" });
   },
 };

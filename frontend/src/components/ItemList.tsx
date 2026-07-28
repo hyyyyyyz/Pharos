@@ -28,12 +28,19 @@ import {
   localZoteroAvailable,
 } from "../lib/localZotero";
 import {
+  parseZoteroCollectionNodeId,
+  parseZoteroLibraryNodeId,
+  zotero,
+  zoteroAvailable,
+} from "../lib/zotero";
+import {
   compactAuthors,
   dash,
   isJobActive,
   localToVM,
   statusMeta,
   toVM,
+  zoteroToVM,
   type PaperVM,
 } from "../lib/model";
 import { pdfTranslationEnabled, useSession, useUI, type SortCol } from "../store";
@@ -218,7 +225,14 @@ export function ItemList(): JSX.Element {
   const openSettings = useUI((s) => s.openSettings);
   const pdfTx = useSession(pdfTranslationEnabled);
 
-  const localSelected = selectedCol === LOCAL_ZOTERO_COLLECTION_ID;
+  const legacyLocalSelected = selectedCol === LOCAL_ZOTERO_COLLECTION_ID;
+  const selectedZoteroCollection = parseZoteroCollectionNodeId(selectedCol);
+  const selectedZoteroLibrary = selectedZoteroCollection
+    ? null
+    : parseZoteroLibraryNodeId(selectedCol);
+  const mirrorLibrary = selectedZoteroCollection?.library ?? selectedZoteroLibrary;
+  const mirrorSelected = mirrorLibrary !== null;
+  const localSelected = legacyLocalSelected || mirrorSelected;
 
   const cols = pdfTx && !localSelected ? COLS : COLS_NO_TX;
 
@@ -281,13 +295,34 @@ export function ItemList(): JSX.Element {
   const localPapersQuery = useQuery({
     queryKey: ["zotero-local", "papers"],
     queryFn: localZotero.list,
-    enabled: localZoteroAvailable() && localSelected,
+    enabled: localZoteroAvailable() && legacyLocalSelected,
+  });
+
+  const mirrorPapersQuery = useQuery({
+    queryKey: [
+      "zotero-mirror",
+      "items",
+      mirrorLibrary?.sourceId,
+      mirrorLibrary?.libraryId,
+      selectedZoteroCollection?.collectionKey ?? null,
+      debounced,
+    ],
+    queryFn: () =>
+      zotero.queryItems({
+        library: mirrorLibrary,
+        collectionKey: selectedZoteroCollection?.collectionKey ?? null,
+        search: debounced || null,
+        limit: 500,
+      }),
+    enabled: zoteroAvailable() && mirrorSelected,
   });
 
   const syncLocal = useMutation({
-    mutationFn: localZotero.sync,
+    mutationFn: () => zotero.refresh(false),
     onSuccess: () => {
       setNote("本地 Zotero 同步完成");
+      void qc.invalidateQueries({ queryKey: ["zotero-desktop"] });
+      void qc.invalidateQueries({ queryKey: ["zotero-mirror"] });
       void qc.invalidateQueries({ queryKey: ["zotero-local", "status"] });
       void qc.invalidateQueries({ queryKey: ["zotero-local", "papers"] });
     },
@@ -301,7 +336,7 @@ export function ItemList(): JSX.Element {
 
   const collectionsQuery = useQuery({ queryKey: ["collections"], queryFn: api.collections.list });
 
-  const inFolder = selectedCol !== "" && !BUILTIN_COLS.has(selectedCol);
+  const inFolder = selectedCol !== "" && !BUILTIN_COLS.has(selectedCol) && !mirrorSelected;
 
   const folderQuery = useQuery({
     queryKey: ["collection", selectedCol, "papers"],
@@ -364,6 +399,10 @@ export function ItemList(): JSX.Element {
     () => (localPapersQuery.data ?? []).map(localToVM),
     [localPapersQuery.data],
   );
+  const mirrorPapers = useMemo(
+    () => (mirrorPapersQuery.data?.items ?? []).map(zoteroToVM),
+    [mirrorPapersQuery.data],
+  );
 
   const byId = useMemo(() => new Map(papers.map((p) => [p.id, p])), [papers]);
 
@@ -371,7 +410,11 @@ export function ItemList(): JSX.Element {
     // Search replaces the browse view entirely: it spans the whole library, so
     // intersecting it with the selected folder would quietly answer a different
     // question than the one the box asks.
-    if (searching && localSelected) {
+    if (mirrorSelected) {
+      return mirrorPapers.map((vm) => ({ id: vm.id, vm, hit: null, title: vm.title }));
+    }
+
+    if (searching && legacyLocalSelected) {
       const needle = debounced.toLocaleLowerCase();
       return localPapers
         .filter((paper) =>
@@ -392,7 +435,7 @@ export function ItemList(): JSX.Element {
     }
 
     let list: PaperVM[];
-    if (localSelected) list = localPapers;
+    if (legacyLocalSelected) list = localPapers;
     else if (selectedCol === "trash") list = trashPapers;
     else if (selectedCol === "uncat") list = papers.filter((p) => !categorised.has(p.id));
     else if (inFolder) {
@@ -406,7 +449,9 @@ export function ItemList(): JSX.Element {
     debounced,
     searchQuery.data,
     byId,
-    localSelected,
+    mirrorSelected,
+    mirrorPapers,
+    legacyLocalSelected,
     localPapers,
     selectedCol,
     inFolder,
@@ -461,7 +506,8 @@ export function ItemList(): JSX.Element {
 
   const listPending =
     (searching && !localSelected && searchQuery.isPending) ||
-    (localSelected && localPapersQuery.isPending) ||
+    (legacyLocalSelected && localPapersQuery.isPending) ||
+    (mirrorSelected && mirrorPapersQuery.isPending) ||
     (!localSelected && !searching && papersQuery.isPending) ||
     (selectedCol === "trash" && trashQuery.isPending) ||
     (inFolder && folderQuery.isPending) ||
@@ -475,7 +521,11 @@ export function ItemList(): JSX.Element {
     !papersQuery.isError &&
     papers.length === 0;
 
-  const activeListError = localSelected ? localPapersQuery.isError : papersQuery.isError;
+  const activeListError = mirrorSelected
+    ? mirrorPapersQuery.isError
+    : legacyLocalSelected
+      ? localPapersQuery.isError
+      : papersQuery.isError;
   const showEmptyList = !listPending && !activeListError && !showFirstUse && visible.length === 0;
 
   const emptyText = searching
@@ -483,15 +533,18 @@ export function ItemList(): JSX.Element {
       ? "搜索失败，请重试"
       : `没有找到与“${debounced}”匹配的内容`
     : localSelected
-      ? "还没有本地 Zotero 缓存，请点击右上角同步"
+      ? "这个 Zotero 文库中暂无可显示的顶层条目，请同步后重试"
       : selectedCol === "trash"
       ? "回收站是空的"
       : "该分类下暂无条目";
 
   const hasRows = visible.length > 0;
 
-  const total = searchQuery.data?.total ?? 0;
-  const truncated = searching && !localSelected && total > visible.length;
+  const total = mirrorSelected
+    ? (mirrorPapersQuery.data?.total ?? 0)
+    : (searchQuery.data?.total ?? 0);
+  const truncated =
+    (mirrorSelected || (searching && !localSelected)) && total > visible.length;
 
   return (
     <section className="ph-il">
@@ -576,7 +629,7 @@ export function ItemList(): JSX.Element {
       {/* The backend reports which engine answered. "like" means FTS5 is not
           available on this deployment and ranking is crude — worth saying once,
           quietly, rather than leaving the user to wonder why. */}
-      {searching && searchQuery.data?.engine === "like" && (
+      {searching && !localSelected && searchQuery.data?.engine === "like" && (
         <div className="ph-il-note">当前部署未启用全文索引，搜索结果按简单匹配排序</div>
       )}
 

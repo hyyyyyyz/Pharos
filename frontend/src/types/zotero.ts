@@ -99,6 +99,10 @@ export interface ZoteroItemSummary extends ZoteroLibraryRef {
   parentKey: string | null;
   title: string | null;
   abstractNote: string | null;
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  url: string | null;
   dateAdded: string | null;
   dateModified: string | null;
   creators: ZoteroCreator[];
@@ -127,6 +131,7 @@ export interface ZoteroItemDetail {
   item: ZoteroItem;
   attachments: ZoteroAttachment[];
   children: ZoteroItemSummary[];
+  annotations: ZoteroItemSummary[];
 }
 
 export interface ZoteroTag extends ZoteroLibraryRef {
