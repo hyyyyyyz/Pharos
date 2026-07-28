@@ -20,7 +20,7 @@ use super::{
     model::{
         LibraryKind, LibrarySnapshot, ProviderCapabilities, ZoteroAttachment, ZoteroCollection,
         ZoteroCreator, ZoteroFulltext, ZoteroFulltextIndex, ZoteroItem, ZoteroLibrary, ZoteroProbe,
-        ZoteroSavedSearch, ZoteroTag, ZoteroTagRef, LOCAL_SOURCE_ID,
+        ZoteroSavedSearch, ZoteroSavedSearchMembership, ZoteroTag, ZoteroTagRef, LOCAL_SOURCE_ID,
     },
     provider::{ProviderFuture, ZoteroProvider},
 };
@@ -42,6 +42,7 @@ pub struct LibraryDelta {
     pub items: Vec<ZoteroItem>,
     pub attachments: Vec<ZoteroAttachment>,
     pub searches: Vec<ZoteroSavedSearch>,
+    pub search_memberships: Vec<ZoteroSavedSearchMembership>,
     pub tags: Vec<ZoteroTag>,
     pub fulltext: Vec<ZoteroFulltextIndex>,
     pub current_collection_keys: HashSet<String>,
@@ -198,6 +199,16 @@ impl LocalApiProvider {
             .into_iter()
             .filter_map(|value| search_from_value(library, value))
             .collect::<Vec<_>>();
+        let search_memberships = self
+            .fetch_saved_search_memberships(
+                library,
+                searches
+                    .iter()
+                    .filter(|search| !search.deleted)
+                    .map(|search| search.key.clone())
+                    .collect(),
+            )
+            .await?;
         let tags = tag_values
             .into_iter()
             .filter_map(|value| tag_from_value(library, value))
@@ -251,6 +262,7 @@ impl LocalApiProvider {
             items,
             attachments,
             searches,
+            search_memberships,
             tags,
             fulltext,
         })
@@ -289,6 +301,12 @@ impl LocalApiProvider {
             .await?;
         let (current_search_versions, current_search_meta) = self
             .fetch_paged_versions(&format!("{route}/searches?includeTrashed=1"))
+            .await?;
+        let search_memberships = self
+            .fetch_saved_search_memberships(
+                library,
+                current_search_versions.keys().cloned().collect(),
+            )
             .await?;
 
         let trash_keys = trash_values
@@ -354,6 +372,7 @@ impl LocalApiProvider {
             items,
             attachments,
             searches,
+            search_memberships,
             tags,
             fulltext,
             current_collection_keys: current_collection_versions.into_keys().collect(),
@@ -391,6 +410,30 @@ impl LocalApiProvider {
             indexed_pages: value_u64(&value, "indexedPages"),
             total_pages: value_u64(&value, "totalPages"),
         }))
+    }
+
+    async fn fetch_saved_search_memberships(
+        &self,
+        library: &ZoteroLibrary,
+        search_keys: Vec<String>,
+    ) -> Result<Vec<ZoteroSavedSearchMembership>, String> {
+        let route = library_route(library);
+        let mut memberships = Vec::new();
+        for search_key in search_keys {
+            validate_key(&search_key)?;
+            let (versions, _meta) = self
+                .fetch_paged_versions(&format!(
+                    "{route}/searches/{search_key}/items?includeTrashed=1"
+                ))
+                .await?;
+            memberships.push(ZoteroSavedSearchMembership {
+                source_id: library.source_id.clone(),
+                library_id: library.library_id.clone(),
+                search_key,
+                item_keys: versions.into_keys().collect(),
+            });
+        }
+        Ok(memberships)
     }
 
     async fn resolve_attachment(&self, candidate: AttachmentCandidate) -> ZoteroAttachment {
@@ -525,10 +568,6 @@ impl ZoteroProvider for LocalApiProvider {
 
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::local_api()
-    }
-
-    fn probe(&self) -> ProviderFuture<'_, bool> {
-        Box::pin(async move { Ok(self.probe_info().await.available) })
     }
 
     fn libraries(&self) -> ProviderFuture<'_, Vec<ZoteroLibrary>> {
@@ -936,6 +975,28 @@ mod tests {
                 })
                 .expect("query mirror");
             assert!(!page.items.is_empty());
+            if let Some(summary) = page.items.iter().find(|item| item.attachment_count > 0) {
+                let detail = mirror
+                    .item_detail(&crate::zotero::model::ZoteroItemRef {
+                        source_id: summary.source_id.clone(),
+                        library_id: summary.library_id.clone(),
+                        item_key: summary.key.clone(),
+                    })
+                    .expect("item detail");
+                assert!(!detail.attachments.is_empty());
+                if let Some(attachment) = detail
+                    .attachments
+                    .iter()
+                    .find(|attachment| attachment.available && is_pdf_attachment(attachment))
+                {
+                    let path = mirror
+                        .attachment_path(&attachment.public_id)
+                        .expect("attachment lookup")
+                        .expect("available attachment path");
+                    let prefix = std::fs::read(path).expect("read attachment");
+                    assert!(prefix.starts_with(b"%PDF-"));
+                }
+            }
             let delta = provider
                 .fetch_delta(library, library.version)
                 .await

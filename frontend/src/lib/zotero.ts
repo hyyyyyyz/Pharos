@@ -20,6 +20,7 @@ import type {
 export const ZOTERO_ITEM_ID_PREFIX = "zotero-item:";
 export const ZOTERO_LIBRARY_NODE_PREFIX = "zotero-library:";
 export const ZOTERO_COLLECTION_NODE_PREFIX = "zotero-collection:";
+export const ZOTERO_SAVED_SEARCH_NODE_PREFIX = "zotero-search:";
 
 const desktopOnly = (): void => {
   if (!isTauri()) throw new Error("本机 Zotero 仅在 Pharos 桌面客户端中可用。");
@@ -77,6 +78,28 @@ export const parseZoteroCollectionNodeId = (
   return {
     library: { sourceId: parts[0], libraryId: parts[1] },
     collectionKey: parts[2],
+  };
+};
+
+export const zoteroSavedSearchNodeId = (
+  library: ZoteroLibraryRef,
+  searchKey: string,
+): string =>
+  `${ZOTERO_SAVED_SEARCH_NODE_PREFIX}${encodeParts(
+    library.sourceId,
+    library.libraryId,
+    searchKey,
+  )}`;
+
+export const parseZoteroSavedSearchNodeId = (
+  id: string | null | undefined,
+): { library: ZoteroLibraryRef; searchKey: string } | null => {
+  if (!id?.startsWith(ZOTERO_SAVED_SEARCH_NODE_PREFIX)) return null;
+  const parts = decodeParts(id.slice(ZOTERO_SAVED_SEARCH_NODE_PREFIX.length));
+  if (parts?.length !== 3 || parts.some((part) => part === "")) return null;
+  return {
+    library: { sourceId: parts[0], libraryId: parts[1] },
+    searchKey: parts[2],
   };
 };
 

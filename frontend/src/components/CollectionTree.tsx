@@ -21,6 +21,7 @@ import {
   zoteroAvailable,
   zoteroCollectionNodeId,
   zoteroLibraryNodeId,
+  zoteroSavedSearchNodeId,
 } from "../lib/zotero";
 import type {
   ZoteroCollection,
@@ -403,20 +404,24 @@ export function CollectionTree(): JSX.Element {
     searches: ZoteroSavedSearch[],
     depth: number,
   ): JSX.Element[] =>
-    searches.map((search) => (
-      <div
-        key={`${library.sourceId}/${library.libraryId}/${search.key}`}
-        className="ph-tree-row"
-        style={{ paddingLeft: 8 + depth * 15, opacity: 0.68, cursor: "default" }}
-        title="已镜像检索定义；复杂条件将在 Connector 模式下执行"
-      >
-        <span className="ph-tree-caret" />
-        <span className="ph-tree-icon">
-          <Icons.search />
-        </span>
-        <span className="ph-tree-text">{search.name}</span>
-      </div>
-    ));
+    searches.map((search) => {
+      const nodeId = zoteroSavedSearchNodeId(library, search.key);
+      return (
+        <div
+          key={nodeId}
+          className={selectedCol === nodeId ? "ph-tree-row is-active" : "ph-tree-row"}
+          style={{ paddingLeft: 8 + depth * 15 }}
+          title={`Zotero 保存的搜索 · ${search.name}`}
+          onClick={() => selectCol(nodeId)}
+        >
+          <span className="ph-tree-caret" />
+          <span className="ph-tree-icon">
+            <Icons.search />
+          </span>
+          <span className="ph-tree-text">{search.name}</span>
+        </div>
+      );
+    });
 
   const renderZoteroLibrary = (library: ZoteroLibrary, index: number): JSX.Element => {
     const nodeId = zoteroLibraryNodeId(library);

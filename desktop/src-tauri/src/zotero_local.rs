@@ -20,11 +20,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
         RwLock,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use futures_util::{stream, StreamExt};
-use reqwest::{header, Client, StatusCode, Url};
+use reqwest::{header, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -36,12 +35,7 @@ use crate::zotero::{
     model::{LibrarySnapshot, ZoteroRefreshRequest},
 };
 
-const LOCAL_API: &str = "http://127.0.0.1:23119/api";
 const CACHE_SCHEMA: u32 = 2;
-const PAGE_SIZE: usize = 100;
-const MAX_ITEMS: usize = 100_000;
-const ATTACHMENT_PROBES: usize = 12;
-const USER_LIBRARY_ID: &str = "0";
 const MAX_IPC_IMPORT_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,13 +65,6 @@ enum LibraryKind {
 }
 
 impl LibraryKind {
-    fn route(self, id: &str) -> String {
-        match self {
-            Self::User => format!("users/{id}"),
-            Self::Group => format!("groups/{id}"),
-        }
-    }
-
     fn public_label(self) -> &'static str {
         match self {
             Self::User => "personal",
@@ -368,254 +355,10 @@ impl Drop for SyncFlag<'_> {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct ApiItem {
-    key: String,
-    #[serde(default)]
-    version: u64,
-    #[serde(default)]
-    data: Value,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiGroup {
-    id: u64,
-    #[serde(default)]
-    version: u64,
-    #[serde(default)]
-    data: Value,
-}
-
 #[derive(Debug, Clone)]
 struct LibrarySpec {
     id: String,
     kind: LibraryKind,
-    name: String,
-    item_version: Option<u64>,
-}
-
-#[derive(Debug, Clone)]
-struct AttachmentProbe {
-    library: LibrarySpec,
-    parent_item: String,
-    item_key: String,
-    item_version: u64,
-    title: String,
-    filename: String,
-    content_type: String,
-    link_mode: Option<String>,
-    order: usize,
-}
-
-fn client() -> Result<Client, String> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(2))
-        .timeout(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "无法初始化本地 Zotero 连接。".to_string())
-}
-
-async fn request(client: &Client, path: &str) -> Result<reqwest::Response, String> {
-    // `path` is always assembled internally from validated numeric group IDs
-    // and Zotero item keys. The WebView never controls the host or scheme.
-    let url = format!("{LOCAL_API}/{path}");
-    client
-        .get(url)
-        .header("Zotero-API-Version", "3")
-        .header(header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|_| {
-            "无法连接本机 Zotero。请确认 Zotero 正在运行，并已开启“允许其他应用与 Zotero 通信”。"
-                .to_string()
-        })
-}
-
-async fn probe(client: &Client) -> bool {
-    match request(client, "").await {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
-    }
-}
-
-async fn json_get<T: for<'de> Deserialize<'de>>(
-    client: &Client,
-    path: &str,
-) -> Result<(T, Option<u64>), String> {
-    let response = request(client, path).await?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Zotero 本地接口返回 HTTP {}。",
-            response.status().as_u16()
-        ));
-    }
-    let version = response
-        .headers()
-        .get("Last-Modified-Version")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok());
-    let value = response
-        .json::<T>()
-        .await
-        .map_err(|_| "Zotero 返回了无法识别的数据。".to_string())?;
-    Ok((value, version))
-}
-
-async fn fetch_paged_items(
-    client: &Client,
-    library: &LibrarySpec,
-    suffix: &str,
-) -> Result<(Vec<ApiItem>, Option<u64>), String> {
-    let mut items = Vec::new();
-    let mut start = 0;
-    let mut library_version = None;
-    loop {
-        let route = library.kind.route(&library.id);
-        let separator = if suffix.contains('?') { '&' } else { '?' };
-        let path =
-            format!("{route}/{suffix}{separator}format=json&limit={PAGE_SIZE}&start={start}");
-        let (mut page, version): (Vec<ApiItem>, Option<u64>) = json_get(client, &path).await?;
-        library_version = version.or(library_version);
-        let count = page.len();
-        items.append(&mut page);
-        if count < PAGE_SIZE {
-            break;
-        }
-        start += count;
-        if start >= MAX_ITEMS {
-            return Err("本地 Zotero 文库超过安全扫描上限（100000 条）。".to_string());
-        }
-    }
-    Ok((items, library_version))
-}
-
-async fn libraries(client: &Client) -> Result<Vec<LibrarySpec>, String> {
-    let mut result = vec![LibrarySpec {
-        id: USER_LIBRARY_ID.to_string(),
-        kind: LibraryKind::User,
-        name: "我的 Zotero 文库".to_string(),
-        item_version: None,
-    }];
-    let (groups, _): (Vec<ApiGroup>, Option<u64>) =
-        json_get(client, "users/0/groups?format=json").await?;
-    for group in groups {
-        let name = value_string(&group.data, "name")
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| format!("Zotero 群组 {}", group.id));
-        result.push(LibrarySpec {
-            id: group.id.to_string(),
-            kind: LibraryKind::Group,
-            name,
-            item_version: Some(group.version),
-        });
-    }
-    Ok(result)
-}
-
-async fn resolve_attachment(client: &Client, probe: AttachmentProbe) -> (String, CachedAttachment) {
-    let route = probe.library.kind.route(&probe.library.id);
-    let path = format!("{route}/items/{}/file/view/url", probe.item_key);
-    let local_path = match request(client, &path).await {
-        Ok(response) if response.status().is_success() => response
-            .text()
-            .await
-            .ok()
-            .and_then(|body| file_url_path(body.trim()))
-            .filter(|path| path.is_file()),
-        _ => None,
-    };
-    let size_bytes = local_path
-        .as_deref()
-        .and_then(|path| fs::metadata(path).ok())
-        .filter(|metadata| metadata.is_file())
-        .map(|metadata| metadata.len());
-    (
-        probe.parent_item,
-        CachedAttachment {
-            id: stable_id("attachment", &probe.library, &probe.item_key),
-            item_key: probe.item_key,
-            item_version: probe.item_version,
-            title: probe.title,
-            filename: probe.filename,
-            content_type: probe.content_type,
-            link_mode: probe.link_mode,
-            order: probe.order,
-            size_bytes,
-            local_path,
-        },
-    )
-}
-
-async fn scan(client: &Client) -> Result<Cache, String> {
-    let specs = libraries(client).await?;
-    let mut papers = Vec::new();
-    let mut cache_libraries = Vec::new();
-    let mut max_version = None;
-
-    for mut library in specs {
-        let (items, item_version) = fetch_paged_items(client, &library, "items/top").await?;
-        let (attachments, attachment_version) =
-            fetch_paged_items(client, &library, "items?itemType=attachment").await?;
-        library.item_version = item_version.or(attachment_version).or(library.item_version);
-        max_version = [max_version, library.item_version]
-            .into_iter()
-            .flatten()
-            .max();
-
-        let probes: Vec<AttachmentProbe> = attachments
-            .into_iter()
-            .enumerate()
-            .filter_map(|(order, attachment)| attachment_probe(&library, attachment, order))
-            .collect();
-        let resolved: Vec<(String, CachedAttachment)> = stream::iter(probes)
-            .map(|attachment| resolve_attachment(client, attachment))
-            .buffer_unordered(ATTACHMENT_PROBES)
-            .collect()
-            .await;
-        let mut by_parent: HashMap<String, Vec<CachedAttachment>> = HashMap::new();
-        for (parent, attachment) in resolved {
-            by_parent.entry(parent).or_default().push(attachment);
-        }
-        for attachments in by_parent.values_mut() {
-            attachments.sort_by(|left, right| {
-                (!attachment_available(left))
-                    .cmp(&(!attachment_available(right)))
-                    .then_with(|| is_supplement(left).cmp(&is_supplement(right)))
-                    .then_with(|| left.order.cmp(&right.order))
-                    .then_with(|| {
-                        left.filename
-                            .to_lowercase()
-                            .cmp(&right.filename.to_lowercase())
-                    })
-            });
-        }
-
-        for item in items {
-            if let Some(paper) = cached_paper(&library, item, &mut by_parent) {
-                papers.push(paper);
-            }
-        }
-        cache_libraries.push(CachedLibrary {
-            id: library.id,
-            kind: library.kind,
-            name: library.name,
-            item_version: library.item_version,
-        });
-    }
-
-    papers.sort_by(|a, b| {
-        b.year
-            .cmp(&a.year)
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-    });
-    Ok(Cache {
-        schema_version: CACHE_SCHEMA,
-        last_successful_sync_ms: Some(now_ms()),
-        zotero_version: max_version,
-        libraries: cache_libraries,
-        papers,
-    })
 }
 
 fn cache_from_snapshots(snapshots: &[LibrarySnapshot]) -> Cache {
@@ -634,8 +377,6 @@ fn cache_from_snapshots(snapshots: &[LibrarySnapshot]) -> Cache {
         let spec = LibrarySpec {
             id: library.library_id.clone(),
             kind,
-            name: library.name.clone(),
-            item_version: Some(library.version),
         };
         libraries.push(CachedLibrary {
             id: library.library_id.clone(),
@@ -781,117 +522,6 @@ fn cache_from_snapshots(snapshots: &[LibrarySnapshot]) -> Cache {
     }
 }
 
-fn attachment_probe(library: &LibrarySpec, item: ApiItem, order: usize) -> Option<AttachmentProbe> {
-    let data = &item.data;
-    let content_type = value_string(data, "contentType").unwrap_or_default();
-    let filename = value_string(data, "filename").unwrap_or_default();
-    if content_type.to_ascii_lowercase() != "application/pdf"
-        && !filename.to_ascii_lowercase().ends_with(".pdf")
-    {
-        return None;
-    }
-    // A standalone PDF has no parent item and appears as a top-level Zotero
-    // item. Associate it with itself so it still becomes a readable row.
-    let parent_item = value_string(data, "parentItem")
-        .filter(|parent| !parent.is_empty())
-        .unwrap_or_else(|| item.key.clone());
-    Some(AttachmentProbe {
-        library: library.clone(),
-        parent_item,
-        item_key: item.key,
-        item_version: item.version,
-        title: value_string(data, "title")
-            .filter(|title| !title.trim().is_empty())
-            .unwrap_or_else(|| filename.clone()),
-        filename: if filename.is_empty() {
-            "paper.pdf".to_string()
-        } else {
-            filename
-        },
-        content_type,
-        link_mode: value_string(data, "linkMode"),
-        order,
-    })
-}
-
-fn cached_paper(
-    library: &LibrarySpec,
-    item: ApiItem,
-    attachments: &mut HashMap<String, Vec<CachedAttachment>>,
-) -> Option<CachedPaper> {
-    let data = &item.data;
-    let item_type = value_string(data, "itemType").unwrap_or_default();
-    if matches!(item_type.as_str(), "note" | "annotation") {
-        return None;
-    }
-    let own_attachments = attachments.remove(&item.key).unwrap_or_default();
-    let title = value_string(data, "title")
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.trim().to_string())
-        .or_else(|| {
-            own_attachments.first().map(|attachment| {
-                attachment
-                    .filename
-                    .strip_suffix(".pdf")
-                    .unwrap_or(&attachment.filename)
-                    .to_string()
-            })
-        })?;
-    // A top-level non-PDF attachment is not a paper. A standalone PDF is.
-    if item_type == "attachment" && own_attachments.is_empty() {
-        return None;
-    }
-    let venue = [
-        "publicationTitle",
-        "proceedingsTitle",
-        "conferenceName",
-        "repository",
-        "university",
-    ]
-    .into_iter()
-    .find_map(|key| value_string(data, key).filter(|value| !value.trim().is_empty()));
-    let doi = value_string(data, "DOI")
-        .map(|value| normalize_doi(&value))
-        .filter(|value| !value.is_empty());
-    let date = value_string(data, "date");
-    Some(CachedPaper {
-        id: stable_id("paper", library, &item.key),
-        library_id: library.id.clone(),
-        library_kind: library.kind,
-        library_name: library.name.clone(),
-        item_key: item.key.clone(),
-        item_version: item.version,
-        item_type,
-        title,
-        authors: creators(data),
-        year: date.as_deref().and_then(parse_year),
-        venue,
-        doi,
-        abstract_text: value_string(data, "abstractNote").filter(|value| !value.trim().is_empty()),
-        url: value_string(data, "url").filter(|value| !value.trim().is_empty()),
-        date_added: value_string(data, "dateAdded").filter(|value| !value.trim().is_empty()),
-        attachments: own_attachments,
-    })
-}
-
-fn creators(data: &Value) -> Vec<String> {
-    data.get("creators")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|creator| {
-            let name = value_string(creator, "name").unwrap_or_default();
-            if !name.trim().is_empty() {
-                return Some(name.trim().to_string());
-            }
-            let first = value_string(creator, "firstName").unwrap_or_default();
-            let last = value_string(creator, "lastName").unwrap_or_default();
-            let joined = format!("{first} {last}").trim().to_string();
-            (!joined.is_empty()).then_some(joined)
-        })
-        .collect()
-}
-
 fn value_string(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(ToString::to_string)
 }
@@ -924,14 +554,6 @@ fn stable_id(kind: &str, library: &LibrarySpec, key: &str) -> String {
     hash.update([0]);
     hash.update(key.as_bytes());
     format!("zotero-local-{}", &hex::encode(hash.finalize())[..32])
-}
-
-fn file_url_path(raw: &str) -> Option<PathBuf> {
-    let url = Url::parse(raw).ok()?;
-    if url.scheme() != "file" {
-        return None;
-    }
-    url.to_file_path().ok()
 }
 
 fn attachment_available(attachment: &CachedAttachment) -> bool {
@@ -1289,8 +911,6 @@ mod tests {
         LibrarySpec {
             id: "0".to_string(),
             kind: LibraryKind::User,
-            name: "Personal".to_string(),
-            item_version: None,
         }
     }
 
@@ -1329,12 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn local_file_urls_only() {
-        assert!(file_url_path("https://example.test/file.pdf").is_none());
-        assert!(file_url_path("file:///tmp/paper.pdf").is_some());
-    }
-
-    #[test]
     fn paper_projection_never_exposes_paths() {
         let paper = CachedPaper {
             id: "p".to_string(),
@@ -1368,38 +982,5 @@ mod tests {
         let json = serde_json::to_string(&LocalZoteroPaper::from(&paper)).unwrap();
         assert!(!json.contains("/Users/private"));
         assert!(!json.contains("localPath"));
-    }
-
-    #[test]
-    #[ignore = "requires a running Zotero Desktop instance"]
-    fn live_local_api_scan_reports_only_aggregate_counts() {
-        let cache = tauri::async_runtime::block_on(async {
-            let client = client().expect("client");
-            scan(&client).await.expect("local Zotero scan")
-        });
-        let available = cache
-            .papers
-            .iter()
-            .filter(|paper| paper.attachments.iter().any(attachment_available))
-            .count();
-        let attachments = cache
-            .papers
-            .iter()
-            .map(|paper| paper.attachments.len())
-            .sum::<usize>();
-        let multi_pdf_papers = cache
-            .papers
-            .iter()
-            .filter(|paper| paper.attachments.len() > 1)
-            .count();
-        eprintln!(
-            "local Zotero scan: libraries={} papers={} pdf_available={} pdf_attachments={} multi_pdf_papers={}",
-            cache.libraries.len(),
-            cache.papers.len(),
-            available,
-            attachments,
-            multi_pdf_papers,
-        );
-        assert_eq!(cache.schema_version, CACHE_SCHEMA);
     }
 }

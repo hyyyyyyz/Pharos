@@ -12,7 +12,6 @@ pub type ProviderFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> 
 pub trait ZoteroProvider: Send + Sync {
     fn id(&self) -> &'static str;
     fn capabilities(&self) -> ProviderCapabilities;
-    fn probe(&self) -> ProviderFuture<'_, bool>;
     fn libraries(&self) -> ProviderFuture<'_, Vec<ZoteroLibrary>>;
     fn snapshot<'a>(&'a self, library: &'a ZoteroLibrary) -> ProviderFuture<'a, LibrarySnapshot>;
 }

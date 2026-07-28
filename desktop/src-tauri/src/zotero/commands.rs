@@ -22,6 +22,7 @@ use super::{
         ZoteroItemSummary, ZoteroLibrary, ZoteroLibraryRef, ZoteroPage, ZoteroProbe,
         ZoteroRefreshRequest, ZoteroSavedSearch, ZoteroSyncReport, ZoteroTag, LOCAL_SOURCE_ID,
     },
+    provider::ZoteroProvider,
 };
 
 const MAX_IPC_IMPORT_BYTES: u64 = 256 * 1024 * 1024;
@@ -151,11 +152,20 @@ impl ZoteroState {
             .and_then(|mirror| mirror.get_meta("last_successful_sync_ms").ok())
             .flatten()
             .and_then(|value| value.parse().ok());
+        let (source_id, capabilities) = self
+            .provider()
+            .map(|provider| (provider.id().to_string(), provider.capabilities()))
+            .unwrap_or_else(|_| {
+                (
+                    LOCAL_SOURCE_ID.to_string(),
+                    ProviderCapabilities::local_api(),
+                )
+            });
         Ok(ZoteroConnectionStatus {
-            source_id: LOCAL_SOURCE_ID.to_string(),
+            source_id,
             provider: ProviderKind::LocalApi,
             phase,
-            capabilities: ProviderCapabilities::local_api(),
+            capabilities,
             available: probe.available,
             syncing,
             zotero_version: probe.zotero_version,
@@ -191,7 +201,7 @@ impl ZoteroState {
             return Err(message);
         }
 
-        let libraries = provider.fetch_libraries().await.map_err(|message| {
+        let libraries = provider.libraries().await.map_err(|message| {
             self.set_error(Some(message.clone()));
             message
         })?;
@@ -203,7 +213,7 @@ impl ZoteroState {
                 || cursor.is_none()
                 || cursor.is_some_and(|version| version > library.version);
             if needs_full {
-                let snapshot = provider.fetch_snapshot(library).await.map_err(|message| {
+                let snapshot = provider.snapshot(library).await.map_err(|message| {
                     self.set_error(Some(message.clone()));
                     message
                 })?;

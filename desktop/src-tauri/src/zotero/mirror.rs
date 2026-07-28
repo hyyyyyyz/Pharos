@@ -1,13 +1,13 @@
 //! Versioned SQLite mirror for Zotero metadata and relations.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::local_api::LibraryDelta;
 use super::model::{LibrarySnapshot, ProviderCapabilities, ProviderKind, ZoteroLibrary};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug, Clone)]
 pub struct ZoteroMirror {
@@ -24,10 +24,6 @@ impl ZoteroMirror {
         let mirror = Self { path };
         mirror.with_connection(|connection| migrate(connection))?;
         Ok(mirror)
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     pub fn replace_library(&self, snapshot: &LibrarySnapshot) -> Result<(), String> {
@@ -73,28 +69,6 @@ impl ZoteroMirror {
             transaction
                 .commit()
                 .map_err(|error| format!("无法提交 Zotero 增量同步：{error}"))
-        })
-    }
-
-    pub fn library_count(&self) -> Result<u64, String> {
-        self.with_connection(|connection| {
-            connection
-                .query_row(
-                    "SELECT COUNT(*) FROM libraries WHERE deleted = 0",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(|error| format!("无法读取 Zotero 镜像：{error}"))
-        })
-    }
-
-    pub fn item_count(&self) -> Result<u64, String> {
-        self.with_connection(|connection| {
-            connection
-                .query_row("SELECT COUNT(*) FROM items WHERE deleted = 0", [], |row| {
-                    row.get(0)
-                })
-                .map_err(|error| format!("无法读取 Zotero 镜像：{error}"))
         })
     }
 
@@ -369,6 +343,33 @@ fn migrate(connection: &mut Connection) -> Result<(), String> {
             .commit()
             .map_err(|error| format!("无法提交 Zotero 镜像迁移：{error}"))?;
     }
+    let current: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| format!("无法读取 Zotero 镜像版本：{error}"))?;
+    if current < 3 {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| format!("无法开始 Zotero 镜像迁移：{error}"))?;
+        transaction
+            .execute_batch(
+                "CREATE TABLE saved_search_items (
+                    source_id TEXT NOT NULL,
+                    library_id TEXT NOT NULL,
+                    search_key TEXT NOT NULL,
+                    item_key TEXT NOT NULL,
+                    PRIMARY KEY (source_id, library_id, search_key, item_key)
+                 );
+                 CREATE INDEX saved_search_items_item_idx
+                    ON saved_search_items(source_id, library_id, item_key);",
+            )
+            .map_err(|error| format!("无法迁移 Zotero 保存搜索结果：{error}"))?;
+        transaction
+            .pragma_update(None, "user_version", 3)
+            .map_err(|error| format!("无法更新 Zotero 镜像版本：{error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("无法提交 Zotero 镜像迁移：{error}"))?;
+    }
     Ok(())
 }
 
@@ -382,6 +383,7 @@ fn replace_library_in_transaction(
     for table in [
         "item_collections",
         "item_tags",
+        "saved_search_items",
         "attachments",
         "items",
         "collections",
@@ -482,6 +484,22 @@ fn replace_library_in_transaction(
             params![search.source_id, search.library_id, search.key, search.version, search.name,
                 json(&search.conditions)?, json(&search.raw)?, search.deleted],
         ).map_err(|error| format!("无法写入 Zotero 保存的搜索：{error}"))?;
+    }
+    for membership in &snapshot.search_memberships {
+        for item_key in &membership.item_keys {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO saved_search_items(source_id, library_id, search_key, item_key)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        membership.source_id,
+                        membership.library_id,
+                        membership.search_key,
+                        item_key
+                    ],
+                )
+                .map_err(|error| format!("无法写入 Zotero 保存搜索结果：{error}"))?;
+        }
     }
     for tag in &snapshot.tags {
         transaction.execute(
@@ -709,6 +727,28 @@ fn apply_delta_in_transaction(
             )
             .map_err(|error| format!("无法增量写入 Zotero 搜索：{error}"))?;
     }
+    transaction
+        .execute(
+            "DELETE FROM saved_search_items WHERE source_id = ?1 AND library_id = ?2",
+            params![source_id, library_id],
+        )
+        .map_err(|error| format!("无法更新 Zotero 保存搜索结果：{error}"))?;
+    for membership in &delta.search_memberships {
+        for item_key in &membership.item_keys {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO saved_search_items(source_id, library_id, search_key, item_key)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        membership.source_id,
+                        membership.library_id,
+                        membership.search_key,
+                        item_key
+                    ],
+                )
+                .map_err(|error| format!("无法增量写入 Zotero 保存搜索结果：{error}"))?;
+        }
+    }
 
     transaction
         .execute(
@@ -917,7 +957,8 @@ mod tests {
 
     use super::*;
     use crate::zotero::model::{
-        LibraryKind, ZoteroCollection, ZoteroCreator, ZoteroFulltextIndex, ZoteroItem, ZoteroTagRef,
+        LibraryKind, ZoteroCollection, ZoteroCreator, ZoteroFulltextIndex, ZoteroItem,
+        ZoteroSavedSearch, ZoteroSavedSearchMembership, ZoteroTagRef,
     };
 
     #[test]
@@ -1003,6 +1044,22 @@ mod tests {
                 item_key: "ATTACH".into(),
                 version: 3,
             }],
+            searches: vec![ZoteroSavedSearch {
+                source_id: "zotero-local".into(),
+                library_id: "0".into(),
+                key: "SEARCH".into(),
+                version: 4,
+                name: "Reading queue".into(),
+                deleted: false,
+                conditions: json!([]),
+                raw: json!({}),
+            }],
+            search_memberships: vec![ZoteroSavedSearchMembership {
+                source_id: "zotero-local".into(),
+                library_id: "0".into(),
+                search_key: "SEARCH".into(),
+                item_keys: vec!["ITEM".into()],
+            }],
             ..LibrarySnapshot::default()
         };
         let transaction = connection.transaction().unwrap();
@@ -1021,8 +1078,14 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
+        let saved_search_membership: i64 = connection
+            .query_row("SELECT COUNT(*) FROM saved_search_items", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(membership, 2);
         assert_eq!(nested, "ROOT");
+        assert_eq!(saved_search_membership, 1);
     }
 
     #[test]
@@ -1072,6 +1135,7 @@ mod tests {
             items: vec![],
             attachments: vec![],
             searches: vec![],
+            search_memberships: vec![],
             tags: vec![],
             fulltext: vec![],
             current_collection_keys: HashSet::new(),

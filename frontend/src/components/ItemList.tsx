@@ -30,6 +30,7 @@ import {
 import {
   parseZoteroCollectionNodeId,
   parseZoteroLibraryNodeId,
+  parseZoteroSavedSearchNodeId,
   zotero,
   zoteroAvailable,
 } from "../lib/zotero";
@@ -227,10 +228,12 @@ export function ItemList(): JSX.Element {
 
   const legacyLocalSelected = selectedCol === LOCAL_ZOTERO_COLLECTION_ID;
   const selectedZoteroCollection = parseZoteroCollectionNodeId(selectedCol);
-  const selectedZoteroLibrary = selectedZoteroCollection
+  const selectedZoteroSearch = parseZoteroSavedSearchNodeId(selectedCol);
+  const selectedZoteroLibrary = selectedZoteroCollection || selectedZoteroSearch
     ? null
     : parseZoteroLibraryNodeId(selectedCol);
-  const mirrorLibrary = selectedZoteroCollection?.library ?? selectedZoteroLibrary;
+  const mirrorLibrary =
+    selectedZoteroCollection?.library ?? selectedZoteroSearch?.library ?? selectedZoteroLibrary;
   const mirrorSelected = mirrorLibrary !== null;
   const localSelected = legacyLocalSelected || mirrorSelected;
 
@@ -305,12 +308,14 @@ export function ItemList(): JSX.Element {
       mirrorLibrary?.sourceId,
       mirrorLibrary?.libraryId,
       selectedZoteroCollection?.collectionKey ?? null,
+      selectedZoteroSearch?.searchKey ?? null,
       debounced,
     ],
     queryFn: () =>
       zotero.queryItems({
         library: mirrorLibrary,
         collectionKey: selectedZoteroCollection?.collectionKey ?? null,
+        savedSearchKey: selectedZoteroSearch?.searchKey ?? null,
         search: debounced || null,
         limit: 500,
       }),

@@ -159,6 +159,7 @@ export interface ZoteroFulltext extends ZoteroItemRef {
 export interface ZoteroItemQuery {
   library?: ZoteroLibraryRef | null;
   collectionKey?: string | null;
+  savedSearchKey?: string | null;
   parentKey?: string | null;
   itemTypes?: string[];
   tag?: string | null;

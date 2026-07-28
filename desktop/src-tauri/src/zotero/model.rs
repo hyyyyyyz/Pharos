@@ -118,6 +118,16 @@ pub struct ZoteroSavedSearch {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ZoteroSavedSearchMembership {
+    pub source_id: String,
+    pub library_id: String,
+    pub search_key: String,
+    #[serde(default)]
+    pub item_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ZoteroCreator {
     pub creator_type: Option<String>,
     pub first_name: Option<String>,
@@ -217,6 +227,7 @@ pub struct ZoteroLibraryRef {
 pub struct ZoteroItemQuery {
     pub library: Option<ZoteroLibraryRef>,
     pub collection_key: Option<String>,
+    pub saved_search_key: Option<String>,
     pub parent_key: Option<String>,
     #[serde(default)]
     pub item_types: Vec<String>,
@@ -239,6 +250,7 @@ impl Default for ZoteroItemQuery {
         Self {
             library: None,
             collection_key: None,
+            saved_search_key: None,
             parent_key: None,
             item_types: Vec::new(),
             tag: None,
@@ -364,6 +376,7 @@ pub struct LibrarySnapshot {
     pub items: Vec<ZoteroItem>,
     pub attachments: Vec<ZoteroAttachment>,
     pub searches: Vec<ZoteroSavedSearch>,
+    pub search_memberships: Vec<ZoteroSavedSearchMembership>,
     pub tags: Vec<ZoteroTag>,
     pub fulltext: Vec<ZoteroFulltextIndex>,
 }

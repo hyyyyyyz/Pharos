@@ -365,6 +365,15 @@ fn item_filters(query: &ZoteroItemQuery) -> (String, Vec<SqlValue>) {
         );
         values.push(SqlValue::Text(collection_key.to_string()));
     }
+    if let Some(search_key) = query.saved_search_key.as_deref() {
+        clauses.push(
+            "EXISTS (SELECT 1 FROM saved_search_items ssi WHERE ssi.source_id = i.source_id
+                AND ssi.library_id = i.library_id AND ssi.item_key = i.item_key
+                AND ssi.search_key = ?)"
+                .to_string(),
+        );
+        values.push(SqlValue::Text(search_key.to_string()));
+    }
     if let Some(parent_key) = query.parent_key.as_deref() {
         clauses.push("i.parent_key = ?".to_string());
         values.push(SqlValue::Text(parent_key.to_string()));
@@ -696,5 +705,16 @@ mod tests {
         assert!(values
             .iter()
             .any(|value| matches!(value, SqlValue::Text(text) if text.contains("1=1"))));
+    }
+
+    #[test]
+    fn metadata_projection_normalises_year_and_doi() {
+        assert_eq!(parse_year("2024-11-03"), Some(2024));
+        assert_eq!(parse_year("forthcoming"), None);
+        assert_eq!(
+            normalize_doi("https://doi.org/10.1000/example"),
+            "10.1000/example"
+        );
+        assert_eq!(normalize_doi("DOI:10.1000/example"), "10.1000/example");
     }
 }
