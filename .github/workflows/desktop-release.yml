@@ -7,7 +7,7 @@
 # identical to the web app and to each other. (On Windows the WebView is
 # WebView2 / Chromium; on macOS it is WebKit — both render this design the same.)
 #
-# Trigger by pushing a tag like `desktop-v0.3.1`, or run it by hand from the
+# Trigger by pushing a tag like `desktop-v0.4.0`, or run it by hand from the
 # Actions tab. It publishes the installers after all platform builds succeed.
 #
 # The builds are UNSIGNED (no Apple / Windows code-signing certificate):
@@ -26,7 +26,7 @@ on:
       release_tag:
         description: "Release tag (must match desktop app version)"
         required: true
-        default: "desktop-v0.3.1"
+        default: "desktop-v0.4.0"
 
 permissions:
   contents: write
@@ -105,8 +105,9 @@ jobs:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           releaseName: "Pharos 桌面版 v__VERSION__"
           releaseBody: |
-            此版本修复首次启动时完整 Zotero 分类树已经写入镜像、但界面仍缓存为空的
-            竞态问题；首次同步完成后会立即出现全部分类，无需重启客户端。
+            此版本把本机 Zotero 文库恢复为真正的条目树：论文书目是父条目，展开后
+            显示对应的 PDF、网页快照与笔记。只有双击具体 PDF 子项才会进入阅读器，
+            不再由父条目静默选择第一份附件；多 PDF 条目也会打开用户明确选择的文件。
 
             Pharos 桌面版 —— 与网页版共享同一套界面，并增加完整的本机 Zotero
             只读文库：个人/群组文库、嵌套分类、保存检索、笔记、标注、全文索引和
