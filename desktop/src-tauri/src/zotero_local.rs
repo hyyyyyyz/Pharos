@@ -226,12 +226,7 @@ pub struct LocalZoteroState {
 }
 
 impl LocalZoteroState {
-    pub fn load(app: &AppHandle) -> Self {
-        let cache_path = app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("zotero-local-v1.json");
+    pub fn load(cache_path: PathBuf) -> Self {
         let mut error = None;
         let cache = match fs::read(&cache_path) {
             Ok(bytes) => match serde_json::from_slice::<Cache>(&bytes) {

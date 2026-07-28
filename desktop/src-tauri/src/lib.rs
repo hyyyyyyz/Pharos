@@ -4,10 +4,44 @@
 //! capabilities live behind narrow commands: today that includes user-approved
 //! Daily Vault folders and the loopback-only Zotero Local API.
 
+mod workspace;
 mod zotero;
 mod zotero_local;
 
+use std::{fs, path::Path};
+
 use tauri::Manager;
+
+/// Copy caches created by pre-Workspace desktop builds into the new portable
+/// hierarchy. The old files are intentionally retained as a rollback anchor.
+fn migrate_legacy_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() || !source.is_file() {
+        return Ok(());
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "Invalid Workspace migration destination".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "Unable to create Workspace migration directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    let temporary = destination.with_extension("migrating");
+    fs::copy(source, &temporary).map_err(|error| {
+        format!(
+            "Unable to copy legacy desktop data {}: {error}",
+            source.display()
+        )
+    })?;
+    fs::rename(&temporary, destination).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!(
+            "Unable to install migrated desktop data {}: {error}",
+            destination.display()
+        )
+    })
+}
 
 /// Builds and runs the application. Shared by the desktop launcher (`main.rs`)
 /// and the mobile entry point, so both platforms start the same app.
@@ -40,8 +74,25 @@ pub fn run() {
             zotero_local::protocol_response(ctx.app_handle(), request)
         })
         .setup(|app| {
-            app.manage(zotero_local::LocalZoteroState::load(app.handle()));
-            app.manage(zotero::commands::ZoteroState::load(app.handle()));
+            let workspace = workspace::WorkspaceState::initialize(app.handle())
+                .map_err(std::io::Error::other)?;
+            let app_data = app.path().app_data_dir()?;
+            migrate_legacy_file(
+                &app_data.join("zotero-mirror-v1.sqlite3"),
+                &workspace.zotero_mirror_path(),
+            )
+            .map_err(std::io::Error::other)?;
+            migrate_legacy_file(
+                &app_data.join("zotero-local-v1.json"),
+                &workspace.legacy_zotero_cache_path(),
+            )
+            .map_err(std::io::Error::other)?;
+
+            let zotero_mirror_path = workspace.zotero_mirror_path();
+            let zotero_cache_path = workspace.legacy_zotero_cache_path();
+            app.manage(workspace);
+            app.manage(zotero_local::LocalZoteroState::load(zotero_cache_path));
+            app.manage(zotero::commands::ZoteroState::load(zotero_mirror_path));
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<zotero::commands::ZoteroState>();
@@ -72,6 +123,9 @@ pub fn run() {
             zotero_local::zotero_local_get,
             zotero_local::zotero_local_pdf_url,
             zotero_local::zotero_local_pdf_bytes,
+            workspace::workspace_status,
+            workspace::workspace_relocate,
+            workspace::workspace_health,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Pharos desktop app");

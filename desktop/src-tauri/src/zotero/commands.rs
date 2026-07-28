@@ -11,7 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 use super::{
     local_api::LocalApiProvider,
@@ -49,7 +49,7 @@ impl Drop for SyncFlag<'_> {
 }
 
 impl ZoteroState {
-    pub fn load(app: &AppHandle) -> Self {
+    pub fn load(mirror_path: PathBuf) -> Self {
         let mut errors = Vec::new();
         let provider = match LocalApiProvider::new() {
             Ok(provider) => Some(provider),
@@ -58,11 +58,6 @@ impl ZoteroState {
                 None
             }
         };
-        let mirror_path = app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("zotero-mirror-v1.sqlite3");
         let mirror = match ZoteroMirror::open(mirror_path) {
             Ok(mirror) => Some(mirror),
             Err(error) => {
