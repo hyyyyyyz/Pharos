@@ -1,7 +1,7 @@
 {
   "name": "pharos-desktop",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pharos desktop — an all-in-one, local-first research workbench.",
   "type": "module",
   "scripts": {

@@ -15,7 +15,7 @@ translation engine.
 
 - **Native rewrite (SwiftUI) was ruled out** — it could only ever *resemble* the
   web app, never be identical, and would double the UI maintenance.
-- **Tauri over Electron** — version 0.3.0's universal macOS application bundle
+- **Tauri over Electron** — version 0.3.1's universal macOS application bundle
   is about 15 MB and uses the operating system WebView instead of shipping a
   second browser engine. Tauri's main caveat is that macOS uses WebKit
   (WKWebView) rather than Chromium, so Chrome-only CSS can render differently.
@@ -73,7 +73,7 @@ npm run build             # -> src-tauri/target/release/bundle/{msi,nsis}/Pharos
 
 CI (`.github/workflows/desktop-release.yml`) builds **both macOS and Windows** in
 one matrix run and attaches all installers to a single **draft** GitHub Release.
-Trigger it by pushing a tag like `desktop-v0.3.0`, or run it by hand from the
+Trigger it by pushing a tag like `desktop-v0.3.1`, or run it by hand from the
 Actions tab. On Windows, Tauri uses the system WebView2 (Chromium), so the app
 renders identically to the web version there. (Linux/AppImage is one more matrix
 entry plus an apt step for `libwebkit2gtk-4.1-dev` — add it when you want it.)
@@ -95,7 +95,7 @@ certificate, to the CI action.
 
 ## Local Zotero integration
 
-Version 0.3.0 can read the complete local Zotero graph without requiring Zotero
+Version 0.3.1 can read the complete local Zotero graph without requiring Zotero
 cloud storage: personal and group libraries, nested collections, executable
 saved searches, every item type, notes, PDF annotations, tags, relations,
 full-text indexes, and local attachments. The first sync creates a versioned
