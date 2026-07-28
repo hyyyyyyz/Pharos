@@ -35,6 +35,20 @@ pub struct LocalApiProvider {
     client: Client,
 }
 
+#[derive(Debug, Clone)]
+pub struct LibraryDelta {
+    pub library: ZoteroLibrary,
+    pub collections: Vec<ZoteroCollection>,
+    pub items: Vec<ZoteroItem>,
+    pub attachments: Vec<ZoteroAttachment>,
+    pub searches: Vec<ZoteroSavedSearch>,
+    pub tags: Vec<ZoteroTag>,
+    pub fulltext: Vec<ZoteroFulltextIndex>,
+    pub current_collection_keys: HashSet<String>,
+    pub current_item_keys: HashSet<String>,
+    pub current_search_keys: HashSet<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 struct ResponseMeta {
     library_version: Option<u64>,
@@ -138,12 +152,17 @@ impl LocalApiProvider {
             let name = value_string(data, "name")
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| format!("Zotero 群组 {id}"));
+            let (_sample, library_meta): (Vec<Value>, ResponseMeta) = self
+                .json_get(&format!("groups/{id}/items?format=json&limit=1"))
+                .await?;
             libraries.push(ZoteroLibrary {
                 source_id: LOCAL_SOURCE_ID.to_string(),
                 library_id: id,
                 kind: LibraryKind::Group,
                 name,
-                version: value_u64(&group, "version")
+                version: library_meta
+                    .library_version
+                    .or_else(|| value_u64(&group, "version"))
                     .or(groups_meta.library_version)
                     .unwrap_or_default(),
                 editable: value_bool(data, "editable").unwrap_or(false),
@@ -234,6 +253,112 @@ impl LocalApiProvider {
             searches,
             tags,
             fulltext,
+        })
+    }
+
+    pub async fn fetch_delta(
+        &self,
+        library: &ZoteroLibrary,
+        since: u64,
+    ) -> Result<LibraryDelta, String> {
+        let route = library_route(library);
+        let (collection_values, collection_meta) = self
+            .fetch_paged(&format!(
+                "{route}/collections?includeTrashed=1&since={since}"
+            ))
+            .await?;
+        let (item_values, item_meta) = self
+            .fetch_paged(&format!("{route}/items?includeTrashed=1&since={since}"))
+            .await?;
+        let (search_values, search_meta) = self
+            .fetch_paged(&format!("{route}/searches?includeTrashed=1&since={since}"))
+            .await?;
+        let (tag_values, tag_meta) = self.fetch_paged(&format!("{route}/tags")).await?;
+        let (trash_values, trash_meta) = self
+            .fetch_paged(&format!("{route}/items/trash?since={since}"))
+            .await?;
+        let (fulltext_values, fulltext_meta): (HashMap<String, u64>, ResponseMeta) = self
+            .json_get(&format!("{route}/fulltext?since={since}"))
+            .await?;
+
+        let (current_item_versions, current_item_meta) = self
+            .fetch_paged_versions(&format!("{route}/items?includeTrashed=1"))
+            .await?;
+        let (current_collection_versions, current_collection_meta) = self
+            .fetch_paged_versions(&format!("{route}/collections?includeTrashed=1"))
+            .await?;
+        let (current_search_versions, current_search_meta) = self
+            .fetch_paged_versions(&format!("{route}/searches?includeTrashed=1"))
+            .await?;
+
+        let trash_keys = trash_values
+            .iter()
+            .filter_map(object_key)
+            .collect::<HashSet<_>>();
+        let collections = collection_values
+            .into_iter()
+            .filter_map(|value| collection_from_value(library, value))
+            .collect::<Vec<_>>();
+        let searches = search_values
+            .into_iter()
+            .filter_map(|value| search_from_value(library, value))
+            .collect::<Vec<_>>();
+        let tags = tag_values
+            .into_iter()
+            .filter_map(|value| tag_from_value(library, value))
+            .collect::<Vec<_>>();
+        let mut items = Vec::with_capacity(item_values.len());
+        let mut attachment_candidates = Vec::new();
+        for value in item_values {
+            let Some(item) = item_from_value(library, value.clone(), &trash_keys) else {
+                continue;
+            };
+            if item.item_type == "attachment" {
+                attachment_candidates.push(attachment_candidate(library, &item, &value));
+            }
+            items.push(item);
+        }
+        let attachments = stream::iter(attachment_candidates)
+            .map(|candidate| self.resolve_attachment(candidate))
+            .buffer_unordered(ATTACHMENT_PROBES)
+            .collect::<Vec<_>>()
+            .await;
+        let fulltext = fulltext_values
+            .into_iter()
+            .map(|(item_key, version)| ZoteroFulltextIndex {
+                source_id: library.source_id.clone(),
+                library_id: library.library_id.clone(),
+                item_key,
+                version,
+            })
+            .collect();
+
+        let mut meta = collection_meta;
+        for next in [
+            item_meta,
+            search_meta,
+            tag_meta,
+            trash_meta,
+            fulltext_meta,
+            current_item_meta,
+            current_collection_meta,
+            current_search_meta,
+        ] {
+            meta.merge(&next);
+        }
+        let mut current_library = library.clone();
+        current_library.version = meta.library_version.unwrap_or(library.version.max(since));
+        Ok(LibraryDelta {
+            library: current_library,
+            collections,
+            items,
+            attachments,
+            searches,
+            tags,
+            fulltext,
+            current_collection_keys: current_collection_versions.into_keys().collect(),
+            current_item_keys: current_item_versions.into_keys().collect(),
+            current_search_keys: current_search_versions.into_keys().collect(),
         })
     }
 
@@ -333,6 +458,32 @@ impl LocalApiProvider {
             }
         }
         Ok((objects, combined_meta))
+    }
+
+    async fn fetch_paged_versions(
+        &self,
+        suffix: &str,
+    ) -> Result<(HashMap<String, u64>, ResponseMeta), String> {
+        let mut versions = HashMap::new();
+        let mut start = 0;
+        let mut combined_meta = ResponseMeta::default();
+        loop {
+            let separator = if suffix.contains('?') { '&' } else { '?' };
+            let path =
+                format!("{suffix}{separator}format=versions&limit={PAGE_SIZE}&start={start}");
+            let (page, meta): (HashMap<String, u64>, ResponseMeta) = self.json_get(&path).await?;
+            combined_meta.merge(&meta);
+            let count = page.len();
+            versions.extend(page);
+            if count < PAGE_SIZE {
+                break;
+            }
+            start += count;
+            if start >= MAX_OBJECTS {
+                return Err("本地 Zotero 文库超过安全扫描上限（100000 个对象）。".to_string());
+            }
+        }
+        Ok((versions, combined_meta))
     }
 
     async fn json_get<T: DeserializeOwned>(&self, path: &str) -> Result<(T, ResponseMeta), String> {
@@ -785,6 +936,15 @@ mod tests {
                 })
                 .expect("query mirror");
             assert!(!page.items.is_empty());
+            let delta = provider
+                .fetch_delta(library, library.version)
+                .await
+                .expect("no-op delta");
+            assert!(delta.items.is_empty());
+            mirror.apply_delta(&delta).expect("apply no-op delta");
+            let after_delta = mirror.metrics().expect("post-delta metrics");
+            assert_eq!(after_delta.items, metrics.items);
+            assert_eq!(after_delta.attachments, metrics.attachments);
             drop(mirror);
             for candidate in [
                 path.clone(),

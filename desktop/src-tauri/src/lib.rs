@@ -42,6 +42,15 @@ pub fn run() {
         .setup(|app| {
             app.manage(zotero_local::LocalZoteroState::load(app.handle()));
             app.manage(zotero::commands::ZoteroState::load(app.handle()));
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<zotero::commands::ZoteroState>();
+                // A failed background refresh keeps the last successful mirror
+                // intact. Users can still browse offline and retry manually.
+                let _ = state
+                    .refresh(zotero::model::ZoteroRefreshRequest::default())
+                    .await;
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

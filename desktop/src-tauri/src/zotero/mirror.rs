@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
+use super::local_api::LibraryDelta;
 use super::model::{LibrarySnapshot, ProviderCapabilities, ProviderKind, ZoteroLibrary};
 
 const SCHEMA_VERSION: i64 = 2;
@@ -42,6 +43,36 @@ impl ZoteroMirror {
             transaction
                 .commit()
                 .map_err(|error| format!("无法提交 Zotero 镜像事务：{error}"))
+        })
+    }
+
+    pub fn library_version(
+        &self,
+        source_id: &str,
+        library_id: &str,
+    ) -> Result<Option<u64>, String> {
+        self.with_connection(|connection| {
+            connection
+                .query_row(
+                    "SELECT library_version FROM libraries\n\
+                     WHERE source_id = ?1 AND library_id = ?2 AND deleted = 0",
+                    params![source_id, library_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| format!("无法读取 Zotero 同步版本：{error}"))
+        })
+    }
+
+    pub fn apply_delta(&self, delta: &LibraryDelta) -> Result<(), String> {
+        self.with_connection(|connection| {
+            let transaction = connection
+                .transaction()
+                .map_err(|error| format!("无法开始 Zotero 增量同步事务：{error}"))?;
+            apply_delta_in_transaction(&transaction, delta)?;
+            transaction
+                .commit()
+                .map_err(|error| format!("无法提交 Zotero 增量同步：{error}"))
         })
     }
 
@@ -486,6 +517,385 @@ fn replace_library_in_transaction(
     Ok(())
 }
 
+fn apply_delta_in_transaction(
+    transaction: &Transaction<'_>,
+    delta: &LibraryDelta,
+) -> Result<(), String> {
+    let library = &delta.library;
+    let source_id = &library.source_id;
+    let library_id = &library.library_id;
+    transaction
+        .execute(
+            "INSERT INTO sources(id, kind, display_name, capabilities_json, last_seen_at)\n\
+             VALUES (?1, ?2, ?3, ?4, strftime('%s','now'))\n\
+             ON CONFLICT(id) DO UPDATE SET kind = excluded.kind,\n\
+                display_name = excluded.display_name, capabilities_json = excluded.capabilities_json,\n\
+                last_seen_at = excluded.last_seen_at",
+            params![
+                source_id,
+                provider_kind_label(ProviderKind::LocalApi),
+                "本机 Zotero",
+                json(&ProviderCapabilities::local_api())?,
+            ],
+        )
+        .map_err(|error| format!("无法更新 Zotero 数据源：{error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO libraries(source_id, library_id, library_type, name, editable,\n\
+                files_editable, library_version, raw_json, deleted)\n\
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)\n\
+             ON CONFLICT(source_id, library_id) DO UPDATE SET\n\
+                library_type = excluded.library_type, name = excluded.name,\n\
+                editable = excluded.editable, files_editable = excluded.files_editable,\n\
+                library_version = excluded.library_version, raw_json = excluded.raw_json, deleted = 0",
+            params![
+                source_id,
+                library_id,
+                library.kind.as_str(),
+                library.name,
+                library.editable,
+                library.files_editable,
+                library.version,
+                json(&library.raw)?,
+            ],
+        )
+        .map_err(|error| format!("无法更新 Zotero 文库：{error}"))?;
+
+    for collection in &delta.collections {
+        transaction
+            .execute(
+                "INSERT INTO collections(source_id, library_id, collection_key, version, name,\n\
+                    parent_key, raw_json, deleted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)\n\
+                 ON CONFLICT(source_id, library_id, collection_key) DO UPDATE SET\n\
+                    version = excluded.version, name = excluded.name, parent_key = excluded.parent_key,\n\
+                    raw_json = excluded.raw_json, deleted = excluded.deleted",
+                params![
+                    collection.source_id,
+                    collection.library_id,
+                    collection.key,
+                    collection.version,
+                    collection.name,
+                    collection.parent_key,
+                    json(&collection.raw)?,
+                    collection.deleted,
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 分类：{error}"))?;
+    }
+
+    for item in &delta.items {
+        transaction
+            .execute(
+                "DELETE FROM item_collections WHERE source_id = ?1 AND library_id = ?2 AND item_key = ?3",
+                params![item.source_id, item.library_id, item.key],
+            )
+            .map_err(|error| format!("无法更新 Zotero 分类关系：{error}"))?;
+        transaction
+            .execute(
+                "DELETE FROM item_tags WHERE source_id = ?1 AND library_id = ?2 AND item_key = ?3",
+                params![item.source_id, item.library_id, item.key],
+            )
+            .map_err(|error| format!("无法更新 Zotero 标签关系：{error}"))?;
+        transaction
+            .execute(
+                "DELETE FROM attachments WHERE source_id = ?1 AND library_id = ?2 AND item_key = ?3",
+                params![item.source_id, item.library_id, item.key],
+            )
+            .map_err(|error| format!("无法更新 Zotero 附件：{error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO items(source_id, library_id, item_key, version, item_type, parent_key,\n\
+                    display_title, abstract_note, date_added, date_modified, creators_json,\n\
+                    relations_json, raw_json, deleted)\n\
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)\n\
+                 ON CONFLICT(source_id, library_id, item_key) DO UPDATE SET\n\
+                    version = excluded.version, item_type = excluded.item_type,\n\
+                    parent_key = excluded.parent_key, display_title = excluded.display_title,\n\
+                    abstract_note = excluded.abstract_note, date_added = excluded.date_added,\n\
+                    date_modified = excluded.date_modified, creators_json = excluded.creators_json,\n\
+                    relations_json = excluded.relations_json, raw_json = excluded.raw_json,\n\
+                    deleted = excluded.deleted",
+                params![
+                    item.source_id,
+                    item.library_id,
+                    item.key,
+                    item.version,
+                    item.item_type,
+                    item.parent_key,
+                    item.title,
+                    item.abstract_note,
+                    item.date_added,
+                    item.date_modified,
+                    json(&item.creators)?,
+                    json(&item.relations)?,
+                    json(&item.raw)?,
+                    item.deleted,
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 条目：{error}"))?;
+        for collection_key in &item.collection_keys {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO item_collections(source_id, library_id, item_key, collection_key)\n\
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![item.source_id, item.library_id, item.key, collection_key],
+                )
+                .map_err(|error| format!("无法增量写入 Zotero 分类关系：{error}"))?;
+        }
+        for tag in &item.tags {
+            transaction
+                .execute(
+                    "INSERT OR REPLACE INTO item_tags(source_id, library_id, item_key, tag, tag_type)\n\
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![item.source_id, item.library_id, item.key, tag.tag, tag.kind],
+                )
+                .map_err(|error| format!("无法增量写入 Zotero 标签关系：{error}"))?;
+        }
+    }
+
+    for attachment in &delta.attachments {
+        transaction
+            .execute(
+                "INSERT INTO attachments(source_id, library_id, item_key, parent_key, public_id,\n\
+                    link_mode, content_type, filename, local_path, path_status, file_size, raw_json, version)\n\
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)\n\
+                 ON CONFLICT(source_id, library_id, item_key) DO UPDATE SET\n\
+                    parent_key = excluded.parent_key, public_id = excluded.public_id,\n\
+                    link_mode = excluded.link_mode, content_type = excluded.content_type,\n\
+                    filename = excluded.filename, local_path = excluded.local_path,\n\
+                    path_status = excluded.path_status, file_size = excluded.file_size,\n\
+                    raw_json = excluded.raw_json, version = excluded.version",
+                params![
+                    attachment.source_id,
+                    attachment.library_id,
+                    attachment.key,
+                    attachment.parent_key,
+                    attachment.public_id,
+                    attachment.link_mode,
+                    attachment.content_type,
+                    attachment.filename,
+                    attachment
+                        .local_path
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    if attachment.available { "available" } else { "missing" },
+                    attachment.size_bytes,
+                    json(&attachment.raw)?,
+                    attachment.version,
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 附件：{error}"))?;
+    }
+
+    for search in &delta.searches {
+        transaction
+            .execute(
+                "INSERT INTO saved_searches(source_id, library_id, search_key, version, name,\n\
+                    conditions_json, raw_json, deleted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)\n\
+                 ON CONFLICT(source_id, library_id, search_key) DO UPDATE SET\n\
+                    version = excluded.version, name = excluded.name,\n\
+                    conditions_json = excluded.conditions_json, raw_json = excluded.raw_json,\n\
+                    deleted = excluded.deleted",
+                params![
+                    search.source_id,
+                    search.library_id,
+                    search.key,
+                    search.version,
+                    search.name,
+                    json(&search.conditions)?,
+                    json(&search.raw)?,
+                    search.deleted,
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 搜索：{error}"))?;
+    }
+
+    transaction
+        .execute(
+            "DELETE FROM library_tags WHERE source_id = ?1 AND library_id = ?2",
+            params![source_id, library_id],
+        )
+        .map_err(|error| format!("无法更新 Zotero 标签：{error}"))?;
+    for tag in &delta.tags {
+        transaction
+            .execute(
+                "INSERT INTO library_tags(source_id, library_id, tag, tag_type, item_count)\n\
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    tag.source_id,
+                    tag.library_id,
+                    tag.tag,
+                    tag.kind,
+                    tag.item_count
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 标签：{error}"))?;
+    }
+    for fulltext in &delta.fulltext {
+        transaction
+            .execute(
+                "INSERT INTO fulltext(source_id, library_id, item_key, version, synced_at)\n\
+                 VALUES (?1, ?2, ?3, ?4, strftime('%s','now'))\n\
+                 ON CONFLICT(source_id, library_id, item_key) DO UPDATE SET\n\
+                    version = excluded.version, content = NULL, indexed_pages = NULL,\n\
+                    total_pages = NULL, synced_at = excluded.synced_at",
+                params![
+                    fulltext.source_id,
+                    fulltext.library_id,
+                    fulltext.item_key,
+                    fulltext.version,
+                ],
+            )
+            .map_err(|error| format!("无法增量写入 Zotero 全文索引：{error}"))?;
+    }
+
+    mark_missing(
+        transaction,
+        "collections",
+        "collection_key",
+        "collection",
+        source_id,
+        library_id,
+        &delta.current_collection_keys,
+        library.version,
+    )?;
+    mark_missing(
+        transaction,
+        "saved_searches",
+        "search_key",
+        "search",
+        source_id,
+        library_id,
+        &delta.current_search_keys,
+        library.version,
+    )?;
+    let missing_items = missing_keys(
+        transaction,
+        "items",
+        "item_key",
+        source_id,
+        library_id,
+        &delta.current_item_keys,
+    )?;
+    for item_key in missing_items {
+        transaction
+            .execute(
+                "UPDATE items SET deleted = 1 WHERE source_id = ?1 AND library_id = ?2 AND item_key = ?3",
+                params![source_id, library_id, item_key],
+            )
+            .map_err(|error| format!("无法标记 Zotero 删除条目：{error}"))?;
+        transaction
+            .execute(
+                "DELETE FROM attachments WHERE source_id = ?1 AND library_id = ?2 AND item_key = ?3",
+                params![source_id, library_id, item_key],
+            )
+            .map_err(|error| format!("无法清理 Zotero 删除附件：{error}"))?;
+        write_tombstone(
+            transaction,
+            source_id,
+            library_id,
+            "item",
+            &item_key,
+            library.version,
+        )?;
+    }
+
+    transaction
+        .execute(
+            "INSERT INTO sync_state(source_id, library_id, entity_type, version, last_success_at, last_error)\n\
+             VALUES (?1, ?2, 'library', ?3, strftime('%s','now'), NULL)\n\
+             ON CONFLICT(source_id, library_id, entity_type) DO UPDATE SET\n\
+                version = excluded.version, last_success_at = excluded.last_success_at, last_error = NULL",
+            params![source_id, library_id, library.version],
+        )
+        .map_err(|error| format!("无法更新 Zotero 增量同步状态：{error}"))?;
+    Ok(())
+}
+
+fn mark_missing(
+    transaction: &Transaction<'_>,
+    table: &str,
+    key_column: &str,
+    entity_type: &str,
+    source_id: &str,
+    library_id: &str,
+    current_keys: &std::collections::HashSet<String>,
+    version: u64,
+) -> Result<(), String> {
+    for key in missing_keys(
+        transaction,
+        table,
+        key_column,
+        source_id,
+        library_id,
+        current_keys,
+    )? {
+        transaction
+            .execute(
+                &format!(
+                    "UPDATE {table} SET deleted = 1 WHERE source_id = ?1 AND library_id = ?2 AND {key_column} = ?3"
+                ),
+                params![source_id, library_id, key],
+            )
+            .map_err(|error| format!("无法标记 Zotero 删除对象：{error}"))?;
+        write_tombstone(
+            transaction,
+            source_id,
+            library_id,
+            entity_type,
+            &key,
+            version,
+        )?;
+    }
+    Ok(())
+}
+
+fn missing_keys(
+    transaction: &Transaction<'_>,
+    table: &str,
+    key_column: &str,
+    source_id: &str,
+    library_id: &str,
+    current_keys: &std::collections::HashSet<String>,
+) -> Result<Vec<String>, String> {
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT {key_column} FROM {table} WHERE source_id = ?1 AND library_id = ?2 AND deleted = 0"
+        ))
+        .map_err(|error| format!("无法核对 Zotero 对象：{error}"))?;
+    let existing = statement
+        .query_map(params![source_id, library_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|error| format!("无法核对 Zotero 对象：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法核对 Zotero 对象：{error}"))?;
+    Ok(existing
+        .into_iter()
+        .filter(|key| !current_keys.contains(key))
+        .collect())
+}
+
+fn write_tombstone(
+    transaction: &Transaction<'_>,
+    source_id: &str,
+    library_id: &str,
+    entity_type: &str,
+    entity_key: &str,
+    version: u64,
+) -> Result<(), String> {
+    transaction
+        .execute(
+            "INSERT INTO tombstones(source_id, library_id, entity_type, entity_key, version, deleted_at)\n\
+             VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'))\n\
+             ON CONFLICT(source_id, library_id, entity_type, entity_key) DO UPDATE SET\n\
+                version = excluded.version, deleted_at = excluded.deleted_at",
+            params![source_id, library_id, entity_type, entity_key, version],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("无法记录 Zotero 删除对象：{error}"))
+}
+
 fn json(value: &impl serde::Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| format!("无法编码 Zotero 数据：{error}"))
 }
@@ -500,6 +910,8 @@ fn provider_kind_label(kind: ProviderKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -611,5 +1023,76 @@ mod tests {
             .unwrap();
         assert_eq!(membership, 2);
         assert_eq!(nested, "ROOT");
+    }
+
+    #[test]
+    fn delta_reconciliation_records_permanent_deletions() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        let mut library = ZoteroLibrary {
+            source_id: "zotero-local".into(),
+            library_id: "0".into(),
+            kind: LibraryKind::User,
+            name: "My Library".into(),
+            version: 1,
+            editable: false,
+            files_editable: false,
+            raw: json!({}),
+        };
+        let snapshot = LibrarySnapshot {
+            library: Some(library.clone()),
+            items: vec![ZoteroItem {
+                source_id: "zotero-local".into(),
+                library_id: "0".into(),
+                key: "ITEM".into(),
+                version: 1,
+                item_type: "journalArticle".into(),
+                parent_key: None,
+                title: Some("Paper".into()),
+                abstract_note: None,
+                date_added: None,
+                date_modified: None,
+                creators: vec![],
+                tags: vec![],
+                collection_keys: vec![],
+                relations: json!({}),
+                raw: json!({}),
+                deleted: false,
+            }],
+            ..LibrarySnapshot::default()
+        };
+        let transaction = connection.transaction().unwrap();
+        replace_library_in_transaction(&transaction, &snapshot, &library).unwrap();
+        transaction.commit().unwrap();
+
+        library.version = 2;
+        let delta = LibraryDelta {
+            library,
+            collections: vec![],
+            items: vec![],
+            attachments: vec![],
+            searches: vec![],
+            tags: vec![],
+            fulltext: vec![],
+            current_collection_keys: HashSet::new(),
+            current_item_keys: HashSet::new(),
+            current_search_keys: HashSet::new(),
+        };
+        let transaction = connection.transaction().unwrap();
+        apply_delta_in_transaction(&transaction, &delta).unwrap();
+        transaction.commit().unwrap();
+
+        let deleted: bool = connection
+            .query_row(
+                "SELECT deleted FROM items WHERE item_key = 'ITEM'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let tombstones: u64 = connection
+            .query_row("SELECT COUNT(*) FROM tombstones", [], |row| row.get(0))
+            .unwrap();
+        assert!(deleted);
+        assert_eq!(tombstones, 1);
     }
 }

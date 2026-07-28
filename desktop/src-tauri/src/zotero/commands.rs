@@ -164,7 +164,7 @@ impl ZoteroState {
         })
     }
 
-    pub async fn refresh(&self, _request: ZoteroRefreshRequest) -> Result<RefreshOutcome, String> {
+    pub async fn refresh(&self, request: ZoteroRefreshRequest) -> Result<RefreshOutcome, String> {
         if self
             .syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -192,16 +192,40 @@ impl ZoteroState {
             message
         })?;
         let mut snapshots = Vec::with_capacity(libraries.len());
+        let mut used_full_snapshot = false;
         for library in &libraries {
-            let snapshot = provider.fetch_snapshot(library).await.map_err(|message| {
+            let cursor = mirror.library_version(&library.source_id, &library.library_id)?;
+            let needs_full = request.force_full
+                || cursor.is_none()
+                || cursor.is_some_and(|version| version > library.version);
+            if needs_full {
+                let snapshot = provider.fetch_snapshot(library).await.map_err(|message| {
+                    self.set_error(Some(message.clone()));
+                    message
+                })?;
+                mirror.replace_library(&snapshot).map_err(|message| {
+                    self.set_error(Some(message.clone()));
+                    message
+                })?;
+                snapshots.push(snapshot);
+                used_full_snapshot = true;
+                continue;
+            }
+            let cursor = cursor.unwrap_or_default();
+            if library.version <= cursor {
+                continue;
+            }
+            let delta = provider
+                .fetch_delta(library, cursor)
+                .await
+                .map_err(|message| {
+                    self.set_error(Some(message.clone()));
+                    message
+                })?;
+            mirror.apply_delta(&delta).map_err(|message| {
                 self.set_error(Some(message.clone()));
                 message
             })?;
-            mirror.replace_library(&snapshot).map_err(|message| {
-                self.set_error(Some(message.clone()));
-                message
-            })?;
-            snapshots.push(snapshot);
         }
         mirror.reconcile_libraries(
             LOCAL_SOURCE_ID,
@@ -226,7 +250,7 @@ impl ZoteroState {
             report: ZoteroSyncReport {
                 source_id: LOCAL_SOURCE_ID.to_string(),
                 provider: ProviderKind::LocalApi,
-                full: true,
+                full: used_full_snapshot,
                 library_count: metrics.libraries,
                 item_count: metrics.items,
                 attachment_count: metrics.attachments,
