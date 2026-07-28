@@ -43,7 +43,7 @@ discover → screen → read → organize → hypothesize → plan → record �
 
 The public [GitHub Pages site](https://hyyyyyyz.github.io/Pharos/) is the
 marketing website. The actual product consists of the React web client (or the
-Tauri desktop shell), the FastAPI backend, SQLite storage, and an isolated PDF
+Tauri desktop client), the FastAPI backend, SQLite storage, and an isolated PDF
 translation worker.
 
 <div align="center">
@@ -57,7 +57,7 @@ data rather than static mockups.
 
 | Module | Current capabilities |
 | --- | --- |
-| **Library** | Import PDFs, preserve bibliographic metadata, translate papers, search full text, organize collections, annotate passages, attach notes to highlights, and import bibliographic metadata from Zotero. |
+| **Library** | Import PDFs, preserve bibliographic metadata, translate papers, search full text, organize collections, annotate passages, attach notes to highlights, and browse complete local Zotero libraries and PDFs from the desktop app. |
 | **Daily Papers** | Follow user-defined research directions, fetch new arXiv papers, rank them for each user, optionally generate model-backed abstract readings, and import useful papers into the library. |
 | **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
 | **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
@@ -106,16 +106,28 @@ contracts and remain future work.
   credentials.
 - SQLite FTS5 full-text search and nested collection organization.
 - PDF metadata extraction with Crossref/arXiv reconciliation where possible.
-- One-way Zotero Web API metadata sync. A server with a registered Zotero OAuth
+- One-way Zotero Web API metadata sync for browser and cross-device use. A server with a registered Zotero OAuth
   application offers one-click browser authorization; manual API-key linking
-  remains available as a fallback. Pharos does not download Zotero attachments
-  or write translation/reading state back to Zotero.
-- An experimental Tauri 2 desktop shell for macOS and Windows that reuses the
-  exact React UI and connects to the same separately running backend.
+  remains available as a fallback.
+- Complete local Zotero read access in the desktop client: personal and group
+  libraries, nested collections, saved-search results, every item type, tags,
+  notes, PDF annotations, full-text indexes, and local-only attachments. The
+  mirror stays usable when Zotero is closed, and PDFs are never uploaded unless
+  the user explicitly chooses **Import to Pharos**.
+- A Tauri 2 desktop client for macOS and Windows that reuses the exact React UI,
+  connects to the same backend, and adds local-first capabilities through Rust.
 
 ### Connect Zotero
 
-For a self-hosted deployment, register a web application at
+The desktop and web connections serve different purposes.
+
+**Desktop local connection.** Keep Zotero running and allow local application
+communication. Pharos reads Zotero's official loopback API, builds a versioned
+SQLite mirror, and opens local PDFs through an opaque, range-capable native
+protocol. No Zotero storage plan or cloud upload is required. Zotero remains
+authoritative; Pharos never reads or writes `zotero.sqlite` directly.
+
+**Web/cloud connection.** For a self-hosted deployment, register a web application at
 [Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
 
 - Website: `https://pharos.selab.top/` (replace this with your own public URL)
@@ -124,8 +136,14 @@ For a self-hosted deployment, register a web application at
 Set the OAuth client key and secret only on the backend. When they are not
 configured, the account settings keep the manual Zotero user-ID/API-key flow
 available. Both connection methods grant Pharos a one-way, metadata-only import
-path for the user's personal library; attachments, group libraries, notes, and
-write-back are outside the current integration.
+path for data that exists in Zotero Cloud. Local-only attachments are available
+only to the desktop client. Write-back remains disabled in the Local API and
+cloud providers.
+
+The repository also contains a hardened Zotero 7/8 Connector transport preview.
+It currently advertises data capabilities as disabled until pairing, notifier,
+and transaction tests are complete. See
+[`docs/ZOTERO_INTEGRATION.md`](docs/ZOTERO_INTEGRATION.md).
 
 ## Architecture
 
@@ -134,10 +152,11 @@ write-back are outside the current integration.
 </div>
 
 The diagram above focuses on the PDF translation execution path. The current
-repository also contains Literature Discovery, Research Projects, and an
-experimental Tauri desktop shell.
+repository also contains Literature Discovery, Research Projects, and the
+Tauri desktop client with its local Zotero mirror.
 
-Pharos keeps one backend as the source of truth for every client.
+The FastAPI backend is authoritative for Pharos-native records. Zotero remains
+authoritative for Zotero entities, which the desktop client mirrors locally.
 
 ```text
 React web client / Tauri desktop client
@@ -176,6 +195,7 @@ Pharos/
 │   └── engine_worker/       isolated BabelDOC worker; emits NDJSON progress
 ├── frontend/                React web product and PDF reader
 ├── desktop/                 Tauri 2 desktop shell and release configuration
+├── zotero-connector/        secure Zotero 7/8 extension transport
 ├── site/                    Three.js/Vite GitHub Pages marketing site
 ├── scripts/                 environment and engine setup utilities
 ├── docs/                    architecture and research-workflow specifications
@@ -259,8 +279,9 @@ Open `http://localhost:5173`. The Vite development server proxies `/api` to
 
 ## Run the desktop client
 
-The desktop application is a thin Tauri shell. It uses the same React frontend
-and expects the backend to be running separately.
+The desktop application uses the same React frontend and expects the Pharos
+backend to be running separately. Its Rust layer adds the complete local Zotero
+mirror, opaque local-PDF streaming, deep links, and native security boundaries.
 
 ```bash
 npm ci --prefix frontend
@@ -347,6 +368,10 @@ npm --prefix site run build
 
 # Desktop Rust shell
 cargo check --manifest-path desktop/src-tauri/Cargo.toml
+
+# Zotero Connector transport
+npm --prefix zotero-connector test
+npm --prefix zotero-connector run build
 ```
 
 The live BabelDOC integration test is optional because it requires the isolated
@@ -364,9 +389,10 @@ Pharos deliberately distinguishes implemented records from automated research:
 - A `verified` project record is a user decision, not independent reproduction.
 - Tags, paper-level notes, direct arXiv-link import, and one-click
   Discovery-to-Library download are not yet complete end-to-end frontend flows.
-- Zotero sync is metadata-only and one-way into Pharos. One-click authorization
-  additionally requires the deployment owner to register and configure a
-  Zotero OAuth application; manual API-key linking remains available.
+- Zotero cloud sync is metadata-only and one-way into Pharos. Desktop local
+  access includes the complete library graph and local PDFs, but Local API
+  write-back is intentionally disabled. The Connector's future realtime and
+  write capabilities remain gated behind pairing and transaction tests.
 - The full product backend is currently self-hosted; GitHub Pages hosts only
   the public marketing site.
 - The desktop shell exists, but signed/notarized public releases and a mobile

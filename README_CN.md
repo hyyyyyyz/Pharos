@@ -35,7 +35,7 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 发现 → 筛选 → 阅读 → 整理 → 假设 → 规划 → 记录 → 主张 → 草稿 → 审阅
 ```
 
-公开的 [GitHub Pages 页面](https://hyyyyyyz.github.io/Pharos/) 是项目宣传站。真正的产品由 React 网页客户端（或 Tauri 桌面薄壳）、FastAPI 后端、SQLite 数据层以及隔离运行的 PDF 翻译工作进程共同组成。
+公开的 [GitHub Pages 页面](https://hyyyyyyz.github.io/Pharos/) 是项目宣传站。真正的产品由 React 网页客户端（或 Tauri 桌面客户端）、FastAPI 后端、SQLite 数据层以及隔离运行的 PDF 翻译工作进程共同组成。
 
 <div align="center">
   <img src="assets/brand/poster.png" alt="研究机器人围绕 Pharos 灯塔阅读、翻译并整理论文" width="620" />
@@ -47,7 +47,7 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 
 | 模块 | 当前能力 |
 | --- | --- |
-| **文库** | 导入本地 PDF、保存书目信息、翻译论文、检索全文、管理分类、阅读原文与译文、保存高亮和高亮笔记，并从 Zotero 单向同步书目元数据。 |
+| **文库** | 导入本地 PDF、保存书目信息、翻译论文、检索全文、管理分类、阅读原文与译文、保存高亮和高亮笔记；桌面端还可直接浏览完整的本机 Zotero 文库和 PDF。 |
 | **每日论文** | 根据用户自定义的研究方向跟进 arXiv 新论文，按用户方向匹配和排序；配置模型后可生成摘要级中文解读，并把有价值的论文下载到文库。 |
 | **文献探索** | 同时检索 arXiv 和 OpenAlex，合并重复记录，单个来源失败时保留其余结果，重新打开搜索历史，快速查看核心思路，并把选中的论文纳入研究项目。 |
 | **研究项目** | 保存研究问题、文献纳入理由、九阶段项目状态，以及假设、实验计划、结果、主张、草稿和审阅记录。 |
@@ -82,17 +82,24 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 - 论文、搜索、项目、批注、研究方向和 Zotero 凭据均按用户隔离。
 - SQLite FTS5 全文检索和嵌套分类管理。
 - 从 PDF 中提取元数据，并在可以识别 DOI 或 arXiv 编号时通过 Crossref/arXiv 补全。
-- 通过 Zotero Web API 单向同步书目元数据。服务器注册并配置 Zotero OAuth 应用后，用户可以在浏览器中一键授权；同时保留手动填写 API 密钥的备用方式。当前不下载 Zotero 附件，也不把 Pharos 的翻译或阅读状态写回 Zotero。
-- 已有实验性的 Tauri 2 桌面薄壳，可在 macOS 和 Windows 上复用同一套 React 界面并连接同一个后端。
+- 网页端和跨设备场景通过 Zotero Web API 单向同步云端书目元数据。服务器注册并配置 Zotero OAuth 应用后，用户可以在浏览器中一键授权，同时保留手动 API 密钥方式。
+- 桌面端可完整只读访问本机 Zotero：个人文库、群组文库、嵌套分类、保存检索的实际结果、全部条目类型、标签、笔记、PDF 标注、全文索引和只存在本机的附件。Zotero 关闭后仍可使用离线镜像；只有用户明确点击“导入 Pharos”时才会上传 PDF。
+- Tauri 2 桌面客户端在 macOS 和 Windows 上复用同一套 React 界面，并通过 Rust 增加本地优先能力和安全边界。
 
 ### 连接 Zotero
 
-自行部署时，需要先在 [Zotero OAuth 应用管理页面](https://www.zotero.org/oauth/apps) 注册网页应用：
+桌面端和网页端的 Zotero 连接用途不同。
+
+**桌面本地连接：** 保持 Zotero 运行，并允许其他本机应用通信。Pharos 通过 Zotero 官方 loopback API 建立带版本的 SQLite 镜像，再用不暴露真实路径、支持分段读取的原生协议打开 PDF。无需购买 Zotero 云存储，也不要求把附件上传到云端。Zotero 始终是数据事实来源；Pharos 不会直接读写 `zotero.sqlite`。
+
+**网页/云端连接：** 自行部署时，需要先在 [Zotero OAuth 应用管理页面](https://www.zotero.org/oauth/apps) 注册网页应用：
 
 - 网站地址：`https://pharos.selab.top/`（请替换为自己的公开产品地址）
 - 回调地址：`https://pharos.selab.top/api/zotero/oauth/callback`
 
-OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。未配置 OAuth 时，账户设置仍会提供手动填写 Zotero 用户编号和 API 密钥的连接方式。两种方式都只会把个人文库的书目元数据单向导入 Pharos；当前不包含附件、群组文库、笔记或任何写回操作。
+OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。未配置 OAuth 时，账户设置仍会提供手动填写 Zotero 用户编号和 API 密钥的连接方式。两种云端连接方式都只同步已经存在于 Zotero Cloud 的数据；仅本机存在的附件只能由桌面客户端读取。Local API 和云端 Provider 当前都不执行写回。
+
+仓库中还包含一个面向 Zotero 7/8 的安全 Connector 传输预览。配对界面、Notifier 和事务测试完成前，它会如实把所有数据能力标为关闭。详见 [`docs/ZOTERO_INTEGRATION.md`](docs/ZOTERO_INTEGRATION.md)。
 
 ## 系统架构
 
@@ -100,9 +107,9 @@ OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。�
   <img src="assets/brand/architecture-overview.png" alt="Pharos 客户端连接 FastAPI 核心，后端把 PDF 翻译交给独立 BabelDOC 工作进程" width="100%" />
 </div>
 
-上图主要展示 PDF 翻译执行链路；当前仓库还包含文献探索、研究项目和实验性 Tauri 桌面薄壳。
+上图主要展示 PDF 翻译执行链路；当前仓库还包含文献探索、研究项目和带本机 Zotero 镜像的 Tauri 桌面客户端。
 
-Pharos 使用一个后端作为所有客户端的数据事实来源：
+FastAPI 后端是 Pharos 原生科研记录的数据事实来源；Zotero 条目仍以 Zotero 为准，由桌面端建立本地镜像：
 
 ```text
 React 网页客户端 / Tauri 桌面客户端
@@ -134,7 +141,8 @@ Pharos/
 │   ├── pharos/              API、领域服务、存储和引擎适配器
 │   └── engine_worker/       独立 BabelDOC 工作进程，输出 NDJSON 进度
 ├── frontend/                React 产品界面和 PDF 阅读器
-├── desktop/                 Tauri 2 桌面薄壳与打包配置
+├── desktop/                 Tauri 2 桌面客户端、本地能力与打包配置
+├── zotero-connector/        Zotero 7/8 安全扩展传输层
 ├── site/                    Three.js/Vite GitHub Pages 宣传站
 ├── scripts/                 环境和翻译引擎安装工具
 ├── docs/                    架构与科研工作流规范
@@ -151,7 +159,7 @@ Pharos/
 - Node.js **20 或更高版本**以及 npm
 - 现代浏览器
 - 在 Apple Silicon Mac 上使用 PDF 翻译：conda 与 Rosetta 2
-- 运行桌面薄壳：Rust **1.77.2 或更高版本**以及对应平台的构建工具
+- 运行桌面客户端：Rust **1.77.2 或更高版本**以及对应平台的构建工具
 
 仓库目前提供的翻译引擎自动安装脚本面向 Apple Silicon Mac。Linux 与 Windows x86_64 可以使用原生引擎依赖，但仓库暂未提供对应的一键安装脚本。
 
@@ -207,7 +215,7 @@ npm --prefix frontend run dev
 
 ## 运行桌面客户端
 
-桌面应用是一个实验性的 Tauri 薄壳，复用同一套 React 界面，并要求后端独立运行。
+桌面应用复用同一套 React 界面，并要求 Pharos 后端独立运行。Rust 层负责完整本机 Zotero 镜像、不暴露路径的 PDF 分段读取、深链接和原生安全边界。
 
 ```bash
 npm ci --prefix frontend
@@ -277,8 +285,12 @@ python -m pytest backend/tests
 npm --prefix frontend run build
 npm --prefix site run build
 
-# 桌面端 Rust 薄壳
+# 桌面端 Rust 能力层
 cargo check --manifest-path desktop/src-tauri/Cargo.toml
+
+# Zotero Connector 安全传输层
+npm --prefix zotero-connector test
+npm --prefix zotero-connector run build
 ```
 
 BabelDOC 真实集成测试需要独立引擎环境和真实 PDF 测试文件，因此不属于默认测试流程。
@@ -292,9 +304,9 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - 研究项目保存由研究者填写的计划和结果，不会自动运行代码、分配 GPU 或验证指标来源。
 - 项目记录中的“人工核验”是用户作出的状态判断，不代表平台已经独立复现。
 - 标签、论文级笔记、直接粘贴 arXiv 链接导入、从文献探索一键下载到文库等前端流程仍未完全闭环。
-- Zotero 当前只把书目元数据同步到 Pharos，不同步附件，也不会回写 Pharos 状态。一键网页授权还要求部署者注册并配置 Zotero OAuth 应用；未配置时仍可手动使用 API 密钥连接。
+- Zotero 云端同步仍是单向的元数据导入。桌面端本地连接已经覆盖完整文库图谱和本地 PDF，但 Local API 写回被有意关闭；Connector 的实时同步和写入能力只有在配对、冲突处理和事务测试完成后才会开放。
 - 完整产品后端目前需要自行部署；GitHub Pages 只托管公开宣传站。
-- 桌面薄壳已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
+- 桌面客户端已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 
 下一阶段的重点包括页面级证据定位、基于原文的可靠问答、证据感知的研究想法工作流、沙箱实验执行、结果与论文主张强绑定，以及受证据约束的写作与审阅流程。详细约束见 [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)。
 

@@ -370,7 +370,7 @@ export function SettingsModal(): JSX.Element | null {
           </div>
           <div className="ph-set-nav-spacer" />
           <div className="ph-set-nav-foot">
-            Pharos v0.2.0
+            Pharos v0.3.0
             <br />
             开源 · AGPL-3.0
           </div>
@@ -547,7 +547,7 @@ export function SettingsModal(): JSX.Element | null {
                                     : "等待本机 Zotero"}
                             </div>
                             <div className="ph-set-zot-card-sub">
-                              {localZot.libraryCount} 个文库 · {localZot.itemCount} 个完整条目
+                              {localZot.libraryCount} 个文库 · {localZot.itemCount} 个 Zotero 对象
                               {localZot.lastSuccessfulSyncMs
                                 ? ` · ${fmtEpoch(localZot.lastSuccessfulSyncMs)}`
                                 : ""}

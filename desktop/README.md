@@ -1,25 +1,25 @@
 # Pharos Desktop (Tauri)
 
-The Pharos desktop app is a thin native shell around **the exact same React
-frontend** that ships to the browser (`../frontend`). There is only one UI
-codebase — the desktop client loads `frontend/dist` in a native WebView — so the
-desktop and web clients are identical by construction, not by matching styles.
+The Pharos desktop app wraps **the exact same React frontend** that ships to the
+browser (`../frontend`) in a Tauri native runtime. There is one UI codebase — the
+desktop client loads `frontend/dist` in a native WebView — while Rust adds the
+local capabilities that a browser cannot safely provide.
 
-It is a **thin client**: like the web app, it talks to the Pharos backend over
-the network. It does not bundle the backend or the translation engine.
+It still talks to the Pharos backend for accounts, cloud records, discovery,
+translation jobs, and research projects. The desktop runtime additionally owns
+a versioned, offline-capable mirror of the user's local Zotero libraries and a
+path-hiding PDF stream protocol. It does not bundle the Pharos backend or the
+translation engine.
 
 ## Why Tauri (not Electron / native)
 
 - **Native rewrite (SwiftUI) was ruled out** — it could only ever *resemble* the
   web app, never be identical, and would double the UI maintenance.
-- **Tauri over Electron** — the app is ~8 MB and idles around 30–50 MB of RAM,
-  versus ~150 MB / 200–300 MB for Electron. Tauri's one caveat is that macOS
-  uses WebKit (WKWebView) rather than Chromium, so a design leaning on webfonts
-  or Chrome-only CSS could render slightly differently. Pharos's design uses
-  system fonts and standard CSS (flex/grid/oklch/color-mix), all fully supported
-  by WebKit, so the difference is negligible. Even Zotero (Gecko) and Obsidian
-  (Electron) are web-tech-in-a-shell — native is only chosen by apps with no web
-  twin.
+- **Tauri over Electron** — version 0.3.0's universal macOS application bundle
+  is about 15 MB and uses the operating system WebView instead of shipping a
+  second browser engine. Tauri's main caveat is that macOS uses WebKit
+  (WKWebView) rather than Chromium, so Chrome-only CSS can render differently.
+  Pharos uses system fonts and standards-based CSS supported by current WebKit.
 
 ## Layout
 
@@ -30,8 +30,9 @@ desktop/
     Cargo.toml          # Rust deps (tauri 2)
     tauri.conf.json      # v2 config; frontendDist -> ../../frontend/dist
     build.rs
-    src/{main,lib}.rs    # the shell: opens the window, loads the web UI
-    capabilities/default.json  # v2 permissions (window + open-external)
+    src/{main,lib}.rs    # app bootstrap, commands, and local PDF protocol
+    src/zotero/          # Local API provider, SQLite mirror, and repository
+    capabilities/default.json  # narrowly scoped Tauri permissions
     icons/               # generated from assets/brand/app-icon.png
 ```
 
@@ -72,7 +73,7 @@ npm run build             # -> src-tauri/target/release/bundle/{msi,nsis}/Pharos
 
 CI (`.github/workflows/desktop-release.yml`) builds **both macOS and Windows** in
 one matrix run and attaches all installers to a single **draft** GitHub Release.
-Trigger it by pushing a tag like `desktop-v0.2.0`, or run it by hand from the
+Trigger it by pushing a tag like `desktop-v0.3.0`, or run it by hand from the
 Actions tab. On Windows, Tauri uses the system WebView2 (Chromium), so the app
 renders identically to the web version there. (Linux/AppImage is one more matrix
 entry plus an apt step for `libwebkit2gtk-4.1-dev` — add it when you want it.)
@@ -92,10 +93,28 @@ Proper code-signing + notarization removes both warnings and is a later step:
 add an Apple Developer cert + notarization secrets, and a Windows signing
 certificate, to the CI action.
 
-## What the desktop shell can add later (without changing the UI)
+## Local Zotero integration
 
-The appearance stays identical; these are non-visual capabilities Tauri unlocks:
-local Zotero access (`localhost:23119`, which the browser can't reach), token
-storage in the macOS Keychain instead of `localStorage`, Finder drag-and-drop
-and `.pdf` file associations, native menus/shortcuts, system notifications
-(translation done, daily digest ready), and auto-update.
+Version 0.3.0 can read the complete local Zotero graph without requiring Zotero
+cloud storage: personal and group libraries, nested collections, executable
+saved searches, every item type, notes, PDF annotations, tags, relations,
+full-text indexes, and local attachments. The first sync creates a versioned
+SQLite mirror; later syncs use Zotero library versions and deletion cursors.
+The mirror remains browsable when Zotero is closed.
+
+Pharos never reads or writes `zotero.sqlite` directly. It uses Zotero's official
+loopback Local API and treats Zotero as the source of truth. Real attachment
+paths stay inside the Rust process. The UI receives opaque identifiers and reads
+validated PDF byte ranges through `pharos-local://`. A PDF is copied to Pharos
+only after an explicit **Import to Pharos** action.
+
+Local API write-back is intentionally disabled. The bundled Zotero Connector is
+a hardened transport preview whose read, realtime, and write capabilities stay
+off until pairing, Notifier integration, conflict handling, and transactional
+write tests are complete.
+
+## What can be added later without changing the UI
+
+The shared interface can progressively gain Keychain-backed tokens, Finder
+drag-and-drop and `.pdf` file associations, native menus and shortcuts, system
+notifications, auto-update, and a tested opt-in Zotero write-back provider.
