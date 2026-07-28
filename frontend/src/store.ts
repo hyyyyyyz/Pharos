@@ -66,8 +66,7 @@ interface UIState {
   selectedCol: string; // "lib" | "uncat" | "trash" | collection id
   selectCol: (id: string) => void;
   favOpen: boolean;
-  zoteroOpen: boolean;
-  toggleGroup: (g: "favOpen" | "zoteroOpen") => void;
+  toggleGroup: (g: "favOpen") => void;
   selectedTags: string[];
   toggleTag: (t: string) => void;
 
@@ -181,7 +180,6 @@ export const useUI = create<UIState>((set) => ({
   selectedCol: "lib",
   selectCol: (selectedCol) => set({ selectedCol }),
   favOpen: true,
-  zoteroOpen: true,
   toggleGroup: (g) => set((s) => ({ [g]: !s[g] }) as Pick<UIState, typeof g>),
   selectedTags: [],
   toggleTag: (t) =>

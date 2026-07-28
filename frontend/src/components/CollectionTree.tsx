@@ -65,7 +65,6 @@ export function CollectionTree(): JSX.Element {
   const selectedCol = useUI((s) => s.selectedCol);
   const selectCol = useUI((s) => s.selectCol);
   const favOpen = useUI((s) => s.favOpen);
-  const zoteroOpen = useUI((s) => s.zoteroOpen);
   const toggleGroup = useUI((s) => s.toggleGroup);
 
   const [editing, setEditing] = useState<Editing>(null);
@@ -147,12 +146,19 @@ export function CollectionTree(): JSX.Element {
     void qc.invalidateQueries({ queryKey: ["zotero-mirror"] });
   }, [mirrorRevision, qc]);
 
-  const zoteroVisibleItemCount =
-    (zoteroLibraries.data?.length ?? 0) > 0 &&
-    zoteroCountQueries.length === zoteroLibraries.data?.length &&
-    zoteroCountQueries.every((query) => query.data !== undefined)
-      ? zoteroCountQueries.reduce((total, query) => total + (query.data?.total ?? 0), 0)
-      : undefined;
+  const primaryZoteroIndex = (zoteroLibraries.data ?? []).findIndex(
+    (library) => library.kind === "user",
+  );
+  const primaryZoteroLibrary =
+    primaryZoteroIndex >= 0 ? zoteroLibraries.data?.[primaryZoteroIndex] : undefined;
+
+  // On desktop the local Zotero personal library is the user's primary
+  // library. Promote it into the existing “我的文库” slot instead of showing a
+  // Pharos root, a “本机 Zotero” wrapper, and another “我的文库” below it.
+  useEffect(() => {
+    if (selectedCol !== "lib" || primaryZoteroLibrary === undefined) return;
+    selectCol(zoteroLibraryNodeId(primaryZoteroLibrary));
+  }, [primaryZoteroLibrary, selectCol, selectedCol]);
 
   const tree = useMemo(() => collections.data?.collections ?? [], [collections.data]);
 
@@ -459,7 +465,11 @@ export function CollectionTree(): JSX.Element {
       );
     });
 
-  const renderZoteroLibrary = (library: ZoteroLibrary, index: number): JSX.Element => {
+  const renderZoteroLibrary = (
+    library: ZoteroLibrary,
+    index: number,
+    promoted = false,
+  ): JSX.Element => {
     const nodeId = zoteroLibraryNodeId(library);
     const libraryCollections = zoteroCollectionQueries[index]?.data ?? [];
     const savedSearches = zoteroSearchQueries[index]?.data ?? [];
@@ -470,9 +480,15 @@ export function CollectionTree(): JSX.Element {
       <Fragment key={nodeId}>
         <div
           className={selectedCol === nodeId ? "ph-tree-row is-active" : "ph-tree-row"}
-          style={{ paddingLeft: 8 + 15 }}
+          style={{ paddingLeft: promoted ? 8 : 8 + 15 }}
           onClick={() => selectCol(nodeId)}
-          title={library.kind === "group" ? `Zotero 群组文库 · ${library.name}` : "Zotero 个人文库"}
+          title={
+            library.kind === "group"
+              ? `Zotero 群组文库 · ${library.name}`
+              : localStatus.data?.available
+                ? "本机 Zotero 个人文库"
+                : "Zotero 个人文库 · 离线镜像"
+          }
         >
           <span
             className="ph-tree-caret"
@@ -493,12 +509,13 @@ export function CollectionTree(): JSX.Element {
             {library.kind === "group" ? <Icons.cloud /> : <Icons.library />}
           </span>
           <span className="ph-tree-text" title={library.name}>
-            {library.name}
+            {promoted ? "我的文库" : library.name}
           </span>
           {count !== undefined && <span className="ph-tree-count">{count}</span>}
         </div>
-        {!isCollapsed && renderZoteroCollections(library, libraryCollections, null, 2)}
-        {!isCollapsed && renderSavedSearches(library, savedSearches, 2)}
+        {!isCollapsed &&
+          renderZoteroCollections(library, libraryCollections, null, promoted ? 1 : 2)}
+        {!isCollapsed && renderSavedSearches(library, savedSearches, promoted ? 1 : 2)}
       </Fragment>
     );
   };
@@ -552,69 +569,39 @@ export function CollectionTree(): JSX.Element {
         </button>
       </div>
 
-      {renderBuiltin(builtins[0])}
+      {primaryZoteroLibrary !== undefined
+        ? renderZoteroLibrary(primaryZoteroLibrary, primaryZoteroIndex, true)
+        : renderBuiltin(builtins[0])}
 
-      {zoteroAvailable() && (
-        <>
-          <div
-            className="ph-tree-row"
-            style={{ paddingLeft: 8 }}
-            onClick={() => toggleGroup("zoteroOpen")}
-            title={
-              localStatus.data?.available
-                ? "本机 Zotero 在线，条目与 PDF 保留在本地"
-                : localStatus.data?.itemCount
-                  ? "Zotero 未运行，正在使用上次同步的离线镜像"
-                  : "启动 Zotero 后即可同步完整文库"
-            }
-          >
-            <span className="ph-tree-caret">
-              {zoteroOpen ? <Icons.caretD /> : <Icons.caretR />}
-            </span>
-            <span className="ph-tree-icon">
-              <Icons.library />
-            </span>
-            <span className="ph-tree-text">
-              {localStatus.data?.syncing
-                ? "正在同步 Zotero"
-                : localStatus.data?.available
-                  ? "本机 Zotero"
-                  : "Zotero 离线镜像"}
-            </span>
-            {zoteroVisibleItemCount !== undefined && (
-              <span className="ph-tree-count">{zoteroVisibleItemCount}</span>
-            )}
-          </div>
-          {zoteroOpen &&
-            (zoteroLibraries.data ?? []).map((library, index) =>
-              renderZoteroLibrary(library, index),
-            )}
-          {zoteroOpen && zoteroLibraries.isPending && (
-            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
-              正在读取 Zotero…
-            </div>
-          )}
-          {zoteroOpen && zoteroLibraries.isError && (
-            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
-              无法读取 Zotero 镜像
-            </div>
-          )}
-          {zoteroOpen &&
-            !zoteroLibraries.isPending &&
-            !zoteroLibraries.isError &&
-            (zoteroLibraries.data?.length ?? 0) === 0 && (
-              <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
-                {localStatus.data?.syncing ||
-                localStatus.data?.phase === "connecting" ||
-                localStatus.data?.phase === "indexing"
-                  ? "正在建立完整文库镜像…"
-                  : localStatus.data?.available
-                    ? "正在等待首次同步…"
-                    : "启动 Zotero 后将自动读取文库"}
-              </div>
-            )}
-        </>
+      {zoteroAvailable() &&
+        (zoteroLibraries.data ?? []).map((library, index) =>
+          library.kind === "group" ? renderZoteroLibrary(library, index) : null,
+        )}
+      {zoteroAvailable() && primaryZoteroLibrary === undefined && zoteroLibraries.isPending && (
+        <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+          正在读取 Zotero…
+        </div>
       )}
+      {zoteroAvailable() && primaryZoteroLibrary === undefined && zoteroLibraries.isError && (
+        <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+          无法读取 Zotero 镜像
+        </div>
+      )}
+      {zoteroAvailable() &&
+        primaryZoteroLibrary === undefined &&
+        !zoteroLibraries.isPending &&
+        !zoteroLibraries.isError &&
+        (zoteroLibraries.data?.length ?? 0) === 0 && (
+          <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+            {localStatus.data?.syncing ||
+            localStatus.data?.phase === "connecting" ||
+            localStatus.data?.phase === "indexing"
+              ? "正在建立完整文库镜像…"
+              : localStatus.data?.available
+                ? "正在等待首次同步…"
+                : "启动 Zotero 后将自动读取文库"}
+          </div>
+        )}
 
       <div className="ph-tree-row" style={{ paddingLeft: 8 }} onClick={() => toggleGroup("favOpen")}>
         <span className="ph-tree-caret">{favOpen ? <Icons.caretD /> : <Icons.caretR />}</span>
