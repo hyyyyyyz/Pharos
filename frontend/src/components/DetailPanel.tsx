@@ -10,18 +10,30 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Paper } from "../api/types";
 import { Icons } from "../design/icons";
-import { dash, isJobActive, statusOf, toVM } from "../lib/model";
+import { dash, isJobActive, statusOf, toVM, zoteroDetailToVM } from "../lib/model";
 import {
   isLocalZoteroPaperId,
   localZotero,
   type LocalZoteroAttachment,
   type LocalZoteroPaper,
 } from "../lib/localZotero";
+import { parseZoteroItemId, zotero } from "../lib/zotero";
+import type { ZoteroAttachment, ZoteroItemDetail } from "../types/zotero";
 import { pdfTranslationEnabled, useSession, useUI } from "../store";
 import "./DetailPanel.css";
 
 /** Job error messages can be a whole stack trace; the panel only has room for a line. */
 const ERR_MAX = 120;
+
+const formatSize = (bytes: number | null): string => {
+  if (bytes === null) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+};
+
+const isPdfAttachment = (attachment: ZoteroAttachment): boolean =>
+  attachment.contentType?.toLowerCase() === "application/pdf" ||
+  attachment.filename?.toLowerCase().endsWith(".pdf") === true;
 
 function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element {
   const openPaper = useUI((s) => s.openPaper);
@@ -41,11 +53,6 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
   const defaultAttachment = paper.pdfAttachments.find(
     (attachment) => attachment.id === paper.pdfAttachmentId,
   );
-  const formatSize = (bytes: number | null): string => {
-    if (bytes === null) return "";
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-  };
   return (
     <aside className="ph-dp ph-scroll">
       <div className="ph-dp-body">
@@ -174,13 +181,222 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
   );
 }
 
+function MirrorZoteroDetail({ detail }: { detail: ZoteroItemDetail }): JSX.Element {
+  const openPaper = useUI((state) => state.openPaper);
+  const qc = useQueryClient();
+  const vm = zoteroDetailToVM(detail);
+  const libraries = useQuery({
+    queryKey: ["zotero-mirror", "libraries"],
+    queryFn: zotero.libraries,
+  });
+  const libraryName =
+    libraries.data?.find(
+      (library) =>
+        library.sourceId === detail.item.sourceId && library.libraryId === detail.item.libraryId,
+    )?.name ?? "本地文库";
+  const pdfAttachments = detail.attachments.filter(isPdfAttachment);
+  const defaultAttachment =
+    pdfAttachments.find((attachment) => attachment.available) ?? pdfAttachments[0];
+  const notes = detail.children.filter((child) => child.itemType === "note");
+
+  const importPaper = useMutation({
+    mutationFn: async (attachment: ZoteroAttachment) =>
+      api.upload(await zotero.attachmentFile(attachment, vm.title)),
+    onSuccess: (imported) => {
+      void qc.invalidateQueries({ queryKey: ["papers"] });
+      void qc.invalidateQueries({ queryKey: ["collections"] });
+      openPaper(imported.id);
+    },
+  });
+
+  return (
+    <aside className="ph-dp ph-scroll">
+      <div className="ph-dp-body">
+        <div className="ph-dp-title">{vm.title}</div>
+        <div className="ph-dp-sub">本机 Zotero · {libraryName}</div>
+
+        <div className="ph-dp-actions">
+          <button
+            type="button"
+            className="ph-dp-primary"
+            disabled={!defaultAttachment?.available}
+            onClick={() => openPaper(vm.id, defaultAttachment?.publicId)}
+          >
+            <span className="ph-dp-ic">
+              <Icons.open />
+            </span>
+            {defaultAttachment?.available ? "打开本地 PDF" : "PDF 未在本机"}
+          </button>
+        </div>
+
+        {pdfAttachments.length > 0 && !pdfAttachments.some((attachment) => attachment.available) && (
+          <div className="ph-dp-error">
+            Zotero 已记录 PDF，但文件尚未下载到这台设备；元数据、笔记和标注仍可离线查看。
+          </div>
+        )}
+        {importPaper.isError && (
+          <div className="ph-dp-error">导入失败：{String(importPaper.error)}</div>
+        )}
+
+        <div className="ph-dp-grid">
+          <span className="ph-dp-k">作者</span>
+          <span className="ph-dp-v">
+            {vm.authors.length > 0 ? vm.authors.join(" · ") : dash(null)}
+          </span>
+          <span className="ph-dp-k">来源</span>
+          <span className="ph-dp-v">{dash(vm.venue ?? libraryName)}</span>
+          <span className="ph-dp-k">年份</span>
+          <span className="ph-dp-v">{dash(vm.year)}</span>
+          <span className="ph-dp-k">附件</span>
+          <span className="ph-dp-v">
+            {detail.attachments.length > 0
+              ? `${detail.attachments.filter((attachment) => attachment.available).length}/${detail.attachments.length} 份本机可用`
+              : "没有附件"}
+          </span>
+          <span className="ph-dp-k">DOI</span>
+          {vm.doi ? (
+            <a
+              className="ph-dp-v-doi"
+              href={`https://doi.org/${vm.doi}`}
+              target="_blank"
+              rel="noreferrer"
+              title={vm.doi}
+            >
+              {vm.doi}
+            </a>
+          ) : (
+            <span className="ph-dp-v-doi">{dash(null)}</span>
+          )}
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label">摘要</div>
+          {vm.abstract?.trim() ? (
+            <div className="ph-dp-abstract">{vm.abstract}</div>
+          ) : (
+            <div className="ph-dp-muted ph-dp-muted-ab">Zotero 中暂无摘要</div>
+          )}
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label ph-dp-label-7">附件</div>
+          <div className="ph-dp-local-files">
+            {detail.attachments.length > 0 ? (
+              detail.attachments.map((attachment) => {
+                const pdf = isPdfAttachment(attachment);
+                const importing =
+                  importPaper.isPending && importPaper.variables?.publicId === attachment.publicId;
+                return (
+                  <div className="ph-dp-local-file" key={attachment.publicId}>
+                    <span className="ph-dp-file-ic">
+                      <Icons.file />
+                    </span>
+                    <span className="ph-dp-local-file-main" title={attachment.filename ?? undefined}>
+                      <span className="ph-dp-file-name">
+                        {attachment.filename ?? `Zotero 附件 ${attachment.key}`}
+                      </span>
+                      <span className="ph-dp-local-file-meta">
+                        {attachment.available
+                          ? [pdf ? "PDF" : attachment.contentType ?? "附件", formatSize(attachment.sizeBytes)]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : "尚未下载"}
+                      </span>
+                    </span>
+                    <span className="ph-dp-local-file-actions">
+                      {pdf && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!attachment.available}
+                            onClick={() => openPaper(vm.id, attachment.publicId)}
+                          >
+                            打开
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!attachment.available || importPaper.isPending}
+                            title="复制这份 PDF 到 Pharos，之后可翻译并跨设备访问"
+                            onClick={() => importPaper.mutate(attachment)}
+                          >
+                            {importing ? "导入中" : "导入"}
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="ph-dp-muted">这个 Zotero 条目没有附件</div>
+            )}
+          </div>
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label ph-dp-label-7">标签</div>
+          {vm.tags.length > 0 ? (
+            <div className="ph-dp-tags">
+              {vm.tags.map((tag) => (
+                <span key={tag} className="ph-dp-tag">{tag}</span>
+              ))}
+            </div>
+          ) : (
+            <div className="ph-dp-muted">暂无标签</div>
+          )}
+        </div>
+
+        <div className="ph-dp-sec">
+          <div className="ph-dp-label ph-dp-label-7">笔记</div>
+          {notes.length > 0 ? (
+            <div className="ph-dp-local-files">
+              {notes.map((note) => (
+                <div className="ph-dp-local-file" key={note.key}>
+                  <span className="ph-dp-file-ic"><Icons.file /></span>
+                  <span className="ph-dp-local-file-main">
+                    <span className="ph-dp-file-name">{note.title || "Zotero 笔记"}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ph-dp-muted">暂无笔记</div>
+          )}
+        </div>
+
+        <div className="ph-dp-sec-last">
+          <div className="ph-dp-label ph-dp-label-7">PDF 标注</div>
+          {detail.annotations.length > 0 ? (
+            <div className="ph-dp-local-files">
+              {detail.annotations.map((annotation) => (
+                <div className="ph-dp-local-file" key={annotation.key}>
+                  <span className="ph-dp-file-ic"><Icons.spark /></span>
+                  <span className="ph-dp-local-file-main">
+                    <span className="ph-dp-file-name">
+                      {annotation.title || "Zotero PDF 标注"}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ph-dp-muted">暂无 PDF 标注</div>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 export function DetailPanel(): JSX.Element {
   const selectedPaperId = useUI((s) => s.selectedPaperId);
   const openPaper = useUI((s) => s.openPaper);
   const pdfTx = useSession(pdfTranslationEnabled);
   const qc = useQueryClient();
   const id = selectedPaperId ?? "";
-  const isLocal = isLocalZoteroPaperId(id);
+  const mirrorRef = parseZoteroItemId(id);
+  const isLegacyLocal = isLocalZoteroPaperId(id);
+  const isLocal = isLegacyLocal || mirrorRef !== null;
 
   // The list already holds ["papers"]; reading it here avoids an empty flash
   // while ["paper", id] loads after a selection change.
@@ -199,7 +415,12 @@ export function DetailPanel(): JSX.Element {
   const localDetailQuery = useQuery({
     queryKey: ["zotero-local", "paper", id],
     queryFn: () => localZotero.get(id),
-    enabled: id !== "" && isLocal,
+    enabled: id !== "" && isLegacyLocal,
+  });
+  const mirrorDetailQuery = useQuery({
+    queryKey: ["zotero-mirror", "item", mirrorRef?.sourceId, mirrorRef?.libraryId, mirrorRef?.itemKey],
+    queryFn: () => zotero.item(mirrorRef!),
+    enabled: mirrorRef !== null,
   });
 
   const translate = useMutation({
@@ -214,6 +435,16 @@ export function DetailPanel(): JSX.Element {
     detailQuery.data ?? papersQuery.data?.find((p) => p.id === id) ?? null;
 
   if (isLocal) {
+    if (mirrorRef !== null) {
+      if (mirrorDetailQuery.data) return <MirrorZoteroDetail detail={mirrorDetailQuery.data} />;
+      return (
+        <aside className="ph-dp ph-scroll">
+          <div className="ph-dp-empty">
+            {mirrorDetailQuery.isError ? "无法读取 Zotero 镜像条目" : "正在读取 Zotero 条目…"}
+          </div>
+        </aside>
+      );
+    }
     const localPaper = localDetailQuery.data;
     if (localPaper) return <LocalZoteroDetail paper={localPaper} />;
     return (

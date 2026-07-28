@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { Icons } from "../design/icons";
 import { isLocalZoteroPaperId, localZotero, localZoteroAvailable } from "../lib/localZotero";
+import { parseZoteroItemId, zotero, zoteroAvailable } from "../lib/zotero";
 import { useUI } from "../store";
 import "./TabBar.css";
 
@@ -20,14 +21,32 @@ export function TabBar(): JSX.Element {
       localZoteroAvailable() &&
       tabs.some((tab) => tab.kind === "paper" && isLocalZoteroPaperId(tab.paperId)),
   });
+  const mirrorRefs = tabs.map((tab) =>
+    tab.kind === "paper" ? parseZoteroItemId(tab.paperId) : null,
+  );
+  const mirrorDetails = useQueries({
+    queries: mirrorRefs.map((reference) => ({
+      queryKey: [
+        "zotero-mirror",
+        "item",
+        reference?.sourceId,
+        reference?.libraryId,
+        reference?.itemKey,
+      ],
+      queryFn: () => zotero.item(reference!),
+      enabled: zoteroAvailable() && reference !== null,
+    })),
+  });
 
   return (
     <div className="ph-tabbar">
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const active = tab.id === activeTabId;
         const isLibTab = tab.kind === "library";
         const local = !isLibTab && isLocalZoteroPaperId(tab.paperId);
-        const paper = isLibTab || local ? undefined : papers?.find((p) => p.id === tab.paperId);
+        const mirror = mirrorRefs[index] !== null;
+        const paper =
+          isLibTab || local || mirror ? undefined : papers?.find((p) => p.id === tab.paperId);
         const localPaper =
           isLibTab || !local ? undefined : localPapers?.find((p) => p.id === tab.paperId);
         const localAttachment =
@@ -36,9 +55,21 @@ export function TabBar(): JSX.Element {
             : localPaper?.pdfAttachments.find(
                 (attachment) => attachment.id === tab.localAttachmentId,
               );
+        const mirrorDetail = mirrorDetails[index]?.data;
+        const mirrorAttachment =
+          isLibTab || !tab.localAttachmentId
+            ? undefined
+            : mirrorDetail?.attachments.find(
+                (attachment) => attachment.publicId === tab.localAttachmentId,
+              );
         const title = isLibTab
           ? "文库"
-          : localAttachment?.filename ?? localPaper?.title ?? paper?.title ?? "论文";
+          : mirrorAttachment?.filename ??
+            mirrorDetail?.item.title ??
+            localAttachment?.filename ??
+            localPaper?.title ??
+            paper?.title ??
+            "论文";
         return (
           <div
             key={tab.id}

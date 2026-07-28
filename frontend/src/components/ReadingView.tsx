@@ -10,6 +10,7 @@ import {
   isLocalZoteroPaperId,
   localZotero,
 } from "../lib/localZotero";
+import { parseZoteroItemId, zotero } from "../lib/zotero";
 import {
   TRANSLATE_STAGES,
   dash,
@@ -17,6 +18,7 @@ import {
   localToVM,
   stageIndex,
   toVM,
+  zoteroDetailToVM,
 } from "../lib/model";
 import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
 import { AiPanel } from "./AiPanel";
@@ -31,6 +33,12 @@ const MAX_ZOOM = 4;
 const THUMB_WIDTH = 120;
 /** Backend errors can be a whole stack trace; the panel shows the gist. */
 const ERROR_MAX = 200;
+
+interface LocalReadableAttachment {
+  id: string;
+  filename: string;
+  available: boolean;
+}
 
 const clampZoom = (v: number): number => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v));
 
@@ -91,7 +99,10 @@ export function ReadingView({
   const aiOpen = useUI(isAiOpen);
   const toggleAI = useUI((s) => s.toggleAI);
   const pdfTx = useSession(pdfTranslationEnabled);
-  const isLocal = isLocalZoteroPaperId(paperId);
+  const mirrorRef = parseZoteroItemId(paperId);
+  const isLegacyLocal = isLocalZoteroPaperId(paperId);
+  const isMirrorLocal = mirrorRef !== null;
+  const isLocal = isLegacyLocal || isMirrorLocal;
 
   /* --------------------------------------------------------- the paper */
   const { data: paper } = useQuery({
@@ -104,37 +115,75 @@ export function ReadingView({
   const { data: localPaper } = useQuery({
     queryKey: ["zotero-local", "paper", paperId],
     queryFn: () => localZotero.get(paperId),
-    enabled: isLocal,
+    enabled: isLegacyLocal,
   });
+  const { data: mirrorDetail } = useQuery({
+    queryKey: ["zotero-mirror", "item", mirrorRef?.sourceId, mirrorRef?.libraryId, mirrorRef?.itemKey],
+    queryFn: () => zotero.item(mirrorRef!),
+    enabled: isMirrorLocal,
+  });
+  const localAttachments = useMemo<LocalReadableAttachment[]>(() => {
+    if (isLegacyLocal) {
+      return (localPaper?.pdfAttachments ?? []).map((attachment) => ({
+        id: attachment.id,
+        filename: attachment.filename,
+        available: attachment.available,
+      }));
+    }
+    if (!isMirrorLocal) return [];
+    return (mirrorDetail?.attachments ?? [])
+      .filter(
+        (attachment) =>
+          attachment.contentType?.toLowerCase() === "application/pdf" ||
+          attachment.filename?.toLowerCase().endsWith(".pdf") === true,
+      )
+      .map((attachment) => ({
+        id: attachment.publicId,
+        filename: attachment.filename ?? `Zotero PDF ${attachment.key}`,
+        available: attachment.available,
+      }));
+  }, [isLegacyLocal, isMirrorLocal, localPaper, mirrorDetail]);
   const [localAttachmentId, setLocalAttachmentId] = useState<string | null>(
     initialLocalAttachmentId ?? null,
   );
   useEffect(() => {
-    if (!localPaper) return;
+    if (!isLocal || (isLegacyLocal && !localPaper) || (isMirrorLocal && !mirrorDetail)) return;
     setLocalAttachmentId((current) => {
-      if (current && localPaper.pdfAttachments.some((attachment) => attachment.id === current)) {
+      if (current && localAttachments.some((attachment) => attachment.id === current)) {
         return current;
       }
       if (
         initialLocalAttachmentId &&
-        localPaper.pdfAttachments.some(
-          (attachment) => attachment.id === initialLocalAttachmentId,
-        )
+        localAttachments.some((attachment) => attachment.id === initialLocalAttachmentId)
       ) {
         return initialLocalAttachmentId;
       }
-      return localPaper.pdfAttachmentId ?? localPaper.pdfAttachments[0]?.id ?? null;
+      if (isLegacyLocal && localPaper?.pdfAttachmentId) return localPaper.pdfAttachmentId;
+      return (
+        localAttachments.find((attachment) => attachment.available)?.id ??
+        localAttachments[0]?.id ??
+        null
+      );
     });
-  }, [initialLocalAttachmentId, localPaper]);
+  }, [initialLocalAttachmentId, isLegacyLocal, isLocal, isMirrorLocal, localAttachments, localPaper, mirrorDetail]);
   const localAttachment = useMemo(
-    () =>
-      localPaper?.pdfAttachments.find((attachment) => attachment.id === localAttachmentId) ??
-      null,
-    [localAttachmentId, localPaper],
+    () => localAttachments.find((attachment) => attachment.id === localAttachmentId) ?? null,
+    [localAttachmentId, localAttachments],
   );
   const vm = useMemo(
-    () => (isLocal ? (localPaper ? localToVM(localPaper) : null) : paper ? toVM(paper) : null),
-    [isLocal, localPaper, paper],
+    () =>
+      isLegacyLocal
+        ? localPaper
+          ? localToVM(localPaper)
+          : null
+        : isMirrorLocal
+          ? mirrorDetail
+            ? zoteroDetailToVM(mirrorDetail)
+            : null
+          : paper
+            ? toVM(paper)
+            : null,
+    [isLegacyLocal, isMirrorLocal, localPaper, mirrorDetail, paper],
   );
 
   const translate = useMutation({
@@ -207,8 +256,11 @@ export function ReadingView({
   }, [showPdf, isLocal, effMode, vm?.job]);
 
   const localPdfQuery = useQuery({
-    queryKey: ["zotero-local", "pdf", localAttachment?.id],
-    queryFn: () => localZotero.pdfSource(localAttachment!.id),
+    queryKey: ["zotero-local", isMirrorLocal ? "mirror-pdf" : "legacy-pdf", localAttachment?.id],
+    queryFn: () =>
+      isMirrorLocal
+        ? zotero.attachmentSource(localAttachment!.id)
+        : localZotero.pdfSource(localAttachment!.id),
     enabled: isLocal && localAttachment?.available === true,
   });
   const localPdfUrl = localPdfQuery.data?.url ?? null;
@@ -387,7 +439,7 @@ export function ReadingView({
             </button>
           )}
           <div className="ph-rv-file" title={displayFilename}>{displayFilename}</div>
-          {isLocal && (localPaper?.pdfAttachments.length ?? 0) > 1 && (
+          {isLocal && localAttachments.length > 1 && (
             <label className="ph-rv-local-attachment">
               <span>附件</span>
               <select
@@ -395,7 +447,7 @@ export function ReadingView({
                 onChange={(event) => setLocalAttachmentId(event.target.value)}
                 aria-label="选择本地 Zotero PDF"
               >
-                {localPaper?.pdfAttachments.map((attachment) => (
+                {localAttachments.map((attachment) => (
                   <option key={attachment.id} value={attachment.id}>
                     {attachment.filename}{attachment.available ? "" : "（未下载）"}
                   </option>
