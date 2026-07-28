@@ -4,6 +4,7 @@
 //! capabilities live behind narrow commands: today that includes user-approved
 //! Daily Vault folders and the loopback-only Zotero Local API.
 
+mod zotero;
 mod zotero_local;
 
 use tauri::Manager;
