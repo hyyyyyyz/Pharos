@@ -34,10 +34,15 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # The desktop client talks to Zotero's loopback-only Local API. TLS is not
 # needed for that fixed `127.0.0.1` endpoint, so keep reqwest's heavyweight TLS
 # stack out of the native bundle.
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 futures-util = "0.3"
 sha2 = "0.10"
 hex = "0.4"
+regex = "1"
+# Model credentials never enter the portable Workspace. This selects the
+# native credential store on each desktop platform (Keychain / Credential
+# Manager / Secret Service) while keeping one cross-platform API in Rust.
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 # Must be the first registered plugin. Its deep-link feature forwards a second

@@ -4,6 +4,8 @@
 //! capabilities live behind narrow commands: today that includes user-approved
 //! Daily Vault folders and the loopback-only Zotero Local API.
 
+mod ai;
+mod codex_bridge;
 mod workspace;
 mod zotero;
 mod zotero_local;
@@ -91,6 +93,7 @@ pub fn run() {
             let zotero_mirror_path = workspace.zotero_mirror_path();
             let zotero_cache_path = workspace.legacy_zotero_cache_path();
             app.manage(workspace);
+            app.manage(ai::AiState::default());
             app.manage(zotero_local::LocalZoteroState::load(zotero_cache_path));
             app.manage(zotero::commands::ZoteroState::load(zotero_mirror_path));
             let handle = app.handle().clone();
@@ -126,6 +129,21 @@ pub fn run() {
             workspace::workspace_status,
             workspace::workspace_relocate,
             workspace::workspace_health,
+            ai::provider_status,
+            ai::provider_save,
+            ai::provider_clear,
+            ai::conversation_list,
+            ai::conversation_create,
+            ai::conversation_load,
+            ai::conversation_delete,
+            ai::document_context_status,
+            ai::document_prepare_context,
+            ai::conversation_cancel,
+            ai::conversation_send_stream,
+            codex_bridge::codex_capabilities,
+            codex_bridge::codex_discover_sessions,
+            codex_bridge::codex_import_session,
+            codex_bridge::codex_create_handoff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Pharos desktop app");

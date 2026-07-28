@@ -26,6 +26,7 @@ const ZOTERO_MIRROR_RELATIVE_PATH: &str = "database/zotero-mirror-v1.sqlite3";
 const LEGACY_ZOTERO_CACHE_RELATIVE_PATH: &str = "cache/zotero-local-v1.json";
 
 const REQUIRED_DIRECTORIES: &[&str] = &[
+    "config",
     "database",
     "library/objects/sha256",
     "library/metadata",
@@ -123,6 +124,7 @@ impl std::fmt::Debug for WorkspaceState {
 pub struct WorkspaceStatus {
     pub root: String,
     pub configured_root: String,
+    pub daily_path: String,
     pub workspace_id: String,
     pub format_version: u32,
     pub database_schema_version: i64,
@@ -234,6 +236,10 @@ impl WorkspaceState {
         self.root.join("daily")
     }
 
+    pub fn workspace_id(&self) -> Result<String, String> {
+        Ok(read_manifest(&self.root)?.workspace_id)
+    }
+
     fn status(&self) -> Result<WorkspaceStatus, String> {
         let manifest = read_manifest(&self.root)?;
         let database_schema_version = database_schema_version(&self.db_path())?;
@@ -243,6 +249,7 @@ impl WorkspaceState {
         Ok(WorkspaceStatus {
             root: path_for_display(&self.root),
             configured_root: path_for_display(&configured_root),
+            daily_path: path_for_display(&self.daily_path()),
             workspace_id: manifest.workspace_id,
             format_version: manifest.format_version,
             database_schema_version,
