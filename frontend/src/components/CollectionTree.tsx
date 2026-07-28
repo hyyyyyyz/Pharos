@@ -89,7 +89,24 @@ export function CollectionTree(): JSX.Element {
     queryKey: ["zotero-desktop", "status"],
     queryFn: zotero.status,
     enabled: zoteroAvailable(),
-    staleTime: 5_000,
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const status = query.state.data;
+      if (status === undefined) return 750;
+      if (
+        status.syncing ||
+        status.phase === "detecting" ||
+        status.phase === "connecting" ||
+        status.phase === "indexing"
+      ) {
+        return 750;
+      }
+      // Keep a very light probe while both Zotero and the mirror are absent so
+      // launching Zotero after Pharos does not require restarting the client.
+      if (!status.available && status.itemCount === 0) return 5_000;
+      return false;
+    },
+    refetchIntervalInBackground: true,
   });
   const zoteroLibraries = useQuery({
     queryKey: ["zotero-mirror", "libraries"],
@@ -117,6 +134,25 @@ export function CollectionTree(): JSX.Element {
       enabled: zoteroAvailable(),
     })),
   });
+
+  // The native runtime starts its first mirror refresh in the background. The
+  // tree can therefore finish its initial empty queries a few milliseconds
+  // before Rust commits the snapshot. Treat the mirror revision as the source
+  // of truth and reload every provider-neutral projection when it advances.
+  // Without this bridge, the first launch showed an empty tree until restart
+  // even though the SQLite mirror already contained every collection.
+  const mirrorRevision = localStatus.data?.lastSuccessfulSyncMs;
+  useEffect(() => {
+    if (mirrorRevision === null || mirrorRevision === undefined) return;
+    void qc.invalidateQueries({ queryKey: ["zotero-mirror"] });
+  }, [mirrorRevision, qc]);
+
+  const zoteroVisibleItemCount =
+    (zoteroLibraries.data?.length ?? 0) > 0 &&
+    zoteroCountQueries.length === zoteroLibraries.data?.length &&
+    zoteroCountQueries.every((query) => query.data !== undefined)
+      ? zoteroCountQueries.reduce((total, query) => total + (query.data?.total ?? 0), 0)
+      : undefined;
 
   const tree = useMemo(() => collections.data?.collections ?? [], [collections.data]);
 
@@ -539,9 +575,15 @@ export function CollectionTree(): JSX.Element {
               <Icons.library />
             </span>
             <span className="ph-tree-text">
-              {localStatus.data?.available ? "本机 Zotero" : "Zotero 离线镜像"}
+              {localStatus.data?.syncing
+                ? "正在同步 Zotero"
+                : localStatus.data?.available
+                  ? "本机 Zotero"
+                  : "Zotero 离线镜像"}
             </span>
-            {localStatus.data && <span className="ph-tree-count">{localStatus.data.itemCount}</span>}
+            {zoteroVisibleItemCount !== undefined && (
+              <span className="ph-tree-count">{zoteroVisibleItemCount}</span>
+            )}
           </div>
           {zoteroOpen &&
             (zoteroLibraries.data ?? []).map((library, index) =>
@@ -557,6 +599,20 @@ export function CollectionTree(): JSX.Element {
               无法读取 Zotero 镜像
             </div>
           )}
+          {zoteroOpen &&
+            !zoteroLibraries.isPending &&
+            !zoteroLibraries.isError &&
+            (zoteroLibraries.data?.length ?? 0) === 0 && (
+              <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+                {localStatus.data?.syncing ||
+                localStatus.data?.phase === "connecting" ||
+                localStatus.data?.phase === "indexing"
+                  ? "正在建立完整文库镜像…"
+                  : localStatus.data?.available
+                    ? "正在等待首次同步…"
+                    : "启动 Zotero 后将自动读取文库"}
+              </div>
+            )}
         </>
       )}
 

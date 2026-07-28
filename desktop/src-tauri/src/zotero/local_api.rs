@@ -964,12 +964,28 @@ mod tests {
                 snapshot.items.iter().filter(|item| !item.deleted).count()
             );
             let library = snapshot.library.as_ref().unwrap();
+            let library_ref = ZoteroLibraryRef {
+                source_id: library.source_id.clone(),
+                library_id: library.library_id.clone(),
+            };
+            let mirrored_collections = mirror
+                .list_collections(&library_ref)
+                .expect("query mirrored collections");
+            assert_eq!(
+                mirrored_collections.len(),
+                snapshot
+                    .collections
+                    .iter()
+                    .filter(|collection| !collection.deleted)
+                    .count()
+            );
+            assert!(mirrored_collections.iter().all(|collection| {
+                collection.source_id == library_ref.source_id
+                    && collection.library_id == library_ref.library_id
+            }));
             let page = mirror
                 .query_items(&ZoteroItemQuery {
-                    library: Some(ZoteroLibraryRef {
-                        source_id: library.source_id.clone(),
-                        library_id: library.library_id.clone(),
-                    }),
+                    library: Some(library_ref),
                     limit: 25,
                     ..ZoteroItemQuery::default()
                 })
