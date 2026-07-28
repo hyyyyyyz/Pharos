@@ -1,0 +1,15 @@
+{
+  "name": "@pharos/zotero-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure Zotero 7/8 localhost bridge for Pharos",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs",
+    "verify": "npm test && npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

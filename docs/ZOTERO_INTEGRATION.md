@@ -12,14 +12,16 @@ All providers implement one entity model and one capability contract:
 
 | Provider | Desktop data | Local files | Realtime | Write-back |
 | --- | --- | --- | --- | --- |
-| Pharos Connector | Complete | Yes | Yes | Yes |
+| Pharos Connector (transport preview) | Negotiated, disabled | Disabled | Disabled | Disabled |
 | Zotero Local API | Complete read projection | Yes | Polling | No |
 | Zotero Cloud | Synced cloud data | Only uploaded files | Remote polling | Scoped API writes |
 
-Provider priority on desktop is Connector, Local API, then Cloud. Web and
-mobile clients use Cloud. A cloud link never makes a local-only PDF remotely
-available and Pharos never uploads a Zotero attachment without an explicit
-user action.
+Provider priority on desktop will be Connector, Local API, then Cloud once the
+Connector advertises tested data capabilities. Today the Connector truthfully
+advertises all data capabilities as disabled, so desktop uses the complete
+Local API projection. Web and mobile clients use Cloud. A cloud link never
+makes a local-only PDF remotely available and Pharos never uploads a Zotero
+attachment without an explicit user action.
 
 ## Stable identity
 
@@ -59,11 +61,13 @@ available. The UI calls this operation “连接本机 Zotero”, not “导入�
 
 ## Connector phase
 
-`pharos-connector@selab.top` is a Zotero 7/8 bootstrapped extension. It uses
-Zotero's JavaScript API and `Zotero.Notifier` to provide realtime changes and
-safe writes. Its localhost endpoints require a paired bearer token stored in
-the operating-system credential store on the Pharos side. The Connector, never
-Pharos, performs Zotero transactions.
+`pharos-connector@selab.top` is a Zotero 7/8 bootstrapped extension. Version
+`0.1.0` establishes the hardened localhost transport and capability handshake;
+it does not yet expose data or writes. Future releases will use Zotero's
+JavaScript API and `Zotero.Notifier` for realtime changes and safe writes. Its
+protected endpoints require a paired bearer token; the pairing UI and
+operating-system credential-store handoff must land before a data capability is
+enabled. The Connector, never Pharos, will perform Zotero transactions.
 
 ## Security boundaries
 
@@ -74,4 +78,3 @@ Pharos, performs Zotero transactions.
 - Direct writes to `zotero.sqlite` are forbidden.
 - Local attachments remain local unless the user explicitly imports or uploads
   a file for a Pharos workflow.
-

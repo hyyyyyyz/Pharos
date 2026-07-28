@@ -1,0 +1,13 @@
+{
+  "manifest_version": 2,
+  "name": "Pharos Connector",
+  "version": "0.1.0",
+  "description": "Secure local bridge between Zotero and the Pharos research workspace.",
+  "applications": {
+    "zotero": {
+      "id": "pharos-connector@selab.top",
+      "strict_min_version": "7.0",
+      "strict_max_version": "8.*"
+    }
+  }
+}
