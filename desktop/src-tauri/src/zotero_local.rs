@@ -296,7 +296,7 @@ impl LocalZoteroState {
                 }
             })
             .collect();
-        libraries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        libraries.sort_by_key(|library| library.name.to_lowercase());
         LocalZoteroStatus {
             available,
             syncing: self.syncing.load(Ordering::Acquire),

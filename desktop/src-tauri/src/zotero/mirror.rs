@@ -22,7 +22,7 @@ impl ZoteroMirror {
                 .map_err(|error| format!("无法创建 Zotero 镜像目录：{error}"))?;
         }
         let mirror = Self { path };
-        mirror.with_connection(|connection| migrate(connection))?;
+        mirror.with_connection(migrate)?;
         Ok(mirror)
     }
 
@@ -791,9 +791,11 @@ fn apply_delta_in_transaction(
 
     mark_missing(
         transaction,
-        "collections",
-        "collection_key",
-        "collection",
+        MissingEntity {
+            table: "collections",
+            key_column: "collection_key",
+            entity_type: "collection",
+        },
         source_id,
         library_id,
         &delta.current_collection_keys,
@@ -801,9 +803,11 @@ fn apply_delta_in_transaction(
     )?;
     mark_missing(
         transaction,
-        "saved_searches",
-        "search_key",
-        "search",
+        MissingEntity {
+            table: "saved_searches",
+            key_column: "search_key",
+            entity_type: "search",
+        },
         source_id,
         library_id,
         &delta.current_search_keys,
@@ -852,11 +856,15 @@ fn apply_delta_in_transaction(
     Ok(())
 }
 
+struct MissingEntity<'a> {
+    table: &'a str,
+    key_column: &'a str,
+    entity_type: &'a str,
+}
+
 fn mark_missing(
     transaction: &Transaction<'_>,
-    table: &str,
-    key_column: &str,
-    entity_type: &str,
+    entity: MissingEntity<'_>,
     source_id: &str,
     library_id: &str,
     current_keys: &std::collections::HashSet<String>,
@@ -864,8 +872,8 @@ fn mark_missing(
 ) -> Result<(), String> {
     for key in missing_keys(
         transaction,
-        table,
-        key_column,
+        entity.table,
+        entity.key_column,
         source_id,
         library_id,
         current_keys,
@@ -873,7 +881,8 @@ fn mark_missing(
         transaction
             .execute(
                 &format!(
-                    "UPDATE {table} SET deleted = 1 WHERE source_id = ?1 AND library_id = ?2 AND {key_column} = ?3"
+                    "UPDATE {} SET deleted = 1 WHERE source_id = ?1 AND library_id = ?2 AND {} = ?3",
+                    entity.table, entity.key_column
                 ),
                 params![source_id, library_id, key],
             )
@@ -882,7 +891,7 @@ fn mark_missing(
             transaction,
             source_id,
             library_id,
-            entity_type,
+            entity.entity_type,
             &key,
             version,
         )?;

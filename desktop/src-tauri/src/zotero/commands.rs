@@ -201,9 +201,8 @@ impl ZoteroState {
             return Err(message);
         }
 
-        let libraries = provider.libraries().await.map_err(|message| {
+        let libraries = provider.libraries().await.inspect_err(|message| {
             self.set_error(Some(message.clone()));
-            message
         })?;
         let mut snapshots = Vec::with_capacity(libraries.len());
         let mut used_full_snapshot = false;
@@ -213,13 +212,11 @@ impl ZoteroState {
                 || cursor.is_none()
                 || cursor.is_some_and(|version| version > library.version);
             if needs_full {
-                let snapshot = provider.snapshot(library).await.map_err(|message| {
+                let snapshot = provider.snapshot(library).await.inspect_err(|message| {
                     self.set_error(Some(message.clone()));
-                    message
                 })?;
-                mirror.replace_library(&snapshot).map_err(|message| {
+                mirror.replace_library(&snapshot).inspect_err(|message| {
                     self.set_error(Some(message.clone()));
-                    message
                 })?;
                 snapshots.push(snapshot);
                 used_full_snapshot = true;
@@ -232,13 +229,11 @@ impl ZoteroState {
             let delta = provider
                 .fetch_delta(library, cursor)
                 .await
-                .map_err(|message| {
+                .inspect_err(|message| {
                     self.set_error(Some(message.clone()));
-                    message
                 })?;
-            mirror.apply_delta(&delta).map_err(|message| {
+            mirror.apply_delta(&delta).inspect_err(|message| {
                 self.set_error(Some(message.clone()));
-                message
             })?;
         }
         mirror.reconcile_libraries(
