@@ -41,9 +41,21 @@ pub fn run() {
         })
         .setup(|app| {
             app.manage(zotero_local::LocalZoteroState::load(app.handle()));
+            app.manage(zotero::commands::ZoteroState::load(app.handle()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            zotero::commands::zotero_connection_status,
+            zotero::commands::zotero_refresh,
+            zotero::commands::zotero_list_libraries,
+            zotero::commands::zotero_list_collections,
+            zotero::commands::zotero_query_items,
+            zotero::commands::zotero_get_item,
+            zotero::commands::zotero_list_item_children,
+            zotero::commands::zotero_list_tags,
+            zotero::commands::zotero_list_saved_searches,
+            zotero::commands::zotero_get_fulltext,
+            zotero::commands::zotero_get_attachment_url,
             zotero_local::zotero_local_status,
             zotero_local::zotero_local_sync,
             zotero_local::zotero_local_list,

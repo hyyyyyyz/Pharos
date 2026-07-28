@@ -93,6 +93,10 @@ pub struct ZoteroCollection {
     pub name: String,
     pub parent_key: Option<String>,
     #[serde(default)]
+    pub item_count: u64,
+    #[serde(default)]
+    pub deleted: bool,
+    #[serde(default)]
     pub raw: Value,
 }
 
@@ -104,6 +108,8 @@ pub struct ZoteroSavedSearch {
     pub key: String,
     pub version: u64,
     pub name: String,
+    #[serde(default)]
+    pub deleted: bool,
     #[serde(default)]
     pub conditions: Value,
     #[serde(default)]
@@ -158,6 +164,7 @@ pub struct ZoteroAttachment {
     pub source_id: String,
     pub library_id: String,
     pub key: String,
+    pub version: u64,
     pub parent_key: Option<String>,
     pub public_id: String,
     pub link_mode: Option<String>,
@@ -188,6 +195,160 @@ pub struct ZoteroFulltextIndex {
     pub library_id: String,
     pub item_key: String,
     pub version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroItemRef {
+    pub source_id: String,
+    pub library_id: String,
+    pub item_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroLibraryRef {
+    pub source_id: String,
+    pub library_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroItemQuery {
+    pub library: Option<ZoteroLibraryRef>,
+    pub collection_key: Option<String>,
+    pub parent_key: Option<String>,
+    #[serde(default)]
+    pub item_types: Vec<String>,
+    pub tag: Option<String>,
+    pub search: Option<String>,
+    #[serde(default)]
+    pub include_deleted: bool,
+    #[serde(default = "default_query_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub offset: u32,
+}
+
+fn default_query_limit() -> u32 {
+    100
+}
+
+impl Default for ZoteroItemQuery {
+    fn default() -> Self {
+        Self {
+            library: None,
+            collection_key: None,
+            parent_key: None,
+            item_types: Vec::new(),
+            tag: None,
+            search: None,
+            include_deleted: false,
+            limit: default_query_limit(),
+            offset: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroItemSummary {
+    pub source_id: String,
+    pub library_id: String,
+    pub key: String,
+    pub version: u64,
+    pub item_type: String,
+    pub parent_key: Option<String>,
+    pub title: Option<String>,
+    pub abstract_note: Option<String>,
+    pub date_added: Option<String>,
+    pub date_modified: Option<String>,
+    pub creators: Vec<ZoteroCreator>,
+    pub tags: Vec<ZoteroTagRef>,
+    pub collection_keys: Vec<String>,
+    pub deleted: bool,
+    pub child_count: u64,
+    pub attachment_count: u64,
+    pub available_attachment_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroItemDetail {
+    pub item: ZoteroItem,
+    pub attachments: Vec<ZoteroAttachment>,
+    pub children: Vec<ZoteroItemSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroPage<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroFulltext {
+    pub source_id: String,
+    pub library_id: String,
+    pub item_key: String,
+    pub version: u64,
+    pub content: String,
+    pub indexed_pages: Option<u64>,
+    pub total_pages: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroProbe {
+    pub available: bool,
+    pub zotero_version: Option<String>,
+    pub api_version: Option<u64>,
+    pub schema_version: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroConnectionStatus {
+    pub source_id: String,
+    pub provider: ProviderKind,
+    pub phase: ConnectionPhase,
+    pub capabilities: ProviderCapabilities,
+    pub available: bool,
+    pub syncing: bool,
+    pub zotero_version: Option<String>,
+    pub api_version: Option<u64>,
+    pub schema_version: Option<u64>,
+    pub last_successful_sync_ms: Option<u64>,
+    pub last_error: Option<String>,
+    pub library_count: u64,
+    pub item_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroRefreshRequest {
+    #[serde(default)]
+    pub force_full: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoteroSyncReport {
+    pub source_id: String,
+    pub provider: ProviderKind,
+    pub full: bool,
+    pub library_count: u64,
+    pub item_count: u64,
+    pub attachment_count: u64,
+    pub collection_count: u64,
+    pub note_count: u64,
+    pub annotation_count: u64,
+    pub available_attachment_count: u64,
+    pub completed_at_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

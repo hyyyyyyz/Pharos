@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::model::{LibrarySnapshot, ProviderCapabilities, ProviderKind, ZoteroLibrary};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, Clone)]
 pub struct ZoteroMirror {
@@ -93,7 +93,41 @@ impl ZoteroMirror {
         })
     }
 
-    fn with_connection<T>(
+    pub fn reconcile_libraries(
+        &self,
+        source_id: &str,
+        active_ids: &[String],
+    ) -> Result<(), String> {
+        self.with_connection(|connection| {
+            let transaction = connection
+                .transaction()
+                .map_err(|error| format!("无法开始 Zotero 文库核对事务：{error}"))?;
+            let mut statement = transaction
+                .prepare("SELECT library_id FROM libraries WHERE source_id = ?1 AND deleted = 0")
+                .map_err(|error| format!("无法读取 Zotero 文库：{error}"))?;
+            let existing = statement
+                .query_map([source_id], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("无法读取 Zotero 文库：{error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("无法读取 Zotero 文库：{error}"))?;
+            drop(statement);
+            for library_id in existing {
+                if !active_ids.contains(&library_id) {
+                    transaction
+                        .execute(
+                            "UPDATE libraries SET deleted = 1 WHERE source_id = ?1 AND library_id = ?2",
+                            params![source_id, library_id],
+                        )
+                        .map_err(|error| format!("无法核对 Zotero 文库：{error}"))?;
+                }
+            }
+            transaction
+                .commit()
+                .map_err(|error| format!("无法提交 Zotero 文库核对：{error}"))
+        })
+    }
+
+    pub(crate) fn with_connection<T>(
         &self,
         operation: impl FnOnce(&mut Connection) -> Result<T, String>,
     ) -> Result<T, String> {
@@ -117,23 +151,24 @@ fn configure(connection: &Connection) -> Result<(), String> {
 
 fn migrate(connection: &mut Connection) -> Result<(), String> {
     configure(connection)?;
-    let current: i64 = connection
+    let original: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|error| format!("无法读取 Zotero 镜像版本：{error}"))?;
-    if current > SCHEMA_VERSION {
+    if original > SCHEMA_VERSION {
         return Err(format!(
-            "Zotero 镜像版本 {current} 高于当前客户端支持的 {SCHEMA_VERSION}。"
+            "Zotero 镜像版本 {original} 高于当前客户端支持的 {SCHEMA_VERSION}。"
         ));
     }
-    if current == SCHEMA_VERSION {
+    if original == SCHEMA_VERSION {
         return Ok(());
     }
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("无法开始 Zotero 镜像迁移：{error}"))?;
-    transaction
-        .execute_batch(
-            r#"
+    if original < 1 {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| format!("无法开始 Zotero 镜像迁移：{error}"))?;
+        transaction
+            .execute_batch(
+                r#"
             CREATE TABLE mirror_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -269,13 +304,41 @@ fn migrate(connection: &mut Connection) -> Result<(), String> {
                 deleted_at INTEGER NOT NULL,
                 PRIMARY KEY (source_id, library_id, entity_type, entity_key)
             );
-            PRAGMA user_version = 1;
             "#,
-        )
-        .map_err(|error| format!("无法迁移 Zotero 镜像：{error}"))?;
-    transaction
-        .commit()
-        .map_err(|error| format!("无法提交 Zotero 镜像迁移：{error}"))
+            )
+            .map_err(|error| format!("无法迁移 Zotero 镜像：{error}"))?;
+        transaction
+            .pragma_update(None, "user_version", 1)
+            .map_err(|error| format!("无法更新 Zotero 镜像版本：{error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("无法提交 Zotero 镜像迁移：{error}"))?;
+    }
+
+    let current: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| format!("无法读取 Zotero 镜像版本：{error}"))?;
+    if current < 2 {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| format!("无法开始 Zotero 镜像迁移：{error}"))?;
+        transaction
+            .execute_batch(
+                "ALTER TABLE attachments ADD COLUMN version INTEGER NOT NULL DEFAULT 0;\n\
+                 CREATE INDEX attachments_parent_idx\n\
+                    ON attachments(source_id, library_id, parent_key);\n\
+                 CREATE INDEX items_modified_idx\n\
+                    ON items(source_id, library_id, date_modified DESC);",
+            )
+            .map_err(|error| format!("无法迁移 Zotero 镜像：{error}"))?;
+        transaction
+            .pragma_update(None, "user_version", 2)
+            .map_err(|error| format!("无法更新 Zotero 镜像版本：{error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("无法提交 Zotero 镜像迁移：{error}"))?;
+    }
+    Ok(())
 }
 
 fn replace_library_in_transaction(
@@ -289,7 +352,6 @@ fn replace_library_in_transaction(
         "item_collections",
         "item_tags",
         "attachments",
-        "fulltext",
         "items",
         "collections",
         "saved_searches",
@@ -343,9 +405,9 @@ fn replace_library_in_transaction(
     for collection in &snapshot.collections {
         transaction.execute(
             "INSERT INTO collections(source_id, library_id, collection_key, version, name, parent_key, raw_json, deleted)\n\
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![collection.source_id, collection.library_id, collection.key, collection.version,
-                collection.name, collection.parent_key, json(&collection.raw)?],
+                collection.name, collection.parent_key, json(&collection.raw)?, collection.deleted],
         ).map_err(|error| format!("无法写入 Zotero 分类：{error}"))?;
     }
     for item in &snapshot.items {
@@ -373,21 +435,21 @@ fn replace_library_in_transaction(
     for attachment in &snapshot.attachments {
         transaction.execute(
             "INSERT INTO attachments(source_id, library_id, item_key, parent_key, public_id, link_mode,\n\
-                content_type, filename, local_path, path_status, file_size, raw_json)\n\
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                content_type, filename, local_path, path_status, file_size, raw_json, version)\n\
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![attachment.source_id, attachment.library_id, attachment.key, attachment.parent_key,
                 attachment.public_id, attachment.link_mode, attachment.content_type, attachment.filename,
                 attachment.local_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 if attachment.available { "available" } else { "missing" }, attachment.size_bytes,
-                json(&attachment.raw)?],
+                json(&attachment.raw)?, attachment.version],
         ).map_err(|error| format!("无法写入 Zotero 附件：{error}"))?;
     }
     for search in &snapshot.searches {
         transaction.execute(
             "INSERT INTO saved_searches(source_id, library_id, search_key, version, name, conditions_json, raw_json, deleted)\n\
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![search.source_id, search.library_id, search.key, search.version, search.name,
-                json(&search.conditions)?, json(&search.raw)?],
+                json(&search.conditions)?, json(&search.raw)?, search.deleted],
         ).map_err(|error| format!("无法写入 Zotero 保存的搜索：{error}"))?;
     }
     for tag in &snapshot.tags {
@@ -400,7 +462,9 @@ fn replace_library_in_transaction(
         transaction
             .execute(
                 "INSERT INTO fulltext(source_id, library_id, item_key, version, synced_at)\n\
-             VALUES (?1, ?2, ?3, ?4, strftime('%s','now'))",
+                 VALUES (?1, ?2, ?3, ?4, strftime('%s','now'))\n\
+                 ON CONFLICT(source_id, library_id, item_key) DO UPDATE SET\n\
+                    version = excluded.version, synced_at = excluded.synced_at",
                 params![
                     fulltext.source_id,
                     fulltext.library_id,
@@ -410,6 +474,15 @@ fn replace_library_in_transaction(
             )
             .map_err(|error| format!("无法写入 Zotero 全文索引：{error}"))?;
     }
+    transaction
+        .execute(
+            "INSERT INTO sync_state(source_id, library_id, entity_type, version, last_success_at, last_error)\n\
+             VALUES (?1, ?2, 'library', ?3, strftime('%s','now'), NULL)\n\
+             ON CONFLICT(source_id, library_id, entity_type) DO UPDATE SET\n\
+                version = excluded.version, last_success_at = excluded.last_success_at, last_error = NULL",
+            params![source_id, library_id, library.version],
+        )
+        .map_err(|error| format!("无法更新 Zotero 同步状态：{error}"))?;
     Ok(())
 }
 
@@ -470,6 +543,8 @@ mod tests {
                     version: 1,
                     name: "Root".into(),
                     parent_key: None,
+                    item_count: 1,
+                    deleted: false,
                     raw: json!({}),
                 },
                 ZoteroCollection {
@@ -479,6 +554,8 @@ mod tests {
                     version: 1,
                     name: "Child".into(),
                     parent_key: Some("ROOT".into()),
+                    item_count: 1,
+                    deleted: false,
                     raw: json!({}),
                 },
             ],

@@ -30,6 +30,12 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tauri::{http, AppHandle, Manager, State};
 
+use crate::zotero::{
+    commands::ZoteroState,
+    local_api::is_pdf_attachment,
+    model::{LibrarySnapshot, ZoteroRefreshRequest},
+};
+
 const LOCAL_API: &str = "http://127.0.0.1:23119/api";
 const CACHE_SCHEMA: u32 = 2;
 const PAGE_SIZE: usize = 100;
@@ -612,6 +618,169 @@ async fn scan(client: &Client) -> Result<Cache, String> {
     })
 }
 
+fn cache_from_snapshots(snapshots: &[LibrarySnapshot]) -> Cache {
+    let mut libraries = Vec::new();
+    let mut papers = Vec::new();
+    let mut max_version = None;
+
+    for snapshot in snapshots {
+        let Some(library) = snapshot.library.as_ref() else {
+            continue;
+        };
+        let kind = match library.kind {
+            crate::zotero::model::LibraryKind::User => LibraryKind::User,
+            crate::zotero::model::LibraryKind::Group => LibraryKind::Group,
+        };
+        let spec = LibrarySpec {
+            id: library.library_id.clone(),
+            kind,
+            name: library.name.clone(),
+            item_version: Some(library.version),
+        };
+        libraries.push(CachedLibrary {
+            id: library.library_id.clone(),
+            kind,
+            name: library.name.clone(),
+            item_version: Some(library.version),
+        });
+        max_version = [max_version, Some(library.version)]
+            .into_iter()
+            .flatten()
+            .max();
+
+        let mut by_parent: HashMap<String, Vec<CachedAttachment>> = HashMap::new();
+        for (order, attachment) in snapshot.attachments.iter().enumerate() {
+            if !is_pdf_attachment(attachment) {
+                continue;
+            }
+            let data = attachment.raw.get("data").unwrap_or(&attachment.raw);
+            let filename = attachment
+                .filename
+                .clone()
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "paper.pdf".to_string());
+            let title = value_string(data, "title")
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| filename.clone());
+            let parent = attachment
+                .parent_key
+                .clone()
+                .unwrap_or_else(|| attachment.key.clone());
+            by_parent.entry(parent).or_default().push(CachedAttachment {
+                id: attachment.public_id.clone(),
+                item_key: attachment.key.clone(),
+                item_version: attachment.version,
+                title,
+                filename,
+                content_type: attachment
+                    .content_type
+                    .clone()
+                    .unwrap_or_else(|| "application/pdf".to_string()),
+                link_mode: attachment.link_mode.clone(),
+                order,
+                size_bytes: attachment.size_bytes,
+                local_path: attachment.local_path.clone(),
+            });
+        }
+        for attachments in by_parent.values_mut() {
+            attachments.sort_by(|left, right| {
+                (!attachment_available(left))
+                    .cmp(&(!attachment_available(right)))
+                    .then_with(|| is_supplement(left).cmp(&is_supplement(right)))
+                    .then_with(|| left.order.cmp(&right.order))
+            });
+        }
+
+        for item in snapshot.items.iter().filter(|item| {
+            !item.deleted
+                && item.parent_key.is_none()
+                && !matches!(item.item_type.as_str(), "note" | "annotation")
+        }) {
+            let attachments = by_parent.remove(&item.key).unwrap_or_default();
+            if item.item_type == "attachment" && attachments.is_empty() {
+                continue;
+            }
+            let data = item.raw.get("data").unwrap_or(&item.raw);
+            let title = item
+                .title
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| {
+                    attachments.first().map(|attachment| {
+                        attachment
+                            .filename
+                            .strip_suffix(".pdf")
+                            .unwrap_or(&attachment.filename)
+                            .to_string()
+                    })
+                });
+            let Some(title) = title else { continue };
+            let venue = [
+                "publicationTitle",
+                "proceedingsTitle",
+                "conferenceName",
+                "repository",
+                "university",
+            ]
+            .into_iter()
+            .find_map(|key| value_string(data, key).filter(|value| !value.trim().is_empty()));
+            let doi = value_string(data, "DOI")
+                .map(|value| normalize_doi(&value))
+                .filter(|value| !value.is_empty());
+            let authors = item
+                .creators
+                .iter()
+                .filter_map(|creator| {
+                    creator
+                        .name
+                        .clone()
+                        .filter(|name| !name.trim().is_empty())
+                        .or_else(|| {
+                            let joined = format!(
+                                "{} {}",
+                                creator.first_name.as_deref().unwrap_or_default(),
+                                creator.last_name.as_deref().unwrap_or_default()
+                            )
+                            .trim()
+                            .to_string();
+                            (!joined.is_empty()).then_some(joined)
+                        })
+                })
+                .collect();
+            papers.push(CachedPaper {
+                id: stable_id("paper", &spec, &item.key),
+                library_id: library.library_id.clone(),
+                library_kind: kind,
+                library_name: library.name.clone(),
+                item_key: item.key.clone(),
+                item_version: item.version,
+                item_type: item.item_type.clone(),
+                title,
+                authors,
+                year: value_string(data, "date").as_deref().and_then(parse_year),
+                venue,
+                doi,
+                abstract_text: item.abstract_note.clone(),
+                url: value_string(data, "url").filter(|value| !value.trim().is_empty()),
+                date_added: item.date_added.clone(),
+                attachments,
+            });
+        }
+    }
+    papers.sort_by(|a, b| {
+        b.year
+            .cmp(&a.year)
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    });
+    Cache {
+        schema_version: CACHE_SCHEMA,
+        last_successful_sync_ms: Some(now_ms()),
+        zotero_version: max_version,
+        libraries,
+        papers,
+    }
+}
+
 fn attachment_probe(library: &LibrarySpec, item: ApiItem, order: usize) -> Option<AttachmentProbe> {
     let data = &item.data;
     let content_type = value_string(data, "contentType").unwrap_or_default();
@@ -830,17 +999,16 @@ fn persist_cache(path: &Path, cache: &Cache) -> Result<(), String> {
 #[tauri::command]
 pub async fn zotero_local_status(
     state: State<'_, LocalZoteroState>,
+    zotero: State<'_, ZoteroState>,
 ) -> Result<LocalZoteroStatus, String> {
-    let available = match client() {
-        Ok(client) => probe(&client).await,
-        Err(_) => false,
-    };
+    let available = zotero.status().await?.available;
     Ok(state.public_status(available))
 }
 
 #[tauri::command]
 pub async fn zotero_local_sync(
     state: State<'_, LocalZoteroState>,
+    zotero: State<'_, ZoteroState>,
 ) -> Result<LocalZoteroStatus, String> {
     if state
         .syncing
@@ -850,9 +1018,12 @@ pub async fn zotero_local_sync(
         return Err("本地 Zotero 正在同步。".to_string());
     }
     let _flag = SyncFlag(&state.syncing);
-    let client = client()?;
-    match scan(&client).await {
-        Ok(cache) => {
+    match zotero
+        .refresh(ZoteroRefreshRequest { force_full: true })
+        .await
+    {
+        Ok(outcome) => {
+            let cache = cache_from_snapshots(&outcome.snapshots);
             state.replace_cache(cache)?;
             Ok(state.public_status(true))
         }
@@ -1045,8 +1216,12 @@ pub fn protocol_response(
             .body(Vec::new())
             .unwrap();
     }
-    let state = app.state::<LocalZoteroState>();
-    let Some(path) = state.attachment_path(attachment_id) else {
+    let legacy = app.state::<LocalZoteroState>();
+    let zotero = app.state::<ZoteroState>();
+    let Some(path) = legacy
+        .attachment_path(attachment_id)
+        .or_else(|| zotero.attachment_path(attachment_id))
+    else {
         return response_builder(StatusCode::NOT_FOUND, origin)
             .body(Vec::new())
             .unwrap();
