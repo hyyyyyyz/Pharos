@@ -38,7 +38,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      # Matrix runners used to race while both tried to create the same release.
+      # Create it exactly once before either platform starts; the Tauri action
+      # then only uploads its own assets to an already-known release.
+      - name: Ensure the GitHub Release exists
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            const version = tag.replace(/^desktop-v/, "");
+            const body = [
+              "此版本把本机 Zotero 文库恢复为真正的条目树：论文书目是父条目，展开后显示对应的 PDF、网页快照与笔记。只有双击具体 PDF 子项才会进入阅读器，不再由父条目静默选择第一份附件；多 PDF 条目也会打开用户明确选择的文件。",
+              "",
+              "Pharos 桌面版与网页版共享同一套界面，并增加完整的本机 Zotero 只读文库：个人/群组文库、嵌套分类、保存检索、笔记、标注、全文索引和本地 PDF。无需购买 Zotero 云存储；本地 PDF 不会自动上传。",
+              "",
+              "macOS：下载 universal DMG，Apple Silicon 与 Intel 通用。应用尚未签名，首次打开可右键选择“打开”，或运行 `xattr -cr /Applications/Pharos.app`。",
+              "",
+              "Windows：下载 MSI 或 setup.exe。应用尚未签名，SmartScreen 提示时选择“更多信息”→“仍要运行”。",
+            ].join("\n");
+            try {
+              const existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.data.id,
+                name: `Pharos 桌面版 v${version}`,
+                body,
+                draft: false,
+                prerelease: false,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name: `Pharos 桌面版 v${version}`,
+                body,
+                draft: false,
+                prerelease: false,
+              });
+            }
+
   release:
+    needs: prepare-release
     strategy:
       fail-fast: false
       matrix:
