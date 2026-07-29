@@ -62,6 +62,11 @@ data rather than static mockups.
 | **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
 | **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
 
+The desktop reader also includes local-first **AI Chat**. Each opened paper has
+its own persistent conversations and local text index; when a model is
+configured, Pharos prepares a reusable Chinese research profile before the
+first question.
+
 ### Reading and translation
 
 - **Layout-preserving English-to-Chinese translation.** BabelDOC, invoked
@@ -116,6 +121,38 @@ contracts and remain future work.
   the user explicitly chooses **Import to Pharos**.
 - A Tauri 2 desktop client for macOS and Windows that reuses the exact React UI,
   connects to the same backend, and adds local-first capabilities through Rust.
+
+### Desktop AI Chat and portable data
+
+The desktop client keeps its native research state in one versioned **Pharos
+Workspace**. It can be moved to another directory from **Settings → Data &
+Interop**, copied to another device, and reopened as a complete local unit:
+
+```text
+Pharos Workspace/
+├── database/       SQLite metadata and the Zotero mirror
+├── library/        paper objects, metadata, and paper-text indexes
+├── daily/          portable Daily Papers archive
+├── conversations/  per-paper append-only AI Chat logs
+├── annotations/    local annotation data
+├── interchange/    Codex imports and exports
+├── backups/        consistency backups
+└── cache · logs · tmp
+```
+
+- Opening a PDF extracts its selectable text locally and creates a stable index
+  for that exact paper or Zotero attachment. Scanned PDFs need OCR before a
+  reliable context can be built.
+- With an OpenAI-compatible endpoint configured, Pharos prepares a reusable
+  paper profile and selects question-relevant excerpts from the cached full
+  text for every answer. Different papers never share a conversation.
+- Provider URL and model settings live in the Workspace; the API key is stored
+  only in the operating system credential store and is never written to JSONL,
+  SQLite, browser storage, logs, or Git.
+- The Codex bridge can import visible user/assistant messages from Codex CLI or
+  Desktop history into the current paper, and can hand a Pharos conversation to
+  a real Codex task. It does not import hidden reasoning, tool output, or auth
+  files, and it never rewrites Codex's internal JSONL or databases.
 
 ### Connect Zotero
 
@@ -281,7 +318,8 @@ Open `http://localhost:5173`. The Vite development server proxies `/api` to
 
 The desktop application uses the same React frontend and expects the Pharos
 backend to be running separately. Its Rust layer adds the complete local Zotero
-mirror, opaque local-PDF streaming, deep links, and native security boundaries.
+mirror, opaque local-PDF streaming, paper-aware AI Chat, a portable Workspace,
+Codex interoperability, deep links, and native security boundaries.
 
 ```bash
 npm ci --prefix frontend
@@ -293,6 +331,10 @@ Production builds use `frontend/.env.desktop` (or the corresponding process
 environment) for `VITE_API_BASE`. The release workflow can build universal
 macOS installers and Windows MSI/NSIS installers, but current packages are
 unsigned. See [`desktop/README.md`](desktop/README.md).
+
+In the client, use **Settings → AI Chat** to configure an OpenAI-compatible
+Base URL, model, and API key. Use **Settings → Data & Interop** to inspect or
+relocate the Workspace and verify Codex CLI discovery.
 
 ## Develop the marketing site
 
@@ -381,8 +423,8 @@ engine environment and a real PDF fixture.
 
 Pharos deliberately distinguishes implemented records from automated research:
 
-- The **Navigator** reading-companion interface exists, but its streaming paper
-  Q&A backend is not yet mounted in the FastAPI application.
+- Desktop **AI Chat** supports local paper pre-indexing, persistent conversations,
+  and OpenAI-compatible models; the web Q&A service is still under development.
 - Literature Discovery reads search metadata and abstracts, not full papers.
 - Research Projects persist plans and results supplied by the researcher; they
   do not run code, allocate GPUs, or validate metrics.

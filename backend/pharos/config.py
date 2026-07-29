@@ -6,7 +6,7 @@ environment. See ``.env.example``.
 
 LLM providers are *named* rather than singular, because the two jobs have
 different economics: translation is high-volume and wants a cheap model, while
-the 领航 chat is low-volume and wants the strongest reasoning available. Each
+the paper AI chat is low-volume and wants the strongest reasoning available. Each
 provider is an OpenAI-compatible endpoint, so a self-hosted relay is configured
 exactly like a first-party one — only ``base_url`` differs.
 """
@@ -139,7 +139,7 @@ class Settings(BaseSettings):
     # "bing"/"google" are free and keyless, and remain the translation default
     # so the app works with no credentials at all.
     translator_type: str = "bing"
-    #: Provider name for the 领航 chat. Empty => chat is unavailable (the API
+    #: Provider name for paper AI chat. Empty => chat is unavailable (the API
     #: returns a clear 503 rather than pretending).
     chat_provider: str = "deepseek"
 

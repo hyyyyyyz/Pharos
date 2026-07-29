@@ -189,7 +189,7 @@ class Paper(Base):
         DateTime(timezone=True), default=None
     )
     #: Plain text of the original PDF, extracted once on upload and used to feed
-    #: full-text search (and, later, retrieval for the 领航 chat). Kept on the row
+    #: full-text search (and, later, retrieval for paper AI chat). Kept on the row
     #: rather than re-parsed per query because parsing a large PDF takes seconds.
     #: NULL means extraction never ran or found nothing (a scan, say) — such a
     #: paper is simply not full-text searchable, which is honest.

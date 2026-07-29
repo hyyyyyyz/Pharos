@@ -8,14 +8,15 @@ local capabilities that a browser cannot safely provide.
 It still talks to the Pharos backend for accounts, cloud records, discovery,
 translation jobs, and research projects. The desktop runtime additionally owns
 a versioned, offline-capable mirror of the user's local Zotero libraries and a
-path-hiding PDF stream protocol. It does not bundle the Pharos backend or the
-translation engine.
+path-hiding PDF stream protocol, a portable local Workspace, paper-aware AI
+Chat, and safe Codex interoperability. It does not bundle the Pharos backend or
+the translation engine.
 
 ## Why Tauri (not Electron / native)
 
 - **Native rewrite (SwiftUI) was ruled out** — it could only ever *resemble* the
   web app, never be identical, and would double the UI maintenance.
-- **Tauri over Electron** — version 0.4.0's universal macOS application bundle
+- **Tauri over Electron** — the universal macOS application bundle
   is about 15 MB and uses the operating system WebView instead of shipping a
   second browser engine. Tauri's main caveat is that macOS uses WebKit
   (WKWebView) rather than Chromium, so Chrome-only CSS can render differently.
@@ -30,7 +31,10 @@ desktop/
     Cargo.toml          # Rust deps (tauri 2)
     tauri.conf.json      # v2 config; frontendDist -> ../../frontend/dist
     build.rs
-    src/{main,lib}.rs    # app bootstrap, commands, and local PDF protocol
+    src/{main,lib}.rs    # app bootstrap and native command registration
+    src/workspace.rs     # portable, versioned local Workspace
+    src/ai.rs            # paper indexing, conversations, and model streaming
+    src/codex_bridge.rs  # safe Codex history import and task handoff
     src/zotero/          # Local API provider, SQLite mirror, and repository
     capabilities/default.json  # narrowly scoped Tauri permissions
     icons/               # generated from assets/brand/app-icon.png
@@ -93,9 +97,46 @@ Proper code-signing + notarization removes both warnings and is a later step:
 add an Apple Developer cert + notarization secrets, and a Windows signing
 certificate, to the CI action.
 
+## Portable Workspace and AI Chat
+
+All movable native data lives under one versioned Pharos Workspace. The default
+location is the operating system's application-data directory; **Settings →
+Data & Interop** can copy it to an empty directory or switch to an existing,
+valid Workspace after restart.
+
+```text
+Pharos Workspace/
+├── database/       SQLite metadata and Zotero mirror
+├── library/        paper objects, metadata, and paper-text indexes
+├── daily/          Daily Papers archive
+├── conversations/  append-only JSONL AI Chat histories
+├── annotations/    local annotations
+├── interchange/    Codex imports and exports
+├── backups/        consistency backups
+└── cache · logs · tmp
+```
+
+Opening a paper in the desktop reader extracts its text locally and creates a
+stable context for the exact paper or Zotero attachment. If an OpenAI-compatible
+provider is configured, Pharos immediately prepares a reusable Chinese research
+profile. Each question then combines that profile with relevant excerpts from
+the cached paper text and the current conversation history. Scanned PDFs need
+OCR before this can work reliably.
+
+Provider URL and model settings are stored in the Workspace. The API key is
+stored only in the operating system credential store; it is never returned to
+the WebView or written to the Workspace, logs, browser storage, or Git.
+
+The Codex bridge discovers terminal and desktop histories under
+`CODEX_HOME/sessions` and `archived_sessions`. It imports only visible user and
+assistant messages, removes injected environment blocks and likely credentials,
+and never reads auth/config databases or rewrites Codex files. A Pharos
+conversation can also be handed to `codex exec --json` to create a real Codex
+task.
+
 ## Local Zotero integration
 
-Version 0.4.0 can read the complete local Zotero graph without requiring Zotero
+The desktop client can read the complete local Zotero graph without requiring Zotero
 cloud storage: personal and group libraries, nested collections, executable
 saved searches, every item type, notes, PDF annotations, tags, relations,
 full-text indexes, and local attachments. The first sync creates a versioned
