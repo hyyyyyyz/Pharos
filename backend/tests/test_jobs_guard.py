@@ -15,11 +15,12 @@ real and let a caller enumerate other people's libraries.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
-
 from pharos.api.jobs import _start_job_row
+from pharos.db import session as db_session
 from pharos.db.models import Paper, User
 from pharos.db.session import init_engine, session_scope
 
@@ -28,16 +29,26 @@ OTHER = "user-other"
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _db(tmp_path_factory: pytest.TempPathFactory) -> None:
+def _db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     """A real SQLite file — init_engine memoises, so this must run once.
 
     Both users are inserted for real rather than referenced by bare id: SQLite
     foreign keys are enforced here, so ``Paper.user_id`` must name a live row.
     """
+    # The session module intentionally memoises one production engine.  Test
+    # modules need to reset those globals before claiming their own temporary
+    # database, otherwise collection order can leak users and papers across
+    # modules and make the full suite fail while this file passes in isolation.
+    if db_session._engine is not None:
+        db_session._engine.dispose()
+    db_session._engine = None
+    db_session._SessionLocal = None
+    db_session._fts5_available = None
     init_engine(tmp_path_factory.mktemp("db") / "pharos.db")
     with session_scope() as s:
         for uid in (OWNER, OTHER):
             s.add(User(id=uid, email=f"{uid}@example.test", password_hash="x"))
+    yield
 
 
 def _add(paper_id: str, *, deleted: bool, user_id: str = OWNER) -> None:
@@ -49,7 +60,7 @@ def _add(paper_id: str, *, deleted: bool, user_id: str = OWNER) -> None:
                 title="Attention Is All You Need",
                 orig_sha256=f"sha-{paper_id}",
                 orig_filename="attention.pdf",
-                deleted_at=datetime.now(timezone.utc) if deleted else None,
+                deleted_at=datetime.now(UTC) if deleted else None,
             )
         )
 
