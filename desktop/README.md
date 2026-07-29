@@ -77,7 +77,7 @@ npm run build             # -> src-tauri/target/release/bundle/{msi,nsis}/Pharos
 
 CI (`.github/workflows/desktop-release.yml`) builds **both macOS and Windows** in
 one matrix run and attaches all installers to a single **draft** GitHub Release.
-Trigger it by pushing a tag like `desktop-v0.4.0`, or run it by hand from the
+Trigger it by pushing a tag like `desktop-v0.5.0`, or run it by hand from the
 Actions tab. On Windows, Tauri uses the system WebView2 (Chromium), so the app
 renders identically to the web version there. (Linux/AppImage is one more matrix
 entry plus an apt step for `libwebkit2gtk-4.1-dev` — add it when you want it.)

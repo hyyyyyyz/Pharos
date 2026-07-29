@@ -373,7 +373,7 @@ export function SettingsModal(): JSX.Element | null {
           </div>
           <div className="ph-set-nav-spacer" />
           <div className="ph-set-nav-foot">
-            Pharos v0.4.0
+            Pharos v0.5.0
             <br />
             开源 · AGPL-3.0
           </div>
