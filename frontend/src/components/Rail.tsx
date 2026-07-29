@@ -10,6 +10,7 @@ import {
   RAIL_DEFAULT_WIDTH,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
+  useSession,
   useUI,
   type ModuleKey,
 } from "../store";
@@ -24,6 +25,10 @@ interface NavDef {
   Icon: IconComponent;
   /** Not built yet: dimmed, with a 即将 pill (expanded) or a dot (collapsed). */
   comingSoon: boolean;
+  /** Only rendered for operator accounts. An ordinary user never sees the entry
+   *  at all — the backend refuses the endpoints regardless, so this is about
+   *  not advertising a door that will not open. */
+  adminOnly?: boolean;
 }
 
 const NAV: NavDef[] = [
@@ -31,6 +36,7 @@ const NAV: NavDef[] = [
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
   { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
   { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
+  { key: "admin", label: "管理后台", title: "管理后台", Icon: Icons.user, comingSoon: false, adminOnly: true },
 ];
 
 const cx = (...parts: (string | false)[]): string => parts.filter(Boolean).join(" ");
@@ -54,6 +60,13 @@ interface RailDrag {
 }
 
 export function Rail(): JSX.Element {
+  // The console entry appears only for operators. This is presentation, not
+  // enforcement — every /api/admin endpoint independently refuses a
+  // non-administrator, so a hidden entry is a courtesy, not the security
+  // boundary.
+  const isAdmin = useSession((s) => s.user?.is_admin === true);
+  const visibleNav = NAV.filter((item) => !item.adminOnly || isAdmin);
+
   const railExpanded = useUI((s) => s.railExpanded);
   const toggleRail = useUI((s) => s.toggleRail);
   const railWidth = useUI((s) => s.railWidth);
@@ -178,7 +191,7 @@ export function Rail(): JSX.Element {
       </div>
 
       <div className={cx("ph-rail-nav", exp ? "ph-rail-nav--exp" : "ph-rail-nav--col")}>
-        {NAV.map(({ key, label, title, Icon, comingSoon }) => {
+        {visibleNav.map(({ key, label, title, Icon, comingSoon }) => {
           const active = activeModule === key;
           return (
             <button

@@ -742,3 +742,84 @@ export interface ProjectArtifactPatchBody {
   body?: string;
   status?: ProjectArtifactStatus;
 }
+
+/* ------------------------------------------------------------------ admin */
+
+/** One account as the administrator console lists it. */
+export interface AdminUser {
+  id: string;
+  email: string;
+  display_name: string | null;
+  is_admin: boolean;
+  is_active: boolean;
+  pdf_translation: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  /** Resources this account owns — an active researcher versus a dormant signup. */
+  papers: number;
+  projects: number;
+  searches: number;
+  highlights: number;
+}
+
+export interface AdminUserPage {
+  users: AdminUser[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminStats {
+  users: number;
+  admins: number;
+  inactive_users: number;
+  papers: number;
+  translated_papers: number;
+  projects: number;
+  searches: number;
+  daily_papers: number;
+  allow_registration: boolean;
+}
+
+/**
+ * A model provider as configured on the server.
+ *
+ * `key_hint` is the key's last four characters and nothing more — the backend
+ * never sends the secret, so the console can distinguish two keys during a
+ * rotation without ever holding one.
+ */
+export interface AdminProvider {
+  name: string;
+  label: string;
+  base_url: string | null;
+  model: string;
+  configured: boolean;
+  key_hint: string | null;
+  /** Which jobs this provider serves: "translate" and/or "chat". */
+  roles: string[];
+}
+
+export interface AdminProviders {
+  providers: AdminProvider[];
+  translator: string;
+  chat_provider: string;
+  /** The engine actually in force after the missing-key fallback. Differing
+   *  from `translator` means translation silently degraded to the free engine. */
+  effective_translator: string;
+}
+
+export interface AdminProbeResult {
+  name: string;
+  ok: boolean;
+  latency_ms: number | null;
+  detail: string | null;
+}
+
+/** Fields an administrator may change on another account. Email and password
+ *  are deliberately absent — changing them is an account takeover. */
+export interface AdminUserPatch {
+  is_admin?: boolean;
+  is_active?: boolean;
+  pdf_translation?: boolean;
+  display_name?: string;
+}

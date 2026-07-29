@@ -1,0 +1,512 @@
+/* Administrator console. Metrics and colours come from the same tokens the rest
+   of the workbench uses — no new visual language, because this is one more
+   module beside 文库, not a separate product. */
+
+.ph-admin {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  background: var(--c-bg);
+}
+
+/* ---------------------------------------------------------------- header */
+
+.ph-admin-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--c-sf);
+  border-bottom: 1px solid var(--c-bd);
+}
+
+.ph-admin-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--c-tx);
+}
+
+.ph-admin-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+
+.ph-admin-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-bd);
+  border-radius: 7px;
+}
+
+.ph-admin-tab {
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-tx2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ph-admin-tab:hover {
+  color: var(--c-tx);
+}
+.ph-admin-tab.is-on {
+  background: var(--c-sf);
+  color: var(--c-ac);
+  font-weight: 600;
+  box-shadow: var(--sh-sm);
+}
+
+.ph-admin-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ph-admin-panel {
+  padding: 18px 16px 28px;
+  max-width: 1100px;
+}
+
+/* ----------------------------------------------------------------- stats */
+
+.ph-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.ph-admin-stat {
+  padding: 12px 14px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 10px;
+}
+
+.ph-admin-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--c-tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.ph-admin-stat-label {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--c-tx2);
+}
+
+.ph-admin-stat-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+/* --------------------------------------------------------------- toolbar */
+
+.ph-admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ph-admin-searchwrap {
+  position: relative;
+  flex: 1;
+  max-width: 300px;
+}
+
+.ph-admin-searchicon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--c-tx3);
+  pointer-events: none;
+}
+
+.ph-admin-search {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 28px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  font-size: 12px;
+  outline: none;
+}
+.ph-admin-search:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-admin-reg {
+  font-size: 11.5px;
+  color: var(--c-tx2);
+}
+.ph-admin-reg-hint {
+  margin-left: 4px;
+  color: var(--c-tx3);
+}
+
+/* ----------------------------------------------------------------- table */
+
+.ph-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.ph-admin-table th {
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-tx3);
+  background: var(--c-hdr);
+  border-bottom: 1px solid var(--c-bd);
+  white-space: nowrap;
+}
+
+.ph-admin-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--c-bd);
+  vertical-align: middle;
+}
+.ph-admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* A suspended account stays legible but visibly inert. */
+.ph-admin-table tr.is-suspended td {
+  opacity: 0.55;
+}
+
+.ph-admin-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-tx2);
+  width: 56px;
+}
+
+.ph-admin-date {
+  color: var(--c-tx3);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ph-admin-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.ph-admin-avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--c-acs);
+  color: var(--c-ac);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ph-admin-userinfo {
+  min-width: 0;
+}
+
+.ph-admin-username {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--c-tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-admin-self {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+
+.ph-admin-useremail {
+  font-size: 11.5px;
+  color: var(--c-tx3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- badges */
+
+.ph-admin-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.ph-admin-badge.is-admin {
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+.ph-admin-badge.is-plain {
+  background: var(--c-hv);
+  color: var(--c-tx3);
+}
+.ph-admin-badge.is-ready {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+/* --------------------------------------------------------------- actions */
+
+.ph-admin-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ph-admin-act {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx2);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ph-admin-act:hover:not(:disabled) {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-admin-act:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ph-admin-act.is-danger:hover:not(:disabled) {
+  border-color: var(--c-err);
+  color: var(--c-err);
+  background: var(--c-err-soft);
+}
+
+.ph-admin-selfnote {
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+/* -------------------------------------------------------- states & notes */
+
+.ph-admin-empty {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--c-tx3);
+}
+
+.ph-admin-error {
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--c-err-soft);
+  color: var(--c-err);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ph-admin-note {
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  color: var(--c-tx2);
+  font-size: 12px;
+  line-height: 1.75;
+}
+.ph-admin-note code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--c-hv);
+  color: var(--c-tx);
+  font-size: 11.5px;
+}
+
+.ph-admin-warn {
+  margin-bottom: 14px;
+  padding: 10px 13px;
+  border-radius: 8px;
+  background: var(--c-err-soft);
+  color: var(--c-err);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* ------------------------------------------------------------- providers */
+
+.ph-admin-roles {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.ph-admin-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+}
+
+.ph-admin-role-label {
+  font-size: 11.5px;
+  color: var(--c-tx3);
+}
+
+.ph-admin-role-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-ac);
+}
+
+.ph-admin-providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.ph-admin-provider {
+  padding: 14px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 10px;
+}
+.ph-admin-provider.is-on {
+  border-color: var(--c-acsb);
+}
+
+.ph-admin-provider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ph-admin-provider-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-tx);
+}
+
+.ph-admin-kv {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 5px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+.ph-admin-kv dt {
+  color: var(--c-tx3);
+}
+.ph-admin-kv dd {
+  margin: 0;
+  color: var(--c-tx);
+  overflow-wrap: anywhere;
+}
+.ph-admin-url {
+  font-size: 11.5px;
+  color: var(--c-tx2) !important;
+}
+
+.ph-admin-provider-roles {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.ph-admin-rolechip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--c-acs);
+  color: var(--c-ac);
+}
+
+.ph-admin-provider-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--c-bd);
+  flex-wrap: wrap;
+}
+
+.ph-admin-probe {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ph-admin-probe.is-ok {
+  color: var(--c-ok);
+}
+.ph-admin-probe.is-bad {
+  color: var(--c-err);
+}
+
+@media (max-width: 900px) {
+  /* Owned-resource counts are the first thing worth dropping on a narrow
+     screen; identity, role and status are not. */
+  .ph-admin-table th:nth-child(2),
+  .ph-admin-table th:nth-child(3),
+  .ph-admin-table th:nth-child(4),
+  .ph-admin-table td:nth-child(2),
+  .ph-admin-table td:nth-child(3),
+  .ph-admin-table td:nth-child(4) {
+    display: none;
+  }
+}

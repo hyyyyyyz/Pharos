@@ -105,6 +105,30 @@ def current_user(
     return _authenticate(credentials, session)
 
 
+def require_admin(user: Annotated[User, Depends(current_user)]) -> User:
+    """The authenticated user, but only if they are an operator.
+
+    Deliberately a **403, not a 404**, which is the opposite of how the
+    owner-scoped endpoints hide other people's papers. The two cases are not
+    alike: there, revealing that a paper id exists leaks another user's library
+    membership, so a stranger's row has to be indistinguishable from a missing
+    one. Here the resource is the admin console itself — its existence is not a
+    secret (it is in the UI, the docs and the source), and the caller is already
+    authenticated. Answering 404 would tell an ordinary user "no such endpoint"
+    when the truth is "not for you", which is a worse experience for the honest
+    majority and buys no secrecy from anyone who can read the repository.
+
+    ``is_active`` is already enforced by ``current_user``; this only adds the
+    operator check on top.
+    """
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires an administrator account",
+        )
+    return user
+
+
 def current_user_optional(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
     session: Annotated[Session, Depends(get_session)],

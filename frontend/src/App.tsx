@@ -10,6 +10,7 @@ import { ReadingView } from "./components/ReadingView";
 import { DailyView } from "./components/DailyView";
 import { DiscoveryView } from "./components/DiscoveryView";
 import { ProjectsView } from "./components/ProjectsView";
+import { AdminView } from "./components/AdminView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
 import { DesktopOAuthBridge } from "./components/DesktopOAuthBridge";
@@ -75,6 +76,8 @@ export default function App() {
           <DiscoveryView />
         ) : activeModule === "kb" ? (
           <ProjectsView />
+        ) : activeModule === "admin" ? (
+          <AdminView />
         ) : (
           <ComingSoon module={activeModule} />
         )}

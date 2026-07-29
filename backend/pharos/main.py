@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from pharos.api import (
+    admin,
     annotate,
     auth,
     daily,
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     # Auth first: it is the only router whose endpoints are reachable without a
     # token, and the one every other router now depends on.
     app.include_router(auth.router)
+    app.include_router(admin.router)
     app.include_router(papers.router)
     app.include_router(jobs.router)
     app.include_router(search.router)

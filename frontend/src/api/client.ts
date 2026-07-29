@@ -48,6 +48,12 @@ import type {
   ZoteroDesktopOAuthStart,
   ZoteroOAuthStart,
   ZoteroStatus,
+  AdminProbeResult,
+  AdminProviders,
+  AdminStats,
+  AdminUser,
+  AdminUserPage,
+  AdminUserPatch,
 } from "./types";
 
 // Web production is same-origin, so "/api" reaches the FastAPI process that
@@ -596,6 +602,48 @@ export const api = {
         { method: "DELETE" },
       ),
   },
+
+  /* ------------------------------------------------------------------ admin */
+
+  /**
+   * The administrator console. Every call here 403s for an ordinary account —
+   * the backend gates them on `require_admin`, so the client never has to
+   * decide who may see what; it only has to avoid *offering* the screen.
+   */
+  admin: {
+    stats: (): Promise<AdminStats> => json<AdminStats>("/admin/stats"),
+
+    listUsers: (
+      opts: { q?: string; limit?: number; offset?: number; signal?: AbortSignal } = {},
+    ): Promise<AdminUserPage> => {
+      const params = new URLSearchParams();
+      if (opts.q) params.set("q", opts.q);
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.offset !== undefined) params.set("offset", String(opts.offset));
+      const query = params.toString();
+      return json<AdminUserPage>(`/admin/users${query ? `?${query}` : ""}`, {
+        signal: opts.signal,
+      });
+    },
+
+    updateUser: (userId: string, patch: AdminUserPatch): Promise<AdminUser> =>
+      json<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+
+    providers: (): Promise<AdminProviders> => json<AdminProviders>("/admin/providers"),
+
+    /** Sends one tiny completion to the provider. This is the only way to tell
+     *  "a key is configured" from "the key works" — a typo and a decommissioned
+     *  relay both look healthy in the configuration listing. */
+    probeProvider: (name: string): Promise<AdminProbeResult> =>
+      json<AdminProbeResult>(`/admin/providers/${encodeURIComponent(name)}/probe`, {
+        method: "POST",
+      }),
+  },
+
 };
 
 /** The Authorization header as an object, or `{}` when signed out. Exported for
