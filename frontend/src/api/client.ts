@@ -633,6 +633,18 @@ export const api = {
         body: JSON.stringify(patch),
       }),
 
+    /**
+     * Permanently delete an account and everything it owns.
+     *
+     * `confirmEmail` must match the target's address — the backend checks it
+     * too, so a mistyped id fails instead of erasing the wrong researcher.
+     */
+    deleteUser: (userId: string, confirmEmail: string): Promise<void> =>
+      empty(
+        `/admin/users/${encodeURIComponent(userId)}?confirm_email=${encodeURIComponent(confirmEmail)}`,
+        { method: "DELETE" },
+      ),
+
     providers: (): Promise<AdminProviders> => json<AdminProviders>("/admin/providers"),
 
     /** Sends one tiny completion to the provider. This is the only way to tell

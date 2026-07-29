@@ -29,8 +29,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from pharos.api.deps import get_session, get_settings, require_admin
+from pharos.api.deps import get_library, get_session, get_settings, require_admin
 from pharos.config import Settings
+from pharos.services.library import LibraryService
 from pharos.db.models import (
     DailyPaper,
     Highlight,
@@ -402,6 +403,61 @@ def update_user(
         "highlights": _counts_by_user(session, Highlight.user_id, Highlight),
     }
     return _user_out(target, counts)
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: str,
+    admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_session)],
+    library: Annotated[LibraryService, Depends(get_library)],
+    confirm_email: Annotated[str, Query(max_length=320)],
+) -> None:
+    """Permanently delete an account and everything it owns.
+
+    ``confirm_email`` must equal the target's address. The console already asks
+    the operator to type it, but the check belongs here too: this is the one
+    endpoint in Pharos that destroys another person's work, and a mistyped id in
+    a script should fail rather than silently erase the wrong researcher.
+
+    **Papers are purged one by one rather than left to the database cascade.**
+    ``papers.user_id`` is ``ON DELETE CASCADE``, so a bare ``DELETE FROM users``
+    would remove every row and leave every PDF behind as an orphaned directory —
+    the blobs are content-addressed and owned by no row in particular. Worse,
+    naively deleting the files instead would destroy PDFs that a *different*
+    user's paper still points at, because two researchers who upload the same
+    paper share one blob. ``LibraryService.purge`` already resolves exactly this:
+    it reference-counts across all users and defers the unlink until after the
+    commit. Reusing it is what makes deletion both complete and safe.
+
+    Everything else the account owns — projects, searches, highlights, notes,
+    collections, conversations, Zotero credentials — is metadata with no files
+    of its own, so the FK cascade is the right tool for those.
+    """
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == admin.id:
+        raise HTTPException(
+            status_code=409, detail="不能删除自己的账户，请由另一位管理员操作"
+        )
+    if target.is_admin and _admin_count(session) <= 1:
+        raise HTTPException(
+            status_code=409, detail="这是最后一位管理员，删除后将无人可管理此实例"
+        )
+    if confirm_email.strip().casefold() != target.email:
+        raise HTTPException(
+            status_code=400, detail="确认邮箱与该账户不一致，未执行删除"
+        )
+
+    # Purge the owned papers first, while the rows still exist to be counted.
+    papers = list(session.scalars(select(Paper).where(Paper.user_id == target.id)).all())
+    for paper in papers:
+        library.purge(session, paper)
+
+    session.delete(target)
+    session.flush()
 
 
 @router.get("/providers", response_model=ProvidersOut)

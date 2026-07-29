@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { AdminProbeResult, AdminUser } from "../api/types";
@@ -69,6 +69,8 @@ function UsersPanel(): JSX.Element {
   const me = useSession((s) => s.user);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** The account awaiting a typed-email confirmation, if any. */
+  const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null);
 
   const stats = useQuery({ queryKey: ["admin", "stats"], queryFn: api.admin.stats });
   const users = useQuery({
@@ -86,6 +88,18 @@ function UsersPanel(): JSX.Element {
     },
     // The backend refuses the lockout cases with a 409 and an explanatory
     // message; showing it verbatim is more useful than a generic failure.
+    onError: (e) => setError(errText(e)),
+  });
+
+  const remove = useMutation({
+    mutationFn: ({ id, email }: { id: string; email: string }) =>
+      api.admin.deleteUser(id, email),
+    onMutate: () => setError(null),
+    onSuccess: () => {
+      setPendingDelete(null);
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      qc.invalidateQueries({ queryKey: ["admin", "stats"] });
+    },
     onError: (e) => setError(errText(e)),
   });
 
@@ -151,13 +165,106 @@ function UsersPanel(): JSX.Element {
                 key={u.id}
                 user={u}
                 isSelf={u.id === me?.id}
-                busy={patch.isPending}
+                busy={patch.isPending || remove.isPending}
                 onPatch={(body) => patch.mutate({ id: u.id, ...body })}
+                onDelete={() => setPendingDelete(u)}
               />
             ))}
           </tbody>
         </table>
       )}
+
+      {pendingDelete && (
+        <DeleteDialog
+          user={pendingDelete}
+          busy={remove.isPending}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() =>
+            remove.mutate({ id: pendingDelete.id, email: pendingDelete.email })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Deleting an account destroys every paper, project, highlight and note it
+ * owns, and that cannot be undone. So the confirmation asks the operator to
+ * type the address rather than to click a second button: retyping is the
+ * cheapest available proof that they read *which* account they are about to
+ * erase, and it is the same string the backend independently verifies.
+ */
+function DeleteDialog({
+  user,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  user: AdminUser;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}): JSX.Element {
+  const [typed, setTyped] = useState("");
+  const matches = typed.trim().toLowerCase() === user.email.toLowerCase();
+  const owns = user.papers + user.projects + user.highlights;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="ph-admin-overlay" role="presentation" onClick={onCancel}>
+      <div
+        className="ph-admin-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="删除用户"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="ph-admin-dialog-title">删除用户</div>
+        <p className="ph-admin-dialog-body">
+          将永久删除 <b>{user.email}</b> 及其全部数据
+          {owns > 0 && (
+            <>
+              ：
+              <b>
+                {user.papers} 篇论文、{user.projects} 个项目、{user.highlights} 条高亮
+              </b>
+            </>
+          )}
+          。此操作<b>无法撤销</b>。
+        </p>
+        <p className="ph-admin-dialog-hint">请输入该用户的邮箱以确认：</p>
+        <input
+          className="ph-admin-dialog-input"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={user.email}
+          autoFocus
+          aria-label="确认邮箱"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && matches && !busy) onConfirm();
+          }}
+        />
+        <div className="ph-admin-dialog-actions">
+          <button className="ph-admin-act" onClick={onCancel} disabled={busy}>
+            取消
+          </button>
+          <button
+            className="ph-admin-act is-destructive"
+            onClick={onConfirm}
+            disabled={!matches || busy}
+          >
+            {busy ? "删除中…" : "永久删除"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -185,11 +292,13 @@ function UserRow({
   isSelf,
   busy,
   onPatch,
+  onDelete,
 }: {
   user: AdminUser;
   isSelf: boolean;
   busy: boolean;
   onPatch: (body: { is_admin?: boolean; is_active?: boolean }) => void;
+  onDelete: () => void;
 }): JSX.Element {
   const name = user.display_name?.trim() || user.email.split("@")[0];
   return (
@@ -238,6 +347,15 @@ function UserRow({
                 onClick={() => onPatch({ is_active: !user.is_active })}
               >
                 {user.is_active ? "停用" : "恢复"}
+              </button>
+              <button
+                className="ph-admin-trash"
+                disabled={busy}
+                onClick={onDelete}
+                title={`删除 ${user.email}`}
+                aria-label={`删除用户 ${user.email}`}
+              >
+                <Icons.trash size={15} />
               </button>
             </>
           )}

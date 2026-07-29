@@ -18,7 +18,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from pharos.db.models import User
+from pharos.db.models import Paper, User
 from pharos.db.session import session_scope
 from pharos.main import create_app
 
@@ -59,6 +59,12 @@ def _account(client: TestClient, email: str, *, admin: bool = False) -> dict:
         with session_scope() as session:
             session.get(User, body["user"]["id"]).is_admin = True
     return {"id": body["user"]["id"], "headers": {"Authorization": f"Bearer {body['token']}"}}
+
+
+def _email_of(user_id: str) -> str:
+    """The stored (casefolded) address, which is what deletion asks to confirm."""
+    with session_scope() as session:
+        return session.get(User, user_id).email
 
 
 ADMIN_PATHS = ["/api/admin/stats", "/api/admin/users", "/api/admin/providers"]
@@ -236,3 +242,146 @@ def test_unknown_user_is_404(client: TestClient) -> None:
         ).status_code
         == 404
     )
+
+
+# --------------------------------------------------------------------------- #
+# deletion
+# --------------------------------------------------------------------------- #
+
+
+def _pdf_bytes(text: str) -> bytes:
+    """One-page PDF bytes.
+
+    Note these are NOT reproducible across calls — PyMuPDF stamps a creation
+    time — so a test that needs two users to share one blob must upload the
+    *same* bytes object rather than regenerating it.
+    """
+    import pymupdf
+
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 100), text, fontsize=11)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def _upload(client: TestClient, headers: dict, source: str | bytes) -> dict:
+    data = _pdf_bytes(source) if isinstance(source, str) else source
+    response = client.post(
+        "/api/papers", headers=headers, files={"file": ("p.pdf", data, "application/pdf")}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _blob_dir(sha256: str):
+    from pharos.config import get_settings
+
+    return get_settings().files_dir / sha256
+
+
+def test_deleting_a_user_removes_their_papers_and_blobs(client: TestClient) -> None:
+    admin = _account(client, "admin@test.io", admin=True)
+    victim = _account(client, "victim@test.io")
+    paper = _upload(client, victim["headers"], f"only-{uuid.uuid4().hex}")
+
+    with session_scope() as session:
+        sha = session.get(Paper, paper["id"]).orig_sha256
+    assert _blob_dir(sha).is_dir()
+
+    response = client.request(
+        "DELETE",
+        f"/api/admin/users/{victim['id']}",
+        headers=admin["headers"],
+        params={"confirm_email": _email_of(victim["id"])},
+    )
+    assert response.status_code == 204
+
+    with session_scope() as session:
+        assert session.get(User, victim["id"]) is None
+        assert session.get(Paper, paper["id"]) is None
+    # An unshared blob goes with the row rather than becoming an orphan.
+    assert not _blob_dir(sha).exists()
+
+
+def test_deleting_a_user_keeps_a_blob_another_user_still_references(
+    client: TestClient,
+) -> None:
+    """The case a naive cascade-plus-rmtree would get wrong.
+
+    Two researchers upload the same paper: two rows, one content-addressed blob.
+    Deleting one account must not destroy the file the other still reads.
+    """
+    admin = _account(client, "admin@test.io", admin=True)
+    leaving = _account(client, "leaving@test.io")
+    staying = _account(client, "staying@test.io")
+
+    # One byte string, uploaded twice — this is what produces one blob and two
+    # rows, and it is the situation a naive delete would corrupt.
+    shared = _pdf_bytes(f"shared-{uuid.uuid4().hex}")
+    left = _upload(client, leaving["headers"], shared)
+    kept = _upload(client, staying["headers"], shared)
+
+    with session_scope() as session:
+        sha = session.get(Paper, left["id"]).orig_sha256
+        assert session.get(Paper, kept["id"]).orig_sha256 == sha  # one blob, two rows
+    assert left["id"] != kept["id"]
+
+    response = client.request(
+        "DELETE",
+        f"/api/admin/users/{leaving['id']}",
+        headers=admin["headers"],
+        params={"confirm_email": _email_of(leaving["id"])},
+    )
+    assert response.status_code == 204
+
+    with session_scope() as session:
+        assert session.get(Paper, left["id"]) is None
+        assert session.get(Paper, kept["id"]) is not None
+    assert _blob_dir(sha).is_dir(), "still-referenced PDF was destroyed"
+    # And the surviving user can actually still read it.
+    assert (
+        client.get(f"/api/papers/{kept['id']}/pdf/original", headers=staying["headers"]).status_code
+        == 200
+    )
+
+
+def test_delete_requires_the_matching_confirmation_email(client: TestClient) -> None:
+    admin = _account(client, "admin@test.io", admin=True)
+    user = _account(client, "safe@test.io")
+    response = client.request(
+        "DELETE",
+        f"/api/admin/users/{user['id']}",
+        headers=admin["headers"],
+        params={"confirm_email": "someone-else@test.io"},
+    )
+    assert response.status_code == 400
+    with session_scope() as session:
+        assert session.get(User, user["id"]) is not None
+
+
+def test_admin_cannot_delete_themselves(client: TestClient) -> None:
+    admin = _account(client, "admin@test.io", admin=True)
+    response = client.request(
+        "DELETE",
+        f"/api/admin/users/{admin['id']}",
+        headers=admin["headers"],
+        params={"confirm_email": _email_of(admin["id"])},
+    )
+    assert response.status_code == 409
+    with session_scope() as session:
+        assert session.get(User, admin["id"]) is not None
+
+
+def test_ordinary_account_cannot_delete_anyone(client: TestClient) -> None:
+    user = _account(client, "user@test.io")
+    victim = _account(client, "victim@test.io")
+    response = client.request(
+        "DELETE",
+        f"/api/admin/users/{victim['id']}",
+        headers=user["headers"],
+        params={"confirm_email": _email_of(victim["id"])},
+    )
+    assert response.status_code == 403
+    with session_scope() as session:
+        assert session.get(User, victim["id"]) is not None

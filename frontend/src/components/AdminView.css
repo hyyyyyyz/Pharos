@@ -510,3 +510,118 @@
     display: none;
   }
 }
+
+/* ----------------------------------------------------------------- delete */
+
+/* Red from the start rather than only on hover: this is the one control in the
+   console that destroys another person's work, and it should look like it
+   before the pointer arrives. */
+.ph-admin-trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-err);
+  cursor: pointer;
+}
+.ph-admin-trash:hover:not(:disabled) {
+  background: var(--c-err-soft);
+  border-color: var(--c-err);
+}
+.ph-admin-trash:focus-visible {
+  outline: none;
+  border-color: var(--c-err);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--c-err) 30%, transparent);
+}
+.ph-admin-trash:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ph-admin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--c-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ph-admin-dialog {
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+  background: var(--c-sf);
+  border: 1px solid var(--c-bd);
+  border-radius: 12px;
+  box-shadow: var(--sh-pop);
+  animation: ph-fade 0.14s ease;
+}
+
+.ph-admin-dialog-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--c-err);
+  margin-bottom: 10px;
+}
+
+.ph-admin-dialog-body {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--c-tx);
+  overflow-wrap: anywhere;
+}
+
+.ph-admin-dialog-hint {
+  margin: 0 0 7px;
+  font-size: 12px;
+  color: var(--c-tx2);
+}
+
+.ph-admin-dialog-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--c-bd);
+  background: var(--c-bg);
+  color: var(--c-tx);
+  font-size: 12.5px;
+  outline: none;
+}
+.ph-admin-dialog-input:focus {
+  border-color: var(--c-ac);
+  box-shadow: 0 0 0 2px var(--c-ring);
+}
+
+.ph-admin-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Stays visibly inert until the typed address matches, so the destructive
+   click is never one slip away. */
+.ph-admin-act.is-destructive {
+  border-color: var(--c-err);
+  background: var(--c-err);
+  color: var(--c-sf);
+  font-weight: 600;
+}
+.ph-admin-act.is-destructive:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--c-err) 85%, black);
+  color: var(--c-sf);
+}
+.ph-admin-act.is-destructive:disabled {
+  background: var(--c-hv);
+  border-color: var(--c-bd);
+  color: var(--c-tx3);
+}
