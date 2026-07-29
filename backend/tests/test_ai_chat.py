@@ -301,6 +301,50 @@ def test_stream_persists_visible_turns_and_emits_ndjson(
         )
 
 
+def test_conversation_rejects_parallel_generation_and_active_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _save_provider(monkeypatch)
+    with session_scope() as session:
+        conversation = ai_chat.create_conversation(
+            session,
+            user_id=OWNER,
+            paper_id=PAPER,
+        )
+        conversation_id = conversation.id
+        state = ai_chat.prepare_chat_request(
+            session,
+            user_id=OWNER,
+            conversation_id=conversation_id,
+            message="第一条问题",
+            settings=settings(),
+        )
+        with pytest.raises(ai_chat.ConversationBusy):
+            ai_chat.prepare_chat_request(
+                session,
+                user_id=OWNER,
+                conversation_id=conversation_id,
+                message="并发问题",
+                settings=settings(),
+            )
+        with pytest.raises(ai_chat.ConversationBusy):
+            ai_chat.delete_conversation(
+                session,
+                user_id=OWNER,
+                conversation_id=conversation_id,
+            )
+
+    monkeypatch.setattr(ai_chat, "stream_completion", lambda *_args, **_kwargs: iter(["回答"]))
+    list(ai_chat.stream_chat_events(state, run_id="parallel-run"))
+
+    with session_scope() as session:
+        ai_chat.delete_conversation(
+            session,
+            user_id=OWNER,
+            conversation_id=conversation_id,
+        )
+
+
 def test_http_api_is_mounted_shape_compatible_and_persistent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

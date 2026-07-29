@@ -148,6 +148,8 @@ def _http_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=503, detail=str(error))
     if isinstance(error, ai_chat.ProviderFailure):
         return HTTPException(status_code=502, detail=str(error))
+    if isinstance(error, ai_chat.ConversationBusy):
+        return HTTPException(status_code=409, detail=str(error))
     if isinstance(error, ai_chat.AiChatError):
         return HTTPException(status_code=400, detail=str(error))
     return HTTPException(status_code=500, detail="AI 对话服务暂时不可用。")
@@ -329,6 +331,7 @@ def stream_message(
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> StreamingResponse:
+    state: ai_chat.ChatRequestState | None = None
     try:
         state = ai_chat.prepare_chat_request(
             session,
@@ -341,6 +344,8 @@ def stream_message(
         # fresh session to persist the assistant turn.  Commit the user turn now.
         session.commit()
     except Exception as error:
+        if state is not None:
+            ai_chat.release_conversation_run(state.conversation_id)
         raise _http_error(error) from error
     return StreamingResponse(
         ai_chat.stream_chat_events(state, run_id=payload.run_id),

@@ -19,6 +19,7 @@ import ipaddress
 import json
 import re
 import socket
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -72,6 +73,10 @@ class ProviderFailure(AiChatError):
     """The configured provider rejected or failed a request."""
 
 
+class ConversationBusy(AiChatError):
+    """A conversation already has an active model generation."""
+
+
 @dataclass(frozen=True)
 class ProviderRuntime:
     base_url: str
@@ -109,6 +114,31 @@ class ChatRequestState:
     model: str
     system_prompt: str
     history: tuple[dict[str, str], ...]
+
+
+# Production runs one API worker on the constrained Pharos host.  This lock
+# prevents two browser tabs from forking the same conversation history inside
+# that worker.  A future multi-worker deployment should move the lease into a
+# shared store with expiry semantics.
+_active_conversations: set[str] = set()
+_active_conversations_lock = threading.Lock()
+
+
+def acquire_conversation_run(conversation_id: str) -> None:
+    with _active_conversations_lock:
+        if conversation_id in _active_conversations:
+            raise ConversationBusy("当前对话正在生成，请等待完成或先停止上一条回答。")
+        _active_conversations.add(conversation_id)
+
+
+def release_conversation_run(conversation_id: str) -> None:
+    with _active_conversations_lock:
+        _active_conversations.discard(conversation_id)
+
+
+def conversation_run_active(conversation_id: str) -> bool:
+    with _active_conversations_lock:
+        return conversation_id in _active_conversations
 
 
 def now() -> datetime:
@@ -480,8 +510,7 @@ def build_profile(
                 {
                     "role": "system",
                     "content": (
-                        "你是 Pharos 的论文阅读助手。先建立可靠的论文理解档案，"
-                        "后续用于精确问答。"
+                        "你是 Pharos 的论文阅读助手。先建立可靠的论文理解档案，后续用于精确问答。"
                     ),
                 },
                 {"role": "user", "content": prompt},
@@ -596,6 +625,8 @@ def delete_conversation(
     conversation_id: str,
 ) -> None:
     conversation = require_conversation(session, user_id=user_id, conversation_id=conversation_id)
+    if conversation_run_active(conversation.id):
+        raise ConversationBusy("当前对话仍在生成，请先停止回答再删除。")
     session.delete(conversation)
 
 
@@ -622,58 +653,63 @@ def prepare_chat_request(
 ) -> ChatRequestState:
     question = _clean_message(message)
     conversation = require_conversation(session, user_id=user_id, conversation_id=conversation_id)
-    paper = owned_paper(session, user_id=user_id, paper_id=conversation.paper_id)
-    provider = effective_provider(session, user_id=user_id, settings=settings)
-    if provider is None:
-        raise ProviderUnavailable("请先在设置中配置 OpenAI 兼容模型。")
+    acquire_conversation_run(conversation.id)
+    try:
+        paper = owned_paper(session, user_id=user_id, paper_id=conversation.paper_id)
+        provider = effective_provider(session, user_id=user_id, settings=settings)
+        if provider is None:
+            raise ProviderUnavailable("请先在设置中配置 OpenAI 兼容模型。")
 
-    context = context_for(session, user_id=user_id, paper_id=paper.id)
-    if context is None:
-        context = ensure_context(
+        context = context_for(session, user_id=user_id, paper_id=paper.id)
+        if context is None:
+            context = ensure_context(
+                session,
+                user_id=user_id,
+                paper_id=paper.id,
+                settings=settings,
+            ).context
+
+        timestamp = now()
+        user_message = AiMessage(
+            user_id=user_id,
+            conversation_id=conversation.id,
+            role="user",
+            content=question,
+            model=None,
+            created_at=timestamp,
+        )
+        session.add(user_message)
+        if conversation.title == "论文对话":
+            conversation.title = question[:42]
+        conversation.updated_at = timestamp
+        session.flush()
+
+        messages = conversation_messages(
             session,
             user_id=user_id,
-            paper_id=paper.id,
-            settings=settings,
-        ).context
-
-    timestamp = now()
-    user_message = AiMessage(
-        user_id=user_id,
-        conversation_id=conversation.id,
-        role="user",
-        content=question,
-        model=None,
-        created_at=timestamp,
-    )
-    session.add(user_message)
-    if conversation.title == "论文对话":
-        conversation.title = question[:42]
-    conversation.updated_at = timestamp
-    session.flush()
-
-    messages = conversation_messages(
-        session,
-        user_id=user_id,
-        conversation_id=conversation.id,
-    )
-    excerpts = relevant_context(
-        _paper_text(paper),
-        question,
-        MAX_REQUEST_CONTEXT_CHARS,
-    )
-    system_prompt = paper_system_prompt(
-        title=paper.title,
-        summary=context.summary,
-        excerpts=excerpts,
-    )
-    return ChatRequestState(
-        provider=provider,
-        conversation_id=conversation.id,
-        user_id=user_id,
-        model=provider.model,
-        system_prompt=system_prompt,
-        history=_history(messages),
-    )
+            conversation_id=conversation.id,
+        )
+        excerpts = relevant_context(
+            _paper_text(paper),
+            question,
+            MAX_REQUEST_CONTEXT_CHARS,
+        )
+        system_prompt = paper_system_prompt(
+            title=paper.title,
+            summary=context.summary,
+            excerpts=excerpts,
+        )
+        return ChatRequestState(
+            provider=provider,
+            conversation_id=conversation.id,
+            user_id=user_id,
+            model=provider.model,
+            system_prompt=system_prompt,
+            history=_history(messages),
+        )
+    except Exception:
+        release_conversation_run(conversation.id)
+        raise
 
 
 def paper_system_prompt(*, title: str, summary: str | None, excerpts: str | None) -> str:
@@ -928,11 +964,11 @@ def persist_assistant(
 
 
 def stream_chat_events(state: ChatRequestState, *, run_id: str) -> Iterator[bytes]:
-    yield _event({"type": "started", "run_id": run_id})
-    messages = [{"role": "system", "content": state.system_prompt}, *state.history]
-    answer_parts: list[str] = []
-    answer_chars = 0
     try:
+        yield _event({"type": "started", "run_id": run_id})
+        messages = [{"role": "system", "content": state.system_prompt}, *state.history]
+        answer_parts: list[str] = []
+        answer_chars = 0
         for delta in stream_completion(state.provider, messages):
             answer_chars += len(delta)
             if answer_chars > MAX_ANSWER_CHARS:
@@ -966,3 +1002,5 @@ def stream_chat_events(state: ChatRequestState, *, run_id: str) -> Iterator[byte
         return
     except Exception as error:  # noqa: BLE001 - stream errors are protocol events
         yield _event({"type": "error", "message": str(error)[:500] or "生成失败。"})
+    finally:
+        release_conversation_run(state.conversation_id)
