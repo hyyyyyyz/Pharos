@@ -27,10 +27,12 @@
   font-size: 11.5px;
 }
 .ph-native-field input:focus { border-color: var(--c-ac); box-shadow: 0 0 0 2px var(--c-ring); }
+.ph-native-field input:disabled { opacity: 0.55; cursor: not-allowed; }
 .ph-native-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ph-native-security { margin: 1px 0 12px; padding: 8px 9px; border-radius: 7px; background: var(--c-acs); color: var(--c-aclink, var(--c-ac)); font-size: 10.5px; line-height: 1.55; }
 .ph-native-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.ph-native-actions button {
+.ph-native-actions button,
+.ph-native-action-link {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--c-bd);
@@ -41,7 +43,10 @@
   font: inherit;
   font-size: 11.5px;
 }
-.ph-native-actions button.is-primary { border-color: var(--c-ac); background: var(--c-ac); color: var(--c-acc); }
+.ph-native-action-link { display: inline-flex; align-items: center; text-decoration: none; }
+.ph-native-actions--spaced { margin-top: 12px; }
+.ph-native-actions button.is-primary,
+.ph-native-action-link.is-primary { border-color: var(--c-ac); background: var(--c-ac); color: var(--c-acc); }
 .ph-native-actions button:disabled { opacity: 0.45; cursor: default; }
 .ph-native-message { margin: 10px 0; padding: 9px 10px; border-radius: 7px; font-size: 10.8px; line-height: 1.6; }
 .ph-native-message.is-ok { background: var(--c-ok-soft, #e8f7f2); color: var(--c-ok, #16806d); }

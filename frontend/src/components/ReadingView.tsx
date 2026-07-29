@@ -6,7 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import type { DocumentContext, DocumentRef } from "../lib/desktopChat";
+import type { DocumentContext, DocumentRef } from "../lib/paperChat";
 import {
   isLocalZoteroPaperId,
   localZotero,

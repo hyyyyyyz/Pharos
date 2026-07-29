@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icons } from "../design/icons";
 import {
-  desktopChat,
-  desktopChatAvailable,
-  desktopError,
+  paperChat,
+  paperChatAvailable,
+  paperChatError,
+  paperChatIsDesktop,
+  paperChatNativeCodexAvailable,
+  paperChatNeedsClientContext,
   type ChatMessage,
   type CodexSessionSummary,
   type ConversationSummary,
@@ -11,7 +14,7 @@ import {
   type DocumentRef,
   type PaperContextStatus,
   type ProviderStatus,
-} from "../lib/desktopChat";
+} from "../lib/paperChat";
 import { useUI } from "../store";
 import "./AiPanel.css";
 
@@ -55,7 +58,10 @@ export function AiPanel({
   onOpenSettings,
 }: AiPanelProps): JSX.Element {
   const toggleAI = useUI((state) => state.toggleAI);
-  const available = desktopChatAvailable();
+  const available = paperChatAvailable();
+  const desktop = paperChatIsDesktop();
+  const nativeCodex = paperChatNativeCodexAvailable();
+  const needsClientContext = paperChatNeedsClientContext();
 
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [contextStatus, setContextStatus] = useState<PaperContextStatus | null>(null);
@@ -83,29 +89,38 @@ export function AiPanel({
     async (generation: number, providerConfigured: boolean): Promise<PaperContextStatus | null> => {
       if (!contextReady || documentGenerationRef.current !== generation) return null;
       setContextPhase("extracting");
-      const context = cachedContextRef.current ?? await getContextRef.current();
+      const context = needsClientContext
+        ? cachedContextRef.current ?? await getContextRef.current()
+        : {
+            title: documentTitle,
+            authors: "",
+            abstractText: "",
+            fullText: "",
+            currentPage: null,
+            pageCount: null,
+          };
       if (documentGenerationRef.current !== generation) return null;
       cachedContextRef.current = context;
       setContextPhase(providerConfigured ? "understanding" : "indexed");
-      const prepared = await desktopChat.prepareContext(documentRef, context);
+      const prepared = await paperChat.prepareContext(documentRef, context);
       if (documentGenerationRef.current !== generation) return null;
       setContextStatus(prepared);
       setContextPhase(prepared.hasSummary && prepared.status === "ready" ? "ready" : "indexed");
       if (prepared.error) setError(prepared.error);
       return prepared;
     },
-    [contextReady, documentRef],
+    [contextReady, documentRef, documentTitle, needsClientContext],
   );
 
   const loadConversation = useCallback(async (conversationId: string): Promise<void> => {
-    const detail = await desktopChat.loadConversation(conversationId);
+    const detail = await paperChat.loadConversation(conversationId);
     setActiveId(detail.id);
     setMessages(detail.messages);
   }, []);
 
   const refreshConversations = useCallback(
     async (preferredId?: string | null): Promise<ConversationSummary[]> => {
-      const next = await desktopChat.listConversations(documentRef);
+      const next = await paperChat.listConversations(documentRef);
       setConversations(next);
       const target = preferredId ?? activeId ?? next[0]?.id ?? null;
       if (target && next.some((conversation) => conversation.id === target)) {
@@ -151,9 +166,9 @@ export function AiPanel({
     void (async () => {
       try {
         const [nextProvider, nextConversations, existingContext] = await Promise.all([
-          desktopChat.providerStatus(),
-          desktopChat.listConversations(documentRef),
-          desktopChat.contextStatus(documentRef),
+          paperChat.providerStatus(),
+          paperChat.listConversations(documentRef),
+          paperChat.contextStatus(documentRef),
         ]);
         if (!isCurrent()) return;
         setProvider(nextProvider);
@@ -162,7 +177,7 @@ export function AiPanel({
 
         const first = nextConversations[0];
         if (first) {
-          const detail = await desktopChat.loadConversation(first.id);
+          const detail = await paperChat.loadConversation(first.id);
           if (!isCurrent()) return;
           setActiveId(detail.id);
           setMessages(detail.messages);
@@ -181,7 +196,7 @@ export function AiPanel({
       } catch (cause) {
         if (isCurrent()) {
           setContextPhase("error");
-          setError(desktopError(cause));
+          setError(paperChatError(cause));
         }
       }
     })();
@@ -189,7 +204,7 @@ export function AiPanel({
     return () => {
       cancelled = true;
       if (documentGenerationRef.current === generation) documentGenerationRef.current += 1;
-      if (runIdRef.current) void desktopChat.cancel(runIdRef.current).catch(() => undefined);
+      if (runIdRef.current) void paperChat.cancel(runIdRef.current).catch(() => undefined);
     };
     // A paper identity change is the only reason to initialise again. The
     // extraction callback also changes as pdf.js reports pages and zoom state.
@@ -207,16 +222,16 @@ export function AiPanel({
       const generation = documentGenerationRef.current;
       void (async () => {
         try {
-          const next = await desktopChat.providerStatus();
+          const next = await paperChat.providerStatus();
           if (documentGenerationRef.current !== generation) return;
           setProvider(next);
           if (!next.configured || !contextReady) return;
-          const current = await desktopChat.contextStatus(documentRef);
+          const current = await paperChat.contextStatus(documentRef);
           if (documentGenerationRef.current !== generation) return;
           setContextStatus(current);
           if (!current?.hasSummary) await preparePaperContext(generation, true);
         } catch (cause) {
-          if (documentGenerationRef.current === generation) setError(desktopError(cause));
+          if (documentGenerationRef.current === generation) setError(paperChatError(cause));
         }
       })();
     };
@@ -226,7 +241,7 @@ export function AiPanel({
 
   const ensureConversation = useCallback(async (): Promise<string> => {
     if (activeId) return activeId;
-    const created = await desktopChat.createConversation(documentRef);
+    const created = await paperChat.createConversation(documentRef);
     setConversations((current) => [created, ...current]);
     setActiveId(created.id);
     setMessages([]);
@@ -240,10 +255,10 @@ export function AiPanel({
       let activeProvider = provider;
       if (!activeProvider?.configured) {
         try {
-          activeProvider = await desktopChat.providerStatus();
+          activeProvider = await paperChat.providerStatus();
           setProvider(activeProvider);
         } catch (cause) {
-          setError(desktopError(cause));
+          setError(paperChatError(cause));
           return;
         }
         if (!activeProvider.configured) {
@@ -255,15 +270,24 @@ export function AiPanel({
           void (async () => {
             try {
               setContextPhase("extracting");
-              const context = await getContextRef.current();
+              const context = needsClientContext
+                ? await getContextRef.current()
+                : {
+                    title: documentTitle,
+                    authors: "",
+                    abstractText: "",
+                    fullText: "",
+                    currentPage: null,
+                    pageCount: null,
+                  };
               cachedContextRef.current = context;
               setContextPhase("understanding");
-              const prepared = await desktopChat.prepareContext(documentRef, context);
+              const prepared = await paperChat.prepareContext(documentRef, context);
               setContextStatus(prepared);
               setContextPhase(prepared.hasSummary ? "ready" : "indexed");
             } catch (cause) {
               setContextPhase("error");
-              setError(desktopError(cause));
+              setError(paperChatError(cause));
             }
           })();
         }
@@ -275,7 +299,7 @@ export function AiPanel({
       try {
         conversationId = await ensureConversation();
       } catch (cause) {
-        setError(desktopError(cause));
+        setError(paperChatError(cause));
         return;
       }
 
@@ -294,7 +318,7 @@ export function AiPanel({
       runIdRef.current = nextRunId;
 
       try {
-        await desktopChat.send(
+        await paperChat.send(
           {
             runId: nextRunId,
             conversationId,
@@ -314,7 +338,7 @@ export function AiPanel({
           },
         );
       } catch (cause) {
-        const message = desktopError(cause);
+        const message = paperChatError(cause);
         if (message !== "已停止生成。") setError(message);
       } finally {
         setStreaming(false);
@@ -334,8 +358,10 @@ export function AiPanel({
       contextPhase,
       contextStatus?.hasSummary,
       documentRef,
+      documentTitle,
       ensureConversation,
       loadConversation,
+      needsClientContext,
       onOpenSettings,
       provider?.configured,
       refreshConversations,
@@ -344,27 +370,27 @@ export function AiPanel({
   );
 
   const stop = useCallback(() => {
-    if (runId) void desktopChat.cancel(runId);
+    if (runId) void paperChat.cancel(runId);
   }, [runId]);
 
   const createConversation = useCallback(async () => {
     if (streaming) return;
     try {
-      const created = await desktopChat.createConversation(documentRef);
+      const created = await paperChat.createConversation(documentRef);
       setConversations((current) => [created, ...current]);
       setActiveId(created.id);
       setMessages([]);
       setError(null);
     } catch (cause) {
-      setError(desktopError(cause));
+      setError(paperChatError(cause));
     }
   }, [documentRef, streaming]);
 
   const deleteConversation = useCallback(async () => {
     if (!activeId || streaming || !window.confirm("删除当前 AI 对话？论文索引不会被删除。")) return;
     try {
-      await desktopChat.deleteConversation(activeId);
-      const next = await desktopChat.listConversations(documentRef);
+      await paperChat.deleteConversation(activeId);
+      const next = await paperChat.listConversations(documentRef);
       setConversations(next);
       if (next[0]) await loadConversation(next[0].id);
       else {
@@ -373,7 +399,7 @@ export function AiPanel({
       }
       setMenuOpen(false);
     } catch (cause) {
-      setError(desktopError(cause));
+      setError(paperChatError(cause));
     }
   }, [activeId, documentRef, loadConversation, streaming]);
 
@@ -383,9 +409,9 @@ export function AiPanel({
     setCodexBusy(true);
     setError(null);
     try {
-      setCodexSessions(await desktopChat.discoverCodexSessions());
+      setCodexSessions(await paperChat.discoverCodexSessions());
     } catch (cause) {
-      setError(desktopError(cause));
+      setError(paperChatError(cause));
     } finally {
       setCodexBusy(false);
     }
@@ -395,12 +421,12 @@ export function AiPanel({
     async (session: CodexSessionSummary) => {
       setCodexBusy(true);
       try {
-        const imported = await desktopChat.importCodexSession(session.path, documentRef);
+        const imported = await paperChat.importCodexSession(session.path, documentRef);
         await refreshConversations(imported.id);
         setCodexSessions(null);
         setMenuOpen(false);
       } catch (cause) {
-        setError(desktopError(cause));
+        setError(paperChatError(cause));
       } finally {
         setCodexBusy(false);
       }
@@ -412,11 +438,11 @@ export function AiPanel({
     if (!activeId) return;
     setCodexBusy(true);
     try {
-      const result = await desktopChat.handoffToCodex(activeId);
+      const result = await paperChat.handoffToCodex(activeId);
       setError(`已创建 Codex 任务 ${result.threadId}`);
       setMenuOpen(false);
     } catch (cause) {
-      setError(desktopError(cause));
+      setError(paperChatError(cause));
     } finally {
       setCodexBusy(false);
     }
@@ -446,13 +472,17 @@ export function AiPanel({
               <Icons.plus size={14} />
             </button>
             <div className="ph-ai-menu-wrap">
-              <button className="ph-ai-head-btn" title="对话与 Codex" onClick={() => setMenuOpen((open) => !open)}>
+              <button className="ph-ai-head-btn" title="对话操作" onClick={() => setMenuOpen((open) => !open)}>
                 ···
               </button>
               {menuOpen && (
                 <div className="ph-ai-menu">
-                  <button onClick={() => void openCodexImport()} disabled={codexBusy}>从 Codex 导入…</button>
-                  <button onClick={() => void handoffToCodex()} disabled={!activeId || codexBusy}>转交给 Codex</button>
+                  {nativeCodex && (
+                    <>
+                      <button onClick={() => void openCodexImport()} disabled={codexBusy}>从 Codex 导入…</button>
+                      <button onClick={() => void handoffToCodex()} disabled={!activeId || codexBusy}>转交给 Codex</button>
+                    </>
+                  )}
                   <button className="is-danger" onClick={() => void deleteConversation()} disabled={!activeId || streaming}>删除当前对话</button>
                 </div>
               )}
@@ -484,13 +514,17 @@ export function AiPanel({
       <div className="ph-ai-body ph-scroll" ref={bodyRef}>
         {!available ? (
           <div className="ph-ai-notice">
-            <strong>AI 对话正在使用客户端本地能力</strong>
-            <span>网页端不会接触你的模型密钥。请在 Pharos macOS 客户端中使用此功能。</span>
+            <strong>当前环境无法连接 AI 对话</strong>
+            <span>请刷新页面或改用 Pharos 客户端。</span>
           </div>
         ) : provider !== null && !provider.configured ? (
           <div className="ph-ai-notice">
             <strong>连接你的模型</strong>
-            <span>支持 OpenAI 兼容接口。API Key 只保存在系统凭据库中。</span>
+            <span>
+              支持 OpenAI 兼容接口。{desktop
+                ? "API Key 只保存在系统凭据库中。"
+                : "API Key 由 Pharos 后端加密保存，不会进入浏览器存储。"}
+            </span>
             <button onClick={onOpenSettings}>配置模型</button>
           </div>
         ) : empty ? (
@@ -547,7 +581,7 @@ export function AiPanel({
           </div>
         )}
 
-        {codexSessions !== null && (
+        {nativeCodex && codexSessions !== null && (
           <div className="ph-ai-codex">
             <div className="ph-ai-codex-head">
               <strong>导入 Codex 历史对话</strong>

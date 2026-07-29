@@ -27,6 +27,10 @@ export interface ProviderStatus {
   model: string;
   temperature: number;
   maxOutputTokens: number | null;
+  /** Web only: whether this account overrides the instance provider. */
+  source?: "personal" | "server" | "none";
+  /** Web only: false when the server lacks credential encryption. */
+  canStoreCredential?: boolean;
 }
 
 export interface ProviderSaveRequest {
