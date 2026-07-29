@@ -62,10 +62,11 @@ data rather than static mockups.
 | **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
 | **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
 
-The desktop reader also includes local-first **AI Chat**. Each opened paper has
-its own persistent conversations and local text index; when a model is
-configured, Pharos prepares a reusable Chinese research profile before the
-first question.
+Both the web and desktop readers include paper-aware **AI Chat**. Each opened
+paper has its own persistent conversations; when a model is configured, Pharos
+prepares a reusable Chinese research profile before the first question. The web
+app keeps this state owner-scoped on the backend, while the desktop client keeps
+its native copy in the local Workspace.
 
 ### Reading and translation
 
@@ -122,7 +123,22 @@ contracts and remain future work.
 - A Tauri 2 desktop client for macOS and Windows that reuses the exact React UI,
   connects to the same backend, and adds local-first capabilities through Rust.
 
-### Desktop AI Chat and portable data
+### AI Chat across web and desktop
+
+- The web app reads only papers already owned by the signed-in account. It
+  persists a reusable paper profile and independent conversations per paper on
+  the backend, and restores them after a refresh or on another browser device.
+- A user may bring an OpenAI-compatible provider from **Settings → AI Chat**.
+  Its API key is encrypted with `PHAROS_CREDENTIAL_SECRET`, never returned to
+  browser JavaScript, and never stored in `localStorage` or IndexedDB. An
+  operator-configured `PHAROS_CHAT_PROVIDER` can be used as the server fallback.
+- The desktop client uses the same React AI panel but performs PDF text
+  extraction, indexing, provider access, and conversation persistence locally.
+- Native Zotero attachments, Workspace relocation, Codex history discovery,
+  and creating a real local Codex task remain desktop-only because a browser
+  cannot safely access those machine resources.
+
+### Desktop portable data
 
 The desktop client keeps its native research state in one versioned **Pharos
 Workspace**. It can be moved to another directory from **Settings → Data &
@@ -314,6 +330,11 @@ npm --prefix frontend run dev
 Open `http://localhost:5173`. The Vite development server proxies `/api` to
 `http://127.0.0.1:8848`.
 
+In the web app, use **Settings → AI Chat** to configure a personal
+OpenAI-compatible endpoint, model, and API key. Opening an uploaded library
+paper then prepares its reusable context and restores its per-paper chat
+history automatically.
+
 ## Run the desktop client
 
 The desktop application uses the same React frontend and expects the Pharos
@@ -361,7 +382,7 @@ are:
 | Variable | Purpose |
 | --- | --- |
 | `PHAROS_AUTH_SECRET` | Signs access tokens. Use at least 32 random characters for any persistent or networked instance. |
-| `PHAROS_CREDENTIAL_SECRET` | Independently encrypts stored Zotero credentials and temporary OAuth secrets. Use at least 32 random characters and do not reuse the auth or OAuth secret. |
+| `PHAROS_CREDENTIAL_SECRET` | Independently encrypts stored Zotero credentials, temporary OAuth secrets, and users' web AI provider keys. Use at least 32 random characters and do not reuse the auth or OAuth secret. |
 | `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | Optional previous credential-encryption secret used temporarily during key rotation. |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | Server-side key from the registered Zotero OAuth application. |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_SECRET` | Server-side secret from the registered Zotero OAuth application; never expose it through a `VITE_*` variable or commit it. |
@@ -370,7 +391,7 @@ are:
 | `PHAROS_DATA_DIR` | Overrides the SQLite database and PDF blob root. Defaults to `data/`. |
 | `PHAROS_ENGINE_PYTHON` | Absolute path to the Python interpreter inside the isolated translation-engine environment. |
 | `PHAROS_TRANSLATOR_TYPE` | `bing`, `google`, `deepseek`, `openai`, or `custom`. |
-| `PHAROS_CHAT_PROVIDER` | Selects the configured provider used by optional model-backed reading tasks. |
+| `PHAROS_CHAT_PROVIDER` | Selects the instance-wide provider used by optional model-backed reading tasks and as the web AI Chat fallback when a user has no personal provider. |
 | `PHAROS_DEEPSEEK_*`, `PHAROS_OPENAI_*`, `PHAROS_CUSTOM_*` | API key, base URL, and model for named OpenAI-compatible providers. |
 | `PHAROS_CORS_ORIGINS` | Comma-separated allowed web origins. Set explicit origins in a real deployment. |
 
@@ -423,8 +444,9 @@ engine environment and a real PDF fixture.
 
 Pharos deliberately distinguishes implemented records from automated research:
 
-- Desktop **AI Chat** supports local paper pre-indexing, persistent conversations,
-  and OpenAI-compatible models; the web Q&A service is still under development.
+- **AI Chat** now works in both readers: the web app provides owner-scoped
+  server persistence and encrypted BYOK, while the desktop app provides local
+  indexing, local credentials, and local Workspace persistence.
 - Literature Discovery reads search metadata and abstracts, not full papers.
 - Research Projects persist plans and results supplied by the researcher; they
   do not run code, allocate GPUs, or validate metrics.

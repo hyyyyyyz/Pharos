@@ -52,7 +52,7 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 | **文献探索** | 同时检索 arXiv 和 OpenAlex，合并重复记录，单个来源失败时保留其余结果，重新打开搜索历史，快速查看核心思路，并把选中的论文纳入研究项目。 |
 | **研究项目** | 保存研究问题、文献纳入理由、九阶段项目状态，以及假设、实验计划、结果、主张、草稿和审阅记录。 |
 
-桌面阅读器还提供本地优先的 **AI 对话**：每篇论文拥有独立、持久化的对话和本地正文索引；配置模型后，Pharos 会在第一次提问前先建立可复用的中文论文理解档案。
+网页端和桌面端都提供论文感知的 **AI 对话**：每篇论文拥有独立、持久化的对话；配置模型后，Pharos 会在第一次提问前先建立可复用的中文论文理解档案。网页端按账户保存在后端，桌面端则保存在本地 Workspace。
 
 ### 论文阅读与翻译
 
@@ -88,7 +88,14 @@ Pharos 是一个开源、自托管的科研平台，面向从研究问题到可�
 - 桌面端可完整只读访问本机 Zotero：个人文库、群组文库、嵌套分类、保存检索的实际结果、全部条目类型、标签、笔记、PDF 标注、全文索引和只存在本机的附件。Zotero 关闭后仍可使用离线镜像；只有用户明确点击“导入 Pharos”时才会上传 PDF。
 - Tauri 2 桌面客户端在 macOS 和 Windows 上复用同一套 React 界面，并通过 Rust 增加本地优先能力和安全边界。
 
-### 桌面端 AI 对话与可迁移数据
+### 网页端与桌面端 AI 对话
+
+- 网页端只读取当前登录账户已经拥有的论文，在后端保存每篇论文的理解档案和独立会话；刷新页面或换一台浏览器设备登录后仍可恢复。
+- 用户可以在“设置 → AI 对话”中填写自己的 OpenAI 兼容接口。API Key 使用 `PHAROS_CREDENTIAL_SECRET` 在后端加密，绝不回传给浏览器 JavaScript，也不会进入 `localStorage` 或 IndexedDB。管理员配置的 `PHAROS_CHAT_PROVIDER` 可作为全站默认模型。
+- 桌面端复用同一套 React AI 面板，但论文文字提取、索引、模型请求和会话持久化均在本机完成。
+- 本机 Zotero 附件、Workspace 目录迁移、Codex 历史扫描和创建真实本机 Codex 任务仍属于客户端能力，因为普通网页无法安全访问这些资源。
+
+### 桌面端可迁移数据
 
 桌面客户端把原生研究数据统一存放在一个带版本的 **Pharos Workspace** 中。用户可以在“设置 → 数据与互通”里迁移目录，把整个目录复制到另一台设备后继续使用：
 
@@ -236,6 +243,8 @@ npm --prefix frontend run dev
 
 打开 `http://localhost:5173`。Vite 开发服务器会把 `/api` 请求代理到 `http://127.0.0.1:8848`。
 
+在网页端通过“设置 → AI 对话”填写个人 OpenAI 兼容接口、模型和 API Key。打开文库中已经上传的论文后，系统会自动建立可复用的论文上下文，并恢复这篇论文自己的对话历史。
+
 ## 运行桌面客户端
 
 桌面应用复用同一套 React 界面，并要求 Pharos 后端独立运行。Rust 层负责完整本机 Zotero 镜像、不暴露路径的 PDF 分段读取、论文感知的 AI 对话、可迁移 Workspace、Codex 互通、深链接和原生安全边界。
@@ -273,7 +282,7 @@ npm --prefix site run preview
 | 变量 | 用途 |
 | --- | --- |
 | `PHAROS_AUTH_SECRET` | 用于签发访问令牌。持久化或联网运行时，应使用至少 32 个随机字符。 |
-| `PHAROS_CREDENTIAL_SECRET` | 独立用于加密已保存的 Zotero 凭据和临时 OAuth 密钥。至少使用 32 个随机字符，不要复用登录签名密钥或 OAuth 客户端密钥。 |
+| `PHAROS_CREDENTIAL_SECRET` | 独立用于加密已保存的 Zotero 凭据、临时 OAuth 密钥和用户在网页端配置的 AI Provider 密钥。至少使用 32 个随机字符，不要复用登录签名密钥或 OAuth 客户端密钥。 |
 | `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | 可选；轮换凭据加密密钥时，临时保留上一把密钥用于读取并迁移旧密文。 |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | 在 Zotero 注册 OAuth 应用后获得的服务端客户端编号。 |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_SECRET` | Zotero OAuth 应用的服务端密钥；禁止放入任何 `VITE_*` 变量或提交到仓库。 |
@@ -282,7 +291,7 @@ npm --prefix site run preview
 | `PHAROS_DATA_DIR` | 修改 SQLite 数据库和 PDF 文件存储根目录，默认为 `data/`。 |
 | `PHAROS_ENGINE_PYTHON` | 指向独立翻译引擎环境中的 Python 解释器绝对路径。 |
 | `PHAROS_TRANSLATOR_TYPE` | 可选 `bing`、`google`、`deepseek`、`openai` 或 `custom`。 |
-| `PHAROS_CHAT_PROVIDER` | 选择用于可选模型解读任务的已配置服务。 |
+| `PHAROS_CHAT_PROVIDER` | 选择用于可选模型解读任务的全站模型；当网页用户没有个人 Provider 时，也作为 AI 对话的默认模型。 |
 | `PHAROS_DEEPSEEK_*`、`PHAROS_OPENAI_*`、`PHAROS_CUSTOM_*` | 对应服务的密钥、接口地址和模型名称。 |
 | `PHAROS_CORS_ORIGINS` | 允许访问 API 的网页来源，多个来源使用英文逗号分隔；正式部署时应明确填写。 |
 
@@ -324,7 +333,7 @@ BabelDOC 真实集成测试需要独立引擎环境和真实 PDF 测试文件，
 
 Pharos 明确区分“已经持久化的研究记录”和“真正的自动科研能力”：
 
-- 桌面端 **AI 对话** 已支持本地论文预解析、持久化会话与 OpenAI 兼容模型；网页端服务仍在建设中。
+- **AI 对话** 已同时覆盖网页端和桌面端：网页端提供按用户隔离的后端持久化与加密 BYOK，桌面端提供本地索引、本机凭据和 Workspace 持久化。
 - 文献探索读取的是搜索结果中的标题和摘要，不是论文全文。
 - 研究项目保存由研究者填写的计划和结果，不会自动运行代码、分配 GPU 或验证指标来源。
 - 项目记录中的“人工核验”是用户作出的状态判断，不代表平台已经独立复现。
