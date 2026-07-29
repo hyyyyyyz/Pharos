@@ -13,12 +13,15 @@ import {
 } from "../lib/zoteroOAuth";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
 import { DirectionsSettings } from "./DirectionsSettings";
+import { AiSettings, DataSettings } from "./DesktopAiSettings";
 import "./SettingsModal.css";
 
 type IconComponent = (typeof Icons)["user"];
 
 const TABS: { key: SettingsTab; label: string; Icon: IconComponent }[] = [
   { key: "account", label: "账户", Icon: Icons.user },
+  { key: "ai", label: "AI 对话", Icon: Icons.spark },
+  { key: "data", label: "数据与互通", Icon: Icons.folder },
   { key: "appearance", label: "外观", Icon: Icons.palette },
   // Last, and using the rail's own 每日论文 icon so the tab is recognisable as
   // the settings for that module rather than a third appearance-like section.
@@ -484,7 +487,7 @@ export function SettingsModal(): JSX.Element | null {
                 </div>
                 <div className="ph-set-sec-desc">
                   开启后整篇论文会译成中文并保留原排版，读起来省力，但要等，也要花 API
-                  额度；关闭后你直接读原文，遇到读不懂的段落再问领航。已经译好的论文不会消失，仍然可以切到中文对照。
+                  额度；关闭后你直接读原文，遇到读不懂的段落再用 AI 对话。已经译好的论文不会消失，仍然可以切到中文对照。
                 </div>
                 {setPdfTx.isError && <div className="ph-set-err">{errText(setPdfTx.error)}</div>}
               </div>
@@ -866,6 +869,9 @@ export function SettingsModal(): JSX.Element | null {
               </div>
             </>
           )}
+
+          {settingsTab === "ai" && <AiSettings />}
+          {settingsTab === "data" && <DataSettings />}
 
           {/* Mounted only while its tab is showing, which is what keeps its two
               queries off the network the rest of the time — the same rule the

@@ -1,0 +1,54 @@
+.ph-native-empty,
+.ph-native-card {
+  border: 1px solid var(--c-bd);
+  border-radius: 10px;
+  background: var(--c-sf);
+}
+.ph-native-empty { padding: 18px; color: var(--c-tx2); font-size: 12px; line-height: 1.7; }
+.ph-native-card { margin-bottom: 14px; padding: 14px; }
+.ph-native-card-head { margin-bottom: 13px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ph-native-card-head > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ph-native-card-head strong { color: var(--c-tx); font-size: 12.5px; }
+.ph-native-card-head span { color: var(--c-tx3); font-size: 10.5px; line-height: 1.55; }
+.ph-native-state { flex: none; padding: 3px 7px; border-radius: 999px; background: var(--c-bg); color: var(--c-tx3) !important; font-size: 9.5px !important; }
+.ph-native-state.is-on { background: var(--c-ok-soft, #e8f7f2); color: var(--c-ok, #16806d) !important; }
+.ph-native-field { margin-bottom: 10px; display: flex; flex-direction: column; gap: 5px; }
+.ph-native-field > span { color: var(--c-tx2); font-size: 10.5px; font-weight: 600; }
+.ph-native-field input {
+  width: 100%;
+  height: 31px;
+  padding: 0 9px;
+  border: 1px solid var(--c-bd);
+  border-radius: 7px;
+  outline: none;
+  background: var(--c-bg);
+  color: var(--c-tx);
+  font: inherit;
+  font-size: 11.5px;
+}
+.ph-native-field input:focus { border-color: var(--c-ac); box-shadow: 0 0 0 2px var(--c-ring); }
+.ph-native-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ph-native-security { margin: 1px 0 12px; padding: 8px 9px; border-radius: 7px; background: var(--c-acs); color: var(--c-aclink, var(--c-ac)); font-size: 10.5px; line-height: 1.55; }
+.ph-native-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.ph-native-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--c-bd);
+  border-radius: 7px;
+  background: var(--c-sf);
+  color: var(--c-tx2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+}
+.ph-native-actions button.is-primary { border-color: var(--c-ac); background: var(--c-ac); color: var(--c-acc); }
+.ph-native-actions button:disabled { opacity: 0.45; cursor: default; }
+.ph-native-message { margin: 10px 0; padding: 9px 10px; border-radius: 7px; font-size: 10.8px; line-height: 1.6; }
+.ph-native-message.is-ok { background: var(--c-ok-soft, #e8f7f2); color: var(--c-ok, #16806d); }
+.ph-native-message.is-error { background: var(--c-err-soft); color: var(--c-err); }
+.ph-native-path { margin-bottom: 10px; padding: 8px 9px; border: 1px solid var(--c-bd); border-radius: 7px; background: var(--c-bg); color: var(--c-tx2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.ph-native-tree { margin: 0 0 12px; padding: 10px; border-radius: 8px; background: var(--c-bg); color: var(--c-tx2); font: 9.7px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+.ph-native-kv { min-height: 28px; border-top: 1px solid var(--c-bd); display: grid; grid-template-columns: 95px 1fr; align-items: center; gap: 10px; font-size: 10.5px; }
+.ph-native-kv span { color: var(--c-tx3); }
+.ph-native-kv strong { overflow: hidden; color: var(--c-tx2); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.ph-native-copy { margin: 10px 0 0; color: var(--c-tx3); font-size: 10.5px; line-height: 1.65; }

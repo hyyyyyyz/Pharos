@@ -6,6 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
+import type { DocumentContext, DocumentRef } from "../lib/desktopChat";
 import {
   isLocalZoteroPaperId,
   localZotero,
@@ -31,6 +32,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 4;
 const THUMB_WIDTH = 120;
+const AI_CONTEXT_MAX_CHARS = 180_000;
 /** Backend errors can be a whole stack trace; the panel shows the gist. */
 const ERROR_MAX = 200;
 
@@ -83,6 +85,30 @@ async function flattenOutline(doc: PDFDocumentProxy): Promise<OutlineEntry[]> {
   return out;
 }
 
+const textItem = (item: unknown): string => {
+  if (item === null || typeof item !== "object" || !("str" in item)) return "";
+  const value = (item as { str?: unknown }).str;
+  return typeof value === "string" ? value : "";
+};
+
+async function extractPaperText(doc: PDFDocumentProxy): Promise<string> {
+  const pages: string[] = [];
+  let chars = 0;
+  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+    const page = await doc.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const text = content.items.map(textItem).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    const section = `\n\n--- 第 ${pageNumber} 页 ---\n${text}`;
+    const remaining = AI_CONTEXT_MAX_CHARS - chars;
+    if (remaining <= 0) break;
+    pages.push(section.slice(0, remaining));
+    chars += Math.min(section.length, remaining);
+    if (chars >= AI_CONTEXT_MAX_CHARS) break;
+    if (pageNumber % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return pages.join("").trim();
+}
+
 export function ReadingView({
   paperId,
   initialLocalAttachmentId,
@@ -98,6 +124,7 @@ export function ReadingView({
   const outlineMode = useUI((s) => s.outlineMode);
   const aiOpen = useUI(isAiOpen);
   const toggleAI = useUI((s) => s.toggleAI);
+  const openSettings = useUI((s) => s.openSettings);
   const pdfTx = useSession(pdfTranslationEnabled);
   const mirrorRef = parseZoteroItemId(paperId);
   const isLegacyLocal = isLocalZoteroPaperId(paperId);
@@ -415,6 +442,74 @@ export function ReadingView({
     { key: "original", label: "原文" },
   ];
   const stage = stageIndex(vm?.job ?? null);
+  const documentRef = useMemo<DocumentRef>(() => {
+    const title = vm?.title?.trim() || displayFilename || "未命名论文";
+    if (isMirrorLocal && mirrorRef) {
+      return {
+        key: [
+          "zotero",
+          mirrorRef.sourceId,
+          mirrorRef.libraryId,
+          mirrorRef.itemKey,
+          localAttachmentId ?? "entry",
+        ].map(encodeURIComponent).join(":"),
+        kind: "zotero",
+        title,
+        sourceId: mirrorRef.sourceId,
+        libraryId: mirrorRef.libraryId,
+        itemKey: mirrorRef.itemKey,
+        attachmentId: localAttachmentId,
+      };
+    }
+    if (isLegacyLocal) {
+      return {
+        key: ["zotero-local", paperId, localAttachmentId ?? "entry"].map(encodeURIComponent).join(":"),
+        kind: "zotero",
+        title,
+        libraryId: localPaper?.libraryId ?? null,
+        itemKey: localPaper?.itemKey ?? null,
+        attachmentId: localAttachmentId,
+      };
+    }
+    return {
+      key: `paper:${encodeURIComponent(paperId)}`,
+      kind: "paper",
+      title,
+      paperId,
+    };
+  }, [
+    displayFilename,
+    isLegacyLocal,
+    isMirrorLocal,
+    localAttachmentId,
+    localPaper?.itemKey,
+    localPaper?.libraryId,
+    mirrorRef,
+    paperId,
+    vm?.title,
+  ]);
+
+  const getAiContext = useCallback(async (): Promise<DocumentContext> => {
+    let contextDoc = doc;
+    let ownTask: ReturnType<typeof pdfjs.getDocument> | null = null;
+    if (!isLocal && (!contextDoc || pdfKind !== "original")) {
+      ownTask = pdfjs.getDocument(api.pdfSource(paperId, "original"));
+      contextDoc = await ownTask.promise;
+    }
+    if (!contextDoc) throw new Error("PDF 尚未加载完成，暂时无法建立 AI 对话上下文。");
+    try {
+      return {
+        title: vm?.title ?? displayFilename,
+        authors: vm?.authors.join(", ") ?? "",
+        abstractText: vm?.abstract ?? "",
+        fullText: await extractPaperText(contextDoc),
+        currentPage,
+        pageCount: contextDoc.numPages,
+      };
+    } finally {
+      if (ownTask) await ownTask.destroy().catch(() => undefined);
+    }
+  }, [currentPage, displayFilename, doc, isLocal, paperId, pdfKind, vm?.abstract, vm?.authors, vm?.title]);
 
   return (
     <div className="ph-rv">
@@ -476,18 +571,16 @@ export function ReadingView({
               })}
             </div>
           )}
-          {!isLocal && (
-            <button
-              className={`ph-rv-ai-btn${aiOpen ? " is-on" : ""}`}
-              title="领航 AI"
-              onClick={toggleAI}
-            >
-              <span className="ph-rv-ico">
-                <Icons.spark />
-              </span>
-              领航
-            </button>
-          )}
+          <button
+            className={`ph-rv-ai-btn${aiOpen ? " is-on" : ""}`}
+            title="AI 对话"
+            onClick={toggleAI}
+          >
+            <span className="ph-rv-ico">
+              <Icons.spark />
+            </span>
+            AI 对话
+          </button>
         </div>
 
         <div className="ph-rv-body">
@@ -644,7 +737,15 @@ export function ReadingView({
         </div>
       </section>
 
-      {aiOpen && !isLocal && <AiPanel paperId={paperId} />}
+      {aiOpen && (
+        <AiPanel
+          documentRef={documentRef}
+          documentTitle={documentRef.title}
+          contextReady={!isLocal || Boolean(doc)}
+          getContext={getAiContext}
+          onOpenSettings={() => openSettings("ai")}
+        />
+      )}
     </div>
   );
 }

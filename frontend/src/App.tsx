@@ -35,7 +35,7 @@ export default function App() {
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
-  // The 领航 panel auto-shows above 1200px, so the width has to stay live —
+  // The AI 对话 panel auto-shows above 1200px, so the width has to stay live —
   // reading it once at store-init would freeze the layout at the load-time size.
   useEffect(() => {
     const onResize = () => setWinW(window.innerWidth);

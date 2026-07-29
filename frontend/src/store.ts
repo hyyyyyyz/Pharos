@@ -9,7 +9,7 @@ export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing";
 export type LiveModuleKey = "library" | "daily" | "search" | "kb";
 export type ReadMode = "zh" | "bilingual" | "original";
 export type OutlineMode = "outline" | "thumbs";
-export type SettingsTab = "account" | "appearance" | "daily";
+export type SettingsTab = "account" | "ai" | "data" | "appearance" | "daily";
 export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
@@ -130,7 +130,7 @@ interface UIState {
 }
 
 /**
- * Is the 领航 panel showing? While the preference is "auto" it follows the
+ * Is the AI 对话 panel showing? While the preference is "auto" it follows the
  * window width (the prototype's 1200px breakpoint); once the user toggles it
  * explicitly, their choice sticks.
  */

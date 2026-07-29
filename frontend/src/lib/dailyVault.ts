@@ -52,6 +52,8 @@ export type DailyVaultLocation =
       name: string;
       path: string;
       trustedVaultId: string | null;
+      /** The standard `daily/` directory inside the active Pharos Workspace. */
+      managed?: boolean;
     };
 
 export interface DailyVaultManifestEntry {
@@ -80,6 +82,7 @@ interface RememberedConnection {
   kind: "browser" | "tauri";
   vaultId: string;
   path?: string;
+  managed?: boolean;
 }
 
 const pickerWindow = (): BrowserPickerWindow => window as BrowserPickerWindow;
@@ -118,7 +121,7 @@ function parseConnection(): RememberedConnection | null {
 function rememberConnection(location: DailyVaultLocation, vaultId: string): void {
   const value: RememberedConnection =
     location.kind === "tauri"
-      ? { kind: "tauri", path: location.path, vaultId }
+      ? { kind: "tauri", path: location.path, vaultId, managed: location.managed === true }
       : { kind: "browser", vaultId };
   localStorage.setItem(CONNECTION_KEY, JSON.stringify(value));
 }
@@ -385,15 +388,32 @@ export async function chooseDailyVaultDirectory(): Promise<DailyVaultLocation> {
 
 export async function loadRememberedDailyVault(): Promise<DailyVaultLocation | null> {
   const saved = parseConnection();
+  if (!saved && isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const workspace = await invoke<{ dailyPath: string }>("workspace_status");
+    return {
+      kind: "tauri",
+      name: "Pharos Workspace",
+      path: workspace.dailyPath,
+      trustedVaultId: null,
+      managed: true,
+    };
+  }
   if (!saved) return null;
   if (saved.kind === "tauri" && isTauri() && saved.path) {
-    const segments = saved.path.split(/[\\/]/).filter(Boolean);
-    const name = segments[segments.length - 1] ?? saved.path;
+    let path = saved.path;
+    if (saved.managed) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      path = (await invoke<{ dailyPath: string }>("workspace_status")).dailyPath;
+    }
+    const segments = path.split(/[\\/]/).filter(Boolean);
+    const name = saved.managed ? "Pharos Workspace" : (segments[segments.length - 1] ?? path);
     return {
       kind: "tauri",
       name,
-      path: saved.path,
+      path,
       trustedVaultId: saved.vaultId,
+      managed: saved.managed === true,
     };
   }
   if (saved.kind === "browser" && !isTauri()) {

@@ -357,6 +357,14 @@ export function DailyView(): JSX.Element {
           // manifest whose vault id no longer matches the remembered one.
           setVaultNeedsRestore(true);
           setVaultMessage("目录内容已变化；自动保存暂停，等待确认恢复");
+        } else if (location.kind === "tauri" && location.managed) {
+          const archive = await api.daily.vault.export();
+          const created = await writeDailyVault(location, archive, null);
+          if (!alive) return;
+          acceptTrustedVault(location, created);
+          setVaultMessage(
+            `已启用 Pharos Workspace · ${created.days.length} 天 · ${manifestPaperCount(created)} 篇`,
+          );
         } else {
           setVaultMessage("已记住目录，但清单不存在；点击立即同步重新创建");
         }

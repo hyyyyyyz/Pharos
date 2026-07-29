@@ -1,4 +1,4 @@
-/* ReadingView — the reader row: outline | centre pane | 领航.
+/* ReadingView — the reader row: outline | centre pane | AI 对话.
    Every value here is copied verbatim from the design prototype. */
 
 .ph-rv {
@@ -124,7 +124,7 @@
   cursor: not-allowed;
 }
 
-/* 领航 toggle */
+/* AI 对话 toggle */
 .ph-rv-ai-btn {
   display: flex;
   align-items: center;

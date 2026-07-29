@@ -156,7 +156,7 @@ function LocalZoteroDetail({ paper }: { paper: LocalZoteroPaper }): JSX.Element 
                       <button
                         type="button"
                         disabled={!attachment.available || importPaper.isPending}
-                        title="明确复制并上传这份 PDF，之后可使用翻译、领航与跨设备访问"
+                        title="明确复制并上传这份 PDF，之后可使用翻译、AI 对话与跨设备访问"
                         onClick={() => importPaper.mutate(attachment)}
                       >
                         {importing ? "导入中" : "导入"}

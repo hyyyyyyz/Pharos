@@ -486,6 +486,18 @@ fn append_event(path: &Path, kind: &str, payload: Value) -> Result<(), String> {
     } else {
         1
     };
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("无法打开会话日志：{error}"))?;
+    write_event_line(&mut file, seq, kind, payload)?;
+    file.flush()
+        .and_then(|_| file.sync_data())
+        .map_err(|error| format!("无法提交会话记录：{error}"))
+}
+
+fn write_event_line(file: &mut File, seq: u64, kind: &str, payload: Value) -> Result<(), String> {
     let event = ConversationEvent {
         schema_version: 1,
         event_id: new_id("evt"),
@@ -494,14 +506,30 @@ fn append_event(path: &Path, kind: &str, payload: Value) -> Result<(), String> {
         kind: kind.to_string(),
         payload,
     };
+    serde_json::to_writer(&mut *file, &event).map_err(|error| error.to_string())?;
+    file.write_all(b"\n")
+        .map_err(|error| format!("无法写入会话记录：{error}"))
+}
+
+fn append_event_batch(path: &Path, events: Vec<(&str, Value)>) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "会话目录无效。".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("无法创建会话目录：{error}"))?;
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .map_err(|error| format!("无法打开会话日志：{error}"))?;
-    serde_json::to_writer(&mut file, &event).map_err(|error| error.to_string())?;
-    file.write_all(b"\n")
-        .and_then(|_| file.flush())
+    let mut seq = if file.metadata().map(|metadata| metadata.len()).unwrap_or(0) == 0 {
+        1
+    } else {
+        let reader = BufReader::new(File::open(path).map_err(|error| error.to_string())?);
+        reader.lines().count() as u64 + 1
+    };
+    for (kind, payload) in events {
+        write_event_line(&mut file, seq, kind, payload)?;
+        seq += 1;
+    }
+    file.flush()
         .and_then(|_| file.sync_data())
         .map_err(|error| format!("无法提交会话记录：{error}"))
 }
@@ -739,8 +767,7 @@ pub(crate) fn import_external_conversation(
         .io_lock
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    append_event(
-        &path,
+    let mut events = vec![(
         "session_meta",
         json!({
             "conversationId": id,
@@ -749,7 +776,7 @@ pub(crate) fn import_external_conversation(
             "source": source,
             "sourceSessionId": source_session_id,
         }),
-    )?;
+    )];
     for (role, content, timestamp_ms) in messages {
         if role != "user" && role != "assistant" {
             continue;
@@ -758,8 +785,7 @@ pub(crate) fn import_external_conversation(
         if content.is_empty() {
             continue;
         }
-        append_event(
-            &path,
+        events.push((
             "message",
             serde_json::to_value(ChatMessage {
                 id: new_id("msg"),
@@ -769,8 +795,9 @@ pub(crate) fn import_external_conversation(
                 model: None,
             })
             .map_err(|error| error.to_string())?,
-        )?;
+        ));
     }
+    append_event_batch(&path, events)?;
     db(workspace)?
         .execute(
             "INSERT INTO conversations(id, document_key, document_kind, document_title, title,\n\
@@ -965,6 +992,12 @@ pub async fn document_prepare_context(
     if full_text.chars().count() > MAX_PAPER_CHARS {
         full_text = full_text.chars().take(MAX_PAPER_CHARS).collect();
     }
+    if full_text.chars().count() < 80 {
+        return Err(
+            "当前 PDF 没有足够的可提取正文，暂时无法建立论文上下文。扫描版 PDF 需要先完成 OCR。"
+                .to_string(),
+        );
+    }
     let composite = format!(
         "标题：{}\n作者：{}\n摘要：{}\n\n{}",
         request.context.title.trim(),
@@ -972,9 +1005,6 @@ pub async fn document_prepare_context(
         request.context.abstract_text.trim(),
         full_text
     );
-    if composite.trim().chars().count() < 80 {
-        return Err("当前 PDF 没有足够的可提取文字，暂时无法建立论文上下文。".to_string());
-    }
     let hash = content_hash(&composite);
     if let Some((existing, _)) = paper_context_row(&workspace, &request.document_ref.key)? {
         let same_hash: Option<String> = db(&workspace)?
@@ -1034,12 +1064,22 @@ pub async fn document_prepare_context(
         )
         .map_err(|error| error.to_string())?;
 
+    // A long paper cannot always fit into one model request.  Build the
+    // initial profile from the beginning, the end, and method/experiment-heavy
+    // sections instead of blindly truncating the paper at the character limit.
+    // The complete extracted text remains cached locally for later per-question
+    // retrieval.
+    let profile_context = relevant_context(
+        &composite,
+        "abstract introduction motivation contribution method approach architecture algorithm training experiment evaluation result ablation discussion limitation conclusion future work",
+        MAX_REQUEST_CONTEXT_CHARS,
+    );
     let prompt = format!(
         "请先完整理解下面这篇论文，并建立一份以后问答可复用的中文研究档案。必须忠于原文，输出 Markdown，包含：\n\
          1. 一句话结论；2. 研究问题；3. 核心 trick（最关键、最独特的机制）；\n\
          4. 方法流程；5. 实验与证据；6. 局限；7. 关键术语与符号；8. 可继续追问的问题。\n\
          论文文字层可能有排版噪声，不要据此编造。\n\n{}",
-        composite.chars().take(MAX_REQUEST_CONTEXT_CHARS).collect::<String>()
+        profile_context
     );
     let messages = vec![
         json!({"role":"system","content":"你是 Pharos 的论文阅读助手。先建立可靠的论文理解档案，后续用于精确问答。"}),

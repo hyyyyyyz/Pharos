@@ -28,8 +28,9 @@ use crate::{
     workspace::WorkspaceState,
 };
 
-const MAX_SESSION_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_SESSION_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_IMPORTED_MESSAGE_CHARS: usize = 300_000;
 const MAX_IMPORTED_TOTAL_CHARS: usize = 2_000_000;
 const MAX_HANDOFF_CHARS: usize = 120_000;
@@ -52,6 +53,7 @@ pub struct CodexSessionSummary {
     cwd: Option<String>,
     updated_at_ms: i64,
     message_count: usize,
+    truncated: bool,
     archived: bool,
 }
 
@@ -175,7 +177,7 @@ fn safe_session_path(raw: &str) -> Result<(PathBuf, bool, i64), String> {
         return Err("Codex 对话路径不是普通文件。".to_string());
     }
     if metadata.len() > MAX_SESSION_BYTES {
-        return Err("Codex 对话文件超过 64 MiB 安全上限。".to_string());
+        return Err("Codex 对话文件超过 512 MiB 安全上限。".to_string());
     }
     let canonical =
         fs::canonicalize(&path).map_err(|_| "无法确认 Codex 对话文件的真实路径。".to_string())?;
@@ -226,6 +228,11 @@ fn sanitise_visible_text(value: &str, role: &str) -> Option<String> {
         "skills_instructions",
     ] {
         text = remove_tagged_block(text, tag);
+    }
+    if role == "user" {
+        if let Some((_, request)) = text.rsplit_once("## My request for Codex:") {
+            text = request.to_string();
+        }
     }
     let trimmed = text.trim();
     if role == "user"
@@ -280,7 +287,11 @@ fn first_line_title(text: &str) -> String {
     }
 }
 
-fn parse_session(path: &Path, fallback_timestamp: i64) -> Result<ParsedSession, String> {
+fn parse_session_limited(
+    path: &Path,
+    fallback_timestamp: i64,
+    max_bytes: Option<u64>,
+) -> Result<(ParsedSession, bool), String> {
     let file = File::open(path).map_err(|error| format!("无法读取 Codex 对话：{error}"))?;
     let mut reader = BufReader::new(file);
     let mut event_messages = Vec::new();
@@ -291,6 +302,8 @@ fn parse_session(path: &Path, fallback_timestamp: i64) -> Result<ParsedSession, 
     let mut sequence = 0i64;
     let mut event_chars = 0usize;
     let mut response_chars = 0usize;
+    let mut consumed_bytes = 0u64;
+    let mut truncated = false;
 
     loop {
         line.clear();
@@ -298,6 +311,11 @@ fn parse_session(path: &Path, fallback_timestamp: i64) -> Result<ParsedSession, 
             .read_until(b'\n', &mut line)
             .map_err(|error| format!("无法读取 Codex JSONL：{error}"))?;
         if read == 0 {
+            break;
+        }
+        consumed_bytes = consumed_bytes.saturating_add(read as u64);
+        if max_bytes.is_some_and(|limit| consumed_bytes > limit) {
+            truncated = true;
             break;
         }
         if line.len() > MAX_LINE_BYTES {
@@ -377,12 +395,19 @@ fn parse_session(path: &Path, fallback_timestamp: i64) -> Result<ParsedSession, 
         .find(|(role, _, _)| role == "user")
         .map(|(_, text, _)| first_line_title(text))
         .unwrap_or_else(|| "Codex 对话".to_string());
-    Ok(ParsedSession {
-        session_id,
-        cwd,
-        title,
-        messages,
-    })
+    Ok((
+        ParsedSession {
+            session_id,
+            cwd,
+            title,
+            messages,
+        },
+        truncated,
+    ))
+}
+
+fn parse_session(path: &Path, fallback_timestamp: i64) -> Result<ParsedSession, String> {
+    parse_session_limited(path, fallback_timestamp, None).map(|(parsed, _)| parsed)
 }
 
 fn fallback_session_id(path: &Path) -> String {
@@ -423,7 +448,8 @@ pub fn codex_discover_sessions(limit: Option<usize>) -> Result<Vec<CodexSessionS
     Ok(files
         .into_iter()
         .filter_map(|(path, archived, updated_at_ms)| {
-            let parsed = parse_session(&path, updated_at_ms).ok()?;
+            let (parsed, truncated) =
+                parse_session_limited(&path, updated_at_ms, Some(MAX_PREVIEW_BYTES)).ok()?;
             Some(CodexSessionSummary {
                 path: path.to_string_lossy().into_owned(),
                 session_id: parsed.session_id,
@@ -431,6 +457,7 @@ pub fn codex_discover_sessions(limit: Option<usize>) -> Result<Vec<CodexSessionS
                 cwd: parsed.cwd,
                 updated_at_ms,
                 message_count: parsed.messages.len(),
+                truncated,
                 archived,
             })
         })
@@ -619,5 +646,64 @@ mod tests {
     #[test]
     fn creates_a_short_title_from_the_first_visible_line() {
         assert_eq!(first_line_title("\n\n  研究这个方法\n更多"), "研究这个方法");
+    }
+
+    #[test]
+    fn removes_desktop_attachment_headers_from_user_requests() {
+        let raw = "# Files mentioned by the user:\n\n## screenshot.png: /tmp/private.png\n\n## My request for Codex:\n真正的问题";
+        assert_eq!(
+            sanitise_visible_text(raw, "user").as_deref(),
+            Some("真正的问题")
+        );
+    }
+
+    #[test]
+    fn imports_only_visible_codex_dialogue_without_duplicates() {
+        let path = std::env::temp_dir().join(format!(
+            "pharos-codex-parse-{}-{}.jsonl",
+            std::process::id(),
+            modified_ms(&fs::metadata(std::env::temp_dir()).unwrap())
+        ));
+        let fixture = [
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": { "id": "thread-test", "cwd": "/tmp" }
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": "分析这篇论文<environment_context>隐藏路径</environment_context>"
+                }
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": { "type": "agent_message", "message": "先检查核心方法。" }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "重复副本" }]
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": { "type": "reasoning", "content": "不可导入" }
+            }),
+        ]
+        .into_iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        fs::write(&path, fixture).unwrap();
+
+        let parsed = parse_session(&path, 100).unwrap();
+        let _ = fs::remove_file(&path);
+        assert_eq!(parsed.session_id.as_deref(), Some("thread-test"));
+        assert_eq!(parsed.messages.len(), 2);
+        assert_eq!(parsed.messages[0].1, "分析这篇论文");
+        assert_eq!(parsed.messages[1].1, "先检查核心方法。");
     }
 }
