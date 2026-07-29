@@ -18,27 +18,48 @@ from pharos.config import Settings
 
 _PREFIX = "fernet:v1:"
 _CONTEXT = b"pharos:zotero-credentials:v1\x00"
+_AI_CONTEXT = b"pharos:ai-provider-credentials:v1\x00"
 
 
 class CredentialError(RuntimeError):
     """A stored credential cannot be safely decrypted."""
 
 
-def _fernet(secret: str) -> Fernet:
-    raw = hashlib.sha256(_CONTEXT + secret.encode("utf-8")).digest()
+def _fernet(secret: str, context: bytes) -> Fernet:
+    raw = hashlib.sha256(context + secret.encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(raw))
 
 
 class CredentialCipher:
     """Encrypt with the primary secret and decrypt with primary or previous."""
 
-    def __init__(self, primary: str | None, previous: str | None = None) -> None:
-        self._primary = _fernet(primary) if primary else None
-        self._previous = _fernet(previous) if previous else None
+    def __init__(
+        self,
+        primary: str | None,
+        previous: str | None = None,
+        *,
+        context: bytes = _CONTEXT,
+    ) -> None:
+        self._primary = _fernet(primary, context) if primary else None
+        self._previous = _fernet(previous, context) if previous else None
 
     @classmethod
     def from_settings(cls, settings: Settings) -> CredentialCipher:
         return cls(settings.stable_credential_secret, settings.credential_secret_previous)
+
+    @classmethod
+    def for_ai_provider(cls, settings: Settings) -> CredentialCipher:
+        """A separately derived key for user-supplied model credentials.
+
+        Keeping the derivation context distinct prevents a ciphertext copied
+        from a Zotero column from being accepted as a model key (and vice
+        versa), while still letting one operator-managed secret rotate both.
+        """
+        return cls(
+            settings.stable_credential_secret,
+            settings.credential_secret_previous,
+            context=_AI_CONTEXT,
+        )
 
     @property
     def configured(self) -> bool:

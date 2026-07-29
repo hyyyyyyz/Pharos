@@ -120,9 +120,7 @@ class ZoteroOAuthAttempt(Base):
     __tablename__ = "zotero_oauth_attempts"
 
     state: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     #: SHA-256 hex digests only. The callback supplies both original values;
     #: keeping their hashes is enough to bind it without leaving replay material
     #: in a database backup.
@@ -143,9 +141,7 @@ class ZoteroOAuthAttempt(Base):
     handoff_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None, index=True
     )
-    handoff_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    handoff_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
@@ -267,9 +263,7 @@ class UserDirection(Base):
     __tablename__ = "user_directions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(64))
     #: Newline-separated, lower-cased match terms. A paper matches the direction
     #: when any term appears in its title or abstract.
@@ -358,9 +352,7 @@ class Collection(Base):
     __tablename__ = "collections"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(256))
     #: Self-reference for nesting. NULL = a top-level folder.
     parent_id: Mapped[str | None] = mapped_column(
@@ -393,9 +385,7 @@ class Tag(Base):
     __tablename__ = "tags"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     #: Optional accent for the chip, e.g. "amber". NULL = the neutral chip.
     color: Mapped[str | None] = mapped_column(String(16), default=None)
@@ -408,9 +398,7 @@ class PaperTag(Base):
     paper_id: Mapped[str] = mapped_column(
         ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True
     )
-    tag_id: Mapped[str] = mapped_column(
-        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
-    )
+    tag_id: Mapped[str] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
 
 
 # ------------------------------------------------------------------ annotation
@@ -431,12 +419,8 @@ class Highlight(Base):
     __tablename__ = "highlights"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    paper_id: Mapped[str] = mapped_column(
-        ForeignKey("papers.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
     #: "original" | "mono" | "dual"
     kind: Mapped[str] = mapped_column(String(16), default="original")
     #: 1-based page number within that rendition.
@@ -463,15 +447,91 @@ class Note(Base):
     __tablename__ = "notes"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    paper_id: Mapped[str] = mapped_column(
-        ForeignKey("papers.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
     body: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+# --------------------------------------------------------------- paper AI chat
+
+
+class AiProviderPreference(Base):
+    """One user's optional OpenAI-compatible provider override.
+
+    The API key is encrypted before it reaches this row and is never returned to
+    a client.  When no row exists the web client uses the instance-wide chat
+    provider from :class:`pharos.config.Settings`, so an operator can fund the
+    service centrally while advanced users may still bring their own endpoint.
+    """
+
+    __tablename__ = "ai_provider_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    base_url: Mapped[str] = mapped_column(String(1024))
+    model: Mapped[str] = mapped_column(String(200))
+    api_key: Mapped[str] = mapped_column(Text)
+    temperature: Mapped[float] = mapped_column(Float, default=0.25)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, default=4096)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class PaperAiContext(Base):
+    """Durable, user-scoped understanding profile for one uploaded paper."""
+
+    __tablename__ = "paper_ai_contexts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "paper_id", name="uq_paper_ai_context_owner_paper"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    summary: Mapped[str | None] = mapped_column(Text, default=None)
+    page_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: indexed | understanding | ready.  A failed model call returns to indexed
+    #: and records ``error`` so the raw text remains usable for a later retry.
+    status: Mapped[str] = mapped_column(String(24), default="indexed", index=True)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class AiConversation(Base):
+    """One persistent conversation, isolated to an owner and a paper."""
+
+    __tablename__ = "ai_conversations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(256), default="论文对话")
+    source: Mapped[str] = mapped_column(String(32), default="pharos")
+    source_session_id: Mapped[str | None] = mapped_column(String(256), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class AiMessage(Base):
+    """One visible user/assistant turn inside an :class:`AiConversation`."""
+
+    __tablename__ = "ai_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content: Mapped[str] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(200), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 # --------------------------------------------------------------- research lab
@@ -489,9 +549,7 @@ class ResearchProject(Base):
     __tablename__ = "research_projects"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(256))
     description: Mapped[str] = mapped_column(Text, default="")
     research_question: Mapped[str] = mapped_column(Text, default="")
@@ -517,9 +575,7 @@ class LiteratureSearch(Base):
     __tablename__ = "literature_searches"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     project_id: Mapped[str | None] = mapped_column(
         ForeignKey("research_projects.id", ondelete="CASCADE"), index=True, default=None
     )
@@ -549,9 +605,7 @@ class LiteratureResult(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     search_id: Mapped[str] = mapped_column(
         ForeignKey("literature_searches.id", ondelete="CASCADE"), index=True
     )
@@ -599,14 +653,10 @@ class ProjectSource(Base):
     """
 
     __tablename__ = "project_sources"
-    __table_args__ = (
-        UniqueConstraint("project_id", "result_id", name="uq_project_source_result"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "result_id", name="uq_project_source_result"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     project_id: Mapped[str] = mapped_column(
         ForeignKey("research_projects.id", ondelete="CASCADE"), index=True
     )
@@ -632,9 +682,7 @@ class ProjectArtifact(Base):
     __tablename__ = "project_artifacts"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     project_id: Mapped[str] = mapped_column(
         ForeignKey("research_projects.id", ondelete="CASCADE"), index=True
     )

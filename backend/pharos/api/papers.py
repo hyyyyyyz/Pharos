@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from pharos.api import ai_chat as ai_chat_api
 from pharos.api.deps import current_user, get_blobs, get_library, get_session
 from pharos.api.schemas import PaperOut, as_utc, paper_out
 from pharos.db.models import Paper, User
@@ -301,3 +302,9 @@ def get_paper_pdf(
         raise HTTPException(status_code=404, detail=f"{kind} PDF not available yet")
     filename = f"{paper.title[:60]}.{kind}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)
+
+
+# AI conversations are owner-scoped through a paper, so keeping the child
+# router attached to the papers slice makes it impossible to ship the UI while
+# forgetting to mount its backend.  The parent's /api prefix yields /api/ai.
+router.include_router(ai_chat_api.router)
