@@ -86,6 +86,9 @@ $z-index-loading-cover: 60;
 $item-pane-sections: (
 	"info": var(--accent-blue),
 	"abstract": var(--accent-azure),
+	// The brand gold, so the one Pharos-only section in this list reads as ours
+	// rather than as another Zotero category.
+	"pharos-chat": var(--accent-gold),
 	"attachments": var(--accent-green),
 	"notes": var(--accent-yellow),
 	"note-info": var(--accent-yellow),

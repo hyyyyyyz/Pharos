@@ -97,12 +97,27 @@
 			this.render();
 		}
 
+		// "pharos-chat" is listed in both: _builtInPanes is what stops a pane
+		// being treated as a plugin's (which would look for a plugin icon and
+		// find none), and _defaultPanes is the order the buttons appear in.
+		//
+		// It goes LAST, which is not where a reading tool would naturally sit.
+		// Reordering moves a pane one *visible* position, then writes the result
+		// back into this list, so a pane that is hidden for some regular items
+		// but not others makes the visible and persisted orders diverge: with
+		// pharos-chat third, moving "info" down one step carried it past both
+		// "abstract" and the hidden "pharos-chat". Upstream's own hidden panes
+		// (note-info, attachment-info, attachment-annotations) never hit this
+		// because they belong to attachment and note items, where the
+		// regular-item panes are hidden instead, so the two orders never
+		// interleave. Anyone who wants it higher can drag it there; that choice
+		// persists.
 		get _defaultPanes() {
-			return ["info", "abstract", "attachments", "notes", "libraries-collections", "tags", "related"];
+			return ["info", "abstract", "attachments", "notes", "libraries-collections", "tags", "related", "pharos-chat"];
 		}
 
 		get _builtInPanes() {
-			return ["info", "abstract", "attachments", "notes", "note-info", "attachment-info", "attachment-annotations", "libraries-collections", "tags", "related"];
+			return ["info", "abstract", "attachments", "notes", "note-info", "attachment-info", "attachment-annotations", "libraries-collections", "tags", "related", "pharos-chat"];
 		}
 
 		get container() {

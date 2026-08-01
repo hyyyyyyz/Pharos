@@ -165,6 +165,7 @@ const xpcomFilesLocal = [
 	// OSKeyStore, the data layer -- is already present on the Zotero namespace.
 	'pharos/api',
 	'pharos/translate',
+	'pharos/chat',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";

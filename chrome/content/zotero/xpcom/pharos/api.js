@@ -227,6 +227,107 @@ Zotero.Pharos.API = new function () {
 	};
 
 	/**
+	 * POST and consume a newline-delimited JSON stream, one object at a time.
+	 *
+	 * Separate from request() because that goes through Zotero.HTTP, which is
+	 * XHR-based and only hands back a response once it is complete. Chat replies
+	 * are the one place where waiting for the whole body defeats the point: the
+	 * answer has to appear as it is generated.
+	 *
+	 * @param {String} path
+	 * @param {Object} options
+	 * @param {Object} options.body - serialised as JSON
+	 * @param {Function} options.onEvent - called with each parsed object
+	 * @param {AbortSignal} [options.signal]
+	 */
+	this.stream = async function (path, { body, onEvent, signal } = {}) {
+		let token = await this.getToken();
+		if (!token) {
+			throw new Zotero.Pharos.API.SignedOutError();
+		}
+
+		let response;
+		try {
+			response = await fetch(this.getBaseURL() + path, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: 'Bearer ' + token,
+				},
+				body: JSON.stringify(body),
+				signal,
+			});
+		}
+		catch (e) {
+			// fetch rejects on transport failure with a message that says nothing
+			// useful ("NetworkError when attempting to fetch resource").
+			if (e.name == 'AbortError') {
+				throw e;
+			}
+			throw new Error(Zotero.getString('pharos-error-unreachable'));
+		}
+
+		if (!response.ok) {
+			// Same reasoning as in request(): a 401 here means the token is dead,
+			// and clearing it is what turns a wall of failures back into a prompt.
+			if (response.status == 401) {
+				await this.setToken(null);
+				throw new Zotero.Pharos.API.SignedOutError();
+			}
+			let detail;
+			try {
+				let parsed = JSON.parse(await response.text());
+				detail = parsed && parsed.detail;
+			}
+			catch (e) {
+				// Not JSON. Fall through to the status.
+			}
+			let error = new Error(detail || `HTTP ${response.status}`);
+			error.status = response.status;
+			throw error;
+		}
+
+		let reader = response.body.getReader();
+		let decoder = new TextDecoder();
+		let buffer = '';
+		while (true) {
+			let { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+			// stream: true because a multi-byte character can be split across
+			// two chunks, and decoding each chunk independently would corrupt it.
+			buffer += decoder.decode(value, { stream: true });
+
+			// The last segment is kept: a chunk boundary rarely lands on a
+			// newline, so the tail is usually half an object.
+			let lines = buffer.split('\n');
+			buffer = lines.pop();
+			for (let line of lines) {
+				line = line.trim();
+				if (!line) {
+					continue;
+				}
+				try {
+					onEvent(JSON.parse(line));
+				}
+				catch (e) {
+					Zotero.logError(new Error(`Unparseable stream line: ${line}`));
+				}
+			}
+		}
+		// A final object with no trailing newline.
+		if (buffer.trim()) {
+			try {
+				onEvent(JSON.parse(buffer.trim()));
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		}
+	};
+
+	/**
 	 * FastAPI reports failures as {"detail": ...}. Surfacing that beats showing
 	 * the caller a bare status code.
 	 */

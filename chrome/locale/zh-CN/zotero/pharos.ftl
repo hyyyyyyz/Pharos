@@ -54,3 +54,22 @@ pharos-prefs-sign-out-all-help = 退出所有设备会吊销该账号签发过�
 pharos-prefs-server-header = 服务器
 pharos-prefs-server-help = Pharos 是开源的，可以自行部署。填入你自己的实例地址即可切换。令牌只在签发它的服务器上有效，因此更改地址会同时退出登录。
 pharos-prefs-server-url = 地址
+
+## AI 对话
+
+section-pharos-chat =
+    .label = 问 Pharos
+pharos-chat-placeholder =
+    .placeholder = 就这篇论文提问…
+pharos-chat-send = 发送
+
+pharos-chat-status-connecting = 连接中…
+pharos-chat-status-preparing = 正在读取论文…
+pharos-chat-status-thinking = 思考中…
+
+pharos-chat-error-prepare = 无法读取这篇论文。
+pharos-chat-error-prepare-timeout = 读取论文超时。
+pharos-chat-error-failed = 未能生成回答。
+pharos-chat-error-empty = 没有收到回答。
+
+pharos-error-unreachable = 无法连接到 Pharos 服务器。

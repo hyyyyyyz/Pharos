@@ -54,3 +54,22 @@ pharos-prefs-sign-out-all-help = Signing out everywhere revokes every token this
 pharos-prefs-server-header = Server
 pharos-prefs-server-help = Pharos is open source and can be self-hosted. Point this at your own instance to use it instead. Changing it signs you out, since a token only works on the server that issued it.
 pharos-prefs-server-url = Address
+
+## Chat
+
+section-pharos-chat =
+    .label = Ask Pharos
+pharos-chat-placeholder =
+    .placeholder = Ask about this paper…
+pharos-chat-send = Send
+
+pharos-chat-status-connecting = Connecting…
+pharos-chat-status-preparing = Reading the paper…
+pharos-chat-status-thinking = Thinking…
+
+pharos-chat-error-prepare = Could not read this paper.
+pharos-chat-error-prepare-timeout = Reading this paper took too long.
+pharos-chat-error-failed = The answer could not be generated.
+pharos-chat-error-empty = No answer came back.
+
+pharos-error-unreachable = Could not reach the Pharos server.

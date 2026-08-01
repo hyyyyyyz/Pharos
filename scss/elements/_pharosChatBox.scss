@@ -1,0 +1,67 @@
+// Pharos chat, in the item pane.
+//
+// The pane is narrow and resizable, so nothing here assumes a width: the
+// messages column is fluid and the composer stacks its button beneath the input
+// rather than beside it.
+
+#zotero-editpane-pharos-chat {
+	.pharos-chat-messages {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		// Bounded so the composer stays reachable without scrolling the whole
+		// item pane, and min-height keeps the section from collapsing to nothing
+		// before the first message.
+		min-height: 40px;
+		max-height: 320px;
+		overflow-y: auto;
+		margin-block-end: 8px;
+	}
+
+	.pharos-chat-message {
+		padding: 6px 8px;
+		border-radius: 6px;
+		// Long identifiers, URLs and formulae are common in papers and must not
+		// widen the pane.
+		overflow-wrap: anywhere;
+		white-space: pre-wrap;
+
+		&.is-user {
+			background: var(--fill-quinary);
+			// Indented rather than right-aligned: at this width a floated bubble
+			// leaves too little room for the text itself.
+			margin-inline-start: 16px;
+		}
+
+		&.is-assistant {
+			background: var(--color-quarternary-on-background);
+		}
+	}
+
+	.pharos-chat-status {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		margin-block-end: 6px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-composer {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.pharos-chat-input {
+		width: 100%;
+		box-sizing: border-box;
+		resize: vertical;
+		font: inherit;
+	}
+
+	.pharos-chat-send {
+		align-self: flex-end;
+	}
+}
