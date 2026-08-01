@@ -256,3 +256,20 @@ pref("browser.theme.toolbar-theme", 2);
 
 // Need to enable -moz-context-properties for SVG context properties to work
 pref("svg.context-properties.content.enabled", true);
+
+// Pharos ---------------------------------------------------------------------
+//
+// Still under the extensions.zotero. branch: every default in this file is
+// written with that prefix, and ZOTERO_CONFIG.PREF_BRANCH reads it back, so
+// renaming the branch would silently drop every default in the application.
+
+// The backend. A pref rather than a constant because Pharos is open source and
+// meant to be self-hostable -- point this at your own instance and the account,
+// the translation engine and the digest all follow.
+pref("extensions.zotero.pharos.baseURL", "https://pharos.selab.top");
+
+// Cached display name of the signed-in account, so the preferences pane and
+// menus can show who is signed in without a round trip on every paint. The
+// token itself is NOT here -- it lives in the login manager, encrypted through
+// OSKeyStore, the same way Zotero stores its own Web API key.
+pref("extensions.zotero.pharos.accountEmail", "");

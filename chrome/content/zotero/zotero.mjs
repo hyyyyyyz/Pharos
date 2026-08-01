@@ -161,6 +161,9 @@ const xpcomFilesLocal = [
 	'users',
 	'translation/translate_item',
 	'translation/translators',
+	// Pharos. Loaded last so that everything these build on -- HTTP, prefs,
+	// OSKeyStore, the data layer -- is already present on the Zotero namespace.
+	'pharos/api',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";
