@@ -276,3 +276,8 @@ pref("extensions.zotero.pharos.accountEmail", "");
 
 // Whether the module rail is collapsed to icons only.
 pref("extensions.zotero.pharos.rail.collapsed", false);
+
+// Cached from GET /api/auth/me so the rail can decide whether to draw the
+// admin entry while it renders. A render-time convenience, never a permission:
+// every admin endpoint is gated server-side.
+pref("extensions.zotero.pharos.isAdmin", false);

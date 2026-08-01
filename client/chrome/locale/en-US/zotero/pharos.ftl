@@ -189,3 +189,219 @@ pharos-rail-collapse =
 pharos-rail-expand =
     .title = Expand
     .aria-label = Expand the module rail
+
+## Administrator console
+
+pharos-admin-menu = Admin Console…
+pharos-admin-window =
+    .title = Admin Console
+
+pharos-rail-admin = Admin
+pharos-rail-admin-tooltip =
+    .title = Admin Console
+
+pharos-admin-tab-users = Users
+pharos-admin-tab-providers = API Configuration
+pharos-admin-search =
+    .placeholder = Search email or name…
+    .aria-label = Search users
+
+pharos-admin-loading = Loading…
+pharos-admin-error = Could not load the console.
+pharos-admin-forbidden = This account is not an administrator.
+# Stands in for a value the server did not report
+pharos-admin-none = —
+
+pharos-admin-stat-users = Users
+# $count (Number) - accounts with administrator rights
+pharos-admin-stat-admins = { $count } administrators
+pharos-admin-stat-papers = Papers
+# $count (Number) - papers with a finished translation
+pharos-admin-stat-translated = { $count } translated
+pharos-admin-stat-projects = Projects
+pharos-admin-stat-daily = Daily papers
+# $count (Number) - literature searches run on this instance
+pharos-admin-stat-searches = { $count } searches
+pharos-admin-registration-open = Registration is open
+pharos-admin-registration-closed = Registration is closed
+pharos-admin-registration-hint = · set on the server, in .env
+
+pharos-admin-column-user = User
+pharos-admin-column-papers = Papers
+pharos-admin-column-projects = Projects
+pharos-admin-column-highlights = Highlights
+pharos-admin-column-created = Registered
+pharos-admin-column-last-login = Last seen
+pharos-admin-column-role = Role
+pharos-admin-column-actions = Actions
+
+pharos-admin-users-empty = No accounts yet.
+pharos-admin-users-none-matched = No accounts matched.
+# $shown (Number) - accounts on this page
+# $total (Number) - accounts in total
+pharos-admin-users-truncated = Showing { $shown } of { $total }. Search to narrow the list.
+
+pharos-admin-role-admin = Administrator
+pharos-admin-role-user = User
+pharos-admin-suspended = Deactivated
+pharos-admin-self = you
+pharos-admin-self-note = Current account
+pharos-admin-promote = Make Administrator
+pharos-admin-demote = Remove Administrator
+pharos-admin-deactivate = Deactivate
+pharos-admin-activate = Restore
+pharos-admin-delete = Delete
+# $email (String) - the account this button would delete
+pharos-admin-delete-tooltip = Delete { $email }
+pharos-admin-update-failed = Could not update this account.
+
+pharos-admin-delete-title = Delete account
+# $email (String) - the account being deleted
+pharos-admin-delete-body = This permanently deletes { $email } and everything it owns.
+# $papers, $projects, $highlights (Number) - what deletion destroys
+pharos-admin-delete-owns = { $papers } papers, { $projects } projects, { $highlights } highlights.
+pharos-admin-delete-irreversible = This cannot be undone.
+pharos-admin-delete-prompt = Type the account's email address to confirm:
+pharos-admin-delete-confirm = Delete Permanently
+pharos-admin-deleting = Deleting…
+pharos-admin-cancel = Cancel
+pharos-admin-delete-failed = Could not delete this account.
+
+pharos-admin-providers-note = API keys are configured in the server's .env and shared by every account. This page is read-only: changing a key means editing that file and restarting. The key itself never leaves the server.
+# $configured (String) - the translator the server was told to use
+# $effective (String) - the engine actually translating
+pharos-admin-providers-degraded = Translation has degraded: { $configured } is configured, but { $effective } is what runs. The key is usually missing or invalid.
+pharos-admin-role-translate = Translation
+pharos-admin-role-chat = AI Chat
+pharos-admin-providers-empty = No providers are configured.
+pharos-admin-provider-configured = Configured
+pharos-admin-provider-unconfigured = Not configured
+pharos-admin-provider-model = Model
+pharos-admin-provider-url = Address
+pharos-admin-provider-key = Key
+# $hint (String) - the key's last four characters
+pharos-admin-provider-key-set = Set · ending { $hint }
+pharos-admin-provider-key-unset = Not set
+pharos-admin-provider-used-translate = Used for translation
+pharos-admin-provider-used-chat = Used for chat
+pharos-admin-probe = Test Connection
+pharos-admin-probing = Testing…
+# $ms (Number) - round-trip time of the test completion
+pharos-admin-probe-ok = Working · { $ms } ms
+pharos-admin-probe-failed = The test failed.
+
+# =============================================================================
+
+## Daily paper settings
+
+pharos-prefs-daily-pane = Daily Papers
+# On the Pharos pane, opening the subpane. A XUL button, hence .label.
+pharos-prefs-daily-open =
+    .label = Daily Paper Settings…
+
+pharos-prefs-daily-signed-out = Sign in to your Pharos account to edit your research directions.
+
+# The one thing about this screen that cannot be guessed from the controls.
+pharos-prefs-daily-note = Your directions are yours; the sweep is shared. Editing a direction takes effect immediately -- the next digest you open is re-matched and re-ranked, with nothing fetched again and nothing read again. arXiv categories are different: they decide which papers are fetched at all, and that request is made once for everybody. A category you add starts working from the next sweep onward, and days already fetched will not fill in.
+
+pharos-prefs-daily-directions-header = Research Directions
+# $count (Number) - directions this account has
+# $max (Number) - the most it may have
+pharos-prefs-daily-count = { $count } of { $max }
+pharos-prefs-daily-loading = Loading…
+pharos-prefs-daily-load-failed = Could not load your research directions.
+
+pharos-prefs-daily-empty-title = No research directions yet
+pharos-prefs-daily-empty-desc = The daily digest is filtered entirely by your directions: with none, it is empty, and not one fetched paper is shown. Add one, or put the seven defaults back and edit them from there.
+pharos-prefs-daily-restore = Restore Default Directions
+pharos-prefs-daily-restoring = Restoring…
+pharos-prefs-daily-restore-none = None of the default directions could be restored. Add one by hand instead.
+
+pharos-prefs-daily-add = New Direction
+pharos-prefs-daily-edit = Edit
+pharos-prefs-daily-delete = Delete
+pharos-prefs-daily-delete-confirm = Confirm Delete
+pharos-prefs-daily-deleting = Deleting…
+pharos-prefs-daily-enabled = Enabled
+pharos-prefs-daily-disabled = Disabled
+pharos-prefs-daily-move-up = Move Up
+pharos-prefs-daily-move-down = Move Down
+pharos-prefs-daily-order-help = Order is the tie-break when a paper matches several directions, so it decides which one a paper is filed under.
+
+pharos-prefs-daily-name = Name
+pharos-prefs-daily-name-input =
+    .placeholder = Direction name, for example VLA
+pharos-prefs-daily-keywords = Keywords
+pharos-prefs-daily-keywords-input =
+    .placeholder = One per line, or separated by commas
+pharos-prefs-daily-save = Save
+pharos-prefs-daily-saving = Saving…
+pharos-prefs-daily-create = Create
+pharos-prefs-daily-cancel = Cancel
+
+# Keyword syntax. Load-bearing: what is typed is what is matched.
+pharos-prefs-daily-syntax-help = A term matches when it appears anywhere in a paper's title or abstract, spaces and punctuation included. Wrap it in double quotes -- "wam" -- to match it as a whole word instead, so it fires on "WAM:" but never inside "swam". What you type is sent as you typed it.
+pharos-prefs-daily-parsed-none = No keywords yet. A direction with no keywords matches nothing at all.
+# $count (Number) - distinct terms the direction will be matched on
+pharos-prefs-daily-parsed-count = Matching on these { $count } terms; a paper is a hit if any one of them appears.
+pharos-prefs-daily-chip-word = whole word
+pharos-prefs-daily-chip-substring = anywhere in the text
+
+# $max (Number)
+# $count (Number)
+pharos-prefs-daily-warn-keyword-count = Too many keywords (at most { $max }, currently { $count }).
+# $max (Number)
+# $count (Number)
+pharos-prefs-daily-warn-keyword-total = The keyword list is too long (at most { $max } characters, currently { $count }).
+# $count (Number) - keywords over the per-keyword limit
+# $max (Number)
+pharos-prefs-daily-warn-keyword-long = { $count } keywords are longer than { $max } characters. A whole sentence is unlikely ever to appear verbatim.
+
+pharos-prefs-daily-sweep-header = What Gets Fetched
+pharos-prefs-daily-categories = arXiv categories
+# $max (Number)
+pharos-prefs-daily-categories-help = These decide which papers are fetched each day. Directions can only filter what was fetched, so no number of keywords will surface a paper from outside them. Separate with commas or spaces; at most { $max }.
+# $list (String) - the tokens that did not look like categories
+pharos-prefs-daily-categories-invalid = These do not look like arXiv categories: { $list }
+# $max (Number)
+# $count (Number)
+pharos-prefs-daily-categories-too-many = Too many categories (at most { $max }, currently { $count }).
+pharos-prefs-daily-max = Papers per day
+# $min (Number)
+# $max (Number)
+pharos-prefs-daily-max-help = How many papers a day is allowed to keep ({ $min }–{ $max }). When more match, the highest-scoring ones are kept.
+# $min (Number)
+# $max (Number)
+pharos-prefs-daily-max-range = The daily limit has to be a whole number between { $min } and { $max }.
+pharos-prefs-daily-max-blank = Left empty, the daily limit is not changed.
+pharos-prefs-daily-config-save = Save Fetch Settings
+pharos-prefs-daily-config-revert = Revert
+pharos-prefs-daily-config-saved = Saved.
+pharos-prefs-daily-config-failed = Could not load the fetch settings.
+
+## AI model
+
+pharos-prefs-provider-header = AI Model
+pharos-prefs-provider-loading = Loading…
+pharos-prefs-provider-failed = Could not load the model settings.
+pharos-prefs-provider-source-personal = Your own model
+pharos-prefs-provider-source-server = Server model
+pharos-prefs-provider-source-none = Not configured
+pharos-prefs-provider-address = Address
+pharos-prefs-provider-model = Model
+pharos-prefs-provider-temperature = Temperature
+pharos-prefs-provider-max-tokens = Maximum output tokens
+pharos-prefs-provider-key-stored = An API key is stored for this account.
+pharos-prefs-provider-key-none = No API key of your own is stored.
+pharos-prefs-provider-key-unsupported = This server has no credential encryption key configured, so it cannot hold a personal API key. Only the model the administrator provides is available.
+# Says plainly what this pane will and will not do with a key.
+pharos-prefs-provider-security = Pharos never keeps an API key on this computer -- not in settings, not in the log, nowhere. Keys are entered in the Pharos web app and encrypted by the server. This pane can show which model is in use and clear it; it cannot read the key back.
+pharos-prefs-provider-clear = Clear My Model
+pharos-prefs-provider-clearing = Clearing…
+pharos-prefs-provider-clear-confirm = Delete the personal model settings and API key stored for this account? Conversations you have already had are kept.
+pharos-prefs-provider-cleared = Your model settings were cleared.
+pharos-prefs-provider-cleared-server = Your model settings were cleared. The server's model is in use again.
+pharos-prefs-provider-clear-failed = Could not clear the model settings.
+
+
+# =============================================================================

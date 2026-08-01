@@ -1,0 +1,210 @@
+// The 每日论文 settings subpane: research directions, sweep configuration, and
+// the read-only AI model panel.
+//
+// Everything is scoped under the subpane id. The surrounding groupboxes,
+// headings and form controls already come from the shared preferences styles,
+// so this covers only the list of directions, the keyword chips and the
+// key/value rows the model panel is built from.
+
+#zotero-subpane-pharos-daily {
+	.pharos-daily-prefs-help {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		margin-block-end: 8px;
+	}
+
+	// The one thing on this screen that is not guessable from the controls:
+	// directions are per-user and take effect at once, the sweep is shared and
+	// only widens from the next run. Given a little more weight than help text.
+	.pharos-daily-prefs-note {
+		color: var(--fill-secondary);
+		border-inline-start: 2px solid var(--color-accent);
+		padding-inline-start: 8px;
+		margin-block-end: 12px;
+	}
+
+	.pharos-daily-prefs-status,
+	.pharos-daily-prefs-count {
+		color: var(--fill-secondary);
+	}
+
+	.pharos-daily-prefs-error {
+		color: var(--color-critical);
+		margin-block: 4px;
+	}
+
+	.pharos-daily-prefs-warn {
+		color: var(--color-critical);
+		font-size: 11px;
+		margin-block: 4px;
+	}
+
+	// [hidden] on an HTML element inside a XUL document still needs saying:
+	// several of these are display:flex or display:grid, and that wins over the
+	// UA rule.
+	[hidden] {
+		display: none;
+	}
+
+	.pharos-daily-prefs-actions {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-block: 8px;
+	}
+
+	//
+	// Directions
+	//
+
+	.pharos-daily-prefs-row {
+		display: grid;
+		// Order buttons, the direction itself, then its actions. The middle
+		// column is the only flexible one so that a long keyword list wraps
+		// rather than pushing the buttons off the pane.
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: start;
+		gap: 8px;
+		padding: 8px 10px;
+		margin-block-end: 6px;
+		border: var(--material-border);
+		border-radius: 5px;
+		background: var(--material-background);
+	}
+
+	// A disabled direction still matches nothing, so it reads as inactive
+	// rather than disappearing -- it is still editable.
+	.pharos-daily-prefs-row-off {
+		opacity: 0.6;
+	}
+
+	.pharos-daily-prefs-order {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.pharos-daily-prefs-move {
+		font-size: 10px;
+		padding: 0 4px;
+		min-width: 2.5em;
+	}
+
+	// The flexible column of a row. min-width: 0 so a long keyword list wraps
+	// inside its cell instead of widening the grid and pushing the buttons off
+	// the pane.
+	.pharos-daily-prefs-main {
+		min-width: 0;
+	}
+
+	.pharos-daily-prefs-name {
+		font-weight: 600;
+		margin-block-end: 4px;
+	}
+
+	.pharos-daily-prefs-keywords,
+	.pharos-daily-prefs-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.pharos-daily-prefs-chips {
+		margin-block: 6px;
+	}
+
+	// Terms are shown verbatim, so the chip needs a monospace face and a
+	// preserved space: leading and trailing spaces are load-bearing in padded
+	// terms, and the renderer marks them with a visible glyph rather than
+	// letting them collapse.
+	.pharos-daily-prefs-chip {
+		font-family: monospace;
+		font-size: 11px;
+		white-space: pre;
+		padding: 1px 5px;
+		border-radius: 3px;
+		border: var(--material-border);
+		background: var(--color-background);
+	}
+
+	// A quoted term matches a whole word rather than a substring, which is a
+	// real difference in behaviour and therefore a visible difference here.
+	.pharos-daily-prefs-chip-word {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+	}
+
+	// The default. Deliberately the quieter of the two, so the whole-word chip
+	// is what draws the eye -- but named rather than left as an absence, because
+	// "plain substring" is a state the user is being told about.
+	.pharos-daily-prefs-chip-substring {
+		color: var(--fill-secondary);
+	}
+
+	.pharos-daily-prefs-chip-bad {
+		border-color: var(--color-critical);
+		color: var(--color-critical);
+	}
+
+	.pharos-daily-prefs-empty-title {
+		font-weight: 600;
+		margin-block-end: 4px;
+	}
+
+	.pharos-daily-prefs-danger {
+		color: var(--color-critical);
+	}
+
+	//
+	// Editor
+	//
+
+	.pharos-daily-prefs-editor {
+		display: flex;
+		flex-direction: column;
+		padding: 10px;
+		margin-block-end: 6px;
+		border: var(--material-border);
+		border-radius: 5px;
+		background: var(--material-background);
+
+		textarea {
+			font-family: monospace;
+			resize: vertical;
+		}
+	}
+
+	.pharos-daily-prefs-parsed-head {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		margin-block-start: 4px;
+	}
+
+	//
+	// Sweep configuration
+	//
+
+	.pharos-daily-prefs-number {
+		width: 6em;
+	}
+
+	//
+	// AI model
+	//
+
+	.pharos-daily-prefs-kv {
+		display: grid;
+		grid-template-columns: 12em minmax(0, 1fr);
+		gap: 8px;
+		margin-block-end: 4px;
+
+		& > span {
+			color: var(--fill-secondary);
+		}
+
+		// A base URL or model name can be long and has no useful break points.
+		& > strong {
+			overflow-wrap: anywhere;
+		}
+	}
+}

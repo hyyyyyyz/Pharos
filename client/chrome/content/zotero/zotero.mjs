@@ -171,6 +171,8 @@ const xpcomFilesLocal = [
 	'pharos/daily',
 	'pharos/discovery',
 	'pharos/projects',
+	'pharos/admin',
+	'pharos/directions',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";

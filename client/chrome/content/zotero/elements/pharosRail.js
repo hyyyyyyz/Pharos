@@ -61,6 +61,7 @@
 			{ key: 'daily', icon: 'daily', l10n: 'pharos-rail-daily' },
 			{ key: 'discovery', icon: 'discovery', l10n: 'pharos-rail-discovery' },
 			{ key: 'projects', icon: 'projects', l10n: 'pharos-rail-projects' },
+			{ key: 'admin', icon: 'admin', l10n: 'pharos-rail-admin', adminOnly: true },
 		];
 
 		get module() {
@@ -105,11 +106,24 @@
 
 			this._render();
 			this._renderToggle();
+
+			// Re-check against the server and redraw. isAdmin() reads a cached pref
+			// so the first paint needs no round trip, but an operator promoted
+			// since last launch should not have to restart to see the console.
+			Zotero.Pharos.Admin.refresh()
+				.then(() => this._render())
+				.catch(e => Zotero.logError(e));
 		}
 
 		_render() {
 			this._nav.replaceChildren();
 			for (let mod of PharosRail.MODULES) {
+				// Skipped at render time, NOT filtered out of MODULES: _apply()
+				// maps a module's index in that array onto the deck's child index,
+				// so removing an entry would shift every panel after it.
+				if (mod.adminOnly && !Zotero.Pharos.Admin.isAdmin()) {
+					continue;
+				}
 				let button = document.createElement('button');
 				button.className = 'pharos-rail-item'
 					+ (mod.key == this.module ? ' is-active' : '');
@@ -155,23 +169,27 @@
 				ArrowUp: -1,
 				ArrowLeft: -1,
 			};
-			let index = PharosRail.MODULES.findIndex(m => m.key == this.module);
+			// Navigates the VISIBLE entries. Arrowing onto a hidden admin module
+			// would select a panel with no button to show it was selected.
+			let visible = PharosRail.MODULES.filter(
+				m => !m.adminOnly || Zotero.Pharos.Admin.isAdmin()
+			);
+			let index = visible.findIndex(m => m.key == this.module);
 			let next;
 			if (event.key in KEYS) {
-				next = (index + KEYS[event.key] + PharosRail.MODULES.length)
-					% PharosRail.MODULES.length;
+				next = (index + KEYS[event.key] + visible.length) % visible.length;
 			}
 			else if (event.key == 'Home') {
 				next = 0;
 			}
 			else if (event.key == 'End') {
-				next = PharosRail.MODULES.length - 1;
+				next = visible.length - 1;
 			}
 			else {
 				return;
 			}
 			event.preventDefault();
-			this.module = PharosRail.MODULES[next].key;
+			this.module = visible[next].key;
 			this._nav.querySelector('.pharos-rail-item.is-active')?.focus();
 		}
 

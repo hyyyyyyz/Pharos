@@ -1,0 +1,197 @@
+<!--
+    ***** BEGIN LICENSE BLOCK *****
+
+    Copyright © 2026 Pharos Contributors
+                     https://pharos.selab.top
+
+    This file is part of Pharos, which is derived from Zotero.
+
+    Pharos is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Pharos is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with Pharos.  If not, see <http://www.gnu.org/licenses/>.
+
+    ***** END LICENSE BLOCK *****
+-->
+
+<!--
+    Every button here is an html:button with onclick, not a XUL button with
+    oncommand. Two reasons, both of which fail quietly if ignored: a XUL button
+    renders its `label` attribute and ignores textContent, so the running labels
+    this pane sets ("Saving…", "Confirm Delete") would go nowhere; and
+    preferences.js converts `oncommand` attributes to listeners only for elements
+    that actually fire a command event, which HTML buttons do not.
+-->
+
+<vbox id="zotero-subpane-pharos-daily" class="main-section subpane"
+	onload="event.waitUntil(Zotero_Preferences.PharosDaily.init())">
+
+	<html:div id="pharos-daily-prefs-signed-out" class="pharos-daily-prefs-help"
+		data-l10n-id="pharos-prefs-daily-signed-out" hidden="hidden"/>
+
+	<vbox id="pharos-daily-prefs-body" hidden="true">
+
+		<html:div class="pharos-daily-prefs-note" data-l10n-id="pharos-prefs-daily-note"/>
+
+		<groupbox>
+			<label><html:h2 data-l10n-id="pharos-prefs-daily-directions-header"/></label>
+
+			<html:div id="pharos-daily-prefs-status" class="pharos-daily-prefs-status" role="status"/>
+
+			<!-- Shown only when the account has no directions at all. The backend
+			     will not re-seed, on purpose, so without this the state is a dead
+			     end. -->
+			<vbox id="pharos-daily-prefs-empty" hidden="true">
+				<html:div class="pharos-daily-prefs-empty-title"
+					data-l10n-id="pharos-prefs-daily-empty-title"/>
+				<html:div class="pharos-daily-prefs-help"
+					data-l10n-id="pharos-prefs-daily-empty-desc"/>
+				<html:div class="pharos-daily-prefs-actions">
+					<html:button id="pharos-daily-prefs-restore"
+						data-l10n-id="pharos-prefs-daily-restore"
+						onclick="Zotero_Preferences.PharosDaily.restoreDefaults()"/>
+				</html:div>
+			</vbox>
+
+			<html:div id="pharos-daily-prefs-list" class="pharos-daily-prefs-list"/>
+
+			<html:div id="pharos-daily-prefs-order-help" class="pharos-daily-prefs-help"
+				data-l10n-id="pharos-prefs-daily-order-help" hidden="hidden"/>
+
+			<html:div class="pharos-daily-prefs-actions">
+				<html:button id="pharos-daily-prefs-add" data-l10n-id="pharos-prefs-daily-add"
+					onclick="Zotero_Preferences.PharosDaily.startCreate()"/>
+				<html:span id="pharos-daily-prefs-count" class="pharos-daily-prefs-count"/>
+			</html:div>
+
+			<!-- The editor lives here when idle and is moved into the list, in
+			     place of the row being edited, while it is open. Declared in the
+			     markup rather than built in JS so its data-l10n-ids are resolved
+			     by the pane's one translateFragment() pass.
+
+			     A div rather than a form: a real form in a chrome document
+			     navigates the pane away on submit, and Enter in a text field is
+			     enough to trigger it. Enter is wired up in JS instead. -->
+			<html:div id="pharos-daily-prefs-editor-home">
+				<html:div id="pharos-daily-prefs-editor" class="pharos-daily-prefs-editor" hidden="hidden">
+					<html:label for="pharos-daily-prefs-name" data-l10n-id="pharos-prefs-daily-name"/>
+					<html:input id="pharos-daily-prefs-name" type="text" autocomplete="off"
+						data-l10n-id="pharos-prefs-daily-name-input"/>
+
+					<html:label for="pharos-daily-prefs-keywords"
+						data-l10n-id="pharos-prefs-daily-keywords"/>
+					<html:textarea id="pharos-daily-prefs-keywords" rows="6" spellcheck="false"
+						data-l10n-id="pharos-prefs-daily-keywords-input"/>
+
+					<html:div class="pharos-daily-prefs-help"
+						data-l10n-id="pharos-prefs-daily-syntax-help"/>
+
+					<!-- The parse, shown back. A term only fires if it appears
+					     verbatim, so the user has to see the exact strings rather
+					     than a tidied-up version of what they typed. -->
+					<html:div id="pharos-daily-prefs-parsed-head" class="pharos-daily-prefs-parsed-head"/>
+					<html:div id="pharos-daily-prefs-chips" class="pharos-daily-prefs-chips"/>
+
+					<html:div id="pharos-daily-prefs-editor-warnings" class="pharos-daily-prefs-warn" hidden="hidden"/>
+					<html:div id="pharos-daily-prefs-editor-error" class="pharos-daily-prefs-error"
+						role="alert" hidden="hidden"/>
+
+					<html:div class="pharos-daily-prefs-actions">
+						<html:button id="pharos-daily-prefs-submit" type="button"
+							data-l10n-id="pharos-prefs-daily-create"
+							onclick="Zotero_Preferences.PharosDaily.submitEditor()"/>
+						<html:button id="pharos-daily-prefs-cancel" type="button"
+							data-l10n-id="pharos-prefs-daily-cancel"
+							onclick="Zotero_Preferences.PharosDaily.cancelEditor()"/>
+					</html:div>
+				</html:div>
+			</html:div>
+		</groupbox>
+
+		<groupbox>
+			<label><html:h2 data-l10n-id="pharos-prefs-daily-sweep-header"/></label>
+
+			<html:div id="pharos-daily-prefs-config-error" class="pharos-daily-prefs-error"
+				role="alert" hidden="hidden"/>
+
+			<html:label for="pharos-daily-prefs-categories" data-l10n-id="pharos-prefs-daily-categories"/>
+			<html:input id="pharos-daily-prefs-categories" type="text" autocomplete="off"
+				spellcheck="false" placeholder="cs.RO, cs.CV, cs.LG"/>
+			<html:div id="pharos-daily-prefs-categories-help" class="pharos-daily-prefs-help"/>
+			<html:div id="pharos-daily-prefs-category-chips" class="pharos-daily-prefs-chips"/>
+			<html:div id="pharos-daily-prefs-categories-warn" class="pharos-daily-prefs-warn" hidden="hidden"/>
+
+			<html:label for="pharos-daily-prefs-max" data-l10n-id="pharos-prefs-daily-max"/>
+			<html:input id="pharos-daily-prefs-max" class="pharos-daily-prefs-number" type="number"
+				min="1" max="200" step="1" autocomplete="off"/>
+			<html:div id="pharos-daily-prefs-max-help" class="pharos-daily-prefs-help"/>
+			<html:div id="pharos-daily-prefs-max-warn" class="pharos-daily-prefs-warn" hidden="hidden"/>
+
+			<html:div class="pharos-daily-prefs-actions">
+				<html:button id="pharos-daily-prefs-config-save"
+					data-l10n-id="pharos-prefs-daily-config-save"
+					onclick="Zotero_Preferences.PharosDaily.saveConfig()"/>
+				<html:button id="pharos-daily-prefs-config-revert"
+					data-l10n-id="pharos-prefs-daily-config-revert"
+					onclick="Zotero_Preferences.PharosDaily.revertConfig()"/>
+				<html:span id="pharos-daily-prefs-config-status" class="pharos-daily-prefs-count"/>
+			</html:div>
+		</groupbox>
+
+		<!--
+		    Read-only, plus the one destructive action. There is deliberately no
+		    field to type an API key into: a key entered here would have to be
+		    held in this process, and the invariant is that it lives only in the
+		    backend, encrypted. Keys are entered in the web app.
+		-->
+		<groupbox>
+			<label><html:h2 data-l10n-id="pharos-prefs-provider-header"/></label>
+
+			<html:div id="pharos-daily-prefs-provider-status" class="pharos-daily-prefs-status"
+				role="status"/>
+
+			<html:div id="pharos-daily-prefs-provider" class="pharos-daily-prefs-provider" hidden="hidden">
+				<html:div class="pharos-daily-prefs-kv">
+					<html:span data-l10n-id="pharos-prefs-provider-header"/>
+					<html:strong id="pharos-daily-prefs-provider-source"/>
+				</html:div>
+				<html:div class="pharos-daily-prefs-kv">
+					<html:span data-l10n-id="pharos-prefs-provider-address"/>
+					<html:strong id="pharos-daily-prefs-provider-base-url"/>
+				</html:div>
+				<html:div class="pharos-daily-prefs-kv">
+					<html:span data-l10n-id="pharos-prefs-provider-model"/>
+					<html:strong id="pharos-daily-prefs-provider-model"/>
+				</html:div>
+				<html:div class="pharos-daily-prefs-kv">
+					<html:span data-l10n-id="pharos-prefs-provider-temperature"/>
+					<html:strong id="pharos-daily-prefs-provider-temperature"/>
+				</html:div>
+				<html:div class="pharos-daily-prefs-kv">
+					<html:span data-l10n-id="pharos-prefs-provider-max-tokens"/>
+					<html:strong id="pharos-daily-prefs-provider-max-tokens"/>
+				</html:div>
+
+				<html:div id="pharos-daily-prefs-provider-key" class="pharos-daily-prefs-help"/>
+				<html:div class="pharos-daily-prefs-help"
+					data-l10n-id="pharos-prefs-provider-security"/>
+
+				<html:div class="pharos-daily-prefs-actions">
+					<html:button id="pharos-daily-prefs-provider-clear"
+						data-l10n-id="pharos-prefs-provider-clear" hidden="hidden"
+						onclick="Zotero_Preferences.PharosDaily.clearProvider()"/>
+					<html:span id="pharos-daily-prefs-provider-message"
+						class="pharos-daily-prefs-count"/>
+				</html:div>
+			</html:div>
+		</groupbox>
+	</vbox>
+</vbox>

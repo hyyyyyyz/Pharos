@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosAdmin.css" type="text/css"?>
+
+<!DOCTYPE window>
+
+<window data-l10n-id="pharos-admin-window"
+		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+		xmlns:html="http://www.w3.org/1999/xhtml"
+		id="pharos-admin-window"
+		windowtype="pharos:admin"
+		width="960" height="720"
+		persist="screenX screenY width height"
+		onload="Zotero_Pharos_Admin.init()"
+		onunload="Zotero_Pharos_Admin.destroy()">
+	<linkset>
+		<html:link rel="localization" href="branding/brand.ftl" />
+		<html:link rel="localization" href="zotero.ftl" />
+		<html:link rel="localization" href="pharos.ftl" />
+	</linkset>
+
+	<script>
+		Services.scriptloader.loadSubScript("chrome://zotero/content/include.js", this);
+	</script>
+	<script src="chrome://zotero/content/pharosAdmin.js"/>
+
+	<vbox flex="1" id="pharos-admin-root">
+		<hbox id="pharos-admin-toolbar" align="center">
+			<html:div id="pharos-admin-tabs" role="tablist">
+				<html:button id="pharos-admin-tab-users" role="tab"
+						data-l10n-id="pharos-admin-tab-users"/>
+				<html:button id="pharos-admin-tab-providers" role="tab"
+						data-l10n-id="pharos-admin-tab-providers"/>
+			</html:div>
+			<spacer flex="1"/>
+			<html:input id="pharos-admin-search" type="search"
+					data-l10n-id="pharos-admin-search" data-l10n-attrs="placeholder"/>
+		</hbox>
+
+		<html:div id="pharos-admin-status" role="status"/>
+
+		<html:div id="pharos-admin-body" flex="1"/>
+	</vbox>
+</window>
