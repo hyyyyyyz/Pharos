@@ -100,7 +100,7 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
   - [x] 每日论文（工具菜单 → 独立窗口，可把论文连同 PDF 与模型解读存入本地文库）
   - [x] 文献探索（工具菜单 → 搜 arXiv/OpenAlex，可精读、可入库、可归入项目）
   - [x] 研究项目（工具菜单 → 看阶段/来源/记录，推进阶段，记录可存为 Zotero 笔记）
-- [ ] **阶段 4**：GitHub Actions 出 macOS / Windows 安装包
+- [x] **阶段 4**：GitHub Actions 出安装包（macOS `.dmg`、Windows/Linux 便携包）
 
 ### 改动 Zotero 时踩过的坑（都不报错，只是行为错）
 
@@ -120,6 +120,11 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
   从 `build/` 移除，而 `stash pop` 只恢复源码、不重建——`dir_build` 于是打包了一个
   缺文件的 build，窗口报 “Missing chrome or resource URL”。排查未提交的改动时，
   pop 之后要重新 `npm run build`。
+- `version` 文件里的 `.SOURCE` 后缀是**必需的**：`prepare_build` 用正则
+  `([0-9].+)\.SOURCE` 找版本号，再按通道替换该后缀（`release` 替换为空串）。
+  直接写 `0.1.0` 会报 “Version number not found”。
+- 那 4 个 updater/launcher 归档原本是 **Git LFS 指针**，而分离副本没有 LFS 服务器，
+  新克隆拿到的会是指针、构建停在 `check_lfs_file`。共 1.1M，已改为普通 blob。
 
 ### 阶段 1 验收结果
 
