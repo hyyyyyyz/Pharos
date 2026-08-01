@@ -91,7 +91,29 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
 
 - [x] **阶段 1**：拉取源码 → 移除 `.git` → 改品牌标识 → 构建出可运行的 `Pharos.app`
 - [x] **阶段 2**：注入 Pharos 配色（浅色 + 深色）
-- [ ] **阶段 3**：接入 Pharos 独有能力（保排版翻译 → AI 对话 → 每日论文 → 文献探索/研究项目）
+- [ ] **阶段 3**：接入 Pharos 独有能力
+  - [x] 后端客户端 `Zotero.Pharos.API`（token 经 OSKeyStore 加密存入登录管理器，
+        用独立 login host；401 即清 token，把死墙变回登录提示）
+  - [x] 账号设置面板（服务器不可达 ≠ 已退出；改服务器地址强制退出）
+  - [x] 保排版翻译（右键 PDF → 仅译文 / 中英对照，译文作为普通附件挂回同一条目）
+  - [x] AI 对话（条目面板区块，`API.stream()` 读 NDJSON 流）
+  - [x] 每日论文（工具菜单 → 独立窗口，可把论文连同 PDF 与模型解读存入本地文库）
+  - [ ] 文献探索 / 研究项目
+
+### 改动 Zotero 时踩过的坑（都不报错，只是行为错）
+
+- `buildItemContextMenu` **按索引**寻址菜单子元素，`options` 数组必须和
+  `zoteroPane.xhtml` 的 menupopup 顺序严格一致。
+- `data-l10n-id` 解析的是**该文档自己的** `<link rel="localization">` 列表，
+  与 `Zotero.ftl`（`getString()` 用的）是两套。id 缺失会让 DOM 本地化 reject，
+  表现为调用方抛出裸的 `undefined`，无堆栈。
+- **XML 注释里不能出现 `--`**，否则整个文档解析失败、窗口打不开。
+  （`CLAUDE.md` 要求注释用 `--`，那是给 JS/SCSS 的，XML 是例外。）
+- 侧边导航的区块排序把「移动一个**可见**位置」的结果写回 `_builtInPanes`，
+  所以「对部分常规条目隐藏、邻居却可见」的区块不能插在列表中间，否则会打乱
+  上游的排序行为。Pharos 对话区块因此排在最后。
+- 窗口的 `onload="X.init()"` 里做的赋值，在 `loadWindow` 返回时**尚未执行**。
+  需要等待初始化的句柄必须在脚本加载时就创建，否则 `await undefined` 会静默通过。
 - [ ] **阶段 4**：GitHub Actions 出 macOS / Windows 安装包
 
 ### 阶段 1 验收结果
