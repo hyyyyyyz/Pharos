@@ -4,7 +4,11 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-dist/
+# Listed rather than matched at any depth, for the same reason: the client
+# vendors pdf.js, which ships real sources under external/dist.
+/dist/
+site/dist/
+zotero-connector/dist/
 .venv/
 venv/
 .pytest_cache/
@@ -27,7 +31,11 @@ frontend/.vite/
 
 # --- Pharos runtime data (never commit user papers / DB / caches) ---
 backend/storage/files/
-data/
+# Anchored. Unanchored, this also matched client/chrome/content/zotero/xpcom/data/
+# -- the desktop client's entire data model -- and every test fixture under
+# client/test/tests/data. Those files are committed, so they were not lost, but
+# any later edit to them would have been skipped by git add without a word.
+/data/
 *.db
 *.sqlite3
 *.sqlite3-*
@@ -36,6 +44,9 @@ data/
 .cache/
 offline_assets/
 *.onnx
+# The client's PDF structure analysis ships three of these; they are part of
+# the program, not build output.
+!client/**/*.onnx
 
 # --- macOS / editors ---
 .DS_Store

@@ -147,7 +147,7 @@ duplicate arXiv ids, excessive counts, and oversized text.
 
 | Client | v1 behavior |
 | --- | --- |
-| Tauri on macOS, Windows, Linux | Native directory picker, persisted user-approved filesystem scope, automatic snapshots while the app is running. |
+| Desktop client (macOS, Windows, Linux) | Papers are saved into the Zotero library itself rather than a separate vault directory, so no filesystem scope has to be requested or persisted. |
 | Chrome / Edge desktop | File System Access API, directory handle stored in IndexedDB, permission may need to be granted again after reopening. |
 | Safari / Firefox | Portable JSON export/import fallback; these browsers cannot be promised continuous writable-directory access. |
 | iOS / Android | JSON fallback for now. A later adapter must use iOS security-scoped documents and Android Storage Access Framework rather than desktop paths. |

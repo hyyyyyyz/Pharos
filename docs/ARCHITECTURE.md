@@ -204,8 +204,8 @@ generic artifact row. Their ordering and evidence contract are defined in
 - Future `PaperChunk` + a vector index (sqlite-vec / FAISS) → grounded RAG/Q&A
   and Evidence Ledger over papers.
 - pdf.js text layer + `Highlight`/`Note` → coordinate-anchored annotations.
-- Tauri desktop wrap reuses the exact FastAPI + SPA as a sidecar; SQLite +
-  on-disk blobs make the whole library portable.
+- The desktop client is built from Zotero source and talks to the same REST
+  API as the web client; SQLite + on-disk blobs make the whole library portable.
 - Discovery providers sit behind normalising adapters. A provider can fail while
   the run persists successful results from another provider as `partial`.
 - Default result analysis is deterministic extraction from title/abstract and is

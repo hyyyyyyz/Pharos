@@ -14,7 +14,7 @@ idea through a durable research workflow — in one self-hosted platform.
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-0C2040.svg)](LICENSE)
 &nbsp;![Status](https://img.shields.io/badge/status-active%20development-F8C040.svg)
 &nbsp;![Backend](https://img.shields.io/badge/backend-FastAPI%20·%20SQLite-189090.svg)
-&nbsp;![Clients](https://img.shields.io/badge/clients-React%20·%20Tauri-0C2040.svg)
+&nbsp;![Clients](https://img.shields.io/badge/clients-React%20·%20Zotero--based%20desktop-0C2040.svg)
 
 [Official Website](https://hyyyyyyz.github.io/Pharos/) ·
 [Web App](https://pharos.selab.top/) ·
@@ -43,7 +43,7 @@ discover → screen → read → organize → hypothesize → plan → record �
 
 The public [GitHub Pages site](https://hyyyyyyz.github.io/Pharos/) is the
 marketing website. The actual product consists of the React web client (or the
-Tauri desktop client), the FastAPI backend, SQLite storage, and an isolated PDF
+Zotero-based desktop client), the FastAPI backend, SQLite storage, and an isolated PDF
 translation worker.
 
 <div align="center">
@@ -65,8 +65,8 @@ data rather than static mockups.
 Both the web and desktop readers include paper-aware **AI Chat**. Each opened
 paper has its own persistent conversations; when a model is configured, Pharos
 prepares a reusable Chinese research profile before the first question. The web
-app keeps this state owner-scoped on the backend, while the desktop client keeps
-its native copy in the local Workspace.
+app and the desktop client read the same owner-scoped state from the backend, so
+a conversation started in one continues in the other.
 
 ### Reading and translation
 
@@ -115,13 +115,10 @@ contracts and remain future work.
 - One-way Zotero Web API metadata sync for browser and cross-device use. A server with a registered Zotero OAuth
   application offers one-click browser authorization; manual API-key linking
   remains available as a fallback.
-- Complete local Zotero read access in the desktop client: personal and group
-  libraries, nested collections, saved-search results, every item type, tags,
-  notes, PDF annotations, full-text indexes, and local-only attachments. The
-  mirror stays usable when Zotero is closed, and PDFs are never uploaded unless
-  the user explicitly chooses **Import to Pharos**.
-- A Tauri 2 desktop client for macOS and Windows that reuses the exact React UI,
-  connects to the same backend, and adds local-first capabilities through Rust.
+- A desktop client for macOS, Windows and Linux built from Zotero source, so
+  the library, PDF reader, annotations, citation styles and 760+ web translators
+  are Zotero's own rather than reimplementations. It keeps its data in `~/Pharos`
+  and never touches an existing Zotero installation.
 
 ### AI Chat across web and desktop
 
@@ -132,53 +129,32 @@ contracts and remain future work.
   Its API key is encrypted with `PHAROS_CREDENTIAL_SECRET`, never returned to
   browser JavaScript, and never stored in `localStorage` or IndexedDB. An
   operator-configured `PHAROS_CHAT_PROVIDER` can be used as the server fallback.
-- The desktop client uses the same React AI panel but performs PDF text
-  extraction, indexing, provider access, and conversation persistence locally.
-- Native Zotero attachments, Workspace relocation, Codex history discovery,
-  and creating a real local Codex task remain desktop-only because a browser
-  cannot safely access those machine resources.
+- The desktop client asks the same backend, from a section in the item pane
+  beside the paper being read. The answer streams in as it is generated.
 
-### Desktop portable data
+### What the desktop client adds
 
-The desktop client keeps its native research state in one versioned **Pharos
-Workspace**. It can be moved to another directory from **Settings → Data &
-Interop**, copied to another device, and reopened as a complete local unit:
+Built from Zotero source rather than alongside it, so everything below happens
+in the same window as the reading:
 
-```text
-Pharos Workspace/
-├── database/       SQLite metadata and the Zotero mirror
-├── library/        paper objects, metadata, and paper-text indexes
-├── daily/          portable Daily Papers archive
-├── conversations/  per-paper append-only AI Chat logs
-├── annotations/    local annotation data
-├── interchange/    Codex imports and exports
-├── backups/        consistency backups
-└── cache · logs · tmp
-```
+- **Layout-preserving translation.** Right-click a PDF for a translated-only or
+  bilingual rendering. BabelDOC rebuilds the document with figures, equations
+  and pagination in place, and the result is imported as an ordinary attachment
+  on the same item -- it opens in the same reader, takes highlights, and syncs.
+- **AI chat** about the open paper, in the item pane.
+- **Daily papers**, **literature discovery** and **research projects** under the
+  Tools menu. Anything found can be saved into the local library, PDF and the
+  model's reading included.
 
-- Opening a PDF extracts its selectable text locally and creates a stable index
-  for that exact paper or Zotero attachment. Scanned PDFs need OCR before a
-  reliable context can be built.
-- With an OpenAI-compatible endpoint configured, Pharos prepares a reusable
-  paper profile and selects question-relevant excerpts from the cached full
-  text for every answer. Different papers never share a conversation.
-- Provider URL and model settings live in the Workspace; the API key is stored
-  only in the operating system credential store and is never written to JSONL,
-  SQLite, browser storage, logs, or Git.
-- The Codex bridge can import visible user/assistant messages from Codex CLI or
-  Desktop history into the current paper, and can hand a Pharos conversation to
-  a real Codex task. It does not import hidden reasoning, tool output, or auth
-  files, and it never rewrites Codex's internal JSONL or databases.
+Its data lives in `~/Pharos`, separate from Zotero's `~/Zotero`. The token for
+the backend is kept in the operating system credential store, encrypted through
+OSKeyStore, and never written to prefs, logs or Git.
 
 ### Connect Zotero
 
-The desktop and web connections serve different purposes.
-
-**Desktop local connection.** Keep Zotero running and allow local application
-communication. Pharos reads Zotero's official loopback API, builds a versioned
-SQLite mirror, and opens local PDFs through an opaque, range-capable native
-protocol. No Zotero storage plan or cloud upload is required. Zotero remains
-authoritative; Pharos never reads or writes `zotero.sqlite` directly.
+The desktop client needs no Zotero connection: it *is* a Zotero-derived
+application, with its own library in `~/Pharos`. Linking a Zotero account below
+is for the web app, and for moving metadata between the two.
 
 **Web/cloud connection.** For a self-hosted deployment, register a web application at
 [Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
@@ -189,9 +165,7 @@ authoritative; Pharos never reads or writes `zotero.sqlite` directly.
 Set the OAuth client key and secret only on the backend. When they are not
 configured, the account settings keep the manual Zotero user-ID/API-key flow
 available. Both connection methods grant Pharos a one-way, metadata-only import
-path for data that exists in Zotero Cloud. Local-only attachments are available
-only to the desktop client. Write-back remains disabled in the Local API and
-cloud providers.
+path for data that exists in Zotero Cloud. Write-back remains disabled.
 
 The repository also contains a hardened Zotero 7/8 Connector transport preview.
 It currently advertises data capabilities as disabled until pairing, notifier,
@@ -206,13 +180,13 @@ and transaction tests are complete. See
 
 The diagram above focuses on the PDF translation execution path. The current
 repository also contains Literature Discovery, Research Projects, and the
-Tauri desktop client with its local Zotero mirror.
+desktop client built from Zotero source.
 
 The FastAPI backend is authoritative for Pharos-native records. Zotero remains
-authoritative for Zotero entities, which the desktop client mirrors locally.
+authoritative for entities imported from Zotero Cloud.
 
 ```text
-React web client / Tauri desktop client
+React web client / Zotero-based desktop client
                   │
                   │ REST + Server-Sent Events + bearer-token authentication
                   ▼
@@ -228,8 +202,8 @@ React web client / Tauri desktop client
 - **Backend:** FastAPI, SQLAlchemy 2.x, SQLite in WAL mode, SSE, a
   content-addressed PDF blob store, and background job managers.
 - **Web client:** React 18, TypeScript, Vite, TanStack Query, Zustand, and pdf.js.
-- **Desktop client:** Tauri 2 with the same frontend bundle; the backend and
-  translation engine remain separate services.
+- **Desktop client:** built from Zotero source (Gecko/XUL, not Electron); the
+  backend and translation engine remain separate services. See `client/`.
 - **Translation boundary:** BabelDOC runs in its own Python environment and OS
   process. The backend consumes NDJSON progress and republishes it over SSE.
 - **External sources:** arXiv, OpenAlex, Crossref, Zotero, and optional
@@ -247,7 +221,7 @@ Pharos/
 │   ├── pharos/              API, domain services, storage, engine adapter
 │   └── engine_worker/       isolated BabelDOC worker; emits NDJSON progress
 ├── frontend/                React web product and PDF reader
-├── desktop/                 Tauri 2 desktop shell and release configuration
+├── client/                  Desktop client, built from Zotero source
 ├── zotero-connector/        secure Zotero 7/8 extension transport
 ├── site/                    Three.js/Vite GitHub Pages marketing site
 ├── scripts/                 environment and engine setup utilities
@@ -266,7 +240,8 @@ marketing site does not start the FastAPI backend or the Pharos product UI.
 - Node.js **20 or newer** and npm
 - A modern browser
 - For PDF translation on macOS Apple Silicon: conda and Rosetta 2
-- For the desktop shell: Rust **1.77.2 or newer** and the platform build tools
+- For the desktop client: Node 20+ and the platform build tools listed in
+  `client/app/scripts/check_requirements`
 
 The documented engine bootstrap targets macOS Apple Silicon. Linux and Windows
 x86_64 have native engine wheels, but their full installation path is not yet
@@ -337,25 +312,29 @@ history automatically.
 
 ## Run the desktop client
 
-The desktop application uses the same React frontend and expects the Pharos
-backend to be running separately. Its Rust layer adds the complete local Zotero
-mirror, opaque local-PDF streaming, paper-aware AI Chat, a portable Workspace,
-Codex interoperability, deep links, and native security boundaries.
+`client/` is the desktop application, built from Zotero source with the
+`.git` removed -- see `client/BRANDING.md` for what was changed and why. It
+keeps Zotero's library, PDF reader, annotations and citation styles, and adds
+layout-preserving translation, AI chat about the open paper, the daily arXiv
+digest, literature discovery and research projects. It expects the Pharos
+backend to be running.
 
 ```bash
-npm ci --prefix frontend
-npm ci --prefix desktop
-npm --prefix desktop run dev
+cd client
+npm install
+npm run build                    # transpile JS/JSX, compile SCSS
+app/scripts/dir_build -p m       # produces app/staging/Pharos.app
+app/scripts/run_pharos_dev       # launch with an isolated data directory
 ```
 
-Production builds use `frontend/.env.desktop` (or the corresponding process
-environment) for `VITE_API_BASE`. The release workflow can build universal
-macOS installers and Windows MSI/NSIS installers, but current packages are
-unsigned. See [`desktop/README.md`](desktop/README.md).
+Always launch development builds through `run_pharos_dev`. It passes `-datadir`
+and refuses to run against `~/Zotero`: `-profile` isolates only the Gecko
+profile, **not** Zotero's data directory, and a build that identified as Zotero
+once opened the developer's real library.
 
-In the client, use **Settings → AI Chat** to configure an OpenAI-compatible
-Base URL, model, and API key. Use **Settings → Data & Interop** to inspect or
-relocate the Workspace and verify Codex CLI discovery.
+Sign in under **Settings → Pharos** to reach the backend. Tagging `v*` builds
+installers through `client/.github/workflows/release.yml`; macOS builds are
+unsigned, so their first launch needs Control-click, Open.
 
 ## Develop the marketing site
 
@@ -429,8 +408,8 @@ python -m pytest backend/tests
 npm --prefix frontend run build
 npm --prefix site run build
 
-# Desktop Rust shell
-cargo check --manifest-path desktop/src-tauri/Cargo.toml
+# Desktop client
+(cd client && test/runtests.sh -f pharosAPI pharosTranslate pharosChat)
 
 # Zotero Connector transport
 npm --prefix zotero-connector test
@@ -444,9 +423,8 @@ engine environment and a real PDF fixture.
 
 Pharos deliberately distinguishes implemented records from automated research:
 
-- **AI Chat** now works in both readers: the web app provides owner-scoped
-  server persistence and encrypted BYOK, while the desktop app provides local
-  indexing, local credentials, and local Workspace persistence.
+- **AI Chat** works in both readers against the same owner-scoped server
+  persistence, with encrypted BYOK.
 - Literature Discovery reads search metadata and abstracts, not full papers.
 - Research Projects persist plans and results supplied by the researcher; they
   do not run code, allocate GPUs, or validate metrics.
@@ -459,8 +437,8 @@ Pharos deliberately distinguishes implemented records from automated research:
   write capabilities remain gated behind pairing and transaction tests.
 - The full product backend is currently self-hosted; GitHub Pages hosts only
   the public marketing site.
-- The desktop shell exists, but signed/notarized public releases and a mobile
-  thin client remain future work.
+- Desktop builds are unsigned. Signed and notarized releases, a Windows
+  installer rather than a portable archive, and a mobile client are future work.
 
 The next major workstreams are page-addressable evidence, grounded paper Q&A,
 an evidence-aware idea workflow, sandboxed experiment execution, claim-to-result
