@@ -80,13 +80,13 @@ fi
 # Make sure a staged build exists for the requested platform
 case $platform in
 	m)
-		app_dir="$STAGE_DIR/Pharos.app/Contents/Resources"
+		app_dir="$STAGE_DIR/$APP_NAME.app/Contents/Resources"
 		;;
 	w)
 		app_dir="$STAGE_DIR/Zotero_$(get_canonical_arch w "$arch")"
 		;;
 	l)
-		app_dir="$STAGE_DIR/Pharos_linux-$(get_canonical_arch l "$arch")"
+		app_dir="$STAGE_DIR/${APP_NAME}_linux-$(get_canonical_arch l "$arch")"
 		;;
 	*)
 		fall_back "Unknown platform '$platform'"

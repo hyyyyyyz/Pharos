@@ -19,8 +19,17 @@ APP_ID="pharos\@pharos.selab.top"
 # Whether to sign builds
 SIGN=0
 
-# OS X Developer ID certificate information
-DEVELOPER_ID=F0F1FE48DB909B263AC51C8215374D87FDC12121
+# OS X Developer ID certificate information.
+#
+# Empty, and left that way deliberately. This was Zotero's own certificate
+# hash; keeping it here would name a certificate this project cannot use and
+# does not own. Pharos builds are unsigned until someone with an Apple Developer
+# account sets this (and the NOTARIZATION_* values below) in config-custom.sh,
+# which is sourced at the end of this file and is not in the repository.
+#
+# An unsigned build still runs on macOS -- the first launch needs Control-click,
+# Open, because Gatekeeper will not open it from a double-click.
+DEVELOPER_ID=""
 # Keychain and keychain password, if not building via the GUI
 KEYCHAIN=""
 KEYCHAIN_PASSWORD=""

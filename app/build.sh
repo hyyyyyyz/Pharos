@@ -664,10 +664,10 @@ find "$BUILD_DIR" -name .DS_Store -exec rm -f {} \;
 
 # Mac
 if [ $BUILD_MAC == 1 ]; then
-	echo 'Building Pharos.app'
+	echo "Building $APP_NAME.app"
 		
 	# Set up directory structure
-	APPDIR="$STAGE_DIR/Pharos.app"
+	APPDIR="$STAGE_DIR/$APP_NAME.app"
 	rm -rf "$APPDIR"
 	mkdir "$APPDIR"
 	chmod 755 "$APPDIR"
@@ -812,6 +812,14 @@ if [ $BUILD_MAC == 1 ]; then
 	
 	# Sign
 	if [ $SIGN == 1 ]; then
+		# Checked up front because DEVELOPER_ID is empty by default here, and an
+		# empty --sign argument makes codesign fail once per file with an error
+		# that does not mention the missing certificate.
+		if [ -z "$DEVELOPER_ID" ]; then
+			echo "Signing was requested (-e) but DEVELOPER_ID is not set." >&2
+			echo "Set it, along with the NOTARIZATION_* values, in app/config-custom.sh." >&2
+			exit 1
+		fi
 		# Unlock keychain if a password is provided (necessary for building from a shell)
 		if [ -n "$KEYCHAIN_PASSWORD" ]; then
 			security -v unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/$KEYCHAIN.keychain-db
@@ -884,29 +892,36 @@ if [ $BUILD_MAC == 1 ]; then
 	if [ $PACKAGE == 1 ]; then
 		if [ $MAC_NATIVE == 1 ]; then
 			echo "Creating Mac installer"
-			dmg="$DIST_DIR/Zotero-$VERSION.dmg"
-			"$CALLDIR/mac/pkg-dmg" --source "$STAGE_DIR/Pharos.app" \
+			dmg="$DIST_DIR/$APP_NAME-$VERSION.dmg"
+			"$CALLDIR/mac/pkg-dmg" --source "$STAGE_DIR/$APP_NAME.app" \
 				--target "$dmg" \
-				--sourcefile --volname Zotero --copy "$CALLDIR/mac/DSStore:/.DS_Store" \
+				--sourcefile --volname "$APP_NAME" --copy "$CALLDIR/mac/DSStore:/.DS_Store" \
 				--symlink /Applications:"/Drag Here to Install" > /dev/null
-			
-			if [ "$UPDATE_CHANNEL" != "test" ]; then
+
+			# Notarisation also requires credentials, not just a non-test channel.
+			# Upstream could assume they were always present; here they are set in
+			# config-custom.sh by whoever has an Apple Developer account, and
+			# without them notarize_mac_app fails on an otherwise good build.
+			if [ "$UPDATE_CHANNEL" == "test" ]; then
+				echo "Test build -- skipping notarization"
+			elif [ -z "$NOTARIZATION_USER" ]; then
+				echo "No notarization credentials -- skipping notarization"
+				echo "The disk image is unsigned: macOS needs Control-click, Open on first launch"
+			else
 				# Upload disk image to Apple
 				"$CALLDIR/scripts/notarize_mac_app" "$dmg"
 				echo
-				
+
 				# Staple notarization info to disk image
 				"$CALLDIR/scripts/notarization_stapler" "$dmg"
-				
+
 				echo "Notarization complete"
-			else
-				echo "Test build -- skipping notarization"
 			fi
 			echo
 		else
 			echo 'Not building on Mac; creating Mac distribution as a zip file'
-			rm -f "$DIST_DIR/Zotero_mac.zip"
-			cd "$STAGE_DIR" && zip -rqX "$DIST_DIR/Zotero-${VERSION}_mac.zip" Pharos.app
+			rm -f "$DIST_DIR/${APP_NAME}_mac.zip"
+			cd "$STAGE_DIR" && zip -rqX "$DIST_DIR/$APP_NAME-${VERSION}_mac.zip" "$APP_NAME.app"
 		fi
 	fi
 fi
@@ -938,12 +953,12 @@ if [ $BUILD_WIN == 1 ]; then
 		archs=(win-x64 win-arm64 win32);
 	fi
 	for arch in "${archs[@]}"; do
-		echo "Building Zotero_$arch"
+		echo "Building ${APP_NAME}_$arch"
 		
 		runtime_path="${WIN_RUNTIME_PATH_PREFIX}$arch"
 		
 		# Set up directory
-		APPDIR="$STAGE_DIR/Zotero_$arch"
+		APPDIR="$STAGE_DIR/${APP_NAME}_$arch"
 		mkdir "$APPDIR"
 		
 		# Copy relevant assets from Firefox
@@ -1062,11 +1077,11 @@ if [ $BUILD_WIN == 1 ]; then
 				fi
 				
 				if [ "$arch" = "win32" ]; then
-					INSTALLER_PATH="$DIST_DIR/Zotero-${VERSION}_win32_setup.exe"
+					INSTALLER_PATH="$DIST_DIR/$APP_NAME-${VERSION}_win32_setup.exe"
 				elif [ "$arch" = "win-x64" ]; then
-					INSTALLER_PATH="$DIST_DIR/Zotero-${VERSION}_x64_setup.exe"
+					INSTALLER_PATH="$DIST_DIR/$APP_NAME-${VERSION}_x64_setup.exe"
 				elif [ "$arch" = "win-arm64" ]; then
-					INSTALLER_PATH="$DIST_DIR/Zotero-${VERSION}_arm64_setup.exe"
+					INSTALLER_PATH="$DIST_DIR/$APP_NAME-${VERSION}_arm64_setup.exe"
 				fi
 				
 				# Stage installer
@@ -1109,7 +1124,7 @@ if [ $BUILD_WIN == 1 ]; then
 				echo 'Not building on Windows; only building zip file'
 			fi
 			cd "$STAGE_DIR"
-			zip -rqX "$DIST_DIR/Zotero-${VERSION}_$arch.zip" Zotero_$arch
+			zip -rqX "$DIST_DIR/$APP_NAME-${VERSION}_$arch.zip" "${APP_NAME}_$arch"
 		fi
 	done
 	
@@ -1129,8 +1144,8 @@ if [ $BUILD_LINUX == 1 ]; then
 		runtime_path="${LINUX_RUNTIME_PATH_PREFIX}${arch}"
 		
 		# Set up directory
-		echo 'Building Pharos_linux-'$arch
-		APPDIR="$STAGE_DIR/Pharos_linux-$arch"
+		echo "Building ${APP_NAME}_linux-$arch"
+		APPDIR="$STAGE_DIR/${APP_NAME}_linux-$arch"
 		rm -rf "$APPDIR"
 		mkdir "$APPDIR"
 		
@@ -1181,9 +1196,9 @@ if [ $BUILD_LINUX == 1 ]; then
 		
 		if [ $PACKAGE == 1 ]; then
 			# Create tar
-			rm -f "$DIST_DIR/Zotero-${VERSION}_linux-$arch.tar.xz"
+			rm -f "$DIST_DIR/$APP_NAME-${VERSION}_linux-$arch.tar.xz"
 			cd "$STAGE_DIR"
-			tar -cJf "$DIST_DIR/Zotero-${VERSION}_linux-$arch.tar.xz" "Pharos_linux-$arch"
+			tar -cJf "$DIST_DIR/$APP_NAME-${VERSION}_linux-$arch.tar.xz" "${APP_NAME}_linux-$arch"
 		fi
 	done
 fi

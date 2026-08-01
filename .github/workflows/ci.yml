@@ -1,3 +1,7 @@
+# Pharos: upstream's "Build, Upload" job was removed. It was gated on
+# github.repository == "zotero/zotero" so it could never run here, and it
+# uploaded to Zotero's own S3 bucket with their credentials. Release
+# artifacts are built by release.yml instead.
 name: CI
 on: [push, pull_request]
 concurrency:
@@ -16,9 +20,6 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          lfs: true
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -116,71 +117,3 @@ jobs:
           npm test --prefix chrome/content/zotero/xpcom/utilities -- -j resource/schema/global/schema.json
 
   # Build deployment ZIPs from main, version branches (e.g., 9.0, 10.0), and *-hotfix branches
-  deploy:
-    name: Build, Upload
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.repository == 'zotero/zotero'
-    steps:
-      - name: Check if deployment branch
-        id: check-deploy
-        if: env.ACT != 'true'
-        run: |
-          branch="${GITHUB_REF#refs/heads/}"
-          if [[ "$branch" == "main" || "$branch" =~ ^[0-9]+\.[0-9]+$ || "$branch" == *-hotfix ]]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/checkout@v4
-        if: steps.check-deploy.outputs.deploy == 'true'
-        with:
-          submodules: recursive
-          lfs: true
-
-      - name: Install Node
-        if: steps.check-deploy.outputs.deploy == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Cache Node modules
-        id: node-cache
-        if: steps.check-deploy.outputs.deploy == 'true'
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Node modules
-        if: steps.check-deploy.outputs.deploy == 'true' && steps.node-cache.outputs.cache-hit != 'true'
-        run: npm install
-
-      - name: Build Zotero
-        if: steps.check-deploy.outputs.deploy == 'true'
-        run: npm run build
-        # Currently necessary for document-worker Webpack: https://stackoverflow.com/a/69746937
-        env:
-          NODE_OPTIONS: --openssl-legacy-provider
-
-      - name: Create deployment ZIP
-        if: steps.check-deploy.outputs.deploy == 'true'
-        run: |
-          cd build
-          zip -r ../build.zip *
-          cd ..
-
-      - uses: ruby/setup-ruby@v1
-        if: steps.check-deploy.outputs.deploy == 'true'
-        with:
-          ruby-version: '3.3'
-          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
-
-      - name: Upload deployment ZIP
-        if: steps.check-deploy.outputs.deploy == 'true'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: |
-          mkdir build-zip
-          cp build.zip build-zip/$GITHUB_SHA.zip
-          gem install --no-document dpl -v '>= 2.0'
-          dpl s3 --bucket zotero-download --local_dir build-zip --upload_dir ci/client --acl public_read

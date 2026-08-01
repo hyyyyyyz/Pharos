@@ -32,9 +32,9 @@ for file in $files; do
 	fi
 done
 
-mac_path="$STAGE_DIR/Pharos.app/Contents/Resources"
-win_path="$STAGE_DIR/Pharos_win-x64"
-linux_path="$STAGE_DIR/Pharos_linux-x86_64"
+mac_path="$STAGE_DIR/$APP_NAME.app/Contents/Resources"
+win_path="$STAGE_DIR/${APP_NAME}_win-x64"
+linux_path="$STAGE_DIR/${APP_NAME}_linux-x86_64"
 
 added=0
 build_id=$(date +%Y%m%d%H%M%S)

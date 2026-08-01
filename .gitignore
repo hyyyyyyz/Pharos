@@ -13,6 +13,8 @@ app/win/codesign
 
 # The packaged application (app/scripts/dir_build -p m).
 app/staging/
+# Packaged installers. build.sh writes a 180MB disk image here.
+app/dist/
 
 # The Gecko runtime, downloaded by app/scripts/fetch_xulrunner.
 app/xulrunner/
