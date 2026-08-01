@@ -41,9 +41,12 @@
 	class PharosRail extends XULElementBase {
 		content = MozXULElement.parseXULToFragment(`
 			<html:div class="pharos-rail-inner">
+				<html:div class="pharos-rail-brand">
+					<html:span class="pharos-rail-mark"/>
+					<html:span class="pharos-rail-wordmark">Pharos</html:span>
+					<html:button class="pharos-rail-toggle" tabindex="-1"/>
+				</html:div>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
-				<html:div class="pharos-rail-spacer"/>
-				<html:button class="pharos-rail-toggle" tabindex="-1"/>
 			</html:div>
 		`);
 
@@ -73,12 +76,17 @@
 			this._apply();
 		}
 
-		get collapsed() {
-			return this.getAttribute('collapsed') == 'true';
+		/**
+		 * NOT the `collapsed` attribute, which XUL reserves: setting it applies
+		 * `visibility: collapse` to the whole element, so the rail vanished
+		 * entirely and there was nothing left to click to bring it back.
+		 */
+		get railCollapsed() {
+			return this.getAttribute('rail-collapsed') == 'true';
 		}
 
-		set collapsed(val) {
-			this.setAttribute('collapsed', val ? 'true' : 'false');
+		set railCollapsed(val) {
+			this.setAttribute('rail-collapsed', val ? 'true' : 'false');
 			Zotero.Prefs.set('pharos.rail.collapsed', !!val);
 			this._renderToggle();
 		}
@@ -89,10 +97,10 @@
 			this._deck = document.getElementById('pharos-deck');
 
 			this._toggle.addEventListener('click', () => {
-				this.collapsed = !this.collapsed;
+				this.railCollapsed = !this.railCollapsed;
 			});
 
-			this.setAttribute('collapsed',
+			this.setAttribute('rail-collapsed',
 				Zotero.Prefs.get('pharos.rail.collapsed') ? 'true' : 'false');
 
 			this._render();
@@ -170,7 +178,7 @@
 		_renderToggle() {
 			document.l10n.setAttributes(
 				this._toggle,
-				this.collapsed ? 'pharos-rail-expand' : 'pharos-rail-collapse'
+				this.railCollapsed ? 'pharos-rail-expand' : 'pharos-rail-collapse'
 			);
 		}
 

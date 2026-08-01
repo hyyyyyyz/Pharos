@@ -107,15 +107,35 @@ describe("Pharos module rail", function () {
 
 	describe("collapsing", function () {
 		afterEach(function () {
-			rail.collapsed = false;
+			rail.railCollapsed = false;
 		});
 
 		it("should persist the collapsed state", function () {
-			rail.collapsed = true;
+			rail.railCollapsed = true;
 			assert.isTrue(Zotero.Prefs.get('pharos.rail.collapsed'));
-			assert.equal(rail.getAttribute('collapsed'), 'true');
-			rail.collapsed = false;
+			assert.equal(rail.getAttribute('rail-collapsed'), 'true');
+			rail.railCollapsed = false;
 			assert.isFalse(Zotero.Prefs.get('pharos.rail.collapsed'));
+		});
+
+		it("should never set XUL's reserved `collapsed` attribute", function () {
+			// XUL applies `visibility: collapse` to anything carrying it, so the
+			// whole rail disappeared and there was no button left to click to
+			// bring it back. The state attribute is `rail-collapsed` for that
+			// reason and must stay that way.
+			rail.railCollapsed = true;
+			assert.isNotOk(rail.getAttribute('collapsed'),
+				"the rail must not collapse itself out of existence");
+			assert.isAbove(rail.getBoundingClientRect().width, 0,
+				"the collapsed rail is still on screen");
+		});
+
+		it("should keep the expand control reachable when collapsed", function () {
+			rail.railCollapsed = true;
+			var toggle = rail.querySelector('.pharos-rail-toggle');
+			assert.ok(toggle);
+			assert.isAbove(toggle.getBoundingClientRect().width, 0,
+				"the control that expands the rail is still visible");
 		});
 	});
 

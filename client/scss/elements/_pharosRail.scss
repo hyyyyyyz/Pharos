@@ -12,7 +12,7 @@
 	overflow: hidden;
 	transition: width 0.16s ease;
 
-	&[collapsed="true"] {
+	&[rail-collapsed="true"] {
 		// !important because the splitter writes an inline width, which would
 		// otherwise win over the collapsed state.
 		width: 44px !important;
@@ -38,7 +38,7 @@
 	min-width: 0;
 }
 
-#pharos-rail[collapsed="true"] .pharos-rail-inner {
+#pharos-rail[rail-collapsed="true"] .pharos-rail-inner {
 	padding: 9px 0 8px;
 }
 
@@ -121,25 +121,54 @@
 	min-width: 0;
 }
 
-.pharos-rail-spacer {
+.pharos-rail-brand {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	padding-inline-start: 4px;
+	margin-block-end: 6px;
+	min-width: 0;
+}
+
+.pharos-rail-mark {
+	width: 20px;
+	height: 20px;
+	flex: 0 0 20px;
+	// Line art, not z.svg. z.svg is the application icon -- a navy rounded
+	// square -- which is invisible against this rail's navy background.
+	background: url("chrome://zotero/skin/pharos-mark.svg") no-repeat center / contain;
+	-moz-context-properties: fill, stroke;
+	stroke: var(--fill-primary);
+}
+
+.pharos-rail-wordmark {
 	flex: 1;
+	font-weight: 600;
+	color: var(--fill-primary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
 }
 
 .pharos-rail-toggle {
+	width: 24px;
 	height: 24px;
+	flex: 0 0 24px;
 	border: none;
 	border-radius: 5px;
 	color: var(--fill-tertiary);
-	font: inherit;
 	cursor: default;
-	// The shorthand goes first, deliberately: written after background-image it
-	// resets it and the chevron disappears.
-	background: transparent url("chrome://zotero/skin/20/universal/chevron.svg")
+	// Shorthand first: written after background-image it resets it and the
+	// chevron disappears.
+	// The panel glyph rather than an arrow, matching the web client. A chevron
+	// reads as "scroll" here; this one says "the sidebar".
+	background: transparent url("chrome://zotero/skin/20/universal/sidebar.svg")
 		no-repeat center / 16px 16px;
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;
-	transform: rotate(180deg);
 
 	&:hover {
 		background-color: var(--fill-quinary);
@@ -147,8 +176,22 @@
 	}
 }
 
-// Points the other way when collapsed, so the chevron always indicates what a
-// click will do rather than what the current state is.
-#pharos-rail[collapsed="true"] .pharos-rail-toggle {
-	transform: none;
+// Collapsed: the mark and the wordmark go, leaving only the control that brings
+// the rail back. Losing that button is how the rail became unrecoverable once.
+#pharos-rail[rail-collapsed="true"] {
+	.pharos-rail-mark,
+	.pharos-rail-wordmark {
+		display: none;
+	}
+
+	.pharos-rail-brand {
+		justify-content: center;
+		padding-inline-start: 0;
+	}
+
+	// Mirrored when collapsed, so the glyph always shows which side the panel
+	// will appear on rather than where it is now.
+	.pharos-rail-toggle {
+		transform: scaleX(-1);
+	}
 }
