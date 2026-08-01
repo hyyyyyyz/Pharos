@@ -168,3 +168,24 @@ pharos-projects-status-draft = 草稿
 pharos-projects-status-ready = 就绪
 pharos-projects-status-verified = 已验证
 pharos-projects-status-rejected = 已否决
+
+## 模块栏
+
+pharos-rail-library = 文库
+pharos-rail-library-tooltip =
+    .title = 文库
+pharos-rail-daily = 每日论文
+pharos-rail-daily-tooltip =
+    .title = 每日论文
+pharos-rail-discovery = 文献探索
+pharos-rail-discovery-tooltip =
+    .title = 文献探索
+pharos-rail-projects = 研究项目
+pharos-rail-projects-tooltip =
+    .title = 研究项目
+pharos-rail-collapse =
+    .title = 收起
+    .aria-label = 收起模块栏
+pharos-rail-expand =
+    .title = 展开
+    .aria-label = 展开模块栏

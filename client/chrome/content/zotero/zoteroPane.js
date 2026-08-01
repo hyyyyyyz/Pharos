@@ -6260,44 +6260,32 @@ var ZoteroPane = new function () {
 	/** Open literature discovery. Same reasoning as the digest window. */
 	/** Open research projects. Same reasoning as the other two windows. */
 	this.openPharosProjects = function () {
-		let existing = Services.wm.getMostRecentWindow('pharos:projects');
-		if (existing) {
-			existing.focus();
-			return;
-		}
-		window.openDialog(
-			'chrome://zotero/content/pharosProjects.xhtml',
-			'pharos-projects',
-			'chrome,centerscreen,resizable,dialog=no'
-		);
+		ZoteroPane.setPharosModule('projects');
 	};
 
 
 	this.openPharosDiscovery = function () {
-		let existing = Services.wm.getMostRecentWindow('pharos:discovery');
-		if (existing) {
-			existing.focus();
-			return;
+		ZoteroPane.setPharosModule('discovery');
+	};
+
+
+	/**
+	 * Show a Pharos module in the main area.
+	 *
+	 * The rail is the primary way in, but it is out of the tab order because
+	 * Zotero manages Tab within its own pane -- so the Tools menu is what makes
+	 * these reachable from the keyboard. Both drive the same rail.
+	 */
+	this.setPharosModule = function (module) {
+		let rail = document.getElementById('pharos-rail');
+		if (rail) {
+			rail.module = module;
 		}
-		window.openDialog(
-			'chrome://zotero/content/pharosDiscovery.xhtml',
-			'pharos-discovery',
-			'chrome,centerscreen,resizable,dialog=no'
-		);
 	};
 
 
 	this.openPharosDaily = function () {
-		let existing = Services.wm.getMostRecentWindow('pharos:daily');
-		if (existing) {
-			existing.focus();
-			return;
-		}
-		window.openDialog(
-			'chrome://zotero/content/pharosDaily.xhtml',
-			'pharos-daily',
-			'chrome,centerscreen,resizable,dialog=no'
-		);
+		ZoteroPane.setPharosModule('daily');
 	};
 
 

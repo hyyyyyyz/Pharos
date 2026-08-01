@@ -1,0 +1,154 @@
+// The module rail.
+//
+// Widths and spacing are taken from the web client's Rail.css so the two
+// products read as one: 178px expanded, 44px collapsed.
+
+#pharos-rail {
+	display: flex;
+	width: 178px;
+	min-width: 44px;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-border);
+	overflow: hidden;
+	transition: width 0.16s ease;
+
+	&[collapsed="true"] {
+		// !important because the splitter writes an inline width, which would
+		// otherwise win over the collapsed state.
+		width: 44px !important;
+		min-width: 44px;
+
+		.pharos-rail-label {
+			display: none;
+		}
+
+		.pharos-rail-item {
+			justify-content: center;
+			padding-inline: 0;
+		}
+	}
+}
+
+.pharos-rail-inner {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	gap: 2px;
+	padding: 9px 8px 8px;
+	min-width: 0;
+}
+
+#pharos-rail[collapsed="true"] .pharos-rail-inner {
+	padding: 9px 0 8px;
+}
+
+.pharos-rail-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.pharos-rail-item {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 0 0 0 4px;
+	height: 30px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-secondary);
+	font: inherit;
+	text-align: start;
+	cursor: default;
+	min-width: 0;
+
+	&:hover {
+		background: var(--fill-quinary);
+	}
+
+	&.is-active {
+		background: var(--color-quarternary-on-sidepane);
+		color: var(--fill-primary);
+		font-weight: 600;
+	}
+
+	&:focus-visible {
+		outline: var(--width-focus-border) solid var(--color-focus-border);
+		outline-offset: -1px;
+	}
+}
+
+.pharos-rail-icon {
+	width: 20px;
+	height: 20px;
+	flex: 0 0 20px;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 20px 20px;
+	// Without this the SVG paints its own colours and ignores fill/stroke; it is
+	// how every other icon in Zotero follows the theme.
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+
+	// Reuses the item-pane icon set rather than adding a second one. The Pharos
+	// modules borrow the closest existing glyph; only the chat bubble is ours.
+	&.icon-library {
+		background-image: url("chrome://zotero/skin/itempane/20/libraries-collections.svg");
+	}
+
+	&.icon-daily {
+		background-image: url("chrome://zotero/skin/itempane/20/abstract.svg");
+	}
+
+	&.icon-discovery {
+		background-image: url("chrome://zotero/skin/20/universal/magnifier.svg");
+	}
+
+	&.icon-projects {
+		background-image: url("chrome://zotero/skin/itempane/20/notes.svg");
+	}
+}
+
+.pharos-rail-label {
+	// The rail is resizable, so a long label has to lose gracefully rather than
+	// widen the column or wrap into two lines.
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.pharos-rail-spacer {
+	flex: 1;
+}
+
+.pharos-rail-toggle {
+	height: 24px;
+	border: none;
+	border-radius: 5px;
+	color: var(--fill-tertiary);
+	font: inherit;
+	cursor: default;
+	// The shorthand goes first, deliberately: written after background-image it
+	// resets it and the chevron disappears.
+	background: transparent url("chrome://zotero/skin/20/universal/chevron.svg")
+		no-repeat center / 16px 16px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+	transform: rotate(180deg);
+
+	&:hover {
+		background-color: var(--fill-quinary);
+		color: var(--fill-secondary);
+	}
+}
+
+// Points the other way when collapsed, so the chevron always indicates what a
+// click will do rather than what the current state is.
+#pharos-rail[collapsed="true"] .pharos-rail-toggle {
+	transform: none;
+}

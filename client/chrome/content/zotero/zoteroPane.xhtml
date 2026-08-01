@@ -1112,6 +1112,10 @@
 	</popupset>
 	
 	<hbox flex="1" id="browser">
+		<!-- Pharos: outside tabs-deck so it stays visible on a reader tab, and
+		     left of everything, matching the web client. -->
+		<pharos-rail id="pharos-rail" zotero-persist="collapsed"/>
+		<splitter id="pharos-rail-splitter" resizebefore="closest" resizeafter="closest" tabindex="-1"/>
 		<vbox id="appcontent" flex="1">
 			<stack id="zotero-pane-stack" flex="1">
 				<!-- A placeholder to persist pdf-reader sidebar collapse state to avoid introducing another pref -->
@@ -1221,193 +1225,211 @@
 								</html:div>
 							</vbox>
 							
-							<hbox id="zotero-trees" flex="1">
-								<vbox id="zotero-collections-pane" zotero-persist="width">
-									<toolbar id="zotero-toolbar-collection-tree" tabindex="-1" class="zotero-toolbar toolbar toolbar-primary">
-										<hbox id="zotero-collections-toolbar" align="center">
-											<toolbarbutton id="zotero-tb-collection-add" tabindex="-1" class="zotero-tb-button" data-l10n-id="toolbar-new-collection" command="cmd_zotero_newCollection"/>
-											<spacer flex="1"></spacer>
-											<html:div style="display: flex;flex-direction: row; flex-grow: 0; flex-shrink: 1; min-width: 0;">
-												<toolbarbutton id="zotero-tb-collections-search" data-l10n-id="zotero-collections-search-btn" tabindex="-1" class="zotero-tb-button"/>
-												<search-textbox
-													id="zotero-collections-search" class="hidden" disabled="true"
-													data-l10n-id="zotero-collections-search"
-													data-l10n-attrs="placeholder"
-													oncommand="ZoteroPane.handleCollectionSearchInput()"/>
-											</html:div>
-										</hbox>									
-									</toolbar>
-									<!-- This is used for positioning the sync error icon panel
-											under specific tree cells, which don't exist as
-											elements on their own -->
-									<box id="zotero-collections-tree-shim"/>
-									<!-- This extra vbox prevents the toolbar from getting compressed when resizing
-											the tag selector to max height -->
-									<vbox id="zotero-collections-tree-container" class="virtualized-table-container" flex="1" clickthrough="never">
-										<html:div id="zotero-collections-tree"></html:div>
-									</vbox>
-									<splitter
-										id="zotero-tags-splitter"
-										orient="vertical"
-										collapse="after"
-										zotero-persist="state"
-										onmousemove="if (this.getAttribute('state') == 'dragging') { ZoteroPane.handleTagSelectorResize(); }"
-									>
-										<grippy oncommand="ZoteroPane.toggleTagSelector()"/>
-									</splitter>
-									<!-- 'collapsed' is no longer necessary here due to the persisted 'state' on
-										 zotero-tags-splitter, but without this an old-style entry for 'collapsed'
-										 in localstore.rdf can cause the pane to always be closed on Zotero open.
-										 
-										 TODO: deal with this some other way?
-									-->
-									<vbox id="zotero-tag-selector-container" zotero-persist="height,collapsed" clickthrough="never">
-										<html:div id="zotero-tag-selector" label="&tagSelector.label;"/>
-									</vbox>
-								</vbox>
-								
-								<splitter id="zotero-collections-splitter" resizebefore="closest" resizeafter="closest" collapse="before"
-									zotero-persist="state"
-									onmousemove="document.getElementById('zotero-items-toolbar').setAttribute('state', this.getAttribute('state'));ZoteroPane_Local.updateLayoutConstraints();"
-									oncommand="ZoteroPane_Local.updateLayoutConstraints()">
-									<grippy id="zotero-collections-grippy"/>
-								</splitter>
-								
-								<box id="zotero-layout-switcher" orient="horizontal" zotero-persist="orient">
-									<vbox id="zotero-items-pane-container">
-										<toolbar id="zotero-toolbar-item-tree" tabindex="-1" class="zotero-toolbar toolbar toolbar-primary">
-											<hbox id="zotero-items-toolbar" align="center" flex="1">
-												<toolbarbutton
-														id="zotero-tb-add"
-														class="zotero-tb-button"
-														tabindex="-1"
-														tooltiptext="&zotero.toolbar.newItem.label;"
-														type="menu"
-														wantdropmarker="true"
-														onmousedown="if (this.disabled) { event.preventDefault(); return; }">
-													<menupopup onpopupshowing="ZoteroPane_Local.updateNewItemTypes()"></menupopup>
-												</toolbarbutton>
-												
-												<toolbarbutton
-													id="zotero-tb-lookup"
-													tabindex="-1"
-													class="zotero-tb-button"
-													tooltiptext="&zotero.toolbar.lookup.label;"
-													type="panel"
-													onmousedown="Zotero_Lookup.handleToolbarButtonMouseDown(event)"
-												/>
-												
-												<panel id="zotero-lookup-panel" type="arrow" animate="false"
-														noautohide="true"
-														onpopupshown="Zotero_Lookup.onShown(event)"
-														onpopuphidden="Zotero_Lookup.onHidden(event)"
-														onfocusout="Zotero_Lookup.onFocusOut(event)"
-												>
-													<vbox>
-														<label control="zotero-lookup-textbox">&zotero.lookup.description;</label>
-														<vbox id="zotero-lookup-multiline">
-															<html:textarea
-																id="zotero-lookup-textbox"
-																onkeypress="Zotero_Lookup.onKeyPress(event, this)"
-																oninput="Zotero_Lookup.onInput(event, this)"
-																oncontextmenu="Zotero_Lookup.onContextMenu(event, this)"
-																rows="1"
-																wrap="off"/>
-															<hbox id="zotero-lookup-buttons" align="start" hidden="true">
-																<button
-																	align="start"
-																	oncommand="Zotero_Lookup.accept(document.getElementById('zotero-lookup-textbox'))"
-																	label="&zotero.lookup.button.search;"/>
-																<html:progress id="zotero-lookup-multiline-progress" value="0" hidden="true" style="flex: 1"/>
-															</hbox>
-														</vbox>
-													</vbox>
-												</panel>
-												
-												<toolbarbutton
-														id="zotero-tb-attachment-add"
-														class="zotero-tb-button"
-														tabindex="-1"
-														data-l10n-id="toolbar-add-attachment"
-														type="menu"
-														wantdropmarker="true">
-													<menupopup onpopupshowing="ZoteroPane.updateAddAttachmentMenu(event, this)">
-														<menuitem
-															data-l10n-id="menu-add-standalone-file-attachment"
-															command="cmd_zotero_newStandaloneFileAttachment"
-														/>
-														<menuitem
-															data-l10n-id="menu-add-standalone-linked-file-attachment"
-															command="cmd_zotero_newStandaloneLinkedFileAttachment"
-														/>
-														<menuseparator/>
-														<menuitem
-															data-l10n-id="menu-add-child-file-attachment"
-															command="cmd_zotero_newChildFileAttachment"
-														/>
-														<menuitem
-															data-l10n-id="menu-add-child-linked-file-attachment"
-															command="cmd_zotero_newChildLinkedFileAttachment"
-															id="zotero-tb-attachment-add-file-link"
-														/>
-														<menuitem
-															data-l10n-id="menu-add-child-linked-url-attachment"
-															command="cmd_zotero_newChildURLAttachment"
-														/>
-													</menupopup>
-												</toolbarbutton>
-												<toolbarbutton
-														id="zotero-tb-note-add" class="zotero-tb-button" tooltiptext="&zotero.toolbar.newNote;"
-														type="menu"
-														tabindex="-1"
-														wantdropmarker="true">
-													<menupopup onpopupshowing="ZoteroPane.updateNewNoteMenu(event, this)">
-														<menuitem
-															data-l10n-id="menu-new-standalone-note"
-															command="cmd_zotero_newStandaloneNote"
-														/>
-														<menuitem
-															data-l10n-id="menu-new-item-note"
-															command="cmd_zotero_newChildNote"
-														/>
-													</menupopup>
-												</toolbarbutton>
-												
-												<spacer flex="1"/>
-												<image id="zotero-tb-search-spinner" class="zotero-spinner-16"/>
-												<quick-search-textbox id="zotero-tb-search" timeout="250"
-														onkeydown="ZoteroPane_Local.handleSearchKeypress(this, event)"
-														oninput="ZoteroPane_Local.handleSearchInput(this, event)"
-														oncommand="ZoteroPane_Local.search()"/>
-												
-												<!-- Stacked mode only: Toggle Item Pane button -->
-												<toolbarbutton
-													id="zotero-tb-toggle-item-pane-stacked"
-													class="zotero-tb-button"
-													tabindex="-1"
-													data-l10n-id="toggle-item-pane"
-													oncommand="ZoteroPane.toggleItemPane()"
-												/>
-											</hbox>
-											
+							<!-- Pharos: the library view and the three Pharos modules, one visible at a
+							     time. Wrapping the existing #zotero-trees rather than modifying it is
+							     what keeps the collection tree, item tree and item pane untouched: when
+							     a Pharos module is showing, the library panel is simply not selected.
+							     A plain box with `hidden` rather than a <deck>, deliberately. A deck
+							     here nests inside #tabs-deck, and code that asks "is this element
+							     visible" by comparing el.closest('deck').selectedPanel against
+							     el.closest('deck > *') then resolves both to the INNER deck and
+							     concludes a library toolbar is visible while a reader tab is showing.
+							     itemPaneTest's getVisibleToggle() does exactly that. -->
+							<box id="pharos-deck" flex="1" orient="vertical">
+								<hbox id="zotero-trees" flex="1">
+									<vbox id="zotero-collections-pane" zotero-persist="width">
+										<toolbar id="zotero-toolbar-collection-tree" tabindex="-1" class="zotero-toolbar toolbar toolbar-primary">
+											<hbox id="zotero-collections-toolbar" align="center">
+												<toolbarbutton id="zotero-tb-collection-add" tabindex="-1" class="zotero-tb-button" data-l10n-id="toolbar-new-collection" command="cmd_zotero_newCollection"/>
+												<spacer flex="1"></spacer>
+												<html:div style="display: flex;flex-direction: row; flex-grow: 0; flex-shrink: 1; min-width: 0;">
+													<toolbarbutton id="zotero-tb-collections-search" data-l10n-id="zotero-collections-search-btn" tabindex="-1" class="zotero-tb-button"/>
+													<search-textbox
+														id="zotero-collections-search" class="hidden" disabled="true"
+														data-l10n-id="zotero-collections-search"
+														data-l10n-attrs="placeholder"
+														oncommand="ZoteroPane.handleCollectionSearchInput()"/>
+												</html:div>
+											</hbox>									
 										</toolbar>
-										<advanced-search-deck id="zotero-advanced-search-pane-deck"/>
-										<hbox id="zotero-items-pane" class="virtualized-table-container" flex="1" clickthrough="never">
-											<html:div id="zotero-items-tree"></html:div>
-										</hbox>
+										<!-- This is used for positioning the sync error icon panel
+												under specific tree cells, which don't exist as
+												elements on their own -->
+										<box id="zotero-collections-tree-shim"/>
+										<!-- This extra vbox prevents the toolbar from getting compressed when resizing
+												the tag selector to max height -->
+										<vbox id="zotero-collections-tree-container" class="virtualized-table-container" flex="1" clickthrough="never">
+											<html:div id="zotero-collections-tree"></html:div>
+										</vbox>
+										<splitter
+											id="zotero-tags-splitter"
+											orient="vertical"
+											collapse="after"
+											zotero-persist="state"
+											onmousemove="if (this.getAttribute('state') == 'dragging') { ZoteroPane.handleTagSelectorResize(); }"
+										>
+											<grippy oncommand="ZoteroPane.toggleTagSelector()"/>
+										</splitter>
+										<!-- 'collapsed' is no longer necessary here due to the persisted 'state' on
+											 zotero-tags-splitter, but without this an old-style entry for 'collapsed'
+											 in localstore.rdf can cause the pane to always be closed on Zotero open.
+										 
+											 TODO: deal with this some other way?
+										-->
+										<vbox id="zotero-tag-selector-container" zotero-persist="height,collapsed" clickthrough="never">
+											<html:div id="zotero-tag-selector" label="&tagSelector.label;"/>
+										</vbox>
 									</vbox>
+								
+									<splitter id="zotero-collections-splitter" resizebefore="closest" resizeafter="closest" collapse="before"
+										zotero-persist="state"
+										onmousemove="document.getElementById('zotero-items-toolbar').setAttribute('state', this.getAttribute('state'));ZoteroPane_Local.updateLayoutConstraints();"
+										oncommand="ZoteroPane_Local.updateLayoutConstraints()">
+										<grippy id="zotero-collections-grippy"/>
+									</splitter>
+								
+									<box id="zotero-layout-switcher" orient="horizontal" zotero-persist="orient">
+										<vbox id="zotero-items-pane-container">
+											<toolbar id="zotero-toolbar-item-tree" tabindex="-1" class="zotero-toolbar toolbar toolbar-primary">
+												<hbox id="zotero-items-toolbar" align="center" flex="1">
+													<toolbarbutton
+															id="zotero-tb-add"
+															class="zotero-tb-button"
+															tabindex="-1"
+															tooltiptext="&zotero.toolbar.newItem.label;"
+															type="menu"
+															wantdropmarker="true"
+															onmousedown="if (this.disabled) { event.preventDefault(); return; }">
+														<menupopup onpopupshowing="ZoteroPane_Local.updateNewItemTypes()"></menupopup>
+													</toolbarbutton>
+												
+													<toolbarbutton
+														id="zotero-tb-lookup"
+														tabindex="-1"
+														class="zotero-tb-button"
+														tooltiptext="&zotero.toolbar.lookup.label;"
+														type="panel"
+														onmousedown="Zotero_Lookup.handleToolbarButtonMouseDown(event)"
+													/>
+												
+													<panel id="zotero-lookup-panel" type="arrow" animate="false"
+															noautohide="true"
+															onpopupshown="Zotero_Lookup.onShown(event)"
+															onpopuphidden="Zotero_Lookup.onHidden(event)"
+															onfocusout="Zotero_Lookup.onFocusOut(event)"
+													>
+														<vbox>
+															<label control="zotero-lookup-textbox">&zotero.lookup.description;</label>
+															<vbox id="zotero-lookup-multiline">
+																<html:textarea
+																	id="zotero-lookup-textbox"
+																	onkeypress="Zotero_Lookup.onKeyPress(event, this)"
+																	oninput="Zotero_Lookup.onInput(event, this)"
+																	oncontextmenu="Zotero_Lookup.onContextMenu(event, this)"
+																	rows="1"
+																	wrap="off"/>
+																<hbox id="zotero-lookup-buttons" align="start" hidden="true">
+																	<button
+																		align="start"
+																		oncommand="Zotero_Lookup.accept(document.getElementById('zotero-lookup-textbox'))"
+																		label="&zotero.lookup.button.search;"/>
+																	<html:progress id="zotero-lookup-multiline-progress" value="0" hidden="true" style="flex: 1"/>
+																</hbox>
+															</vbox>
+														</vbox>
+													</panel>
+												
+													<toolbarbutton
+															id="zotero-tb-attachment-add"
+															class="zotero-tb-button"
+															tabindex="-1"
+															data-l10n-id="toolbar-add-attachment"
+															type="menu"
+															wantdropmarker="true">
+														<menupopup onpopupshowing="ZoteroPane.updateAddAttachmentMenu(event, this)">
+															<menuitem
+																data-l10n-id="menu-add-standalone-file-attachment"
+																command="cmd_zotero_newStandaloneFileAttachment"
+															/>
+															<menuitem
+																data-l10n-id="menu-add-standalone-linked-file-attachment"
+																command="cmd_zotero_newStandaloneLinkedFileAttachment"
+															/>
+															<menuseparator/>
+															<menuitem
+																data-l10n-id="menu-add-child-file-attachment"
+																command="cmd_zotero_newChildFileAttachment"
+															/>
+															<menuitem
+																data-l10n-id="menu-add-child-linked-file-attachment"
+																command="cmd_zotero_newChildLinkedFileAttachment"
+																id="zotero-tb-attachment-add-file-link"
+															/>
+															<menuitem
+																data-l10n-id="menu-add-child-linked-url-attachment"
+																command="cmd_zotero_newChildURLAttachment"
+															/>
+														</menupopup>
+													</toolbarbutton>
+													<toolbarbutton
+															id="zotero-tb-note-add" class="zotero-tb-button" tooltiptext="&zotero.toolbar.newNote;"
+															type="menu"
+															tabindex="-1"
+															wantdropmarker="true">
+														<menupopup onpopupshowing="ZoteroPane.updateNewNoteMenu(event, this)">
+															<menuitem
+																data-l10n-id="menu-new-standalone-note"
+																command="cmd_zotero_newStandaloneNote"
+															/>
+															<menuitem
+																data-l10n-id="menu-new-item-note"
+																command="cmd_zotero_newChildNote"
+															/>
+														</menupopup>
+													</toolbarbutton>
+												
+													<spacer flex="1"/>
+													<image id="zotero-tb-search-spinner" class="zotero-spinner-16"/>
+													<quick-search-textbox id="zotero-tb-search" timeout="250"
+															onkeydown="ZoteroPane_Local.handleSearchKeypress(this, event)"
+															oninput="ZoteroPane_Local.handleSearchInput(this, event)"
+															oncommand="ZoteroPane_Local.search()"/>
+												
+													<!-- Stacked mode only: Toggle Item Pane button -->
+													<toolbarbutton
+														id="zotero-tb-toggle-item-pane-stacked"
+														class="zotero-tb-button"
+														tabindex="-1"
+														data-l10n-id="toggle-item-pane"
+														oncommand="ZoteroPane.toggleItemPane()"
+													/>
+												</hbox>
+											
+											</toolbar>
+											<advanced-search-deck id="zotero-advanced-search-pane-deck"/>
+											<hbox id="zotero-items-pane" class="virtualized-table-container" flex="1" clickthrough="never">
+												<html:div id="zotero-items-tree"></html:div>
+											</hbox>
+										</vbox>
 									
 				
-									<splitter id="zotero-items-splitter" resizebefore="closest" resizeafter="closest" collapse="after" orient="horizontal" zotero-persist="state orient"
-										onmousemove="ZoteroPane.updateLayoutConstraints()"
-										oncommand="ZoteroPane.updateLayoutConstraints()">
-										<grippy id="zotero-items-grippy"/>
-									</splitter>
+										<splitter id="zotero-items-splitter" resizebefore="closest" resizeafter="closest" collapse="after" orient="horizontal" zotero-persist="state orient"
+											onmousemove="ZoteroPane.updateLayoutConstraints()"
+											oncommand="ZoteroPane.updateLayoutConstraints()">
+											<grippy id="zotero-items-grippy"/>
+										</splitter>
 				
-									<!-- itemPane.xul -->
-									<item-pane id="zotero-item-pane" zotero-persist="width height"/>
-								</box>
-							</hbox>
+										<!-- itemPane.xul -->
+										<item-pane id="zotero-item-pane" zotero-persist="width height"/>
+									</box>
+								</hbox>
+								<!-- src is set on first activation, not here. Each view queries the
+								     backend as it loads, and three panels with a src would fire three
+								     requests at every start for modules that may never be opened. -->
+								<browser id="pharos-view-daily" type="chrome" flex="1" disablehistory="true" hidden="true"/>
+								<browser id="pharos-view-discovery" type="chrome" flex="1" disablehistory="true" hidden="true"/>
+								<browser id="pharos-view-projects" type="chrome" flex="1" disablehistory="true" hidden="true"/>
+							</box>
 						</tab-content>
 					</deck>
 		

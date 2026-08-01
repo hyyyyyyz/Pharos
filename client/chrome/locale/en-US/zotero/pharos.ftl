@@ -168,3 +168,24 @@ pharos-projects-status-draft = Draft
 pharos-projects-status-ready = Ready
 pharos-projects-status-verified = Verified
 pharos-projects-status-rejected = Rejected
+
+## Module rail
+
+pharos-rail-library = Library
+pharos-rail-library-tooltip =
+    .title = Library
+pharos-rail-daily = Daily Papers
+pharos-rail-daily-tooltip =
+    .title = Daily Papers
+pharos-rail-discovery = Find Literature
+pharos-rail-discovery-tooltip =
+    .title = Find Literature
+pharos-rail-projects = Research Projects
+pharos-rail-projects-tooltip =
+    .title = Research Projects
+pharos-rail-collapse =
+    .title = Collapse
+    .aria-label = Collapse the module rail
+pharos-rail-expand =
+    .title = Expand
+    .aria-label = Expand the module rail

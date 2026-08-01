@@ -273,3 +273,6 @@ pref("extensions.zotero.pharos.baseURL", "https://pharos.selab.top");
 // token itself is NOT here -- it lives in the login manager, encrypted through
 // OSKeyStore, the same way Zotero stores its own Web API key.
 pref("extensions.zotero.pharos.accountEmail", "");
+
+// Whether the module rail is collapsed to icons only.
+pref("extensions.zotero.pharos.rail.collapsed", false);
