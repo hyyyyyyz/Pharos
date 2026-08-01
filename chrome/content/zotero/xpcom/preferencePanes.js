@@ -82,6 +82,17 @@ Zotero.PreferencePanes = {
 			helpURL: 'https://www.zotero.org/support/preferences/advanced',
 		},
 		{
+			// Pharos's own account, separate from the Zotero one above: the two
+			// are different services, and linking a Zotero Web API account is
+			// optional rather than a prerequisite.
+			id: 'zotero-prefpane-pharos',
+			label: 'pharos-prefs-pane',
+			image: 'chrome://zotero/skin/20/universal/account.svg',
+			src: 'chrome://zotero/content/preferences/preferences_pharos.xhtml',
+			scripts: ['chrome://zotero/content/preferences/preferences_pharos.js'],
+			defaultXUL: true,
+		},
+		{
 			id: 'zotero-subpane-reset-sync',
 			parent: 'zotero-prefpane-account',
 			label: 'zotero.preferences.subpane.resetSync',

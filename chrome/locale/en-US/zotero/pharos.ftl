@@ -31,3 +31,26 @@ pharos-translate-error-timeout = Translation timed out
 pharos-translate-error-cancelled = Cancelled
 pharos-translate-error-no-output = The translation produced no file in this format
 pharos-translate-error-disabled = Whole-document translation is switched off for this account
+
+## Preferences
+
+pharos-prefs-pane = Pharos
+
+pharos-prefs-account-header = Pharos Account
+pharos-prefs-account-intro = Sign in to translate documents, chat about a paper, and receive the daily arXiv digest.
+pharos-prefs-email = Email
+pharos-prefs-password = Password
+pharos-prefs-sign-in = Sign In
+pharos-prefs-signing-in = Signing in…
+pharos-prefs-error-incomplete = Enter your email and password.
+pharos-prefs-error-sign-in = Could not sign in.
+
+pharos-prefs-signed-in-as = Signed in as
+pharos-prefs-sign-out = Sign Out
+pharos-prefs-sign-out-all = Sign Out Everywhere
+pharos-prefs-sign-out-all-confirm = This signs out every device where you are signed in to Pharos. Continue?
+pharos-prefs-sign-out-all-help = Signing out everywhere revokes every token this account has ever been issued.
+
+pharos-prefs-server-header = Server
+pharos-prefs-server-help = Pharos is open source and can be self-hosted. Point this at your own instance to use it instead. Changing it signs you out, since a token only works on the server that issued it.
+pharos-prefs-server-url = Address

@@ -31,3 +31,26 @@ pharos-translate-error-timeout = 翻译超时
 pharos-translate-error-cancelled = 已取消
 pharos-translate-error-no-output = 本次翻译没有生成该格式的文件
 pharos-translate-error-disabled = 该账号已关闭整篇翻译功能
+
+## 设置
+
+pharos-prefs-pane = Pharos
+
+pharos-prefs-account-header = Pharos 账号
+pharos-prefs-account-intro = 登录后即可使用保排版翻译、论文 AI 对话与每日论文推送。
+pharos-prefs-email = 邮箱
+pharos-prefs-password = 密码
+pharos-prefs-sign-in = 登录
+pharos-prefs-signing-in = 正在登录…
+pharos-prefs-error-incomplete = 请填写邮箱和密码。
+pharos-prefs-error-sign-in = 登录失败。
+
+pharos-prefs-signed-in-as = 已登录：
+pharos-prefs-sign-out = 退出登录
+pharos-prefs-sign-out-all = 退出所有设备
+pharos-prefs-sign-out-all-confirm = 这会让所有已登录 Pharos 的设备一并退出，是否继续？
+pharos-prefs-sign-out-all-help = 退出所有设备会吊销该账号签发过的全部令牌。
+
+pharos-prefs-server-header = 服务器
+pharos-prefs-server-help = Pharos 是开源的，可以自行部署。填入你自己的实例地址即可切换。令牌只在签发它的服务器上有效，因此更改地址会同时退出登录。
+pharos-prefs-server-url = 地址

@@ -55,6 +55,11 @@
 		<html:link rel="localization" href="branding/brand.ftl"/>
 		<html:link rel="localization" href="zotero.ftl"/>
 		<html:link rel="localization" href="preferences.ftl"/>
+		<!-- data-l10n-id in the Pharos pane resolves against this document's own
+		     resource list, not against the one Zotero.ftl uses for getString().
+		     Omitting it makes DOM localization reject and the window fail to
+		     open, with nothing pointing at the missing id. -->
+		<html:link rel="localization" href="pharos.ftl"/>
 	</linkset>
 	
 	<script>
