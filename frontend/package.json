@@ -9,16 +9,10 @@
     "build": "tsc -b && vite build",
     "build:pages": "tsc -b && vite build --mode pages",
     "preview": "vite preview",
-    "deploy": "npm run build:pages && gh-pages -d dist",
-    "build:desktop": "tsc -b && vite build --mode desktop"
+    "deploy": "npm run build:pages && gh-pages -d dist"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.16",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-deep-link": "^2.4.9",
-    "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-fs": "^2",
-    "@tauri-apps/plugin-opener": "^2.5.4",
     "pdfjs-dist": "^4.7.76",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

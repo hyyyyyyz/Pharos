@@ -44,8 +44,6 @@ import type {
   TagPatchBody,
   UserDirection,
   ZoteroLinkBody,
-  ZoteroDesktopOAuthFinishBody,
-  ZoteroDesktopOAuthStart,
   ZoteroOAuthStart,
   ZoteroStatus,
   AdminProbeResult,
@@ -57,8 +55,8 @@ import type {
 } from "./types";
 
 // Web production is same-origin, so "/api" reaches the FastAPI process that
-// also serves this bundle. Development proxies it through Vite; desktop builds
-// can still override VITE_API_BASE with their configured backend URL.
+// also serves this bundle. Development proxies it through Vite; VITE_API_BASE
+// still overrides it for a deployment that splits the two.
 const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 /**
@@ -233,16 +231,6 @@ export const api = {
     /** Create a one-use server flow, then let the browser visit authorize_url. */
     oauthStart: (): Promise<ZoteroOAuthStart> =>
       json<ZoteroOAuthStart>("/zotero/oauth/start", { method: "POST" }),
-
-    /** System-browser OAuth for Tauri; the one-use binding never enters a URL. */
-    oauthDesktopStart: (): Promise<ZoteroDesktopOAuthStart> =>
-      json<ZoteroDesktopOAuthStart>("/zotero/oauth/desktop/start", { method: "POST" }),
-
-    oauthDesktopFinish: (data: ZoteroDesktopOAuthFinishBody): Promise<ZoteroStatus> =>
-      json<ZoteroStatus>("/zotero/oauth/desktop/finish", {
-        method: "POST",
-        ...body(data),
-      }),
 
     /** Verify and store manually created credentials. Sync remains explicit. */
     link: (data: ZoteroLinkBody): Promise<ZoteroStatus> =>

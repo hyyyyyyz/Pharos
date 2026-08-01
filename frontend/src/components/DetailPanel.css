@@ -205,60 +205,6 @@
   white-space: nowrap;
 }
 
-.ph-dp-local-files {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.ph-dp-local-file {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 5px 7px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  background: var(--c-bg, #fafbfc);
-  border: 1px solid var(--c-bd, #e6e8ec);
-}
-
-.ph-dp-local-file-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.ph-dp-local-file-meta {
-  font-size: 10.5px;
-  color: var(--c-tx3, #8b93a1);
-}
-
-.ph-dp-local-file-actions {
-  grid-column: 2;
-  display: flex;
-  gap: 5px;
-}
-
-.ph-dp-local-file-actions button {
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 5px;
-  background: var(--c-sf, #fff);
-  color: var(--c-tx2, #5a616e);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-
-.ph-dp-local-file-actions button:hover:not(:disabled) {
-  border-color: var(--c-acsb, #dcdcf7);
-  color: var(--c-ac, #5b53d6);
-}
-
-.ph-dp-local-file-actions button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .ph-dp-tags {
   display: flex;
   flex-wrap: wrap;

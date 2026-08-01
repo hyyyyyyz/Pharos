@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import type { AccentKey, ThemeMode } from "./design/tokens";
-import type { AuthUser } from "./api/types";
-import type { ZoteroOAuthResult } from "./lib/zoteroOAuth";
+import type { AuthUser, ZoteroOAuthResult } from "./api/types";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "admin";
@@ -9,7 +8,7 @@ export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "adm
 export type LiveModuleKey = "library" | "daily" | "search" | "kb" | "admin";
 export type ReadMode = "zh" | "bilingual" | "original";
 export type OutlineMode = "outline" | "thumbs";
-export type SettingsTab = "account" | "ai" | "data" | "appearance" | "daily";
+export type SettingsTab = "account" | "ai" | "appearance" | "daily";
 export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
@@ -22,7 +21,7 @@ const RAIL_WIDTH_KEY = "ph-rail-width";
 /** An open tab in the 文库 module: the library itself, or one paper. */
 export type Tab =
   | { id: "library"; kind: "library" }
-  | { id: string; kind: "paper"; paperId: string; localAttachmentId?: string };
+  | { id: string; kind: "paper"; paperId: string };
 
 const ls = (key: string): string | null =>
   typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
@@ -102,7 +101,7 @@ interface UIState {
   /* ---------------------------------------------------------------- tabs */
   tabs: Tab[];
   activeTabId: string;
-  openPaper: (paperId: string, localAttachmentId?: string) => void;
+  openPaper: (paperId: string) => void;
   setTab: (id: string) => void;
   closeTab: (id: string) => void;
 
@@ -233,16 +232,12 @@ export const useUI = create<UIState>((set) => ({
 
   tabs: [{ id: "library", kind: "library" }],
   activeTabId: "library",
-  openPaper: (paperId, localAttachmentId) =>
+  openPaper: (paperId) =>
     set((s) => {
-      const tabId = localAttachmentId
-        ? `t-${paperId}-${localAttachmentId}`
-        : `t-${paperId}`;
+      const tabId = `t-${paperId}`;
       const exists = s.tabs.some((t) => t.id === tabId);
       return {
-        tabs: exists
-          ? s.tabs
-          : [...s.tabs, { id: tabId, kind: "paper", paperId, localAttachmentId }],
+        tabs: exists ? s.tabs : [...s.tabs, { id: tabId, kind: "paper", paperId }],
         activeTabId: tabId,
       };
     }),

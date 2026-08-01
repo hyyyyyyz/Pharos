@@ -1,39 +1,28 @@
-import { isTauri } from "@tauri-apps/api/core";
-import { desktopChat, desktopError } from "./desktopChat";
 import { webChat, webChatError } from "./webChat";
 
-const desktop = isTauri();
-
-/** One UI, two durable transports: local Workspace on desktop, FastAPI on web. */
-export const paperChat = desktop ? desktopChat : webChat;
+/**
+ * The one transport left.
+ *
+ * This module used to dispatch between a native desktop client and the web one.
+ * The desktop client is now built from Zotero source and does not run this
+ * bundle, so every conversation goes through the Pharos backend. Kept as a named
+ * seam rather than importing `webChat` everywhere: the panel and the settings
+ * pane speak to "the chat backend", not to a specific HTTP client.
+ */
+export const paperChat = webChat;
 
 export const paperChatAvailable = (): boolean =>
-  desktop || (typeof window !== "undefined" && typeof window.fetch === "function");
+  typeof window !== "undefined" && typeof window.fetch === "function";
 
-/** Only the native transport needs pdf.js to send the extracted text to Rust. */
-export const paperChatNeedsClientContext = (): boolean => desktop;
-
-/** Browser sandboxing prevents ~/.codex discovery and spawning `codex exec`. */
-export const paperChatNativeCodexAvailable = (): boolean => desktop;
-
-export const paperChatIsDesktop = (): boolean => desktop;
-
-export const paperChatError = (error: unknown): string =>
-  desktop ? desktopError(error) : webChatError(error);
+export const paperChatError = webChatError;
 
 export type {
   ChatEvent,
   ChatMessage,
-  CodexCapabilities,
-  CodexHandoffResult,
-  CodexSessionSummary,
   ConversationDetail,
   ConversationSummary,
-  DocumentContext,
   DocumentRef,
   PaperContextStatus,
   ProviderSaveRequest,
   ProviderStatus,
-  WorkspaceRelocateResult,
-  WorkspaceStatus,
-} from "./desktopChat";
+} from "./webChat";

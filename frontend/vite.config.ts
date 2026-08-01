@@ -1,11 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The actual product is served from https://pharos.selab.top/, so ordinary
-// production and desktop builds use the root base path. "pages" remains an
-// explicit legacy mode for anyone intentionally publishing this app under the
-// GitHub Pages /Pharos/ project path; the separate site/ project owns the real
-// marketing page.
+// The actual product is served from https://pharos.selab.top/, so an ordinary
+// production build uses the root base path. "pages" remains an explicit legacy
+// mode for anyone intentionally publishing this app under the GitHub Pages
+// /Pharos/ project path; the separate site/ project owns the real marketing
+// page.
 export default defineConfig(({ mode }) => ({
   base: mode === "pages" ? "/Pharos/" : "/",
   plugins: [react()],

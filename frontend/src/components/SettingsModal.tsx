@@ -4,16 +4,10 @@ import { Icons } from "../design/icons";
 import { ACCENTS, accentSwatch } from "../design/tokens";
 import type { ThemeMode } from "../design/tokens";
 import { api } from "../api/client";
-import type { AuthUser, ZoteroStatus } from "../api/types";
-import { zotero, zoteroAvailable } from "../lib/zotero";
-import type { ZoteroConnectionStatus, ZoteroSyncReport } from "../types/zotero";
-import {
-  desktopZoteroOAuth,
-  type ZoteroOAuthResult,
-} from "../lib/zoteroOAuth";
+import type { AuthUser, ZoteroOAuthResult, ZoteroStatus } from "../api/types";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
 import { DirectionsSettings } from "./DirectionsSettings";
-import { AiSettings, DataSettings } from "./DesktopAiSettings";
+import { AiSettings } from "./AiSettings";
 import "./SettingsModal.css";
 
 type IconComponent = (typeof Icons)["user"];
@@ -21,7 +15,6 @@ type IconComponent = (typeof Icons)["user"];
 const TABS: { key: SettingsTab; label: string; Icon: IconComponent }[] = [
   { key: "account", label: "账户", Icon: Icons.user },
   { key: "ai", label: "AI 对话", Icon: Icons.spark },
-  { key: "data", label: "数据与互通", Icon: Icons.folder },
   { key: "appearance", label: "外观", Icon: Icons.palette },
   // Last, and using the rail's own 每日论文 icon so the tab is recognisable as
   // the settings for that module rather than a third appearance-like section.
@@ -70,11 +63,6 @@ function fmtTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function fmtEpoch(ms: number | null): string {
-  if (ms === null) return "尚未同步";
-  return fmtTime(new Date(ms).toISOString());
 }
 
 /** Error text from a rejected mutation, without leaking a stack trace into the UI. */
@@ -132,13 +120,6 @@ export function SettingsModal(): JSX.Element | null {
     refetchInterval: (q) => (q.state.data?.status === "syncing" ? 1500 : false),
   });
 
-  const localZoteroQuery = useQuery({
-    queryKey: ["zotero-desktop", "status"],
-    queryFn: (): Promise<ZoteroConnectionStatus> => zotero.status(),
-    enabled: onAccount && zoteroAvailable(),
-    staleTime: 2_000,
-  });
-
   /* ------------------------------------------------------------ 显示名称 */
 
   const [editingName, setEditingName] = useState(false);
@@ -175,11 +156,6 @@ export function SettingsModal(): JSX.Element | null {
   const [manualZoteroOpen, setManualZoteroOpen] = useState(false);
   const oauthStart = useMutation({
     mutationFn: async (): Promise<void> => {
-      if (desktopZoteroOAuth.available()) {
-        const start = await api.zotero.oauthDesktopStart();
-        await desktopZoteroOAuth.start(start);
-        return;
-      }
       const start = await api.zotero.oauthStart();
       const authorize = new URL(start.authorize_url);
       if (
@@ -220,14 +196,6 @@ export function SettingsModal(): JSX.Element | null {
     // and invalidates again forever. This codebase has had that loop before.
     onSuccess: (status) => {
       qc.setQueryData(["zotero", "status"], status);
-    },
-  });
-
-  const syncLocal = useMutation({
-    mutationFn: (): Promise<ZoteroSyncReport> => zotero.refresh(false),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["zotero-desktop"] });
-      void qc.invalidateQueries({ queryKey: ["zotero-mirror"] });
     },
   });
 
@@ -322,7 +290,6 @@ export function SettingsModal(): JSX.Element | null {
 
   const me = meQuery.data;
   const zot = zoteroQuery.data;
-  const localZot = localZoteroQuery.data;
 
   /* The prototype's three branches, now driven by the server. */
   const connecting = oauthStart.isPending || link.isPending || zot?.status === "syncing";
@@ -500,105 +467,11 @@ export function SettingsModal(): JSX.Element | null {
                   <div className="ph-set-zot-title">Zotero</div>
                 </div>
 
-                {zoteroAvailable() && (
-                  <div className="ph-set-zot-channel">
-                    <div className="ph-set-zot-channel-head">
-                      <span className="ph-set-ic">
-                        <Icons.library />
-                      </span>
-                      <span>本机 Zotero</span>
-                      <span className="ph-set-zot-badge">推荐</span>
-                    </div>
-                    <div className="ph-set-zot-desc">
-                      直接读取这台 Mac 上的 Zotero 文库与 PDF，不需要 Zotero 云存储。文件默认留在本机，不会自动上传到 Pharos。
-                    </div>
+                <div className="ph-set-zot-desc">
+                  书目元数据从 Zotero 云端单向导入，只有已经上传到 Zotero 云端的附件才可能跨设备获得。本机文库与本地 PDF 由 Pharos 客户端直接读取，不经过这里。
+                </div>
 
-                    {localZoteroQuery.isPending && !localZot && (
-                      <div className="ph-set-zot-connecting">
-                        <span className="ph-set-ic ph-set-ic--spin">
-                          <Icons.sync />
-                        </span>
-                        正在检测本机 Zotero…
-                      </div>
-                    )}
-
-                    {localZoteroQuery.isError && (
-                      <div className="ph-set-err">
-                        无法读取本机 Zotero 状态：{errText(localZoteroQuery.error)}
-                      </div>
-                    )}
-
-                    {localZot && (
-                      <>
-                        <div className="ph-set-zot-card">
-                          <span
-                            className={cx(
-                              "ph-set-zot-check",
-                              localZot.phase === "error" && "ph-set-zot-check--err",
-                            )}
-                          >
-                            {localZot.phase === "error" ? <Icons.alert size={16} /> : <Icons.check />}
-                          </span>
-                          <div className="ph-set-zot-card-text">
-                            <div className="ph-set-zot-card-title">
-                              {syncLocal.isPending
-                                ? "正在同步本机 Zotero"
-                                : localZot.available
-                                  ? "本机 Zotero 已连接"
-                                  : localZot.itemCount > 0
-                                    ? "Zotero 未运行 · 使用离线缓存"
-                                    : "等待本机 Zotero"}
-                            </div>
-                            <div className="ph-set-zot-card-sub">
-                              {localZot.libraryCount} 个文库 · {localZot.itemCount} 个 Zotero 对象
-                              {localZot.lastSuccessfulSyncMs
-                                ? ` · ${fmtEpoch(localZot.lastSuccessfulSyncMs)}`
-                                : ""}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            className="ph-set-btn"
-                            onClick={() => syncLocal.mutate()}
-                            disabled={!localZot.available || localZot.syncing || syncLocal.isPending}
-                          >
-                            {syncLocal.isPending || localZot.syncing ? "同步中…" : "同步"}
-                          </button>
-                        </div>
-                        {!localZot.available && (
-                          <div className="ph-set-zot-note">
-                            请启动 Zotero，并在“设置 → 高级”中开启“允许其他应用与 Zotero 通信”。已有缓存和已导入论文不会丢失。
-                          </div>
-                        )}
-                        {localZot.lastError && (
-                          <div className="ph-set-err">{localZot.lastError}</div>
-                        )}
-                        {syncLocal.isError && (
-                          <div className="ph-set-err">{errText(syncLocal.error)}</div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div
-                  className={cx(
-                    "ph-set-zot-channel",
-                    zoteroAvailable() && "ph-set-zot-channel--cloud",
-                  )}
-                >
-                  <div className="ph-set-zot-channel-head">
-                    <span className="ph-set-ic">
-                      <Icons.cloud />
-                    </span>
-                    <span>Zotero 云端</span>
-                    {zoteroAvailable() && <span className="ph-set-zot-badge is-muted">可选</span>}
-                  </div>
-                  <div className="ph-set-zot-desc">
-                    用于网页端和跨设备同步书目元数据；只有已经上传到 Zotero 云端的附件才可能跨设备获得。
-                  </div>
-
-                  {zoteroOAuthResult && (
+                {zoteroOAuthResult && (
                   <div
                     className={cx(
                       "ph-set-zot-result",
@@ -642,9 +515,7 @@ export function SettingsModal(): JSX.Element | null {
                         <span className="ph-set-ic">
                           <Icons.open />
                         </span>
-                        {desktopZoteroOAuth.available()
-                          ? "在浏览器中授权 Zotero"
-                          : "前往 Zotero 授权"}
+                        前往 Zotero 授权
                       </button>
                     ) : (
                       <div className="ph-set-zot-unavailable" role="note">
@@ -814,7 +685,6 @@ export function SettingsModal(): JSX.Element | null {
                     )}
                   </>
                   )}
-                </div>
               </div>
             </>
           )}
@@ -871,7 +741,6 @@ export function SettingsModal(): JSX.Element | null {
           )}
 
           {settingsTab === "ai" && <AiSettings />}
-          {settingsTab === "data" && <DataSettings />}
 
           {/* Mounted only while its tab is showing, which is what keeps its two
               queries off the network the rest of the time — the same rule the

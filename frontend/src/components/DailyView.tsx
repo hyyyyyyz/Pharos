@@ -357,14 +357,6 @@ export function DailyView(): JSX.Element {
           // manifest whose vault id no longer matches the remembered one.
           setVaultNeedsRestore(true);
           setVaultMessage("目录内容已变化；自动保存暂停，等待确认恢复");
-        } else if (location.kind === "tauri" && location.managed) {
-          const archive = await api.daily.vault.export();
-          const created = await writeDailyVault(location, archive, null);
-          if (!alive) return;
-          acceptTrustedVault(location, created);
-          setVaultMessage(
-            `已启用 Pharos Workspace · ${created.days.length} 天 · ${manifestPaperCount(created)} 篇`,
-          );
         } else {
           setVaultMessage("已记住目录，但清单不存在；点击立即同步重新创建");
         }
@@ -946,7 +938,7 @@ export function DailyView(): JSX.Element {
                 <strong>{vaultLocation ? "更换目录" : "选择目录"}</strong>
                 <small>
                   {writableDailyDirectorySupported()
-                    ? "桌面客户端、Chrome 与 Edge 可持续自动保存"
+                    ? "Chrome 与 Edge 可持续自动保存"
                     : "当前浏览器不支持持续目录写入"}
                 </small>
               </button>
@@ -972,7 +964,7 @@ export function DailyView(): JSX.Element {
 
             <div className="ph-dv-vault-note">
               目录保存论文快照、中文核心解读、评分、日期与研究方向；不会保存登录密码、JWT、LLM Key、Zotero Token 或管理员信息。
-              桌面端会记住授权；网页端仅在页面打开且目录获准访问时自动写入。
+              浏览器仅在页面打开且目录获准访问时自动写入。
             </div>
 
             {vaultLocation !== null && (

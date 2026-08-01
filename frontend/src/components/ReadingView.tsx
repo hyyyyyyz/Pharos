@@ -6,21 +6,8 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import type { DocumentContext, DocumentRef } from "../lib/paperChat";
-import {
-  isLocalZoteroPaperId,
-  localZotero,
-} from "../lib/localZotero";
-import { isZoteroPdfAttachment, parseZoteroItemId, zotero } from "../lib/zotero";
-import {
-  TRANSLATE_STAGES,
-  dash,
-  isJobActive,
-  localToVM,
-  stageIndex,
-  toVM,
-  zoteroDetailToVM,
-} from "../lib/model";
+import type { DocumentRef } from "../lib/paperChat";
+import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
 import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
@@ -32,15 +19,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 4;
 const THUMB_WIDTH = 120;
-const AI_CONTEXT_MAX_CHARS = 180_000;
 /** Backend errors can be a whole stack trace; the panel shows the gist. */
 const ERROR_MAX = 200;
-
-interface LocalReadableAttachment {
-  id: string;
-  filename: string;
-  available: boolean;
-}
 
 const clampZoom = (v: number): number => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v));
 
@@ -85,37 +65,7 @@ async function flattenOutline(doc: PDFDocumentProxy): Promise<OutlineEntry[]> {
   return out;
 }
 
-const textItem = (item: unknown): string => {
-  if (item === null || typeof item !== "object" || !("str" in item)) return "";
-  const value = (item as { str?: unknown }).str;
-  return typeof value === "string" ? value : "";
-};
-
-async function extractPaperText(doc: PDFDocumentProxy): Promise<string> {
-  const pages: string[] = [];
-  let chars = 0;
-  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
-    const page = await doc.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const text = content.items.map(textItem).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-    const section = `\n\n--- 第 ${pageNumber} 页 ---\n${text}`;
-    const remaining = AI_CONTEXT_MAX_CHARS - chars;
-    if (remaining <= 0) break;
-    pages.push(section.slice(0, remaining));
-    chars += Math.min(section.length, remaining);
-    if (chars >= AI_CONTEXT_MAX_CHARS) break;
-    if (pageNumber % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  return pages.join("").trim();
-}
-
-export function ReadingView({
-  paperId,
-  initialLocalAttachmentId,
-}: {
-  paperId: string;
-  initialLocalAttachmentId?: string;
-}): JSX.Element {
+export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const qc = useQueryClient();
   const readMode = useUI((s) => s.readMode);
   const setReadMode = useUI((s) => s.setReadMode);
@@ -126,95 +76,18 @@ export function ReadingView({
   const toggleAI = useUI((s) => s.toggleAI);
   const openSettings = useUI((s) => s.openSettings);
   const pdfTx = useSession(pdfTranslationEnabled);
-  const mirrorRef = parseZoteroItemId(paperId);
-  const isLegacyLocal = isLocalZoteroPaperId(paperId);
-  const isMirrorLocal = mirrorRef !== null;
-  const isLocal = isLegacyLocal || isMirrorLocal;
 
   /* --------------------------------------------------------- the paper */
   const { data: paper } = useQuery({
     queryKey: ["paper", paperId],
     queryFn: () => api.getPaper(paperId),
-    enabled: !isLocal,
     refetchInterval: (q) =>
       isJobActive((q.state.data as Paper | undefined)?.latest_job) ? 1500 : false,
   });
-  const { data: localPaper } = useQuery({
-    queryKey: ["zotero-local", "paper", paperId],
-    queryFn: () => localZotero.get(paperId),
-    enabled: isLegacyLocal,
-  });
-  const { data: mirrorDetail } = useQuery({
-    queryKey: ["zotero-mirror", "item", mirrorRef?.sourceId, mirrorRef?.libraryId, mirrorRef?.itemKey],
-    queryFn: () => zotero.item(mirrorRef!),
-    enabled: isMirrorLocal,
-  });
-  const localAttachments = useMemo<LocalReadableAttachment[]>(() => {
-    if (isLegacyLocal) {
-      return (localPaper?.pdfAttachments ?? []).map((attachment) => ({
-        id: attachment.id,
-        filename: attachment.filename,
-        available: attachment.available,
-      }));
-    }
-    if (!isMirrorLocal) return [];
-    return (mirrorDetail?.attachments ?? [])
-      .filter(isZoteroPdfAttachment)
-      .map((attachment) => ({
-        id: attachment.publicId,
-        filename: attachment.filename ?? `Zotero PDF ${attachment.key}`,
-        available: attachment.available,
-      }));
-  }, [isLegacyLocal, isMirrorLocal, localPaper, mirrorDetail]);
-  const [localAttachmentId, setLocalAttachmentId] = useState<string | null>(
-    initialLocalAttachmentId ?? null,
-  );
-  useEffect(() => {
-    if (!isLocal || (isLegacyLocal && !localPaper) || (isMirrorLocal && !mirrorDetail)) return;
-    setLocalAttachmentId((current) => {
-      if (current && localAttachments.some((attachment) => attachment.id === current)) {
-        return current;
-      }
-      if (
-        initialLocalAttachmentId &&
-        localAttachments.some((attachment) => attachment.id === initialLocalAttachmentId)
-      ) {
-        return initialLocalAttachmentId;
-      }
-      if (isLegacyLocal && localPaper?.pdfAttachmentId) return localPaper.pdfAttachmentId;
-      if (isMirrorLocal) return null;
-      return (
-        localAttachments.find((attachment) => attachment.available)?.id ??
-        localAttachments[0]?.id ??
-        null
-      );
-    });
-  }, [initialLocalAttachmentId, isLegacyLocal, isLocal, isMirrorLocal, localAttachments, localPaper, mirrorDetail]);
-  const localAttachment = useMemo(
-    () => localAttachments.find((attachment) => attachment.id === localAttachmentId) ?? null,
-    [localAttachmentId, localAttachments],
-  );
-  const vm = useMemo(
-    () =>
-      isLegacyLocal
-        ? localPaper
-          ? localToVM(localPaper)
-          : null
-        : isMirrorLocal
-          ? mirrorDetail
-            ? zoteroDetailToVM(mirrorDetail)
-            : null
-          : paper
-            ? toVM(paper)
-            : null,
-    [isLegacyLocal, isMirrorLocal, localPaper, mirrorDetail, paper],
-  );
+  const vm = useMemo(() => (paper ? toVM(paper) : null), [paper]);
 
   const translate = useMutation({
-    mutationFn: () => {
-      if (isLocal) throw new Error("请先把本地 PDF 导入 Pharos，再发起翻译。");
-      return api.translate(paperId);
-    },
+    mutationFn: () => api.translate(paperId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["paper", paperId] });
@@ -252,18 +125,16 @@ export function ReadingView({
    * shows work already paid for and sitting on disk — hiding that would be
    * taking something away, which is not what "don't translate my PDFs" asks for.
    */
-  const effMode: ReadMode = isLocal ? "original" : pdfTx || isTranslated ? readMode : "original";
+  const effMode: ReadMode = pdfTx || isTranslated ? readMode : "original";
 
   /* The 中文/中英/原文 group. Off + untranslated leaves 原文 as the only member,
      and a one-button segmented control is noise pretending to be a choice — so
      the group goes entirely, per "the apparatus must genuinely disappear". */
-  const showModes = !isLocal && (pdfTx || isTranslated);
+  const showModes = pdfTx || isTranslated;
 
   // 原文 always wins: it is the only path to the source PDF before/after a
   // failed translation.
-  const showPdf = isLocal
-    ? localAttachment?.available === true
-    : effMode === "original" || isTranslated;
+  const showPdf = effMode === "original" || isTranslated;
 
   /* Which PDF to show, as a plain string. Deliberately NOT the PdfSource object:
      this memo recomputes whenever `vm.job` gets a new identity (every /papers
@@ -272,42 +143,27 @@ export function ReadingView({
      equal, so the reload only happens when the file actually changes. */
   const pdfKind = useMemo<PdfKind | null>(() => {
     if (!showPdf) return null;
-    if (isLocal) return "original";
     let kind: PdfKind = effMode === "zh" ? "mono" : effMode === "bilingual" ? "dual" : "original";
     // The backend may produce a mono-only result; don't request a 404.
     if (kind === "dual" && vm?.job && !vm.job.has_dual) kind = "mono";
     return kind;
-  }, [showPdf, isLocal, effMode, vm?.job]);
-
-  const localPdfQuery = useQuery({
-    queryKey: ["zotero-local", isMirrorLocal ? "mirror-pdf" : "legacy-pdf", localAttachment?.id],
-    queryFn: () =>
-      isMirrorLocal
-        ? zotero.attachmentSource(localAttachment!.id)
-        : localZotero.pdfSource(localAttachment!.id),
-    enabled: isLocal && localAttachment?.available === true,
-  });
-  const localPdfUrl = localPdfQuery.data?.url ?? null;
+  }, [showPdf, effMode, vm?.job]);
 
   /* -------------------------------------------------------- the pdf.js doc */
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
-  const effectiveDocError =
-    docError ?? (localPdfQuery.isError ? errMsg(localPdfQuery.error) : null);
 
   useEffect(() => {
     setDoc(null);
     setDocError(null);
-    if (!pdfKind || (isLocal && !localPdfUrl)) return;
+    if (!pdfKind) return;
     let cancelled = false;
     // pdfSource(), not pdfUrl(): /papers/{id}/pdf/{kind} requires a bearer token
     // like every other endpoint, and a bare URL cannot carry one. pdf.js issues
     // the requests itself, so httpHeaders rides along on the initial fetch and
     // on every range request. Built here rather than in the memo so the token
     // read is as late as possible.
-    const task = pdfjs.getDocument(
-      isLocal ? { url: localPdfUrl!, httpHeaders: {} } : api.pdfSource(paperId, pdfKind),
-    );
+    const task = pdfjs.getDocument(api.pdfSource(paperId, pdfKind));
     task.promise.then(
       (d) => {
         if (cancelled) return;
@@ -322,7 +178,7 @@ export function ReadingView({
       // Destroying the loading task destroys the document it produced.
       void task.destroy().catch(() => undefined);
     };
-  }, [pdfKind, paperId, isLocal, localPdfUrl]);
+  }, [pdfKind, paperId]);
 
   /* ------------------------------------------------------------ zoom / fit */
   const [zoom, setZoom] = useState(1);
@@ -428,7 +284,7 @@ export function ReadingView({
 
   /* ------------------------------------------------------------------ view */
   const pageCount = doc?.numPages ?? vm?.pages ?? 0;
-  const displayFilename = isLocal ? (localAttachment?.filename ?? vm?.file ?? "") : (vm?.file ?? "");
+  const displayFilename = vm?.file ?? "";
   const jobError = (vm?.job?.error ?? "").trim();
   const failMessage = jobError
     ? jobError.length > ERROR_MAX
@@ -442,74 +298,15 @@ export function ReadingView({
     { key: "original", label: "原文" },
   ];
   const stage = stageIndex(vm?.job ?? null);
-  const documentRef = useMemo<DocumentRef>(() => {
-    const title = vm?.title?.trim() || displayFilename || "未命名论文";
-    if (isMirrorLocal && mirrorRef) {
-      return {
-        key: [
-          "zotero",
-          mirrorRef.sourceId,
-          mirrorRef.libraryId,
-          mirrorRef.itemKey,
-          localAttachmentId ?? "entry",
-        ].map(encodeURIComponent).join(":"),
-        kind: "zotero",
-        title,
-        sourceId: mirrorRef.sourceId,
-        libraryId: mirrorRef.libraryId,
-        itemKey: mirrorRef.itemKey,
-        attachmentId: localAttachmentId,
-      };
-    }
-    if (isLegacyLocal) {
-      return {
-        key: ["zotero-local", paperId, localAttachmentId ?? "entry"].map(encodeURIComponent).join(":"),
-        kind: "zotero",
-        title,
-        libraryId: localPaper?.libraryId ?? null,
-        itemKey: localPaper?.itemKey ?? null,
-        attachmentId: localAttachmentId,
-      };
-    }
-    return {
+  const documentRef = useMemo<DocumentRef>(
+    () => ({
       key: `paper:${encodeURIComponent(paperId)}`,
       kind: "paper",
-      title,
+      title: vm?.title?.trim() || displayFilename || "未命名论文",
       paperId,
-    };
-  }, [
-    displayFilename,
-    isLegacyLocal,
-    isMirrorLocal,
-    localAttachmentId,
-    localPaper?.itemKey,
-    localPaper?.libraryId,
-    mirrorRef,
-    paperId,
-    vm?.title,
-  ]);
-
-  const getAiContext = useCallback(async (): Promise<DocumentContext> => {
-    let contextDoc = doc;
-    let ownTask: ReturnType<typeof pdfjs.getDocument> | null = null;
-    if (!isLocal && (!contextDoc || pdfKind !== "original")) {
-      ownTask = pdfjs.getDocument(api.pdfSource(paperId, "original"));
-      contextDoc = await ownTask.promise;
-    }
-    if (!contextDoc) throw new Error("PDF 尚未加载完成，暂时无法建立 AI 对话上下文。");
-    try {
-      return {
-        title: vm?.title ?? displayFilename,
-        authors: vm?.authors.join(", ") ?? "",
-        abstractText: vm?.abstract ?? "",
-        fullText: await extractPaperText(contextDoc),
-        currentPage,
-        pageCount: contextDoc.numPages,
-      };
-    } finally {
-      if (ownTask) await ownTask.destroy().catch(() => undefined);
-    }
-  }, [currentPage, displayFilename, doc, isLocal, paperId, pdfKind, vm?.abstract, vm?.authors, vm?.title]);
+    }),
+    [displayFilename, paperId, vm?.title],
+  );
 
   return (
     <div className="ph-rv">
@@ -531,22 +328,6 @@ export function ReadingView({
             </button>
           )}
           <div className="ph-rv-file" title={displayFilename}>{displayFilename}</div>
-          {isLocal && localAttachments.length > 1 && (
-            <label className="ph-rv-local-attachment">
-              <span>附件</span>
-              <select
-                value={localAttachmentId ?? ""}
-                onChange={(event) => setLocalAttachmentId(event.target.value)}
-                aria-label="选择本地 Zotero PDF"
-              >
-                {localAttachments.map((attachment) => (
-                  <option key={attachment.id} value={attachment.id}>
-                    {attachment.filename}{attachment.available ? "" : "（未下载）"}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           <div className="ph-rv-spacer" />
           {showModes && (
             <div className="ph-rv-seg">
@@ -606,15 +387,15 @@ export function ReadingView({
                 <div className="ph-rv-spacer" />
                 <span className="ph-rv-hint">Ctrl+滚轮缩放 · 拖动平移</span>
               </div>
-              {effectiveDocError ? (
-                <div className="ph-rv-pdf-msg is-err">加载失败：{effectiveDocError}</div>
+              {docError ? (
+                <div className="ph-rv-pdf-msg is-err">加载失败：{docError}</div>
               ) : (
                 <PdfCanvas
                   doc={doc}
                   paperId={paperId}
                   /* Highlights are stored per rendition: a mark drawn on the
                      bilingual PDF has no meaning on the original's page 3. */
-                  kind={isLocal ? null : pdfKind}
+                  kind={pdfKind}
                   zoom={zoom}
                   onZoom={handleZoom}
                   onFitScale={handleFitScale}
@@ -623,26 +404,6 @@ export function ReadingView({
                   onCurrentPage={onCurrentPage}
                 />
               )}
-            </div>
-          ) : isLocal ? (
-            <div className="ph-rv-state ph-scroll">
-              <div className="ph-rv-failed">
-                <div className="ph-rv-err-icon">
-                  <Icons.file />
-                </div>
-                <div className="ph-rv-err-title">本地 PDF 暂不可用</div>
-                <div className="ph-rv-err-msg">
-                  {localPdfQuery.isError
-                    ? String(localPdfQuery.error)
-                    : localAttachment
-                      ? `“${localAttachment.filename}”尚未下载到这台 Mac。请在 Zotero 中下载或打开附件，然后返回文库重新同步。缓存中的书目信息不会被删除。`
-                      : isMirrorLocal && initialLocalAttachmentId
-                        ? "所选 PDF 附件已移动或删除。请返回文库重新同步，再从条目下选择具体附件。"
-                        : isMirrorLocal && localAttachments.length > 0
-                          ? "请返回文库，展开 Zotero 条目并双击具体 PDF 附件。"
-                          : "这个 Zotero 条目没有 PDF 附件。书目信息仍会保留在本地文库中。"}
-                </div>
-              </div>
             </div>
           ) : status === "translating" ? (
             <div className="ph-rv-state ph-scroll">
@@ -741,8 +502,6 @@ export function ReadingView({
         <AiPanel
           documentRef={documentRef}
           documentTitle={documentRef.title}
-          contextReady={!isLocal || Boolean(doc)}
-          getContext={getAiContext}
           onOpenSettings={() => openSettings("ai")}
         />
       )}

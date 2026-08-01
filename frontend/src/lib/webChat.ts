@@ -1,21 +1,80 @@
 import { clearSession, getToken } from "../auth/session";
-import type {
-  ChatEvent,
-  CodexCapabilities,
-  CodexHandoffResult,
-  CodexSessionSummary,
-  ConversationDetail,
-  ConversationSummary,
-  DocumentContext,
-  DocumentRef,
-  PaperContextStatus,
-  ProviderSaveRequest,
-  ProviderStatus,
-  WorkspaceRelocateResult,
-  WorkspaceStatus,
-} from "./desktopChat";
 
-type PaperChatClient = typeof import("./desktopChat").desktopChat;
+/**
+ * The document a conversation is about.
+ *
+ * Only papers in the signed-in account's Pharos library qualify: the server
+ * indexes and answers from its own copy, so a document it cannot fetch has no
+ * conversation to hold.
+ */
+export interface DocumentRef {
+  key: string;
+  kind: "paper";
+  title: string;
+  paperId?: string | null;
+}
+
+export interface ProviderStatus {
+  configured: boolean;
+  hasCredential: boolean;
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  maxOutputTokens: number | null;
+  /** Whether this account overrides the instance-wide provider. */
+  source?: "personal" | "server" | "none";
+  /** False when the server lacks credential encryption. */
+  canStoreCredential?: boolean;
+}
+
+export interface ProviderSaveRequest {
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  maxOutputTokens?: number | null;
+  apiKey?: string | null;
+}
+
+export interface PaperContextStatus {
+  documentKey: string;
+  status: "preparing" | "indexed" | "understanding" | "ready" | string;
+  charCount: number;
+  pageCount: number | null;
+  hasSummary: boolean;
+  summary: string | null;
+  error: string | null;
+  updatedAtMs: number;
+}
+
+export interface ConversationSummary {
+  id: string;
+  documentKey: string;
+  documentKind: string;
+  documentTitle: string;
+  title: string;
+  source: string;
+  sourceSessionId: string | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestampMs: number;
+  model: string | null;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: ChatMessage[];
+}
+
+export type ChatEvent =
+  | { type: "started"; run_id: string }
+  | { type: "delta"; text: string }
+  | { type: "done"; message: ChatMessage }
+  | { type: "error"; message: string };
 
 const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PREPARE_POLL_MS = 1_200;
@@ -34,7 +93,7 @@ class WebChatError extends Error {
 
 const paperIdOf = (documentRef: DocumentRef): string => {
   const paperId = documentRef.paperId?.trim();
-  if (documentRef.kind !== "paper" || !paperId) {
+  if (!paperId) {
     throw new WebChatError("网页端 AI 对话只能读取已经导入 Pharos 文库的论文。", 400);
   }
   return paperId;
@@ -134,18 +193,7 @@ async function consumeEvents(
   if (finalEvent) onEvent(finalEvent);
 }
 
-const unavailableCodex = (): never => {
-  throw new WebChatError(
-    "网页无法扫描本机 Codex 历史或启动本机 Codex。请使用 Pharos 桌面客户端。",
-    400,
-  );
-};
-
-const unavailableWorkspace = (): never => {
-  throw new WebChatError("真实 Workspace 目录迁移仅在 Pharos 桌面客户端中可用。", 400);
-};
-
-export const webChat: PaperChatClient = {
+export const webChat = {
   providerStatus: (): Promise<ProviderStatus> => json<ProviderStatus>("/ai/provider"),
 
   saveProvider: (provider: ProviderSaveRequest): Promise<ProviderStatus> =>
@@ -161,10 +209,7 @@ export const webChat: PaperChatClient = {
     return json<PaperContextStatus | null>(`/ai/papers/${encodeURIComponent(paperId)}/context`);
   },
 
-  prepareContext: async (
-    documentRef: DocumentRef,
-    _context: DocumentContext,
-  ): Promise<PaperContextStatus> => {
+  prepareContext: async (documentRef: DocumentRef): Promise<PaperContextStatus> => {
     const paperId = paperIdOf(documentRef);
     const initial = await json<PaperContextStatus>(
       `/ai/papers/${encodeURIComponent(paperId)}/prepare`,
@@ -206,7 +251,6 @@ export const webChat: PaperChatClient = {
       conversationId: string;
       documentRef: DocumentRef;
       message: string;
-      currentContext?: DocumentContext | null;
     },
     onEvent: (event: ChatEvent) => void,
   ): Promise<string> => {
@@ -239,31 +283,6 @@ export const webChat: PaperChatClient = {
     controller.abort();
     return true;
   },
-
-  codexCapabilities: async (): Promise<CodexCapabilities> => ({
-    available: false,
-    version: null,
-    codexHome: null,
-    readableRoots: [],
-  }),
-
-  discoverCodexSessions: async (_limit = 40): Promise<CodexSessionSummary[]> =>
-    unavailableCodex(),
-
-  importCodexSession: async (
-    _path: string,
-    _documentRef: DocumentRef,
-  ): Promise<ConversationSummary> => unavailableCodex(),
-
-  handoffToCodex: async (
-    _conversationId: string,
-    _cwd?: string | null,
-  ): Promise<CodexHandoffResult> => unavailableCodex(),
-
-  workspaceStatus: async (): Promise<WorkspaceStatus> => unavailableWorkspace(),
-
-  relocateWorkspace: async (_destination: string): Promise<WorkspaceRelocateResult> =>
-    unavailableWorkspace(),
 };
 
 export function webChatError(error: unknown): string {

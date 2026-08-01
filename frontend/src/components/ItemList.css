@@ -307,53 +307,11 @@
   align-items: center;
   gap: 6px;
 }
-.ph-il-disclosure,
-.ph-il-disclosure-placeholder {
-  width: 14px;
-  height: 18px;
-  flex: none;
-}
-.ph-il-disclosure {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--c-tx3);
-  cursor: pointer;
-}
-.ph-il-disclosure:hover {
-  background: var(--c-hv);
-  color: var(--c-tx);
-}
-.ph-il-disclosure:focus-visible {
-  outline: 1px solid var(--c-ac);
-  outline-offset: 1px;
-}
 .ph-il-zotero {
   display: flex;
   color: var(--c-tx3, #8b93a1);
 }
 
-.ph-il-local-missing {
-  flex: none;
-  margin-left: 6px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--c-hv);
-  color: var(--c-tx3);
-  font-size: 9.5px;
-  font-weight: 500;
-}
-
-.ph-il-sync {
-  display: flex;
-}
-
-.ph-il-sync.is-spinning {
-  animation: ph-spin 1s linear infinite;
-}
 .ph-il-title {
   min-width: 0;
   overflow: hidden;
@@ -386,97 +344,6 @@
   gap: 5px;
 }
 
-/* Zotero keeps a bibliographic item separate from the files and notes attached
-   to it. The connector and indentation make that ownership legible without
-   turning the compact list into a second, oversized card layout. */
-.ph-il-children {
-  position: relative;
-}
-.ph-il-children::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  bottom: 13px;
-  left: 18px;
-  border-left: 1px solid var(--c-bds);
-  pointer-events: none;
-}
-.ph-il-child {
-  position: relative;
-  height: 27px;
-  background: color-mix(in oklab, var(--c-hv) 42%, transparent);
-}
-.ph-il-child::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: 13px;
-  left: 18px;
-  width: 15px;
-  border-top: 1px solid var(--c-bds);
-  pointer-events: none;
-}
-.ph-il-child .ph-il-c-title {
-  padding-left: 27px;
-}
-.ph-il-child .ph-il-title {
-  font-size: 11.5px;
-  color: var(--c-tx2);
-}
-.ph-il-child.is-selected .ph-il-title {
-  font-weight: 500;
-  color: var(--c-tx);
-}
-.ph-il-child.is-unavailable .ph-il-child-icon,
-.ph-il-child.is-unavailable .ph-il-title {
-  color: var(--c-tx3);
-}
-.ph-il-child-icon {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex: none;
-}
-.ph-il-child-icon.is-pdf {
-  color: var(--c-err);
-}
-.ph-il-child-icon.is-snapshot {
-  color: var(--c-aclink);
-}
-.ph-il-child-icon.is-note {
-  color: color-mix(in oklab, var(--c-ac) 68%, #8c6a20);
-}
-.ph-il-child-icon.is-attachment {
-  color: var(--c-tx3);
-}
-.ph-il-child-kind {
-  flex: none;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--c-hv);
-  color: var(--c-tx3);
-  font-size: 9px;
-  font-weight: 550;
-  line-height: 1.25;
-}
-.ph-il-child-kind.is-pdf {
-  background: var(--c-err-soft);
-  color: var(--c-err);
-}
-.ph-il-tree-state {
-  height: 27px;
-  padding: 0 8px 0 46px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--c-bd);
-  background: color-mix(in oklab, var(--c-hv) 42%, transparent);
-  color: var(--c-tx3);
-  font-size: 11px;
-}
-.ph-il-tree-state.is-error {
-  color: var(--c-err);
-}
 
 /* ----------------------------------------------------------- search results */
 

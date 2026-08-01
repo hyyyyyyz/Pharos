@@ -59,7 +59,6 @@
 }
 
 .ph-ai-context.is-ready { color: #16806d; }
-.ph-ai-context.is-extracting,
 .ph-ai-context.is-understanding { color: var(--c-ac, #5b53d6); }
 .ph-ai-context.is-error { color: var(--c-err, #d93a3a); }
 
@@ -236,9 +235,7 @@
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.ph-ai-feedback.is-success { border-color: #9fd8c9; background: #eaf8f4; color: #167561; }
-.ph-ai-feedback button,
-.ph-ai-codex-head button {
+.ph-ai-feedback button {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -250,37 +247,6 @@
   color: currentColor;
   cursor: pointer;
 }
-
-.ph-ai-codex {
-  position: absolute;
-  z-index: 20;
-  inset: 8px;
-  padding: 10px;
-  border: 1px solid var(--c-bd);
-  border-radius: 11px;
-  background: var(--c-sf);
-  box-shadow: 0 14px 45px rgb(18 30 50 / 14%);
-  overflow-y: auto;
-}
-.ph-ai-codex-head { position: relative; min-height: 28px; padding-right: 24px; color: var(--c-tx); font-size: 12px; }
-.ph-ai-codex-item {
-  width: 100%;
-  margin-top: 5px;
-  padding: 8px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: var(--c-bg);
-  color: var(--c-tx);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  text-align: left;
-}
-.ph-ai-codex-item:hover { border-color: var(--c-acsb); }
-.ph-ai-codex-item span { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ph-ai-codex-item small,
-.ph-ai-codex-empty { color: var(--c-tx3); font-size: 9.5px; }
 
 .ph-ai-composer { flex: none; padding: 9px 11px 11px; border-top: 1px solid var(--c-bd); }
 .ph-ai-box { padding: 8px 9px; border: 1px solid var(--c-bd); border-radius: 10px; background: var(--c-sf); }

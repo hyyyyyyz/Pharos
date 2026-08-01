@@ -103,15 +103,20 @@ export interface ZoteroOAuthStart {
   expires_at: string;
 }
 
-export interface ZoteroDesktopOAuthStart extends ZoteroOAuthStart {
-  /** Short-lived app binding; never placed in the system-browser URL. */
-  desktop_secret: string;
-}
-
-export interface ZoteroDesktopOAuthFinishBody {
-  code: string;
-  desktop_secret: string;
-}
+/**
+ * How the Zotero consent round trip ended.
+ *
+ * The backend sends the browser back to the product root with `?zotero=<one of
+ * these>`, so this is the shape of that redirect rather than of a JSON body —
+ * which is why it lives here with the other Zotero wire types.
+ */
+export type ZoteroOAuthResult =
+  | "connected"
+  | "cancelled"
+  | "expired"
+  | "invalid"
+  | "busy"
+  | "error";
 
 export interface ZoteroLinkBody {
   zotero_user_id: string;

@@ -4,13 +4,8 @@ import {
   paperChat,
   paperChatAvailable,
   paperChatError,
-  paperChatIsDesktop,
-  paperChatNativeCodexAvailable,
-  paperChatNeedsClientContext,
   type ChatMessage,
-  type CodexSessionSummary,
   type ConversationSummary,
-  type DocumentContext,
   type DocumentRef,
   type PaperContextStatus,
   type ProviderStatus,
@@ -20,13 +15,11 @@ import "./AiPanel.css";
 
 const CHIPS = ["核心贡献是什么？", "真正关键的 trick 是什么？", "实验如何证明方法有效？", "这篇论文有哪些局限？"];
 
-type ContextPhase = "idle" | "waiting" | "extracting" | "understanding" | "ready" | "indexed" | "error";
+type ContextPhase = "idle" | "understanding" | "ready" | "indexed" | "error";
 
 interface AiPanelProps {
   documentRef: DocumentRef;
   documentTitle: string;
-  contextReady: boolean;
-  getContext: () => Promise<DocumentContext>;
   onOpenSettings?: () => void;
 }
 
@@ -40,8 +33,6 @@ const phaseText = (
   provider: ProviderStatus | null,
   status: PaperContextStatus | null,
 ): string => {
-  if (phase === "waiting") return "等待 PDF 加载";
-  if (phase === "extracting") return "正在读取论文";
   if (phase === "understanding") return "正在建立论文理解";
   if (phase === "ready") return "已理解当前论文";
   if (phase === "indexed") return provider?.configured ? "论文已索引" : "已索引 · 等待配置模型";
@@ -53,15 +44,10 @@ const phaseText = (
 export function AiPanel({
   documentRef,
   documentTitle,
-  contextReady,
-  getContext,
   onOpenSettings,
 }: AiPanelProps): JSX.Element {
   const toggleAI = useUI((state) => state.toggleAI);
   const available = paperChatAvailable();
-  const desktop = paperChatIsDesktop();
-  const nativeCodex = paperChatNativeCodexAvailable();
-  const needsClientContext = paperChatNeedsClientContext();
 
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [contextStatus, setContextStatus] = useState<PaperContextStatus | null>(null);
@@ -75,41 +61,25 @@ export function AiPanel({
   const [runId, setRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [codexSessions, setCodexSessions] = useState<CodexSessionSummary[] | null>(null);
-  const [codexBusy, setCodexBusy] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const getContextRef = useRef(getContext);
-  const cachedContextRef = useRef<DocumentContext | null>(null);
   const runIdRef = useRef<string | null>(null);
   const documentGenerationRef = useRef(0);
-  getContextRef.current = getContext;
 
+  /* The server reads its own copy of the paper, so preparing a context is one
+     call and no client-side extraction. */
   const preparePaperContext = useCallback(
     async (generation: number, providerConfigured: boolean): Promise<PaperContextStatus | null> => {
-      if (!contextReady || documentGenerationRef.current !== generation) return null;
-      setContextPhase("extracting");
-      const context = needsClientContext
-        ? cachedContextRef.current ?? await getContextRef.current()
-        : {
-            title: documentTitle,
-            authors: "",
-            abstractText: "",
-            fullText: "",
-            currentPage: null,
-            pageCount: null,
-          };
       if (documentGenerationRef.current !== generation) return null;
-      cachedContextRef.current = context;
       setContextPhase(providerConfigured ? "understanding" : "indexed");
-      const prepared = await paperChat.prepareContext(documentRef, context);
+      const prepared = await paperChat.prepareContext(documentRef);
       if (documentGenerationRef.current !== generation) return null;
       setContextStatus(prepared);
       setContextPhase(prepared.hasSummary && prepared.status === "ready" ? "ready" : "indexed");
       if (prepared.error) setError(prepared.error);
       return prepared;
     },
-    [contextReady, documentRef, documentTitle, needsClientContext],
+    [documentRef],
   );
 
   const loadConversation = useCallback(async (conversationId: string): Promise<void> => {
@@ -139,7 +109,6 @@ export function AiPanel({
     const generation = documentGenerationRef.current + 1;
     documentGenerationRef.current = generation;
     const isCurrent = (): boolean => !cancelled && documentGenerationRef.current === generation;
-    cachedContextRef.current = null;
     setProvider(null);
     setContextStatus(null);
     setContextPhase("idle");
@@ -153,15 +122,8 @@ export function AiPanel({
     runIdRef.current = null;
     setError(null);
     setMenuOpen(false);
-    setCodexSessions(null);
 
     if (!available) return () => undefined;
-    if (!contextReady) {
-      setContextPhase("waiting");
-      return () => {
-        cancelled = true;
-      };
-    }
 
     void (async () => {
       try {
@@ -206,10 +168,9 @@ export function AiPanel({
       if (documentGenerationRef.current === generation) documentGenerationRef.current += 1;
       if (runIdRef.current) void paperChat.cancel(runIdRef.current).catch(() => undefined);
     };
-    // A paper identity change is the only reason to initialise again. The
-    // extraction callback also changes as pdf.js reports pages and zoom state.
+    // A paper identity change is the only reason to initialise again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available, contextReady, documentRef.key, preparePaperContext]);
+  }, [available, documentRef.key, preparePaperContext]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -225,7 +186,7 @@ export function AiPanel({
           const next = await paperChat.providerStatus();
           if (documentGenerationRef.current !== generation) return;
           setProvider(next);
-          if (!next.configured || !contextReady) return;
+          if (!next.configured) return;
           const current = await paperChat.contextStatus(documentRef);
           if (documentGenerationRef.current !== generation) return;
           setContextStatus(current);
@@ -237,7 +198,7 @@ export function AiPanel({
     };
     window.addEventListener("pharos:model-provider-updated", refreshProvider);
     return () => window.removeEventListener("pharos:model-provider-updated", refreshProvider);
-  }, [available, contextReady, documentRef, preparePaperContext]);
+  }, [available, documentRef, preparePaperContext]);
 
   const ensureConversation = useCallback(async (): Promise<string> => {
     if (activeId) return activeId;
@@ -266,23 +227,11 @@ export function AiPanel({
           onOpenSettings?.();
           return;
         }
-        if (!contextStatus?.hasSummary && contextPhase !== "extracting" && contextPhase !== "understanding") {
+        if (!contextStatus?.hasSummary && contextPhase !== "understanding") {
           void (async () => {
             try {
-              setContextPhase("extracting");
-              const context = needsClientContext
-                ? await getContextRef.current()
-                : {
-                    title: documentTitle,
-                    authors: "",
-                    abstractText: "",
-                    fullText: "",
-                    currentPage: null,
-                    pageCount: null,
-                  };
-              cachedContextRef.current = context;
               setContextPhase("understanding");
-              const prepared = await paperChat.prepareContext(documentRef, context);
+              const prepared = await paperChat.prepareContext(documentRef);
               setContextStatus(prepared);
               setContextPhase(prepared.hasSummary ? "ready" : "indexed");
             } catch (cause) {
@@ -324,7 +273,6 @@ export function AiPanel({
             conversationId,
             documentRef,
             message: text,
-            currentContext: cachedContextRef.current,
           },
           (event) => {
             if (event.type === "delta") {
@@ -349,7 +297,7 @@ export function AiPanel({
           await loadConversation(conversationId);
           await refreshConversations(conversationId);
         } catch {
-          /* The streamed answer is still on screen if disk refresh fails. */
+          /* The streamed answer is still on screen if the refresh fails. */
         }
       }
     },
@@ -358,10 +306,8 @@ export function AiPanel({
       contextPhase,
       contextStatus?.hasSummary,
       documentRef,
-      documentTitle,
       ensureConversation,
       loadConversation,
-      needsClientContext,
       onOpenSettings,
       provider?.configured,
       refreshConversations,
@@ -403,51 +349,6 @@ export function AiPanel({
     }
   }, [activeId, documentRef, loadConversation, streaming]);
 
-  const openCodexImport = useCallback(async () => {
-    setMenuOpen(false);
-    setCodexSessions([]);
-    setCodexBusy(true);
-    setError(null);
-    try {
-      setCodexSessions(await paperChat.discoverCodexSessions());
-    } catch (cause) {
-      setError(paperChatError(cause));
-    } finally {
-      setCodexBusy(false);
-    }
-  }, []);
-
-  const importCodex = useCallback(
-    async (session: CodexSessionSummary) => {
-      setCodexBusy(true);
-      try {
-        const imported = await paperChat.importCodexSession(session.path, documentRef);
-        await refreshConversations(imported.id);
-        setCodexSessions(null);
-        setMenuOpen(false);
-      } catch (cause) {
-        setError(paperChatError(cause));
-      } finally {
-        setCodexBusy(false);
-      }
-    },
-    [documentRef, refreshConversations],
-  );
-
-  const handoffToCodex = useCallback(async () => {
-    if (!activeId) return;
-    setCodexBusy(true);
-    try {
-      const result = await paperChat.handoffToCodex(activeId);
-      setError(`已创建 Codex 任务 ${result.threadId}`);
-      setMenuOpen(false);
-    } catch (cause) {
-      setError(paperChatError(cause));
-    } finally {
-      setCodexBusy(false);
-    }
-  }, [activeId]);
-
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -477,12 +378,6 @@ export function AiPanel({
               </button>
               {menuOpen && (
                 <div className="ph-ai-menu">
-                  {nativeCodex && (
-                    <>
-                      <button onClick={() => void openCodexImport()} disabled={codexBusy}>从 Codex 导入…</button>
-                      <button onClick={() => void handoffToCodex()} disabled={!activeId || codexBusy}>转交给 Codex</button>
-                    </>
-                  )}
                   <button className="is-danger" onClick={() => void deleteConversation()} disabled={!activeId || streaming}>删除当前对话</button>
                 </div>
               )}
@@ -504,7 +399,7 @@ export function AiPanel({
           >
             {conversations.map((conversation) => (
               <option key={conversation.id} value={conversation.id}>
-                {conversation.source === "codex" ? "Codex · " : ""}{conversation.title}
+                {conversation.title}
               </option>
             ))}
           </select>
@@ -515,15 +410,13 @@ export function AiPanel({
         {!available ? (
           <div className="ph-ai-notice">
             <strong>当前环境无法连接 AI 对话</strong>
-            <span>请刷新页面或改用 Pharos 客户端。</span>
+            <span>请刷新页面后重试。</span>
           </div>
         ) : provider !== null && !provider.configured ? (
           <div className="ph-ai-notice">
             <strong>连接你的模型</strong>
             <span>
-              支持 OpenAI 兼容接口。{desktop
-                ? "API Key 只保存在系统凭据库中。"
-                : "API Key 由 Pharos 后端加密保存，不会进入浏览器存储。"}
+              支持 OpenAI 兼容接口。API Key 由 Pharos 后端加密保存，不会进入浏览器存储。
             </span>
             <button onClick={onOpenSettings}>配置模型</button>
           </div>
@@ -534,9 +427,7 @@ export function AiPanel({
               <div className="ph-ai-empty-txt">
                 {contextPhase === "ready"
                   ? "我已经预先理解这篇论文"
-                  : contextPhase === "waiting"
-                    ? "PDF 加载完成后会自动建立上下文"
-                  : contextPhase === "extracting" || contextPhase === "understanding"
+                  : contextPhase === "understanding"
                     ? "正在为这篇论文建立上下文"
                     : "围绕当前论文开始对话"}
               </div>
@@ -575,28 +466,9 @@ export function AiPanel({
         )}
 
         {error && (
-          <div className={`ph-ai-feedback${error.startsWith("已创建 Codex") ? " is-success" : ""}`}>
+          <div className="ph-ai-feedback">
             {error}
             <button title="关闭" onClick={() => setError(null)}><Icons.close /></button>
-          </div>
-        )}
-
-        {nativeCodex && codexSessions !== null && (
-          <div className="ph-ai-codex">
-            <div className="ph-ai-codex-head">
-              <strong>导入 Codex 历史对话</strong>
-              <button onClick={() => setCodexSessions(null)}><Icons.close /></button>
-            </div>
-            {codexSessions.length === 0 ? (
-              <div className="ph-ai-codex-empty">
-                {codexBusy ? "正在扫描 Codex 历史…" : "没有发现可导入的 Codex 对话。"}
-              </div>
-            ) : codexSessions.map((session) => (
-              <button key={session.path} className="ph-ai-codex-item" disabled={codexBusy} onClick={() => void importCodex(session)}>
-                <span>{session.title}</span>
-                <small>{session.truncated ? "至少 " : ""}{session.messageCount} 条消息 · {new Date(session.updatedAtMs).toLocaleDateString()}</small>
-              </button>
-            ))}
           </div>
         )}
       </div>

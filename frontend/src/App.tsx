@@ -13,8 +13,6 @@ import { ProjectsView } from "./components/ProjectsView";
 import { AdminView } from "./components/AdminView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
-import { DesktopOAuthBridge } from "./components/DesktopOAuthBridge";
-import { DesktopExternalLinks } from "./components/DesktopExternalLinks";
 import "./App.css";
 
 /**
@@ -55,11 +53,7 @@ export default function App() {
           <>
             <TabBar />
             {activeTab && activeTab.kind === "paper" ? (
-              <ReadingView
-                key={activeTab.id}
-                paperId={activeTab.paperId}
-                initialLocalAttachmentId={activeTab.localAttachmentId}
-              />
+              <ReadingView key={activeTab.id} paperId={activeTab.paperId} />
             ) : (
               <div className="ph-libview">
                 <CollectionTree />
@@ -82,8 +76,6 @@ export default function App() {
           <ComingSoon module={activeModule} />
         )}
       </main>
-      <DesktopExternalLinks />
-      <DesktopOAuthBridge />
       <SettingsModal />
     </div>
   );

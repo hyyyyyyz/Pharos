@@ -37,24 +37,19 @@ interface BrowserPickerWindow extends Window {
     mode: "readwrite";
     startIn: "documents";
   }) => Promise<BrowserDirectoryHandle>;
-  __TAURI_INTERNALS__?: unknown;
 }
 
-export type DailyVaultLocation =
-  | {
-      kind: "browser";
-      name: string;
-      handle: BrowserDirectoryHandle;
-      trustedVaultId: string | null;
-    }
-  | {
-      kind: "tauri";
-      name: string;
-      path: string;
-      trustedVaultId: string | null;
-      /** The standard `daily/` directory inside the active Pharos Workspace. */
-      managed?: boolean;
-    };
+/**
+ * The directory a Daily Vault is written to.
+ *
+ * A File System Access handle, always: the browser is the only host for this
+ * bundle, so there is no filesystem path to fall back to.
+ */
+export interface DailyVaultLocation {
+  name: string;
+  handle: BrowserDirectoryHandle;
+  trustedVaultId: string | null;
+}
 
 export interface DailyVaultManifestEntry {
   path: string;
@@ -79,14 +74,11 @@ export interface DailyVaultManifest {
 }
 
 interface RememberedConnection {
-  kind: "browser" | "tauri";
+  kind: "browser";
   vaultId: string;
-  path?: string;
-  managed?: boolean;
 }
 
 const pickerWindow = (): BrowserPickerWindow => window as BrowserPickerWindow;
-const isTauri = (): boolean => pickerWindow().__TAURI_INTERNALS__ !== undefined;
 
 function safeRelativePath(path: string): string[] {
   const parts = path.split("/");
@@ -106,23 +98,15 @@ function parseConnection(): RememberedConnection | null {
     const raw = localStorage.getItem(CONNECTION_KEY);
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<RememberedConnection>;
-    if (
-      (value.kind !== "browser" && value.kind !== "tauri") ||
-      typeof value.vaultId !== "string"
-    ) {
-      return null;
-    }
+    if (value.kind !== "browser" || typeof value.vaultId !== "string") return null;
     return value as RememberedConnection;
   } catch {
     return null;
   }
 }
 
-function rememberConnection(location: DailyVaultLocation, vaultId: string): void {
-  const value: RememberedConnection =
-    location.kind === "tauri"
-      ? { kind: "tauri", path: location.path, vaultId, managed: location.managed === true }
-      : { kind: "browser", vaultId };
+function rememberConnection(vaultId: string): void {
+  const value: RememberedConnection = { kind: "browser", vaultId };
   localStorage.setItem(CONNECTION_KEY, JSON.stringify(value));
 }
 
@@ -228,49 +212,17 @@ async function browserExists(root: BrowserDirectoryHandle, path: string): Promis
   }
 }
 
-async function tauriPath(root: string, relative: string): Promise<string> {
-  const { join } = await import("@tauri-apps/api/path");
-  return join(root, ...safeRelativePath(relative));
-}
+const readText = (location: DailyVaultLocation, path: string): Promise<string> =>
+  browserRead(location.handle, path);
 
-async function tauriRead(root: string, path: string): Promise<string> {
-  const { readTextFile } = await import("@tauri-apps/plugin-fs");
-  return readTextFile(await tauriPath(root, path));
-}
-
-async function tauriWrite(root: string, path: string, contents: string): Promise<void> {
-  const { mkdir, writeTextFile } = await import("@tauri-apps/plugin-fs");
-  const parts = safeRelativePath(path);
-  parts.pop();
-  if (parts.length > 0) await mkdir(await tauriPath(root, parts.join("/")), { recursive: true });
-  await writeTextFile(await tauriPath(root, path), contents);
-}
-
-async function tauriExists(root: string, path: string): Promise<boolean> {
-  const { exists } = await import("@tauri-apps/plugin-fs");
-  return exists(await tauriPath(root, path));
-}
-
-async function readText(location: DailyVaultLocation, path: string): Promise<string> {
-  return location.kind === "browser"
-    ? browserRead(location.handle, path)
-    : tauriRead(location.path, path);
-}
-
-async function writeText(
+const writeText = (
   location: DailyVaultLocation,
   path: string,
   contents: string,
-): Promise<void> {
-  if (location.kind === "browser") await browserWrite(location.handle, path, contents);
-  else await tauriWrite(location.path, path, contents);
-}
+): Promise<void> => browserWrite(location.handle, path, contents);
 
-async function exists(location: DailyVaultLocation, path: string): Promise<boolean> {
-  return location.kind === "browser"
-    ? browserExists(location.handle, path)
-    : tauriExists(location.path, path);
-}
+const exists = (location: DailyVaultLocation, path: string): Promise<boolean> =>
+  browserExists(location.handle, path);
 
 function encodeJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -366,70 +318,29 @@ function assertDay(value: DailyVaultDay, expectedDate: string): void {
 }
 
 export function writableDailyDirectorySupported(): boolean {
-  return isTauri() || typeof pickerWindow().showDirectoryPicker === "function";
+  return typeof pickerWindow().showDirectoryPicker === "function";
 }
 
 export async function chooseDailyVaultDirectory(): Promise<DailyVaultLocation> {
-  if (isTauri()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({ directory: true, multiple: false, title: "选择 Daily Vault 目录" });
-    if (typeof selected !== "string") throw new Error("未选择目录");
-    const segments = selected.split(/[\\/]/).filter(Boolean);
-    const name = segments[segments.length - 1] ?? selected;
-    return { kind: "tauri", name, path: selected, trustedVaultId: null };
-  }
-
   const picker = pickerWindow().showDirectoryPicker;
   if (!picker) throw new Error("当前浏览器不支持持续写入本地目录，请使用 JSON 备份");
   const handle = await picker({ id: "pharos-daily-vault", mode: "readwrite", startIn: "documents" });
   await saveBrowserHandle(handle);
-  return { kind: "browser", name: handle.name, handle, trustedVaultId: null };
+  return { name: handle.name, handle, trustedVaultId: null };
 }
 
 export async function loadRememberedDailyVault(): Promise<DailyVaultLocation | null> {
   const saved = parseConnection();
-  if (!saved && isTauri()) {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const workspace = await invoke<{ dailyPath: string }>("workspace_status");
-    return {
-      kind: "tauri",
-      name: "Pharos Workspace",
-      path: workspace.dailyPath,
-      trustedVaultId: null,
-      managed: true,
-    };
-  }
   if (!saved) return null;
-  if (saved.kind === "tauri" && isTauri() && saved.path) {
-    let path = saved.path;
-    if (saved.managed) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      path = (await invoke<{ dailyPath: string }>("workspace_status")).dailyPath;
-    }
-    const segments = path.split(/[\\/]/).filter(Boolean);
-    const name = saved.managed ? "Pharos Workspace" : (segments[segments.length - 1] ?? path);
-    return {
-      kind: "tauri",
-      name,
-      path,
-      trustedVaultId: saved.vaultId,
-      managed: saved.managed === true,
-    };
-  }
-  if (saved.kind === "browser" && !isTauri()) {
-    const handle = await loadBrowserHandle();
-    if (handle) {
-      return { kind: "browser", name: handle.name, handle, trustedVaultId: saved.vaultId };
-    }
-  }
-  return null;
+  const handle = await loadBrowserHandle();
+  if (!handle) return null;
+  return { name: handle.name, handle, trustedVaultId: saved.vaultId };
 }
 
 export async function ensureDailyVaultPermission(
   location: DailyVaultLocation,
   request: boolean,
 ): Promise<boolean> {
-  if (location.kind === "tauri") return true;
   const query = location.handle.queryPermission?.bind(location.handle);
   const current = query ? await query({ mode: "readwrite" }) : "prompt";
   if (current === "granted") return true;
@@ -485,7 +396,7 @@ export async function writeDailyVault(
   // exists and has a content hash, so a failed write leaves the previous
   // manifest fully usable instead of pointing at a half-written snapshot.
   await writeText(location, MANIFEST_NAME, encodeJson(manifest));
-  rememberConnection(location, vaultId);
+  rememberConnection(vaultId);
   return manifest;
 }
 
@@ -566,7 +477,7 @@ export function trustDailyVault(
   location: DailyVaultLocation,
   manifest: DailyVaultManifest,
 ): DailyVaultLocation {
-  rememberConnection(location, manifest.vault_id);
+  rememberConnection(manifest.vault_id);
   return { ...location, trustedVaultId: manifest.vault_id };
 }
 
