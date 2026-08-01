@@ -1,0 +1,16 @@
+itemFields-eventPlace = Lugar de evento
+itemFields-originalDate = Data original
+itemFields-originalPlace = Lugar original
+itemFields-originalPublisher = Editor original
+itemFields-partNumber = Número da parte
+itemFields-partTitle = Título da parte
+itemFields-priorityDate = Data prioritária
+itemFields-sessionTitle = Título da sessão
+creatorTypes-chair = Presidente
+creatorTypes-creator = Autor
+creatorTypes-executiveProducer = Produtor executivo
+creatorTypes-host = Apresentador
+creatorTypes-narrator = Narrador
+creatorTypes-originalCreator = Criador original
+creatorTypes-organizer = Organizador
+creatorTypes-seriesCreator = Criador da série

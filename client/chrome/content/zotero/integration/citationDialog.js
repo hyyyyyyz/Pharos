@@ -1,0 +1,2400 @@
+/*
+	***** BEGIN LICENSE BLOCK *****
+	
+	Copyright © 2024 Corporation for Digital Scholarship
+                     Vienna, Virginia, USA
+					http://zotero.org
+	
+	This file is part of Zotero.
+	
+	Zotero is free software: you can redistribute it and/or modify
+	it under the terms of the GNU Affero General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+	
+	Zotero is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU Affero General Public License for more details.
+
+	You should have received a copy of the GNU Affero General Public License
+	along with Zotero.  If not, see <http://www.gnu.org/licenses/>.
+	
+	***** END LICENSE BLOCK *****
+*/
+
+
+const CollectionViewItemTree = require('zotero/collectionViewItemTree');
+const { getCSSIcon } = require('components/icons');
+const { COLUMNS } = require('zotero/itemTreeColumns');
+var doc, io, ioReadyPromise, ioIsReady, accepted;
+
+var currentLayout, libraryLayout, listLayout;
+
+var Helpers, SearchHandler, PopupsHandler, KeyboardHandler;
+
+const ITEM_LIST_MAX_ITEMS = 50;
+const SEARCH_TIMEOUT = 250;
+var NUMERIC_LOCATOR_TIMEOUT = 500; // exposed to tests
+
+var { CitationDialogHelpers } = ChromeUtils.importESModule('chrome://zotero/content/integration/citationDialog/helpers.mjs');
+var { CitationDialogSearchHandler } = ChromeUtils.importESModule('chrome://zotero/content/integration/citationDialog/searchHandler.mjs');
+var { CitationDialogPopupsHandler } = ChromeUtils.importESModule('chrome://zotero/content/integration/citationDialog/popupHandler.mjs');
+var { CitationDialogKeyboardHandler } = ChromeUtils.importESModule('chrome://zotero/content/integration/citationDialog/keyboardHandler.mjs');
+
+
+// window.DIALOG_STATE exposed to tests
+var DIALOG_STATE = {
+	type: null, // 'citation' or 'add-note'
+	loaded: false,
+
+	isCitingItems: () => DIALOG_STATE.type == 'citation',
+	isAddingNote: () => DIALOG_STATE.type == 'add-note',
+	isAddingAnnotations: () => DIALOG_STATE.type == 'annotations',
+};
+
+
+//
+// Initialization of all handlers and top-level functions
+//
+async function onLoad() {
+	doc = document;
+	io = window.arguments[0].wrappedJSObject;
+	ioReadyPromise = io.allCitedDataLoadedPromise;
+	// if io did not send the promise indiciating when io.sort() and io.getItems() will be ready to run,
+	// use an immediately resolved promise
+	if (!ioReadyPromise) {
+		ioReadyPromise = Zotero.Promise.resolve();
+	}
+	ioReadyPromise.then(() => ioIsReady = true);
+	window.isPristine = true;
+	// set the font-size and density
+	Zotero.UIProperties.set(document.querySelector("body"));
+
+	Zotero.debug("Citation Dialog: initializing");
+	let timer = new Zotero.Integration.Timer();
+	timer.start();
+
+	Helpers = new CitationDialogHelpers({ doc, io });
+	SearchHandler = new CitationDialogSearchHandler({ dialogState: DIALOG_STATE, io });
+	PopupsHandler = new CitationDialogPopupsHandler({ doc, dialogState: DIALOG_STATE });
+	KeyboardHandler = new CitationDialogKeyboardHandler({ doc });
+
+	// Initialize dialog type before layouts that depend on DIALOG_STATE.type
+	let initialType = 'citation';
+	if (io.isCitingNotes) {
+		initialType = 'add-note';
+	}
+	else if (io.isAddingAnnotations) {
+		initialType = 'annotations';
+	}
+	await setDialogType(initialType);
+
+	// Restore the dimensions of the dialog in the specified mode.
+	// That way, opening "annotation" dialog (always library mode)
+	// will not conflict with how wide the "citation" dialog will be in list mode.
+	let initialMode = IOManager.getInitialDialogMode();
+	let savedParams = Helpers.fetchStoredWindowParams()[initialMode] || {};
+	let restoredWidth = savedParams.width || window.innerWidth;
+	let restoredHeight = savedParams.height || Helpers.getSearchRowHeight();
+	window.resizeTo(restoredWidth, restoredHeight);
+	// On windows, after initial window size is set, make sure we don't resize list
+	// mode when search results are ready for a moment to avoid blinking
+	if (Zotero.isWin && initialMode == "list") {
+		Helpers.delayNextSmoothResize(250);
+	}
+
+	libraryLayout = new LibraryLayout();
+	listLayout = new ListLayout();
+
+	// initialize most essential IO functionality (e.g. accept/cancel)
+	// remaining listeners that rely on layouts being loaded are added later in IOManager.init
+	IOManager.preInit();
+	// top-level keypress handling and focus navigation across the dialog
+	// keypresses for lower-level bubble-specific behavior are handled in bubbleInput.js
+	doc.addEventListener("keydown", event => KeyboardHandler.handleKeydown(event));
+	// capturing keypress listener for a few special cases, such as handling arrowUp
+	// keypress from the top-most row in the items table
+	doc.addEventListener("keydown", event => KeyboardHandler.captureKeydown(event), true);
+
+	// citation has to be built before libraryLayout.init to so itemTree knows which items to highlight
+	await CitationDataManager.buildCitation();
+	IOManager.updateBubbleInput();
+	// init library layout after bubble input is built since bubble-input's height is a factor
+	// determining initial library layout height
+	await libraryLayout.init();
+	// fetch selected items so they are known
+	// before refreshing items list after dialog mode setting
+	await SearchHandler.refreshSelectedAndOpenItems();
+	// some nodes (e.g. item-tree-menu-bar) are expected to be present to switch modes
+	// so this has to go after all layouts are loaded
+	await IOManager.toggleDialogMode(initialMode);
+	// most of IO handling relies on currentLayout being defined so it must follow setInitialDialogMode
+	IOManager.init();
+	// set the text of the citation preview
+	CitationPreview.update();
+	// explicitly focus bubble input so one can begin typing right away
+	_id("bubble-input").refocusInput();
+	// wait to call functions that rely on io.getItems() or io.sort() till all cited data is loaded
+	ioReadyPromise.then(async () => {
+		if (accepted) return;
+		Zotero.debug("Citation Dialog: io loaded cited data");
+		await SearchHandler.refreshCitedItems();
+		currentLayout.refreshItemsList({ retainItemsState: true });
+		if (_id("keepSorted").checked) {
+			IOManager._resortItems();
+		}
+	});
+
+	DIALOG_STATE.loaded = true;
+	let initTime = timer.stop();
+	Zotero.debug(`Citation Dialog: initialized in ${initTime} s`);
+}
+
+
+async function accept() {
+	if (accepted || SearchHandler.searching || !CitationDataManager.items.length) return;
+	accepted = true;
+	Zotero.debug("Citation Dialog: accepted");
+
+	cleanupBeforeDialogClosing();
+	_id("library-layout").hidden = true;
+	_id("list-layout").hidden = true;
+	_id("bubble-input").hidden = true;
+	_id("bottom-area").hidden = true;
+	_id("progress").hidden = false;
+	let progressHeight = Helpers.getSearchRowHeight();
+	// The minHeight is not just removed so that windows doesn't make the window too small
+	document.documentElement.style.minHeight = progressHeight + "px";
+	setTimeout(() => {
+		window.resizeTo(window.innerWidth, progressHeight);
+	});
+	// If items were added before sorting was ready, we must wait to sort them here.
+	// Otherwise, if the dialog is opened again, bubbles will not be in the correct
+	// order, even though the citation itself will look right.
+	if (_id("keepSorted").checked) {
+		await ioReadyPromise;
+		await CitationDataManager.sort();
+	}
+	CitationDataManager.updateCitationObject(true);
+	io.accept((percent) => {
+		_id("progress").value = Math.round(percent);
+	});
+}
+
+function cancel() {
+	if (accepted) return;
+	accepted = true;
+	cleanupBeforeDialogClosing();
+	io.cancel();
+	window.close();
+}
+// handle dialog being cancelled via window.close() (e.g. clicking X icon on windows)
+function onUnload() {
+	if (this.accepted) return;
+	cancel();
+}
+
+function cleanupBeforeDialogClosing() {
+	if (!currentLayout || !libraryLayout) return;
+	
+	// Save window params for current layout mode so we can restore it on next dialog open
+	let allParams = Helpers.fetchStoredWindowParams();
+	let params = { width: window.outerWidth };
+	// Only save height in library mode, since in list mode height varies
+	if (currentLayout.type == "library") {
+		params.height = window.outerHeight;
+	}
+	allParams[currentLayout.type] = params;
+	// Remember the width of collectionTree, so it can be restored on next open
+	allParams.library = allParams.library || {};
+	allParams.library.collectionTreeWidth = libraryLayout.collectionTreeWidth;
+	Zotero.Prefs.set("integration.citationDialog.windowParams", JSON.stringify(allParams));
+
+	// Only library mode in annotations dialog
+	if (!DIALOG_STATE.isAddingAnnotations()) {
+		Zotero.Prefs.set("integration.citationDialogLastUsedMode", currentLayout.type);
+		if (currentLayout.type == "library") {
+			Zotero.Prefs.set("integration.citationDialogCollectionLastSelected", libraryLayout.collectionsView.selectedTreeRow.id);
+		}
+	}
+	libraryLayout.collectionsView.unregister();
+	libraryLayout.itemsView.unregister();
+}
+
+// register that something changed in the dialog
+function dialogNotPristine() {
+	window.isPristine = false;
+}
+
+// shortcut used for brevity
+function _id(id) {
+	return doc.getElementById(id);
+}
+
+// Switch between "Add/Edit Citation", "Add Note", "Add Annotations" modes
+async function setDialogType(type) {
+	if (type == DIALOG_STATE.type) return;
+	if (DIALOG_STATE.loaded && io.disableDialogTypeSwitch) return;
+	// If there is a running search, do nothing to avoid window resizing conflicts
+	if (SearchHandler.searching) return;
+	DIALOG_STATE.type = type;
+	document.documentElement.setAttribute("dialog-type", DIALOG_STATE.type);
+
+	let modeSpecificComponents = doc.querySelectorAll(`[data-dialog-type]`);
+	for (let component of modeSpecificComponents) {
+		let shouldBeVisible = component.getAttribute("data-dialog-type").includes(type);
+		component.hidden = !shouldBeVisible;
+	}
+
+	Helpers.setActiveSegmentedControl(_id(`dialog-type-${DIALOG_STATE.type}`));
+
+	// Disabled all multiselect when citing notes, enable when citing regular items
+	for (let multiselectable of [...doc.querySelectorAll("[data-multiselectable]")]) {
+		let shouldBeSelectable = DIALOG_STATE.isCitingItems() ? "true" : "false";
+		multiselectable.dataset.multiselectable = shouldBeSelectable;
+	}
+
+	// Set proper settings availability depending on the type
+	_id("bubble-input").sortable = DIALOG_STATE.isCitingItems();
+	_id("keepSorted").disabled = !io.sortable || !DIALOG_STATE.isCitingItems();
+	_id("keepSorted").checked = !_id("keepSorted").disabled && !io.citation.properties.unsorted;
+	if (DIALOG_STATE.isCitingItems()) {
+		_id("keepSorted").disabled = !io.sortable;
+		_id("keepSorted").parentElement.hidden = !io.sortable;
+		CitationPreview.update();
+		if (!DIALOG_STATE.loaded) {
+			_id("keepSorted").checked = io.sortable && !io.citation.properties.unsorted;
+		}
+	}
+	else if (DIALOG_STATE.isAddingNote()) {
+		_id("settings-button").hidden = true;
+		_id("keepSorted").disabled = true;
+	}
+	else if (DIALOG_STATE.isAddingAnnotations()) {
+		// Only library mode supported when adding annotations.
+		// On the first call, current layout is not loaded.
+		// Dialog mode will be set in setInitialDialogMode
+		if (currentLayout) {
+			await IOManager.toggleDialogMode("library");
+		}
+		_id("includeComments").checked = Zotero.Prefs.get("integration.annotationDialogIncludeComments");
+	}
+
+	// hide the settings button if there are no settings to show
+	let visibleSettings = !!_id("settings-popup").querySelector(".popup div:not([hidden]) input:not([disabled])");
+	_id("settings-button").hidden = !visibleSettings;
+
+	// After initial loading, hide the dialog type switch if it is not wanted
+	// (e.g. when adding citations in the note editor or when editing existing citation)
+	if (io.disableDialogTypeSwitch || (io.citation.citationItems.length && !DIALOG_STATE.loaded)) {
+		_id("dialog-type-setting").hidden = true;
+		return;
+	}
+	
+	if (DIALOG_STATE.loaded) {
+		// Completely reset itemTree to have right dragAndDrop, regularOnly, multiselect behavior
+		libraryLayout.itemsView.unregister();
+		_id("zotero-items-tree").replaceChildren();
+		libraryLayout.itemsView = null;
+		await libraryLayout._initItemTree();
+		libraryLayout._onCollectionSelection();
+
+		// Rerun the search and update bubble-input
+		SearchHandler.clearNonLibraryItemsCache();
+		currentLayout.search(SearchHandler.searchValue);
+		CitationDataManager.clearAll();
+		IOManager.updateBubbleInput();
+	}
+}
+
+// Template for layout classes.
+class Layout {
+	constructor(type) {
+		this.type = type;
+		this._lastSearchTime = null;
+	}
+
+	// Re-render the items based on search results
+	// @param {Boolean} options.retainItemsState: try to restore focused and selected status of item nodes.
+	async refreshItemsList({ retainItemsState } = {}) {
+		Zotero.debug("Citation Dialog: refreshing items list");
+		let sections = [];
+
+		// Tell SearchHandler which currently cited items are so they are not included in results
+		let citedIDs = CitationDataManager.getCitedLibraryItemIDs();
+		let searchResultGroups = SearchHandler.getOrderedSearchResultGroups(citedIDs);
+		for (let { key, group, isLibrary } of searchResultGroups) {
+			// selected items become a collapsible deck/list if there are multiple items
+			let collapsibleGroupID = DIALOG_STATE.isAddingAnnotations() ? "selectedAnnotations" : "selected";
+			let isGroupCollapsible = key == collapsibleGroupID && group.length > 1;
+			
+			// Construct each section and items
+			let sectionHeader = "";
+			if (isLibrary) {
+				sectionHeader = Zotero.Libraries.get(key).name;
+			}
+			// special handling for selected items to display how many total selected items there are
+			else if (key == "selected") {
+				sectionHeader = await doc.l10n.formatValue(`integration-citationDialog-section-${key}`, { count: group.length, total: SearchHandler.allSelectedItemsCount() });
+			}
+			else {
+				sectionHeader = await doc.l10n.formatValue(`integration-citationDialog-section-${key}`, { count: group.length });
+			}
+			let section = Helpers.buildItemsSection(`${this.type}-${key}-items`, sectionHeader, isGroupCollapsible, group.length, this.type);
+			let itemContainer = section.querySelector(".itemsContainer");
+	
+			let items = [];
+			let index = 0;
+			for (let item of group) {
+				// do not add an unreasonable number of nodes into the DOM
+				if (index >= ITEM_LIST_MAX_ITEMS) break;
+				// createItemNode implemented by layouts
+				let itemNode = await this.createItemNode(item, isGroupCollapsible ? index : null);
+				itemNode.addEventListener("click", IOManager.handleItemClick);
+				// items can be dragged into bubble-input to add them into the citation
+				itemNode.addEventListener("dragstart", IOManager._handleItemDragStart);
+				items.push(itemNode);
+				index++;
+			}
+			// if cited group is present but has no items, cited items must be
+			// still loading, so show a placeholder item card
+			if (group.length === 0 && key == "cited") {
+				let placeholder = Helpers.createCitedItemPlaceholder();
+				items = [placeholder];
+			}
+			itemContainer.replaceChildren(...items);
+			sections.push(section);
+			if (isGroupCollapsible) {
+				// handle click on "Add all"
+				section.querySelector(".add-all").addEventListener("click", () => IOManager.addItemsToCitation(group));
+				// await for "All all" label so it does not appear blank for a moment after render
+				let addAllLabel = await doc.l10n.formatValue("integration-citationDialog-add-all");
+				section.querySelector(".add-all").textContent = addAllLabel;
+				// if the user explicitly expanded or collapsed the section, keep it as such
+				if (IOManager.sectionExpandedStatus[section.id]) {
+					IOManager.toggleSectionCollapse(section, IOManager.sectionExpandedStatus[section.id]);
+				}
+				// otherwise, expand the section if something is typed or whenever the list layout is opened
+				else {
+					let activeSearch = SearchHandler.searchValue.length > 0;
+					IOManager.toggleSectionCollapse(section, (activeSearch || this.type == "list") ? "expanded" : "collapsed");
+				}
+			}
+		}
+		let previouslyFocused = doc.activeElement;
+		let previouslySelected = doc.querySelectorAll(".item.selected");
+		_id(`${this.type}-layout`).querySelector(".search-items").replaceChildren(...sections);
+		// Update which bubbles need to be highlighted
+		this.updateSelectedItems();
+
+		// Keep focus and selection on the same item nodes if specified.
+		if (retainItemsState) {
+			doc.getElementById(previouslyFocused.id)?.focus();
+			// Try to retain selected status of items, in case if multiselection was in progress
+			for (let oldNote of previouslySelected) {
+				let itemNode = doc.getElementById(oldNote.id);
+				if (!itemNode) continue;
+				itemNode.classList.add("selected");
+				itemNode.classList.toggle("current", oldNote.classList.contains("current"));
+			}
+		}
+		// Pre-select the item to be added on Enter of an input
+		else if (_id("bubble-input").contains(doc.activeElement)) {
+			this.markPreSelected();
+		}
+		// Ensure focus is never lost
+		if (doc.activeElement.tagName == "body") {
+			IOManager._restorePreClickFocus();
+		}
+	}
+
+	// Create the node for selected/cited/opened item groups.
+	// It's different for list and library modes, so it is implemented by layouts.
+	async createItemNode() {}
+
+
+	// Run search and refresh items list
+	async search(value, { skipDebounce = false } = {}) {
+		if (accepted) return;
+		let timer = new Zotero.Integration.Timer();
+		timer.start();
+		Zotero.debug("Citation Dialog: searching");
+		IOManager._showLoadingSpinner();
+		SearchHandler.searching = true;
+		// search for selected/opened items
+		// only enforce min query length in list mode
+		SearchHandler.setSearchValue(value, this.type == "list");
+		await SearchHandler.refreshSelectedAndOpenItems();
+		// noop if cited items are not yet loaded
+		SearchHandler.refreshCitedItems();
+		
+		// Never resize window here to avoid flickering
+		// The window will always be resized after the second items update below
+		await this.refreshItemsList({ skipWindowResize: true });
+
+		// debounce to not rerun sql search until typing is probably done
+		if (!skipDebounce) {
+			// record when the search started
+			let searchStartTime = Date.now();
+			this._lastSearchTime = searchStartTime;
+			
+			// wait a moment
+			await Zotero.Promise.delay(SEARCH_TIMEOUT);
+			
+			// stop if another search started during the delay
+			if (this._lastSearchTime !== searchStartTime) return;
+		}
+		// in list mode, search for matches across libraries
+		// in library mode, set filter on itemTree
+		if (this.type == "list") {
+			await SearchHandler.refreshLibraryItems();
+			await this.refreshItemsList();
+		}
+		else {
+			// Make sure the collectionTreeRow is defined to
+			// avoid errors thrown when filter is set on first load
+			while (!this.itemsView.collectionTreeRows) {
+				await Zotero.Promise.delay(10);
+			}
+			await this.refreshItemsList();
+			await this.itemsView.setFilter('citation-search', SearchHandler.searchValue);
+		}
+
+		SearchHandler.searching = false;
+		IOManager._hideLoadingSpinner();
+		let searchTime = timer.stop();
+		Zotero.debug(`Citation Dialog: searching done in ${searchTime}`);
+		if (this.forceUpdateTablesAfterRefresh && this.type == "library") {
+			this.forceUpdateTablesAfterRefresh = false;
+			setTimeout(() => {
+				libraryLayout.itemsView.tree?.invalidate();
+				libraryLayout.itemsView.tree?.forceUpdate();
+				// Necessary for the collectionTree to be properly rendered after switching to library mode
+				if (libraryLayout.collectionsView) {
+					let currentCollectionIndex = libraryLayout.collectionsView.tree.selection.focused;
+					libraryLayout.collectionsView.ensureRowIsVisible(currentCollectionIndex);
+				}
+			}, 250);
+		}
+	}
+
+	// implemented by layouts
+	resizeWindow() {}
+
+	updateSelectedItems() {}
+
+	// Mark initially selected item that can be selected on Enter in an input
+	// Item is pre-selected when there is an active search OR when there are no
+	// items in the citation yet
+	markPreSelected() {
+		for (let itemNode of [...doc.querySelectorAll(".item.selected")]) {
+			itemNode.classList.remove("selected");
+			itemNode.classList.remove("current");
+		}
+		let firstItemNode = _id(`${currentLayout.type}-layout`).querySelector(`.item:not([disabled])`);
+		if (!firstItemNode) return;
+		let activeSearch = SearchHandler.searchValue.length > 0;
+		let noBubbles = !CitationDataManager.items.length;
+		if (activeSearch || noBubbles) {
+			firstItemNode.classList.add("current");
+			IOManager.selectItemNodesRange(firstItemNode);
+		}
+	}
+}
+
+class LibraryLayout extends Layout {
+	constructor() {
+		super("library");
+		this._scrolledToFirstCitedOnInit = false;
+		this.MIN_WIDTH = 1000; // min-width from _citationDialog.scss
+	}
+
+	async init() {
+		await this._initItemTree();
+		await this._initCollectionTree();
+		this.collectionsView.itemTreeView = this.itemsView;
+		// on mouse scrollwheel in suggested items, scroll the list horizontally
+		_id("library-other-items").addEventListener('wheel', this._scrollHorizontallyOnWheel);
+		this._initSidepane();
+		this._initCollectionsTreeDivider();
+	}
+
+	// Create item node for an item group and store item ids in itemIDs attribute
+	async createItemNode(item, index = null) {
+		let itemNode = Helpers.createNode("div", {
+			tabindex: "-1",
+			"data-l10n-id": "integration-citationDialog-aria-item-library",
+			role: "option",
+			"data-tabindex": 30,
+			"data-arrow-nav-enabled": true,
+			draggable: DIALOG_STATE.isCitingItems()
+		}, "item keyboard-clickable");
+		let id = item.cslItemID || item.id;
+		itemNode.setAttribute("itemID", id);
+		itemNode.setAttribute("role", "option");
+		itemNode.id = id;
+		let title = Helpers.buildItemTitle(item);
+		let description = Helpers.buildItemDescription(item, true);
+		itemNode.append(title, description);
+
+		if (DIALOG_STATE.isAddingAnnotations() && item.isAnnotation()) {
+			let attachment = Zotero.Items.get(item.parentItemID);
+			let topLevelItem = attachment.parentItemID ? Zotero.Items.get(attachment.parentItemID) : attachment;
+			let topLevelItemTitle = Helpers.buildItemTitle(topLevelItem);
+			topLevelItemTitle.classList.add("description");
+			itemNode.prepend(topLevelItemTitle);
+		}
+
+		if (index !== null) {
+			itemNode.style.setProperty('--deck-index', index);
+		}
+
+		return itemNode;
+	}
+
+	async refreshItemsList(options = {}) {
+		await super.refreshItemsList(options);
+		_id("library-other-items").querySelector(".search-items").hidden = !_id("library-layout").querySelector(".section:not([hidden])");
+		_id("library-no-suggested-items-message").hidden = !_id("library-other-items").querySelector(".search-items").hidden;
+		// When there are no matches, show a message
+		if (!_id("library-no-suggested-items-message").hidden) {
+			doc.l10n.setAttributes(_id("library-no-suggested-items-message"), `integration-citationDialog-lib-message-${DIALOG_STATE.type}`, { search: SearchHandler.searchValue.length > 0 });
+		}
+		if (!options.skipWindowResize) {
+			this.resizeWindow();
+		}
+		let collapsibleDecks = [..._id("library-other-items").querySelectorAll(".section.expandable")];
+		for (let collapsibleDeck of collapsibleDecks) {
+			collapsibleDeck.querySelector(".itemsContainer").addEventListener("click", this._captureItemsContainerClick, true);
+			collapsibleDeck.querySelector(".itemsContainer").classList.add("keyboard-clickable");
+			collapsibleDeck.querySelector(".collapse-section-btn").addEventListener("click", (event) => {
+				IOManager.toggleSectionCollapse(collapsibleDeck, "collapsed", true);
+				// on mouse click, move focus from the button that will disappear onto the collapsed deck
+				if (!event.clientX && !event.clientY) {
+					collapsibleDeck.querySelector(".itemsContainer").focus();
+				}
+			});
+		}
+	}
+
+	// Refresh itemTree to properly display +/- icons column
+	async refreshItemsView() {
+		await this._refreshItemsViewHighlightedRows();
+		// Save selected items, clear selection to not scroll after refresh
+		let selectedItemIDs = this.itemsView.getSelectedItems(true);
+		this.itemsView.selection.selectEventsSuppressed = true;
+		this.itemsView.selection.clearSelection();
+		// Restore selection without scrolling
+		await this.itemsView.selectItems(selectedItemIDs, true, true);
+		this.itemsView.selection.selectEventsSuppressed = false;
+	}
+
+	updateSelectedItems() {
+		if (!libraryLayout.itemsView) return;
+		let selectedItemIDs = new Set(libraryLayout.itemsView.getSelectedItems().map(item => item.id));
+		for (let bubbleItem of CitationDataManager.items) {
+			bubbleItem.selected = selectedItemIDs.has(bubbleItem.id);
+		}
+		IOManager.updateBubbleInput();
+	}
+
+	// Resolves once the resize animation has fully completed
+	async resizeWindow() {
+		await Helpers.smoothResizingPromise;
+		let bubbleInputHeight = Helpers.getSearchRowHeight();
+		let suggestedItemsHeight = _id("library-other-items").getBoundingClientRect().height;
+		let minTableHeight = 400;
+		let citationPreview = _id("citation-preview").getBoundingClientRect().height;
+		let bottomHeight = _id("bottom-area-wrapper").getBoundingClientRect().height;
+
+		let minHeight = bubbleInputHeight + suggestedItemsHeight + citationPreview + bottomHeight + minTableHeight;
+
+		let targetWidth = Math.max(window.innerWidth, this.MIN_WIDTH);
+		let targetHeight = Math.max(minHeight, lastSetWindowHeight);
+		let needsResize = window.innerHeight < minHeight || window.innerWidth < this.MIN_WIDTH;
+
+		if (needsResize) {
+			doc.documentElement.style.removeProperty('min-height');
+			ignoreWindowResizing = true;
+			await new Promise((resolve) => {
+				Helpers.smoothResize(targetWidth, targetHeight, {
+					onComplete: () => {
+						_id("bubble-input").refocusInput();
+						doc.documentElement.style.minHeight = `${minHeight}px`;
+						document.documentElement.setAttribute("dialog-layout", this.type);
+						ignoreWindowResizing = false;
+						resolve();
+					},
+				});
+			});
+		}
+		// ensure dialog-layout and min-height is set even if window does not need resizing
+		else {
+			doc.documentElement.style.minHeight = `${minHeight}px`;
+			document.documentElement.setAttribute("dialog-layout", this.type);
+		}
+	}
+
+	// handle click on the items container
+	_captureItemsContainerClick(event) {
+		let section = event.target.closest(".section");
+		// expand the deck of items if it is collapsed
+		if (section.classList.contains("expanded")) return;
+		event.stopPropagation();
+		IOManager.toggleSectionCollapse(section, "expanded", true);
+		// if the click is keyboard-initiated, focus the first item
+		if (event.layerX == 0 && event.layerY == 0) {
+			let firstItem = section.querySelector(".item");
+			IOManager.selectItemNodesRange(firstItem);
+			section.querySelector(".item").focus();
+		}
+	}
+
+	async _initItemTree() {
+		var itemsTree = _id('zotero-items-tree');
+		let itemColumns = COLUMNS.map((column) => {
+			column = Object.assign({}, column);
+			column.hidden = !['title', 'firstCreator', 'date'].includes(column.dataKey);
+			return column;
+		});
+		let columnLabel = Zotero.getString('integration-citationDialog-add-to-citation');
+		// Add + column to add an item to the citation on click
+		itemColumns.push({
+			dataKey: 'addToCitation',
+			label: columnLabel,
+			htmlLabel: ' ', // space for column label to appear empty
+			width: 26,
+			hidden: false,
+			staticWidth: true,
+			fixedWidth: true,
+			showInColumnPicker: false,
+			renderCell: (index, inCitation, column) => {
+				let cell = Helpers.createNode("span", {}, `cell ${column.className} clickable`);
+				if (inCitation === null) {
+					// no icon should be shown when an item cannot be added
+					// (e.g. when citing notes, parent items are displayed but not included)
+					return cell;
+				}
+				let iconWrapper = Helpers.createNode("span", {}, `icon-action`);
+				cell.append(iconWrapper);
+				let icon = getCSSIcon('plus-circle');
+				iconWrapper.append(icon);
+				// add aria-label for screen readers to announce if this item is added
+				let count = this._getItemsViewIconClickItems(index).length;
+				if (inCitation) {
+					doc.l10n.setAttributes(cell, "integration-citationDialog-items-table-added", { count });
+				}
+				else {
+					doc.l10n.setAttributes(cell, "integration-citationDialog-items-table", { count });
+				}
+				iconWrapper.append(icon);
+				// refresh the tooltip's item count, since the selection can change
+				// without this row re-rendering
+				cell.addEventListener("mouseenter", () => {
+					doc.l10n.setArgs(cell, { count: this._getItemsViewIconClickItems(index).length });
+				});
+				iconWrapper.addEventListener("click", () => {
+					this._handleItemsViewIconClick(index);
+				});
+				return cell;
+			}
+		});
+		this.itemsView = await CollectionViewItemTree.init(itemsTree, {
+			id: "citationDialog",
+			dragAndDrop: DIALOG_STATE.isCitingItems(),
+			persistColumns: true,
+			columnPicker: true,
+			onSelectionChange: () => {
+				libraryLayout.updateSelectedItems();
+				if (DIALOG_STATE.isAddingAnnotations()) {
+					this._handleSelectionChangeWithAnnotation();
+				}
+			},
+			regularOnly: DIALOG_STATE.isCitingItems(),
+			multiSelect: DIALOG_STATE.isCitingItems() || DIALOG_STATE.isAddingAnnotations(),
+			onActivate: (event, items) => {
+				// Prevent Enter event from reaching KeyboardHandler which would accept the dialog
+				event.preventDefault();
+				event.stopPropagation();
+				if (DIALOG_STATE.isAddingAnnotations() && items.some(item => !item.isAnnotation())) return;
+				if (DIALOG_STATE.isAddingNote() && items.some(item => !item.isNote())) return;
+
+				let row = event.target.closest(".row");
+				let isClick = event.type == "dblclick";
+				// Suppress focus-ring on focused rows to avoid flashing
+				doc.querySelector("#item-tree-container").classList.add("no-focus-ring");
+				this.itemsView.selection.clearSelection();
+				// on Enter, try to find the last item's row to keep it visible after items are added
+				if (!isClick) {
+					let lastItemID = items[items.length - 1].id;
+					let rowIndex = this.itemsView.getRowIndexByID(lastItemID);
+					row = doc.getElementById(`${this.itemsView.id}-row-${rowIndex}`) || row;
+				}
+				let rowTopBeforeRefresh = row.getBoundingClientRect().top;
+				IOManager.addItemsToCitation(items, { noInputRefocus: true }).then(() => {
+					this._scrollItemTreeToRow(row.id, rowTopBeforeRefresh);
+					// move focus to bubble-input after virtualized-table steals focus on double-click
+					setTimeout(() => {
+						_id("bubble-input").refocusInput();
+						doc.querySelector("#item-tree-container").classList.remove("no-focus-ring");
+					}, 5);
+				});
+			},
+			emptyMessage: Zotero.getString('pane.items.loading'),
+			columns: itemColumns,
+			// Skip irrelevant child rows (e.g. no notes in annotations mode)
+			filterChildItems: (item) => {
+				if (DIALOG_STATE.isAddingAnnotations()) {
+					return SearchHandler.isItemWithAnnotations(item);
+				}
+				else if (DIALOG_STATE.isAddingNote()) {
+					return SearchHandler.isItemWithNotes(item);
+				}
+				return true;
+			},
+			// getExtraField helps itemTree fetch the data for a column that's
+			// not a part of actual item properties
+			getExtraField: (item, key) => {
+				if (key == "addToCitation") {
+					if (!(item instanceof Zotero.Item)) return null;
+					if (DIALOG_STATE.isAddingNote() && !item.isNote()) return null;
+					if (DIALOG_STATE.isCitingItems() && !item.isRegularItem()) return null;
+					if (DIALOG_STATE.isAddingAnnotations() && !item.isAnnotation()) return null;
+					// The returned value needs to be a string due to a call to .toLowerCase()
+					// in _handleTyping of virtualized-table. Otherwise, errors are thrown if you type
+					// when the addToCitation column is used for sorting.
+					// Strings have to be different to allow for sorting by the addToCitation column.
+					// "" indicates the item is not in the citation, " " indicates that it is.
+					// " " is picked over other strings to never be picked up by _handleTyping
+					//  of virtualized-table, which could change row selection in a way that's irrelevant here.
+					return CitationDataManager.itemAddedCache.has(item.id) ? " " : "";
+				}
+				return undefined;
+			}
+		});
+		doc.querySelector("item-tree-menu-bar").init(this.itemsView);
+		// handle backspace/delete to remove an item from citation
+		itemsTree.addEventListener("keypress", event => this._handleItemsViewKeyPress(event));
+		// only highlight bubbles of selected rows when the focus is in itemTree
+		// when focus leaves the items table, bubbles highlighting is removed
+		itemsTree.addEventListener("focusin", this.updateSelectedItems);
+		itemsTree.addEventListener("focusout", this._clearSelectedBubbles);
+		this._refreshItemsViewHighlightedRows();
+	}
+	
+	async _initCollectionTree() {
+		const CollectionTree = require('zotero/collectionTree');
+		this.collectionsView = await CollectionTree.init(_id('zotero-collections-tree'), {
+			onSelectionChange: this._onCollectionSelection.bind(this),
+			hideSources: ['duplicates', 'trash', 'feeds'],
+			initialFolder: Zotero.Prefs.get("integration.citationDialogCollectionLastSelected"),
+			onActivate: () => {},
+			filterLibraryIDs: io.filterLibraryIDs,
+			multiSelect: true
+		});
+		// Add aria-description with instructions on what this collection tree is for
+		// Voiceover announces the description placed on the actual tree when focus enters it
+		if (Zotero.isMac) {
+			doc.l10n.setAttributes(_id("collection-tree"), "integration-citationDialog-collections-table");
+		}
+		// JAWS does not. It will announce the description and label of the parent with role=group
+		// on JAWS+Tab keypress. So on windows, place aria-label and description on the rows' container.
+		else {
+			let rowsContainer = doc.querySelector("#collection-tree .windowed-list");
+			doc.l10n.setAttributes(rowsContainer, "integration-citationDialog-collections-table");
+			rowsContainer.setAttribute("role", "group");
+		}
+	}
+
+	_initSidepane() {
+		// Click on the + icon of annotion-row will bubbleize the annotation
+		_id("annotations-list").addEventListener("click", (event) => {
+			if (!event.target.classList.contains("zotero-clicky-plus")) return;
+			let annotationRow = event.target.closest("annotation-row");
+			let item = Zotero.Items.get(annotationRow.annotation.id);
+			IOManager.addItemsToCitation(item);
+		});
+		// Space/Enter on annotation row is the same as clicking on the + icon
+		_id("annotations-list").addEventListener("keydown", (event) => {
+			if ([" ", "Enter"].includes(event.key) && event.target.tagName == "annotation-row") {
+				let item = Zotero.Items.get(event.target.annotation.id);
+				IOManager.addItemsToCitation(item);
+				event.preventDefault();
+				event.stopPropagation();
+			}
+		});
+		// Handle the actual filtering in itemPane
+		_id("annotations-sidebar-filter").addEventListener("input", (event) => {
+			_id("annotations-filter-cancel-btn").hidden = !event.target.value;
+			_id("annotations-list").filter = event.target.value;
+			_id("annotations-list").render();
+		});
+		// Handle click on X button to clear the filter
+		_id("annotations-filter-cancel-btn").addEventListener("click", () => {
+			_id("annotations-sidebar-filter").value = "";
+			_id("annotations-sidebar-filter").dispatchEvent(new Event('input', { bubbles: true }));
+		});
+	}
+
+	// Draggable divider to resize collectionTree
+	_initCollectionsTreeDivider() {
+		let setCollectionTreeWidth = (width) => {
+			let minWidth = 200;
+			if (!width) {
+				width = minWidth;
+			}
+			let maxWidth = Math.floor(window.innerWidth * 0.4); // 40% of window width
+			let nextWidth = Math.round(Math.max(minWidth, Math.min(width, maxWidth))); // enforce width between 200px and maxWidth
+			_id("collections-tree-container").style.width = `${nextWidth}px`;
+			this.collectionTreeWidth = nextWidth;
+		};
+
+		let divider = _id("collections-tree-divider");
+		let savedWidth = Helpers.fetchStoredWindowParams().library?.collectionTreeWidth;
+		setCollectionTreeWidth(savedWidth);
+
+		let startX = 0;
+		let startWidth = 0;
+		let onPointerMove = (event) => {
+			let delta = event.clientX - startX;
+			if (Zotero.rtl) delta = -delta;
+			setCollectionTreeWidth(startWidth + delta);
+		};
+		let onPointerUp = () => {
+			divider.removeEventListener("pointermove", onPointerMove);
+			divider.removeEventListener("pointerup", onPointerUp);
+			divider.removeEventListener("pointercancel", onPointerUp);
+		};
+		divider.addEventListener("pointerdown", (event) => {
+			if (event.button !== 0) return;
+			event.preventDefault();
+			startX = event.clientX;
+			startWidth = _id("collections-tree-container").getBoundingClientRect().width;
+			divider.setPointerCapture(event.pointerId);
+			divider.addEventListener("pointermove", onPointerMove);
+			divider.addEventListener("pointerup", onPointerUp);
+			divider.addEventListener("pointercancel", onPointerUp);
+		});
+
+		// Update max width when the window is resized
+		window.addEventListener("resize", () => {
+			setCollectionTreeWidth(this.collectionTreeWidth);
+		});
+	}
+	
+	async _onCollectionSelection() {
+		if (!this.collectionsView.selection.count) return;
+		// Show the union of all selected collections (cross-library selections are
+		// grouped by library in the items view, as in List mode)
+		let selectedRows = [...this.collectionsView.selection.selected]
+			.sort((a, b) => a - b)
+			.map(index => this.collectionsView.getRow(index));
+		// Collection selection not changed
+		if (this.itemsView
+				&& Zotero.Utilities.arrayEquals(
+					selectedRows.map(row => row.id).sort(),
+					this.itemsView.collectionTreeRows.map(row => row.id).sort()
+				)) {
+			return;
+		}
+		// _onCollectionSelection will be called during initiation. It can take a while
+		// to load for large libraries. If we are in list mode during initial load, do nothing.
+		if (currentLayout?.type !== "library") return;
+
+		this.itemsView.setItemsPaneMessage(Zotero.getString('pane.items.loading'));
+
+		// Load item data for each selected library if necessary
+		for (let libraryID of new Set(selectedRows.map(row => row.ref.libraryID))) {
+			let library = Zotero.Libraries.get(libraryID);
+			if (!library.getDataLoaded('item')) {
+				Zotero.debug("Waiting for items to load for library " + library.libraryID);
+				await library.waitForDataLoad('item');
+			}
+		}
+
+		// Restrict each collection's items to those relevant to the current citation mode
+		let filterItemsForMode = async (items) => {
+			// In add-note mode, note parent checks call item.getNotes(), which requires childItems
+			if (DIALOG_STATE.isAddingNote()) {
+				let regularItems = items.filter(item => SearchHandler.isItemWithNotes(item));
+				if (regularItems.length) {
+					await Zotero.Items.loadDataTypes(regularItems, ['childItems']);
+				}
+				// when citing notes, only keep notes or note parents
+				items = items.filter(item => item.isNote() || item.getNotes().length);
+			}
+			// when adding annotations, only keep annotations, their attachments, and their top-level items
+			if (DIALOG_STATE.isAddingAnnotations()) {
+				return SearchHandler.keepItemsWithAnnotations(items);
+			}
+			return items;
+		};
+
+		await this.itemsView.changeCollectionTreeRows(selectedRows.map(collectionTreeRow => ({
+			id: collectionTreeRow.id,
+			getItems: async () => filterItemsForMode(await collectionTreeRow.getItems()),
+			isSearch: () => true,
+			isSearchMode: () => true,
+			setSearch: (searchText, mode) => collectionTreeRow.setSearch(searchText, mode),
+			clearCache: () => collectionTreeRow.clearCache(),
+			ref: collectionTreeRow.ref
+		})));
+		await this.itemsView.setFilter('citation-search', SearchHandler.searchValue);
+
+		this.itemsView.clearItemsPaneMessage();
+	}
+
+	// backspace/delete in itemsView deletes items from the citation
+	_handleItemsViewKeyPress(event) {
+		if (event.key == "Delete" || Zotero.isMac && event.key == "Backspace") {
+			let itemsToRemove = this.itemsView.getSelectedItems();
+			for (let item of itemsToRemove) {
+				let items = CitationDataManager.getItems({ itemID: item.id });
+				for (let item of items) {
+					IOManager._deleteItem(item.dialogReferenceID);
+				}
+			}
+		}
+	}
+
+	// click on + icon will add the item(s) to the citation
+	_handleItemsViewIconClick(index) {
+		let rowNode = doc.getElementById(`${this.itemsView.id}-row-${index}`);
+		let rowTopBeforeRefresh = rowNode.getBoundingClientRect().top;
+		let items = this._getItemsViewIconClickItems(index);
+		this.itemsView.selection.clearSelection();
+		// after adding the items, try to keep the mouse over the clicked row
+		// even if the bubble-input gets taller
+		IOManager.addItemsToCitation(items).then(() => {
+			this._scrollItemTreeToRow(rowNode.id, rowTopBeforeRefresh);
+		});
+	}
+
+	// items that a click on the + icon of the given row will add: all selected
+	// items if the row is part of the current selection, otherwise just this row's item
+	_getItemsViewIconClickItems(index) {
+		let items;
+		if (this.itemsView.selection.isSelected(index)) {
+			items = this.itemsView.getSelectedItems();
+		}
+		else {
+			items = [this.itemsView.getRow(index).ref];
+		}
+		if (DIALOG_STATE.isAddingAnnotations()) {
+			items = items.filter(item => item.isAnnotation());
+		}
+		return items;
+	}
+
+	_handleSelectionChangeWithAnnotation() {
+		let selectedItems = this.itemsView.getSelectedItems().filter(item => item.isAnnotation() || item.isFileAttachment() || item.isRegularItem());
+		let selectedAnnotations = selectedItems.flatMap(item => SearchHandler.getAllAnnotations(item));
+		let uniqueAnnotations = [];
+		let annotationIDs = new Set();
+		for (let annotation of selectedAnnotations) {
+			if (annotationIDs.has(annotation.id)) continue;
+			uniqueAnnotations.push(annotation);
+			annotationIDs.add(annotation.id);
+		}
+		// Don't re-render if the list has not changed
+		let rendered = new Set(_id("annotations-list").items.map(item => item.id));
+		if (rendered.isSupersetOf(annotationIDs) && rendered.isSubsetOf(annotationIDs)) return;
+
+		// When no annotations are selected, a message will be shown
+		_id("annotations-list-wrapper").hidden = uniqueAnnotations.length == 0;
+		_id("annotations-sidebar-filter-wrapper").hidden = uniqueAnnotations.length == 0;
+		_id("annotations-message").hidden = uniqueAnnotations.length > 0;
+
+		_id("annotations-list").items = uniqueAnnotations;
+		_id("annotations-list").filter = "";
+		_id("annotations-sidebar-filter").value = "";
+		_id("annotations-list").render();
+
+		// Add the plus icon to every annotation row
+		let annotationRows = [...doc.querySelectorAll("#annotations-list annotation-row")];
+		for (let annotationRow of annotationRows) {
+			annotationRow.setAttribute("action", "plus");
+		}
+	}
+
+	// Highlight/de-highlight selected rows
+	async _refreshItemsViewHighlightedRows() {
+		let selectedIDs = CitationDataManager.getCitedLibraryItemIDs();
+		// Wait for the tree to fully load to avoid a logged error that the tree is undefined
+		while (!this.itemsView.tree) {
+			await Zotero.Promise.delay(10);
+		}
+		this.itemsView.setHighlightedRows([...selectedIDs]);
+	}
+
+	_scrollHorizontallyOnWheel(event) {
+		if (event.deltaY !== 0 && event.deltaX === 0) {
+			_id("library-other-items").scrollLeft += event.deltaY;
+			event.preventDefault();
+		}
+	}
+
+	async _tryToScrollToFirstCitedRow() {
+		if (this._scrolledToFirstCitedOnInit) return;
+		this._scrolledToFirstCitedOnInit = true;
+		// If the itemTree is still loading, wait for it to finish
+		await this.itemsView.waitForLoad();
+		// Scroll to the first cited item
+		let firstCitedRow = this.itemsView._rows.findIndex(
+			row => row.isObjectRow && CitationDataManager.itemAddedCache.has(row.ref.id)
+		);
+		if (firstCitedRow == -1) return;
+		this.itemsView.ensureRowsAreVisible([firstCitedRow]);
+	}
+
+	// after an item is added, bubble-input's height may increase and push the itemTree down
+	// scroll it back up so that the mouse remains over the same row as before click
+	// do not do it on click of the first row, since then the mouse will be on a header
+	_scrollItemTreeToRow(rowID, rowTopBeforeRefresh) {
+		let rowIndex = parseInt(rowID.split("-").at(-1));
+		if (rowIndex === 0) return;
+		this.itemsView.ensureRowIsVisible(rowIndex);
+		let rowAfterRefresh = doc.querySelector(`#zotero-items-tree #${rowID}`);
+		if (!rowAfterRefresh) return;
+		let rowTopAfterRefresh = rowAfterRefresh.getBoundingClientRect().top;
+		let delta = rowTopAfterRefresh - rowTopBeforeRefresh;
+		if (delta > 0.1) {
+			rowAfterRefresh.closest(".virtualized-table-body").scrollTop += delta;
+		}
+	}
+
+	// remove selected highlight from all bubbles
+	_clearSelectedBubbles() {
+		for (let itemObj of CitationDataManager.items) {
+			itemObj.selected = false;
+		}
+		IOManager.updateBubbleInput();
+	}
+}
+
+class ListLayout extends Layout {
+	constructor() {
+		super("list");
+		this.MIN_WIDTH = 800; // min-width from _citationDialog.scss
+	}
+
+	// Create item node for an item group and store item ids in itemIDs attribute
+	async createItemNode(item) {
+		let itemNode = Helpers.createNode("div", {
+			tabindex: "-1",
+			"data-l10n-id": "integration-citationDialog-aria-item-list",
+			role: "option",
+			"data-tabindex": 30,
+			"data-arrow-nav-enabled": true,
+			draggable: true
+		}, "item keyboard-clickable");
+		let id = item.cslItemID || item.id;
+		itemNode.setAttribute("itemID", id);
+		itemNode.setAttribute("role", "option");
+		itemNode.id = id;
+		let icon = Helpers.createNode("span", {}, "icon icon-css icon-item-type");
+		let dataTypeLabel = item.getItemTypeIconName(true);
+		icon.setAttribute("data-item-type", dataTypeLabel);
+
+		let title = Helpers.buildItemTitle(item);
+		let titleContent = Helpers.createNode("span", {}, "");
+		let description = Helpers.buildItemDescription(item);
+		Zotero.Utilities.Internal.renderItemTitle(item.getDisplayTitle(), titleContent);
+		title.prepend(icon);
+		itemNode.append(title, description);
+		if (Zotero.Retractions.isRetracted(item)) {
+			let retractedIcon = getCSSIcon("cross");
+			retractedIcon.classList.add("retracted");
+			icon.after(retractedIcon);
+		}
+		return itemNode;
+	}
+
+	async refreshItemsList(options = {}) {
+		await super.refreshItemsList(options);
+
+		// Hide padding of list layout if there is not a single item to show
+		let isEmpty = !_id("list-layout").querySelector(".section:not([hidden])");
+		_id("list-layout").classList.toggle("empty", isEmpty);
+		// Explicitly set the height of the container so the transition works when container is collapssed
+		for (let container of [..._id("list-layout").querySelectorAll(".itemsContainer")]) {
+			container.style.height = `${container.scrollHeight}px`;
+		}
+		// collapse/expand collapsible section when header is clicked
+		let collapsibleSection = doc.querySelector(".section.expandable");
+		if (collapsibleSection) {
+			collapsibleSection.querySelector(".header-label").addEventListener("click", () => IOManager.toggleSectionCollapse(collapsibleSection, null, true));
+		}
+		if (!options.skipWindowResize) {
+			this.resizeWindow();
+		}
+	}
+
+	updateSelectedItems() {
+		let selectedIDs = new Set([...doc.querySelectorAll(".item.selected")].map(node => parseInt(node.getAttribute("itemID"))));
+		for (let bubbleItem of CitationDataManager.items) {
+			bubbleItem.selected = selectedIDs.has(bubbleItem.id);
+		}
+		IOManager.updateBubbleInput();
+	}
+
+	// Resolves only once the resize animation has fully completed
+	async resizeWindow() {
+		await Helpers.smoothResizingPromise;
+		let bubbleInputHeight = Helpers.getSearchRowHeight();
+
+		// height of all sections
+		let sectionsHeight = 0;
+		for (let section of [..._id("list-layout").querySelectorAll(".section:not([hidden])")]) {
+			sectionsHeight += section.getBoundingClientRect().height;
+		}
+
+		// account for padding of the items list
+		let sectionsWrapperStyle = getComputedStyle(_id("list-layout-wrapper"));
+		let sectionsWrapperPadding = 0;
+		let marginOfError = 0;
+		if (sectionsHeight > 0) {
+			sectionsWrapperPadding = parseInt(sectionsWrapperStyle.paddingTop) + parseInt(sectionsWrapperStyle.paddingBottom);
+			// margin of error to ensure that the scrollbar does not appear unless really necessary
+			marginOfError = Zotero.isWin ? 6 : 2;
+		}
+
+		// height of citation preview (0 when hidden) and the bottom section
+		let citationPreview = _id("citation-preview").getBoundingClientRect().height;
+		let bottomHeight = _id("bottom-area-wrapper").getBoundingClientRect().height;
+
+		// set min height and resize the window
+		let autoHeight = bubbleInputHeight + sectionsHeight + sectionsWrapperPadding + citationPreview + bottomHeight + marginOfError;
+		// window.resizeTo(X,Y) resizes the window so that it's outerHeight == Y. On mac and windows,
+		// innerHeight and outerHeight are the same. On linux, the outerHeight > innerHeight, perhaps
+		// outerHeight there includes chrome, borders, etc. This difference is accounted for below, so that the dialog
+		// itself (not the outer window) ends up with the desired height.
+		if (Zotero.isLinux) {
+			autoHeight += (window.outerHeight - window.innerHeight);
+		}
+		let minHeight = bubbleInputHeight + citationPreview + bottomHeight;
+
+		// cap window height at the height last set by the user
+		autoHeight = Math.min(autoHeight, lastSetWindowHeight);
+		let targetWidth = Math.min(window.innerWidth, this.MIN_WIDTH);
+
+		// Skip the resize animation if the window is already at the target size.
+		let needsResize = Math.round(window.innerWidth) !== Math.round(targetWidth) || Math.round(window.innerHeight) !== Math.round(autoHeight);
+		if (!needsResize) {
+			doc.documentElement.style.minHeight = `${minHeight}px`;
+			document.documentElement.setAttribute("dialog-layout", this.type);
+			return;
+		}
+
+		// Clear the min-height floor so the window can animate freely (including shrinking);
+		// it's restored to the new value in onComplete below.
+		doc.documentElement.style.removeProperty("min-height");
+		ignoreWindowResizing = true;
+		
+		// Timeout is required likely to allow the min-height removal to settle
+		await new Promise((resolve) => {
+			setTimeout(() => {
+				Helpers.smoothResize(targetWidth, autoHeight, {
+					onComplete: () => {
+						_id("bubble-input").refocusInput();
+						doc.documentElement.style.minHeight = `${minHeight}px`;
+						document.documentElement.setAttribute("dialog-layout", this.type);
+						ignoreWindowResizing = false;
+						resolve();
+					},
+				});
+			}, 10);
+		});
+	}
+
+	_markRoundedCorners() {
+		let selectedGroupStarted = false;
+		let previousRow;
+		let items = [...doc.querySelectorAll(".item")];
+		for (let rowIndex = 0; rowIndex < items.length; rowIndex++) {
+			let row = items[rowIndex];
+			row.classList.remove("selected-first", "selected-last");
+			// stop if we reached the end of the container
+			if (previousRow && selectedGroupStarted && row.parentNode !== previousRow.parentNode) {
+				selectedGroupStarted = false;
+				previousRow.classList.add("selected-last");
+			}
+			// mark the first item in a group of consecutively selected
+			if (row.classList.contains("selected") && !selectedGroupStarted) {
+				row.classList.add("selected-first");
+				selectedGroupStarted = true;
+			}
+			// mark the last item in a group of consecutively selected
+			if (!row.classList.contains("selected") && selectedGroupStarted && previousRow) {
+				previousRow.classList.add("selected-last");
+				selectedGroupStarted = false;
+			}
+			// if this is the last selected item, mark it as the last selected too
+			if (row.classList.contains("selected") && rowIndex == items.length - 1) {
+				row.classList.add("selected-last");
+			}
+			previousRow = row;
+		}
+	}
+}
+
+//
+// Handling of user IO
+//
+const IOManager = {
+	sectionExpandedStatus: {},
+	_skipInputAcceptOnEnterUntil: 0,
+	_timesItemsAdded: 0,
+
+	// most essential IO functionality that is added immediately on load
+	preInit() {
+		_id("accept-button").addEventListener("click", accept);
+		_id("cancel-button").addEventListener("click", cancel);
+
+		doc.addEventListener("dialog-accepted", accept);
+		doc.addEventListener("dialog-cancelled", cancel);
+	},
+
+	init() {
+		// handle input receiving focus or something being typed
+		doc.addEventListener("handle-input", ({ detail: { query, eventType } }) => this._handleInput({ query, eventType }));
+		// handle input keypress on an input of bubbleInput. It's handled here and not in bubbleInput
+		// because we may need to set a locator or add a pre-selected item to the citation
+		doc.addEventListener("input-enter", ({ detail: { input } }) => this._handleInputEnter(input));
+		// handle a bubble being moved or deleted
+		doc.addEventListener("delete-item", ({ detail: { dialogReferenceID } }) => this._deleteItem(dialogReferenceID));
+		doc.addEventListener("move-item", ({ detail: { dialogReferenceID, index } }) => this._moveItem(dialogReferenceID, index));
+		doc.addEventListener("add-dragged-item", ({ detail: { itemIDs, index } }) => this._handleItemDrop(itemIDs, index));
+		// display details popup for the bubble
+		doc.addEventListener("show-details-popup", ({ detail: { dialogReferenceID } }) => this._openItemDetailsPopup(dialogReferenceID));
+		// mark item nodes as selected to highlight them and mark relevant bubbles
+		doc.addEventListener("select-items", ({ detail: { startNode, endNode } }) => this.selectItemNodesRange(startNode, endNode));
+		// focus the item tree from citation dialog keyboard navigation
+		doc.addEventListener("focus-item-tree", ({ detail }) => this.focusItemTree(detail));
+		// update bubbles after citation item is updated by itemDetails popup
+		doc.addEventListener("item-details-updated", () => this.updateBubbleInput());
+
+		doc.addEventListener("DOMMenuBarActive", () => this._handleMenuBarAppearance());
+
+		// if keep sorted was unchecked and then checked, resort items and update bubbles
+		_id("keepSorted").addEventListener("change", () => this._resortItems());
+
+		// Switch list/library mode on mouse down
+		_id("dialog-mode-setting").addEventListener("mousedown", event => this.toggleDialogMode(event.target.closest(".option").getAttribute("value")));
+		// Swtich list/library mode on click via keyboard
+		_id("dialog-mode-setting").addEventListener("click", (event) => {
+			if (event.pointerType === "mouse") return;
+			this.toggleDialogMode(event.target.closest(".option").getAttribute("value"));
+		});
+
+		_id("includeComments").addEventListener("click", () => this._toggleIncludeComments());
+		_id("display-preview-button").addEventListener("click", () => this._toggleDisplayPreview());
+
+		// open settings popup on btn click
+		_id("settings-button").addEventListener("click", event => _id("settings-popup").openPopup(event.target, "before_end"));
+
+		// some additional logic to keep focus on relevant nodes during mouse interactions
+		this._initFocusRetention();
+		doc.addEventListener("focusin", this.resetSelectedAfterFocus);
+
+		// Switch dialog type on mouse down
+		_id("dialog-type-setting").addEventListener("mousedown", event => setDialogType(event.target.closest(".option").getAttribute("value")));
+		// Switch dialog type on click via keyboard
+		_id("dialog-type-setting").addEventListener("click", (event) => {
+			if (event.pointerType === "mouse") return;
+			setDialogType(event.target.closest(".option").getAttribute("value"));
+		});
+		// clear record of just-added bubbles to which next locator would go
+		doc.addEventListener("keydown", event => this._clearJustAddedBubbles(event));
+		_id("bubble-input").addEventListener("focusout", event => this._clearJustAddedBubbles(event));
+		// handle cmd/ctrl-z pressed from the input to undo added locator to a just-added bubble
+		_id("bubble-input").addEventListener("keydown", event => this._handleInputUndo(event));
+	},
+
+	// switch between list and library modes
+	async toggleDialogMode(newMode) {
+		// If there is a running search, do nothing to avoid window resizing conflicts
+		if (SearchHandler.searching) return;
+		// Do nothing if switching to a mode that is already active
+		if (currentLayout?.type == newMode) return;
+		
+		_id("list-layout").hidden = newMode == "library";
+		_id("library-layout").hidden = newMode == "list";
+
+		Helpers.setActiveSegmentedControl(_id(`dialog-mode-${newMode}`));
+		// Delete all item nodes from the old layout
+		for (let itemNode of [...doc.querySelectorAll(".item")]) {
+			itemNode.remove();
+		}
+
+
+		document.documentElement.removeAttribute("dialog-layout");
+		let isInitialModeSetting = currentLayout === undefined;
+		currentLayout = newMode === "library" ? libraryLayout : listLayout;
+
+		// Reflect visibility of the citation preview after the layout switch.
+		CitationPreview.update();
+
+		// Wait for window resize before running search to avoid stutter with large libraries
+		if (!isInitialModeSetting) {
+			await currentLayout.resizeWindow();
+		}
+
+		// do not show View menubar with itemTree-specific options in list mode
+		doc.querySelector("item-tree-menu-bar").suppressed = currentLayout.type == "list";
+		// switching from library to list mode initiated by the user (not via setInitialDialogMode on load)
+		if (currentLayout.type == "list" && !isInitialModeSetting) {
+			// when switching from library to list, make sure all selected items are de-selected
+			libraryLayout.itemsView?.selection.clearSelection();
+			currentLayout.updateSelectedItems();
+		}
+		// After switchingto list mode, the window is often resized, which causes the virtualized table
+		// to redraw and remove most of .row nodes. Then, if one switches back to library mode, the rows
+		// may or may not get redrawn again. For example, if the window's height does not change - they won't
+		// and the tree will look fully or partially empty until the user scrolls.
+		// There are other, harder to reproduce, instances when the tree is initially not fullly drawn.
+		// In this workaround, the trees will be force refreshed after a delay to make sure
+		// the trees get rendered no matter what.
+		if (currentLayout.type == "library") {
+			currentLayout.forceUpdateTablesAfterRefresh = true;
+			// highlight items added in list in itemTree
+			currentLayout._refreshItemsViewHighlightedRows();
+			// In case _onCollectionSelection never ran (initial layout was list), explicitly run it now
+			await currentLayout._onCollectionSelection();
+		}
+		await currentLayout.search(SearchHandler.searchValue, { skipDebounce: true });
+		// When library layout is opened for the first time (initial state or first switch from list mode),
+		// try to scroll to the first cited row in the itemTree to preserve behavior from classic citation dialog.
+		if (currentLayout.type == "library") {
+			currentLayout._tryToScrollToFirstCitedRow();
+		}
+	},
+
+	// pass current items in the citation to bubble-input to have it update the bubbles
+	updateBubbleInput() {
+		// re-generate the bubble string for each item, in case a locator/prefix/suffix/etc. was changed
+		for (let item of CitationDataManager.items) {
+			item.updateBubbleString();
+		}
+		_id("bubble-input").refresh(CitationDataManager.items.map((item) => {
+			return {
+				dialogReferenceID: item.dialogReferenceID,
+				bubbleString: item.bubbleString,
+				selected: item.selected,
+			};
+		}), DIALOG_STATE.type);
+		_id("accept-button").disabled = !CitationDataManager.items.length;
+		CitationPreview.update();
+	},
+
+	async addItemsToCitation(items, { noInputRefocus, index } = { index: null }) {
+		Zotero.debug(`Citation Dialog: adding ${items.length} items to the citation`);
+		if (accepted || SearchHandler.searching) return;
+		if (!Array.isArray(items)) {
+			items = [items];
+		}
+		if (DIALOG_STATE.isAddingAnnotations()) {
+			items = items.filter(item => item.isAnnotation());
+		}
+		// if selecting a note, add it and immediately accept the dialog
+		if (DIALOG_STATE.isAddingNote()) {
+			if (!items[0].isNote()) return;
+			CitationDataManager.items = [];
+			let bubbleItem = BubbleItem.fromItem(items[0]);
+			await CitationDataManager.addItems({ bubbleItems: [bubbleItem] });
+			accept();
+			return;
+		}
+		// Warn about retracted items, if any are present
+		for (let item of items) {
+			if (!Zotero.Retractions.shouldShowCitationWarning(item)) continue;
+			let canProceed = PopupsHandler.showRetractedWarning(item);
+			// User did not select "Continue", so just stop
+			if (!canProceed) return;
+		}
+		
+		// If multiple items are being added, only add ones that are not included in the citation
+		if (items.length > 1) {
+			items = items.filter(item => !(item.id && CitationDataManager.getItems({ itemID: item.id }).length));
+		}
+
+		// If the last input has a locator, add it into the item
+		let input = _id("bubble-input").getCurrentInput();
+		let inputValue = SearchHandler.cleanSearchQuery(input?.value || "");
+		let locator = Helpers.extractLocator(inputValue);
+		// Add the item at a position based on current input if it is not explicitly specified
+		if (index === null && input) {
+			index = _id("bubble-input").getFutureBubbleIndex();
+		}
+		// If there was an input used to run the search, clear it
+		if (input) {
+			input.remove();
+		}
+
+		// Add entries into the citation with the current locator if specified
+		let bubbleItems = items.map(item => BubbleItem.fromItem(item));
+		if (locator) {
+			for (let bubbleItem of bubbleItems) {
+				bubbleItem.locator = locator.locator;
+				bubbleItem.label = locator.label;
+			}
+			// Do not record just-added bubbles if locator is already provided
+			this._clearJustAddedBubbles();
+		}
+		else if (bubbleItems.length == 1) {
+			// If no locator is provided, record the just-added bubble.
+			// If a locator is typed next, that bubble will receive it.
+			this._justAddedBubbles = bubbleItems;
+			// Only show the placeholder guidance on the first add -- after
+			// that, the user presumably knows about the shortcut
+			_id("bubble-input").showJustAddedPlaceholder = DIALOG_STATE.isCitingItems()
+				&& this._timesItemsAdded < 1;
+		}
+		else {
+			// A multi-item add doesn't enter locator-typing mode, so typed text
+			// starts a new search instead of setting a page number on every added item
+			this._clearJustAddedBubbles();
+		}
+		this._timesItemsAdded++;
+		await CitationDataManager.addItems({ bubbleItems, index });
+		// Refresh the itemTree if in library mode
+		if (currentLayout.type == "library") {
+			libraryLayout.refreshItemsView();
+		}
+
+		this.updateBubbleInput();
+
+		// Show guidance panel on the first run
+		if (DIALOG_STATE.isCitingItems() && !Zotero.Prefs.get("firstRunGuidanceShown.citationDialog")) {
+			doc.querySelector(".bubble").id = "first-bubble";
+			// Center the panel on the first bubble
+			let width = doc.querySelector(".bubble").getBoundingClientRect().width;
+			doc.querySelector("guidance-panel").setAttribute("x", Math.round(width / 2));
+			IOManager.showFirstRunDialog();
+		}
+		// Render the preview before refreshing the list so resizeWindow measures its real height;
+		// otherwise the debounced render lands after the resize and overflows the window.
+		await CitationPreview.render();
+		// Always refresh items list to make sure the opened and selected items are up to date
+		await currentLayout.refreshItemsList();
+		if (!noInputRefocus) {
+			_id("bubble-input").refocusInput();
+		}
+		dialogNotPristine();
+	},
+
+	focusItemTree({ selectIfEmpty = false } = {}) {
+		let focusable = _id("zotero-items-tree").querySelector("[tabindex]");
+		if (!focusable) return false;
+		focusable.focus();
+		if (selectIfEmpty && libraryLayout?.itemsView?.selection?.count == 0) {
+			let selection = libraryLayout.itemsView.selection;
+			selection.select(selection.focused);
+		}
+		return true;
+	},
+
+	// select all items between startNode and endNode
+	selectItemNodesRange(startNode, endNode = null) {
+		let itemNodes = [...doc.querySelectorAll(".item")];
+		for (let node of itemNodes) {
+			node.classList.remove("selected", "selected-first", "selected-last");
+		}
+		if (startNode === null) return;
+
+		// can't select the collapsed deck of items
+		if (startNode.classList.contains("itemsContainer")) return;
+
+		let startIndex = itemNodes.indexOf(startNode);
+		let endIndex = endNode ? itemNodes.indexOf(endNode) : startIndex;
+
+		// if startIndex is after endIndex, just swap them
+		if (startIndex > endIndex) [startIndex, endIndex] = [endIndex, startIndex];
+
+		for (let i = startIndex; i <= endIndex; i++) {
+			IOManager.toggleItemNodeSelect(itemNodes[i], true);
+		}
+		currentLayout.updateSelectedItems();
+	},
+
+	toggleItemNodeSelect(itemNode, isSelected = null) {
+		if (isSelected === true) {
+			itemNode.classList.add("selected");
+		}
+		else if (isSelected === false) {
+			itemNode.classList.remove("selected");
+		}
+		else {
+			itemNode.classList.toggle("selected");
+		}
+		currentLayout.updateSelectedItems();
+		// For library view, this is handled in itemTree.jsx
+		if (currentLayout.type == "list") {
+			listLayout._markRoundedCorners();
+		}
+	},
+
+	async handleItemClick(event) {
+		let targetItem = event.target.closest(".item");
+		let multiselectable = targetItem.closest("[data-multiselectable]");
+		
+		// Debounce double clicks so one does not add multiple items unintentionally
+		if (IOManager._lastClickTime && (new Date()).getTime() - IOManager._lastClickTime < 300) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
+		IOManager._lastClickTime = (new Date()).getTime();
+
+		// Cmd/Ctrl + mouseclick toggles selected item node
+		if (multiselectable && (Zotero.isMac && event.metaKey) || (!Zotero.isMac && event.ctrlKey)) {
+			IOManager.toggleItemNodeSelect(targetItem);
+			return;
+		}
+		// Shift + click selects a range
+		if (multiselectable && event.shiftKey) {
+			let itemNodes = [..._id(`${currentLayout.type}-layout`).querySelectorAll(".item")];
+			let firstNode = _id(`${currentLayout.type}-layout`).querySelector(".item.selected") || itemNodes[0];
+			IOManager.selectItemNodesRange(firstNode, targetItem);
+			return;
+		}
+		// get itemIDs associated with the nodes
+		let itemIDs = new Set([targetItem.getAttribute("itemID")]);
+		// if target item is selected, add all other selected itemIDs
+		if (targetItem.classList.contains("selected")) {
+			let selectedItemNodes = _id(`${currentLayout.type}-layout`).querySelectorAll(".item.selected");
+			for (let itemNode of selectedItemNodes) {
+				itemIDs.add(itemNode.getAttribute("itemID"));
+			}
+		}
+		let itemsToAdd = Array.from(itemIDs).map(itemID => SearchHandler.getItem(itemID));
+		// while adding annotations, clicking on selected non-annotation(s) will select them in itemTree
+		if (DIALOG_STATE.isAddingAnnotations() && !itemsToAdd.every(i => i.isAnnotation())) {
+			let selected = await libraryLayout.itemsView.selectItems([...itemIDs].map(id => parseInt(id)));
+			// if no items were selected, select item's group in collection tree and try again
+			if (!selected) {
+				await libraryLayout.collectionsView.selectLibrary(itemsToAdd[0].libraryID);
+				libraryLayout.itemsView.selectItems([...itemIDs].map(id => parseInt(id)));
+			}
+			_id("zotero-items-tree").querySelector("[tabindex]").focus();
+			return;
+		}
+		IOManager.addItemsToCitation(itemsToAdd);
+	},
+
+	toggleSectionCollapse(section, status, userInitiated) {
+		// set desired class
+		if (status == "expanded" && !section.classList.contains("expanded")) {
+			section.classList.add("expanded");
+		}
+		else if (status == "collapsed" && section.classList.contains("expanded")) {
+			section.classList.remove("expanded");
+		}
+		else if (!status) {
+			section.classList.toggle("expanded");
+		}
+		// Record if the user explicitly expanded or collapsed the section to not undo it during next refresh
+		if (userInitiated) {
+			IOManager.sectionExpandedStatus[section.id] = section.classList.contains("expanded") ? "expanded" : "collapsed";
+		}
+		// mark collapsed items as unfocusable
+		if (section.classList.contains("expandable") && !section.classList.contains("expanded")) {
+			for (let item of [...section.querySelectorAll(".item")]) {
+				item.removeAttribute("tabindex");
+				item.setAttribute("draggable", false);
+				item.classList.remove("current");
+				item.classList.remove("selected");
+			}
+			// in library, the items deck itself becomes focusable
+			if (currentLayout.type == "library") {
+				section.querySelector(".itemsContainer").setAttribute("tabindex", -1);
+				section.querySelector(".itemsContainer").dataset.arrowNavEnabled = true;
+				// if an item if focused, focus the collapsed container for smoother transition
+				if (doc.activeElement.classList.contains("item")) {
+					section.querySelector(".itemsContainer").focus();
+				}
+			}
+		}
+		// when expanded, make them focusable again
+		else {
+			for (let item of [...section.querySelectorAll(".item")]) {
+				item.setAttribute("tabindex", -1);
+				item.setAttribute("draggable", true);
+			}
+			if (currentLayout.type == "library") {
+				let container = section.querySelector(".itemsContainer");
+				container.removeAttribute("tabindex");
+				container.classList.remove("selected", "current");
+			}
+		}
+		section.querySelector(".header-label").setAttribute("aria-expanded", section.classList.contains("expanded"));
+		// In list mode, there may be some empty space left after section collapse
+		if (currentLayout.type == "list") {
+			setTimeout(() => {
+				currentLayout.resizeWindow();
+			}, 300);
+		}
+	},
+
+
+	// when focus leaves the input or suggested items area in library mode, un-select all items
+	// so they do not apear highlighted, since Enter would not add them anymore
+	// it does not apply to list mode
+	resetSelectedAfterFocus(event) {
+		if (currentLayout.type == "list") return;
+		let focused = event.target;
+		if (_id("bubble-input").contains(focused)) {
+			if (!doc.querySelector(".item.selected")) {
+				currentLayout.markPreSelected();
+			}
+			return;
+		}
+		if (_id("library-other-items").contains(focused)) return;
+		for (let item of doc.querySelectorAll(".item")) {
+			item.classList.remove("selected");
+			item.classList.remove("current");
+		}
+	},
+
+	// Get the initial dialog mode per user's preference
+	getInitialDialogMode() {
+		let desiredMode = Zotero.Prefs.get("integration.citationDialogMode");
+		if (desiredMode == "last-used") {
+			desiredMode = Zotero.Prefs.get("integration.citationDialogLastUsedMode");
+		}
+		// When the dialog is opened for the very first time, default to list mode
+		if (!desiredMode) {
+			desiredMode = "list";
+		}
+		// Only library mode when adding annotations
+		if (DIALOG_STATE.isAddingAnnotations()) {
+			desiredMode = "library";
+		}
+		return desiredMode;
+	},
+
+	showFirstRunDialog() {
+		let locatorString = Zotero.Cite.getLocatorString("page", "short").toLowerCase()
+			// Strip trailing period ("p." → "p")
+			.replace(/\.$/, '')
+			+ "10";
+		// Use localized locator string (e.g., "p10")
+		doc.querySelector("guidance-panel").show({ l10nArgs: { locator: locatorString } });
+		// Hide guidance panel on any keypress
+		doc.addEventListener("keydown", () => doc.querySelector("guidance-panel").hide(), { capture: true, once: true });
+	},
+	
+	// handle drag start of item nodes into bubble-input
+	_handleItemDragStart(event) {
+		let itemNode = event.target;
+		if (!itemNode.classList.contains("item")) return;
+		let selectedItems = itemNode.classList.contains("selected") ? [...doc.querySelectorAll(".item.selected")] : [itemNode];
+		let wrapper = Helpers.createNode("div", {}, "drag-image-wrapper");
+		wrapper.append(...selectedItems.map(node => node.cloneNode(true)));
+		itemNode.parentNode.append(wrapper);
+		let rect = itemNode.getBoundingClientRect();
+		let offsetX = event.clientX - rect.left;
+		let offsetY = event.clientY - rect.top;
+		event.dataTransfer.setDragImage(wrapper, offsetX, offsetY);
+		// Same format as with drag-drop of items in itemTree via Zotero.Utilities.Internal.onDragItems
+		let draggedItemIDs = selectedItems.map(node => node.getAttribute("itemID")).join(",");
+		event.dataTransfer.setData("zotero/item", draggedItemIDs);
+		setTimeout(() => {
+			itemNode.parentNode.removeChild(wrapper);
+		});
+	},
+
+	// add into the citation items drag-dropped into the bubble-input
+	_handleItemDrop(itemIDs, index) {
+		// fetch items based on their IDs. Check SearchHandler for cited items and
+		// search results. Items dragged from itemTree would not be in SearchHandler.results,
+		// so check Zotero.Items as a fallback
+		let items = itemIDs.map(id => SearchHandler.getItem(id) || Zotero.Items.get(id));
+		this.addItemsToCitation(items, { index });
+	},
+
+	// Handle Enter keypress on an input. If a locator has been typed, add it to the last-added
+	// bubble if exists or a bubble before the input otherwise.
+	// Otherwise, add pre-selected item if any. Otherwise, accept the dialog.
+	_handleInputEnter(input) {
+		// Special case: if one typed a number locator after adding a bubble, add it
+		// as a page locator on Enter. The same happens automatically in _handleInput after
+		// debounce - this is just to allow one to skip debounce by pressing Enter.
+		if (this._justAddedBubbles) {
+			let specialPageLocator = Helpers.isOnlyNumberLocator(input.value);
+			if (specialPageLocator) {
+				this._processNumericLocatorInput();
+				return;
+			}
+		}
+		let locator = Helpers.extractLocator(input.value);
+		// Enter will always clear the record of just-added bubbles
+		let justAddedBubblesCopy = this._justAddedBubbles ? [...this._justAddedBubbles] : null;
+		this._clearJustAddedBubbles();
+		// Apply the locator to the items that were just added OR the bubble before the input if none
+		if (locator && locator.onlyLocator) {
+			let previousBubble = input.previousElementSibling;
+			let itemOfPreviousBubble = previousBubble ? [CitationDataManager.getItem({ dialogReferenceID: previousBubble.getAttribute("dialogReferenceID") })] : null;
+			let items = justAddedBubblesCopy || itemOfPreviousBubble;
+			if (items) {
+				for (let item of items) {
+					item.locator = locator.locator;
+					item.label = locator.label;
+				}
+				input.value = "";
+				input.dispatchEvent(new Event('input', { bubbles: true }));
+				this.updateBubbleInput();
+				// The typed-locator shortcut has been used, so stop showing the tip
+				// about it in the item details popup
+				Zotero.Prefs.set("integration.citationDialogShowLocatorTip", false);
+				return;
+			}
+		}
+		// add whatever items are selected
+		if (doc.querySelector(".item.selected")) {
+			let selectedIDs = [...doc.querySelectorAll(".item.selected")].map(node => node.getAttribute("itemID"));
+			let items = selectedIDs.map(id => SearchHandler.getItem(id));
+			IOManager.addItemsToCitation(items);
+		}
+		// in library mode, if there are no selected/open/cited items but there is a single match in itemTree, add that one matching item
+		else if (currentLayout.type == "library" && libraryLayout.itemsView.rowCount === 1 && input.value.length) {
+			let firstRowID = libraryLayout.itemsView.getRow(0).ref.id;
+			IOManager.addItemsToCitation(Zotero.Items.get(firstRowID));
+		}
+		// Enter on an empty input accepts the dialog
+		else if (!input.value.length && Date.now() > this._skipInputAcceptOnEnterUntil) {
+			accept();
+		}
+	},
+
+	// Handle cmd/ctrl-z pressed from the input to undo added locator to a just-added bubble
+	_handleInputUndo(event) {
+		if (!event.target.classList.contains("input")) return;
+		if (!(event.key == "z" && (event.ctrlKey || (Zotero.isMac && event.metaKey)))) return;
+		if (!this._justAddedBubbles) return;
+		event.preventDefault();
+		let locatorValue = "";
+		for (let bubbleItem of this._justAddedBubbles) {
+			locatorValue = bubbleItem.locator;
+			bubbleItem.locator = null;
+			bubbleItem.label = null;
+		}
+		_id("bubble-input").getCurrentInput().value = locatorValue;
+		this._clearJustAddedBubbles();
+		this._handleInput({ query: locatorValue, eventType: "focus" });
+		this.updateBubbleInput();
+	},
+
+	_deleteItem(dialogReferenceID) {
+		CitationDataManager.deleteItem({ dialogReferenceID });
+		// If the citation is emptied, show the placeholder guidance again on the next add
+		if (!CitationDataManager.items.length) {
+			this._timesItemsAdded = 0;
+		}
+		if (currentLayout.type == "library") {
+			libraryLayout.refreshItemsView();
+		}
+		this._clearJustAddedBubbles();
+		this.updateBubbleInput();
+		// Always refresh items list to make sure the opened and selected items are up to date
+		currentLayout.refreshItemsList();
+		// if the focus was lost (e.g. after clicking on the X icon of a bubble)
+		// try to return focus to previously-focused node
+		setTimeout(() => {
+			// timeout needed to handle deleteing the bubble from itemDetails popup
+			if (doc.activeElement.tagName == "body") {
+				IOManager._restorePreClickFocus();
+			}
+		});
+		dialogNotPristine();
+	},
+
+	_moveItem(dialogReferenceID, newIndex) {
+		let moved = CitationDataManager.moveItem(dialogReferenceID, newIndex);
+		if (moved) {
+			_id("keepSorted").checked = false;
+		}
+		this.updateBubbleInput();
+		dialogNotPristine();
+	},
+
+	_openItemDetailsPopup(dialogReferenceID) {
+		let bubbleItem = CitationDataManager.getItem({ dialogReferenceID });
+		let topLevelItem = bubbleItem.item;
+		if (DIALOG_STATE.isAddingAnnotations()) {
+			topLevelItem = bubbleItem.item.topLevelItem;
+		}
+		PopupsHandler.openItemDetails(bubbleItem, Helpers.buildItemDescription(topLevelItem));
+	},
+
+	_handleInput({ query, eventType }) {
+		// Special case: if one types a number after adding a new item, add that
+		// as a page locator to that item.
+		if (this._justAddedBubbles) {
+			let specialPageLocator = Helpers.isOnlyNumberLocator(query);
+			if (specialPageLocator) {
+				// Show spinner to indicate that locator will be added
+				this._showLoadingSpinner();
+				// Add the locator after debounce to allow one to finish typing
+				this._processNumericLocatorInputDebounced();
+				return;
+			}
+		}
+		query = SearchHandler.cleanSearchQuery(query);
+		// If there is a locator typed, exclude it from the query
+		let locator = Helpers.extractLocator(query);
+		if (locator) {
+			query = query.replace(locator.fullLocatorString, "");
+		}
+		// Do not rerun search if the search value is the same
+		// (e.g. focus returns into the last input)
+		if (query == SearchHandler.searchValue) {
+			return;
+		}
+		currentLayout.search(query, { skipDebounce: eventType == "focus" });
+		dialogNotPristine();
+	},
+
+	// Add special numeric locator to just-added bubble after debounce
+	_processNumericLocatorInput() {
+		// If the just-added bubbles were cleared, stop
+		if (!IOManager._justAddedBubbles) {
+			// Unless there is search happening, hide the spinner.
+			// Otherwise, spinner will be hidden when search is done
+			if (!SearchHandler.searching) {
+				IOManager._hideLoadingSpinner();
+			}
+			return;
+		}
+
+		let input = _id("bubble-input").getCurrentInput();
+		// If the input is empty, hide the spinner and do nothing
+		if (!input.value) {
+			IOManager._hideLoadingSpinner();
+			return;
+		}
+		// If one kept typing something past that number, they are probably
+		// not meaning to type a numeric locator, so clear just-added bubbles and stop
+		if (input.value && !Helpers.isOnlyNumberLocator(input.value)) {
+			IOManager._clearJustAddedBubbles();
+			return;
+		}
+
+		for (let bubbleItem of IOManager._justAddedBubbles) {
+			// Determine the new locator value
+			let newLocator = ((bubbleItem.locator || "") + input.value).trim();
+			// If one types ":123", treat it as "123", since ":{page}" is another
+			// special locator shortcut for page (see Helpers.extractLocator).
+			if (newLocator[0] == ":") {
+				newLocator = newLocator.slice(1).trim();
+			}
+			bubbleItem.locator = newLocator;
+			bubbleItem.label = "page";
+		}
+		IOManager._hideLoadingSpinner();
+		// Clear the input and update bubbles. The placeholder stays, since both of its
+		// suggestions still apply -- typed digits keep appending to the locator, and
+		// any other input starts a search
+		input.value = "";
+		IOManager.updateBubbleInput();
+		// The typed-locator shortcut has been used, so stop showing the tip
+		// about it in the item details popup
+		Zotero.Prefs.set("integration.citationDialogShowLocatorTip", false);
+		// Disable Enter on input from accepting the dialog for the next 500ms;
+		// If one intends to confirmed the numeric locator by pressing Enter (via _handleInputEnter),
+		// we ensure that the Enter keypress won't happen right after when the locator is added to
+		// the bubble, which would accept the dialog unintentionally for the user.
+		this._skipInputAcceptOnEnterUntil = Date.now() + 500;
+	},
+
+	_processNumericLocatorInputDebounced: Zotero.Utilities.debounce(() => IOManager._processNumericLocatorInput(), NUMERIC_LOCATOR_TIMEOUT),
+
+	// Clear the record of which bubbles were just added. If a locator is typed
+	// and Enter is presses, just-added bubbles get that locator.
+	_clearJustAddedBubbles(event) {
+		if (!this._justAddedBubbles) return;
+		// On keydown, only proceed for left/right arrows, which move to another
+		// reference (e.g. to explicitly search for a year). Up/down arrows just move
+		// the list selection while focus remains in the input, so locator entry
+		// stays active.
+		if (event && event.type == "keydown" && !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+		// On focusout, only proceed if focus moved elsewhere within the dialog. When
+		// the window itself loses focus (e.g., on Cmd-Tab to another app to check a
+		// page number), the input remains focused and locator entry stays active.
+		if (event && event.type == "focusout" && !doc.hasFocus()) return;
+		// clear just added bubbles and update bubble input to reflect that
+		this._justAddedBubbles = null;
+		_id("bubble-input").showJustAddedPlaceholder = false;
+		this.updateBubbleInput();
+	},
+
+	_handleMenuBarAppearance() {
+		if (Zotero.isMac) return;
+		let bottomAreaBox = _id("bottom-area-wrapper").getBoundingClientRect();
+		// if the bottom-area was pushed outside of the bounds of the window by itemTree's menubar
+		// increase the window's width a bit so it is still accessible.
+		// + 1 is the margin of safety needed to account for tiny differences in positioning
+		// (e.g. on windows, bottomAreaBox.bottom may have a decimal)
+		if (bottomAreaBox.bottom > window.innerHeight + 1) {
+			window.resizeTo(window.innerWidth, window.innerHeight + 30);
+		}
+	},
+
+	_showLoadingSpinner() {
+		_id("loading-spinner").setAttribute("status", "animate");
+		_id("accept-button").hidden = true;
+	},
+	
+	_hideLoadingSpinner() {
+		_id("loading-spinner").removeAttribute("status");
+		_id("accept-button").hidden = false;
+	},
+
+	// Resort items and update the bubbles
+	_resortItems() {
+		if (!_id("keepSorted").checked) return;
+		CitationDataManager.sort().then(() => {
+			this.updateBubbleInput();
+		});
+	},
+
+	_toggleIncludeComments() {
+		let includeComments = _id("includeComments").checked;
+		Zotero.Prefs.set("integration.annotationDialogIncludeComments", includeComments);
+	},
+
+	async _toggleDisplayPreview() {
+		let newShown = !Zotero.Prefs.get("integration.citationPreviewShown");
+		Zotero.Prefs.set("integration.citationPreviewShown", newShown);
+		// Reflect the pressed state right away, since revealing the preview is deferred until resize
+		_id("display-preview-button").setAttribute("aria-pressed", newShown ? "true" : "false");
+		let preview = _id("citation-preview");
+		if (newShown) {
+			// Lay the preview out off-flow via .measuring (real height, but invisible and not
+			// pushing the list around) so resizeWindow grows the window to fit it; then drop it
+			// into view once there's room, avoiding a momentary squeeze of the list.
+			await CitationPreview.render();
+			preview.classList.add("measuring");
+			preview.hidden = false;
+			await currentLayout.resizeWindow();
+			preview.classList.remove("measuring");
+			CitationPreview.update();
+		}
+		else {
+			// Hide first, then shrink -- freeing the space before the window contracts looks clean.
+			preview.classList.remove("measuring");
+			CitationPreview.update();
+			currentLayout.resizeWindow();
+		}
+	},
+
+	// Return focus to where it was before click moved focus.
+	// If it's not possible, refocus the last input in bubble-input so that
+	// focus is not just lost.
+	_restorePreClickFocus() {
+		if (doc.contains(IOManager._focusedBeforeClick)) {
+			IOManager._focusedBeforeClick.focus();
+			// If the focus was moved, stop
+			if (doc.activeElement == IOManager._focusedBeforeClick) {
+				return;
+			}
+		}
+		// If the focus did not set, or there is no node to focus, refocus bubble-input
+		_id("bubble-input").refocusInput();
+	},
+
+	// We want to not place focus on some of the focusable nodes on mouse click.
+	// These listeners try to keep focus on main components of the interface for
+	// a more consistent navigation.
+	_initFocusRetention() {
+		IOManager._noRefocusing = null;
+		IOManager._focusBeforePanelShow = null;
+		IOManager._clicked = null;
+		IOManager._focusedBeforeClick = null;
+
+		// When focus changes, check if the newly focused node is the node that was last clicked.
+		// If so, return focus to whatever  node was focused before the click.
+		// That way, one can click a button without moving focus onto it.
+		doc.addEventListener("focusout", (_) => {
+			setTimeout(() => {
+				// bubble-input and itemTree/collectionTree are the main interactable elements,
+				// so don't move focus from them
+				if (_id("bubble-input").contains(doc.activeElement)) return;
+				if (_id("library-trees").contains(doc.activeElement)) return;
+				// cmd-click on suggester items in library mode should focus them
+				if (currentLayout.type == "library" && doc.activeElement.closest(".itemsContainer")) return;
+				if (IOManager._noRefocusing) return;
+				let focused = doc.activeElement;
+				if (focused.contains(IOManager._clicked) && !focused.closest("panel")) {
+					IOManager._restorePreClickFocus();
+				}
+			});
+		});
+		// Record which node was last clicked for the focusout handler above
+		doc.addEventListener("mousedown", (event) => {
+			if (event.target.closest("panel")) return;
+			IOManager._clicked = event.target;
+			IOManager._focusedBeforeClick = doc.activeElement;
+		});
+		// Clear record of last clicked node if some other interaction happened (e.g. keydown)
+		doc.addEventListener("keydown", (event) => {
+			if (event.target.closest("panel")) return;
+			IOManager._clicked = null;
+		});
+
+		// When a popup is appearing after click, record which node was focused before click happened
+		doc.addEventListener("popupshowing", (event) => {
+			if (!["xul:panel"].includes(event.target.tagName)) return;
+			IOManager._noRefocusing = true;
+			IOManager._focusBeforePanelShow = null;
+			if (doc.activeElement.contains(IOManager._clicked)) {
+				IOManager._focusBeforePanelShow = IOManager._focusedBeforeClick;
+			}
+		});
+		// When the popup is closed, return focus to where it was before the popup was
+		// opened by click.
+		doc.addEventListener("popuphidden", (event) => {
+			let popup = event.target;
+			if (!["xul:panel"].includes(popup.tagName)) return;
+			IOManager._noRefocusing = false;
+			if (IOManager._focusBeforePanelShow) {
+				IOManager._focusBeforePanelShow.focus();
+			}
+			IOManager._focusBeforePanelShow = null;
+		});
+	}
+};
+
+// Manages the citation preview shown in the bottom area of both layouts.
+const CitationPreview = {
+	// Lazily create _renderDebounced on first use
+	get _renderDebounced() {
+		delete CitationPreview._renderDebounced;
+		CitationPreview._renderDebounced = Zotero.Utilities.debounce(() => CitationPreview.render(), 250);
+		return CitationPreview._renderDebounced;
+	},
+
+	// The rendered text is kept in sync with the cited items even while the preview is hidden,
+	// so it can be measured and revealed instantly when toggled on.
+	update() {
+		let prefShown = Zotero.Prefs.get("integration.citationPreviewShown");
+		let isCitingItems = DIALOG_STATE.isCitingItems();
+		let hasPreview = !!io.preview;
+		let isEmpty = !CitationDataManager.items.length;
+		// The preview pane appears when citing at least one item and the caller has
+		// provided a preview function
+		let isRelevant = isCitingItems && hasPreview && !isEmpty;
+		_id("citation-preview").hidden = !(isRelevant && prefShown);
+		if (isEmpty) {
+			_id("citation-preview-content").innerHTML = "";
+			_id("citation-preview-error").hidden = true;
+		}
+		// The toggle button is hidden when there's no preview and is restored to its last
+		// state when the preview pane appears
+		let toggleBtn = _id("display-preview-button");
+		toggleBtn.hidden = !isRelevant;
+		toggleBtn.setAttribute("aria-pressed", prefShown ? "true" : "false");
+		if (!isEmpty) {
+			CitationPreview._renderDebounced();
+		}
+	},
+
+	async render() {
+		if (!DIALOG_STATE.isCitingItems()) return;
+		if (!CitationDataManager.items.length) return;
+		if (!io.preview) return;
+
+		CitationDataManager.updateCitationObject();
+		let html;
+		try {
+			html = await io.preview("html");
+		}
+		catch (e) {
+			// A preview failure usually means the citation itself won't process, but that
+			// error belongs to the insertion step -- just flag the preview as unavailable
+			Zotero.logError(e);
+		}
+		// Re-check after the await in case the user cleared items
+		if (!CitationDataManager.items.length) return;
+		let errored = html === undefined;
+		_id("citation-preview-content").hidden = errored;
+		_id("citation-preview-error").hidden = !errored;
+		_id("citation-preview-content").innerHTML = errored ? "" : html;
+	},
+};
+
+// Representation of a single entry in the citation.
+class BubbleItem {
+	// Can be created from either Zotero.Item or citation item from io.citation.citationItems
+	static fromItem(item) {
+		let citationItem = {};
+		return new BubbleItem({ item, citationItem });
+	}
+
+	static fromCitationItem(citationItem) {
+		let item;
+		if (io.customGetItem) {
+			item = io.customGetItem(citationItem);
+		}
+		if (!item) {
+			item = Zotero.Cite.getItem(citationItem.id);
+		}
+		return new BubbleItem({ item, citationItem });
+	}
+
+	constructor({ item, citationItem }) {
+		if (!item || !citationItem) {
+			throw new Error("Both Zotero.Item and citation item must be provided");
+		}
+		this.item = item;
+		this.cslItemID = item.cslItemID;
+		this.cslItemData = item.cslItemData;
+		this.cslURIs = item.cslURIs;
+
+		this.locator = citationItem.locator;
+		this.label = citationItem.label;
+		this.suffix = citationItem.suffix;
+		this.prefix = citationItem.prefix;
+		this.suppressAuthor = citationItem["suppress-author"];
+		
+		this.bubbleString = "";
+		this.selected = false;
+		// Add a new ID to our citation item and set the same ID on the bubble
+		// so we have a reliable way to identify which bubble refers to which citationItem.
+		this.dialogReferenceID = Zotero.Utilities.randomString(5);
+		this.updateBubbleString();
+	}
+
+	get id() {
+		return this.cslItemID || this.item.id;
+	}
+
+	updateBubbleString() {
+		this.bubbleString = Helpers.buildBubbleString(this);
+	}
+
+	// Return an object with relevant fields that cipeproc can consume.
+	// Can optionally include dialogReferenceID for sorting in CitationDataManager.sort()
+	getCitationItem({ includeDialogReferenceID } = {}) {
+		let citationItem = {
+			id: this.id,
+		};
+		if (this.locator) {
+			citationItem.locator = this.locator;
+			citationItem.label = this.label;
+		}
+		if (this.suffix) {
+			citationItem.suffix = this.suffix;
+		}
+
+		if (this.prefix) {
+			citationItem.prefix = this.prefix;
+		}
+		if (this.suppressAuthor) {
+			citationItem["suppress-author"] = this.suppressAuthor;
+		}
+		if (this.cslItemData) {
+			citationItem.itemData = this.cslItemData;
+		}
+		if (this.cslURIs) {
+			citationItem.uris = this.cslURIs;
+		}
+		if (includeDialogReferenceID) {
+			citationItem.dialogReferenceID = this.dialogReferenceID;
+		}
+		return citationItem;
+	}
+}
+
+//
+// Singleton to store and handle items in this citation.
+// CitationDataManager.items is an array of BubbleItem objects, which maps
+// directly to the bubbles in the citation.
+//
+const CitationDataManager = {
+	items: [],
+	itemAddedCache: new Set(),
+
+	getCitedLibraryItemIDs() {
+		return new Set(this.items.map(item => item.item.id).filter(id => id));
+	},
+
+	getSelectedIDs() {
+		return this.items.filter(item => item.selected).map(item => item.id);
+	},
+
+	getItem({ dialogReferenceID }) {
+		return this.items.find(bubbleItem => bubbleItem.dialogReferenceID === dialogReferenceID);
+	},
+
+	getItems({ itemID }) {
+		return this.items.filter(bubbleItem => bubbleItem.item.id === itemID);
+	},
+
+	getItemIndex({ dialogReferenceID }) {
+		return this.items.findIndex(item => item.dialogReferenceID === dialogReferenceID);
+	},
+
+	updateItemAddedCache() {
+		this.itemAddedCache = new Set();
+		for (let bubbleItem of this.items) {
+			if (!bubbleItem.item.id) continue;
+			this.itemAddedCache.add(bubbleItem.item.id);
+		}
+	},
+ 	
+	/**
+	 * Include specified items into the citation.
+
+	 */
+	async addItems({ bubbleItems = [], index = null }) {
+		for (let bubbleItem of bubbleItems) {
+			if (index !== null) {
+				this.items.splice(index, 0, bubbleItem);
+				index += 1;
+			}
+			else {
+				this.items.push(bubbleItem);
+			}
+		}
+		// No sorting happens when citing notes, since the dialog is accepted right after
+		if (DIALOG_STATE.isAddingNote()) return;
+		await this.sort();
+		this.updateItemAddedCache();
+	},
+
+	deleteItem({ dialogReferenceID }) {
+		let index = this.getItemIndex({ dialogReferenceID });
+		if (index === -1) {
+			throw new Error("Item to delete not found");
+		}
+		this.items.splice(index, 1);
+		this.updateItemAddedCache();
+	},
+
+	moveItem(dialogReferenceID, newIndex) {
+		let currentIndex = CitationDataManager.getItemIndex({ dialogReferenceID });
+		if (currentIndex === newIndex) return false;
+		let [obj] = this.items.splice(currentIndex, 1);
+		this.items.splice(newIndex, 0, obj);
+		return true;
+	},
+
+	// Update io citation object based on Citation.items array
+	updateCitationObject(final = false) {
+		io.citation.citationItems = this.items.map(item => item.getCitationItem({ includeDialogReferenceID: !final }));
+		if (io.sortable) {
+			io.citation.properties.unsorted = !_id("keepSorted").checked;
+		}
+	},
+
+	// Resorts the items in the citation
+	async sort() {
+		if (DIALOG_STATE.isAddingAnnotations()) {
+			// Sort annotations but only within the same attachment
+			this.items.sort((a, b) => {
+				// first sort by parentItemID to group annotations by the parent attachment
+				if (a.item.parentItemID !== b.item.parentItemID) {
+					return a.item.parentItemID - b.item.parentItemID;
+				}
+				// then sort by annotation order
+				return (a.item.annotationSortIndex > b.item.annotationSortIndex) - (a.item.annotationSortIndex < b.item.annotationSortIndex);
+			});
+			return;
+		}
+		if (!_id("keepSorted").checked) return;
+		// It can take arbitrarily long time for documents with many cited items to load
+		// all data necessary to run io.sort().
+		// Do nothing if io.sort() is not yet ready to run.
+		if (!ioIsReady) return;
+		Zotero.debug("Citation Dialog: sorting items");
+		this.updateCitationObject();
+		try {
+			await io.sort();
+		}
+		catch (e) {
+			// Sorting runs the citation through the processor, so it can fail like the
+			// preview does. Keep the current order -- if the citation can't be processed,
+			// the error will surface when it's inserted into the document.
+			Zotero.logError(e);
+			return;
+		}
+		// sync the order of this.items with io.citation.sortedItems
+		let sortedIOItems = io.citation.sortedItems.map(entry => entry[1]);
+		let sortedItems = sortedIOItems.map((sortedItem) => {
+			return this.items.find(item => item.dialogReferenceID === sortedItem.dialogReferenceID);
+		});
+		this.items = sortedItems;
+	},
+	
+	// Construct citation upon initial load
+	async buildCitation() {
+		let bubbleItems = io.citation.citationItems.map(item => BubbleItem.fromCitationItem(item));
+		await this.addItems({ bubbleItems });
+	},
+
+	clearAll() {
+		this.items = [];
+		this.itemAddedCache = new Set();
+	}
+};
+
+// Explicitly expose singletons to global window for tests
+window.CitationDataManager = CitationDataManager;
+window.IOManager = IOManager;
+
+// Top level listeners
+window.addEventListener("load", onLoad);
+window.addEventListener("unload", onUnload);
+
+
+var ignoreWindowResizing = false;
+var lastSetWindowHeight = 500;
+// Remember the size of the window when stretched by the user
+// and use it as a max-height when programically resizing the window
+window.addEventListener("resize", () => {
+	if (ignoreWindowResizing || !DIALOG_STATE.loaded) return;
+	// only remember window height above a reasonable min value
+	if (window.innerHeight > 300) {
+		// window.outerHeight is required for resizing to properly work on Linux
+		lastSetWindowHeight = window.outerHeight;
+	}
+});
+
+// When the dialog is re-focused, run the search again in case selected or opened items changed
+window.addEventListener("focus", async () => {
+	// Ensure search does not run on the first focus of the dialog from onLoad handling
+	if (!DIALOG_STATE.loaded) return;
+	// Wait a moment to allow accept button click event to fire.
+	// Without this, clicking accept button when the dialog is not focused
+	// would refocus the dialog, run the search below,
+	// which replaces accept button with the spinner and interrupts the click event.
+	await Zotero.Promise.delay(100);
+	if (accepted) return;
+	if (SearchHandler.searching) return;
+	SearchHandler.clearNonLibraryItemsCache();
+	if (!currentLayout) return;
+	if (currentLayout.type == "list") {
+		listLayout.search(SearchHandler.searchValue);
+		return;
+	}
+	
+	// Temp: if there are no items selected, after itemsView.setFilter call during
+	// libraryLayout.search, the top-level item of the focused row will be selected.
+	// This needs to be fixed in the itemTree but for now, clear focused row
+	// before filtering, and then restore it, so that selection doesn't change.
+	let focused = libraryLayout.itemsView.selection.focused;
+	if (libraryLayout.itemsView.selection.selected.size !== 0) {
+		// Just run normal search if some items are selected
+		libraryLayout.search(SearchHandler.searchValue);
+		return;
+	}
+	doc.querySelector("#item-tree-container").classList.add("no-focus-ring");
+	libraryLayout.itemsView.selection.focused = 0;
+	await libraryLayout.search(SearchHandler.searchValue);
+	libraryLayout.itemsView.selection.focused = focused;
+	libraryLayout.itemsView.tree?.invalidate();
+	doc.querySelector("#item-tree-container").classList.remove("no-focus-ring");
+});
+

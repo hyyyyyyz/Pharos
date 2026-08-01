@@ -1,0 +1,87 @@
+// Pharos dark theme.
+//
+// The ground is the brand navy taken down, not a neutral charcoal, so the gold
+// and the teal keep the same relationship to their background that they have in
+// the logo. Values carried over from the web client (frontend/src/design/tokens.ts):
+//
+//     ground   #0B1524      surface #122033      side pane #08111D
+//     hover    #18293F      border  #1E3049      text      #EDE7DC
+//
+// See scss/themes/_light.scss for why the translucent fills are solved rather
+// than stated, and why oklch values are resolved to hex. The overlays are cool
+// here for the same reason they are warm there: the tint has to belong to the
+// ground it sits on.
+$-colors: (
+    accent-azure: #7fb2ecd9,
+    // 灯塔蓝, lifted. On a deep navy ground the brand navy is invisible at its
+    // own near-black value, so the accent comes UP into the same hue rather
+    // than being used at face value.
+    accent-blue: #82a6dd,
+    accent-blue10: #82a6dd4d,
+    accent-blue30: #82a6dd73,
+    accent-blue50: #82a6dd99,
+    accent-gold: #f8c041d9,
+    // A real green, distinct from accent-teal -- see the light theme.
+    accent-green: #6ec272d9,
+    accent-orange: #e08a5ed9,
+    accent-red: #f0736fe5,
+    accent-teal: #50bfbee5,
+    accent-white: #ede7dc,
+    // Dark, because this theme's accent is light. See the light theme for why
+    // this cannot simply be accent-white: cream on #82a6dd is 2.02:1, while
+    // this near-black navy is 7.62:1.
+    accent-text: #08111d,
+    accent-wood-dark: #9c7a5e,
+    accent-wood: #c78a55e5,
+    accent-yellow: #edb84acc,
+    accent-highlight: #f8c04033,
+    fill-primary: #ede7dc,
+    fill-secondary: #a2b0c2,
+    fill-tertiary: #6b7c93,
+    // Solved so they render the web client's hover (#18293F) and the two
+    // fainter stripes over the dark ground.
+    fill-quarternary: #6faff421,
+    fill-quinary: #6fabec0a,
+    fill-senary: #6fab8805,
+    color-background: #0b1524,
+    color-background30: #0b15244d,
+    color-background50: #0b152480,
+    color-background70: #0b1524b2,
+    // Translucent for the same reason as in the light theme; composites to
+    // exactly #1E3049 over the dark ground.
+    color-border: #7bb4fe2b,
+    color-border50: #7bb4fe16,
+    color-button: #1a2a3e,
+    color-control: #a2b0c2,
+    color-invalid: #f0736f,
+    color-invalid-background: #3a2321,
+    color-menu: #12203394,
+    // Opaque and stronger than color-border -- the web client's --c-bds.
+    color-panedivider: #2b4260,
+    color-sidepane: #08111d,
+    color-tabbar: #0b1524,
+    color-toolbar: #0e1b2c,
+    color-scrollbar: rgb(78, 96, 122),
+    color-scrollbar-hover: rgb(118, 138, 166),
+    color-scrollbar-background: transparent,
+    color-stripe: #6fabec0d,
+    // Unchanged, for the same reason as in the light theme: these are a
+    // user-assigned, persisted palette.
+    tag-blue: #2ea8e5d9,
+    tag-gray: #aaac,
+    tag-green: #5fb236d9,
+    tag-indigo: #576dd9,
+    tag-magenta: #e56eeed9,
+    tag-orange: #f19837cc,
+    tag-plum: #a6507b,
+    tag-purple: #a28ae5e5,
+    tag-red: #ff6666e5,
+    tag-teal: #009980,
+    tag-yellow: #ffd400bf,
+);
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        @include derive-colors($-colors);
+    }
+}

@@ -1,0 +1,264 @@
+reader-annotations = Anotacións
+reader-show-annotations = Amosar anotacións
+reader-search-annotations = Buscar anotacións
+reader-search-outline = Buscar no esquema
+reader-no-annotations = Crear unha anotación para vela na barra lateral
+reader-no-extracted-text = Sen texto extraído
+reader-add-comment = Engadir comentario
+reader-annotation-comment = Comentario da anotación
+reader-annotation-text = Texto da anotación
+reader-manage-tags = Xestionar etiquetas para esta anotación
+reader-open-menu = Abrir menú da anotación
+reader-thumbnails = Thumbnails
+reader-tag-selector-message = Filtrar anotacións por esta etiqueta
+reader-add-tags = Engadir etiquetas...
+reader-highlight-text = Resaltar texto
+reader-underline-text = Subliñar texto
+reader-add-note = Engadir nota
+reader-add-text = Engadir Texto
+reader-select-area = Seleccionar área
+reader-highlight-annotation = Resaltar anotación
+reader-highlight-annotation-short = Resaltar
+reader-underline-annotation = Underline annotation
+reader-underline-annotation-short = Subliñar
+reader-note-annotation = Note Annotation
+reader-text-annotation = Text Annotation
+reader-image-annotation = Image Annotation
+reader-ink-annotation = Ink Annotation
+reader-search-result-index = Search result
+reader-search-result-total = Total search results
+reader-draw = Debuxar
+reader-eraser = Eraser
+reader-pick-color = Escoller unha cor
+reader-add-to-note = Engadir nota
+reader-zoom-in = Ampliar
+reader-zoom-out = Afastar
+reader-zoom-reset = Restablecer ampliación
+reader-zoom-auto = Axuste automático
+reader-zoom-page-width = Ampliar ao ancho de páxina
+reader-zoom-page-height = Ampliar a ancho de páxina
+reader-split-vertically = Partir en vertical
+reader-split-horizontally = Partir en horizontal
+reader-next-page = Páxina seguinte
+reader-previous-page = Páxina anterior
+reader-page = Páxina
+reader-location = Ubicación
+reader-read-only = Só lectura
+reader-prompt-transfer-from-pdf-title = Importar anotacións
+reader-prompt-transfer-from-pdf-text = Annotations stored in the PDF file will be moved to { $target }.
+reader-prompt-password-protected = Esta operación non está aceptada para os ficheiros PDF protexidos con contrasinal.
+reader-prompt-delete-pages-title = Eliminar páxinas
+reader-prompt-delete-pages-text =
+    { $count ->
+        [one] Are you sure you want to delete { $count } page from the PDF file?
+       *[other] Are you sure you want to delete { $count } pages from the PDF file?
+    }
+reader-prompt-delete-annotations-title = Delete Annotations
+reader-prompt-delete-annotations-text =
+    { $count ->
+        [one] Are you sure you want to delete the selected annotation?
+       *[other] Are you sure you want to delete the selected annotations?
+    }
+reader-rotate-left = Rotar á esquerda
+reader-rotate-right = Rotar á dereita
+reader-edit-page-number = Editar número de páxina
+reader-edit-annotation-text = Editar Texto de Anotación
+reader-copy-image = Copiar imaxe
+reader-save-image-as = Gardar imaxe como...
+reader-page-number-popup-header = Cambiar o número de páxina por:
+reader-this-annotation = Esta anotación
+reader-selected-annotations = Anotacións seleccionadas
+reader-this-page = Esta páxina
+reader-this-page-and-later-pages = Esta páxina e as seguintes
+reader-all-pages = Todas as páxinas
+reader-auto-detect = Detección automática
+reader-enter-password = Introduce o contrasinal para abrir este arquivo PDF
+reader-include-annotations = Incluír anotacións
+reader-preparing-document-for-printing = Preparando o documento para imprimir...
+reader-phrase-not-found = Frase non atopada
+reader-find = Procurar
+reader-close = Pechar
+reader-show-thumbnails = Show Thumbnails
+reader-show-outline = Amosar esquema
+reader-find-previous = Find the previous occurrence of the phrase
+reader-find-next = Find the next occurrence of the phrase
+reader-toggle-sidebar = Alternar barra lateral
+reader-find-in-document = Atopar no documento
+reader-toggle-context-pane = Alternar panel de contexto
+reader-highlight-all = Resaltar todo
+reader-match-case = Match case
+reader-whole-words = Whole words
+reader-appearance = Aparencia
+reader-epub-appearance-line-height = Altura da liña
+reader-epub-appearance-word-spacing = Espazado entre palabras
+reader-epub-appearance-letter-spacing = Espazado entre letras
+reader-epub-appearance-page-width = Page width
+reader-epub-appearance-use-original-font = Usar o tipo de letra orixinal
+reader-epub-appearance-line-height-revert = Use default line height
+reader-epub-appearance-word-spacing-revert = Usar o espazado entre palabras predeterminado
+reader-epub-appearance-letter-spacing-revert = Usar o espazado entre letras predeterminado
+reader-epub-appearance-page-width-revert = Use default page width
+reader-convert-to-highlight = Converter a resaltado
+reader-convert-to-underline = Converter a subliñado
+reader-size = Tamaño
+reader-merge = Combinar
+reader-copy-link = Copiar ligazón
+reader-theme-original = Orixinal
+reader-theme-snow = Snow
+reader-theme-sepia = Sepia
+reader-theme-dark = Escuro
+reader-theme-black = Negro
+reader-add-theme = Engadir tema
+reader-theme-invert-images = Invert Images
+reader-scroll-mode = Scrolling
+reader-spread-mode = Spreads
+reader-flow-mode = Page Layout
+reader-columns = Columnas
+reader-split-view = Dividir vista
+reader-themes = Temas
+reader-vertical = Vertical
+reader-horizontal = Horizontal
+reader-wrapped = Wrapped
+reader-none = Ningún
+reader-odd = Impar
+reader-even = Par
+reader-paginated = Paxinado
+reader-scrolled = Desprazado
+reader-single = Single
+reader-double = Double
+reader-theme-name = Nome do tema:
+reader-background = Background:
+reader-foreground = Foreground:
+reader-reading-mode = Reading Mode
+reader-reading-mode-not-supported = Reading Mode is not supported in this document.
+reader-clear-selection = Limpar a selección
+reader-epub-encrypted = This ebook is encrypted and cannot be opened.
+reader-move-annotation-start-key =
+    { PLATFORM() ->
+        [macos] { general-key-command }
+       *[other] { general-key-alt }
+    }
+reader-a11y-move-annotation = Use the arrow keys to move the annotation.
+reader-a11y-edit-text-annotation = To move the end of the text annotation, hold { general-key-shift } and use the left/right arrow keys. To move the start of the annotation, hold { general-key-shift }-{ reader-move-annotation-start-key } and use the arrow keys.
+reader-a11y-resize-annotation = To resize the annotation, hold { general-key-shift } and use the arrow keys.
+reader-a11y-annotation-popup-appeared = Use Tab to navigate the annotation popup.
+reader-a11y-annotation-created = { $type } created.
+reader-a11y-annotation-selected = { $type } selected.
+-reader-a11y-textual-annotation-instruction = Para anotar texto co teclado, primeiro usa  «{ reader-find-in-document }» para atopar a frase e logo preme { general-key-control }-{ option-or-alt }-{ $number } para converter o resultado da busca nunha anotación.
+-reader-a11y-annotation-instruction = To add this annotation into the document, focus the document and press { general-key-control }-{ option-or-alt }-{ $number }.
+reader-toolbar-highlight =
+    .aria-description = { -reader-a11y-textual-annotation-instruction(number: 1) }
+    .title = { reader-highlight-text }
+reader-toolbar-underline =
+    .aria-description = { -reader-a11y-textual-annotation-instruction(number: 2) }
+    .title = { reader-underline-text }
+reader-toolbar-note =
+    .aria-description = { -reader-a11y-annotation-instruction(number: 3) }
+    .title = { reader-note-annotation }
+reader-toolbar-text =
+    .aria-description = { -reader-a11y-annotation-instruction(number: 4) }
+    .title = { reader-add-text }
+reader-toolbar-area =
+    .aria-description = { -reader-a11y-annotation-instruction(number: 5) }
+    .title = { reader-select-area }
+reader-toolbar-draw =
+    .aria-description = This annotation type cannot be created via the keyboard.
+    .title = { reader-draw }
+reader-find-in-document-input =
+    .title = Procurar
+    .placeholder = { reader-find-in-document }
+    .aria-description = To turn a search result into a highlight annotation, press { general-key-control }-{ option-or-alt }-1. To turn a search result into an underline annotation, press { general-key-control }-{ option-or-alt }-2.
+reader-import-from-epub =
+    .label = Import Ebook Annotations…
+reader-import-from-epub-prompt-title = Import Ebook Annotations
+reader-import-from-epub-prompt-text =
+    { -app-name } found { $count ->
+        [one] { $count } { $tool } annotation
+       *[other] { $count } { $tool } annotations
+    }, last edited { $lastModifiedRelative }.
+    
+    Any { -app-name } annotations that were previously imported from this ebook will be updated.
+reader-import-from-epub-no-annotations-current-file =
+    This ebook does not appear to contain any importable annotations.
+    
+    { -app-name } can import ebook annotations created in Calibre and KOReader.
+reader-import-from-epub-no-annotations-other-file =
+    “{ $filename }” does not appear to contain any Calibre or KOReader annotations.
+    
+    If this ebook has been annotated with KOReader, try selecting a “metadata.epub.lua” file directly.
+reader-import-from-epub-select-other = Select Other File…
+reader-selected-pages =
+    { $count ->
+        [one] 1 páxina seleccionada
+       *[other] { $count } páxinas seleccionadas
+    }
+reader-page-options = Page Options
+reader-read-aloud = Ler en voz alta
+reader-read-aloud-from-here = Ler en voz alta desde aquí
+reader-read-aloud-options = Opcións
+reader-read-aloud-skip-back = Skip Back
+reader-read-aloud-skip-back-sentence = Skip Back by Sentence
+reader-read-aloud-skip-ahead = Skip Ahead
+reader-read-aloud-skip-ahead-sentence = Skip Ahead by Sentence
+reader-read-aloud-add-annotation = Annotate Sentence ({ $key1 }/{ $key2 })
+reader-read-aloud-play = Play
+reader-read-aloud-pause = Pause
+reader-read-aloud-speed = Reading Speed
+reader-read-aloud-voice = Voice
+reader-read-aloud-voice-tier = Voice Mode
+reader-read-aloud-voice-tier-local = Local
+reader-read-aloud-voice-tier-standard = Estándar
+reader-read-aloud-voice-tier-premium = Premium
+reader-read-aloud-more-voices = More Voices…
+reader-read-aloud-language = Lingua
+reader-read-aloud-remaining-time = Remaining reading time
+reader-read-aloud-log-in-link = <log-in>Log in</log-in> to access { -app-name } Voices.
+reader-read-aloud-log-in-button = Iniciar sesión
+reader-read-aloud-done-button = { general-done }
+reader-read-aloud-add-more-time = Add more time
+reader-read-aloud-quota-exceeded-message =
+    <add-more-time>{ reader-read-aloud-add-more-time }</add-more-time> or continue reading with { $tier ->
+        [standard] Standard Voices
+       *[local] Local Voices
+    }.
+reader-read-aloud-error = { general-error }
+reader-read-aloud-error-unknown = Produciuse un erro descoñecido.
+reader-read-aloud-error-network = Non se puido conectar co servizo de Ler en voz alta. Comproba a conexión á internet.
+reader-read-aloud-error-daily-limit-exceeded = You have exceeded your daily limit for { -app-name } Voices.
+reader-read-aloud-retry = Retry
+reader-read-aloud-first-run-title = Escolle a túa voz preferida para a lectura en voz alta:
+reader-read-aloud-first-run-voice-tier-local-bullet-os-provided = Voices provided by your operating system
+reader-read-aloud-first-run-voice-tier-local-bullet-offline = Available without an internet connection
+reader-read-aloud-first-run-voice-tier-local-bullet-no-account = Available without a { -app-name } account
+reader-read-aloud-first-run-voice-tier-local-bullet-free = Free to use
+reader-read-aloud-first-run-voice-tier-standard-bullet-natural-sounding = Natural-sounding voices
+reader-read-aloud-first-run-voice-tier-standard-bullet-online-only = Only available with an internet connection
+reader-read-aloud-first-run-voice-tier-standard-bullet-account-required = Requires a { -app-name } account
+reader-read-aloud-first-run-voice-tier-standard-bullet-limited-languages = Limited language selection
+reader-read-aloud-first-run-voice-tier-standard-bullet-no-multilingual = No multilingual support
+reader-read-aloud-first-run-voice-tier-standard-bullet-internal-processing = Source text doesn’t leave { -app-name } servers
+reader-read-aloud-first-run-voice-tier-standard-bullet-unlimited-with-subscription = Unlimited use with a { -subscription-name } subscription
+reader-read-aloud-first-run-voice-tier-premium-bullet-highest-quality = Highest-quality voices
+reader-read-aloud-first-run-voice-tier-premium-bullet-online-only = Only available with an internet connection
+reader-read-aloud-first-run-voice-tier-premium-bullet-account-required = Requires a { -app-name } account
+reader-read-aloud-first-run-voice-tier-premium-bullet-broad-languages = Broad language selection
+reader-read-aloud-first-run-voice-tier-premium-bullet-multilingual = Multilingual support
+reader-read-aloud-first-run-voice-tier-premium-bullet-external-processing = Source text is processed by external text-to-speech providers
+reader-read-aloud-first-run-voice-tier-premium-bullet-subscription-minutes = { -subscription-name } plans include monthly Premium Voice minutes
+reader-read-aloud-first-run-voice-tier-premium-bullet-beta-credits = Request credits for additional minutes during beta
+reader-read-aloud-sample-text = I am the local voice { $name }
+reader-read-aloud-voices-none-available = No voices available
+reader-read-aloud-first-run-no-voices-for-language = { $tier } Voices do not support { $language }.
+reader-read-aloud-region = Region
+reader-read-aloud-region-auto = Automático
+reader-read-aloud-annotation-popup-move = Move annotation by sentence
+reader-read-aloud-annotation-popup-extend = Extend annotation by sentence
+reader-read-aloud-annotation-popup-delete = Eliminar
+reader-read-aloud-annotation-popup-done = Feito
+reader-read-aloud-annotation-popup-change-color = Change color
+reader-read-aloud-annotation-popup-highlight = Resaltar
+reader-read-aloud-annotation-popup-underline = Subliñar
+reader-tab-audio-play =
+    .title = { reader-read-aloud-play }
+reader-tab-audio-pause =
+    .title = { reader-read-aloud-pause }

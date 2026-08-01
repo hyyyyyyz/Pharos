@@ -1,0 +1,11 @@
+item-message-pane {
+	display: flex;
+	flex-direction: column;
+
+	@include elements-custom-head;
+
+	#zotero-item-pane-groupbox {
+		flex: 1;
+		border-width: 0;
+	}
+}

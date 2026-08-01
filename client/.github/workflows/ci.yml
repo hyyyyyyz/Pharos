@@ -1,0 +1,119 @@
+# Pharos: upstream's "Build, Upload" job was removed. It was gated on
+# github.repository == "zotero/zotero" so it could never run here, and it
+# uploaded to Zotero's own S3 bucket with their credentials. Release
+# artifacts are built by release.yml instead.
+name: CI
+on: [push, pull_request]
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    name: Test (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # Same-repo PRs are covered by the push run, so run pull_request jobs only for forks
+    if: >
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          #cache: npm
+
+      # On GitHub
+      - name: Install xvfb
+        if: env.ACT != 'true'
+        run: sudo apt update && sudo apt install -y xvfb
+
+      # Local via act
+      - name: Install packages for act
+        if: env.ACT == 'true'
+        run: apt update && apt install -y zstd xvfb dbus-x11 libgtk-3-0 libx11-xcb1 libdbus-glib-1-2 libxt6
+
+      - name: Cache xulrunner
+        id: xulrunner-cache
+        uses: actions/cache@v4
+        with:
+          path: app/xulrunner/firefox-x86_64
+          key: xulrunner-${{ hashFiles('app/config.sh', 'app/scripts/fetch_xulrunner') }}
+
+      - name: Fetch xulrunner
+        if: steps.xulrunner-cache.outputs.cache-hit != 'true'
+        run: app/scripts/fetch_xulrunner -p l
+
+      - name: Cache Node modules
+        id: node-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Node modules
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: npm install
+
+      - name: Build Zotero
+        run: npm run build
+        # Currently necessary for document-worker Webpack: https://stackoverflow.com/a/69746937
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+
+      # Create deployment ZIP from the build output, then replace build/ with the
+      # unzipped contents so that tests run against the same artifact that gets
+      # deployed. This catches problems that only manifest after a zip round-trip
+      # (e.g., resolved symlinks, missing files).
+      - name: Create deployment ZIP
+        run: |
+          cd build
+          zip -r ../build.zip *
+          cd ..
+
+      - name: Replace build with ZIP contents
+        run: |
+          rm -rf build
+          mkdir build
+          cd build
+          unzip ../build.zip
+
+      - name: Run tests
+        run: xvfb-run test/runtests.sh -f -r 3 -p ${{ matrix.shard }}/${{ strategy.job-total }}
+
+  utilities:
+    name: Utilities Tests
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Cache utilities Node modules
+        id: utilities-node-cache
+        uses: actions/cache@v4
+        with:
+          path: chrome/content/zotero/xpcom/utilities/node_modules
+          key: utilities-node-modules-${{ hashFiles('chrome/content/zotero/xpcom/utilities/package-lock.json') }}
+
+      - name: Install utilities Node modules
+        if: steps.utilities-node-cache.outputs.cache-hit != 'true'
+        run: npm install --prefix chrome/content/zotero/xpcom/utilities
+
+      - name: Run utilities tests
+        run: |
+          npm test --prefix chrome/content/zotero/xpcom/utilities -- -j resource/schema/global/schema.json
+
+  # Build deployment ZIPs from main, version branches (e.g., 9.0, 10.0), and *-hotfix branches

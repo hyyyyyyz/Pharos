@@ -1,0 +1,32 @@
+.DS_Store
+node_modules
+build/
+.signatures.json
+tmp
+app/win/codesign
+
+# Pharos additions -----------------------------------------------------------
+#
+# Build outputs and fetched runtimes. All of these are reproducible from the
+# tracked sources, and together they are ~1.5 GB -- larger than everything this
+# repository actually needs to carry.
+
+# The packaged application (app/scripts/dir_build -p m).
+app/staging/
+# Packaged installers. build.sh writes a 180MB disk image here.
+app/dist/
+
+# The Gecko runtime, downloaded by app/scripts/fetch_xulrunner.
+app/xulrunner/
+
+# Submodule build outputs. The sources under reader/src, note-editor/src and
+# document-worker/src are tracked; these are what js-build produces from them.
+reader/build/
+note-editor/build/
+document-worker/build/
+
+# pdf.js build output inside the vendored checkouts. The checkouts themselves
+# are tracked -- they were git submodules upstream, and severing the submodules
+# is what makes them ordinary source here.
+reader/pdfjs/build/
+document-worker/pdf.js/build/

@@ -1,0 +1,42 @@
+// Pharos account pane.
+//
+// Deliberately thin: the surrounding groupbox, headings and controls already
+// come from the shared preferences styles, so this only lays out the two-column
+// label/field rows and the supporting text.
+
+#zotero-prefpane-pharos {
+	.pharos-prefs-field {
+		display: grid;
+		// Fixed label column so the email and password inputs line up with each
+		// other and with the server address below.
+		grid-template-columns: 7em 1fr;
+		align-items: center;
+		gap: 8px;
+		margin-block-end: 8px;
+
+		input {
+			min-width: 0;
+		}
+	}
+
+	.pharos-prefs-intro,
+	.pharos-prefs-help {
+		color: var(--fill-secondary);
+		margin-block-end: 8px;
+	}
+
+	.pharos-prefs-help {
+		font-size: 11px;
+	}
+
+	.pharos-prefs-account {
+		margin-block-end: 8px;
+	}
+
+	// Sits beside the sign-in button and carries both progress and failure, so
+	// it must not push the button around as its text changes.
+	.pharos-prefs-message {
+		margin-inline-start: 8px;
+		color: var(--fill-secondary);
+	}
+}

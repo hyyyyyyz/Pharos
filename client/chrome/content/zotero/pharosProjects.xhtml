@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosDaily.css" type="text/css"?>
+
+<!DOCTYPE window>
+
+<window data-l10n-id="pharos-projects-window"
+		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+		xmlns:html="http://www.w3.org/1999/xhtml"
+		id="pharos-projects-window"
+		windowtype="pharos:projects"
+		width="880" height="700"
+		persist="screenX screenY width height"
+		onload="Zotero_Pharos_Projects.init()">
+	<linkset>
+		<html:link rel="localization" href="branding/brand.ftl" />
+		<html:link rel="localization" href="zotero.ftl" />
+		<html:link rel="localization" href="pharos.ftl" />
+	</linkset>
+
+	<script>
+		Services.scriptloader.loadSubScript("chrome://zotero/content/include.js", this);
+	</script>
+	<script src="chrome://zotero/content/pharosProjects.js"/>
+
+	<vbox flex="1" id="pharos-daily-root">
+		<hbox id="pharos-daily-toolbar" align="center">
+			<html:select id="pharos-projects-select"/>
+			<button id="pharos-projects-advance" data-l10n-id="pharos-projects-advance"/>
+			<spacer flex="1"/>
+			<html:span id="pharos-daily-summary"/>
+		</hbox>
+
+		<html:div id="pharos-daily-status" role="status"/>
+
+		<html:div id="pharos-daily-list" flex="1"/>
+	</vbox>
+</window>

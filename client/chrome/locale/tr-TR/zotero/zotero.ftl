@@ -1,0 +1,1133 @@
+general-sentence-separator = { " " }
+general-key-control = Control
+general-key-shift = Shift
+general-key-alt = Alt
+general-key-option = Option
+general-key-command = Command
+option-or-alt =
+    { PLATFORM() ->
+        [macos] { general-key-option }
+       *[other] { general-key-alt }
+    }
+command-or-control =
+    { PLATFORM() ->
+        [macos] { general-key-command }
+       *[other] { general-key-control }
+    }
+return-or-enter =
+    { PLATFORM() ->
+        [macos] Return
+       *[other] Enter
+    }
+delete-or-backspace =
+    { PLATFORM() ->
+        [macos] Delete
+       *[other] Backspace
+    }
+-os-name =
+    { PLATFORM() ->
+        [macos] macOS
+        [windows] Windows
+       *[other] Linux
+    }
+general-print = Yazdır
+general-remove = Kaldır
+general-add = Ekle
+general-remind-me-later = Daha Sonra Hatırlat
+general-dont-ask-again = Bir Daha Sorma
+general-choose-file = Dosya Seçiniz...
+general-open-settings = Ayarları Aç
+general-settings = Ayarlar...
+general-help = Yardım
+general-tag = Etiket
+general-got-it = Got It
+general-done = Tamam
+general-view-troubleshooting-instructions = Sorun Giderme Talimatlarını Göster
+general-go-back = Geri Git
+general-accept = Kabul Et
+general-cancel = İptal Et
+cancel-button =
+    .label = { general-cancel }
+general-show-in-library = Kitaplıkta Göster
+general-restartApp = { -app-name } Uygulamasını Yeniden Başlat
+general-restartInTroubleshootingMode = Sorun Giderme Modunda Yeniden Başlat
+general-save = Kaydet
+general-clear = Temizle
+clear-button =
+    .label = { general-clear }
+general-update = Güncelle
+general-back = Geri
+general-edit = Düzenle
+general-cut = Kes
+general-copy = Kopyala
+general-paste = Yapıştır
+general-find = Bul
+general-delete = Sil
+general-insert = Ekle
+general-and = ve
+general-et-al = vd.
+general-previous = Önceki
+general-next = Sonraki
+general-learn-more = Daha Öğren
+general-more-information = Daha Fazla Bilgi
+general-warning = Uyarı
+general-type-to-continue = Devam etmek için “{ $text }” yazın.
+general-continue = Devam et
+general-red = Kırmızı
+general-orange = Turuncu
+general-yellow = Sarı
+general-green = Yeşil
+general-teal = Ördekbaşı
+general-blue = Mavi
+general-purple = Mor
+general-magenta = Eflatun
+general-violet = Menekşe
+general-maroon = Bordo
+general-gray = Gri
+general-black = Siyah
+general-loading = Yükleniyor...
+db-checking-integrity = Checking database integrity…
+db-repairing = Repairing database…
+citation-style-label = Alıntı Stili:
+language-label = Dil:
+menu-custom-group-submenu =
+    .label = Diğer Seçenekler...
+menu-file-show-in-finder =
+    .label = Finder'da Göster
+menu-file-show-file =
+    .label = Dosyayı Göster
+menu-file-show-files =
+    .label = Dosyaları Göster
+menu-print =
+    .label = { general-print }
+menu-density =
+    .label = Yoğunluk
+add-attachment = Ek Ekle
+new-note = Yeni Not
+menu-add-by-identifier =
+    .label = Tanımlayıcı Kullanarak Ekle
+menu-add-attachment =
+    .label = { add-attachment }
+menu-add-standalone-file-attachment =
+    .label = Dosya Ekle...
+menu-add-standalone-linked-file-attachment =
+    .label = Dosyaya Bağlantı Ekle...
+menu-add-child-file-attachment =
+    .label = Dosyayı Ekle...
+menu-add-child-linked-file-attachment =
+    .label = Dosyaya Bağlantı Ekle...
+menu-add-child-linked-url-attachment =
+    .label = Web Bağlantısı Ekle...
+menu-new-note =
+    .label = { new-note }
+menu-new-standalone-note =
+    .label = Yeni Bağımsız Not
+menu-new-item-note =
+    .label = Yeni Eser Notu
+menu-restoreToLibrary =
+    .label = Kitaplığa geri yükle
+menu-deletePermanently =
+    .label = Kalıcı Olarak Sil...
+menu-tools-plugins =
+    .label = Eklentiler
+menu-view-columns-move-left =
+    .label = Sütunu Sola Taşı
+menu-view-columns-move-right =
+    .label = Sütunu Sağa Taşı
+menu-view-hide-context-annotation-rows =
+    .label = Eşleşmeyen Açıklamaları Gizle
+menu-view-note-font-size =
+    .label = Not Yazı Tipi Boyutu
+menu-view-note-tab-font-size =
+    .label = Not Sekmesi Yazı Tipi Boyutu
+menu-show-tabs-menu =
+    .label = Sekmeler Menüsünü Göster
+menu-edit-copy-annotation =
+    .label =
+        { $count ->
+            [one] Ek Açıklamayı Kopyala
+           *[other] { $count } Ek Açıklamayı Kopyala
+        }
+main-window-command =
+    .label = Kitaplık
+main-window-key =
+    .key = L
+zotero-toolbar-tabs-menu =
+    .tooltiptext = Tüm sekmeleri listele
+filter-collections = Dermeleri Filtrele
+zotero-collections-search =
+    .placeholder = { filter-collections }
+zotero-collections-search-btn =
+    .tooltiptext = { filter-collections }
+zotero-tabs-menu-filter =
+    .placeholder = Sekmelerde Ara
+zotero-tabs-menu-close-button =
+    .title = Sekmeyi Kapat
+zotero-toolbar-tabs-scroll-forwards =
+    .title = İleri kaydır
+zotero-toolbar-tabs-scroll-backwards =
+    .title = Geri kaydır
+toolbar-add-attachment =
+    .tooltiptext = { add-attachment }
+recently-read = Son Okunanlar
+collections-menu-show-recently-read =
+    .label = Show { recently-read }
+item-menu-remove-from-recently-read =
+    .label = Remove from { recently-read }…
+items-section-collections-selected =
+    { $count ->
+        [one] { $count } derme seçildi
+       *[other] { $count } derme seçildi
+    }
+items-section-searches-selected =
+    { $count ->
+        [one] { $count } saved search selected
+       *[other] { $count } saved searches selected
+    }
+items-section-sources-selected =
+    { $count ->
+        [one] { $count } source selected
+       *[other] { $count } sources selected
+    }
+items-section-library-collections =
+    { $count ->
+        [one] { $library } ({ $count } collection selected)
+       *[other] { $library } ({ $count } collections selected)
+    }
+items-section-library-searches =
+    { $count ->
+        [one] { $library } ({ $count } saved search selected)
+       *[other] { $library } ({ $count } saved searches selected)
+    }
+items-section-library-sources =
+    { $count ->
+        [one] { $library } ({ $count } source selected)
+       *[other] { $library } ({ $count } sources selected)
+    }
+items-section-library-recently-read = { $library } ({ recently-read })
+items-section-library = { $library }
+collections-menu-rename =
+    .label = Rename
+edit-saved-search = Kaydedilen Aramayı Düzenle
+collections-menu-edit-search =
+    .label = Edit Search
+collections-menu-duplicate-search =
+    .label = Duplicate Search
+collections-menu-move-collection =
+    .label = Buraya Taşı
+collections-menu-copy-collection =
+    .label = Buraya Kopyala
+collections-menu-export =
+    .label = Dışarı Aktar...
+collections-menu-generate-report =
+    .label = Generate Report…
+collections-menu-create-bibliography =
+    .label = Create Bibliography…
+collections-menu-unsubscribe =
+    .label = Unsubscribe…
+collections-menu-delete =
+    .label =
+        { $count ->
+            [one] Delete Collection…
+           *[other] Delete Collections…
+        }
+collections-menu-delete-with-items =
+    .label =
+        { $count ->
+            [one] Delete Collection and Items…
+           *[other] Delete Collections and Items…
+        }
+collections-menu-delete-search =
+    .label =
+        { $count ->
+            [one] Delete Search…
+           *[other] Delete Searches…
+        }
+collections-delete-title =
+    { $count ->
+        [one] Delete Collection
+       *[other] Delete Collections
+    }
+collections-delete-message =
+    { $count ->
+        [one] Are you sure you want to delete this collection?
+       *[other] Are you sure you want to delete { $count } collections?
+    }
+collections-delete-keep-items =
+    { $count ->
+        [one] Items within this collection will not be deleted.
+       *[other] Items within these collections will not be deleted.
+    }
+collections-delete-with-items-title =
+    { $count ->
+        [one] Delete Collection and Items
+       *[other] Delete Collections and Items
+    }
+collections-delete-with-items-message =
+    { $count ->
+        [one] Are you sure you want to delete this collection and move all items within it to the Trash?
+       *[other] Are you sure you want to delete { $count } collections and move all items within them to the Trash?
+    }
+collections-delete-search-title =
+    { $count ->
+        [one] Delete Search
+       *[other] Delete Searches
+    }
+collections-delete-search-message =
+    { $count ->
+        [one] Are you sure you want to delete this search?
+       *[other] Are you sure you want to delete { $count } searches?
+    }
+item-creator-moveDown =
+    .label = Bir Aşağı Taşı
+item-creator-moveToTop =
+    .label = En Üste Taşı
+item-creator-moveUp =
+    .label = Bir Yukarı Taşı
+item-menu-viewAttachment =
+    .label =
+        Open { $numAttachments ->
+            [one]
+                { $attachmentType ->
+                    [pdf] PDF
+                    [epub] EPUB
+                    [snapshot] Snapshot
+                    [note] Note
+                   *[other] Attachment
+                }
+           *[other]
+                { $attachmentType ->
+                    [pdf] PDFs
+                    [epub] EPUBs
+                    [snapshot] Snapshots
+                    [note] Notes
+                   *[other] Attachments
+                }
+        } { $openIn ->
+            [tab] in New Tab
+            [window] in New Window
+           *[other] { "" }
+        }
+item-menu-add-file =
+    .label = Dosya
+item-menu-add-linked-file =
+    .label = Bağlantılı Dosya
+item-menu-add-url =
+    .label = Web bağlantısı
+item-menu-change-parent-item =
+    .label = Ana Eseri Değiştir...
+item-menu-relate-items =
+    .label = İlişkili Öğeler
+view-online = Çevrimiçi Göster
+item-menu-option-view-online =
+    .label = { view-online }
+item-button-view-online =
+    .tooltiptext = { view-online }
+file-renaming-file-renamed-to = Dosyanın adı buna değiştirildi: { $filename }
+itembox-button-options =
+    .tooltiptext = Bağlam menüsünü aç
+itembox-button-merge =
+    .aria-label = { $field } alanının versiyonunu seçiniz
+create-parent-intro = Bir DOI, ISBN, PMID, arXiv ID ya da ADS Bibcode değeri girerek bu dosyayı tanımlayınız:
+reader-use-dark-mode-for-content =
+    .label = İçerik için Karanlık Modu Kullanın
+update-updates-found-intro-minor = { -app-name } için bir güncelleme var:
+update-updates-found-desc = Bu güncellemeyi mümkün olan en kısa sürede uygulamanız önerilir.
+import-window =
+    .title = İçeri Aktar
+import-where-from = Nereden içeri aktarmak istiyorsunuz?
+import-online-intro-title = Giriş
+import-source-file =
+    .label = Bir dosya (BibTeX, RIS, Zotero RDF, vb.)
+import-source-folder =
+    .label = PDF'lerin veya diğer dosyaların bulunduğu bir klasör
+import-source-online =
+    .label = { $targetApp } uygulamasından çevrimiçi içe aktarma
+import-options = Seçenekler
+import-importing = İçeri aktarılıyor...
+import-create-collection =
+    .label = İçeri aktarılmış dermeler ve eserleri yeni bir dermeye yerleştir
+import-recreate-structure =
+    .label = Klasör yapısını dermeler olarak yeniden yarat
+import-fileTypes-header = İçeri Aktarılacak Dosya Türleri:
+import-fileTypes-pdf =
+    .label = PDF'ler
+import-fileTypes-other =
+    .placeholder = Şablona göre diğer dosyalar, virgülle ayrılmış (örn. *.jpg,*.png)
+import-file-handling = Dosyaların İdare Edilmesi
+import-file-handling-store =
+    .label = Dosyaları { -app-name } depolama klasörüne kopyala
+import-file-handling-link =
+    .label = Dosyalara orijinal konumlarında bağlantı kur
+import-fileHandling-description = { -app-name } bağlantılı dosyaları eşitleyemez.
+import-online-new =
+    .label = Yalnızca yeni eserleri indir; daha önce içeri aktarılmış olan eserleri güncelleme
+import-mendeley-username = Kullanıcı adı
+import-mendeley-password = Şifre
+general-error = Hata
+file-interface-import-error = Seçilen dosyayı içeri aktarırken bir hata oluştu. Lütfen dosyanın doğruluğunu kontrol ediniz ve tekrar deneyiniz.
+file-interface-import-complete = İçeri Aktarma Tamamlandı
+file-interface-items-were-imported =
+    { $numItems ->
+        [0] Hiçbir eser içeri aktarılmadı
+        [one] Bir eser içeri aktarıldı
+       *[other] { $numItems } eser içeri aktarıldı
+    }
+file-interface-items-were-relinked =
+    { $numRelinked ->
+        [0] Hiçbir eser yeniden bağlantılanmadı
+        [one] Bir eser yeniden bağlantılandı
+       *[other] { $numRelinked } eser yeniden bağlantılandı
+    }
+import-mendeley-encrypted = Seçili Mendeley veri tabanı okunamıyor. Bunun olası nedeni veri tabanının şifrelenmiş olmasıdır. Daha çok bilgi için buraya bakınız: <a data-l10n-name="mendeley-import-kb">Bir Mendeley kitaplığını nasıl içeri aktarırım?</a>
+file-interface-import-error-translator = Seçilmiş dosyayı “{ $translator }” ile içeri aktarırken bir hata oluştu. Lütfen dosyanın geçerliliğini kontrol ediniz ve tekrar deneyiniz.
+import-online-intro = Gelecek aşamada, { $targetAppOnline } uygulamasına giriş yapmanız ve { -app-name } uygulamasına erişim vermeniz istenecek. Bu, { $targetApp } kitaplığınızı { -app-name } içine aktarabilmek için gereklidir.
+import-online-intro2 = { -app-name } hiçbir zaman { $targetApp } şifrenizi görmeyecek ve kaydetmeyecektir.
+import-online-form-intro = Lütfen { $targetAppOnline } uygulaması için giriş bilgilerinizi giriniz. Bu, { $targetApp } kitaplığınızı { -app-name } içine aktarmak için gereklidir.
+import-online-wrong-credentials = { $targetApp } için oturum açılamadı. Lütfen giriş bilgilerini tekrar girin ve yeniden deneyin.
+import-online-blocked-by-plugin = { $plugin } kuruluyken içeri aktarma işlemi sürdürülemez. Lütfen bu eklentiyi devre dışı bırakın ve yeniden deneyin.
+import-online-relink-only =
+    .label = Mendeley Desktop alıntılarını yeniden bağlantıla
+import-online-relink-kb = { general-more-information }
+import-online-connection-error = { -app-name }, { $targetApp } uygulamasına bağlanamadı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.
+tab-title-multiple-collections = Multiple
+items-table-cell-notes =
+    .aria-label =
+        { $count ->
+            [one] { $count } Not
+           *[other] { $count } Not
+        }
+items-column-added-by = Added By
+items-column-modified-by = Modified By
+items-column-last-read = Last Read
+report-error =
+    .label = Hatayı Bildir...
+rtfScan-wizard =
+    .title = RTF Tarama
+rtfScan-introPage-description = { -app-name } alıntıları otomatik olarak ayıklayıp düzenleyebilir ve RTF dosyalarının içine kaynakça olarak koyabilir. Şu an aşağıdaki biçimlendirme şekillerinde yaratılmış alıntıları desteklemektedir:
+rtfScan-introPage-description2 = Başlamak için, aşağıdan bir RTF girdi dosyası ve bir çıktı dosyası seçiniz:
+rtfScan-input-file = Okunan Dosya:
+rtfScan-output-file = Çıkan Dosya:
+rtfScan-no-file-selected = Dosya seçilmedi
+rtfScan-choose-input-file =
+    .label = { general-choose-file }
+    .aria-label = Okunan Dosyayı Seç
+rtfScan-choose-output-file =
+    .label = { general-choose-file }
+    .aria-label = Çıkacak Dosyayı Seç
+rtfScan-intro-page = Giriş
+rtfScan-scan-page = Alıntılar için Tarama
+rtfScan-scanPage-description = { -app-name }, belgenizi alıntı bulmak için tarıyor. Lütfen bekleyiniz.
+rtfScan-citations-page = Alıntıların Onaylanması
+rtfScan-citations-page-description = Lütfen aşağıdaki listede tanınan alıntıları { -app-name } uygulamasının doğru eserlerle eşlendirdiğinden emin olunuz. Bir sonraki adıma geçmeden önce eşlenmemiş veya belirsiz alıntılar çözümlenmelidir.
+rtfScan-style-page = Belge Biçimlendirme
+rtfScan-format-page = Alıntı Biçimlendirme
+rtfScan-format-page-description = { -app-name }, RTF dosyanızı işliyor ve biçimlendiriyor. Lütfen bekleyiniz.
+rtfScan-complete-page = RTF Taraması Tamamlandı
+rtfScan-complete-page-description = Belgenizin taranması ve işlenmesi tamamlandı. Lütfen biçimlendirmesinin doğruluğunu kontrol ediniz.
+rtfScan-action-find-match =
+    .title = Eşleşen eseri seçin
+rtfScan-action-accept-match =
+    .title = Bu eşleşmeyi kabul et
+runJS-title = JavaScript Çalıştır
+runJS-editor-label = Kod:
+runJS-run = Çalıştır
+runJS-help = { general-help }
+runJS-completed = başarıyla tamamlandı
+runJS-result =
+    { $type ->
+        [async] Dönüş değeri:
+       *[other] Sonuç:
+    }
+runJS-run-async = Asenkron fonksiyon olarak çalıştır
+bibliography-window =
+    .title = { -app-name } - Alıntı/Kaynakça Yarat
+bibliography-style-label = { citation-style-label }
+bibliography-locale-label = { language-label }
+bibliography-displayAs-label = Alıntıları böyle göster:
+bibliography-advancedOptions-label = Gelişmiş Seçenekler
+bibliography-outputMode-label = Çıktı Biçimi
+bibliography-outputMode-citations =
+    .label =
+        { $type ->
+            [citation] Alıntılar
+            [note] Notlar
+           *[other] Alıntılar
+        }
+bibliography-outputMode-bibliography =
+    .label = Kaynakça
+bibliography-outputMethod-label = Çıktı Metodu:
+bibliography-outputMethod-saveAsRTF =
+    .label = RTF Olarak Kaydet
+bibliography-outputMethod-saveAsHTML =
+    .label = HTML olarak Kaydet
+bibliography-outputMethod-copyToClipboard =
+    .label = Panoya Kopyala
+bibliography-outputMethod-print =
+    .label = Yazdır
+bibliography-manageStyles-label = Stilleri Yönet...
+styleEditor-locatorType =
+    .aria-label = Yer bulucu türü
+styleEditor-locatorInput = Yer bulucu girdisi
+styleEditor-citationStyle = { citation-style-label }
+styleEditor-locale = { language-label }
+styleEditor-editor =
+    .aria-label = Stil Editörü
+styleEditor-preview =
+    .aria-label = Önizleme
+publications-intro-page = Yayınlarım
+publications-intro = Yayınlarım'a eklediğiniz eserler zotero.org adresindeki profil sayfanızda gösterilecektir. Eklenti dosyalarını dahil etmeyi seçerseniz, bu dosyalar belirttiğiniz lisans uyarınca halka açık şekilde paylaşılacaktır. Sadece kendi ürettiğiniz eserleri ekleyiniz ve sadece dağıtım hakkına sahip olduğunuz ve paylaşmak istediğiniz dosyaları dahil ediniz.
+publications-include-checkbox-files =
+    .label = Dosyaları dahil et
+publications-include-checkbox-notes =
+    .label = Notları dahil et
+publications-include-adjust-at-any-time = Nelerin gösterileceğini, Yayınlarım dermesinden herhangi bir zaman ayarlayabilirsiniz.
+publications-intro-authorship =
+    .label = Bu eseri ben yarattım.
+publications-intro-authorship-files =
+    .label = Bu eseri ben yarattım ve dahil edilmiş dosyaları dağıtma hakkına sahibim.
+publications-sharing-page = Kendi eserlerinizin nasıl paylaşılacağını seçiniz
+publications-sharing-keep-rights-field =
+    .label = Telif alanını aynen tut
+publications-sharing-keep-rights-field-where-available =
+    .label = Eğer Telif alanı varsa, bu alanı aynen tut
+publications-sharing-text = Kendi eserlerinizin tüm haklarını saklı tutabilir, Creative Commons altında lisanslayabilir ya da kamu alanına açıkça sunabilirsiniz. Her durumda eser zotero.org aracılığıyla halka açık olacaktır.
+publications-sharing-prompt = Eserinizin başkaları tarafından paylaşılabilmesine izin veriyor musunuz?
+publications-sharing-reserved =
+    .label = Hayır, eserimi sadece zotero.org adresinde yayınla
+publications-sharing-cc =
+    .label = Evet, Creative Commons ile lisansla
+publications-sharing-cc0 =
+    .label = Evet, eserimi kamu alanına serbestçe koy
+publications-license-page = Bir Creative Commons lisansı seç
+publications-choose-license-text = Bir Creative Commons lisansı, eğer size uygun bir atıfta bulunuluyor, lisansa bir bağlantı veriliyor ve yapılmış herhangi bir değişiklik belirtiliyorsa, başkalarına eserinizi kopyalama ve yeniden dağıtmasına izni vermektedir.
+publications-choose-license-adaptations-prompt = Eserinizin uyarlamalarının paylaşılmasına izin veriyor musunuz?
+publications-choose-license-yes =
+    .label = Evet
+    .accesskey = E
+publications-choose-license-no =
+    .label = Hayır
+    .accesskey = H
+publications-choose-license-sharealike =
+    .label = Evet, başkaları da aynı şekilde paylaşacaksa
+    .accesskey = S
+publications-choose-license-commercial-prompt = Eserinizin ticari kullanımına izin veriyor musunuz?
+publications-buttons-add-to-my-publications =
+    .label = Yayınlarım'a Ekle
+publications-buttons-next-sharing =
+    .label = Sonraki: Paylaşım
+publications-buttons-next-choose-license =
+    .label = Bir Telif Hakkı Lisansı Seç
+licenses-cc-0 = CC0 1.0 Universal Public Domain Adanması
+licenses-cc-by = Creative Commons Alıntı 4.0 Uluslararası Lisansı
+licenses-cc-by-nd = Creative Commons Alıntı-Türetilemez 4.0 Uluslararası Lisansı
+licenses-cc-by-sa = Creative Commons Alıntı-LisansDevam 4.0 Uluslararası Lisansı
+licenses-cc-by-nc = Creative Commons Alıntı-Gayriticari 4.0 Uluslararası Lisansı
+licenses-cc-by-nc-nd = Creative Commons Alıntı-Gayriticari-Türetilemez eserler 4.0 Uluslararası Lisansı
+licenses-cc-by-nc-sa = Creative Commons Alıntı-Gayriticari-LisansDevam 4.0 Uluslararası Lisansı
+licenses-cc-more-info = Çalışmanızı CC lisansı altına almadan önce, Creative Commons <a data-l10n-name="license-considerations">Lisansı Verenleri İçin Dikkat Edilecek Hususlar'ı</a> okuduğunuzdan emin olun. Başvurduğunuz lisansın, daha sonra başka şartlar seçseniz veya eserin yayımını durdursanız bile, iptal edilemeyeceğini unutmayın.
+licenses-cc0-more-info = Çalışmanıza CC0 lisansını uygulamadan önce, Creative Commons <a data-l10n-name="license-considerations">CC0 SSS</a> belgesini okuduğunuzdan emin olun. Çalışmanızı kamuya açık alana adamanın, daha sonra başka şartlar seçseniz veya çalışmayı yayınlamayı bıraksanız bile, geri döndürülemez olduğunu lütfen unutmayın.
+debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-menuitem =
+    .label = Sorun Giderme Modunda Yeniden Başlat...
+    .accesskey = T
+restart-in-troubleshooting-mode-dialog-title = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-dialog-description = { -app-name }, tüm eklentileri devre dışı bırakarak yeniden başlayacak. Sorun Giderme Modu etkinken bazı özellikler düzgün çalışmayabilir.
+menu-ui-density =
+    .label = Yoğunluk
+menu-ui-density-comfortable =
+    .label = Rahat
+menu-ui-density-compact =
+    .label = Sıkıştır
+pane-item-details = Eser Ayrıntıları
+pane-info = Bilgi
+pane-abstract = Özet
+pane-attachments = Ekler
+pane-notes = Notlar
+pane-note-info = Not Bilgisi
+pane-libraries-collections = Kitaplıklar ve Dermeler
+pane-tags = Etiketler
+pane-related = İlişkili
+pane-attachment-info = Ek Bilgileri
+pane-attachment-preview = Önizleme
+pane-attachment-annotations = Ek Açıklamalar
+pane-header-attachment-associated =
+    .label = İlişkilendirilen dosyayı yeniden adlandır
+item-details-pane =
+    .aria-label = { pane-item-details }
+section-info =
+    .label = { pane-info }
+section-abstract =
+    .label = { pane-abstract }
+section-attachments =
+    .label =
+        { $count ->
+            [one] { $count } Ek
+           *[other] { $count } Ek
+        }
+section-attachment-preview =
+    .label = { pane-attachment-preview }
+section-attachments-annotations =
+    .label =
+        { $count ->
+            [one] { $count } Ek Açıklama
+           *[other] { $count } Ek Açıklama
+        }
+section-attachments-move-to-trash-message = “{ $title }” başlıklı eseri çöp sepetine göndermeyi istediğinize emin misiniz?
+section-notes =
+    .label =
+        { $count ->
+            [one] { $count } Not
+           *[other] { $count } Not
+        }
+section-libraries-collections =
+    .label = { pane-libraries-collections }
+section-tags =
+    .label =
+        { $count ->
+            [one] { $count } Etiket
+           *[other] { $count } Etiket
+        }
+section-related =
+    .label = { $count } İlişkili
+section-attachment-info =
+    .label = { pane-attachment-info }
+section-button-remove =
+    .tooltiptext = { general-remove }
+section-button-add =
+    .tooltiptext = { general-add }
+section-button-expand =
+    .dynamic-tooltiptext = Bölümü genişlet
+    .label = { $section } bölümünü genişlet
+section-button-collapse =
+    .dynamic-tooltiptext = Bölümü daralt
+    .label = { $section } bölümünü daralt
+annotations-count =
+    { $count ->
+        [one] { $count } Ek Açıklama
+       *[other] { $count } Ek Açıklama
+    }
+section-button-annotations =
+    .title = { annotations-count }
+    .aria-label = { annotations-count }
+attachment-preview =
+    .aria-label = { pane-attachment-preview }
+sidenav-info =
+    .tooltiptext = { pane-info }
+sidenav-abstract =
+    .tooltiptext = { pane-abstract }
+sidenav-attachments =
+    .tooltiptext = { pane-attachments }
+sidenav-notes =
+    .tooltiptext = { pane-notes }
+sidenav-note-info =
+    .tooltiptext = { pane-note-info }
+sidenav-attachment-info =
+    .tooltiptext = { pane-attachment-info }
+sidenav-attachment-preview =
+    .tooltiptext = { pane-attachment-preview }
+sidenav-attachment-annotations =
+    .tooltiptext = { pane-attachment-annotations }
+sidenav-libraries-collections =
+    .tooltiptext = { pane-libraries-collections }
+sidenav-tags =
+    .tooltiptext = { pane-tags }
+sidenav-related =
+    .tooltiptext = { pane-related }
+sidenav-main-btn-grouping =
+    .aria-label = { pane-item-details }
+sidenav-reorder-up =
+    .label = Bölmeyi Yukarı Taşı
+sidenav-reorder-down =
+    .label = Bölmeyi Aşağı Taşı
+sidenav-reorder-reset =
+    .label = Bölme Sırasını Sıfırla
+toggle-item-pane =
+    .tooltiptext = Eser Bölmesini Aç/Kapat
+toggle-context-pane =
+    .tooltiptext = Bağlam Bölmesini Aç/Kapat
+pin-section =
+    .label = Bölümü Sabitle
+unpin-section =
+    .label = Bölüm Sabitlemesini Kaldır
+collapse-other-sections =
+    .label = Diğer Bölümleri Daralt
+expand-all-sections =
+    .label = Tüm Bölümleri Genişlet
+abstract-field =
+    .placeholder = Özet ekle...
+tag-field =
+    .aria-label = { general-tag }
+tagselector-search =
+    .placeholder = Etiketleri Filtrele
+context-notes-search =
+    .placeholder = Notları Ara
+context-notes-return-button =
+    .aria-label = { general-go-back }
+new-collection = Yeni Derme...
+menu-new-collection =
+    .label = { new-collection }
+toolbar-new-collection =
+    .tooltiptext = { new-collection }
+new-collection-dialog =
+    .title = Yeni Derme
+    .buttonlabelaccept = Derme Oluştur
+new-collection-name = Ad:
+new-collection-create-in = Bunun içinde yarat:
+show-publications-menuitem =
+    .label = Yayınlarımı Göster
+attachment-info-title = Başlık
+attachment-info-filename = Dosya adı
+attachment-info-accessed = Erişildi
+attachment-info-pages = Sayfalar
+attachment-info-modified = Değiştirme
+attachment-info-index = İndekslendi
+attachment-info-convert-note =
+    .label =
+        { $type ->
+            [standalone] Bağımsız Nota
+            [child] Eser Notuna
+           *[unknown] Yeni Nota
+        } Taşı
+    .tooltiptext = Eklere not eklemek artık desteklenmemektedir. Fakat bu notu ayrı bir nota taşıyarak düzenleyebilirsiniz.
+section-note-info =
+    .label = { pane-note-info }
+note-info-title = Başlık
+note-info-parent-item = Ana Eser
+note-info-parent-item-button =
+    { $hasParentItem ->
+        [true] { $parentItemTitle }
+       *[false] None
+    }
+    .title =
+        { $hasParentItem ->
+            [true] View parent item in library
+           *[false] View note item in library
+        }
+note-info-date-created = Oluşturuldu
+note-info-date-modified = Değiştirme
+note-info-size = Boyut
+note-info-word-count = Kelime Sayısı
+note-info-character-count = Karakter Sayısı
+item-title-empty-note = Başlıksız Not
+attachment-preview-placeholder = Önizleyecek bir ek yok
+attachment-rename-from-parent =
+    .tooltiptext = Ana Esere Uymak için Dosyayı Yeniden Adlandır
+account-log-in = Log In
+account-not-logged-in-text = Log in to your Zotero account to sync your data.
+account-error-login-session-expired = Your login session has expired. Please try again.
+toggle-preview =
+    .label =
+        Ek Önizlemesini { $type ->
+            [open] Sakla
+            [collapsed] Göster
+           *[unknown] Sakla/Göster
+        }
+annotation-image-not-available = [Resim mevcut değil]
+quicksearch-mode =
+    .aria-label = Hızlı Arama modu
+quicksearch-input =
+    .aria-label = Çabuk Arama
+    .placeholder = { $placeholder }
+    .aria-description = { $placeholder }
+advanced-search = Gelişmiş Arama
+menuitem-advanced-search =
+    .label = { advanced-search }
+quicksearch-advanced-search-button =
+    .tooltiptext = { advanced-search }
+    .aria-label = { advanced-search }
+advanced-search-close =
+    .tooltiptext = Close Advanced Search
+advanced-search-expand =
+    .tooltiptext = Expand Advanced Search
+advanced-search-collapse =
+    .tooltiptext = Collapse Advanced Search
+item-pane-header-view-as =
+    .label = Bu şekilde görüntüle:
+item-pane-header-none =
+    .label = Hiçbiri
+item-pane-header-title =
+    .label = Başlık
+item-pane-header-titleCreatorYear =
+    .label = Başlık, Yaratan, Yıl
+item-pane-header-bibEntry =
+    .label = Kaynakça Girdisi
+item-pane-header-more-options =
+    .label = Diğer Seçenekler
+item-pane-message-items-selected =
+    { $count ->
+        [0] Hiçbir eser seçilmedi
+        [one] { $count } eser seçildi
+       *[other] { $count } eser seçildi
+    }
+item-pane-message-collections-selected =
+    { $count ->
+        [one] { $count } derme seçildi
+       *[other] { $count } derme seçildi
+    }
+item-pane-message-searches-selected =
+    { $count ->
+        [one] { $count } arama seçildi
+       *[other] { $count } arama seçildi
+    }
+item-pane-message-objects-selected =
+    { $count ->
+        [one] { $count } şey seçildi
+       *[other] { $count } şey seçildi
+    }
+item-pane-message-unselected =
+    { $count ->
+        [0] Bu görüntüde hiçbir eser yok
+        [one] Bu görüntüde { $count } eser var
+       *[other] Bu görüntüde { $count } eser var
+    }
+item-pane-message-objects-unselected =
+    { $count ->
+        [0] Bu görüntüde hiçbir şey yok
+        [one] Bu görüntüde { $count } şey var
+       *[other] Bu görüntüde { $count } şey var
+    }
+item-pane-duplicates-merge-items =
+    .label =
+        { $count ->
+            [one] { $count } eseri birleştir
+           *[other] { $count } eseri birleştir
+        }
+locate-library-lookup-no-resolver = { -app-name } ayarlarının { $pane } bölmesinden bir çözümleyicisi seçmelisiniz.
+architecture-win32-warning-message = En iyi performans için 64-bit { -app-name } uygulamasına geçin. Verileriniz etkilenmeyecektir.
+architecture-warning-action = 64-bit { -app-name } uygulamasını indir
+architecture-x64-on-arm64-message = { -app-name } uygulaması emüle edilmiş modda çalışıyor. { -app-name } uygulamasının yerli bir versiyonu daha verimli çalışacaktır.
+architecture-x64-on-arm64-action = ARM64 için yapılmış { -app-name } uygulamasını indir
+first-run-guidance-authorMenu = { -app-name }, editörleri ve çevirmenleri belirtmenize de olanak tanır. Bir yazarı, editöre veya çevirmene dönüştürmeyi bu menüden seçebilirsiniz.
+first-run-guidance-readAloud = { -app-name } can now read your documents to you using natural-sounding voices.
+advanced-search-remove-btn =
+    .tooltiptext = Remove Condition
+advanced-search-add-btn =
+    .tooltiptext = Add Condition
+advanced-search-group-btn =
+    .tooltiptext = Add Condition Group
+advanced-search-remove-group-btn =
+    .tooltiptext = Remove Group
+advanced-search-ungroup-btn =
+    .tooltiptext = Ungroup Conditions
+advanced-search-result-level-menu =
+    .aria-label = Result type
+advanced-search-result-level-prefix-root =
+    .value = Bul
+advanced-search-join-prefix-root =
+    .value = matching
+advanced-search-result-level-any =
+    .label = any items
+advanced-search-result-level-item =
+    .label = top-level items
+advanced-search-result-level-attachment =
+    .label = attachments
+advanced-search-result-level-note =
+    .label = notes
+advanced-search-result-level-annotation =
+    .label = ek açıklamalar
+advanced-search-binding-menu =
+    .aria-label = Match against the same item
+advanced-search-binding-separate =
+    .label = separately
+advanced-search-binding-same-attachment =
+    .label = in the same attachment
+advanced-search-binding-same-note =
+    .label = in the same note
+advanced-search-binding-same-annotation =
+    .label = in the same annotation
+advanced-search-of-the-following =
+    .value = of the following
+advanced-search-binding-hint-attachment =
+    .value = These conditions can match separate attachments.
+advanced-search-binding-hint-note =
+    .value = These conditions can match separate notes.
+advanced-search-binding-hint-annotation =
+    .value = These conditions can match separate annotations.
+advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
+advanced-search-group-warning-unreachable =
+    A condition here cannot be in the same { $entity ->
+        [attachment] attachment
+        [note] note
+       *[annotation] annotation
+    }. Match these separately or remove the incompatible condition.
+advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-bind-same-attachment =
+    .label = Match the same attachment
+advanced-search-bind-same-note =
+    .label = Match the same note
+advanced-search-bind-same-annotation =
+    .label = Match the same annotation
+advanced-search-conditions-menu =
+    .aria-label = Arama koşulu
+    .label = { $label }
+advanced-search-operators-menu =
+    .aria-label = İşleç
+    .label = { $label }
+advanced-search-condition-input =
+    .aria-label = Değer
+    .label = { $label }
+search-operator-isEmpty = is empty
+search-operator-isNotEmpty = is not empty
+search-conditions-tooltip-fields = Alanlar:
+search-conditions-collection = Derme
+search-conditions-savedSearch = Kaydedilen Arama
+search-conditions-itemTypeID = Eser Türü
+search-conditions-tag = Etiket
+search-conditions-numTags = # of Tags
+search-conditions-numNotes = # of Notes
+search-conditions-numAttachments = # of Attachments
+search-conditions-numAnnotations = # of Annotations
+search-conditions-note = Not
+search-conditions-childNote = Alt Not
+search-conditions-creator = Oluşturan
+search-conditions-thesisType = Tez Türü
+search-conditions-reportType = Rapor Türü
+search-conditions-videoRecordingFormat = Video Kaydının Biçimi
+search-conditions-audioFileType = Ses Dosyası Türü
+search-conditions-audioRecordingFormat = Ses Kayıt Biçimi
+search-conditions-letterType = Mektup Türü
+search-conditions-interviewMedium = Görüşme Ortamı
+search-conditions-manuscriptType = El yazması Türü
+search-conditions-presentationType = Sunum Türü
+search-conditions-mapType = Harita Türü
+search-conditions-artworkMedium = Sanat eseri Ortamı
+search-conditions-dateModified = Son Değiştirme Tarihi
+search-conditions-fulltextContent = Ekin İçeriği
+search-conditions-programmingLanguage = Programlama Dili
+search-conditions-fileTypeID = Ek Dosya Türü
+search-conditions-attachmentStorageType = Attachment Storage Type
+search-conditions-lastRead = Attachment Last Read
+search-conditions-annotationText = Ek Açıklama Metni
+search-conditions-annotationComment = Ek Açıklama Yorumu
+search-conditions-annotationType = Annotation Type
+search-conditions-annotationColor = Annotation Color
+search-conditions-annotationAuthor = Annotation Author
+search-conditions-anyField = Herhangi Bir Alan
+search-conditions-titleCreatorYear = Başlık, Yaratan, Yıl
+search-conditions-submenu-attachment = Ek
+search-conditions-submenu-annotation = Ek Açıklama
+search-conditions-short-fulltextContent = Content
+search-conditions-short-fileTypeID = Dosya Türü
+search-conditions-short-attachmentStorageType = Storage Type
+search-conditions-short-lastRead = Last Read
+search-conditions-short-annotationText = Text
+search-conditions-short-annotationComment = Comment
+search-conditions-short-annotationType = Tür
+search-conditions-short-annotationColor = Color
+search-conditions-short-annotationAuthor = Yazar
+find-pdf-files-added =
+    { $count ->
+        [one] { $count } dosya eklendi
+       *[other] { $count } dosya eklendi
+    }
+select-items-window =
+    .title = Eser Seç
+select-items-dialog =
+    .buttonlabelaccept = Seç
+select-items-convertToStandalone =
+    .label = Bağımsız bir Öğeye Dönüştür
+select-items-convertToStandaloneAttachment =
+    .label =
+        { $count ->
+            [one] Bağımsız Eke Dönüştür
+           *[other] Bağımsız Eklere Dönüştür
+        }
+select-items-convertToStandaloneNote =
+    .label =
+        { $count ->
+            [one] Bağımsız Nota Dönüştür
+           *[other] Bağımsız Notlara Dönüştür
+        }
+file-type-webpage = Web sayfası
+file-type-image = Resim
+file-type-pdf = PDF
+file-type-audio = Ses
+file-type-video = Video
+file-type-presentation = Sunum
+file-type-document = Doküman
+file-type-ebook = E-kitap
+attachment-storage-type-storedFile = Stored File
+attachment-storage-type-linkedFile = Linked File
+attachment-storage-type-webLink = Web Link
+post-upgrade-message = Programınızı <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>sürümüne yükselttiniz! Bu sürümdeki <a data-l10n-name="new-features-link">yenilikleri</a>öğrenin.
+post-upgrade-remind-me-later =
+    .label = { general-remind-me-later }
+post-upgrade-done =
+    .label = { general-done }
+text-action-paste-and-search =
+    .label = Yapıştır ve Ara
+mac-word-plugin-install-message = Word eklentisini kurmak için, Zotero'nun Word verilerine erişmesi gerekiyor.
+mac-word-plugin-install-folder-message = { -app-name } needs access to Word’s startup folder to install the Word plugin.
+mac-word-plugin-install-action-button =
+    .label = Word Eklentisini Kur
+mac-word-plugin-install-remind-later-button =
+    .label = { general-remind-me-later }
+mac-word-plugin-install-dont-ask-again-button =
+    .label = { general-dont-ask-again }
+mac-word-plugin-install-folder-dialog-title = Install the plugin in the Word startup folder
+mac-word-plugin-install-folder-dialog-button = Kur
+mac-word-plugin-install-wrong-folder-selected = The suggested folder must be selected. Please try again without choosing a different folder.
+file-renaming-banner-message = { -app-name } artık eserlerde değişiklik yaptığınızda ek dosya adlarını otomatik olarak uyumlu tutmaktadır.
+file-renaming-banner-documentation-link = { general-learn-more }
+file-renaming-banner-settings-link = { general-settings }
+connector-version-warning = { -app-name } Bağlayıcısı, { -app-name } uygulamasının bu sürümüyle çalışabilmesi için güncellenmelidir.
+userjs-pref-warning = Bazı { -app-name } ayarları desteklenmeyen bir yöntem kullanılarak geçersiz kılındı. { -app-name } bu ayarları geri döndürecek ve kendisini yeniden başlatacak.
+migrate-extra-fields-progress-message = Migrating new fields from Extra field
+search-normalization-progress-message = Indexing items for search
+long-tag-fixer-window-title =
+    .title = Etiketleri Böl
+long-tag-fixer-button-dont-split =
+    .label = Bölme
+menu-normalize-attachment-titles =
+    .label = Ek Dosya Başlıklarını Normalleştir...
+normalize-attachment-titles-title = Ek Dosya Başlıklarını Normalleştir
+normalize-attachment-titles-text =
+    { -app-name } automatically renames files on disk using parent item metadata, but it uses separate, simpler titles such as “Full Text PDF”, “Preprint PDF”, or “PDF” for primary attachments to keep the items list cleaner and avoid duplicating information.
+    
+    In older versions of { -app-name }, as well as when using certain plugins, attachment titles could be changed unnecessarily to match the filenames.
+    
+    Would you like to update the selected attachments to use simpler titles? Only primary attachments with titles that match the filename will be changed.
+banner-close-button =
+    .aria-label = Dismiss notification
+plugins-blocked-plugin =
+    .message = This plugin has been disabled by { -app-name }.
+data-dir-unsupported-storage = This can happen if the { -app-name } data directory is in a cloud storage folder (OneDrive, Dropbox, etc.) or on a network share.
+login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
+os-keystore-save-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
+        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
+    }
+os-keystore-migrate-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
+        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
+    }
+search-button =
+    .label = Ara
+save-search-new-button =
+    .label = Save Search…
+save-search-edit-button =
+    .label = Kaydet
+save-search-name-title = Aramayı Kaydet
+save-search-name-message = Enter a name for the saved search:
+saved-search-close-confirmation-title = Editing Saved Search
+saved-search-close-confirmation-body = Do you want to save changes you made to this saved search?
+item-pane-batch-editing-prompt =
+    .aria-label = Batch editing
+item-pane-batch-editing-enable =
+    .label = Edit Multiple Items…
+item-pane-batch-editing-multiple-values-placeholder = Multiple
+item-pane-batch-editing-clear-values = Clear all values
+item-pane-batch-editing-header =
+    { $count ->
+        [one] Editing { $count } item
+       *[other] Editing { $count } items
+    }
+item-pane-batch-editing-done =
+    .label = { general-done }
+undo-action-edit-metadata =
+    { $count ->
+        [one] Edit Metadata
+       *[other] Edit Metadata for { $count } Items
+    }
+undo-action-edit-field =
+    { $count ->
+        [one] Edit of “{ $field }”
+       *[other] Edit of “{ $field }” for { $count } Items
+    }
+undo-action-normalize-attachment-titles = Normalize Attachment Title
+undo-action-trash =
+    { $count ->
+        [one] Trash Item
+       *[other] Trash { $count } Items
+    }
+undo-action-restore-items =
+    { $count ->
+        [one] Restore Item
+       *[other] Restore { $count } Items
+    }
+undo-action-trash-collection =
+    { $count ->
+        [one] Trash Collection
+       *[other] Trash { $count } Collections
+    }
+undo-action-trash-search =
+    { $count ->
+        [one] Trash Saved Search
+       *[other] Trash { $count } Saved Searches
+    }
+undo-action-restore-collection =
+    { $count ->
+        [one] Restore Collection
+       *[other] Restore { $count } Collections
+    }
+undo-action-restore-objects =
+    { $count ->
+        [one] Restore Object
+       *[other] Restore { $count } Objects
+    }
+undo-action-add-to-collection =
+    { $count ->
+        [one] Add to Collection
+       *[other] Add { $count } Items to Collection
+    }
+undo-action-remove-from-collection =
+    { $count ->
+        [one] Remove from Collection
+       *[other] Remove { $count } Items from Collection
+    }
+undo-action-move-to-collection =
+    { $count ->
+        [one] Move to Collection
+       *[other] Move { $count } Items to Collection
+    }
+undo-action-rename-collection = Dermeyi Yeniden Adlandır
+undo-action-move-collection = Move Collection
+undo-action-add-tag =
+    { $count ->
+        [one] Add Tag
+       *[other] Add Tag to { $count } Items
+    }
+undo-action-change-tag = Change Tag
+undo-action-split-tag = Split Tag
+undo-action-remove-tag =
+    { $count ->
+        [one] Remove Tag
+       *[other] Remove Tag from { $count } Items
+    }
+undo-action-remove-tags-from-item =
+    { $count ->
+        [one] Remove Tag
+       *[other] Remove { $count } Tags
+    }
+undo-action-remove-all-tags = Remove All Tags
+undo-action-edit-note = Notu Düzenle
+undo-action-add-creator = Add Creator
+undo-action-remove-creator = Remove Creator
+undo-action-edit-creator = Edit Creator
+undo-action-reorder-creator = Reorder Creator
+undo-action-change-type = Eser türünü değiştir
+undo-action-change-parent-item =
+    { $count ->
+        [one] Change Parent Item
+       *[other] Change Parent for { $count } Items
+    }
+undo-action-convert-to-standalone =
+    { $count ->
+        [one] Convert to Standalone
+       *[other] Convert { $count } Items to Standalone
+    }
+undo-action-add-related = Add Related
+undo-action-remove-related = Remove Related
+undo-action-merge-items =
+    { $count ->
+        [one] Merge Item
+       *[other] Merge { $count } Items
+    }
+menu-edit-undo-action = Undo { $action }
+menu-edit-redo-action = Redo { $action }

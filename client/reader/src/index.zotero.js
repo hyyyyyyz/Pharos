@@ -1,0 +1,33 @@
+import Reader from './common/reader';
+
+window.createReader = (options) => {
+	if (window._reader) {
+		throw new Error('Reader is already initialized');
+	}
+	options.platform = 'zotero';
+
+	let { onOpenContextMenu } = options;
+	options.onOpenContextMenu = (params) => {
+		if (params.internal) {
+			return reader.openContextMenu(params);
+		}
+		if (params.itemGroups.some(group => group.some(item => item.icon || item.slider))) {
+			throw new Error('Icons and sliders are unsupported in native context menus');
+		}
+		window.contextMenuParams = params;
+		return onOpenContextMenu(params);
+	};
+
+	let { onSaveAnnotations } = options;
+	// Reader iframe doesn't have permissions to wait for onSaveAnnotations
+	// promise, therefore using callback to inform when saving finishes
+	options.onSaveAnnotations = async (annotations) => {
+		return new Promise((resolve) => {
+			onSaveAnnotations(annotations, resolve);
+		});
+	};
+
+	let reader = new Reader(options);
+	window._reader = reader;
+	return reader;
+};

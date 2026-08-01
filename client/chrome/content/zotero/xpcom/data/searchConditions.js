@@ -1,0 +1,989 @@
+/*
+    ***** BEGIN LICENSE BLOCK *****
+    
+    Copyright © 2006-2016 Center for History and New Media
+                          George Mason University, Fairfax, Virginia, USA
+                          https://zotero.org
+    
+    This file is part of Zotero.
+    
+    Zotero is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    
+    Zotero is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+    
+    You should have received a copy of the GNU Affero General Public License
+    along with Zotero.  If not, see <http://www.gnu.org/licenses/>.
+    
+    ***** END LICENSE BLOCK *****
+*/
+
+Zotero.SearchConditions = new function () {
+	this.get = get;
+	this.getStandardConditions = getStandardConditions;
+	this.hasOperator = hasOperator;
+	this.getLocalizedName = getLocalizedName;
+	this.parseSearchString = parseSearchString;
+	this.parseCondition = parseCondition;
+	
+	var _initialized = false;
+	var _conditions;
+	var _standardConditions;
+	
+	var self = this;
+	
+	/*
+	 * Define the advanced search operators
+	 */
+	var _operators = {
+		// Standard -- these need to match those in zoterosearch.xml
+		is: true,
+		isNot: true,
+		beginsWith: true,
+		contains: true,
+		doesNotContain: true,
+		isLessThan: true,
+		isGreaterThan: true,
+		isBefore: true,
+		isAfter: true,
+		isInTheLast: true,
+		isEmpty: true,
+		isNotEmpty: true,
+		
+		// Special
+		any: true,
+		all: true,
+		true: true,
+		false: true
+	};
+	
+	
+	/*
+	 * Define and set up the available advanced search conditions
+	 *
+	 * Flags:
+	 *  - special (don't show in search window menu)
+	 *  - template (special handling)
+	 *  - noLoad (can't load from saved search)
+	 */
+	this.init = async function () {
+		var conditions = [
+			//
+			// Special conditions
+			//
+			{
+				name: 'deleted',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+
+			{
+				name: 'includeDeleted',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			// Don't include child items
+			{
+				name: 'noChildren',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'unfiled',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'retracted',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'publications',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+
+			{
+				name: 'feed',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'includeParentsAndChildren',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'includeParents',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			{
+				name: 'includeChildren',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			// Search recursively within collections
+			{
+				name: 'recursive',
+				operators: {
+					true: true,
+					false: true
+				}
+			},
+			
+			// Join mode
+			{
+				name: 'joinMode',
+				operators: {
+					any: true,
+					all: true
+				}
+			},
+			
+			{
+				name: 'quicksearch-titleCreatorYear',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				noLoad: true
+			},
+			
+			{
+				name: 'quicksearch-titleCreatorYearNote',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				noLoad: true
+			},
+			
+			{
+				name: 'quicksearch-fields',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				noLoad: true
+			},
+			
+			{
+				name: 'quicksearch-everything',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				noLoad: true
+			},
+			
+			// Deprecated
+			{
+				name: 'quicksearch',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				noLoad: true
+			},
+			
+			// Condition group markers. groupStart/groupEnd delimit a nested group of
+			// conditions; the group's join mode is a separate 'joinMode' condition placed
+			// inside the group, exactly as at the top level. Unlike the quicksearch block
+			// markers above, these are saved with the search, so they're not noLoad. The
+			// operator is an unused placeholder, since the sync server rejects an empty one.
+			{
+				name: 'groupStart',
+				operators: {
+					true: true
+				}
+			},
+
+			{
+				name: 'groupEnd',
+				operators: {
+					true: true
+				}
+			},
+
+			// Optional level a group's conditions are evaluated at, placed inside the group
+			// like 'joinMode'. When a group's result level is a descendant level of the surrounding
+			// row (e.g., 'annotation' within a top-level item search), the group's conditions
+			// are matched against descendants and the match is mapped up to the parent --
+			// i.e., "the item has a descendant match for these conditions". The level
+			// rides in the operator, as with 'joinMode'. Saved with the search, so not noLoad.
+			{
+				name: 'resultLevel',
+				operators: {
+					item: true,
+					attachment: true,
+					note: true,
+					annotation: true
+				}
+			},
+
+			// Shortcuts for adding collections and searches by id
+			{
+				name: 'collectionID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				noLoad: true
+			},
+			
+			{
+				name: 'savedSearchID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				noLoad: true
+			},
+			
+			
+			//
+			// Standard conditions
+			//
+			
+			// Collection id to search within
+			{
+				name: 'collection',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'collectionItems',
+				field: 'collectionID'
+			},
+			
+			// Saved search to search within
+			{
+				name: 'savedSearch',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				special: false
+			},
+			
+			{
+				name: 'dateAdded',
+				operators: {
+					is: true,
+					isNot: true,
+					isBefore: true,
+					isAfter: true,
+					isInTheLast: true
+				},
+				table: 'items',
+				field: 'dateAdded'
+			},
+			
+			{
+				name: 'dateModified',
+				operators: {
+					is: true,
+					isNot: true,
+					isBefore: true,
+					isAfter: true,
+					isInTheLast: true
+				},
+				table: 'items',
+				field: 'dateModified'
+			},
+			
+			{
+				name: 'lastRead',
+				operators: {
+					is: true,
+					isNot: true,
+					isBefore: true,
+					isAfter: true,
+					isInTheLast: true
+				},
+				table: 'itemAttachments',
+				field: 'lastRead',
+				level: 'attachment'
+			},
+
+			// Deprecated
+			{
+				name: 'itemTypeID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'items',
+				field: 'itemTypeID',
+				special: true
+			},
+			
+			{
+				name: 'itemType',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'items',
+				field: 'typeName'
+			},
+			
+			{
+				name: 'fileTypeID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemAttachments',
+				field: 'fileTypeID',
+				// Matches attachment items; see 'level' handling in search.js
+				level: 'attachment'
+			},
+
+			{
+				name: 'attachmentStorageType',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemAttachments',
+				field: 'linkMode',
+				level: 'attachment'
+			},
+			
+			{
+				name: 'tagID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemTags',
+				field: 'tagID',
+				special: true
+			},
+			
+			{
+				name: 'tag',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemTags',
+				field: 'name',
+				normalizedField: 'COALESCE(nameNormalized, name)',
+				// Tags apply to items at any level, so a tag match is never mapped
+				level: 'any'
+			},
+			
+			{
+				name: 'numTags',
+				operators: {
+					is: true,
+					isNot: true,
+					isLessThan: true,
+					isGreaterThan: true
+				},
+				table: 'items',
+				field: '(SELECT COUNT(*) FROM itemTags WHERE itemTags.itemID=items.itemID)',
+				// Every item level has its own tag count, so the condition matches natively
+				// at each level rather than rolling a match up to the result level
+				level: ['item', 'attachment', 'note', 'annotation'],
+				inlineFilter: function (val) {
+					return /^[0-9]+$/.test(val) ? val : false;
+				}
+			},
+			
+			// Non-trashed child notes of a regular item (restricted to regular items in
+			// search.js, since other rows can't have child notes)
+			{
+				name: 'numNotes',
+				operators: {
+					is: true,
+					isNot: true,
+					isLessThan: true,
+					isGreaterThan: true
+				},
+				table: 'items',
+				field: '(SELECT COUNT(*) FROM itemNotes WHERE parentItemID=items.itemID '
+					+ 'AND itemID NOT IN (SELECT itemID FROM deletedItems))',
+				level: 'item',
+				inlineFilter: function (val) {
+					return /^[0-9]+$/.test(val) ? val : false;
+				}
+			},
+			
+			// Non-trashed child attachments of a regular item (restricted to regular items
+			// in search.js)
+			{
+				name: 'numAttachments',
+				operators: {
+					is: true,
+					isNot: true,
+					isLessThan: true,
+					isGreaterThan: true
+				},
+				table: 'items',
+				field: '(SELECT COUNT(*) FROM itemAttachments WHERE parentItemID=items.itemID '
+					+ 'AND itemID NOT IN (SELECT itemID FROM deletedItems))',
+				level: 'item',
+				inlineFilter: function (val) {
+					return /^[0-9]+$/.test(val) ? val : false;
+				}
+			},
+			
+			// Non-trashed annotations on the row's own attachment or on a regular item's
+			// non-trashed attachments (restricted to those levels in search.js)
+			{
+				name: 'numAnnotations',
+				operators: {
+					is: true,
+					isNot: true,
+					isLessThan: true,
+					isGreaterThan: true
+				},
+				table: 'items',
+				field: '(SELECT COUNT(*) FROM itemAnnotations WHERE parentItemID IN '
+					+ '(SELECT itemID FROM itemAttachments WHERE '
+						+ '(itemID=items.itemID OR parentItemID=items.itemID) '
+						+ 'AND itemID NOT IN (SELECT itemID FROM deletedItems)) '
+					+ 'AND itemID NOT IN (SELECT itemID FROM deletedItems))',
+				// The count is native to attachments (their own annotations) and regular
+				// items (annotations on their attachments), so no cross-level mapping
+				level: ['item', 'attachment'],
+				inlineFilter: function (val) {
+					return /^[0-9]+$/.test(val) ? val : false;
+				}
+			},
+			
+			{
+				name: 'note',
+				operators: {
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemNotes',
+				// Exclude note prefix and suffix
+				field: `SUBSTR(note, ${1 + Zotero.Notes.notePrefix.length}, `
+					+ `LENGTH(note) - ${Zotero.Notes.notePrefix.length + Zotero.Notes.noteSuffix.length})`,
+				level: 'note'
+			},
+
+			{
+				name: 'creator',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemCreators',
+				field: "TRIM(firstName || ' ' || lastName)",
+				normalizedField: "TRIM(COALESCE(firstNameNormalized, firstName) || ' ' "
+					+ "|| COALESCE(lastNameNormalized, lastName))"
+			},
+			
+			{
+				name: 'lastName',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemCreators',
+				field: 'lastName',
+				normalizedField: 'COALESCE(lastNameNormalized, lastName)',
+				special: true
+			},
+			
+			{
+				name: 'author',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemCreators',
+				field: "TRIM(firstName || ' ' || lastName)",
+				normalizedField: "TRIM(COALESCE(firstNameNormalized, firstName) || ' ' "
+					+ "|| COALESCE(lastNameNormalized, lastName))"
+			},
+			
+			{
+				name: 'editor',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemCreators',
+				field: "TRIM(firstName || ' ' || lastName)",
+				normalizedField: "TRIM(COALESCE(firstNameNormalized, firstName) || ' ' "
+					+ "|| COALESCE(lastNameNormalized, lastName))"
+			},
+			
+			{
+				name: 'bookAuthor',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemCreators',
+				field: "TRIM(firstName || ' ' || lastName)",
+				normalizedField: "TRIM(COALESCE(firstNameNormalized, firstName) || ' ' "
+					+ "|| COALESCE(lastNameNormalized, lastName))"
+			},
+			
+			{
+				name: 'field',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					beginsWith: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemData',
+				field: 'value',
+				normalizedField: 'COALESCE(valueNormalized, value)',
+				aliases: await Zotero.DB.columnQueryAsync("SELECT fieldName FROM fieldsCombined "
+					+ "WHERE fieldName NOT IN ('accessDate', 'date', 'pages', "
+					+ "'section','seriesNumber','issue')"),
+				template: true // mark for special handling
+			},
+
+			{
+				name: 'anyField',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					beginsWith: true
+				},
+				special: false
+			},
+
+			{
+				name: 'titleCreatorYear',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					beginsWith: true
+				},
+				special: false
+			},
+
+			{
+				name: 'datefield',
+				operators: {
+					is: true,
+					isNot: true,
+					isBefore: true,
+					isAfter: true,
+					isInTheLast: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemData',
+				field: 'value',
+				aliases: ['accessDate', 'date', 'dateDue', 'accepted'], // TEMP - NSF
+				template: true // mark for special handling
+			},
+			
+			{
+				name: 'year',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemData',
+				field: 'SUBSTR(value, 1, 4)',
+				special: true
+			},
+			
+			{
+				name: 'numberfield',
+				operators: {
+					is: true,
+					isNot: true,
+					contains: true,
+					doesNotContain: true,
+					isLessThan: true,
+					isGreaterThan: true,
+					isEmpty: true,
+					isNotEmpty: true
+				},
+				table: 'itemData',
+				field: 'value',
+				aliases: ['pages', 'numPages', 'numberOfVolumes', 'section', 'seriesNumber','issue'],
+				template: true // mark for special handling
+			},
+			
+			{
+				name: 'libraryID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'items',
+				field: 'libraryID',
+				special: true,
+				noLoad: true
+			},
+			
+			{
+				name: 'key',
+				operators: {
+					is: true,
+					isNot: true,
+					beginsWith: true
+				},
+				table: 'items',
+				field: 'key',
+				special: true,
+				noLoad: true,
+				inlineFilter: function (val) {
+					return Zotero.Utilities.isValidObjectKey(val) ? `'${val}'` : false;
+				}
+			},
+			
+			{
+				name: 'itemID',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'items',
+				field: 'itemID',
+				special: true,
+				noLoad: true
+			},
+			
+			{
+				name: 'annotationText',
+				operators: {
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemAnnotations',
+				field: 'text',
+				normalizedField: 'COALESCE(textNormalized, text)',
+				special: false,
+				level: 'annotation'
+			},
+			
+			{
+				name: 'annotationComment',
+				operators: {
+					contains: true,
+					doesNotContain: true
+				},
+				table: 'itemAnnotations',
+				field: 'comment',
+				normalizedField: 'COALESCE(commentNormalized, comment)',
+				special: false,
+				level: 'annotation'
+			},
+
+			{
+				name: 'annotationType',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemAnnotations',
+				field: 'type',
+				special: false,
+				level: 'annotation'
+			},
+
+			{
+				name: 'annotationColor',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemAnnotations',
+				field: 'color',
+				special: false,
+				level: 'annotation'
+			},
+
+			// Group-library annotations only; the creator lives in groupItems, so the SQL joins
+			// to it (see search.js)
+			{
+				name: 'annotationAuthor',
+				operators: {
+					is: true,
+					isNot: true
+				},
+				table: 'itemAnnotations',
+				field: 'createdByUserID',
+				special: false,
+				level: 'annotation'
+			},
+
+			{
+				name: 'fulltextContent',
+				operators: {
+					contains: true,
+					doesNotContain: true
+				},
+				special: false
+			},
+			
+			{
+				name: 'tempTable',
+				operators: {
+					is: true
+				}
+			}
+		];
+		
+		// Index conditions by name and aliases
+		_conditions = {};
+		for (var i in conditions) {
+			_conditions[conditions[i]['name']] = conditions[i];
+			if (conditions[i]['aliases']) {
+				for (var j in conditions[i]['aliases']) {
+					// TEMP - NSF
+					switch (conditions[i]['aliases'][j]) {
+						case 'dateDue':
+						case 'accepted':
+							if (!Zotero.ItemTypes.getID('nsfReviewer')) {
+								continue;
+							}
+					}
+					_conditions[conditions[i]['aliases'][j]] = conditions[i];
+				}
+			}
+			_conditions[conditions[i]['name']] = conditions[i];
+		}
+		
+		_standardConditions = [];
+		
+		var baseMappedFields = Zotero.ItemFields.getBaseMappedFields();
+		var locale = Zotero.locale;
+		
+		// Separate standard conditions for menu display
+		for (var i in _conditions){
+			var fieldID = false;
+			if (['field', 'datefield', 'numberfield'].indexOf(_conditions[i]['name']) != -1) {
+				fieldID = Zotero.ItemFields.getID(i);
+			}
+			
+			// If explicitly special...
+			if (_conditions[i]['special'] ||
+				// or a template master (e.g. 'field')...
+				(_conditions[i]['template'] && i==_conditions[i]['name']) ||
+				// or no table and not explicitly unspecial...
+				(!_conditions[i]['table'] &&
+					typeof _conditions[i]['special'] == 'undefined') ||
+				// or field is a type-specific version of a base field...
+				(fieldID && baseMappedFields.indexOf(fieldID) != -1)) {
+				// ...then skip
+				continue;
+			}
+			
+			_standardConditions.push({
+				name: i,
+				localized: self.getLocalizedName(i),
+				operators: _conditions[i]['operators'],
+				flags: _conditions[i]['flags']
+			});
+		}
+		
+		var collation = Zotero.getLocaleCollation();
+		_standardConditions.sort(function (a, b) {
+			// Sort Any Field to the top
+			if (a.name == 'anyField') {
+				return -1;
+			}
+			return collation.compareString(1, a.localized, b.localized);
+		});
+	};
+	
+	
+	/*
+	 * Get condition data
+	 */
+	function get(condition){
+		return _conditions[condition];
+	}
+	
+	
+	/*
+	 * Returns array of possible conditions
+	 *
+	 * Does not include special conditions, only ones that would show in a drop-down list
+	 */
+	function getStandardConditions(){
+		// TODO: return copy instead
+		return _standardConditions;
+	}
+	
+	
+	/*
+	 * Check if an operator is valid for a given condition
+	 */
+	function hasOperator(condition, operator){
+		var [condition, mode] = this.parseCondition(condition);
+		
+		if (!_conditions) {
+			throw new Zotero.Exception.UnloadedDataException("Search conditions not yet loaded");
+		}
+		
+		if (!_conditions[condition]){
+			let e = new Error("Invalid condition '" + condition + "' in hasOperator()");
+			e.name = "ZoteroInvalidDataError";
+			throw e;
+		}
+		
+		if (!operator && typeof _conditions[condition]['operators'] == 'undefined'){
+			return true;
+		}
+		
+		return !!_conditions[condition]['operators'][operator];
+	}
+	
+	
+	function getLocalizedName(str) {
+		// TEMP
+		if (str == 'itemType') {
+			str = 'itemTypeID';
+		}
+		else if (['author', 'editor', 'bookAuthor'].includes(str)) {
+			return Zotero.CreatorTypes.getLocalizedString(str);
+		}
+
+		try {
+			let ftlKey = 'search-conditions-' + str;
+			let conditionString = Zotero.getString(ftlKey);
+			if (conditionString && conditionString !== ftlKey) {
+				return conditionString;
+			}
+		}
+		catch (e) {}
+
+		try {
+			return Zotero.ItemFields.getLocalizedString(str);
+		}
+		catch (e) {
+			Zotero.debug(`getLocalizedName: no localized string for '${str}'`, 2);
+			return str;
+		}
+	}
+	
+	
+	/*
+	 * Parses a search into words and "double-quoted phrases"
+	 *
+	 * Also strips unpaired quotes at the beginning and end of words
+	 *
+	 * Returns array of objects containing 'text' and 'inQuotes'
+	 */
+	function parseSearchString(str) {
+		var parts = str.split(/\s*("[^"]*")\s*|"\s|\s"|^"|"$|'\s|\s'|^'|'$|\s/m);
+		var parsed = [];
+		
+		for (var i in parts) {
+			var part = parts[i];
+			if (!part || !part.length) {
+				continue;
+			}
+			
+			if (part.charAt(0)=='"' && part.charAt(part.length-1)=='"') {
+				parsed.push({
+					text: part.substring(1, part.length-1),
+					inQuotes: true
+				});
+			}
+			else {
+				parsed.push({
+					text: part,
+					inQuotes: false
+				});
+			}
+		}
+		
+		return parsed;
+	}
+	
+	
+	function parseCondition(condition){
+		var mode = false;
+		var pos = condition.indexOf('/');
+		if (pos != -1){
+			mode = condition.substr(pos+1);
+			condition = condition.substr(0, pos);
+		}
+		
+		return [condition, mode];
+	}
+}

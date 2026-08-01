@@ -1,0 +1,36 @@
+item-pane {
+	flex-grow: 0;
+	flex-shrink: 1;
+	min-width: var(--width-available-item-pane, $min-width-item-pane + $width-sidenav);
+	min-height: $min-width-item-pane + $width-sidenav;
+
+	&[collapsed="true"] {
+		min-width: $width-sidenav;
+		min-height: $width-sidenav;
+		max-width: $width-sidenav;
+
+		visibility: inherit;
+
+		&.stacked {
+			max-width: unset;
+			max-height: $width-sidenav;
+		}
+
+		#zotero-item-pane-content {
+			visibility: collapse;
+		}
+	}
+
+	&.stacked {
+		flex-direction: column;
+		height: 0px;
+
+		#zotero-item-pane-content {
+			width: 100%;
+		}
+	}
+	
+	#batch-edit-prompt-message {
+		padding: 3px 8px;
+	}
+}

@@ -1,0 +1,146 @@
+integration-docPrefs-window =
+    .title = { -app-name } - Document Preferences
+integration-addEditCitation-window =
+    .title = { -app-name } - Add/Edit Citation
+integration-editBibliography-window =
+    .title = { -app-name } - Edit Bibliography
+integration-editBibliography-add-button =
+    .aria-label = { general-add }
+integration-editBibliography-remove-button =
+    .aria-label = { general-remove }
+integration-editBibliography-editor =
+    .aria-label = Redigera referens
+-integration-editBibliography-include-uncited = To include an uncited item in your bibliography, select it from the items list and press { general-add }.
+-integration-editBibliography-exclude-cited = You can also exclude a cited item by selecting it from the list of references and pressing { general-remove }.
+-integration-editBibliography-edit-reference = To change how a reference is formatted, use the text editor.
+integration-editBibliography-wrapper =
+    .aria-label = Edit Bibliography dialog
+    .aria-description =
+        { -integration-editBibliography-include-uncited }
+        { -integration-editBibliography-exclude-cited }
+        { -integration-editBibliography-edit-reference }
+integration-citationDialog = Citation Dialog
+integration-citationDialog-section-open = Open Documents ({ $count })
+integration-citationDialog-section-selected = Selected Items ({ $count }/{ $total })
+integration-citationDialog-section-selectedAnnotations = Selected Annotations
+integration-citationDialog-section-selectedItems = Selected Items
+integration-citationDialog-section-cited =
+    { $count ->
+        [0] Cited Items
+       *[other] Cited Items ({ $count })
+    }
+integration-citationDialog-details-suffix = Suffix
+integration-citationDialog-details-prefix = Prefix
+integration-citationDialog-details-suppressAuthor = Omit Author
+integration-citationDialog-details-locator-info = Tip: You can also type page numbers and other locators directly into the main field. <a data-l10n-name="docs-link">Learn more</a>
+integration-citationDialog-details-includeComments = Include Comments
+integration-citationDialog-details-remove = { general-remove }
+integration-citationDialog-details-done =
+    .label = { general-done }
+integration-citationDialog-details-showInLibrary = { general-show-in-library }
+integration-citationDialog-settings-title = Citation Settings
+integration-citationDialog-lib-message-citation =
+    { $search ->
+        [true] No selected, open, or cited items match the current search
+       *[other] No selected or open items
+    }
+integration-citationDialog-lib-message-add-note =
+    { $search ->
+        [true] No selected notes match the current search
+       *[other] No notes are selected
+    }
+integration-citationDialog-lib-message-annotations =
+    { $search ->
+        [true] No items with annotations match the current search
+       *[other] No selected or open items with annotations
+    }
+integration-citationDialog-settings-keepSorted = Keep sources sorted
+integration-citationDialog-preview-empty = Förhandsvisa
+integration-citationDialog-preview-error = Preview unavailable
+integration-citationDialog-btn-displayPreview =
+    .title = Display citation preview
+integration-citationDialog-btn-settings =
+    .title = { general-open-settings }
+integration-citationDialog-mode-library = Bibliotek
+integration-citationDialog-mode-list = List
+integration-citationDialog-btn-type-citation =
+    .title = Lägg till/redigera källhänvisning
+integration-citationDialog-btn-type-add-note =
+    .title = Lägg till anteckning
+integration-citationDialog-btn-type-annotations =
+    .title = Add Annotations
+integration-citationDialog-btn-accept =
+    .title = { general-accept }
+integration-citationDialog-btn-cancel =
+    .title = { general-cancel }
+integration-citationDialog-general-instructions = Use Left/Right-Arrow to navigate the items of this citation. Press Tab to select items to add to this citation.
+integration-citationDialog-enter-to-add-item = Press { return-or-enter } to add this item to the citation.
+integration-citationDialog-search-for-items = Search for items to add to the citation
+integration-citationDialog-aria-bubble =
+    .aria-description = This item is included in the citation. Press space bar to customize the item. { integration-citationDialog-general-instructions }
+integration-citationDialog-single-input-citation =
+    .placeholder = { integration-citationDialog-search-for-items }
+    .aria-description = Press Tab to select items to add to this citation. Press Escape to discard the changes and close the dialog.
+integration-citationDialog-just-added-input-placeholder = Type “10-15” to cite pages, or search for items
+integration-citationDialog-just-added-input-citation =
+    .placeholder = { $placeholder }
+    .title = { $title }
+    .aria-description = { integration-citationDialog-general-instructions }
+integration-citationDialog-input-citation =
+    .placeholder = { integration-citationDialog-search-for-items }
+    .aria-description = { integration-citationDialog-general-instructions }
+integration-citationDialog-single-input-add-note =
+    .placeholder = Search for a note to insert into the document
+integration-citationDialog-single-input-annotations =
+    .placeholder = Search for annotations to insert into the document
+integration-citationDialog-aria-item-list =
+    .aria-description = Use Up/Down Arrow to change item selection. { integration-citationDialog-enter-to-add-item }
+integration-citationDialog-aria-item-library =
+    .aria-description = Use Right/Left Arrow to change item selection. { integration-citationDialog-enter-to-add-item }
+integration-citationDialog-collections-table =
+    .aria-label = Samlingar.
+    .aria-description = Select a collection and press Tab to navigate its items.
+integration-citationDialog-items-table =
+    .aria-label = { integration-citationDialog-enter-to-add-item }
+integration-citationDialog-items-table-added =
+    .aria-label = This item has been added to the citation. Press { return-or-enter } to add it again or { delete-or-backspace } to remove it.
+integration-citationDialog-add-all = Lägg till alla
+integration-citationDialog-collapse-section =
+    .title = Stäng avsnitt
+integration-citationDialog-bubble-empty = (namnlös)
+integration-citationDialog-add-to-citation = Add to Citation
+integration-citationDialog-annotations-filter =
+    .placeholder = Filter annotations
+integration-citationDialog-annotations-empty = Select an item, attachment, or annotation to view annotation details
+integration-prefs-displayAs-label = Visa källor som:
+integration-prefs-footnotes =
+    .label = Fotnoter
+integration-prefs-endnotes =
+    .label = Slutnoter
+integration-prefs-bookmarks =
+    .label = Store citation as bookmarks
+integration-prefs-bookmarks-description = Bokmärken kan delas mellan Word och LibreOffice, men kan orsaka fel om de ändras av misstag. De kan inte infogas i fotnoter.
+integration-prefs-bookmarks-formatNotice =
+    { $show ->
+        [true] The document must be saved as .doc or .docx.
+       *[other] { "" }
+    }
+integration-prefs-automaticCitationUpdates =
+    .label = Uppdatera referenser automatiskt
+    .tooltip = Referenser med väntande uppdateringar markeras i dokumentet
+integration-prefs-automaticCitationUpdates-description = Slå av uppdateringar för att snabba upp infogandet av referenser i stora dokument. Klicka på Uppdatera för att manuellt uppdatera referenserna.
+integration-prefs-automaticJournalAbbeviations =
+    .label = Använd MEDLINE:s tidskriftsförkortningar
+integration-prefs-automaticJournalAbbeviations-description = Tidskriftsförkortningsfältet kommer att ignoreras.
+integration-prefs-exportDocument =
+    .label = Byt till en annan ordbehandlare…
+integration-error-unable-to-find-winword = { -app-name } could not find a running Word instance.
+integration-warning-citation-changes-will-be-lost = You have made changes to a citation that will be lost if you continue.
+integration-warning-bibliography-changes-will-be-lost = You have made changes to the bibliography that will be lost if you continue.
+integration-warning-documentPreferences-changes-will-be-lost = You have made changes to the document preferences that will be lost if you continue.
+integration-warning-discard-changes = Förkasta ändringar
+integration-warning-command-is-running = A word processor integration command is already running.
+first-run-guidance-citationDialog =
+    Click the bubble or use the ← and ↓ keys to view the citation details and customize options such as page number, prefix, and suffix.
+    
+    You can also add a page number or other locator by including it with your search terms (e.g., “history { $locator }”) or by typing it after the bubble and pressing { return-or-enter }.

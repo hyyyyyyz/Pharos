@@ -1,0 +1,34 @@
+:root {
+	font-family: system-ui, -apple-system, sans-serif;
+	font-size: 13px;
+	font-style: normal;
+	line-height: 1.3333333333;
+	--default-focusring-width: 1px;
+	@media (-moz-platform: windows) {
+		--color-accent: var(--accent-blue);
+		--color-accent-text: var(--accent-text);
+		@include light-dark(--color-focus-outer-border, var(--fill-primary), var(--accent-white));
+		@include light-dark(--color-focus-border, var(--accent-white), #00000080);
+		--width-focus-outer-border: 2px;
+		--width-focus-border: 1px;
+	}
+	// Pharos brands the accent on every platform rather than deferring to the OS.
+	// Upstream uses the system SelectedItem colour here, which means the most
+	// prominent surface in the app -- the selected row -- would be whatever
+	// accent the user set in System Settings, and the brand navy would never
+	// appear. Windows already reads --accent-blue, so it needs no override.
+	@media (-moz-platform: macos) {
+		--color-accent: var(--accent-blue);
+		--color-accent-text: var(--accent-text);
+		--color-focus-border: var(--color-accent);
+		--width-focus-border: 3px;
+	}
+	@media (-moz-platform: linux) {
+		--color-accent: var(--accent-blue);
+		--color-accent-text: var(--accent-text);
+		--color-focus-border: var(--color-accent);
+		--width-focus-border: 2px;
+	}
+	// Only used on Windows
+	--color-form-element-base-background: var(--color-background);
+}

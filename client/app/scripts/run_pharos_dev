@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# Launch the staged Pharos build for development.
+#
+# Always goes through an explicit -datadir. Pharos already defaults to
+# ~/Pharos (ZOTERO_CONFIG.CLIENT_NAME in resource/config.mjs), but during the
+# rebrand a build that still identified as Zotero resolved its data directory to
+# ~/Zotero and opened the developer's real library -- it only failed because
+# another process held the SQLite lock. Passing the path explicitly means a
+# regression in that config can no longer reach real user data.
+#
+# Usage: app/scripts/run_pharos_dev [-d DATADIR] [-P PROFILE] [extra args...]
+
+set -euo pipefail
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+APP_ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+DATA_DIR="${PHAROS_DEV_DATADIR:-$HOME/PharosDev}"
+PROFILE_DIR="${PHAROS_DEV_PROFILE:-$HOME/PharosDev/.profile}"
+
+# Parsed by hand rather than with getopts: Gecko takes single-dash long flags
+# like -ZoteroDebugText, which getopts splits into bundled single characters.
+PASSTHROUGH=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-d)
+			[ $# -ge 2 ] || { echo "ERROR: -d requires a path" >&2; exit 1; }
+			DATA_DIR="$2"
+			shift 2
+			;;
+		-P)
+			[ $# -ge 2 ] || { echo "ERROR: -P requires a path" >&2; exit 1; }
+			PROFILE_DIR="$2"
+			shift 2
+			;;
+		--)
+			shift
+			PASSTHROUGH+=("$@")
+			break
+			;;
+		*)
+			PASSTHROUGH+=("$1")
+			shift
+			;;
+	esac
+done
+
+APP_BIN="$APP_ROOT_DIR/staging/Pharos.app/Contents/MacOS/zotero"
+if [ ! -x "$APP_BIN" ]; then
+	echo "ERROR: $APP_BIN not found -- run 'app/scripts/dir_build -p m' first" >&2
+	exit 1
+fi
+
+# Refuse to run against the real Zotero library even if someone passes it in.
+REAL_ZOTERO="$HOME/Zotero"
+if [ "$DATA_DIR" = "$REAL_ZOTERO" ]; then
+	echo "ERROR: refusing to use $REAL_ZOTERO as the Pharos data directory." >&2
+	echo "       That is the Zotero library belonging to this machine's user." >&2
+	exit 1
+fi
+
+# -datadir requires its parent to exist; the profile dir is created by Gecko.
+mkdir -p "$DATA_DIR" "$(dirname "$PROFILE_DIR")"
+
+echo "Pharos data directory: $DATA_DIR"
+echo "Pharos profile:        $PROFILE_DIR"
+# The ${x[@]+"${x[@]}"} form is required because macOS ships bash 3.2, where
+# expanding an empty array under `set -u` is an unbound-variable error.
+exec "$APP_BIN" -datadir "$DATA_DIR" -profile "$PROFILE_DIR" -no-remote \
+	${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}

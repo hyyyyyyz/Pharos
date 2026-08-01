@@ -1,0 +1,57 @@
+body {
+	-webkit-touch-callout: none !important;
+	touch-action: manipulation;
+}
+
+body.resizing-annotation, body.creating-touch-annotation {
+	&, & * {
+		user-select: none !important;
+		-webkit-user-select: none !important;
+	}
+}
+
+body.reading-caret-position {
+	// Make sure text selection is enabled everywhere.
+	// We need this for WebKit because user-select: none disables
+	// caretRangeFromPoint().
+	&, & * {
+		user-select: auto !important;
+		-webkit-user-select: auto !important;
+	}
+
+	// Fully remove the annotation overlay from hit testing. This class is
+	// added/removed synchronously in a single tick, so this will have no
+	// visual effect.
+	#annotation-overlay {
+		display: none !important;
+	}
+}
+
+body[data-tool="note"] {
+	&, * {
+		cursor: default !important;
+	}
+}
+
+#annotation-overlay {
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+:focus-visible {
+	outline: 1px auto;
+}
+
+:root[data-color-scheme="dark"] {
+	img, svg {
+		filter: brightness(80%);
+	}
+}
+
+:root[data-color-scheme="dark"].invert-images {
+	img, svg {
+		filter: invert(1) hue-rotate(180deg);
+		// Project over page background color
+		mix-blend-mode: screen;
+	}
+}

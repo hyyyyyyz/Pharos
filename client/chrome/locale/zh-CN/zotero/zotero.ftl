@@ -1,0 +1,1086 @@
+general-sentence-separator = { "" }
+general-key-control = 控制
+general-key-shift = Shift
+general-key-alt = Alt
+general-key-option = Option
+general-key-command = Command
+option-or-alt =
+    { PLATFORM() ->
+        [macos] { general-key-option }
+       *[other] { general-key-alt }
+    }
+command-or-control =
+    { PLATFORM() ->
+        [macos] { general-key-command }
+       *[other] { general-key-control }
+    }
+return-or-enter =
+    { PLATFORM() ->
+        [macos] Return
+       *[other] Enter
+    }
+delete-or-backspace =
+    { PLATFORM() ->
+        [macos] Delete
+       *[other] Backspace
+    }
+-os-name =
+    { PLATFORM() ->
+        [macos] macOS
+        [windows] Windows
+       *[other] Linux
+    }
+general-print = 打印
+general-remove = 移除
+general-add = 添加
+general-remind-me-later = 稍后提醒我
+general-dont-ask-again = 不再询问
+general-choose-file = 选择文件…
+general-open-settings = 打开设置
+general-settings = 设置…
+general-help = 帮助
+general-tag = 标签
+general-got-it = 好的
+general-done = 完成
+general-view-troubleshooting-instructions = 查看故障排除说明
+general-go-back = 返回
+general-accept = 接受
+general-cancel = 取消
+cancel-button =
+    .label = { general-cancel }
+general-show-in-library = 在文献库中显示
+general-restartApp = 重启 { -app-name }
+general-restartInTroubleshootingMode = 以故障排除模式重启
+general-save = 保存
+general-clear = 清空
+clear-button =
+    .label = { general-clear }
+general-update = 更新
+general-back = 后退
+general-edit = 编辑
+general-cut = 剪切
+general-copy = 复制
+general-paste = 粘贴
+general-find = 查找
+general-delete = 删除
+general-insert = 插入
+general-and = 和
+general-et-al = 等
+general-previous = 前一页
+general-next = 下一步
+general-learn-more = 了解更多
+general-more-information = 更多信息
+general-warning = 警告
+general-type-to-continue = 输入 “{ $text }” 以继续
+general-continue = 继续
+general-red = 红色
+general-orange = 橙色
+general-yellow = 黄色
+general-green = 绿色
+general-teal = 青色
+general-blue = 蓝色
+general-purple = 紫色
+general-magenta = 洋红色
+general-violet = 紫罗兰色
+general-maroon = 深红色
+general-gray = 灰色
+general-black = 黑色
+general-loading = 加载中…
+db-checking-integrity = Checking database integrity…
+db-repairing = Repairing database…
+citation-style-label = 参考文献样式:
+language-label = 语言：
+menu-custom-group-submenu =
+    .label = 更多选项…
+menu-file-show-in-finder =
+    .label = 在访达中显示
+menu-file-show-file =
+    .label = 打开文件目录
+menu-file-show-files =
+    .label = 打开文件目录
+menu-print =
+    .label = { general-print }
+menu-density =
+    .label = 密度
+add-attachment = 添加附件
+new-note = 新建笔记
+menu-add-by-identifier =
+    .label = 根据标识符新增...
+menu-add-attachment =
+    .label = { add-attachment }
+menu-add-standalone-file-attachment =
+    .label = 添加文件...
+menu-add-standalone-linked-file-attachment =
+    .label = 添加文件链接...
+menu-add-child-file-attachment =
+    .label = 附加文件...
+menu-add-child-linked-file-attachment =
+    .label = 附加文件链接…
+menu-add-child-linked-url-attachment =
+    .label = 附加网页链接...
+menu-new-note =
+    .label = { new-note }
+menu-new-standalone-note =
+    .label = 新建独立笔记
+menu-new-item-note =
+    .label = 新建条目笔记
+menu-restoreToLibrary =
+    .label = 还原到文库中
+menu-deletePermanently =
+    .label = 永久删除…
+menu-tools-plugins =
+    .label = 插件
+menu-view-columns-move-left =
+    .label = 将列移至左侧
+menu-view-columns-move-right =
+    .label = 将列移至右侧
+menu-view-hide-context-annotation-rows =
+    .label = 隐藏不匹配的注释
+menu-view-note-font-size =
+    .label = 笔记字体大小
+menu-view-note-tab-font-size =
+    .label = 笔记标签页字体大小
+menu-show-tabs-menu =
+    .label = 显示标签页列表
+menu-edit-copy-annotation =
+    .label =
+        { $count ->
+           *[other] 复制 { $count } 个注释
+        }
+main-window-command =
+    .label = 文献库
+main-window-key =
+    .key = L
+zotero-toolbar-tabs-menu =
+    .tooltiptext = 列出所有标签页
+filter-collections = 筛选分类
+zotero-collections-search =
+    .placeholder = { filter-collections }
+zotero-collections-search-btn =
+    .tooltiptext = { filter-collections }
+zotero-tabs-menu-filter =
+    .placeholder = 搜索标签页
+zotero-tabs-menu-close-button =
+    .title = 关闭标签页
+zotero-toolbar-tabs-scroll-forwards =
+    .title = 向前滚动
+zotero-toolbar-tabs-scroll-backwards =
+    .title = 往回滚动
+toolbar-add-attachment =
+    .tooltiptext = { add-attachment }
+recently-read = 最近阅读
+collections-menu-show-recently-read =
+    .label = 显示 { recently-read }
+item-menu-remove-from-recently-read =
+    .label = 从 { recently-read } 中移除…
+items-section-collections-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个分类
+    }
+items-section-searches-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个已保存搜索
+    }
+items-section-sources-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个来源
+    }
+items-section-library-collections =
+    { $count ->
+       *[other] { $library } (已选择 { $count } 个分类)
+    }
+items-section-library-searches =
+    { $count ->
+       *[other] { $library } (已选择 { $count } 个已保存搜索)
+    }
+items-section-library-sources =
+    { $count ->
+       *[other] { $library } (已选择 { $count } 个来源)
+    }
+items-section-library-recently-read = { $library } ({ recently-read })
+items-section-library = { $library }
+collections-menu-rename =
+    .label = 重命名
+edit-saved-search = 编辑已保存搜索
+collections-menu-edit-search =
+    .label = 编辑搜索
+collections-menu-duplicate-search =
+    .label = 重复搜索
+collections-menu-move-collection =
+    .label = 移动到
+collections-menu-copy-collection =
+    .label = 复制到
+collections-menu-export =
+    .label = 导出…
+collections-menu-generate-report =
+    .label = 生成报告…
+collections-menu-create-bibliography =
+    .label = 创建参考文献表…
+collections-menu-unsubscribe =
+    .label = 退订…
+collections-menu-delete =
+    .label =
+        { $count ->
+           *[other] 删除分类…
+        }
+collections-menu-delete-with-items =
+    .label =
+        { $count ->
+           *[other] 删除分类和条目…
+        }
+collections-menu-delete-search =
+    .label =
+        { $count ->
+           *[other] 删除搜索…
+        }
+collections-delete-title =
+    { $count ->
+       *[other] 删除分类
+    }
+collections-delete-message =
+    { $count ->
+       *[other] 您确定要删除 { $count } 个分类吗？
+    }
+collections-delete-keep-items =
+    { $count ->
+       *[other] 这些分类中的条目不会被删除。
+    }
+collections-delete-with-items-title =
+    { $count ->
+       *[other] 删除分类和条目
+    }
+collections-delete-with-items-message =
+    { $count ->
+       *[other] 您确定要删除 { $count } 个分类并删除其中所有条目吗？
+    }
+collections-delete-search-title =
+    { $count ->
+       *[other] 删除搜索
+    }
+collections-delete-search-message =
+    { $count ->
+       *[other] 您确定要删除 { $count } 个搜索吗？
+    }
+item-creator-moveDown =
+    .label = 下移
+item-creator-moveToTop =
+    .label = 移动到顶端
+item-creator-moveUp =
+    .label = 上移
+item-menu-viewAttachment =
+    .label =
+        打开 { $numAttachments ->
+            [one]
+                { $attachmentType ->
+                    [pdf] PDF
+                    [epub] EPUB
+                    [snapshot] 网页快照
+                    [note] 笔记
+                   *[other] 附件
+                }
+           *[other]
+                { $attachmentType ->
+                    [pdf] PDF
+                    [epub] EPUB
+                    [snapshot] 网页快照
+                    [note] 笔记
+                   *[other] 附件
+                }
+        } { $openIn ->
+            [tab] 到新标签页
+            [window] 到新窗口
+           *[other] { "" }
+        }
+item-menu-add-file =
+    .label = 文件
+item-menu-add-linked-file =
+    .label = 链接的文件
+item-menu-add-url =
+    .label = 网页链接
+item-menu-change-parent-item =
+    .label = 改变上级条目...
+item-menu-relate-items =
+    .label = 关联条目
+view-online = 在线查看
+item-menu-option-view-online =
+    .label = { view-online }
+item-button-view-online =
+    .tooltiptext = { view-online }
+file-renaming-file-renamed-to = 文件已重命名为 { $filename }
+itembox-button-options =
+    .tooltiptext = 打开上下文菜单
+itembox-button-merge =
+    .aria-label = 选择 { $field } 字段的版本
+create-parent-intro = 输入一个 DOI, ISBN, PMID, arXiv ID, 或 ADS Bibcode 来识别这个文件：
+reader-use-dark-mode-for-content =
+    .label = 使用深色模式显示文档内容
+update-updates-found-intro-minor = { -app-name } 有可用更新：
+update-updates-found-desc = 建议尽快更新。
+import-window =
+    .title = 导入
+import-where-from = 您想从哪里导入？
+import-online-intro-title = 介绍
+import-source-file =
+    .label = 文件（BibTeX、RIS、Zotero RDF 等）
+import-source-folder =
+    .label = 一个存放 PDF 及其他文件的文件夹
+import-source-online =
+    .label = { $targetApp } 在线导入
+import-options = 选项
+import-importing = 导入…
+import-create-collection =
+    .label = 将导入的分类和条目放入新分类
+import-recreate-structure =
+    .label = 将文件夹结构重建为分类
+import-fileTypes-header = 要导入的文件类型：
+import-fileTypes-pdf =
+    .label = PDF
+import-fileTypes-other =
+    .placeholder = 其他文件模式，以逗号分隔（例如，*.jpg,*.png）
+import-file-handling = 文件处理
+import-file-handling-store =
+    .label = 将文件复制到 { -app-name } 存储文件夹
+import-file-handling-link =
+    .label = 链接到文件的原始位置
+import-fileHandling-description = { -app-name } 无法同步链接的文件。
+import-online-new =
+    .label = 仅下载新条目，不更新之前已导入的条目
+import-mendeley-username = 用户名
+import-mendeley-password = 密码
+general-error = 错误
+file-interface-import-error = 导入所选文件时发生错误。请确保此文件有效，然后再试一次。
+file-interface-import-complete = 导入完成
+file-interface-items-were-imported =
+    { $numItems ->
+        [0] 没有导入任何条目
+        [one] 已导入 1 个条目
+       *[other] 已导入 { $numItems } 个条目
+    }
+file-interface-items-were-relinked =
+    { $numRelinked ->
+        [0] 没有重新链接任何条目
+        [one] 已重新链接 1 个条目
+       *[other] 已重新链接 { $numRelinked } 个条目
+    }
+import-mendeley-encrypted = 无法读取所选的 Mendeley 数据库，可能是因为它已加密。请参阅<a data-l10n-name="mendeley-import-kb">如何将 Mendeley 库导入 Zotero？</a>了解更多信息。
+file-interface-import-error-translator = 使用“{ $translator }”导入所选文件时发生错误。请确保该文件有效，然后重试。
+import-online-intro = 在下一步中，您需要登录 { $targetAppOnline } 并授予 { -app-name } 访问权限。这是将您的 { $targetApp } 库导入到 { -app-name } 所必需的。
+import-online-intro2 = { -app-name } 永远不会知道或存储您的 { $targetApp } 密码。
+import-online-form-intro = 请输入您登录 { $targetAppOnline } 的凭据。这是将您的 { $targetApp } 库导入到 { -app-name } 所必需的。
+import-online-wrong-credentials = 登录 { $targetApp } 失败。请重新输入凭据并重试。
+import-online-blocked-by-plugin = 安装了 { $plugin } 后导入无法继续。请禁用此插件并重试。
+import-online-relink-only =
+    .label = 重新链接 Mendeley 桌面程序参考文献
+import-online-relink-kb = { general-more-information }
+import-online-connection-error = { -app-name } 无法连接到 { $targetApp }。请检查您的网络连接并重试。
+tab-title-multiple-collections = 多个
+items-table-cell-notes =
+    .aria-label =
+        { $count ->
+           *[other] { $count } 个笔记
+        }
+items-column-added-by = 创建人
+items-column-modified-by = 修改人
+items-column-last-read = 最后阅读时间
+report-error =
+    .label = 报告软件缺陷…
+rtfScan-wizard =
+    .title = RTF 扫描
+rtfScan-introPage-description = { -app-name } 可以自动提取和重新格式化引注，并将参考文献表插入 RTF 文件中。目前它支持以下格式的引注：
+rtfScan-introPage-description2 = 如要开始，请选择 RTF 输入文件和输出文件：
+rtfScan-input-file = 输入文件：
+rtfScan-output-file = 输出文件：
+rtfScan-no-file-selected = 未选定文件
+rtfScan-choose-input-file =
+    .label = { general-choose-file }
+    .aria-label = 选择输入文件
+rtfScan-choose-output-file =
+    .label = { general-choose-file }
+    .aria-label = 选择输出文件
+rtfScan-intro-page = 介绍
+rtfScan-scan-page = 扫描引注
+rtfScan-scanPage-description = { -app-name } 正在扫描您的文档以查找引文。请耐心等待。
+rtfScan-citations-page = 校验已引用的条目
+rtfScan-citations-page-description = 请核查下面的已识别引文列表，以确保 { -app-name } 正确选择了相应的条目。在继续下一步之前，必须解决任何未映射或不明确的引用。
+rtfScan-style-page = 文档格式化
+rtfScan-format-page = 格式化引注
+rtfScan-format-page-description = { -app-name } 正在处理及格式化你的 RTF 文件。请耐心等待。
+rtfScan-complete-page = RTF 扫描完成
+rtfScan-complete-page-description = 您的文档扫描和处理完成。请检查确保其格式正确。
+rtfScan-action-find-match =
+    .title = 选择匹配的条目
+rtfScan-action-accept-match =
+    .title = 接受这次匹配
+runJS-title = 执行 JavaScript
+runJS-editor-label = 代码：
+runJS-run = 执行
+runJS-help = { general-help }
+runJS-completed = 成功完成
+runJS-result =
+    { $type ->
+        [async] 返回值：
+       *[other] 结果：
+    }
+runJS-run-async = 作为异步函数执行
+bibliography-window =
+    .title = { -app-name } - 创建引注/参考文献表
+bibliography-style-label = { citation-style-label }
+bibliography-locale-label = { language-label }
+bibliography-displayAs-label = 引注显示为:
+bibliography-advancedOptions-label = 高级选项
+bibliography-outputMode-label = 输出模式:
+bibliography-outputMode-citations =
+    .label =
+        { $type ->
+            [citation] 引注
+            [note] 笔记
+           *[other] 引注
+        }
+bibliography-outputMode-bibliography =
+    .label = 参考文献表
+bibliography-outputMethod-label = 输出方法:
+bibliography-outputMethod-saveAsRTF =
+    .label = 另存为 RTF
+bibliography-outputMethod-saveAsHTML =
+    .label = 另存为 HTML
+bibliography-outputMethod-copyToClipboard =
+    .label = 复制到剪切板
+bibliography-outputMethod-print =
+    .label = 打印
+bibliography-manageStyles-label = 管理样式…
+styleEditor-locatorType =
+    .aria-label = 定位符类型
+styleEditor-locatorInput = 定位符输入
+styleEditor-citationStyle = { citation-style-label }
+styleEditor-locale = { language-label }
+styleEditor-editor =
+    .aria-label = 样式编辑器
+styleEditor-preview =
+    .aria-label = 预览
+publications-intro-page = 我的出版物
+publications-intro = 你添加到我的出版物的条目将在 zotero.org 上你的个人主页上显示。如果你选择加入附件，这些文件将在你指定的许可下向公众开放下载。请仅添加你自己创建的论文，并仅上传你有权并愿意分享的文件。
+publications-include-checkbox-files =
+    .label = 包括文件
+publications-include-checkbox-notes =
+    .label = 包括笔记
+publications-include-adjust-at-any-time = 您随时可以在“我的出版物”中调整要显示什么。
+publications-intro-authorship =
+    .label = 是我创作的作品。
+publications-intro-authorship-files =
+    .label = 我是作品的作者，并且我有权向大众分发内含的文件。
+publications-sharing-page = 选择您的作品的分享方式
+publications-sharing-keep-rights-field =
+    .label = 保留现有的版权字段
+publications-sharing-keep-rights-field-where-available =
+    .label = 尽可能保留现有的版权字段
+publications-sharing-text = 您可以保留对作品的所有权利，可以在知识共享许可下发布，也可以发布于公有领域。在所有情况下，这些作品都可以通过 zotero.org 公开获得。
+publications-sharing-prompt = 您想允许他人共享您的作品吗？
+publications-sharing-reserved =
+    .label = 不，仅允许 zotero.org 发布我的作品
+publications-sharing-cc =
+    .label = 是的，使用“知识共享”许可协议
+publications-sharing-cc0 =
+    .label = 是的，将我的作品发布在公有领域
+publications-license-page = 选择一个知识共享许可
+publications-choose-license-text = 知识共享许可协议允许其他人在保持适当声明的前提下复制和重新分发您的作品。可以在下面指定其他条件。
+publications-choose-license-adaptations-prompt = 是否允许分享您的作品的衍生版本？
+publications-choose-license-yes =
+    .label = 是
+    .accesskey = Y
+publications-choose-license-no =
+    .label = 否
+    .accesskey = 无
+publications-choose-license-sharealike =
+    .label = 可以，只要其他人以相同协议共享
+    .accesskey = S
+publications-choose-license-commercial-prompt = 允许你的作品被商用吗？
+publications-buttons-add-to-my-publications =
+    .label = 添加到我的出版物
+publications-buttons-next-sharing =
+    .label = 下一步：分享
+publications-buttons-next-choose-license =
+    .label = 选择许可协议
+licenses-cc-0 = CC0 1.0 通用公有领域贡献
+licenses-cc-by = 知识共享 署名 4.0 国际许可协议
+licenses-cc-by-nd = 知识共享 署名-禁止演绎 4.0 国际许可协议
+licenses-cc-by-sa = 知识共享 署名-相同方式共享 4.0 国际许可协议
+licenses-cc-by-nc = 知识共享 署名-非商业性使用 4.0 国际许可协议
+licenses-cc-by-nc-nd = 知识共享 署名-非商业性使用-禁止演绎 4.0 国际许可协议
+licenses-cc-by-nc-sa = 知识共享 署名-非商业性使用-相同方式共享 4.0 国际许可协议
+licenses-cc-more-info = 在将您的作品以知识共享协议许可之前，请确保您已阅读 <a data-l10n-name="license-considerations">许可方注意事项</a>。请注意，即使您后来选择不同的条款或停止发布作品，您之前允许的许可也无法撤销。
+licenses-cc0-more-info = 在将 CC0 应用于您的作品之前，请确保您已阅读知识共享 <a data-l10n-name="license-considerations">CC0 常见问题解答</a>。请注意，将您的作品贡献到公有领域是不可逆转的，即使您后来选择不同的条款或停止发布该作品。
+debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-menuitem =
+    .label = 以故障排除模式重启...
+    .accesskey = T
+restart-in-troubleshooting-mode-dialog-title = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-dialog-description = { -app-name } 将重新启动并禁用所有插件。启用故障排除模式时，某些功能可能无法正常工作。
+menu-ui-density =
+    .label = 紧凑度
+menu-ui-density-comfortable =
+    .label = 舒适
+menu-ui-density-compact =
+    .label = 紧凑
+pane-item-details = 条目详情
+pane-info = 信息
+pane-abstract = 摘要
+pane-attachments = 附件
+pane-notes = 笔记
+pane-note-info = 笔记信息
+pane-libraries-collections = 文库和分类
+pane-tags = 标签
+pane-related = 相关
+pane-attachment-info = 附件信息
+pane-attachment-preview = 预览
+pane-attachment-annotations = 注释
+pane-header-attachment-associated =
+    .label = 重命名相关文件
+item-details-pane =
+    .aria-label = { pane-item-details }
+section-info =
+    .label = { pane-info }
+section-abstract =
+    .label = { pane-abstract }
+section-attachments =
+    .label =
+        { $count ->
+           *[other] { $count } 个附件
+        }
+section-attachment-preview =
+    .label = { pane-attachment-preview }
+section-attachments-annotations =
+    .label =
+        { $count ->
+           *[other] { $count } 个注释
+        }
+section-attachments-move-to-trash-message = 您确定要将 “{ $title }” 移动到回收站吗？
+section-notes =
+    .label =
+        { $count ->
+           *[other] { $count } 个笔记
+        }
+section-libraries-collections =
+    .label = { pane-libraries-collections }
+section-tags =
+    .label =
+        { $count ->
+           *[other] { $count } 个标签
+        }
+section-related =
+    .label = { $count } 个相关
+section-attachment-info =
+    .label = { pane-attachment-info }
+section-button-remove =
+    .tooltiptext = { general-remove }
+section-button-add =
+    .tooltiptext = { general-add }
+section-button-expand =
+    .dynamic-tooltiptext = 展开此栏
+    .label = 展开 { $section } 栏
+section-button-collapse =
+    .dynamic-tooltiptext = 折叠此栏
+    .label = 折叠 { $section } 栏
+annotations-count =
+    { $count ->
+       *[other] { $count } 个注释
+    }
+section-button-annotations =
+    .title = { annotations-count }
+    .aria-label = { annotations-count }
+attachment-preview =
+    .aria-label = { pane-attachment-preview }
+sidenav-info =
+    .tooltiptext = { pane-info }
+sidenav-abstract =
+    .tooltiptext = { pane-abstract }
+sidenav-attachments =
+    .tooltiptext = { pane-attachments }
+sidenav-notes =
+    .tooltiptext = { pane-notes }
+sidenav-note-info =
+    .tooltiptext = { pane-note-info }
+sidenav-attachment-info =
+    .tooltiptext = { pane-attachment-info }
+sidenav-attachment-preview =
+    .tooltiptext = { pane-attachment-preview }
+sidenav-attachment-annotations =
+    .tooltiptext = { pane-attachment-annotations }
+sidenav-libraries-collections =
+    .tooltiptext = { pane-libraries-collections }
+sidenav-tags =
+    .tooltiptext = { pane-tags }
+sidenav-related =
+    .tooltiptext = { pane-related }
+sidenav-main-btn-grouping =
+    .aria-label = { pane-item-details }
+sidenav-reorder-up =
+    .label = 上移此栏
+sidenav-reorder-down =
+    .label = 下移此栏
+sidenav-reorder-reset =
+    .label = 恢复栏顺序
+toggle-item-pane =
+    .tooltiptext = 开/合条目窗格
+toggle-context-pane =
+    .tooltiptext = 开/合内容窗格
+pin-section =
+    .label = 固定此栏
+unpin-section =
+    .label = 取消固定此栏
+collapse-other-sections =
+    .label = 折叠其他栏
+expand-all-sections =
+    .label = 展开所有栏
+abstract-field =
+    .placeholder = 添加摘要...
+tag-field =
+    .aria-label = { general-tag }
+tagselector-search =
+    .placeholder = 筛选标签
+context-notes-search =
+    .placeholder = 搜索笔记
+context-notes-return-button =
+    .aria-label = { general-go-back }
+new-collection = 新建分类…
+menu-new-collection =
+    .label = { new-collection }
+toolbar-new-collection =
+    .tooltiptext = { new-collection }
+new-collection-dialog =
+    .title = 新建分类
+    .buttonlabelaccept = 创建分类
+new-collection-name = 名称:
+new-collection-create-in = 创建到：
+show-publications-menuitem =
+    .label = 显示我的出版物
+attachment-info-title = 标题
+attachment-info-filename = 文件名
+attachment-info-accessed = 访问时间
+attachment-info-pages = 页数
+attachment-info-modified = 修改日期
+attachment-info-index = 已索引
+attachment-info-convert-note =
+    .label =
+        迁移到{ $type ->
+            [standalone] 独立
+            [child] 条目
+           *[unknow] 新
+        }笔记
+    .tooltiptext = 已不再支持向附件添加笔记，但您可以将其迁移到单独的笔记后进行编辑。
+section-note-info =
+    .label = { pane-note-info }
+note-info-title = 标题
+note-info-parent-item = 上级条目
+note-info-parent-item-button =
+    { $hasParentItem ->
+        [true] { $parentItemTitle }
+       *[false] 无
+    }
+    .title =
+        { $hasParentItem ->
+            [true] 在文献库中查看上级条目
+           *[false] 在文献库中查看笔记
+        }
+note-info-date-created = 创建
+note-info-date-modified = 修改日期
+note-info-size = 大小
+note-info-word-count = 字数
+note-info-character-count = 字符数
+item-title-empty-note = 未命名笔记
+attachment-preview-placeholder = 无可预览的附件
+attachment-rename-from-parent =
+    .tooltiptext = 重命名文件以匹配上级条目
+account-log-in = 登录
+account-not-logged-in-text = 登录Zotero账户以同步你的数据。
+account-error-login-session-expired = 登录会话已过期。请重试。
+toggle-preview =
+    .label =
+        { $type ->
+            [open] 隐藏
+            [collapsed] 显示
+           *[unknown] 切换
+        }附件预览
+annotation-image-not-available = [图像不可用]
+quicksearch-mode =
+    .aria-label = 快速搜索模式
+quicksearch-input =
+    .aria-label = 快速搜索
+    .placeholder = { $placeholder }
+    .aria-description = { $placeholder }
+advanced-search = 高级搜索
+menuitem-advanced-search =
+    .label = { advanced-search }
+quicksearch-advanced-search-button =
+    .tooltiptext = { advanced-search }
+    .aria-label = { advanced-search }
+advanced-search-close =
+    .tooltiptext = 关闭高级搜索
+advanced-search-expand =
+    .tooltiptext = 展开高级搜索
+advanced-search-collapse =
+    .tooltiptext = 折叠高级搜索
+item-pane-header-view-as =
+    .label = 显示为
+item-pane-header-none =
+    .label = 无
+item-pane-header-title =
+    .label = 标题
+item-pane-header-titleCreatorYear =
+    .label = 标题、创建者、年份
+item-pane-header-bibEntry =
+    .label = 参考文献表条目
+item-pane-header-more-options =
+    .label = 更多选项
+item-pane-message-items-selected =
+    { $count ->
+        [0] 未选择条目
+        [one] 已选择 { $count } 个条目
+       *[other] 已选择 { $count } 个条目
+    }
+item-pane-message-collections-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个分类
+    }
+item-pane-message-searches-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个搜索结果
+    }
+item-pane-message-objects-selected =
+    { $count ->
+       *[other] 已选择 { $count } 个对象
+    }
+item-pane-message-unselected =
+    { $count ->
+        [0] 此视图中没有条目
+        [one] 此视图中有 { $count } 个条目
+       *[other] 此视图中有 { $count } 个条目
+    }
+item-pane-message-objects-unselected =
+    { $count ->
+        [0] 此视图中没有对象
+        [one] 此视图中包含 { $count } 个对象
+       *[other] 此视图中包含 { $count } 个对象
+    }
+item-pane-duplicates-merge-items =
+    .label =
+        { $count ->
+           *[other] 合并 { $count } 个条目
+        }
+locate-library-lookup-no-resolver = 您必须从 { -app-name } 设置的 { $pane } 窗格中选择解析器。
+architecture-win32-warning-message = 切换到 64 位版本的 { -app-name } 以获得最佳性能。不会影响您的数据。
+architecture-warning-action = 下载 64 位版本的 { -app-name }
+architecture-x64-on-arm64-message = { -app-name } 目前以模拟模式运行。请使用原生版本的 { -app-name } 以获得最佳性能。
+architecture-x64-on-arm64-action = 下载适配 ARM64 的 { -app-name }
+first-run-guidance-authorMenu = { -app-name } 也允许您指定“编辑”和“译者”。您可以从此菜单中选择，将“作者”更改为“编辑”或“译者”。
+first-run-guidance-readAloud = { -app-name }  现在可以使用自然流畅的语音为你朗读文档。
+advanced-search-remove-btn =
+    .tooltiptext = 移除条件
+advanced-search-add-btn =
+    .tooltiptext = 添加条件
+advanced-search-group-btn =
+    .tooltiptext = 添加条件组
+advanced-search-remove-group-btn =
+    .tooltiptext = 删除组
+advanced-search-ungroup-btn =
+    .tooltiptext = 取消条件组合
+advanced-search-result-level-menu =
+    .aria-label = 结果类型
+advanced-search-result-level-prefix-root =
+    .value = 查找
+advanced-search-join-prefix-root =
+    .value = 匹配
+advanced-search-result-level-any =
+    .label = 任意条目
+advanced-search-result-level-item =
+    .label = 顶级条目
+advanced-search-result-level-attachment =
+    .label = 附件
+advanced-search-result-level-note =
+    .label = 笔记
+advanced-search-result-level-annotation =
+    .label = 注释
+advanced-search-binding-menu =
+    .aria-label = 与同一条目匹配
+advanced-search-binding-separate =
+    .label = separately
+advanced-search-binding-same-attachment =
+    .label = 在同一附件中
+advanced-search-binding-same-note =
+    .label = 在同一笔记中
+advanced-search-binding-same-annotation =
+    .label = 在同一注释中
+advanced-search-of-the-following =
+    .value = 以下
+advanced-search-binding-hint-attachment =
+    .value = 这些条件可以匹配不同的附件。
+advanced-search-binding-hint-note =
+    .value = 这些条件可以匹配不同的笔记。
+advanced-search-binding-hint-annotation =
+    .value = 这些条件可以匹配不同的注释。
+advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
+advanced-search-group-warning-unreachable =
+    A condition here cannot be in the same { $entity ->
+        [attachment] attachment
+        [note] note
+       *[annotation] annotation
+    }. Match these separately or remove the incompatible condition.
+advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-bind-same-attachment =
+    .label = 匹配相同的附件
+advanced-search-bind-same-note =
+    .label = 匹配相同的笔记
+advanced-search-bind-same-annotation =
+    .label = 匹配相同的注释
+advanced-search-conditions-menu =
+    .aria-label = 搜索条件
+    .label = { $label }
+advanced-search-operators-menu =
+    .aria-label = 操作符
+    .label = { $label }
+advanced-search-condition-input =
+    .aria-label = 值
+    .label = { $label }
+search-operator-isEmpty = is empty
+search-operator-isNotEmpty = is not empty
+search-conditions-tooltip-fields = 字段：
+search-conditions-collection = 分类
+search-conditions-savedSearch = 保存的搜索
+search-conditions-itemTypeID = 条目类型
+search-conditions-tag = 标签
+search-conditions-numTags = # of Tags
+search-conditions-numNotes = # of Notes
+search-conditions-numAttachments = # of Attachments
+search-conditions-numAnnotations = # of Annotations
+search-conditions-note = 笔记
+search-conditions-childNote = 子笔记
+search-conditions-creator = 创建者
+search-conditions-thesisType = 论文类型
+search-conditions-reportType = 报告类型
+search-conditions-videoRecordingFormat = 视频格式
+search-conditions-audioFileType = 音频文件类型
+search-conditions-audioRecordingFormat = 音频格式
+search-conditions-letterType = 信件类型
+search-conditions-interviewMedium = 采访媒体
+search-conditions-manuscriptType = 手稿类型
+search-conditions-presentationType = 演稿类型
+search-conditions-mapType = 地图类型
+search-conditions-artworkMedium = 艺术品媒介
+search-conditions-dateModified = 修改日期
+search-conditions-fulltextContent = 附件内容
+search-conditions-programmingLanguage = 编程语言
+search-conditions-fileTypeID = 附件类型
+search-conditions-attachmentStorageType = Attachment Storage Type
+search-conditions-lastRead = 附件最后阅读时间
+search-conditions-annotationText = 文本注释
+search-conditions-annotationComment = 注释评论
+search-conditions-annotationType = 注释类型
+search-conditions-annotationColor = 注释颜色
+search-conditions-annotationAuthor = 注释作者
+search-conditions-anyField = 任何字段
+search-conditions-titleCreatorYear = 标题、创建者、年份
+search-conditions-submenu-attachment = 附件
+search-conditions-submenu-annotation = 注释
+search-conditions-short-fulltextContent = 内容
+search-conditions-short-fileTypeID = 音频文件类型
+search-conditions-short-attachmentStorageType = Storage Type
+search-conditions-short-lastRead = 最后阅读时间
+search-conditions-short-annotationText = 文本
+search-conditions-short-annotationComment = 评论
+search-conditions-short-annotationType = 类型
+search-conditions-short-annotationColor = 颜色
+search-conditions-short-annotationAuthor = 作者
+find-pdf-files-added =
+    { $count ->
+       *[other] 已添加 { $count } 个文件
+    }
+select-items-window =
+    .title = 选择条目
+select-items-dialog =
+    .buttonlabelaccept = 选择
+select-items-convertToStandalone =
+    .label = 转为独立
+select-items-convertToStandaloneAttachment =
+    .label =
+        { $count ->
+           *[other] 转为独立附件
+        }
+select-items-convertToStandaloneNote =
+    .label =
+        { $count ->
+           *[other] 转为独立笔记
+        }
+file-type-webpage = 网页
+file-type-image = 图片
+file-type-pdf = PDF
+file-type-audio = 音频
+file-type-video = 视频
+file-type-presentation = 演示文档
+file-type-document = 文档
+file-type-ebook = 电子书
+attachment-storage-type-storedFile = Stored File
+attachment-storage-type-linkedFile = Linked File
+attachment-storage-type-webLink = Web Link
+post-upgrade-message = 你已升级到 <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version } </span>！了解一下<a data-l10n-name="new-features-link">新特性</a>。
+post-upgrade-remind-me-later =
+    .label = { general-remind-me-later }
+post-upgrade-done =
+    .label = { general-done }
+text-action-paste-and-search =
+    .label = 粘贴并搜索
+mac-word-plugin-install-message = Zotero 需要访问 Word 数据才能安装 Word 插件。
+mac-word-plugin-install-folder-message = { -app-name }  需要访问 Word 的 startup 文件夹才能安装 Word 插件。
+mac-word-plugin-install-action-button =
+    .label = 安装 Word 插件
+mac-word-plugin-install-remind-later-button =
+    .label = { general-remind-me-later }
+mac-word-plugin-install-dont-ask-again-button =
+    .label = { general-dont-ask-again }
+mac-word-plugin-install-folder-dialog-title = 将插件安装到 Word 的 startup 文件夹中
+mac-word-plugin-install-folder-dialog-button = 安装
+mac-word-plugin-install-wrong-folder-selected = 必须选择建议的文件夹。请重试且不要选择其他文件夹。
+file-renaming-banner-message = { -app-name } 现在支持在您修改条目时自动保持附件文件名同步。
+file-renaming-banner-documentation-link = { general-learn-more }
+file-renaming-banner-settings-link = { general-settings }
+connector-version-warning = { -app-name } Connector 必须更新才能与该版本的 { -app-name } 兼容。
+userjs-pref-warning = 某些 { -app-name } 设置已通过不支持的方法被覆盖。{ -app-name } 将恢复这些设置并重新启动。
+migrate-extra-fields-progress-message = 从其他字段迁移至新字段
+search-normalization-progress-message = Indexing items for search
+long-tag-fixer-window-title =
+    .title = 拆分标签
+long-tag-fixer-button-dont-split =
+    .label = 不要拆分
+menu-normalize-attachment-titles =
+    .label = 规范附件标题…
+normalize-attachment-titles-title = 规范附件标题
+normalize-attachment-titles-text =
+    { -app-name } 使用上级条目元数据自动重命名磁盘上的文件，但它对主要附件使用单独的、更简单的标题，如“Full Text PDF”、“Preprint PDF”或“PDF”，以保持条目列表的整洁，避免重复信息。
+    
+    在旧版本的 { -app-name } 中以及使用某些插件时，附件标题可能会被不必要地修改以匹配文件名。
+    
+    是否要更新所选附件以使用更简单的标题？只有标题与文件名匹配的主要附件才会被更改。
+banner-close-button =
+    .aria-label = 关闭通知
+plugins-blocked-plugin =
+    .message = 此插件已被 { -app-name } 禁用。
+data-dir-unsupported-storage = 如果 { -app-name } 的数据目录位于云存储文件夹（如OneDrive、Dropbox等）或网络共享位置，则可能会出现这种情况。
+login-manager-reset = { -app-name } 无法读取您保存的登录信息，因此已重置。请在 { -app-name } 设置的 { preferences-pane-account } 窗格中重新登录。
+os-keystore-save-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
+        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
+    }
+os-keystore-migrate-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
+        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
+    }
+search-button =
+    .label = 搜索
+save-search-new-button =
+    .label = 保存搜索…
+save-search-edit-button =
+    .label = 保存
+save-search-name-title = 保存搜索结果
+save-search-name-message = 为已保存搜索输入一个名称:
+saved-search-close-confirmation-title = 编辑已保存搜索
+saved-search-close-confirmation-body = 是否要保存对此已保存搜索所做的更改？
+item-pane-batch-editing-prompt =
+    .aria-label = 批量编辑
+item-pane-batch-editing-enable =
+    .label = 编辑多个条目…
+item-pane-batch-editing-multiple-values-placeholder = 多个
+item-pane-batch-editing-clear-values = 清除所有值
+item-pane-batch-editing-header =
+    { $count ->
+       *[other] 编辑 { $count } 个条目
+    }
+item-pane-batch-editing-done =
+    .label = { general-done }
+undo-action-edit-metadata =
+    { $count ->
+       *[other] 编辑 { $count } 个条目的元数据
+    }
+undo-action-edit-field =
+    { $count ->
+       *[other] 编辑 { $count } 个条目的 “{ $field }”
+    }
+undo-action-normalize-attachment-titles = 规范附件标题
+undo-action-trash =
+    { $count ->
+       *[other] 删除 { $count } 个条目
+    }
+undo-action-restore-items =
+    { $count ->
+       *[other] 恢复 { $count } 个条目
+    }
+undo-action-trash-collection =
+    { $count ->
+       *[other] 删除 { $count } 个分类
+    }
+undo-action-trash-search =
+    { $count ->
+       *[other] 删除 { $count } 个已保存搜索
+    }
+undo-action-restore-collection =
+    { $count ->
+       *[other] 恢复 { $count } 个分类
+    }
+undo-action-restore-objects =
+    { $count ->
+        [one] Restore Object
+       *[other] Restore { $count } Objects
+    }
+undo-action-add-to-collection =
+    { $count ->
+       *[other] 将 { $count } 个条目添加到分类
+    }
+undo-action-remove-from-collection =
+    { $count ->
+       *[other] 从分类中移除 { $count } 个条目
+    }
+undo-action-move-to-collection =
+    { $count ->
+       *[other] 将 { $count } 个条目移动到分类
+    }
+undo-action-rename-collection = 重命名分类
+undo-action-move-collection = 移动分类
+undo-action-add-tag =
+    { $count ->
+       *[other] 为 { $count } 个条目添加标签
+    }
+undo-action-change-tag = 更改标签
+undo-action-split-tag = 拆分标签
+undo-action-remove-tag =
+    { $count ->
+       *[other] 从 { $count } 个条目删除标签
+    }
+undo-action-remove-tags-from-item =
+    { $count ->
+       *[other] 删除 { $count } 个标签
+    }
+undo-action-remove-all-tags = 删除所有标签
+undo-action-edit-note = 编辑笔记
+undo-action-add-creator = 添加创建者
+undo-action-remove-creator = 移除创建者
+undo-action-edit-creator = 编辑创建者
+undo-action-reorder-creator = 重新排序创建者
+undo-action-change-type = 更改条目类型
+undo-action-change-parent-item =
+    { $count ->
+       *[other] 为 { $count } 个条目改变上级条目
+    }
+undo-action-convert-to-standalone =
+    { $count ->
+       *[other] 将 { $count } 个条目转换为独立条目
+    }
+undo-action-add-related = 添加关联
+undo-action-remove-related = 移除关联
+undo-action-merge-items =
+    { $count ->
+       *[other] 合并 { $count } 个条目
+    }
+menu-edit-undo-action = 撤销 { $action }
+menu-edit-redo-action = 重做 { $action }

@@ -1,0 +1,2799 @@
+describe("Zotero.Attachments", function () {
+	var HiddenBrowser;
+	var browser;
+	
+	before(function () {
+		HiddenBrowser = ChromeUtils.importESModule("chrome://zotero/content/HiddenBrowser.mjs").HiddenBrowser;
+	});
+	
+	afterEach(function () {
+		if (browser) {
+			browser.destroy();
+			browser = null;
+		}
+	});
+	
+	describe("#importFromFile()", function () {
+		it("should create a child attachment from a text file", async function () {
+			// Create test file
+			var contents = "Test";
+			var tmpFile = Zotero.getTempDirectory();
+			tmpFile.append('test.txt');
+			await Zotero.File.putContentsAsync(tmpFile, contents);
+			
+			// Create parent item
+			var item = new Zotero.Item('book');
+			var parentItemID = await item.saveTx();
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: tmpFile,
+				parentItemID: parentItemID
+			});
+			var storedFile = item.getFile();
+			assert.equal(((await Zotero.File.getContentsAsync(storedFile))), contents);
+			
+			// Clean up
+			await Zotero.Items.erase(item.id);
+		});
+		
+		it("should create a top-level attachment from a PNG file", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var contents = await Zotero.File.getBinaryContentsAsync(file);
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file
+			});
+			var storedFile = item.getFile();
+			assert.equal(((await Zotero.File.getBinaryContentsAsync(storedFile))), contents);
+			
+			// Clean up
+			await Zotero.Items.erase(item.id);
+		});
+		
+		it("should create a top-level attachment from a PNG file in a collection", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var contents = await Zotero.File.getBinaryContentsAsync(file);
+			
+			var collection = await createDataObject('collection');
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file,
+				collections: [collection.id]
+			});
+			var storedFile = item.getFile();
+			assert.equal(((await Zotero.File.getBinaryContentsAsync(storedFile))), contents);
+			
+			// Clean up
+			await Zotero.Items.erase(item.id);
+		});
+		
+		it("should create a child attachment from a PNG file", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var contents = await Zotero.File.getBinaryContentsAsync(file);
+			
+			// Create parent item
+			var item = new Zotero.Item('book');
+			var parentItemID = await item.saveTx();
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file,
+				parentItemID: parentItemID
+			});
+			var storedFile = item.getFile();
+			assert.equal(((await Zotero.File.getBinaryContentsAsync(storedFile))), contents);
+			
+			// Clean up
+			await Zotero.Items.erase(item.id);
+		});
+
+		it("should set a top-level item's title to the filename, minus its extension", async function () {
+			let file = getTestDataDirectory();
+			file.append('test.pdf');
+			let attachment = await Zotero.Attachments.importFromFile({
+				file: file,
+			});
+			assert.equal(attachment.getField('title'), 'test');
+			await attachment.eraseTx();
+		});
+
+		it("should set a child item's title based on its type", async function () {
+			let file = getTestDataDirectory();
+			file.append('test.pdf');
+			let parent = await createDataObject('item');
+			let attachment = await Zotero.Attachments.importFromFile({
+				file: file,
+				parentItemID: parent.id,
+			});
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-pdf'));
+			await parent.eraseTx();
+		});
+	})
+	
+	describe("#linkFromFile()", function () {
+		it("should link to a file in My Library", async function () {
+			var item = await createDataObject('item');
+			
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: file,
+				parentItemID: item.id
+			});
+			
+			assert.equal(attachment.getFilePath(), file.path);
+		})
+		
+		it.skip("should throw an error for a non-user library", function* () {
+			// Should create a group library for use by all tests
+		})
+
+		it("should set a top-level item's title to the filename, minus its extension", async function () {
+			let file = getTestDataDirectory();
+			file.append('test.pdf');
+			let attachment = await Zotero.Attachments.linkFromFile({
+				file: file,
+			});
+			assert.equal(attachment.getField('title'), 'test');
+			await attachment.eraseTx();
+		});
+
+		it("should set a child item's title based on its type", async function () {
+			let file = getTestDataDirectory();
+			file.append('test.pdf');
+			let parent = await createDataObject('item');
+			let attachment = await Zotero.Attachments.linkFromFile({
+				file: file,
+				parentItemID: parent.id,
+			});
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-pdf'));
+			await parent.eraseTx();
+		});
+	})
+	
+	
+	describe("#linkFromFileWithRelativePath()", function () {
+		afterEach(function () {
+			Zotero.Prefs.clear('baseAttachmentPath');
+		});
+		
+		it("should link to a file using a relative path with no base directory set", async function () {
+			Zotero.Prefs.clear('baseAttachmentPath');
+			
+			var item = await createDataObject('item');
+			var spy = sinon.spy(Zotero.Fulltext, 'indexPDF');
+			var relPath = 'a/b/test.pdf';
+			
+			var attachment = await Zotero.Attachments.linkFromFileWithRelativePath({
+				path: relPath,
+				title: 'test.pdf',
+				parentItemID: item.id,
+				contentType: 'application/pdf'
+			});
+			
+			assert.ok(spy.notCalled);
+			spy.restore();
+			assert.equal(
+				attachment.attachmentPath,
+				Zotero.Attachments.BASE_PATH_PLACEHOLDER + relPath
+			);
+		});
+		
+		
+		it("should link to a file using a relative path within the base directory", async function () {
+			var baseDir = await getTempDirectory();
+			Zotero.Prefs.set('baseAttachmentPath', baseDir);
+			Zotero.Prefs.set('saveRelativeAttachmentPath', true);
+			
+			var subDir = OS.Path.join(baseDir, 'foo');
+			await OS.File.makeDir(subDir);
+			
+			var file = OS.Path.join(subDir, 'test.pdf');
+			await OS.File.copy(OS.Path.join(getTestDataDirectory().path, 'test.pdf'), file);
+			
+			var item = await createDataObject('item');
+			var spy = sinon.spy(Zotero.Fulltext, 'indexPDF');
+			var relPath = 'foo/test.pdf';
+			
+			var attachment = await Zotero.Attachments.linkFromFileWithRelativePath({
+				path: relPath,
+				title: 'test.pdf',
+				parentItemID: item.id,
+				contentType: 'application/pdf'
+			});
+			
+			assert.ok(spy.called);
+			spy.restore();
+			assert.equal(
+				attachment.attachmentPath,
+				Zotero.Attachments.BASE_PATH_PLACEHOLDER + relPath
+			);
+			
+			assert.ok(await attachment.fileExists());
+		});
+		
+		
+		it("should link to a nonexistent file using a relative path within the base directory", async function () {
+			var baseDir = await getTempDirectory();
+			Zotero.Prefs.set('baseAttachmentPath', baseDir);
+			Zotero.Prefs.set('saveRelativeAttachmentPath', true);
+			
+			var subDir = OS.Path.join(baseDir, 'foo');
+			await OS.File.makeDir(subDir);
+			
+			var item = await createDataObject('item');
+			var spy = sinon.spy(Zotero.Fulltext, 'indexPDF');
+			var relPath = 'foo/test.pdf';
+			
+			var attachment = await Zotero.Attachments.linkFromFileWithRelativePath({
+				path: relPath,
+				title: 'test.pdf',
+				parentItemID: item.id,
+				contentType: 'application/pdf'
+			});
+			
+			assert.ok(spy.notCalled);
+			spy.restore();
+			assert.equal(
+				attachment.attachmentPath,
+				Zotero.Attachments.BASE_PATH_PLACEHOLDER + relPath
+			);
+			
+			assert.isFalse(await attachment.fileExists());
+		});
+		
+		
+		it("should reject absolute paths", async function () {
+			try {
+				await Zotero.Attachments.linkFromFileWithRelativePath({
+					path: '/a/b/test.pdf',
+					title: 'test.pdf',
+					contentType: 'application/pdf'
+				});
+			}
+			catch (e) {
+				return;
+			}
+			
+			assert.fail();
+		});
+	});
+	
+	
+	describe("#importSnapshotFromFile()", function () {
+		it("should import an HTML file", async function () {
+			var item = await createDataObject('item');
+			var file = getTestDataDirectory();
+			file.append('test.html');
+			var attachment = await Zotero.Attachments.importSnapshotFromFile({
+				title: 'Snapshot',
+				url: 'http://example.com',
+				file,
+				parentItemID: item.id,
+				contentType: 'text/html',
+				charset: 'utf-8'
+			});
+			
+			var matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'test');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+		});
+		
+		it("should detect charset for an HTML file", async function () {
+			var item = await createDataObject('item');
+			var file = getTestDataDirectory();
+			file.append('test.html');
+			var attachment = await Zotero.Attachments.importSnapshotFromFile({
+				title: 'Snapshot',
+				url: 'http://example.com',
+				file,
+				parentItemID: item.id,
+				contentType: 'text/html'
+			});
+			
+			assert.equal(attachment.attachmentCharset, 'utf-8');
+			
+			var matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'test');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+		});
+		
+		it("shouldn't execute JavaScript when indexing an HTML file", async function () {
+			var item = await createDataObject('item');
+			var file = getTestDataDirectory();
+			file.append('test-js.html');
+			var attachment = await Zotero.Attachments.importSnapshotFromFile({
+				title: 'Snapshot',
+				url: 'http://example.com',
+				file,
+				parentItemID: item.id,
+				contentType: 'text/html'
+			});
+			
+			assert.equal(attachment.attachmentCharset, 'utf-8');
+			
+			// Static content should be indexed
+			var matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'static');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+			
+			// JavaScript-created content shouldn't be
+			matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'test');
+			assert.lengthOf(matches, 0);
+		});
+	});
+	
+	
+	describe("#importFromURL()", function () {
+		it("should use BrowserRequest for a JS redirect page", async function () {
+			let downloadPDFStub = sinon.stub(Zotero.BrowserRequest, "downloadPDF");
+			downloadPDFStub.callsFake(async (_url, path) => {
+				await OS.File.copy(OS.Path.join(getTestDataDirectory().path, 'test.pdf'), path);
+			});
+			try {
+				var item = await Zotero.Attachments.importFromURL({
+					libraryID: Zotero.Libraries.userLibraryID,
+					url: 'https://zotero-static.s3.amazonaws.com/test-pdf-redirect.html',
+					contentType: 'application/pdf'
+				});
+				
+				assert.isTrue(downloadPDFStub.calledOnce);
+			}
+			finally {
+				// Clean up
+				await Zotero.Items.erase(item.id);
+				downloadPDFStub.restore();
+			}
+		});
+	});
+	
+	
+	describe("#linkFromDocument", function () {
+		it("should add a link attachment for the current webpage", async function () {
+			var item = await createDataObject('item');
+			
+			var uri = OS.Path.join(getTestDataDirectory().path, "snapshot", "index.html");
+			browser = new HiddenBrowser(uri);
+			await browser.load(uri);
+			
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var attachment = await Zotero.Attachments.linkFromDocument({
+				document: await browser.getDocument(),
+				parentItemID: item.id
+			});
+			
+			assert.equal(attachment.getField('url'), "file://" + uri);
+			
+			// Check indexing
+			var matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'share your research');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+		})
+	})
+	
+	describe("#importFromDocument()", function () {
+		const { FileUtils } = ChromeUtils.importESModule("resource://gre/modules/FileUtils.sys.mjs");
+		
+		var testServerPath, httpd, prefix;
+		var testServerPort;
+
+		before(async function () {
+			this.timeout(20000);
+		});
+
+		beforeEach(async function () {
+			// Use random prefix because httpd does not actually stop between tests
+			prefix = Zotero.Utilities.randomString();
+			({ httpd, port: testServerPort } = await startHTTPServer());
+			testServerPath = 'http://127.0.0.1:' + testServerPort + '/' + prefix;
+		});
+
+		afterEach(async function () {
+			var defer = Zotero.Promise.defer();
+			httpd.stop(() => defer.resolve());
+			await defer.promise;
+		});
+
+		it("should save a document with embedded files", async function () {
+			var item = await createDataObject('item');
+
+			var uri = OS.Path.join(getTestDataDirectory().path, "snapshot");
+			httpd.registerDirectory("/" + prefix + "/", new FileUtils.File(uri));
+			
+			browser = new HiddenBrowser();
+			await browser.load(testServerPath + "/index.html");
+			Zotero.FullText.indexNextInTest();
+			var attachment = await Zotero.Attachments.importFromDocument({
+				browser,
+				parentItemID: item.id
+			});
+			
+			assert.equal(attachment.getField('url'), testServerPath + "/index.html");
+			
+			// Check indexing
+			var matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'share your research');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+			
+			var storageDir = Zotero.Attachments.getStorageDirectory(attachment).path;
+			var file = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(file), 'index.html');
+			
+			// Check attachment html file contents
+			let path = OS.Path.join(storageDir, 'index.html');
+			assert.isTrue(await OS.File.exists(path));
+			let contents = await Zotero.File.getContentsAsync(path);
+			assert.include(contents, "><!--\n Page saved with SingleFile");
+			
+			// Check attachment base64 contents
+			let expectedPath = getTestDataDirectory();
+			expectedPath.append('snapshot');
+			expectedPath.append('img.gif');
+			let needle = await Zotero.File.getBinaryContentsAsync(expectedPath);
+			needle = '<img src=data:image/gif;base64,' + btoa(needle) + '>';
+			assert.include(contents, needle);
+		});
+
+		it("should save a document with embedded files restricted by CORS", async function () {
+			var item = await createDataObject('item');
+
+			var url = "file://" + OS.Path.join(getTestDataDirectory().path, "snapshot", "img.gif");
+			httpd.registerPathHandler(
+				'/' + prefix + '/index.html',
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 200, "OK");
+						response.write(`<html><head><title>Test</title></head><body><img src="${url}"/>`);
+					}
+				}
+			);
+
+			let browser = new HiddenBrowser();
+			await browser.load(testServerPath + "/index.html");
+			var attachment = await Zotero.Attachments.importFromDocument({
+				browser,
+				parentItemID: item.id
+			});
+
+			assert.equal(attachment.getField('url'), testServerPath + "/index.html");
+
+			// Check for embedded files
+			var storageDir = Zotero.Attachments.getStorageDirectory(attachment).path;
+			var file = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(file), 'index.html');
+
+			// Check attachment html file contents
+			let path = OS.Path.join(storageDir, 'index.html');
+			assert.isTrue(await OS.File.exists(path));
+			let contents = await Zotero.File.getContentsAsync(path);
+			assert.include(contents, "><!--\n Page saved with SingleFile");
+
+			// Check attachment base64 contents
+			let expectedPath = getTestDataDirectory();
+			expectedPath.append('snapshot');
+			expectedPath.append('img.gif');
+			// This is broken because the browser will not load the image due to CORS and
+			// then SingleFile detects that it is an empty image and replaces it without
+			// trying to load the file. I don't really know of a good way around this for
+			// the moment so I am leaving this assertion commented out, but without the
+			// test is much less useful.
+			// let needle = await Zotero.File.getBinaryContentsAsync(expectedPath);
+			// needle = '<img src=data:image/gif;base64,' + btoa(needle) + '>';
+			// assert.include(contents, needle);
+		});
+
+		it("should save a document with embedded files that throw errors", async function () {
+			var item = await createDataObject('item');
+
+			var url = "file://" + OS.Path.join(getTestDataDirectory().path, "snapshot", "foobar.gif");
+			httpd.registerPathHandler(
+				'/' + prefix + '/index.html',
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 200, "OK");
+						response.write(`<html><head><title>Test</title></head><body><img src="${url}"/>`);
+					}
+				}
+			);
+
+			let browser = new HiddenBrowser();
+			await browser.load(testServerPath + "/index.html");
+			var attachment = await Zotero.Attachments.importFromDocument({
+				browser,
+				parentItemID: item.id
+			});
+
+			assert.equal(attachment.getField('url'), testServerPath + "/index.html");
+
+			// Check for embedded files
+			var storageDir = Zotero.Attachments.getStorageDirectory(attachment).path;
+			var file = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(file), 'index.html');
+			assert.isFalse(await OS.File.exists(OS.Path.join(storageDir, 'images', '1.gif')));
+
+			// Check attachment html file contents
+			let path = OS.Path.join(storageDir, 'index.html');
+			assert.isTrue(await OS.File.exists(path));
+			let contents = await Zotero.File.getContentsAsync(path);
+			assert.include(contents, "><!--\n Page saved with SingleFile");
+		});
+
+		it("should save a document but not save the iframe", async function () {
+			let item = await createDataObject('item');
+
+			let content = `<html><head><title>Test</title></head><body><iframe src="${testServerPath + "/iframe.html"}"/>`;
+			httpd.registerPathHandler(
+				'/' + prefix + '/index.html',
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 200, "OK");
+						response.write(content);
+					}
+				}
+			);
+
+			let url = "file://" + OS.Path.join(getTestDataDirectory().path, "snapshot", "img.gif");
+			httpd.registerPathHandler(
+				'/' + prefix + '/iframe.html',
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 200, "OK");
+						response.write(`<html><head><title>Test</title></head><body><img src="${url}"/>`);
+					}
+				}
+			);
+
+			let browser = new HiddenBrowser();
+			await browser.load(testServerPath + "/index.html");
+			let attachment = await Zotero.Attachments.importFromDocument({
+				browser,
+				parentItemID: item.id
+			});
+
+			assert.equal(attachment.getField('url'), testServerPath + "/index.html");
+
+			// Check for embedded files
+			var storageDir = Zotero.Attachments.getStorageDirectory(attachment).path;
+			var file = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(file), 'index.html');
+			assert.isFalse(await OS.File.exists(OS.Path.join(storageDir, 'images', '1.gif')));
+
+			// Check attachment html file contents
+			let path = OS.Path.join(storageDir, 'index.html');
+			assert.isTrue(await OS.File.exists(path));
+			let contents = await Zotero.File.getContentsAsync(path);
+			assert.include(contents, "><!--\n Page saved with SingleFile");
+			assert.notInclude(contents, "<img src=\"data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==\">'></iframe>");
+		});
+	});
+	
+	describe("#importFromSnapshotContent()", function () {
+		it("should save simple HTML content", async function () {
+			let item = await createDataObject('item');
+			
+			let content = getTestDataDirectory();
+			content.append('snapshot');
+			content.append('index.html');
+			
+			let snapshotContent = await Zotero.File.getContentsAsync(content);
+			
+			Zotero.FullText.indexNextInTest();
+			let attachment = await Zotero.Attachments.importFromSnapshotContent({
+				parentItemID: item.id,
+				url: "https://example.com/test.html",
+				title: "Testing Title",
+				snapshotContent
+			});
+			
+			assert.equal(attachment.getField('url'), "https://example.com/test.html");
+			
+			// Check indexing
+			let matches = await Zotero.Fulltext.findTextInItems([attachment.id], 'share your research');
+			assert.lengthOf(matches, 1);
+			assert.propertyVal(matches[0], 'id', attachment.id);
+			
+			// Check for embedded files
+			let storageDir = Zotero.Attachments.getStorageDirectory(attachment).path;
+			let file = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(file), 'test.html');
+			
+			// Check attachment html file contents
+			let path = OS.Path.join(storageDir, 'test.html');
+			assert.isTrue(await OS.File.exists(path));
+			let contents = await Zotero.File.getContentsAsync(path);
+			let expectedContents = await Zotero.File.getContentsAsync(file);
+			assert.equal(contents, expectedContents);
+		});
+	});
+	
+	describe("#downloadFile()", function () {
+		var httpd;
+		var testServerPort;
+		
+		before(async () => {
+			({ httpd, port: testServerPort } = await startHTTPServer());
+		});
+		
+		
+		after(async () => {
+			await new Promise((resolve) => {
+				httpd.stop(() => resolve());
+			});
+		});
+		
+		it("should use BrowserRequest for 403 when enforcing file type", async function () {
+			let prefix = Zotero.Utilities.randomString();
+			let testServerPath = 'http://127.0.0.1:' + testServerPort + '/' + prefix;
+			let pdfURL = testServerPath + '/test.pdf';
+			httpd.registerPathHandler(
+				"/" + prefix + '/test.pdf',
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 403, "Forbidden");
+						response.write("Forbidden");
+					}
+				}
+			);
+			
+			let path = OS.Path.join(Zotero.getTempDirectory().path, 'test.pdf');
+			let getEntryStub = sinon.stub(Zotero.BrowserRequest, "getEntryForURL");
+			let downloadPDFStub = sinon.stub(Zotero.BrowserRequest, "downloadPDF");
+			getEntryStub.returns({ match: 'test' });
+			downloadPDFStub.callsFake(async (_url, path) => {
+				await OS.File.copy(OS.Path.join(getTestDataDirectory().path, 'test.pdf'), path);
+			});
+			var item;
+			try {
+				item = await Zotero.Attachments.downloadFile(pdfURL, path, { enforceFileType: true });
+				
+				assert.isTrue(getEntryStub.calledOnce);
+				assert.isTrue(downloadPDFStub.calledOnce);
+			}
+			finally {
+				// Clean up
+				if (item) await Zotero.Items.erase(item.id);
+				downloadPDFStub.restore();
+				getEntryStub.restore();
+			}
+		});
+	});
+	
+	describe("Find Full Text", function () {
+		var doiPrefix = 'https://doi.org/';
+		var doi1 = '10.1111/abcd';
+		var doi2 = '10.2222/bcde';
+		var doi3 = '10.3333/cdef';
+		var doi4 = '10.4444/defg';
+		var doi5 = '10.5555/efgh';
+		var doi6 = '10.6666/fghi';
+		var pageURL1 = 'http://website/article1';
+		var pageURL2 = 'http://website/article2';
+		var pageURL3 = 'http://website/article3';
+		var pageURL4 = 'http://website/article4';
+		var pageURL5 = `http://website/${doi4}`;
+		var pageURL6 = `http://website/${doi4}/json`;
+		var pageURL7 = doiPrefix + doi5;
+		var pageURL8 = 'http://website2/article8';
+		var pageURL9 = 'http://website/article9';
+		var pageURL10 = 'http://website/refresh';
+		var pageURL11 = 'http://website/book';
+		
+		var httpd;
+		var port = 16213;
+		var baseURL = `http://localhost:${port}/`;
+		var pdfPath = OS.Path.join(getTestDataDirectory().path, 'test.pdf');
+		var pdfURL = `${baseURL}article1/pdf`;
+		var pdfSize;
+		var epubPath = OS.Path.join(getTestDataDirectory().path, 'stub.epub');
+		var epubURL = `${baseURL}article11/epub`;
+		var epubSize;
+		var requestStub;
+		var downloadSpy;
+		var requestStubCallTimes = [];
+		var return429 = true;
+		
+		function makeGetResponseHeader(headers) {
+			return function (header) {
+				if (headers[header] !== undefined) {
+					return headers[header];
+				}
+				throw new Error(`Unimplemented header '${header}'`);
+			};
+		}
+		
+		function getHTMLPage(includePDF) {
+			return `<html>
+				<head>
+					<title>Page Title</title>
+					<link rel="schema.DC" href="http://purl.org/dc/elements/1.1/" />
+					<meta name="citation_title" content="Title"/>
+					<meta name="${includePDF ? 'citation_pdf_url' : 'ignore'}" content="${pdfURL}"/>
+				</head>
+				<body>Body</body>
+			</html>`;
+		}
+		
+		function makeHTMLResponseFromType(html, responseType, responseURL) {
+			var response;
+			if (responseType == 'document') {
+				let parser = new DOMParser();
+				let doc = parser.parseFromString(html, 'text/html');
+				doc = Zotero.HTTP.wrapDocument(doc, responseURL);
+				response = doc;
+			}
+			else if (responseType == 'blob') {
+				let blob = new Blob([html], {type: 'text/html'});
+				response = blob;
+			}
+			else {
+				throw new Error("Request not mocked");
+			}
+			
+			return {
+				status: 200,
+				response,
+				responseURL,
+				getResponseHeader: makeGetResponseHeader({
+					'Content-Type': 'text/html'
+				})
+			};
+		}
+		
+		before(async function () {
+			var pdfBlob = await File.createFromFileName(pdfPath);
+			
+			var origFunc = Zotero.HTTP.request.bind(Zotero.HTTP);
+			requestStub = sinon.stub(Zotero.HTTP, 'request');
+			requestStub.callsFake(function (method, url, options) {
+				Zotero.debug("Intercepting " + method + " " + url);
+				requestStubCallTimes.push(new Date());
+				
+				// Page responses
+				var routes = [
+					// DOI 1 redirects to page 1, which contains a PDF
+					[doiPrefix + doi1, pageURL1, true],
+					[pageURL1, pageURL1, true],
+					// DOI 2 redirects to page 2, which doesn't contain a PDF, but DOI 2 has an
+					// OA entry for the PDF URL
+					[doiPrefix + doi2, pageURL2, false],
+					[pageURL2, pageURL2, false],
+					// DOI 3 redirects to page 2, which doesn't contain a PDF, but DOI 3 contains
+					// an OA entry for page 3, which contains a PDF)
+					[doiPrefix + doi3, pageURL2, false],
+					[pageURL3, pageURL3, true],
+					// DOI 4 redirects to page 4, which doesn't contain a PDF
+					[doiPrefix + doi4, pageURL4, false],
+					[pageURL4, pageURL4, false],
+					// DOI 6 redirects to page 8, which is on a different domain and has a PDF
+					[doiPrefix + doi6, pageURL8, true],
+					[pageURL8, pageURL8, true],
+					[pageURL11, epubURL, false],
+					
+					// Redirect loop
+					['http://website/redirect_loop1', 'http://website/redirect_loop2', false],
+					['http://website/redirect_loop2', 'http://website/redirect_loop3', false],
+					['http://website/redirect_loop3', 'http://website/redirect_loop1', false],
+					
+					// Too many total redirects
+					['http://website/too_many_redirects1', 'http://website/too_many_redirects2', false],
+					['http://website/too_many_redirects2', 'http://website/too_many_redirects3', false],
+					['http://website/too_many_redirects3', 'http://website/too_many_redirects4', false],
+					['http://website/too_many_redirects4', 'http://website/too_many_redirects5', false],
+					['http://website/too_many_redirects5', 'http://website/too_many_redirects6', false],
+					['http://website/too_many_redirects6', 'http://website/too_many_redirects7', false],
+					['http://website/too_many_redirects7', 'http://website/too_many_redirects8', false],
+					['http://website/too_many_redirects8', 'http://website/too_many_redirects9', false],
+					['http://website/too_many_redirects9', 'http://website/too_many_redirects10', false],
+					['http://website/too_many_redirects10', 'http://website/too_many_redirects11', false],
+					['http://website/too_many_redirects11', pageURL1, true],
+				];
+				for (let route of routes) {
+					let [expectedURL, responseURL, includePDF] = route;
+					
+					if (url != expectedURL) continue;
+					
+					// Return explicit 302 if not following redirects
+					if (expectedURL != responseURL && options.followRedirects === false) {
+						return {
+							status: 302,
+							getResponseHeader: makeGetResponseHeader({
+								Location: responseURL
+							})
+						};
+					}
+					
+					let html = getHTMLPage(includePDF);
+					return makeHTMLResponseFromType(html, options.responseType, responseURL);
+				}
+				
+				// HTML page with PDF download link
+				if (url == pageURL5) {
+					let html = `<html>
+						<head>
+							<title>Page Title</title>
+						</head>
+						<body>
+							<a id="pdf-link" href="${pdfURL}">Download PDF</a>
+						</body>
+					</html>`;
+					
+					return makeHTMLResponseFromType(html, options.responseType, pageURL5);
+				}
+				
+				// JSON response with PDF download links
+				if (url == pageURL6) {
+					let response = {
+						oa_locations: [
+							{
+								url_for_landing_page: pageURL1
+							},
+							{
+								url_for_pdf: pdfURL
+							}
+						]
+					};
+					return {
+						status: 200,
+						response,
+						responseURL: pageURL6,
+						getResponseHeader: makeGetResponseHeader({
+							'Content-Type': 'application/json'
+						})
+					};
+				}
+				
+				// DOI that redirects directly to a PDF
+				if (url == pageURL7) {
+					return {
+						status: 200,
+						response: pdfBlob,
+						responseURL: pdfURL,
+						getResponseHeader: makeGetResponseHeader({
+							'Content-Type': 'application/pdf'
+						})
+					};
+				}
+				
+				// Returns a 429 every other call
+				if (url.startsWith(pageURL9)) {
+					if (return429) {
+						return429 = false;
+						throw new Zotero.HTTP.UnexpectedStatusException(
+							{
+								status: 429,
+								response: '',
+								responseURL: pageURL9,
+								getResponseHeader: makeGetResponseHeader({
+									'Content-Type': 'text/plain',
+									'Retry-After': '2',
+								})
+							},
+							pageURL9,
+							'Failing with 429'
+						);
+					}
+					else {
+						return429 = true;
+						let html = getHTMLPage(true);
+						return makeHTMLResponseFromType(html, options.responseType, pageURL9);
+					}
+				}
+				
+				if (url == pageURL10) {
+					let html = `<html><head><meta http-equiv=\"refresh\" content=\"2;url=${pageURL1}\"/></head><body></body></html>`;
+					return makeHTMLResponseFromType(html, options.responseType, pageURL10);
+				}
+				
+				// OA PDF lookup
+				if (url.startsWith(ZOTERO_CONFIG.SERVICES_URL)) {
+					let json = JSON.parse(options.body);
+					let response = [];
+					if (json.doi == doi2) {
+						response.push({
+							url: pdfURL,
+							version: 'submittedVersion'
+						});
+					}
+					else if (json.doi == doi3) {
+						response.push({
+							pageURL: pageURL3,
+							version: 'submittedVersion'
+						});
+					}
+					return {
+						status: 200,
+						response,
+						getResponseHeader: makeGetResponseHeader({
+							'Content-Type': 'application/json'
+						})
+					};
+				}
+				return origFunc(...arguments);
+			});
+
+			downloadSpy = sinon.spy(Zotero.HTTP, 'download');
+
+			pdfSize = await OS.File.stat(pdfPath).size;
+			epubSize = await OS.File.stat(epubPath).size;
+			
+			Zotero.Prefs.clear('findPDFs.resolvers');
+		});
+		
+		beforeEach(async function () {
+			({ httpd } = await startHTTPServer(port));
+			httpd.registerFile(
+				pdfURL.substring(baseURL.length - 1),
+				Zotero.File.pathToFile(pdfPath)
+			);
+			httpd.registerFile(
+				epubURL.substring(baseURL.length - 1),
+				Zotero.File.pathToFile(epubPath)
+			);
+			
+			// Generate a page with a relative PDF URL
+			httpd.registerPathHandler(
+				"/" + doi4,
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 200, "OK");
+						response.write(`<html>
+							<head>
+								<title>Page Title</title>
+							</head>
+							<body>
+								<a id="pdf-link" href="/article1/pdf">Download PDF</a>
+							</body>
+						</html>`);
+					}
+				}
+			);
+			
+			requestStubCallTimes = [];
+		});
+		
+		afterEach(async function () {
+			requestStub.resetHistory();
+			downloadSpy.resetHistory();
+			await new Promise((resolve) => {
+				httpd.stop(() => resolve());
+			});
+			Zotero.Prefs.clear('findPDFs.resolvers');
+			
+			// Close progress dialog after each run
+			var queue = Zotero.ProgressQueues.get('findFile');
+			if (queue) {
+				queue.getDialog().close();
+			}
+		}.bind(this));
+		
+		after(() => {
+			Zotero.HTTP.request.restore();
+			Zotero.HTTP.download.restore();
+		});
+		
+		it("should add a PDF from a resolved DOI webpage", async function () {
+			var doi = doi1;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+
+			// doi.org, publisher, download
+			assert.equal(requestStub.callCount, 2);
+			assert.equal(downloadSpy.callCount, 1);
+			assert.isTrue(requestStub.getCall(0).calledWith('GET', 'https://doi.org/' + doi));
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+
+		it("should add a PDF from a DOI that resolves directly to the file", async function () {
+			var doi = doi5;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 1);
+			assert.isTrue(requestStub.calledWith('GET', 'https://doi.org/' + doi));
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should add a PDF from a resolved DOI from the Extra field", async function () {
+			var doi = doi1;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('extra', 'DOI: ' + doi);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			// doi.org, publisher, download
+			assert.equal(requestStub.callCount, 2);
+			assert.equal(downloadSpy.callCount, 1);
+			assert.isTrue(requestStub.getCall(0).calledWith('GET', 'https://doi.org/' + doi));
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+
+		it("should include a PubMed Central resolver from a PMCID", async function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('PMCID', 'PMC9262588');
+			await item.saveTx();
+
+			var resolvers = Zotero.Attachments.getFileResolvers(item, ['oa']);
+
+			assert.deepEqual(resolvers, [
+				{
+					pageURL: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9262588/',
+					accessMethod: 'oa'
+				}
+			]);
+		});
+
+		it("should include a PubMed Central resolver after DOI OA resolvers", async function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', '10.1093/nar/gkac173');
+			item.setField('PMCID', 'PMC9262588');
+			await item.saveTx();
+
+			var resolvers = Zotero.Attachments.getFileResolvers(item, ['oa']);
+
+			assert.lengthOf(resolvers, 2);
+			assert.isFunction(resolvers[0]);
+			assert.deepEqual(resolvers[1], {
+				pageURL: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9262588/',
+				accessMethod: 'oa'
+			});
+		});
+
+		it("should allow finding files for an item with a PMCID", async function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('PMCID', 'PMC9262588');
+			await item.saveTx();
+
+			assert.isTrue(Zotero.Attachments.canFindFileForItem(item));
+		});
+
+		it("should add a PDF from a URL", async function () {
+			var url = pageURL1;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('url', url);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			// URL, download
+			assert.equal(requestStub.callCount, 1);
+			assert.equal(downloadSpy.callCount, 1);
+			assert.isTrue(requestStub.calledWith('GET', url));
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should add an EPUB from a URL with a redirect", async function () {
+			var url = pageURL11;
+			var item = createUnsavedDataObject('item', { itemType: 'book' });
+			item.setField('title', 'Test');
+			item.setField('url', url);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			// URL, redirect target URL
+			assert.equal(requestStub.callCount, 2);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', url));
+			call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', epubURL));
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, epubURL);
+			assert.equal(json.contentType, 'application/epub+zip');
+			assert.equal(json.filename, 'Test.epub');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, epubSize);
+		});
+		
+		it("should add an OA PDF from a direct URL", async function () {
+			var doi = doi2;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 3);
+			assert.equal(downloadSpy.callCount, 1);
+			var call1 = requestStub.getCall(0);
+			assert.isTrue(call1.calledWith('GET', 'https://doi.org/' + doi));
+			var call2 = requestStub.getCall(1);
+			assert.isTrue(call2.calledWith('GET', pageURL2));
+			var call3 = requestStub.getCall(2);
+			assert.isTrue(call3.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should add an OA PDF from a page URL", async function () {
+			var doi = doi3;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 4);
+			assert.equal(downloadSpy.callCount, 1);
+			// Check the DOI (and get nothing)
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL2));
+			// Check the OA resolver and get page 3
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			// Check page 3 and find the download URL
+			call = requestStub.getCall(3);
+			assert.isTrue(call.calledWith('GET', pageURL3));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("shouldn't try the URL-field URL again if it was already checked as the redirected DOI URL", async function () {
+			var doi = doi4;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			item.setField('url', pageURL4);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 3);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL4));
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			
+			assert.isFalse(attachment);
+		});
+		
+		it("should wait between requests to the same domain", async function () {
+			var url1 = pageURL1;
+			var item1 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item1.setField('title', 'Test');
+			item1.setField('url', url1);
+			await item1.saveTx();
+			
+			var url2 = pageURL3;
+			var item2 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item2.setField('title', 'Test');
+			item2.setField('url', url2);
+			await item2.saveTx();
+			
+			var attachments = await Zotero.Attachments.addAvailableFiles([item1, item2]);
+			
+			// 2 URLs and 2 downloads
+			assert.equal(requestStub.callCount, 2);
+			assert.equal(downloadSpy.callCount, 2);
+			assert.isAbove(requestStubCallTimes[1] - requestStubCallTimes[0], 998);
+			// Make sure both items have attachments
+			assert.equal(item1.numAttachments(), 1);
+			assert.equal(item2.numAttachments(), 1);
+		});
+		
+		it("should wait between requests that resolve to the same domain", async function () {
+			// DOI URL resolves to 'website' domain with PDF
+			var url1 = doiPrefix + doi1;
+			var item1 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item1.setField('title', 'Test');
+			item1.setField('url', url1);
+			await item1.saveTx();
+			
+			// DOI URL resolves to 'website' domain without PDF
+			var url2 = doiPrefix + doi4;
+			var item2 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item2.setField('title', 'Test');
+			item2.setField('url', url2);
+			await item2.saveTx();
+			
+			// DOI URL resolves to 'website2' domain with PDF
+			var url3 = doiPrefix + doi6;
+			var item3 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item3.setField('title', 'Test');
+			item3.setField('url', url3);
+			await item3.saveTx();
+			
+			var attachments = await Zotero.Attachments.addAvailableFiles([item1, item2, item3]);
+			
+			assert.equal(requestStub.callCount, 6);
+			assert.equal(downloadSpy.callCount, 2);
+			assert.equal(requestStub.getCall(0).args[1], doiPrefix + doi1);
+			assert.equal(requestStub.getCall(1).args[1], pageURL1);
+			assert.equal(downloadSpy.getCall(0).args[0], pdfURL);
+
+			assert.equal(requestStub.getCall(2).args[1], doiPrefix + doi4);
+			// Should skip ahead to the next DOI
+			assert.equal(requestStub.getCall(3).args[1], doiPrefix + doi6);
+			// which is on a new domain
+			assert.equal(requestStub.getCall(4).args[1], pageURL8);
+			assert.equal(downloadSpy.getCall(1).args[0], pdfURL);
+			// and then return to make 'website' request for DOI 4
+			assert.equal(requestStub.getCall(5).args[1], pageURL4);
+
+			// 'website' requests should be a second apart
+			assert.isAbove(requestStubCallTimes[5] - requestStubCallTimes[1], 995);
+			
+			assert.equal(item1.numAttachments(), 1);
+			assert.equal(item2.numAttachments(), 0);
+			assert.equal(item3.numAttachments(), 1);
+		});
+		
+		it("should wait between requests to the same domain after a 429", async function () {
+			var url1 = pageURL9;
+			var item1 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item1.setField('title', 'Test');
+			item1.setField('url', url1);
+			await item1.saveTx();
+			
+			var url2 = pageURL3;
+			var item2 = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item2.setField('title', 'Test');
+			item2.setField('url', url2);
+			await item2.saveTx();
+			
+			var attachments = await Zotero.Attachments.addAvailableFiles([item1, item2]);
+			
+			// 429, URL9, download, URL3, download
+			assert.equal(requestStub.callCount, 3);
+			assert.equal(downloadSpy.callCount, 2);
+			assert.equal(requestStub.getCall(0).args[1], pageURL9);
+			assert.equal(requestStub.getCall(1).args[1], pageURL9);
+			assert.equal(downloadSpy.getCall(0).args[0], pdfURL);
+			assert.equal(requestStub.getCall(2).args[1], pageURL3);
+			assert.equal(downloadSpy.getCall(1).args[0], pdfURL);
+			assert.isAbove(requestStubCallTimes[1] - requestStubCallTimes[0], 1999);
+			// Make sure both items have attachments
+			assert.equal(item1.numAttachments(), 1);
+			assert.equal(item2.numAttachments(), 1);
+		});
+		
+		it("should follow a meta redirect", async function () {
+			var url = pageURL10;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('url', url);
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 2);
+			assert.equal(downloadSpy.callCount, 1);
+			assert.equal(requestStub.getCall(0).args[1], pageURL10)
+			assert.equal(requestStub.getCall(1).args[1], pageURL1)
+			assert.equal(downloadSpy.getCall(0).args[0], pdfURL);
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should stop after too many redirects to the same URL", async function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('url', 'http://website/redirect_loop1');
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			assert.isFalse(attachment);
+			assert.equal(requestStub.callCount, 7);
+		});
+		
+		it("should stop after too many total redirects for a given page URL", async function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('url', 'http://website/too_many_redirects1');
+			await item.saveTx();
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			assert.isFalse(attachment);
+			assert.equal(requestStub.callCount, 10);
+		});
+		
+		it("should handle a custom resolver in HTML mode", async function () {
+			var doi = doi4;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			
+			var resolvers = [{
+				name: 'Custom',
+				method: 'get',
+				url: 'http://website/{doi}',
+				mode: 'html',
+				selector: '#pdf-link',
+				attribute: 'href'
+			}];
+			Zotero.Prefs.set('findPDFs.resolvers', JSON.stringify(resolvers));
+			
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+
+			assert.equal(requestStub.callCount, 4);
+			assert.equal(downloadSpy.callCount, 1);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			var call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL4));
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			call = requestStub.getCall(3);
+			assert.isTrue(call.calledWith('GET', pageURL5));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should handle a custom resolver with a relative PDF path in HTML mode", async function () {
+			var doi = doi4;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			
+			var resolvers = [{
+				name: 'Custom',
+				method: 'get',
+				// Registered with httpd.js in beforeEach()
+				url: baseURL + "{doi}",
+				mode: 'html',
+				selector: '#pdf-link',
+				attribute: 'href'
+			}];
+			Zotero.Prefs.set('findPDFs.resolvers', JSON.stringify(resolvers));
+			
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 4);
+			assert.equal(downloadSpy.callCount, 1);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			var call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL4));
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			var call = requestStub.getCall(3);
+			assert.isTrue(call.calledWith('GET', baseURL + doi4));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should handle a custom resolver in JSON mode with URL strings", async function () {
+			var doi = doi4;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			
+			var resolvers = [{
+				name: 'Custom',
+				method: 'get',
+				url: 'http://website/{doi}/json',
+				mode: 'json',
+				selector: '.oa_locations.url_for_pdf'
+			}];
+			Zotero.Prefs.set('findPDFs.resolvers', JSON.stringify(resolvers));
+			
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 4);
+			assert.equal(downloadSpy.callCount, 1);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL4));
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			call = requestStub.getCall(3);
+			assert.isTrue(call.calledWith('GET', pageURL6));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+		
+		it("should handle a custom resolver in JSON mode with mapped properties", async function () {
+			var doi = doi4;
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			item.setField('title', 'Test');
+			item.setField('DOI', doi);
+			await item.saveTx();
+			
+			var resolvers = [{
+				name: 'Custom',
+				method: 'get',
+				url: 'http://website/{doi}/json',
+				mode: 'json',
+				selector: '.oa_locations',
+				mappings: {
+					url: 'url_for_pdf',
+					pageURL: 'url_for_landing_page',
+				}
+			}];
+			Zotero.Prefs.set('findPDFs.resolvers', JSON.stringify(resolvers));
+			
+			var attachment = await Zotero.Attachments.addAvailableFile(item);
+			
+			assert.equal(requestStub.callCount, 5);
+			assert.equal(downloadSpy.callCount, 1);
+			var call = requestStub.getCall(0);
+			assert.isTrue(call.calledWith('GET', 'https://doi.org/' + doi));
+			call = requestStub.getCall(1);
+			assert.isTrue(call.calledWith('GET', pageURL4));
+			call = requestStub.getCall(2);
+			assert.isTrue(call.calledWith('POST', ZOTERO_CONFIG.SERVICES_URL + 'oa/search'));
+			call = requestStub.getCall(3);
+			assert.isTrue(call.calledWith('GET', pageURL6));
+			call = requestStub.getCall(4);
+			assert.isTrue(call.calledWith('GET', pageURL1));
+			
+			assert.ok(attachment);
+			var json = attachment.toJSON();
+			assert.equal(json.url, pdfURL);
+			assert.equal(json.contentType, 'application/pdf');
+			assert.equal(json.filename, 'Test.pdf');
+			assert.equal(await OS.File.stat(attachment.getFilePath()).size, pdfSize);
+		});
+	});
+	
+	describe("#getFileBaseNameFromItem()", function () {
+		var item, itemManyAuthors, itemPatent, itemIncomplete, itemBookSection, itemSpaces, itemSuffixes, itemKeepHyphens,
+			itemNoRepeatedHyphens, itemNoRepeatedUnderscores, itemLowerCase, itemMixedCase, itemUnicode;
+
+		before(() => {
+			item = createUnsavedDataObject('item', { title: 'Lorem Ipsum', itemType: 'journalArticle', libraryID: 1 });
+			item.setCreators([
+				{ firstName: 'Foocius', lastName: 'Barius', creatorType: 'author' },
+				{ firstName: 'Bazius', lastName: 'Pixelus', creatorType: 'author' }
+			]);
+			item.setField('date', "1975-10-15");
+			item.setField('publicationTitle', 'Best Publications Place');
+			item.setField('journalAbbreviation', 'BPP');
+			item.setField('issue', '42');
+			item.setField('pages', '321');
+			item.setField('accessDate', '2009-02-07T06:15:10Z');
+
+			itemBookSection = createUnsavedDataObject('item', { title: 'Book Section', itemType: 'bookSection', libraryID: 1 });
+			itemBookSection.setField('bookTitle', 'Book Title');
+
+			itemManyAuthors = createUnsavedDataObject('item', { title: 'Has Many Authors', itemType: 'book', libraryID: 1 });
+			itemManyAuthors.setCreators([
+				{ firstName: 'First', lastName: 'Author', creatorType: 'author' },
+				{ firstName: 'Second', lastName: 'Creator', creatorType: 'author' },
+				{ firstName: 'Third', lastName: 'Person', creatorType: 'author' },
+				{ firstName: 'Final', lastName: 'Writer', creatorType: 'author' },
+				{ firstName: 'Some', lastName: 'Editor1', creatorType: 'editor' },
+				{ firstName: 'Other', lastName: 'ProEditor2', creatorType: 'editor' },
+				{ firstName: 'Last', lastName: 'SuperbEditor3', creatorType: 'editor' },
+			]);
+			itemManyAuthors.setField('date', "2000-01-02");
+			itemManyAuthors.setField('publisher', 'Awesome House');
+			itemManyAuthors.setField('volume', '3');
+
+			itemPatent = createUnsavedDataObject('item', { title: 'Retroencabulator', itemType: 'patent', libraryID: 1 });
+			itemPatent.setCreators([
+				{ name: 'AcmeCorp', creatorType: 'inventor' },
+				{ firstName: 'Wile', lastName: 'E', creatorType: 'contributor' },
+				{ firstName: 'Road', lastName: 'R', creatorType: 'contributor' },
+			]);
+			itemPatent.setField('date', '1952-05-10');
+			itemPatent.setField('number', 'HBK-8539b');
+			itemPatent.setField('assignee', 'Fast FooBar');
+			itemIncomplete = createUnsavedDataObject('item', { title: 'Incomplete', itemType: 'preprint', libraryID: 1 });
+			
+			itemSpaces = createUnsavedDataObject('item', { title: ' Spaces! ', itemType: 'book', libraryID: 1 });
+			itemSuffixes = createUnsavedDataObject('item', { title: '-Suffixes-', itemType: 'book', libraryID: 1 });
+			itemSuffixes.setField('date', "1999-07-15");
+			itemKeepHyphens = createUnsavedDataObject('item', { title: 'keep--hyphens', itemType: 'journalArticle', libraryID: 1 });
+			itemKeepHyphens.setField('publicationTitle', "keep");
+			itemKeepHyphens.setField('issue', 'hyphens');
+			itemKeepHyphens.setField('date', "1999-07-15");
+			itemNoRepeatedHyphens = createUnsavedDataObject('item', { title: 'no - repeated - hyphens', itemType: 'journalArticle', libraryID: 1 });
+			itemNoRepeatedHyphens.setField('publicationTitle', "no- repeated- hyphens");
+			itemNoRepeatedUnderscores = createUnsavedDataObject('item', { title: 'no _ repeated _ underscores', itemType: 'journalArticle', libraryID: 1 });
+			itemNoRepeatedUnderscores.setField('publicationTitle', "no_ repeated_ underscores");
+			itemLowerCase = createUnsavedDataObject('item', { title: 'lower case title', itemType: 'journalArticle', libraryID: 1 });
+			itemMixedCase = createUnsavedDataObject('item', { title: 'Old MacDonald Had a Farm', itemType: 'journalArticle', libraryID: 1 });
+			itemUnicode = createUnsavedDataObject('item', { title: '金毛猎犬 - Golden Retriever', itemType: 'journalArticle', libraryID: 1 });
+		});
+		
+		it('should strip HTML tags from title', function () {
+			var htmlItem = createUnsavedDataObject('item', { title: 'Foo <i>Bar</i> Foo<br><br/><br />Bar' });
+			htmlItem.libraryID = 1;
+			var str = Zotero.Attachments.getFileBaseNameFromItem(htmlItem, { formatString: '{{ title }}' });
+			assert.equal(str, 'Foo Bar Foo Bar');
+		});
+
+		it('should accept basic formating options', function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: 'FOO{{year}}BAR' }),
+				'FOO1975BAR'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{firstCreator suffix=" - "}}{{year suffix=" - "}}{{title truncate="50" }}' }),
+				'Barius and Pixelus - 1975 - Lorem Ipsum'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{firstCreator suffix=" - " replaceFrom=" *and *" replaceTo="&"}}{{year suffix=" - " replaceFrom="(\\d{2})(\\d{2})" replaceTo="$2"}}{{title truncate="50" replaceFrom=".m" replaceTo="a"}} - {{title truncate="50" replaceFrom=".m" replaceTo="a" regexOpts="g"}}' }),
+				'Barius&Pixelus - 75 - Lora Ipsum - Lora Ipsa'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{year suffix="-"}}{{firstCreator truncate="10" suffix="-"}}{{title truncate="5" }}' }),
+				'1975-Barius and-Lorem'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: 'foo {{year}} bar {{year prefix="++" truncate="2" suffix="++"}}' }),
+				'foo 1975 bar ++19++'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{firstCreator suffix=" - "}}{{year suffix=" - "}}{{title}}' }),
+				'Author et al. - 2000 - Has Many Authors'
+			);
+		});
+
+		it('should trim whitespaces from a value', function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemSpaces, { formatString: '{{ title }}' }),
+				'Spaces!'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{title truncate="6"}}' }),
+				'Lorem'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{firstCreator truncate="7"}}' }),
+				'Barius'
+			);
+			// but preserve if it's configured as a prefix or suffix
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{title prefix=" " suffix=" "}}' }),
+				' Lorem Ipsum '
+			);
+		});
+
+		it('should offer a range of options for composing creators', async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="1" }}' }),
+				'Barius'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="1" truncate="3" }}' }),
+				'Bar'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="5" join=" " }}' }),
+				'Barius Pixelus'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authors max="3" join=" " }}' }),
+				'Author Creator Person'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemPatent, { formatString: '{{ authors }}' }),
+				'AcmeCorp'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authors max="2" name="family" initialize="family" join=" " initialize-with="" }}' }),
+				'A C'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemPatent, { formatString: '{{ authors max="2" name="family" initialize="family" initialize-with="" }}' }),
+				'A'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="1" name="full" initialize="full" name-part-separator="" initialize-with="" }}' }),
+				'FB'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authors max="3" name="full" initialize="full" name-part-separator="" join=" " initialize-with="" }}' }),
+				'FA SC TP'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="1" name="family-given" initialize="given" name-part-separator="" initialize-with="" }}' }),
+				'BariusF'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authors max="2" name="family-given" initialize="given" join=" " name-part-separator="" initialize-with="" }}' }),
+				'AuthorF CreatorS'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ editors }}test' }),
+				'test'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editors max="1" }}' }),
+				'Editor1'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editors max="5" join=" " }}' }),
+				'Editor1 ProEditor2 SuperbEditor3'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editors max="2" name="family" initialize="family" join=" " initialize-with="" }}' }),
+				'E P'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editors max="1" name="full" initialize="full" name-part-separator="" initialize-with="" }}' }),
+				'SE'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editors max="1" name="family-given" initialize="given" name-part-separator="" initialize-with="" }}' }),
+				'Editor1S'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ authors max="3" name="full" initialize="given" }}' }),
+				'F. Barius, B. Pixelus'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ creators case="upper" }}' }),
+				'BARIUS, PIXELUS'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authors max="2" }}' }),
+				'Author, Creator'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ creators max="3" join=" " name="given" }}' }),
+				'First Second Third'
+			);
+		});
+
+		it('should accept case parameter', async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="upper" }}' }),
+				'BEST PUBLICATIONS PLACE'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="lower" }}' }),
+				'best publications place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="title" }}' }),
+				'Best Publications Place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="hyphen" }}' }),
+				'best-publications-place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="camel" }}' }),
+				'bestPublicationsPlace'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="snake" }}' }),
+				'best_publications_place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle case="pascal" }}' }),
+				'BestPublicationsPlace'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemLowerCase, { formatString: '{{ title case="pascal" }}' }),
+				'LowerCaseTitle'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemMixedCase, { formatString: '{{ title case="pascal" }}' }),
+				'OldMacdonaldHadAFarm'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedHyphens, { formatString: '{{ title case="camel" }}' }),
+				'noRepeatedHyphens'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedHyphens, { formatString: '{{ title case="pascal" }}' }),
+				'NoRepeatedHyphens'
+			);
+		});
+
+		it('should work with unicode characters', async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemUnicode, { formatString: '{{ title case="camel" }}' }),
+				'金毛猎犬GoldenRetriever'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemUnicode, { formatString: '{{ title case="pascal" }}' }),
+				'金毛猎犬GoldenRetriever'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemUnicode, { formatString: '{{ title case="hyphen" }}' }),
+				'金毛猎犬-golden-retriever'
+			);
+			// By default we include `v flag` to support unicode features
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemUnicode, { formatString: '{{ title replaceFrom="(\\p{L}+)" replaceTo="Dog" }}' }),
+				'Dog - Golden Retriever'
+			);
+			// But it's possible to override regexOpts and disable unicode features
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemUnicode, { formatString: '{{ title replaceFrom="(\\p{L}+)" replaceTo="Dog" regexOpts="i" }}' }),
+				'金毛猎犬 - Golden Retriever'
+			);
+		});
+
+		it('should not create repeated characters when converting case to hyphen or snake', async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedHyphens, { formatString: '{{ title case="hyphen" }}' }),
+				'no-repeated-hyphens'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedHyphens, { formatString: '{{ publicationTitle case="hyphen" }}' }),
+				'no-repeated-hyphens'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedUnderscores, { formatString: '{{ title case="snake" }}' }),
+				'no_repeated_underscores'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemNoRepeatedUnderscores, { formatString: '{{ publicationTitle case="snake" }}' }),
+				'no_repeated_underscores'
+			);
+		});
+
+		it('should accept itemType, attachmentTitle or any other field', function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ itemType localize="true" }}' }),
+				'Journal Article'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ publicationTitle }}' }),
+				'Best Publications Place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ journalAbbreviation }}' }),
+				'BPP'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ publisher }}' }),
+				'Awesome House'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ volume }}' }),
+				'3'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ issue }}' }),
+				'42'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ pages }}' }),
+				'321'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemPatent, { formatString: '{{ number }}' }),
+				'HBK-8539b'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemPatent, { formatString: '{{ assignee }}' }),
+				'Fast FooBar'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ attachmentTitle }}', attachmentTitle: 'Full Text' }),
+				'Full Text'
+			);
+		});
+
+		it("should support simple logic in template syntax", function () {
+			const template = '{{ if itemType == "journalArticle" }}j-{{ publicationTitle case="hyphen" }}{{ elseif itemType == "patent" }}p-{{ number case="hyphen" }}{{ else }}o-{{ title case="hyphen" }}{{ endif }}';
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, template), 'j-best-publications-place'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemPatent, template), 'p-hbk-8539b'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, template), 'o-has-many-authors'
+			);
+		});
+
+		it("should skip missing fields", async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemIncomplete, { formatString: '{{ authors prefix = "a" suffix="-" }}{{ publicationTitle case="hyphen" suffix="-" }}{{ title }}' }),
+				'Incomplete'
+			);
+		});
+
+		it("should recognized base-mapped fields", function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemBookSection, { formatString: '{{ bookTitle case="snake" }}' }),
+				'book_title'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemBookSection, { formatString: '{{ publicationTitle case="snake" }}' }),
+				'book_title'
+			);
+		});
+
+		it("should trim spaces and remove new lines from the template string", function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemBookSection, { formatString: ' {{ bookTitle case="snake" }}\n{{ bookTitle case="hyphen" prefix="-" }}' }),
+				'book_title-book-title'
+			);
+		});
+
+		it("should suppress suffixes where they would create a repeat character", function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ title suffix="-" }}{{ year prefix="-" }}' }),
+				'Lorem Ipsum-1975'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemSuffixes, { formatString: '{{ title prefix="-" suffix="-" }}{{ year }}' }),
+				'-Suffixes-1999'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemSuffixes, { formatString: '{{ title suffix="-" }}{{ year prefix="-" }}' }),
+				'-Suffixes-1999'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemKeepHyphens, { formatString: '{{ title suffix="-" }}{{ year prefix="-" }}' }),
+				'keep--hyphens-1999'
+			);
+			// keep--hyphens is a title and should be kept unchanged but "keep" and "hyphens" are fields
+			// separated by prefixes and suffixes where repeated characters should be suppressed
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemKeepHyphens, { formatString: '{{ title suffix="-" }}{{ publicationTitle suffix="-" }}{{ issue prefix="-" }}' }),
+				'keep--hyphens-keep-hyphens'
+			);
+			// keep--hyphens is provided as literal part of the template and should be kept unchanged
+			// but "keep" and "hyphens" are fields separated by prefixes and suffixes where repeated
+			// characters should be suppressed. Finally "keep--hyphens" title is appended at the end
+			// which should also be kept as is.
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemKeepHyphens, { formatString: 'keep--hyphens-{{ publicationTitle prefix="-" suffix="-" }}{{ issue prefix="-" suffix="-" }}-keep--hyphens-{{ publicationTitle suffix="-" }}test{{ title prefix="-" }}' }),
+				'keep--hyphens-keep-hyphens-keep--hyphens-keep-test-keep--hyphens'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemSuffixes, { formatString: '{{ title prefix="/" suffix="\\" }}{{ year }}' }),
+				'-Suffixes-1999'
+			);
+		});
+
+		it("should be possible to test attachmentTitle", function () {
+			const template = `{{ if {{ attachmentTitle match="^(full.*|submitted.*|accepted.*)$" }} }}
+{{ firstCreator suffix=" - " }}{{ year suffix=" - " }}{{ title truncate="100" }}
+{{ else }}
+{{ attachmentTitle replaceFrom="\\.pdf|\\.epub|\\.png" }}
+{{ endif }}`;
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: template, attachmentTitle: 'Full Text' }),
+				'Barius and Pixelus - 1975 - Lorem Ipsum'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemBookSection, { formatString: template, attachmentTitle: 'Other Attachment.png' }),
+				'Other Attachment'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemBookSection, { formatString: `{{ attachmentTitle start = "6" truncate = "4" }}`, attachmentTitle: 'Other Attachment.png' }),
+				'Atta'
+			);
+		});
+
+		it("should be possible to count authors", function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ authorsCount }}' }),
+				'4'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ editorsCount }}' }),
+				'3'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: '{{ creatorsCount }}' }),
+				'7'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: 'test{{ if authorsCount > 4 }}{{ authorsCount prefix="-" }}{{ endif }}' }),
+				'test'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: 'test{{ if authorsCount >= 4 }}{{ authorsCount prefix="-" }}{{ endif }}' }),
+				'test-4'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: 'test{{ if editorsCount <= 4 }}{{ editorsCount prefix="-" }}{{ endif }}' }),
+				'test-3'
+			);
+		});
+
+		it("should be possible to test number of authors using equality operator", function () {
+			const template = `{{ if {{ authorsCount == "2" }} }}two{{ else }}not two{{ endif }}`;
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: template }),
+				'not two'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: template }),
+				'two'
+			);
+		});
+
+		it("should be possible to test number of authors using relational operators", function () {
+			const template = `{{ if {{ authorsCount > "2" }} }}
+{{ authors max="1" suffix=" et al" }}
+{{ else }}
+{{ authors join=" & " }}
+{{ endif }}`;
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemManyAuthors, { formatString: template }),
+				'Author et al'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: template }),
+				'Barius & Pixelus'
+			);
+		});
+
+		it("should handle zero in relational operators", function () {
+			const template = '{{ if {{ authorsCount > 0 }} }}more than zero{{ elseif {{ authorsCount <= 0 }} }}zero{{ endif }}';
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: template }),
+				'more than zero'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(itemIncomplete, { formatString: template }),
+				'zero'
+			);
+		});
+
+		it("should perform regex in a case-insensitive way, unless configured otherwise", function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ title match="lorem" }}' }),
+				'Lorem'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ title match="lorem" regexOpts="" }}' }),
+				'_' // template formatting results in an empty string, "_" is returned to make it a valid file name
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ title replaceFrom="lorem" replaceTo="Foobar" }}' }),
+				'Foobar Ipsum'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ title replaceFrom="lorem" replaceTo="foobar" regexOpts="" }}' }),
+				'Lorem Ipsum'
+			);
+		});
+
+		it('should output the accessDate according to the declared timezone', async function () {
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ accessDate timeZone="America/New_York" replaceFrom=":" replaceTo="-" regexOpts="g" }}' }),
+				'2009-02-07 01-15-10'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ accessDate timeZone="Europe/Berlin" replaceFrom=":" replaceTo="-" regexOpts="g" }}' }),
+				'2009-02-07 07-15-10'
+			);
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ accessDate timeZone="America/Los_Angeles" truncate="10" }}' }),
+				'2009-02-06'
+			);
+			// timeZone is optional; UTC date, as stored, is returned if not specified
+			assert.equal(
+				Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: '{{ accessDate replaceFrom=":" replaceTo="-" regexOpts="g" }}' }),
+				'2009-02-07 06-15-10'
+			);
+		});
+
+		it("should convert old attachmentRenameFormatString to use new attachmentRenameTemplate syntax", function () {
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{%c - }{%y - }{%t{50}}'),
+				'{{ firstCreator suffix=" - " }}{{ year suffix=" - " }}{{ title truncate="50" }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{ - %y - }'),
+				'{{ year prefix=" - " suffix=" - " }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{%y{2}00}'),
+				'{{ year truncate="2" suffix="00" }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{%c5 - }'),
+				'{{ firstCreator suffix="5 - " }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{%c-2 - }'),
+				'{{ firstCreator suffix="-2 - " }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{%t5 - }'),
+				'{{ title suffix="5 - " }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('{++%t{10}--}'),
+				'{{ title truncate="10" prefix="++" suffix="--" }}'
+			);
+			assert.equal(
+				Zotero.Prefs.convertLegacyAttachmentRenameFormatString('foo{%c}-{%t{10}}-{%y{2}00}'),
+				'foo{{ firstCreator }}-{{ title truncate="10" }}-{{ year truncate="2" suffix="00" }}'
+			);
+		});
+
+		it("should strip bidi isolates from firstCreator", async function () {
+			var item = createUnsavedDataObject('item',
+				{ creators: [{ name: 'Foo', creatorType: 'author' }, { name: 'Bar', creatorType: 'author' }], libraryID: 1 });
+			var str = Zotero.Attachments.getFileBaseNameFromItem(item);
+			assert.equal(str, Zotero.getString('general.andJoiner', ['Foo', 'Bar']) + ' - ');
+		});
+
+		it("should fall back to the default template when the synced template is invalid", async function () {
+			const { DEFAULT_ATTACHMENT_RENAME_TEMPLATE } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
+			let libraryID = Zotero.Libraries.userLibraryID;
+			let expected = Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: DEFAULT_ATTACHMENT_RENAME_TEMPLATE });
+			await Zotero.SyncedSettings.set(libraryID, 'attachmentRenameTemplate', '{{ title');
+			try {
+				assert.equal(Zotero.Attachments.getFileBaseNameFromItem(item), expected);
+			}
+			finally {
+				await Zotero.SyncedSettings.clear(libraryID, 'attachmentRenameTemplate');
+			}
+		});
+
+		it("should fall back to the default template when the synced template is empty", async function () {
+			const { DEFAULT_ATTACHMENT_RENAME_TEMPLATE } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
+			let libraryID = Zotero.Libraries.userLibraryID;
+			let expected = Zotero.Attachments.getFileBaseNameFromItem(item, { formatString: DEFAULT_ATTACHMENT_RENAME_TEMPLATE });
+			for (let empty of ['', '   ', '\n\t']) {
+				await Zotero.SyncedSettings.set(libraryID, 'attachmentRenameTemplate', empty);
+				try {
+					assert.equal(
+						Zotero.Attachments.getAttachmentRenameTemplate(libraryID),
+						DEFAULT_ATTACHMENT_RENAME_TEMPLATE,
+						`empty synced template ${JSON.stringify(empty)} must resolve to the default`
+					);
+					// A non-empty basename proves the empty template never reached the engine
+					assert.equal(Zotero.Attachments.getFileBaseNameFromItem(item), expected);
+				}
+				finally {
+					await Zotero.SyncedSettings.clear(libraryID, 'attachmentRenameTemplate');
+				}
+			}
+		});
+
+		it("should validate the synced template as the engine renders it, ignoring newlines inside a tag", async function () {
+			// The engine strips newlines before rendering, so a newline inside a tag (here splitting
+			// `endif`) must be validated against the stripped form and not force the default template
+			let libraryID = Zotero.Libraries.userLibraryID;
+			await Zotero.SyncedSettings.set(libraryID, 'attachmentRenameTemplate', '{{if title}}a{{end\nif}}');
+			try {
+				assert.equal(Zotero.Attachments.getFileBaseNameFromItem(item), 'a');
+			}
+			finally {
+				await Zotero.SyncedSettings.clear(libraryID, 'attachmentRenameTemplate');
+			}
+		});
+	});
+	
+	describe("#getBaseDirectoryRelativePath()", function () {
+		it("should handle base directory at Windows drive root", function () {
+			Zotero.Prefs.set('baseAttachmentPath', "C:\\");
+			var path = Zotero.Attachments.getBaseDirectoryRelativePath("C:\\file.txt");
+			assert.equal(path, Zotero.Attachments.BASE_PATH_PLACEHOLDER + "file.txt");
+		});
+		
+		it("should convert backslashes to forward slashes", function () {
+			Zotero.Prefs.set('baseAttachmentPath', "C:\\foo\\bar");
+			var path = Zotero.Attachments.getBaseDirectoryRelativePath("C:\\foo\\bar\\test\\file.txt");
+			assert.equal(path, Zotero.Attachments.BASE_PATH_PLACEHOLDER + "test/file.txt");
+		});
+	});
+	
+	describe("#getTotalFileSize", function () {
+		it("should return the size for a single-file attachment", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file
+			});
+			
+			assert.equal(((await Zotero.Attachments.getTotalFileSize(item))), file.fileSize);
+		})
+	})
+	
+	describe("#hasMultipleFiles and #getNumFiles()", function () {
+		it("should return false and 1 for a single file", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file
+			});
+			
+			assert.isFalse(await Zotero.Attachments.hasMultipleFiles(item));
+			assert.equal(((await Zotero.Attachments.getNumFiles(item))), 1);
+		})
+		
+		it("should return false and 1 for single HTML file with hidden file", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.html');
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file
+			});
+			var path = OS.Path.join(OS.Path.dirname(item.getFilePath()), '.zotero-ft-cache');
+			await Zotero.File.putContentsAsync(path, "");
+			
+			assert.isFalse(await Zotero.Attachments.hasMultipleFiles(item));
+			assert.equal(((await Zotero.Attachments.getNumFiles(item))), 1);
+		})
+		
+		it("should return true and 2 for multiple files", async function () {
+			var file = getTestDataDirectory();
+			file.append('test.html');
+			
+			// Create attachment and compare content
+			var item = await Zotero.Attachments.importFromFile({
+				file: file
+			});
+			var path = OS.Path.join(OS.Path.dirname(item.getFilePath()), 'test.png');
+			await Zotero.File.putContentsAsync(path, "");
+			
+			assert.isTrue(await Zotero.Attachments.hasMultipleFiles(item));
+			assert.equal(((await Zotero.Attachments.getNumFiles(item))), 2);
+		})
+	});
+	
+	describe("#createDirectoryForItem()", function () {
+		it("should create missing directory", async function () {
+			var item = await importFileAttachment('test.png');
+			var path = OS.Path.dirname(item.getFilePath());
+			await OS.File.removeDir(path);
+			await Zotero.Attachments.createDirectoryForItem(item);
+			assert.isTrue(await OS.File.exists(path));
+		});
+		
+		it("should delete all existing files", async function () {
+			var item = await importFileAttachment('test.html');
+			var path = OS.Path.dirname(item.getFilePath());
+			var files = ['a', 'b', 'c', 'd'];
+			for (let file of files) {
+				await Zotero.File.putContentsAsync(OS.Path.join(path, file), file);
+			}
+			await Zotero.Attachments.createDirectoryForItem(item);
+			assert.isTrue(await Zotero.File.directoryIsEmpty(path));
+			assert.isTrue(await OS.File.exists(path));
+		});
+		
+		it("should handle empty directory", async function () {
+			var item = await importFileAttachment('test.png');
+			var file = item.getFilePath();
+			var dir = OS.Path.dirname(item.getFilePath());
+			await OS.File.remove(file);
+			await Zotero.Attachments.createDirectoryForItem(item);
+			assert.isTrue(await OS.File.exists(dir));
+		});
+	});
+	
+	describe("#convertLinkedFileToStoredFile()", function () {
+		it("should copy a linked file to a stored file", async function () {
+			var item = await createDataObject('item');
+			var relatedItem = await createDataObject('item');
+			
+			var originalFile = OS.Path.join(getTestDataDirectory().path, 'test.pdf');
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: originalFile,
+				title: 'Title',
+				parentItemID: item.id
+			});
+			attachment.setNote('Note');
+			attachment.setTags([{ tag: 'Tag' }]);
+			attachment.addRelatedItem(relatedItem);
+			await attachment.saveTx();
+			relatedItem.addRelatedItem(attachment);
+			await relatedItem.saveTx();
+			// Make sure we're indexed
+			await Zotero.Fulltext.indexItems([attachment.id]);
+			
+			var newAttachment = await Zotero.Attachments.convertLinkedFileToStoredFile(attachment);
+			
+			assert.isFalse(Zotero.Items.exists(attachment.id));
+			assert.isTrue(await OS.File.exists(originalFile));
+			assert.equal(newAttachment.attachmentLinkMode, Zotero.Attachments.LINK_MODE_IMPORTED_FILE);
+			assert.equal(newAttachment.attachmentContentType, 'application/pdf');
+			assert.isTrue(await newAttachment.fileExists());
+			assert.equal(newAttachment.getField('title'), 'Title');
+			assert.equal(newAttachment.note, 'Note');
+			assert.sameDeepMembers(newAttachment.getTags(), [{ tag: 'Tag' }]);
+			assert.sameMembers(newAttachment.relatedItems, [relatedItem.key]);
+			assert.sameMembers(relatedItem.relatedItems, [newAttachment.key]);
+			assert.isTrue(await OS.File.exists(Zotero.Fulltext.getItemCacheFile(newAttachment).path));
+			assert.equal(
+				await Zotero.Fulltext.getIndexedState(newAttachment),
+				Zotero.Fulltext.INDEX_STATE_INDEXED
+			);
+		});
+		
+		
+		it("should move annotations to stored file", async function () {
+			var item = await createDataObject('item');
+			var relatedItem = await createDataObject('item');
+			
+			var originalFile = OS.Path.join(getTestDataDirectory().path, 'test.pdf');
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: originalFile,
+				title: 'Title',
+				parentItemID: item.id
+			});
+			var annotation1 = await createAnnotation('highlight', attachment);
+			var annotation2 = await createAnnotation('note', attachment);
+			
+			var newAttachment = await Zotero.Attachments.convertLinkedFileToStoredFile(attachment);
+			
+			assert.isFalse(Zotero.Items.exists(attachment.id));
+			assert.isTrue(Zotero.Items.exists(annotation1.id));
+			assert.isTrue(Zotero.Items.exists(annotation2.id));
+			
+			var annotations = newAttachment.getAnnotations();
+			assert.lengthOf(annotations, 2);
+		});
+		
+		
+		it("should move a linked file to a stored file with `move: true`", async function () {
+			var item = await createDataObject('item');
+			
+			var originalFile = OS.Path.join(Zotero.getTempDirectory().path, 'test.png');
+			await OS.File.copy(
+				OS.Path.join(getTestDataDirectory().path, 'test.png'),
+				originalFile
+			);
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: originalFile,
+				parentItemID: item.id
+			});
+			
+			var newAttachment = await Zotero.Attachments.convertLinkedFileToStoredFile(
+				attachment,
+				{
+					move: true
+				}
+			);
+			
+			assert.isFalse(Zotero.Items.exists(attachment.id));
+			assert.isFalse(await OS.File.exists(originalFile));
+			assert.equal(newAttachment.attachmentLinkMode, Zotero.Attachments.LINK_MODE_IMPORTED_FILE);
+			assert.isTrue(await newAttachment.fileExists());
+		});
+	});
+
+	describe("#renameFile()", function () {
+		let { renameFileFromParent } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
+
+		it("should rename a linked file", async function () {
+			var oldFilename = 'old.png';
+			var newFilename = 'Test.png';
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var tmpDir = await getTempDirectory();
+			var oldFile = OS.Path.join(tmpDir, oldFilename);
+			await OS.File.copy(file.path, oldFile);
+
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Test');
+			await item.saveTx();
+
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: oldFile,
+				parentItemID: item.id
+			});
+
+			await renameFileFromParent(attachment);
+
+			assert.equal(attachment.attachmentFilename, newFilename);
+			var path = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(path), newFilename);
+			await OS.File.exists(path);
+		});
+
+		it("should use unique name for linked file if target name is taken", async function () {
+			var oldFilename = 'old.png';
+			var newFilename = 'Test.png';
+			var uniqueFilename = 'Test 2.png';
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var tmpDir = await getTempDirectory();
+			var oldFile = OS.Path.join(tmpDir, oldFilename);
+			await OS.File.copy(file.path, oldFile);
+			// Create file with target filename
+			await Zotero.File.putContentsAsync(OS.Path.join(tmpDir, newFilename), '');
+
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Test');
+			await item.saveTx();
+
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: oldFile,
+				parentItemID: item.id
+			});
+			await renameFileFromParent(attachment);
+
+			assert.equal(attachment.attachmentFilename, uniqueFilename);
+			var path = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(path), uniqueFilename)
+			await OS.File.exists(path);
+		});
+
+		it("should use unique name for linked file without extension if target name is taken", async function () {
+			var oldFilename = 'old';
+			var newFilename = 'Test.png';
+			var uniqueFilename = 'Test 2.png';
+			var file = getTestDataDirectory();
+			file.append('test.png');
+			var tmpDir = await getTempDirectory();
+			var oldFile = OS.Path.join(tmpDir, oldFilename);
+			await OS.File.copy(file.path, oldFile);
+			// Create file with target filename
+			await Zotero.File.putContentsAsync(OS.Path.join(tmpDir, newFilename), '');
+
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Test');
+			await item.saveTx();
+
+			var attachment = await Zotero.Attachments.linkFromFile({
+				file: oldFile,
+				parentItemID: item.id
+			});
+
+			await renameFileFromParent(attachment);
+
+			assert.equal(attachment.attachmentFilename, uniqueFilename);
+			var path = await attachment.getFilePathAsync();
+			assert.equal(OS.Path.basename(path), uniqueFilename);
+			await OS.File.exists(path);
+		});
+
+		it("shouldn't change attachment title if different from filename", async function () {
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			var attachment = await importFileAttachment('test.png', { parentItemID: item.id });
+			attachment.setField('title', 'Title');
+
+			await attachment.saveTx();
+			await renameFileFromParent(attachment);
+
+			assert.equal(attachment.attachmentFilename, 'Title.png');
+			assert.equal(attachment.getField('title'), 'Title');
+		});
+
+		it("should change attachment title if previously set to the file basename by setAutoAttachmentTitle()", async function () {
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			var attachment = await importFileAttachment('test.png', {
+				parentItemID: item.id,
+				// Pretend this was, e.g., a secondary attachment before, and it got titled
+				// after the file basename
+				title: 'test'
+			});
+			assert.equal(attachment.getField('title'), 'test');
+			await renameFileFromParent(attachment);
+			assert.equal(attachment.attachmentFilename, 'Title.png');
+			// After a manual rename, the title becomes the default for this type
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-image'));
+		});
+
+		it("should change attachment title if file basename matches the title", async function () {
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			var attachment = await importFileAttachment('test.pdf', {
+				parentItemID: item.id,
+				title: "test"
+			});
+			assert.equal(attachment.attachmentFilename, 'test.pdf');
+			assert.equal(attachment.getField('title'), 'test');
+			await renameFileFromParent(attachment);
+			assert.equal(attachment.attachmentFilename, 'Title.pdf');
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-pdf'));
+		});
+
+		it("should change attachment title if file matches the title exactly", async function () {
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			var attachment = await importFileAttachment('test.pdf', {
+				parentItemID: item.id,
+				title: "test.pdf"
+			});
+			assert.equal(attachment.attachmentFilename, 'test.pdf');
+			assert.equal(attachment.getField('title'), 'test.pdf');
+			await renameFileFromParent(attachment);
+			assert.equal(attachment.attachmentFilename, 'Title.pdf');
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-pdf'));
+		});
+
+		it("should change attachment title if file matches the title, case-insensitive", async function () {
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			var attachment = await importFileAttachment('test.pdf', {
+				parentItemID: item.id,
+				title: "tESt.PDF"
+			});
+			assert.equal(attachment.attachmentFilename, 'test.pdf');
+			assert.equal(attachment.getField('title'), 'tESt.PDF');
+			await renameFileFromParent(attachment);
+			assert.equal(attachment.attachmentFilename, 'Title.pdf');
+			assert.equal(attachment.getField('title'), Zotero.getString('file-type-pdf'));
+		});
+
+		it("should restore an extension when renaming a misnamed file", async function () {
+			let pdfFile = getTestDataDirectory();
+			pdfFile.append('test.pdf');
+			let tmpDir = await getTempDirectory();
+			let tmpFileToImport = OS.Path.join(tmpDir, 'bad name . not an extension');
+			await OS.File.copy(pdfFile.path, tmpFileToImport);
+
+			var item = createUnsavedDataObject('item');
+			item.setField('title', 'Title');
+			await item.saveTx();
+
+			let attachment = await Zotero.Attachments.importFromFile({
+				file: tmpFileToImport,
+				parentItemID: item.id
+			});
+
+			await renameFileFromParent(attachment);
+			assert.equal(attachment.attachmentFilename, 'Title.pdf');
+		});
+	});
+	describe("#renameFilesFromParent", function () {
+		let { renameFilesFromParent } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
+
+		before(async () => {
+			await resetDB({
+				thisArg: this,
+				skipBundledFiles: true
+			});
+		});
+
+		beforeEach((() => {
+			Zotero.Prefs.clear('autoRenameFiles.onMetadataChange');
+			Zotero.Prefs.set('autoRenameFiles.done', false);
+		}));
+
+		after((() => {
+			Zotero.Prefs.clear('autoRenameFiles.onMetadataChange');
+			Zotero.Prefs.clear('autoRenameFiles.done');
+		}));
+
+		it("should rename primary attachment to match parent item title", async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			await item.saveTx();
+
+			let attachment1 = await importFileAttachment('test.png', { parentItemID: item.id });
+			let attachment2 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+
+			// Pretend run first
+			let summary = await renameFilesFromParent({ pretend: true });
+			assert.equal(summary.length, 1);
+			assert.equal(summary[0].oldName, attachment2.attachmentFilename);
+			assert.equal(summary[0].newName, 'Lorem.pdf');
+
+			// No files should be renamed yet
+			assert.equal(attachment1.attachmentFilename, 'test.png');
+			let path1pretend = await attachment1.getFilePathAsync();
+			assert.equal(OS.Path.basename(path1pretend), 'test.png');
+			assert.isTrue(await OS.File.exists(path1pretend));
+
+			assert.equal(attachment2.attachmentFilename, 'test.pdf');
+			let path2pretend = await attachment2.getFilePathAsync();
+			assert.equal(OS.Path.basename(path2pretend), 'test.pdf');
+			assert.isTrue(await OS.File.exists(path2pretend));
+
+			// autoRenameFiles.done should still be false
+			assert.isFalse(Zotero.Prefs.get('autoRenameFiles.done'));
+
+			// Actual run
+			await renameFilesFromParent();
+
+			// png is a secondary attachment, so not renamed
+			assert.equal(attachment1.attachmentFilename, 'test.png');
+			let path1 = await attachment1.getFilePathAsync();
+			assert.equal(OS.Path.basename(path1), 'test.png');
+			assert.isTrue(await OS.File.exists(path1));
+
+			// PDF is the primary attachment, so renamed
+			assert.equal(attachment2.attachmentFilename, 'Lorem.pdf');
+			let path2 = await attachment2.getFilePathAsync();
+			assert.equal(OS.Path.basename(path2), 'Lorem.pdf');
+			assert.isTrue(await OS.File.exists(path2));
+
+			assert.isTrue(Zotero.Prefs.get('autoRenameFiles.done'));
+			await attachment1.eraseTx();
+			await attachment2.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should validate the rename template only once for the whole batch", async function () {
+			let item1 = createUnsavedDataObject('item');
+			item1.setField('title', 'Lorem');
+			await item1.saveTx();
+			let attachment1 = await importFileAttachment('test.pdf', { parentItemID: item1.id });
+
+			let item2 = createUnsavedDataObject('item');
+			item2.setField('title', 'Ipsum');
+			await item2.saveTx();
+			let attachment2 = await importFileAttachment('test.pdf', { parentItemID: item2.id });
+
+			let spy = sinon.spy(Zotero.Attachments, 'getAttachmentRenameTemplate');
+			try {
+				await renameFilesFromParent({ pretend: true });
+				assert.isAtMost(spy.callCount, 1, 'template should be resolved and validated once for the batch, not per item');
+			}
+			finally {
+				spy.restore();
+				await attachment1.eraseTx();
+				await attachment2.eraseTx();
+				await item1.eraseTx();
+				await item2.eraseTx();
+			}
+		});
+
+		it('should restore missing extension when renaming a primary attachment with a file present locally', async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			await item.saveTx();
+
+			let attachment1 = await importFileAttachment('empty', { parentItemID: item.id, contentType: 'application/pdf' });
+
+			// Pretend run first
+			let summary = await renameFilesFromParent({ pretend: true });
+			assert.equal(summary.length, 1);
+			assert.equal(summary[0].oldName, attachment1.attachmentFilename);
+			assert.equal(summary[0].newName, 'Lorem.pdf');
+
+			// No files should be renamed yet
+			assert.equal(attachment1.attachmentFilename, 'empty');
+			let path1 = await attachment1.getFilePathAsync();
+			assert.isTrue(await OS.File.exists(path1));
+			assert.isTrue(Zotero.Prefs.get('autoRenameFiles.done') === false);
+
+			// Actual run
+			await renameFilesFromParent();
+
+			// pdf is the primary attachment, so renamed and extension restored
+			assert.equal(attachment1.attachmentFilename, 'Lorem.pdf');
+			let path2 = await attachment1.getFilePathAsync();
+			assert.equal(OS.Path.basename(path2), 'Lorem.pdf');
+			assert.isTrue(await OS.File.exists(path2));
+			assert.isTrue(Zotero.Prefs.get('autoRenameFiles.done'));
+
+			await attachment1.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should change file names even if the actual files are missing locally", async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			await item.saveTx();
+
+			// no extension specifically to test #5562
+			let attachment1 = await importFileAttachment('empty', { parentItemID: item.id, contentType: 'application/pdf' });
+			let path1 = await attachment1.getFilePathAsync();
+			await OS.File.remove(path1);
+			assert.isFalse(await OS.File.exists(path1));
+
+			// Pretend run first
+			let summary = await renameFilesFromParent({ pretend: true });
+			assert.equal(summary.length, 1);
+			assert.equal(summary[0].oldName, attachment1.attachmentFilename);
+			assert.equal(summary[0].newName, 'Lorem');
+
+			// No files should be renamed yet
+			assert.equal(attachment1.attachmentFilename, 'empty');
+			assert.isFalse(Zotero.Prefs.get('autoRenameFiles.done'));
+
+			// Actual run
+			await renameFilesFromParent();
+			
+			// pdf is the primary attachment, so renamed
+			assert.equal(attachment1.attachmentFilename, 'Lorem');
+			assert.isTrue(Zotero.Prefs.get('autoRenameFiles.done'));
+			
+			await item.eraseTx();
+			await attachment1.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should keep the extension when renaming a file that is missing locally", async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			await item.saveTx();
+
+			// no extension specifically to test #5562
+			let attachment1 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+			let path1 = await attachment1.getFilePathAsync();
+			await OS.File.remove(path1);
+			assert.isFalse(await OS.File.exists(path1));
+
+			// Pretend run first
+			let summary = await renameFilesFromParent({ pretend: true });
+			assert.equal(summary.length, 1);
+			assert.equal(summary[0].oldName, attachment1.attachmentFilename);
+			assert.equal(summary[0].newName, 'Lorem.pdf');
+
+			// No files should be renamed yet
+			assert.equal(attachment1.attachmentFilename, 'test.pdf');
+			assert.isFalse(Zotero.Prefs.get('autoRenameFiles.done'));
+
+			// Actual run
+			await renameFilesFromParent();
+
+			// pdf is the primary attachment, so renamed
+			assert.equal(attachment1.attachmentFilename, 'Lorem.pdf');
+			assert.isTrue(Zotero.Prefs.get('autoRenameFiles.done'));
+
+			await item.eraseTx();
+			await attachment1.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should auto-rename a file when parent creators change", async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			item.setCreators([{ firstName: 'Foo', lastName: 'Bar', creatorType: 'author' }]);
+			await item.saveTx();
+			let attachment1 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+			await renameFilesFromParent();
+			assert.equal(attachment1.attachmentFilename, 'Bar - Lorem.pdf');
+
+			item.setCreators([{ firstName: 'Baz', lastName: 'Bazinga', creatorType: 'author' }]);
+			item.saveTx();
+			assert.include(await waitForItemEvent("modify"), item.id);
+			assert.include(await waitForItemEvent("modify"), attachment1.id);
+
+			assert.equal(attachment1.attachmentFilename, 'Bazinga - Lorem.pdf');
+			await attachment1.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should auto-rename a file when parent title changes", async function () {
+			let item = createUnsavedDataObject('item');
+			item.setField('title', 'Lorem');
+			await item.saveTx();
+			let attachment1 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+			await renameFilesFromParent();
+			assert.equal(attachment1.attachmentFilename, 'Lorem.pdf');
+
+			item.setField('title', 'Ipsum');
+			item.saveTx();
+			assert.include(await waitForItemEvent("modify"), item.id);
+			assert.include(await waitForItemEvent("modify"), attachment1.id);
+
+			assert.equal(attachment1.attachmentFilename, 'Ipsum.pdf');
+			await attachment1.eraseTx();
+			await item.eraseTx();
+		});
+
+		it("should auto-rename a file when parent item type changes", async function () {
+			let libraryID = Zotero.Libraries.userLibraryID;
+			// Use a template that depends on the item type so that changing the
+			// type alone is enough to change the derived file name
+			await Zotero.SyncedSettings.set(
+				libraryID, 'attachmentRenameTemplate', '{{ itemType suffix=" - " }}{{ title truncate="100" }}'
+			);
+			let item, attachment1;
+			try {
+				item = createUnsavedDataObject('item', { itemType: 'book' });
+				item.setField('title', 'Lorem');
+				await item.saveTx();
+				attachment1 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+				await renameFilesFromParent();
+				assert.equal(attachment1.attachmentFilename, 'book - Lorem.pdf');
+
+				item.setType(Zotero.ItemTypes.getID('journalArticle'));
+				item.saveTx();
+				assert.include(await waitForItemEvent("modify"), item.id);
+				// Renaming the attachment fires a second `modify` event
+				await waitNoLongerThan(waitForItemEvent("modify"), 1000);
+
+				assert.equal(attachment1.attachmentFilename, 'journalArticle - Lorem.pdf');
+			}
+			finally {
+				await Zotero.SyncedSettings.clear(libraryID, 'attachmentRenameTemplate');
+				if (attachment1) {
+					await attachment1.eraseTx();
+				}
+				if (item) {
+					await item.eraseTx();
+				}
+			}
+		});
+
+		it("should auto-rename a file when parent item type and a type-mapped field change together", async function () {
+			let item, attachment1;
+			try {
+				item = createUnsavedDataObject('item', { itemType: 'email' });
+				item.setField('title', 'Lorem');
+				await item.saveTx();
+				attachment1 = await importFileAttachment('test.pdf', { parentItemID: item.id });
+				await renameFilesFromParent();
+				assert.equal(attachment1.attachmentFilename, 'Lorem.pdf');
+
+				// Use the type-specific field name ('caseName'), as the item box
+				// does, so the changed key matches a field of the new type
+				item.setType(Zotero.ItemTypes.getID('case'));
+				item.setField('caseName', 'Ipsum');
+				item.saveTx();
+				assert.include(await waitForItemEvent("modify"), item.id);
+				// Renaming the attachment fires a second `modify` event
+				await waitNoLongerThan(waitForItemEvent("modify"), 1000);
+
+				assert.equal(attachment1.attachmentFilename, 'Ipsum.pdf');
+			}
+			finally {
+				if (attachment1) {
+					await attachment1.eraseTx();
+				}
+				if (item) {
+					await item.eraseTx();
+				}
+			}
+		});
+	});
+})

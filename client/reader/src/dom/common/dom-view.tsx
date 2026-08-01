@@ -1,0 +1,2501 @@
+import injectCSS from './stylesheets/inject.scss';
+import annotationsCSS from './stylesheets/annotations.scss';
+import {
+	Annotation,
+	AnnotationPopupParams,
+	AnnotationType,
+	ArrayRect,
+	ColorScheme,
+	FindState,
+	MaybePromise,
+	NavLocation,
+	NewAnnotation,
+	OutlineItem,
+	OverlayPopupParams,
+	Platform,
+	Position,
+	SelectionPopupParams,
+	Theme,
+	Tool,
+	ToolType,
+	ViewContextMenuOverlay,
+	ViewStats,
+	WADMAnnotation, ReadAloudStateDelta, ReadAloudStateSnapshot,
+} from "../../common/types";
+import PopupDelayer from "../../common/lib/popup-delayer";
+import { flushSync } from "react-dom";
+import { createRoot, Root } from "react-dom/client";
+import { AnnotationOverlay, DisplayedAnnotation } from "./components/overlay/annotation-overlay";
+import React from "react";
+import { isSelector, Selector } from "./lib/selector";
+import {
+	caretPositionFromPoint,
+	collapseToOneCharacter,
+	getBoundingPageRect,
+	getPageRects,
+	makeRangeSpanning,
+	moveRangeEndsIntoTextNodes,
+	PersistentRange,
+	supportsCaretPositionFromPoint
+} from "./lib/range";
+import { getSelectionRanges, makeDragImageForTextSelection } from "./lib/selection";
+import { FindProcessor } from "./lib/find";
+import {
+	READ_ALOUD_ACTIVE_SEGMENT_COLOR,
+	READ_ALOUD_ACTIVE_SENTENCE_COLOR,
+	SELECTION_COLOR
+} from "../../common/defines";
+import { ReadAloudJumpButton } from "../../common/read-aloud/jump-button";
+import {
+	debounceUntilScrollFinishes,
+	getCodeCombination,
+	getCurrentColorScheme,
+	getKeyCombination,
+	getModeBasedOnColors,
+	isFirefox,
+	isMac,
+	isSafari,
+	placeA11yVirtualCursor,
+	throttle
+} from "../../common/lib/utilities";
+import { closestElement, getContainingBlock, getLang, isBlock, isRTL } from "./lib/nodes";
+import { debounce } from "../../common/lib/debounce";
+import {
+	expandRect,
+	getBoundingRect,
+	isErrorRect,
+	isPageRectVisible,
+	pageRectToClientRect,
+	rectContainsPoint
+} from "./lib/rect";
+import { History } from "../../common/lib/history";
+import { closestMathTeX } from "./lib/math";
+import { DEFAULT_REFLOWABLE_APPEARANCE, PageWidth, type ReflowableAppearance } from "./lib/appearance";
+import { ReadAloud } from "./lib/read-aloud";
+
+const PEN_ACTIVE_TIMEOUT = 5 * 60 * 1000;
+
+abstract class DOMView<State extends DOMViewState, Data> {
+	readonly MIN_SCALE = 0.6;
+
+	readonly MAX_SCALE = 1.8;
+
+	initializedPromise: Promise<void>;
+
+	initialized = false;
+
+	protected readonly _options: DOMViewOptions<State, Data>;
+
+	protected readonly _container: Element;
+
+	protected readonly _iframe: HTMLIFrameElement;
+
+	protected _iframeWindow!: Window & typeof globalThis;
+
+	protected _iframeDocument!: Document;
+
+	protected _tool!: Tool;
+
+	protected _selectedAnnotationIDs: string[];
+
+	protected _annotations: WADMAnnotation[] = [];
+
+	protected _annotationsByID: Map<string, WADMAnnotation> = new Map();
+
+	protected _showAnnotations: boolean;
+
+	protected _displayedAnnotationCache: WeakMap<WADMAnnotation, DisplayedAnnotation> = new WeakMap();
+
+	protected _boundingPageRectCache: WeakMap<Range, DOMRectReadOnly> = new WeakMap();
+
+	protected _annotationShadowRoot!: ShadowRoot;
+
+	protected _annotationRenderRootEl!: HTMLElement;
+
+	protected _annotationRenderRoot!: Root;
+
+	protected _lightTheme: Theme | null;
+
+	protected _darkTheme: Theme | null;
+
+	protected _colorScheme: ColorScheme | null;
+
+	protected _theme!: Theme;
+
+	protected _themeColorScheme!: ColorScheme;
+
+	protected _annotationPopup: AnnotationPopupParams<WADMAnnotation> | null;
+
+	protected _selectionPopup: SelectionPopupParams<WADMAnnotation> | null;
+
+	protected _overlayPopup: OverlayPopupParams | null;
+
+	protected _findState: FindState | null;
+
+	protected abstract _find: FindProcessor | null;
+
+	protected _overlayPopupDelayer: PopupDelayer;
+
+	protected readonly _history: History;
+
+	protected _suspendHistorySaving = false;
+
+	protected _spotlights = new Map<SpotlightKey, Selector>();
+
+	protected _pointerMovementWhileDown = 0;
+
+	protected _lastPointerPosition: { x: number, y: number } | null = null;
+
+	protected _gotPointerUp = false;
+
+	protected _hadSelectionOnPointerDown = false;
+
+	protected _handledPointerIDs = new Set<number>();
+
+	protected _lastScrollTime: number | null = null;
+
+	protected _isCtrlKeyDown = false;
+
+	protected _lastSelectionRange: PersistentRange | null = null;
+
+	protected _readAloud!: ReadAloud<typeof this>;
+
+	protected _readAloudJumpButton!: ReadAloudJumpButton;
+
+	protected _readAloudJumpButtonBlock: Element | null = null;
+
+	protected _iframeCoordScaleFactor = 1;
+
+	protected _previewAnnotation: NewAnnotation<WADMAnnotation> | null = null;
+
+	protected _touchAnnotationStartPosition: CaretPosition | null = null;
+
+	protected _draggingNoteAnnotation: WADMAnnotation | null = null;
+
+	protected _resizingAnnotationID: string | null = null;
+
+	protected _lastPinchDistance = 0;
+
+	protected _outline!: OutlineItem[];
+
+	protected _lastKeyboardFocusedAnnotationID: string | null = null;
+
+	protected _penActive: boolean;
+
+	protected _penActiveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	protected _penExclusive: boolean;
+
+	private _resizeObserver: ResizeObserver;
+
+	private _lastResizeObserverWidth: number | null = null;
+
+	private _lastResizeObserverHeight: number | null = null;
+
+	protected _a11yVirtualCursorTarget: Node | null;
+
+	protected _a11yShouldFocusVirtualCursorTarget: boolean;
+
+	appearance?: ReflowableAppearance;
+
+	scale = 1;
+
+	protected constructor(options: DOMViewOptions<State, Data>) {
+		this._options = options;
+		this._container = options.container;
+
+		this._selectedAnnotationIDs = options.selectedAnnotationIDs;
+		// Don't show annotations if this is false
+		this._showAnnotations = options.showAnnotations;
+		this._lightTheme = options.lightTheme;
+		this._darkTheme = options.darkTheme;
+		this._colorScheme = options.colorScheme;
+		this._annotationPopup = options.annotationPopup;
+		this._selectionPopup = options.selectionPopup;
+		this._overlayPopup = options.overlayPopup;
+		this._findState = options.findState;
+		this._penActive = options.penActive ?? false;
+		this._penExclusive = options.penExclusive ?? false;
+		this._overlayPopupDelayer = new PopupDelayer({ open: !!this._overlayPopup });
+		this._history = new History({
+			onUpdate: () => this._updateViewStats(),
+			onNavigate: location => this.navigate(location, { skipHistory: true, behavior: 'auto' }),
+		});
+		this._a11yVirtualCursorTarget = null;
+		this._a11yShouldFocusVirtualCursorTarget = false;
+		this._readAloud = new ReadAloud(this);
+
+		this._iframe = document.createElement('iframe');
+		this._iframe.sandbox.add('allow-same-origin', 'allow-modals');
+		// A WebKit bug prevents listeners added by the parent page (us) from running inside a child frame (this._iframe)
+		// unless the allow-scripts permission is added to the frame's sandbox. We prevent scripts in the frame from
+		// running via the CSP.
+		// https://bugs.webkit.org/show_bug.cgi?id=218086
+
+		// TEMP: Add allow-scripts on all browsers until we can reliably detect Safari on all platforms
+		// if (isSafari) {
+		if (options.platform !== 'zotero') {
+			this._iframe.sandbox.add('allow-scripts');
+		}
+		// }
+
+		// Set the CSP directly on the iframe; we also add it as a <meta> tag in the srcdoc for browsers that don't
+		// support the csp attribute (currently all browsers besides Chrome derivatives)
+		this._iframe.setAttribute('csp', this._getCSP());
+		this.initializedPromise = this._initialize();
+		this.initializedPromise.then(() => this.initialized = true);
+		this._resizeIframeImmediate();
+		this._resizeObserver = new ResizeObserver(() => {
+			let dpr = window.devicePixelRatio || 1;
+			let width = Math.floor(this._container.clientWidth * dpr) / dpr;
+			let height = Math.floor(this._container.clientHeight * dpr) / dpr;
+			if (width === this._lastResizeObserverWidth && height === this._lastResizeObserverHeight) {
+				return;
+			}
+			let heightChanged = this._lastResizeObserverHeight !== null
+				&& height !== this._lastResizeObserverHeight;
+			this._lastResizeObserverWidth = width;
+			this._lastResizeObserverHeight = height;
+			// A width-only resize that the view can absorb purely by adjusting its horizontal margins
+			// (e.g. a reflowable EPUB that isn't filling the available width) doesn't move the content,
+			// so skip the resize masking and position save/restoration and just apply the new size instantly.
+			if (!heightChanged && this._tryResizeWidthInPlace(width)) {
+				return;
+			}
+			this._resizeIframeLeading();
+			this._resizeIframeTrailing();
+		});
+		this._resizeObserver.observe(options.container);
+		options.container.append(this._iframe);
+	}
+
+	protected async _initialize(): Promise<void> {
+		let srcdoc = await this._getSrcDoc();
+		if (window.dev && isSafari) {
+			// Dev only: Long srcdoc strings make the Safari inspector unusable,
+			// so use a blob URL instead
+			this._iframe.src = URL.createObjectURL(new Blob([srcdoc], { type: 'text/html' }));
+		}
+		else {
+			this._iframe.srcdoc = srcdoc;
+		}
+		return new Promise<void>((resolve, reject) => {
+			this._iframe.addEventListener('load', () => {
+				this._iframeWindow = this._iframe.contentWindow as Window & typeof globalThis;
+				this._iframeDocument = this._iframe.contentDocument!;
+				Promise.resolve(this._handleIFrameLoaded())
+					.then(() => this._iframe.classList.add('loaded'))
+					.then(resolve, reject);
+			}, { once: true });
+		});
+	}
+
+	protected _getCSP(): string {
+		let url = this._options.data.url ? new URL(this._options.data.url) : null;
+		// When url is http[s], use the origin
+		// In the client, though, url will be a zotero: URI and its origin will be the string "null"
+		// for some reason. In that case, just allow the entire protocol. (In practice zotero:// URIs are always
+		// allowed because the protocol is marked as URI_IS_LOCAL_RESOURCE, which exempts it from CSP, but we want
+		// to be safe here.)
+		// https://bugzilla.mozilla.org/show_bug.cgi?id=1551253
+		let origin = url && (url.protocol.startsWith('http') ? url.origin : url.protocol);
+
+		// Allow resources from the same origin as the URL
+		let defaultSrc = origin || "'none'";
+		// Allow images from data: and blob: URIs and from that origin
+		let imgSrc = (origin || '') + ' data: blob:';
+		// Allow styles from data: URIs, inline, and from that origin
+		let styleSrc = (origin || '') + " data: 'unsafe-inline'";
+		// Allow fonts from resource: (for TeX fonts), data:, and blob: URIs and from that origin
+		let fontSrc = (origin || '') + ' resource: data: blob:';
+		// Don't allow any scripts
+		let scriptSrc = "'unsafe-eval'";
+		// Don't allow any child frames
+		let childSrc = "'none'";
+		// Don't allow form submissions
+		let formAction = "'none'";
+		return `default-src ${defaultSrc}; img-src ${imgSrc}; style-src ${styleSrc}; font-src ${fontSrc}; `
+			+ `script-src ${scriptSrc}; child-src ${childSrc}; form-action ${formAction}`;
+	}
+
+	protected abstract _getSrcDoc(): MaybePromise<string>;
+
+	abstract getData(): Data;
+
+	abstract get lang(): string;
+
+	get iframeDocument(): Document {
+		return this._iframeDocument;
+	}
+
+	get iframeWindow(): Window & typeof globalThis {
+		return this._iframeWindow;
+	}
+
+	protected async _handleIFrameLoaded(): Promise<void> {
+		this._iframeWindow.addEventListener('contextmenu', this._handleContextMenu.bind(this));
+		this._iframeWindow.addEventListener('keydown', this._handleKeyDown.bind(this), true);
+		this._iframeWindow.addEventListener('keyup', this._handleKeyUp.bind(this));
+		this._iframeWindow.addEventListener('click', this._handleClick.bind(this));
+		this._iframeDocument.addEventListener('pointerover', this._handlePointerOver.bind(this));
+		this._iframeDocument.addEventListener('pointerout', this._handlePointerOut.bind(this));
+		this._iframeDocument.addEventListener('pointerdown', this._handlePointerDown.bind(this), true);
+		this._iframeDocument.addEventListener('pointerup', this._handlePointerUp.bind(this));
+		this._iframeDocument.addEventListener('pointercancel', this._handlePointerUp.bind(this));
+		this._iframeDocument.addEventListener('pointermove', this._handlePointerMove.bind(this));
+		this._iframeDocument.addEventListener('touchstart', this._handleTouchStart.bind(this));
+		this._iframeDocument.addEventListener('touchmove', this._handleTouchMove.bind(this), { passive: false });
+		this._iframeWindow.addEventListener('dragstart', this._handleDragStart.bind(this), { capture: true });
+		this._iframeWindow.addEventListener('dragenter', this._handleDragEnter.bind(this));
+		this._iframeWindow.addEventListener('dragover', this._handleDragOver.bind(this));
+		this._iframeWindow.addEventListener('dragend', this._handleDragEnd.bind(this));
+		this._iframeWindow.addEventListener('drop', this._handleDrop.bind(this));
+		this._iframeDocument.addEventListener('copy', this._handleCopy.bind(this));
+		this._iframeWindow.addEventListener('resize', this._handleResize.bind(this));
+		this._iframeWindow.addEventListener('focus', this._handleFocus.bind(this));
+		this._iframeDocument.addEventListener('scroll', this._handleScroll.bind(this), { passive: true });
+		this._iframeDocument.addEventListener('scroll', this._handleScrollCapture.bind(this), { passive: true, capture: true });
+		this._iframeDocument.addEventListener('wheel', this._handleWheelCapture.bind(this), { passive: false, capture: true });
+		this._iframeDocument.addEventListener('selectionchange', this._handleSelectionChange.bind(this));
+
+		this._iframeDocument.body.addEventListener('pointerleave', this._handlePointerLeave.bind(this));
+
+		let injectStyle = this._iframeDocument.createElement('style');
+		injectStyle.innerHTML = injectCSS;
+		this._iframeDocument.head.append(injectStyle);
+
+		let annotationOverlay = this._iframeDocument.createElement('div');
+		annotationOverlay.id = 'annotation-overlay';
+		this._annotationShadowRoot = annotationOverlay.attachShadow({ mode: 'open' });
+		this._iframeDocument.body.append(annotationOverlay);
+		this._annotationShadowRoot.addEventListener("focusin", this._handleAnnotationFocusIn.bind(this));
+
+		this._annotationRenderRootEl = this._iframeDocument.createElement('div');
+		this._annotationRenderRootEl.id = 'annotation-render-root';
+		this._annotationShadowRoot.append(this._annotationRenderRootEl);
+		this._annotationRenderRoot = createRoot(this._annotationRenderRootEl);
+
+		let annotationsStyle = this._iframeDocument.createElement('style');
+		annotationsStyle.innerHTML = annotationsCSS;
+		this._annotationShadowRoot.append(annotationsStyle);
+
+		this._readAloudJumpButton = new ReadAloudJumpButton(this._iframeDocument, {
+			title: this._options.getLocalizedString?.('reader-read-aloud'),
+			onClick: () => this._handleReadAloudJumpButtonClick(),
+		});
+
+		this._iframeDocument.documentElement.classList.toggle('is-firefox', isFirefox);
+		this._iframeDocument.documentElement.classList.toggle('is-safari', isSafari);
+
+		// Pass options to setters that were delayed until iframe initialization
+		this.setAnnotations(this._options.annotations);
+		this.setTool(this._options.tool);
+
+		this._updateColorScheme();
+		this._iframeWindow.matchMedia('(prefers-color-scheme: dark)')
+			.addEventListener('change', () => this._updateColorScheme());
+
+		await this._handleViewCreated(this._options.viewState || {});
+		if (this._options.readAloudState) {
+			this.setReadAloudState(this._options.readAloudState);
+		}
+		setTimeout(() => {
+			this._handleViewUpdate();
+		});
+	}
+
+	protected async _handleViewCreated(viewState: Partial<Readonly<State>>): Promise<void> {
+		this.setHyphenate(this._options.hyphenate ?? true);
+
+		if (viewState.appearance) {
+			this.setAppearance(viewState.appearance);
+		}
+		else {
+			this.setAppearance(DEFAULT_REFLOWABLE_APPEARANCE);
+		}
+	}
+
+	// ***
+	// Utilities for annotations - abstractions over the specific types of selectors used by the two views
+	// ***
+
+	abstract toSelector(range: Range): Selector | null;
+
+	abstract toDisplayedRange(position: Position): Range | null;
+
+	getSelectionPosition(): Position | null {
+		let sel = this._iframeWindow.getSelection();
+		if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+		return this.toSelector(sel.getRangeAt(0));
+	}
+
+	clearSelection() {
+		this._iframeWindow.getSelection()?.removeAllRanges();
+	}
+
+	protected _getAnnotationDisplayedRange(annotation: Partial<WADMAnnotation> & Pick<WADMAnnotation, 'type' | 'position'>): Range | null {
+		return this.toDisplayedRange(annotation.position);
+	}
+
+	abstract navigateToSelector(selector: Selector, options?: NavigateOptions): void;
+
+	isPositionNearView(position: Position): boolean {
+		let range = this.toDisplayedRange(position);
+		// Don't discard a position we can't resolve
+		if (!range) return true;
+		let rect = range.getBoundingClientRect();
+		let viewportHeight = this._iframeWindow.innerHeight;
+		return rect.bottom > -viewportHeight * 3 && rect.top < viewportHeight * 4;
+	}
+
+	// ***
+	// Abstractions over document structure
+	// ***
+
+	abstract getAnnotationFromRange(range: Range, type: AnnotationType, color?: string): NewAnnotation<WADMAnnotation> | null;
+
+	protected abstract _getHistoryLocation(): NavLocation | null;
+
+	protected abstract _updateViewState(): void;
+
+	protected abstract _updateViewStats(): void;
+
+	protected abstract _getRoots(includeUnmounted?: boolean): HTMLElement[];
+
+	protected _getContainingRoot(node: Node, includeUnmounted = false): HTMLElement | null {
+		return this._getRoots(includeUnmounted).find(root => root.contains(node))
+			?? null;
+	}
+
+	// ***
+	// Utilities - called in appropriate event handlers
+	// ***
+
+	protected async _pushHistoryPoint(transient = false) {
+		if (!transient) {
+			this._suspendHistorySaving = true;
+			await debounceUntilScrollFinishes(this._iframeDocument, 100);
+			this._suspendHistorySaving = false;
+		}
+
+		let loc = this._getHistoryLocation();
+		if (!loc) return;
+		this._history.save(loc, transient);
+	}
+
+	protected _isExternalLink(link: HTMLAnchorElement): boolean {
+		let href = link.getAttribute('href');
+		if (!href) {
+			return false;
+		}
+		return href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:') || href.startsWith('tel:');
+	}
+
+	protected _clientRectToViewportRect(rect: DOMRect): DOMRect {
+		return this._scaleDOMRect(new DOMRect(
+			rect.x + this._iframe.getBoundingClientRect().x - this._container.getBoundingClientRect().x,
+			rect.y + this._iframe.getBoundingClientRect().y - this._container.getBoundingClientRect().y,
+			rect.width,
+			rect.height
+		));
+	}
+
+	protected _getBoundingPageRectCached(range: Range): DOMRectReadOnly {
+		if (this._boundingPageRectCache.has(range)) {
+			return this._boundingPageRectCache.get(range)!;
+		}
+
+		let rect = getBoundingPageRect(range);
+		this._boundingPageRectCache.set(range, rect);
+		return rect;
+	}
+
+	protected _scaleDOMRect(rect: DOMRect): DOMRect {
+		return new DOMRect(
+			rect.x * this._iframeCoordScaleFactor,
+			rect.y * this._iframeCoordScaleFactor,
+			rect.width * this._iframeCoordScaleFactor,
+			rect.height * this._iframeCoordScaleFactor
+		);
+	}
+
+	protected _getAnnotationFromTextSelection(type: AnnotationType, color?: string): NewAnnotation<WADMAnnotation> | null {
+		let selection = this._iframeDocument.getSelection();
+		if (!selection || selection.isCollapsed) {
+			return null;
+		}
+		let range: Range;
+		if (type === 'highlight' || type === 'underline') {
+			range = makeRangeSpanning(
+				getSelectionRanges(selection),
+				false,
+				this._iframeDocument,
+			);
+		}
+		else if (type === 'note') {
+			let element = closestElement(selection.getRangeAt(0).commonAncestorContainer);
+			if (!element) {
+				return null;
+			}
+			let blockElement = getContainingBlock(element);
+			if (!blockElement) {
+				return null;
+			}
+			range = this._iframeDocument.createRange();
+			range.selectNode(blockElement);
+		}
+		else {
+			return null;
+		}
+		return this.getAnnotationFromRange(range, type, color);
+	}
+
+	/**
+	 * @returns Whether tool was used
+	 */
+	protected _tryUseTool() {
+		this._updateViewStats();
+
+		if (this._tool.type == 'pointer') {
+			if (this._gotPointerUp || this._options.mobile) {
+				let selection = this._iframeWindow.getSelection();
+				if (selection && !selection.isCollapsed) {
+					this._openSelectionPopup(selection);
+					return true;
+				}
+			}
+		}
+		else if (this._tool.type == 'highlight' || this._tool.type == 'underline') {
+			if (this._gotPointerUp) {
+				let annotation = this._touchAnnotationStartPosition
+					? this._previewAnnotation
+					: this._getAnnotationFromTextSelection(this._tool.type, this._tool.color);
+				this._iframeWindow.getSelection()?.removeAllRanges();
+				this._previewAnnotation = null;
+				this._renderAnnotations();
+
+				if (annotation?.text) {
+					this._options.onAddAnnotation(this._finalizeAnnotation(annotation));
+					return true;
+				}
+			}
+			else {
+				this._previewAnnotation = this._getAnnotationFromTextSelection(this._tool.type, this._tool.color);
+				this._renderAnnotations();
+			}
+		}
+
+		return false;
+	}
+
+	protected _tryUseToolDebounced = debounce(this._tryUseTool.bind(this), 500);
+
+	protected _getFocusState() {
+		let getFocusedElement = () => {
+			let focusedElement = this._iframeDocument.activeElement as HTMLElement | SVGElement | null;
+			if (focusedElement === this._annotationShadowRoot.host) {
+				focusedElement = this._annotationShadowRoot.activeElement as HTMLElement | SVGElement | null;
+				if (!focusedElement?.matches('[tabindex="-1"]')
+						|| !this._annotationRenderRootEl.classList.contains('keyboard-focus')) {
+					focusedElement = null;
+				}
+			}
+			else if (!focusedElement?.matches('a, area')) {
+				focusedElement = null;
+			}
+			return focusedElement;
+		};
+
+		let getFocusedElementIndex = () => {
+			return obj.focusedElement ? obj.focusableElements.indexOf(obj.focusedElement) : -1;
+		};
+
+		let getFocusableElements = () => {
+			let focusableElements = [
+				...this._iframeDocument.querySelectorAll('a, area'),
+				...this._annotationShadowRoot.querySelectorAll('[tabindex="-1"]')
+			] as (HTMLElement | SVGElement)[];
+			focusableElements = focusableElements.filter((el) => {
+				let style = getComputedStyle(el);
+				// Only include visible/focusable elements that are scrolled into view
+				return style.visibility === 'visible'
+					&& style.display !== 'none'
+					&& isPageRectVisible(getBoundingPageRect(el), this._iframeWindow, 0);
+			});
+			focusableElements.sort((a, b) => {
+				let rangeA;
+				if (a.getRootNode() === this._annotationShadowRoot && a.hasAttribute('data-annotation-id')) {
+					rangeA = this.toDisplayedRange(this._annotationsByID.get(a.getAttribute('data-annotation-id')!)!.position);
+				}
+				if (!rangeA) {
+					rangeA = this._iframeDocument.createRange();
+					rangeA.selectNode(a);
+				}
+				let rangeB;
+				if (b.getRootNode() === this._annotationShadowRoot && b.hasAttribute('data-annotation-id')) {
+					rangeB = this.toDisplayedRange(this._annotationsByID.get(b.getAttribute('data-annotation-id')!)!.position);
+				}
+				if (!rangeB) {
+					rangeB = this._iframeDocument.createRange();
+					rangeB.selectNode(b);
+				}
+				return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
+			});
+			return focusableElements;
+		};
+
+		let obj = {
+			get focusedElement() {
+				let value = getFocusedElement();
+				Object.defineProperty(this, 'focusedElement', { value });
+				return value;
+			},
+
+			get focusedElementIndex() {
+				let value = getFocusedElementIndex();
+				Object.defineProperty(this, 'focusedElementIndex', { value });
+				return value;
+			},
+
+			get focusableElements() {
+				let value = getFocusableElements();
+				Object.defineProperty(this, 'focusableElements', { value });
+				return value;
+			},
+		};
+
+		return obj;
+	}
+
+	protected _updateAnnotationRange(annotation: WADMAnnotation, range: Range): WADMAnnotation {
+		let newAnnotation = this.getAnnotationFromRange(range, annotation.type);
+		if (!newAnnotation) {
+			throw new Error('Invalid updated range');
+		}
+		return {
+			...annotation,
+			position: newAnnotation.position,
+			pageLabel: newAnnotation.pageLabel,
+			sortIndex: newAnnotation.sortIndex,
+			text: newAnnotation.text,
+		};
+	}
+
+	protected _handleViewUpdate(synchronous = true) {
+		if (!this.initialized) {
+			return;
+		}
+		this._updateViewState();
+		this._updateViewStats();
+		this._displayedAnnotationCache = new WeakMap();
+		this._boundingPageRectCache = new WeakMap();
+		this._renderAnnotations(synchronous);
+		this._repositionPopups();
+	}
+
+	protected _repositionPopups() {
+		// Update annotation popup position
+		if (this._annotationPopup) {
+			let { annotation } = this._annotationPopup;
+			if (annotation) {
+				// Note: There is currently a bug in React components part therefore the popup doesn't
+				// properly update its position when window is resized
+				this._openAnnotationPopup(annotation as WADMAnnotation);
+			}
+		}
+
+		// Update selection popup position
+		if (this._selectionPopup) {
+			let selection = this._iframeWindow.getSelection();
+			if (selection) {
+				this._openSelectionPopup(selection);
+			}
+		}
+
+		// Close overlay popup
+		this._options.onSetOverlayPopup();
+	}
+
+	protected _renderAnnotations(synchronous = false) {
+		if (!this._annotationRenderRootEl) {
+			return;
+		}
+		if (!this._showAnnotations) {
+			this._annotationRenderRootEl.replaceChildren();
+			return;
+		}
+		let displayedAnnotations: DisplayedAnnotation[] = this._annotations.map((annotation) => {
+			if (this._displayedAnnotationCache.has(annotation)) {
+				return this._displayedAnnotationCache.get(annotation)!;
+			}
+
+			let range = this._getAnnotationDisplayedRange(annotation);
+			if (!range) return null;
+			let displayedAnnotation = {
+				id: annotation.id,
+				type: annotation.type,
+				color: annotation.color,
+				sortIndex: annotation.sortIndex,
+				text: annotation.text,
+				comment: annotation.comment,
+				readOnly: annotation.readOnly,
+				key: annotation.id,
+				range,
+			};
+			this._displayedAnnotationCache.set(annotation, displayedAnnotation);
+			return displayedAnnotation;
+		}).filter(a => !!a) as DisplayedAnnotation[];
+		let findAnnotations = this._find?.getAnnotations();
+		if (findAnnotations) {
+			displayedAnnotations.push(...findAnnotations.map(a => ({
+				...a,
+				range: a.range.toRange(),
+			})));
+		}
+		for (let [key, selector] of this._spotlights) {
+			let range = this.toDisplayedRange(selector);
+			if (range) {
+				displayedAnnotations.push({
+					type: 'highlight',
+					color: this._getSpotlightColor(key),
+					key,
+					range,
+				});
+			}
+		}
+		if (this._previewAnnotation) {
+			let range = this._getAnnotationDisplayedRange(this._previewAnnotation);
+			if (range) {
+				displayedAnnotations.push({
+					sourceID: this._draggingNoteAnnotation?.id,
+					type: this._previewAnnotation.type,
+					color: this._previewAnnotation.color,
+					sortIndex: this._previewAnnotation.sortIndex,
+					text: this._previewAnnotation.text,
+					comment: this._previewAnnotation.comment,
+					key: '_previewAnnotation',
+					range,
+				});
+			}
+		}
+
+		displayedAnnotations = displayedAnnotations.filter(
+			a => a.id === this._resizingAnnotationID
+				|| isPageRectVisible(this._getBoundingPageRectCached(a.range), this._iframeWindow)
+		);
+
+		let doRender = () => this._annotationRenderRoot.render(
+			<AnnotationOverlay
+				iframe={this._iframe}
+				annotations={displayedAnnotations}
+				selectedAnnotationIDs={this._selectedAnnotationIDs}
+				onPointerDown={this._handleAnnotationPointerDown}
+				onPointerUp={this._handleAnnotationPointerUp}
+				onContextMenu={this._handleAnnotationContextMenu}
+				onDragStart={this._handleAnnotationDragStart}
+				onResizeStart={this._handleAnnotationResizeStart}
+				onResizeEnd={this._handleAnnotationResizeEnd}
+			/>
+		);
+		if (synchronous) {
+			// We have to flushSync() when we're rendering due to a page change,
+			// or another DOM change external to React. Without it, React will
+			// take its sweet time rendering the annotations, and they'll show
+			// in the wrong position relative to the text until it's done.
+			flushSync(doRender);
+		}
+		else {
+			doRender();
+		}
+	}
+
+	protected _openSelectionPopup(selection: Selection) {
+		if (selection.isCollapsed) {
+			return;
+		}
+		let range = moveRangeEndsIntoTextNodes(
+			makeRangeSpanning(
+				getSelectionRanges(selection),
+				false,
+				this._iframeDocument,
+			)
+		);
+		let selectionIsForward = selection.direction !== 'backward';
+
+		// Anchor the popup to the point where the user stopped dragging: the end
+		// of the selection when it's forward, the beginning when it's backward.
+		// Collapse a copy of the range to that caret to get a precise anchor
+		// rather than the whole first/last line.
+		let caretRange = range.cloneRange();
+		collapseToOneCharacter(caretRange, selectionIsForward);
+		let anchorPageRect = getBoundingPageRect(caretRange);
+		if (isErrorRect(anchorPageRect) || !isPageRectVisible(anchorPageRect, this._iframeWindow, 0)) {
+			// The caret is offscreen because the selection runs past the
+			// viewport (e.g. a long selection in a snapshot or one that
+			// continues into an offscreen column in EPUB). Anchor to the
+			// nearest visible part of the selection instead, so the popup
+			// isn't anchored to an offscreen segment. The rects are in reading
+			// order and each lies within a single column, so column separation
+			// is preserved.
+			let visiblePageRects = Array.from(getPageRects(range))
+				.filter(rect => !isErrorRect(rect) && isPageRectVisible(rect, this._iframeWindow, 0));
+			if (visiblePageRects.length) {
+				anchorPageRect = selectionIsForward
+					? visiblePageRects[visiblePageRects.length - 1]
+					: visiblePageRects[0];
+			}
+			else {
+				// Nothing is visible; use the bounding rect as a placeholder
+				// until the selection scrolls into view.
+				anchorPageRect = getBoundingPageRect(range);
+			}
+		}
+		let domRect = this._clientRectToViewportRect(
+			pageRectToClientRect(
+				anchorPageRect,
+				this._iframeWindow
+			)
+		);
+		let annotation = this.getAnnotationFromRange(range, 'highlight');
+		if (annotation) {
+			let rect: ArrayRect = [domRect.left, domRect.top, domRect.right, domRect.bottom];
+			// Anchor the popup outward from the caret: above the anchor for a
+			// backward selection (caret at the top), below for a forward one
+			// (caret at the bottom). If the selection is too tall to fit the
+			// popup above or below, fall back to the side nearest the caret --
+			// the start side when backward, the end side when forward --
+			// flipping left/right for RTL text.
+			let rtl = isRTL(range.commonAncestorContainer);
+			this._options.onSetSelectionPopup({
+				rect,
+				annotation,
+				preferLeft: selectionIsForward ? rtl : !rtl,
+				preferTop: !selectionIsForward,
+			});
+		}
+		else {
+			this._options.onSetSelectionPopup(null);
+		}
+	}
+
+	protected _openAnnotationPopup(annotation?: WADMAnnotation) {
+		if (!annotation) {
+			if (this._selectedAnnotationIDs.length != 1) {
+				console.log('No selected annotation to open popup for');
+				return;
+			}
+			annotation = this._annotationsByID.get(this._selectedAnnotationIDs[0]);
+			if (!annotation) {
+				// Shouldn't happen
+				console.log('Selected annotation not found');
+				return;
+			}
+		}
+
+		// Note: Popup won't be visible if sidebar is opened
+		let domRect;
+		if (annotation.type == 'note') {
+			let noteElem = this._annotationRenderRootEl.querySelector(`[data-annotation-id="${annotation.id}"]`);
+			if (noteElem) {
+				domRect = this._scaleDOMRect(noteElem.getBoundingClientRect());
+			}
+		}
+		if (!domRect) {
+			let range = this.toDisplayedRange(annotation.position);
+			if (!range) {
+				this._options.onSetAnnotationPopup();
+				return;
+			}
+			domRect = this._clientRectToViewportRect(range.getBoundingClientRect());
+		}
+		let rect: ArrayRect = [domRect.left, domRect.top, domRect.right, domRect.bottom];
+		this._options.onSetAnnotationPopup({ rect, annotation });
+	}
+
+	/**
+	 * For use in the console during development.
+	 */
+	protected _normalizeAnnotations() {
+		this._options.onUpdateAnnotations(this._annotations.map((annotation) => {
+			let range = this.toDisplayedRange(annotation.position);
+			if (!range) {
+				console.warn('Could not create range for annotation', annotation);
+				return annotation;
+			}
+			range = moveRangeEndsIntoTextNodes(range);
+			let newAnnotation = this.getAnnotationFromRange(range, annotation.type, annotation.color);
+			if (!newAnnotation) {
+				console.warn('Could not create annotation from normalized range', annotation);
+				return annotation;
+			}
+			return {
+				...annotation,
+				...newAnnotation,
+			};
+		}));
+	}
+
+	protected _updateColorScheme() {
+		let colorScheme = getCurrentColorScheme(this._colorScheme);
+		let theme: Theme;
+		if (colorScheme === 'light' && this._lightTheme) {
+			theme = this._lightTheme;
+		}
+		else if (colorScheme === 'dark' && this._darkTheme) {
+			theme = this._darkTheme;
+		}
+		else {
+			theme = {
+				id: 'light',
+				label: '',
+				background: '#ffffff',
+				foreground: '#121212'
+			};
+		}
+		let themeColorScheme = getModeBasedOnColors(theme.background, theme.foreground);
+
+		let roots = [this._iframeDocument.documentElement, this._annotationRenderRootEl];
+		for (let root of roots) {
+			root.dataset.colorScheme = themeColorScheme;
+			root.classList.toggle('invert-images', !!theme.invertImages);
+			root.style.colorScheme = themeColorScheme;
+			root.style.setProperty('--background-color', theme.background);
+			root.style.setProperty('--text-color', theme.foreground);
+		}
+
+		this._theme = theme;
+		this._themeColorScheme = themeColorScheme;
+	}
+
+	// ***
+	// Event handlers
+	// ***
+
+	protected _handlePointerOver(event: PointerEvent) {
+		const link = (event.target as Element).closest('a');
+		if (link) {
+			if (this._isExternalLink(link)) {
+				link.title = link.href;
+			}
+			else {
+				this._handlePointerOverInternalLink(link);
+			}
+		}
+
+		if (this._tool.type == 'note') {
+			let range = this._getNoteTargetRange(event);
+			if (range) {
+				this._previewAnnotation = this.getAnnotationFromRange(range, 'note', this._tool.color);
+				this._renderAnnotations();
+			}
+		}
+	}
+
+	protected _handlePointerOut(event: PointerEvent) {
+		let link = (event.target as Element).closest('a');
+		if (link && !this._isExternalLink(link) && event.relatedTarget) {
+			this._handlePointerLeftInternalLink();
+		}
+	}
+
+	protected _handlePointerLeave(event: PointerEvent) {
+		this._hideReadAloudJumpButton();
+	}
+
+	protected _handlePointerOverInternalLink(link: HTMLAnchorElement) {
+		// Do nothing by default
+	}
+
+	protected _handlePointerLeftInternalLink() {
+		// Do nothing by default
+	}
+
+	protected _handleDragEnter(event: DragEvent) {
+		if (!this._draggingNoteAnnotation) {
+			return;
+		}
+		event.preventDefault();
+		let range = this._getNoteTargetRange(event);
+		if (range) {
+			this._previewAnnotation = this.getAnnotationFromRange(range, 'note', this._draggingNoteAnnotation.color);
+			this._renderAnnotations();
+		}
+	}
+
+	protected _handleDragOver(event: DragEvent) {
+		if (!this._draggingNoteAnnotation || !this._previewAnnotation) {
+			return;
+		}
+		event.preventDefault();
+	}
+
+	protected _handleDrop() {
+		if (!this._draggingNoteAnnotation || !this._previewAnnotation) {
+			return;
+		}
+		let finalized = this._finalizeAnnotation(this._previewAnnotation);
+		let newAnnotation: WADMAnnotation = {
+			...this._draggingNoteAnnotation,
+			position: finalized.position,
+			pageLabel: finalized.pageLabel,
+			sortIndex: finalized.sortIndex,
+			text: finalized.text,
+		};
+		this._previewAnnotation = null;
+		this._options.onUpdateAnnotations([newAnnotation]);
+	}
+
+	protected _finalizeAnnotation(annotation: NewAnnotation<WADMAnnotation>): NewAnnotation<WADMAnnotation> {
+		return annotation;
+	}
+
+	protected _getNoteTargetRange(event: PointerEvent | DragEvent): Range | null {
+		// Use composedPath()[0] to get the actual target, even if it's within a shadow tree
+		let target = event.composedPath()[0] as Element;
+		// Disable pointer events and rerender so we can get the cursor position in the text layer,
+		// not the annotation layer, even if the mouse is over the annotation layer
+		let range = this._iframeDocument.createRange();
+		if (target.tagName === 'IMG') { // Allow targeting images directly
+			range.selectNode(target);
+		}
+		else if (target.closest('[data-annotation-id]')) {
+			let annotation = this._annotationsByID.get(
+				target.closest('[data-annotation-id]')!.getAttribute('data-annotation-id')!
+			)!;
+			let annotationRange = this.toDisplayedRange(annotation.position)!;
+			range.setStart(annotationRange.startContainer, annotationRange.startOffset);
+			range.setEnd(annotationRange.endContainer, annotationRange.endOffset);
+		}
+		else {
+			let pos = supportsCaretPositionFromPoint()
+				&& caretPositionFromPoint(this._iframeDocument, event.clientX, event.clientY);
+			let element = closestElement(pos ? pos.offsetNode : target);
+			if (!element) return null;
+			let blockElement = getContainingBlock(element);
+			if (!blockElement) return null;
+			range.selectNode(blockElement);
+		}
+		let rect = range.getBoundingClientRect();
+		if (rect.right <= 0 || rect.left >= this._iframeWindow.innerWidth
+				|| rect.bottom <= 0 || rect.top >= this._iframeWindow.innerHeight) {
+			return null;
+		}
+		return range;
+	}
+
+	protected _handleClick(event: MouseEvent) {
+		let link = (event.target as Element).closest('a');
+		if (!link) {
+			return;
+		}
+		event.preventDefault();
+		if (event.altKey) {
+			return;
+		}
+		if (this._isExternalLink(link)) {
+			this._options.onOpenLink(link.href);
+		}
+		else {
+			this._handleInternalLinkClick(link);
+		}
+	}
+
+	protected abstract _handleInternalLinkClick(link: HTMLAnchorElement): void;
+
+	protected _handleKeyDown(event: KeyboardEvent) {
+		let activeElementBefore = !!this._iframeDocument.activeElement
+			&& this._iframeDocument.activeElement !== this._iframeDocument.body;
+		this._handleKeyDownInternal(event);
+		let activeElementAfter = !!this._iframeDocument.activeElement
+			&& this._iframeDocument.activeElement !== this._iframeDocument.body;
+
+		// If focus was gained via keyboard (e.g. Tab), show focus rings
+		if (!activeElementBefore && activeElementAfter) {
+			this._annotationRenderRootEl.classList.add('keyboard-focus');
+		}
+		// If focus was lost via keyboard (e.g. Escape), hide focus rings
+		else if (activeElementBefore && !activeElementAfter) {
+			this._annotationRenderRootEl.classList.remove('keyboard-focus');
+		}
+	}
+
+	private _handleKeyDownInternal(event: KeyboardEvent) {
+		// To figure out if wheel events are pinch-to-zoom
+		this._isCtrlKeyDown = event.key === 'Control';
+
+		let key = getKeyCombination(event);
+		let code = getCodeCombination(event);
+
+		let f = this._getFocusState();
+
+		if (key === 'Escape' && !this._resizingAnnotationID) {
+			if (this._selectedAnnotationIDs.length) {
+				this._options.onSelectAnnotations([], event);
+				if (this._lastKeyboardFocusedAnnotationID) {
+					(this._annotationRenderRootEl.querySelector(
+						`[tabindex="-1"][data-annotation-id="${this._lastKeyboardFocusedAnnotationID}"]`
+					) as HTMLElement | SVGElement | null)
+					?.focus({ preventScroll: true });
+				}
+			}
+			else if (f.focusedElement) {
+				f.focusedElement.blur();
+			}
+			this._iframeWindow.getSelection()?.removeAllRanges();
+			// The keyboard shortcut was handled here, therefore no need to
+			// pass it to this._onKeyDown(event) below
+			return;
+		}
+		else if (key === 'Shift-Tab') {
+			if (f.focusedElement) {
+				f.focusedElement.blur();
+			}
+			else {
+				this._options.onTabOut(true);
+			}
+			event.preventDefault();
+			return;
+		}
+		else if (key === 'Tab') {
+			if (!f.focusedElement && this._iframeDocument.getSelection()!.isCollapsed && !this._selectedAnnotationIDs.length) {
+				// In PDF view the first visible object (annotation, overlay) is focused
+				if (f.focusableElements.length) {
+					f.focusableElements[0].focus({ preventScroll: true });
+				}
+				else {
+					this._options.onTabOut();
+				}
+			}
+			else {
+				this._options.onTabOut();
+			}
+			event.preventDefault();
+			return;
+		}
+
+		if (f.focusedElement) {
+			if (!window.rtl && key === 'ArrowRight' || window.rtl && key === 'ArrowLeft' || key === 'ArrowDown') {
+				f.focusableElements[(f.focusedElementIndex + 1) % f.focusableElements.length]
+					?.focus({ preventScroll: true });
+				event.preventDefault();
+				return;
+			}
+			else if (!window.rtl && key === 'ArrowLeft' || window.rtl && key === 'ArrowRight' || key === 'ArrowUp') {
+				f.focusableElements[(f.focusedElementIndex - 1 + f.focusableElements.length) % f.focusableElements.length]
+					?.focus({ preventScroll: true });
+				event.preventDefault();
+				return;
+			}
+			else if (['Enter', 'Space'].includes(key)) {
+				if (f.focusedElement.matches('a, area')) {
+					(f.focusedElement as HTMLElement).click();
+					event.preventDefault();
+					return;
+				}
+				else if (f.focusedElement.hasAttribute('data-annotation-id')) {
+					let annotationID = f.focusedElement.getAttribute('data-annotation-id')!;
+					let annotation = this._annotationsByID.get(annotationID);
+					if (annotation) {
+						this._options.onSelectAnnotations([annotationID], event);
+						if (this._selectedAnnotationIDs.length == 1) {
+							this._openAnnotationPopup(annotation);
+						}
+						this._lastKeyboardFocusedAnnotationID = annotationID;
+						f.focusedElement.blur();
+						event.preventDefault();
+						return;
+					}
+				}
+			}
+		}
+		else if (this._selectedAnnotationIDs.length === 1 && key === 'Enter') {
+			this._openAnnotationPopup(this._annotationsByID.get(this._selectedAnnotationIDs[0])!);
+		}
+
+		if (this._selectedAnnotationIDs.length === 1 && key.includes('Shift-Arrow')) {
+			let annotation = this._annotationsByID.get(this._selectedAnnotationIDs[0])!;
+			let oldRange = this.toDisplayedRange(annotation.position);
+			if (!oldRange) {
+				event.preventDefault();
+				return;
+			}
+			if (annotation.type === 'note') {
+				let root = this._getContainingRoot(oldRange.startContainer);
+				if (!root) {
+					throw new Error('Annotation is outside of root?');
+				}
+				let walker = this._iframeDocument.createTreeWalker(
+					root,
+					NodeFilter.SHOW_ELEMENT,
+					node => (isBlock(node as Element) && !node.contains(oldRange!.startContainer)
+						? NodeFilter.FILTER_ACCEPT
+						: NodeFilter.FILTER_SKIP),
+				);
+				walker.currentNode = oldRange.startContainer;
+
+				let newRange = this._iframeDocument.createRange();
+				if (key.endsWith('Arrow' + (window.rtl ? 'Left' : 'Right'))
+						|| key.endsWith('ArrowDown')) {
+					walker.nextNode();
+				}
+				else {
+					walker.previousNode();
+				}
+				newRange.selectNode(walker.currentNode);
+				try {
+					annotation = this._updateAnnotationRange(annotation, newRange);
+				}
+				catch (e) {
+					// Reached the end of the section (EPUB)
+					// TODO: Allow movement between sections
+					event.preventDefault();
+					return;
+				}
+				this._options.onUpdateAnnotations([annotation]);
+				this.navigateToSelector(annotation.position, {
+					block: 'center',
+					behavior: 'smooth',
+					skipHistory: true,
+					ifNeeded: true,
+				});
+			}
+			else {
+				let resizeStart = key.startsWith('Cmd-') || key.startsWith('Ctrl-');
+				let granularity;
+				// Up/down set via granularity, not direction
+				if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+					granularity = 'line';
+				}
+				else if (event.altKey) {
+					granularity = 'word';
+				}
+				else {
+					granularity = 'character';
+				}
+				let selection = this._iframeDocument.getSelection()!;
+
+				selection.removeAllRanges();
+				selection.addRange(oldRange);
+				if (resizeStart) {
+					selection.collapseToStart();
+				}
+				else {
+					selection.collapseToEnd();
+				}
+				selection.modify(
+					'move',
+					event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 'right' : 'left',
+					granularity
+				);
+				let newRange = selection.getRangeAt(0);
+				if (resizeStart) {
+					newRange.setEnd(oldRange.endContainer, oldRange.endOffset);
+				}
+				else {
+					newRange.setStart(oldRange.startContainer, oldRange.startOffset);
+				}
+				selection.removeAllRanges();
+
+				if (!newRange.collapsed) {
+					this._options.onUpdateAnnotations([this._updateAnnotationRange(annotation, newRange)]);
+				}
+			}
+
+			this._options.onSetAnnotationPopup(null);
+			event.preventDefault();
+			return;
+		}
+
+		if (!this._selectedAnnotationIDs.length
+				&& (code === 'Ctrl-Alt-Digit1' || code === 'Ctrl-Alt-Digit2' || code === 'Ctrl-Alt-Digit3')) {
+			let type: AnnotationType;
+			switch (code) {
+				case 'Ctrl-Alt-Digit1':
+					type = 'highlight';
+					break;
+				case 'Ctrl-Alt-Digit2':
+					type = 'underline';
+					break;
+				case 'Ctrl-Alt-Digit3':
+					type = 'note';
+					break;
+			}
+			let annotation = this._getAnnotationFromTextSelection(type, this._options.tools[type].color);
+			if (!annotation && type === 'note') {
+				let pos = caretPositionFromPoint(
+					this._iframeDocument,
+					this._iframeWindow.innerWidth / 2,
+					this._iframeWindow.innerHeight / 2
+				);
+				let elem = pos && closestElement(pos.offsetNode);
+				let block = elem && getContainingBlock(elem);
+				if (block) {
+					let range = this._iframeDocument.createRange();
+					range.selectNode(block);
+					annotation = this.getAnnotationFromRange(range, type, this._options.tools[type].color);
+				}
+			}
+			if (annotation) {
+				this._options.onAddAnnotation(this._finalizeAnnotation(annotation), true);
+				this.navigateToSelector(annotation.position, {
+					block: 'center',
+					behavior: 'smooth',
+					skipHistory: true,
+					ifNeeded: true,
+				});
+				this._iframeWindow.getSelection()?.removeAllRanges();
+				if (type === 'note') {
+					this._renderAnnotations(true);
+					this._openAnnotationPopup();
+				}
+			}
+			event.preventDefault();
+			return;
+		}
+
+		// Pass keydown even to the main window where common keyboard
+		// shortcuts are handled i.e. Delete, Cmd-Minus, Cmd-f, etc.
+		this._options.onKeyDown(event);
+	}
+
+	protected _handleKeyUp(event: KeyboardEvent) {
+		if (event.key === 'Control') {
+			this._isCtrlKeyDown = false;
+		}
+
+		this._options.onKeyUp(event);
+	}
+
+	private _handleDragStart(event: DragEvent) {
+		this._previewAnnotation = null;
+		if (!event.dataTransfer) {
+			return;
+		}
+		let annotation = this._getAnnotationFromTextSelection('highlight');
+		if (!annotation) {
+			return;
+		}
+		console.log('Dragging text', annotation);
+		this._options.onSetDataTransferAnnotations(event.dataTransfer, annotation, true);
+	}
+
+	private _handleDragEnd(_event: DragEvent) {
+		this._draggingNoteAnnotation = null;
+		this._previewAnnotation = null;
+		this._renderAnnotations();
+	}
+
+	private _handleContextMenu(event: MouseEvent) {
+		if (this._options.platform === 'web'
+				// Android fires contextmenu event before showing text selection context menu
+				|| this._options.platform === 'android') {
+			return;
+		}
+		// Prevent native context menu
+		event.preventDefault();
+		let el = event.target as Element;
+		let br = this._iframe.getBoundingClientRect();
+		let overlay = this._getContextMenuOverlay(el);
+
+		let position: Position | undefined;
+		if (this._iframeDocument.getSelection()!.isCollapsed) {
+			let range = this._iframeDocument.createRange();
+			range.selectNodeContents(el);
+			position = this.toSelector(range) ?? undefined;
+		}
+		else {
+			let annotation = this._getAnnotationFromTextSelection('highlight');
+			position = annotation?.position;
+		}
+
+		this._options.onOpenViewContextMenu({
+			x: br.x + event.clientX * this._iframeCoordScaleFactor,
+			y: br.y + event.clientY * this._iframeCoordScaleFactor,
+			overlay,
+			position,
+		});
+	}
+
+	private _getContextMenuOverlay(el: Element): ViewContextMenuOverlay | undefined {
+		let a = el.closest('a');
+		if (a && this._isExternalLink(a)) {
+			return {
+				type: 'external-link',
+				url: a.href,
+			};
+		}
+
+		let math = closestMathTeX(el);
+		if (math) {
+			return {
+				type: 'math',
+				tex: math,
+			};
+		}
+
+		let img = el.closest('img');
+		if (img && /^(data|blob):/.test(img.src)) {
+			return {
+				type: 'image',
+				image: img,
+			};
+		}
+
+		return undefined;
+	}
+
+	private _handleAnnotationContextMenu = (id: string, event: React.MouseEvent) => {
+		if (this._selectionContainsPoint(event.clientX, event.clientY)) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+
+		let br = this._iframe.getBoundingClientRect();
+		if (this._selectedAnnotationIDs.includes(id)) {
+			this._options.onOpenAnnotationContextMenu({
+				ids: this._selectedAnnotationIDs,
+				x: br.x + event.clientX * this._iframeCoordScaleFactor,
+				y: br.y + event.clientY * this._iframeCoordScaleFactor,
+				view: true,
+			});
+		}
+		else {
+			this._options.onSelectAnnotations([id], event.nativeEvent);
+			this._options.onOpenAnnotationContextMenu({
+				ids: [id],
+				x: br.x + event.clientX * this._iframeCoordScaleFactor,
+				y: br.y + event.clientY * this._iframeCoordScaleFactor,
+				view: true,
+			});
+		}
+	};
+
+	private _handleSelectionChange() {
+		let selection = this._iframeDocument.getSelection();
+
+		// Safari fails to follow user-select: none, so manually collapse
+		// the selection if it's on the annotation overlay
+		if (selection && isSafari
+				&& selection.rangeCount > 0
+				&& selection.getRangeAt(0).startContainer.childNodes[selection.getRangeAt(0).startOffset]
+					=== this._annotationShadowRoot.host) {
+			selection.collapseToStart();
+			return;
+		}
+
+		if (!selection || selection.isCollapsed) {
+			this._options.onSetSelectionPopup(null);
+		}
+		else {
+			this._updateViewStats();
+			this._tryUseTool();
+		}
+
+		// Regardless of whether the selection is collapsed, save it for Find
+		if (selection?.rangeCount) {
+			this._lastSelectionRange = new PersistentRange(selection.getRangeAt(0));
+		}
+	}
+
+	private _handleAnnotationPointerDown = (id: string, event: React.PointerEvent) => {
+		event.stopPropagation();
+
+		// Clean up in case this pointer was left behind in _handledPointerIDs,
+		// since we know this is a new interaction
+		this._handledPointerIDs.delete(event.pointerId);
+
+		// On mobile, pointerup handles all annotation selection
+		if (this._options.mobile) {
+			return;
+		}
+
+		// On desktop, pointerdown handles:
+		//  - Selecting annotations when cycling isn't possible (no overlap between pointer and selected annotations)
+		//  - Opening the annotation context menu
+
+		if (event.button == 0) {
+			if (this._selectedAnnotationIDs.length) {
+				let idsHere = this._getAnnotationsAtPoint(event.clientX, event.clientY);
+				// Annotation cycling happens on pointerup, so only set selected annotations now if the clicked position
+				// doesn't overlap with any of the currently selected annotations
+				if (!idsHere.length || this._selectedAnnotationIDs.some(id => idsHere.includes(id))) {
+					return;
+				}
+				this._options.onSelectAnnotations([idsHere[0]], event.nativeEvent);
+				// In view mode (mobile), we assume that there's no special processing inside
+				// onSelectAnnotations() for e.g. the Shift key that might result in multiple annotations
+				// being selected, annotations being deselected, and so on. On desktop, there might be,
+				// but we can also count on onSelectAnnotations() being handled synchronously.
+				// Revisit if either assumption no longer holds true.
+				if (this._options.mobile || this._selectedAnnotationIDs.length == 1) {
+					this._openAnnotationPopup(this._annotationsByID.get(idsHere[0])!);
+				}
+			}
+			else {
+				// If there's a selection and the pointer is inside it, abort
+				if (this._selectionContainsPoint(event.clientX, event.clientY)) {
+					return;
+				}
+
+				this._options.onSelectAnnotations([id], event.nativeEvent);
+				// See above
+				if (this._options.mobile || this._selectedAnnotationIDs.length == 1) {
+					this._openAnnotationPopup(this._annotationsByID.get(id)!);
+				}
+			}
+			this._iframeDocument.body.focus();
+			this._lastKeyboardFocusedAnnotationID = null;
+		}
+		this._handledPointerIDs.add(event.pointerId);
+	};
+
+	private _handleAnnotationPointerUp = (id: string, event: React.PointerEvent) => {
+		event.stopPropagation();
+
+		// If pointerdown already performed an action due to this pointer, don't do anything
+		if (this._handledPointerIDs.has(event.pointerId)) {
+			this._handledPointerIDs.delete(event.pointerId);
+			return;
+		}
+
+		if (event.type === 'pointercancel') {
+			return;
+		}
+		if (event.button !== 0
+				|| this._options.mobile && this._pointerMovementWhileDown > 5) {
+			return;
+		}
+
+		// Cycle selection on left click if clicked annotation is already selected
+		let idsHere = this._getAnnotationsAtPoint(event.clientX, event.clientY);
+		let selectedID = this._selectedAnnotationIDs.find(id => idsHere.includes(id));
+		let nextIDIndex = selectedID
+			? (idsHere.indexOf(selectedID) + 1) % idsHere.length
+			: 0;
+		let nextID = idsHere[nextIDIndex];
+		this._options.onSelectAnnotations([nextID], event.nativeEvent);
+		if (this._selectedAnnotationIDs.length == 1) {
+			this._openAnnotationPopup(this._annotationsByID.get(nextID)!);
+		}
+		this._lastKeyboardFocusedAnnotationID = null;
+	};
+
+	private _getAnnotationsAtPoint(clientX: number, clientY: number): string[] {
+		return this._annotationShadowRoot.elementsFromPoint(clientX, clientY)
+			.map(target => target.getAttribute('data-annotation-id'))
+			.filter(Boolean)
+			.sort() as string[];
+	}
+
+	private _handleAnnotationDragStart = (id: string, dataTransfer: DataTransfer) => {
+		let sel = this._iframeWindow.getSelection();
+		// If there's a selection at this point, that means the pointer was inside the selection in our pointerdown
+		// handler, preventing it from being cleared. We should synthesize a drag from the selection instead of the
+		// annotation.
+		if (sel && !sel.isCollapsed) {
+			dataTransfer.setDragImage(makeDragImageForTextSelection(sel), 0, 0);
+			return;
+		}
+
+		let annotation = this._annotationsByID.get(id)!;
+		this._options.onSetDataTransferAnnotations(dataTransfer, annotation);
+		if (this._selectedAnnotationIDs.length == 1 && annotation.type === 'note' && !annotation.readOnly) {
+			this._draggingNoteAnnotation = annotation;
+		}
+		this._previewAnnotation = null;
+		this._renderAnnotations();
+	};
+
+	private _handleAnnotationResizeStart = (id: string) => {
+		this._resizingAnnotationID = id;
+		this._options.onSetAnnotationPopup(null);
+		this._iframeDocument.body.classList.add('resizing-annotation');
+	};
+
+	private _handleAnnotationResizeEnd = (id: string, range: Range, cancelled: boolean) => {
+		this._resizingAnnotationID = null;
+		this._iframeDocument.body.classList.remove('resizing-annotation');
+		if (cancelled) {
+			return;
+		}
+		let annotation = this._annotationsByID.get(id)!;
+		this._options.onUpdateAnnotations([this._updateAnnotationRange(annotation, range)]);
+
+		// If the resize ends over a link, that somehow counts as a click in Fx
+		// (even though the mousedown wasn't over the link - weird). Prevent that.
+		this._preventNextClickEvent();
+	};
+
+	protected _handleCopy(event: ClipboardEvent) {
+		if (!event.clipboardData) {
+			return;
+		}
+		if (this._selectedAnnotationIDs.length) {
+			// It's enough to provide only one of selected annotations,
+			// others will be included automatically by _onSetDataTransferAnnotations
+			let annotation = this._annotationsByID.get(this._selectedAnnotationIDs[0]);
+			if (!annotation) {
+				return;
+			}
+			console.log('Copying annotation', annotation);
+			this._options.onSetDataTransferAnnotations(event.clipboardData, annotation);
+		}
+		else {
+			let annotation = this._getAnnotationFromTextSelection('highlight');
+			if (!annotation) {
+				return;
+			}
+			console.log('Copying text', annotation);
+			this._options.onSetDataTransferAnnotations(event.clipboardData, annotation, true);
+		}
+		event.preventDefault();
+	}
+
+	protected _handlePointerDown(event: PointerEvent) {
+		// Clean up in case this pointer was left behind in _handledPointerIDs,
+		// since we know this is a new interaction
+		this._handledPointerIDs.delete(event.pointerId);
+
+		if ((event.buttons & 1) === 1 && event.isPrimary) {
+			this._gotPointerUp = false;
+			this._pointerMovementWhileDown = 0;
+			this._lastPointerPosition = { x: event.clientX, y: event.clientY };
+			let selection = this._iframeWindow.getSelection();
+			this._hadSelectionOnPointerDown = (!!selection && !selection.isCollapsed) || !!this._selectedAnnotationIDs.length;
+
+			let touchCaretPosition = this._getTouchAnnotationStartPosition(event);
+			if (touchCaretPosition) {
+				this._touchAnnotationStartPosition = touchCaretPosition;
+				this._iframeDocument.body.classList.add('creating-touch-annotation');
+				event.stopPropagation();
+			}
+		}
+
+		this._options.onSetOverlayPopup();
+
+		// If we marked a node as future focus target for screen readers, clear it to not interfere with focus
+		this._a11yVirtualCursorTarget = null;
+
+		// Hide focus rings
+		this._annotationRenderRootEl.classList.remove('keyboard-focus');
+
+		// Create note annotation on pointer down event, if note tool is active.
+		// The note tool will be automatically deactivated in reader.js,
+		// because this is what we do in PDF reader
+		if ((event.buttons & 1) === 1 && this._tool.type == 'note' && this._previewAnnotation) {
+			this._options.onAddAnnotation(this._finalizeAnnotation(this._previewAnnotation!), true);
+			this._previewAnnotation = null;
+			this._renderAnnotations(true);
+			this._openAnnotationPopup();
+			event.preventDefault();
+
+			// preventDefault() doesn't stop pointerup/click from firing, so our link handler will still fire
+			// if the note is added to a link. "Fix" this by eating any click event in the next half second.
+			// Very silly.
+			this._preventNextClickEvent();
+
+			return;
+		}
+
+		if (event.target !== this._annotationShadowRoot.host) {
+			// Deselect annotations when clicking outside the annotation layer
+			if (this._selectedAnnotationIDs.length) {
+				this._options.onSelectAnnotations([], event);
+				this._handledPointerIDs.add(event.pointerId);
+			}
+		}
+	}
+
+	protected _handlePointerUp(event: PointerEvent) {
+		this._handledPointerIDs.delete(event.pointerId);
+
+		if (!event.isPrimary || event.defaultPrevented) {
+			return;
+		}
+
+		this._gotPointerUp = true;
+		if (event.type === 'pointercancel') {
+			this._previewAnnotation = null;
+			this._renderAnnotations();
+		}
+		// If we're using a tool that immediately creates an annotation based on the current selection, we want to use
+		// debounced _tryUseTool() in order to wait for double- and triple-clicks to complete. A multi-click is only
+		// possible if the pointer hasn't moved while down.
+		else if (this._pointerMovementWhileDown <= 5 && (this._tool.type == 'highlight' || this._tool.type == 'underline')) {
+			this._tryUseToolDebounced();
+		}
+		else {
+			let wasToolUsed = this._tryUseTool();
+			if (!wasToolUsed
+					&& this._pointerMovementWhileDown <= 5
+					&& !this._handledPointerIDs.has(event.pointerId)
+					&& !this._hadSelectionOnPointerDown
+					&& !(event.target as Element).closest('a')) {
+				this._options.onBackdropTap?.(event);
+			}
+		}
+		this._touchAnnotationStartPosition = null;
+		this._renderAnnotations();
+		this._iframeDocument.body.classList.remove('creating-touch-annotation');
+	}
+
+	protected _handlePointerMove(event: PointerEvent) {
+		this._handlePointerMoveForReadAloud(event);
+
+		if ((event.buttons & 1) !== 1 || !event.isPrimary) {
+			return;
+		}
+		if (this._lastPointerPosition) {
+			this._pointerMovementWhileDown
+				+= Math.abs(event.clientX - this._lastPointerPosition.x)
+				+ Math.abs(event.clientY - this._lastPointerPosition.y);
+		}
+		this._lastPointerPosition = { x: event.clientX, y: event.clientY };
+		if (this._touchAnnotationStartPosition
+				&& this._canToolDoTouchAnnotation(this._tool.type)
+				&& this._canPointerEventDoTouchAnnotation(event)) {
+			let endPos = caretPositionFromPoint(this._iframeDocument, event.clientX, event.clientY);
+			if (endPos) {
+				let range: Range | null = this._iframeDocument.createRange();
+				range.setStart(this._touchAnnotationStartPosition.offsetNode, this._touchAnnotationStartPosition.offset);
+				range.setEnd(endPos.offsetNode, endPos.offset);
+				if (range.collapsed) {
+					// Range is reversed - end is before start in the tree
+					// Make sure this isn't WebKit freaking out and putting it
+					// way up at the top of the page
+					let endPosY = endPos.getClientRect()?.y ?? event.clientY;
+					if (isSafari && endPos.offset === 0 && event.clientY - endPosY > 50) {
+						range = null;
+					}
+					else {
+						range.setStart(endPos.offsetNode, endPos.offset);
+						range.setEnd(this._touchAnnotationStartPosition.offsetNode, this._touchAnnotationStartPosition.offset);
+					}
+				}
+				let annotation = range && this.getAnnotationFromRange(range, this._tool.type, this._tool.color);
+				if (annotation) {
+					this._previewAnnotation = annotation;
+					this._renderAnnotations();
+				}
+			}
+			if (event.pointerType === 'pen') {
+				this._markPenActive();
+			}
+			event.stopPropagation();
+		}
+	}
+
+	/**
+	 * Find the containing block for Read Aloud jump button positioning.
+	 */
+	getReadAloudBlock(element: Element): Element | null {
+		return getContainingBlock(element);
+	}
+
+	protected _handlePointerMoveForReadAloud = throttle((event: MouseEvent) => {
+		if (!this._readAloud.state?.popupOpen || event.buttons !== 0) {
+			return;
+		}
+		if (this._readAloudJumpButton.iconContainsPoint(event.clientX, event.clientY)) {
+			return;
+		}
+
+		let targets = this._iframeDocument.elementsFromPoint(event.clientX, event.clientY)
+			.filter(target => !this._readAloudJumpButton.contains(target));
+		let target = targets[0];
+		if (!target) {
+			return;
+		}
+
+		let element = closestElement(target);
+		if (!element) return;
+
+		let block = this.getReadAloudBlock(element);
+		if (!block || block === this._readAloudJumpButtonBlock) {
+			return;
+		}
+
+		// Only show for blocks that are the direct containing block of a segment,
+		// not ancestor blocks (e.g. a wrapper <div> containing <p>s in snapshots)
+		if (!this._readAloud.getSegmentForBlock(block)) {
+			return;
+		}
+
+		this._readAloudJumpButtonBlock = block;
+
+		let blockRect = block.getBoundingClientRect();
+		let scrollX = this._iframeWindow.scrollX;
+		let scrollY = this._iframeWindow.scrollY;
+
+		let rtl = isRTL(block);
+		let width = rtl
+			? this._iframeDocument.documentElement.scrollWidth - blockRect.right - scrollX
+			: blockRect.left + scrollX;
+		this._readAloudJumpButton.show({
+			marginWidth: `${width}px`,
+			top: `${blockRect.top + scrollY}px`,
+			height: `${blockRect.height}px`,
+		});
+	}, 50);
+
+	protected _hideReadAloudJumpButton() {
+		this._readAloudJumpButton.hide();
+		this._readAloudJumpButtonBlock = null;
+	}
+
+	protected _handleReadAloudJumpButtonClick() {
+		if (!this._readAloudJumpButtonBlock || !this._readAloud.state) return;
+
+		let segment = this._readAloud.getSegmentForBlock(this._readAloudJumpButtonBlock);
+		if (!segment) return;
+
+		// Match the immediate spotlight to the user's highlight granularity,
+		// so we don't show a wrong-granularity flash before the manager overrides
+		// with a new highlight.
+		let state = this._readAloud.state;
+		let useSegmentSpotlight = state.segmentGranularity === 'sentence'
+			&& state.highlightGranularity !== 'paragraph'
+			&& isSelector(segment.sourcePosition);
+		let immediateSelector: Selector | null;
+		if (useSegmentSpotlight) {
+			immediateSelector = segment.sourcePosition as Selector;
+		}
+		else {
+			let blockRange = this._iframeDocument.createRange();
+			blockRange.selectNodeContents(this._readAloudJumpButtonBlock);
+			immediateSelector = this.toSelector(blockRange);
+		}
+		if (immediateSelector) {
+			this.setSpotlight(SpotlightKey.ReadAloudActiveSegment, immediateSelector, null);
+		}
+
+		this._options.onSetReadAloudState({
+			targetPosition: segment.position,
+		});
+	}
+
+	protected _canToolDoTouchAnnotation(toolType: ToolType): toolType is 'highlight' | 'underline' {
+		return toolType === 'highlight' || toolType === 'underline';
+	}
+
+	protected _canPointerEventDoTouchAnnotation(event: PointerEvent): boolean {
+		if (event.pointerType !== 'touch' && event.pointerType !== 'pen') {
+			return false;
+		}
+		// While a pen is in use (recently active, or exclusive mode is on), finger
+		// touches navigate/select instead of annotating.
+		if ((this._penActive || this._penExclusive) && event.pointerType !== 'pen') {
+			return false;
+		}
+		return event.target !== this._annotationShadowRoot.host;
+	}
+
+	/**
+	 * Mark the pen as recently active and (re)start the idle timeout. Because we
+	 * can't detect whether a stylus is physically connected, we treat it as in
+	 * use for PEN_ACTIVE_TIMEOUT after the last pen interaction.
+	 */
+	protected _markPenActive() {
+		this._penActive = true;
+		if (this._penActiveTimeout !== null) {
+			clearTimeout(this._penActiveTimeout);
+		}
+		this._penActiveTimeout = setTimeout(() => {
+			this._penActive = false;
+			this._penActiveTimeout = null;
+		}, PEN_ACTIVE_TIMEOUT);
+	}
+
+	protected _clearPenActive() {
+		this._penActive = false;
+		if (this._penActiveTimeout !== null) {
+			clearTimeout(this._penActiveTimeout);
+			this._penActiveTimeout = null;
+		}
+	}
+
+	protected _getTouchAnnotationStartPosition(event: PointerEvent): CaretPosition | null {
+		if (!this._canToolDoTouchAnnotation(this._tool.type) || !this._canPointerEventDoTouchAnnotation(event)) {
+			return null;
+		}
+		let caretPosition = caretPositionFromPoint(this._iframeDocument, event.clientX, event.clientY);
+		if (!caretPosition) {
+			return null;
+		}
+		let caretRect = caretPosition.getClientRect();
+		// Only start touch annotation if the touch was within 100px of
+		// the detected caret position, so scrolling is still allowed
+		// in the margins with an annotation tool selected
+		if (!caretRect || !rectContainsPoint(expandRect(caretRect, 100), event.clientX, event.clientY)) {
+			return null;
+		}
+
+		// Try to snap to the start of the word
+		if ('Segmenter' in Intl && caretPosition.offsetNode.nodeType === Node.TEXT_NODE) {
+			try {
+				let wordSegmenter = new Intl.Segmenter(getLang(caretPosition.offsetNode), {
+					granularity: 'word'
+				});
+
+				let words = wordSegmenter.segment(caretPosition.offsetNode.nodeValue!);
+				let wordContainingCaret = words.containing(caretPosition.offset);
+
+				// If we found a word and we're not too far from its start, snap to that
+				if (wordContainingCaret && wordContainingCaret.index >= caretPosition.offset - 16) {
+					caretPosition = { ...caretPosition, offset: wordContainingCaret.index };
+				}
+			}
+			catch (e) {
+				console.error(e);
+			}
+		}
+		return caretPosition;
+	}
+
+	protected _handleTouchStart(event: TouchEvent) {
+		if (event.touches.length === 2) {
+			this._lastPinchDistance = Math.hypot(event.touches[0].pageX - event.touches[1].pageX, event.touches[0].pageY - event.touches[1].pageY);
+		}
+	}
+
+	protected _handleTouchMove(event: TouchEvent) {
+		// We need to stop annotation-creating/resizing touches from scrolling
+		// the view. Unfortunately:
+		// 1. The recommended way to prevent touch scrolling is via the
+		//    touch-action CSS property, but a WebKit bug causes changes to
+		//    that property not to take effect in child nodes until they're
+		//    invalidated in some other way (text is selected, the web inspector
+		//    highlights them, ...).
+		// 2. A WebKit quirk (I think this is technically spec-compliant) makes
+		//    pointermove events non-cancellable, even when the listener is
+		//    initialized with { passive: false }.
+		// So we do it with a separate touchmove listener.
+		if (this._touchAnnotationStartPosition && (this._tool.type === 'highlight' || this._tool.type === 'underline')
+				|| this._resizingAnnotationID) {
+			event.preventDefault();
+		}
+		// Handle pinch-to-zoom
+		else if (event.touches.length === 2) {
+			event.preventDefault();
+
+			let pinchDistance = Math.hypot(event.touches[0].pageX - event.touches[1].pageX, event.touches[0].pageY - event.touches[1].pageY);
+			this.zoomBy((pinchDistance / this._lastPinchDistance - 1) / 10);
+			this._lastPinchDistance = pinchDistance;
+		}
+	}
+
+	protected _resizeIframeImmediate() {
+		let dpr = window.devicePixelRatio || 1;
+		let width = Math.floor(this._container.clientWidth * dpr) / dpr;
+		let height = Math.floor(this._container.clientHeight * dpr) / dpr;
+		this._iframe.style.width = width + 'px';
+		this._iframe.style.height = height + 'px';
+		if (this._iframeDocument) {
+			this._iframeDocument.documentElement.style.width = width + 'px';
+			this._iframeDocument.documentElement.style.height = height + 'px';
+			// Immediately reposition annotations
+			this._handleViewUpdate();
+		}
+	}
+
+	protected _resizeIframeLeading() {
+		// No-op besides EPUB
+	}
+
+	/**
+	 * Attempt to apply a width-only resize without masking the transition or saving and restoring the
+	 * reading position, for views that can absorb the change with their margins alone. Returns true if
+	 * the resize was handled, or false to fall back to the masked resize path.
+	 */
+	protected _tryResizeWidthInPlace(_width: number): boolean {
+		return false;
+	}
+
+	protected _resizeIframeTrailing() {
+		this._resizeIframeImmediate();
+	}
+
+	protected _handleResize() {
+		this._handleViewUpdate();
+	}
+
+	protected _handleScroll(event: Event) {
+		this._lastScrollTime = event.timeStamp;
+		requestAnimationFrame(() => {
+			this._renderAnnotations();
+			this._repositionPopups();
+		});
+	}
+
+	protected _onManualNavigation(): void {
+		this._readAloud.setPositionLocked(false);
+	}
+
+	lockPositionToReadAloud(): void {
+		this._readAloud.setPositionLocked(true);
+	}
+
+	protected _handleScrollCapture(event: Event) {
+		// The annotation layer is positioned at the top-left of the document, so it moves along with the content when
+		// the document is scrolled. But scrollable sub-frames (e.g. elements with overflow: auto) don't have their own
+		// annotation layers. When one of them is scrolled, trigger a rerender so annotations get repositioned.
+		let target = event.target as Node;
+		if (target !== this._iframeDocument) {
+			for (let annotation of this._annotations) {
+				if (this.toDisplayedRange(annotation.position)?.intersectsNode(target)) {
+					this._displayedAnnotationCache.delete(annotation);
+				}
+			}
+			requestAnimationFrame(() => {
+				this._renderAnnotations(true);
+				this._repositionPopups();
+			});
+		}
+	}
+
+	protected _handleWheelCapture(event: WheelEvent) {
+		if (!event.ctrlKey && !(event.metaKey && isMac())) {
+			this._lastScrollTime = event.timeStamp;
+			return;
+		}
+
+		// Handle pinch-to-zoom and modifier scrolls
+		// This routine is a simplified version of PDF.js webViewerWheel()
+		// See pdf.js/web/app.js
+
+		event.preventDefault();
+		event.stopPropagation();
+
+		// Don't turn a scroll into a zoom when modifier is pressed
+		if (this._lastScrollTime !== null && event.timeStamp - this._lastScrollTime < 100) {
+			this._lastScrollTime = event.timeStamp;
+			return;
+		}
+
+		let deltaMode = event.deltaMode;
+		let scaleFactor = Math.exp(-event.deltaY / 100);
+		let isPinchToZoom = event.ctrlKey
+			&& !this._isCtrlKeyDown
+			&& deltaMode === WheelEvent.DOM_DELTA_PIXEL
+			&& event.deltaX === 0
+			&& (Math.abs(scaleFactor - 1) < 0.05 || isMac())
+			&& event.deltaZ === 0;
+
+		if (isPinchToZoom) {
+			this.zoomBy(scaleFactor - 1);
+		}
+		else {
+			let delta = -event.deltaY;
+			if (deltaMode === WheelEvent.DOM_DELTA_LINE
+				|| deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+				delta *= 0.01;
+			}
+			else {
+				delta *= 0.001;
+			}
+			this.zoomBy(delta);
+		}
+	}
+
+	private _handleFocus() {
+		this._options.onFocus();
+
+		// Help screen readers understand where to place virtual cursor
+		placeA11yVirtualCursor(this._a11yVirtualCursorTarget);
+	}
+
+	private _handleAnnotationFocusIn(event: Event) {
+		let annotationID = (event.target as HTMLElement | SVGElement).dataset.annotationId;
+		if (annotationID) {
+			this._options.onFocusAnnotation(this._annotationsByID.get(annotationID)!);
+		}
+	}
+
+	private _preventNextClickEvent() {
+		let clickListener = (event: Event) => {
+			event.stopImmediatePropagation();
+			event.preventDefault();
+		};
+		this._iframeDocument.addEventListener('click', clickListener, { once: true, capture: true });
+		setTimeout(() => {
+			this._iframeDocument.removeEventListener('click', clickListener, { capture: true });
+		}, 500);
+	}
+
+	private _selectionContainsPoint(x: number, y: number): boolean {
+		let selection = this._iframeDocument.getSelection();
+		if (!selection) return false;
+		let selectionBoundingRect = getBoundingRect(
+			getSelectionRanges(selection).map(range => range.getBoundingClientRect())
+		);
+		return rectContainsPoint(selectionBoundingRect, x, y);
+	}
+
+	protected _keepSelection<T>(block: () => T): T {
+		let selection = this._iframeDocument.getSelection();
+		if (!selection || selection.isCollapsed) {
+			return block();
+		}
+
+		let rangesBefore = getSelectionRanges(selection).map(r => new PersistentRange(r));
+		let result = block();
+		selection.removeAllRanges();
+		for (let range of rangesBefore) {
+			selection.addRange(range.toRange());
+		}
+		return result;
+	}
+
+	destroy() {
+		this._clearPenActive();
+		this._overlayPopupDelayer.destroy();
+		this._annotationRenderRoot.unmount();
+		this._resizeObserver.disconnect();
+	}
+
+	// ***
+	// Setters that get called once there are changes in reader._state
+	// ***
+
+	setTool(tool: Tool) {
+		this._tool = tool;
+
+		this._iframeDocument.body.dataset.tool = tool.type;
+
+		// When highlighting or underlining, we draw a preview annotation during selection, so set the browser's
+		// selection highlight color to transparent. Otherwise, use the default selection color.
+		let selectionColor = tool.type == 'highlight' || tool.type == 'underline' ? 'transparent' : SELECTION_COLOR;
+		if (selectionColor.startsWith('#')) {
+			// 50% opacity, like annotations -- not needed if we're using a system color
+			selectionColor += '80';
+		}
+		this._iframeDocument.documentElement.style.setProperty('--selection-color', selectionColor);
+
+		if (this._previewAnnotation && tool.type !== 'note') {
+			this._previewAnnotation = null;
+		}
+		this._renderAnnotations();
+
+		if (tool.type === 'pointer') {
+			this._clearPenActive();
+		}
+	}
+
+	setAnnotations(annotations: WADMAnnotation[]) {
+		// Individual annotation object reference changes only if that annotation was modified,
+		// so it's possible to do rendering optimizations by skipping other annotations
+		this._annotations = annotations;
+		this._annotationsByID = new Map(annotations.map(a => [a.id, a]));
+		this._renderAnnotations();
+		this._repositionPopups();
+	}
+
+	setShowAnnotations(show: boolean) {
+		this._showAnnotations = show;
+		this._renderAnnotations();
+	}
+
+	setLightTheme(theme: Theme | null) {
+		this._lightTheme = theme;
+		this._updateColorScheme();
+	}
+
+	setDarkTheme(theme: Theme | null) {
+		this._darkTheme = theme;
+		this._updateColorScheme();
+	}
+
+	setColorScheme(colorScheme: ColorScheme | null) {
+		this._colorScheme = colorScheme;
+		this._updateColorScheme();
+	}
+
+	setSelectedAnnotationIDs(ids: string[]) {
+		this._selectedAnnotationIDs = ids;
+		// Close annotation popup each time when any annotation is selected, because the click is what opens the popup
+		this._options.onSetAnnotationPopup();
+		this._renderAnnotations();
+
+		this._iframeWindow.getSelection()?.empty();
+
+		this._updateViewStats();
+	}
+
+	get selectedAnnotationIDs() {
+		return this._selectedAnnotationIDs.slice();
+	}
+
+	setAnnotationPopup(popup: AnnotationPopupParams<WADMAnnotation>) {
+		this._annotationPopup = popup;
+	}
+
+	setSelectionPopup(popup: SelectionPopupParams<WADMAnnotation>) {
+		this._selectionPopup = popup;
+	}
+
+	setOverlayPopup(popup: OverlayPopupParams) {
+		this._overlayPopup = popup;
+		this._overlayPopupDelayer.setOpen(!!popup);
+	}
+
+	setOutline(outline: OutlineItem[]) {
+		this._outline = outline;
+	}
+
+	setAppearance(partialAppearance: Partial<ReflowableAppearance>) {
+		let appearance = {
+			...DEFAULT_REFLOWABLE_APPEARANCE,
+			...partialAppearance
+		};
+		this.appearance = appearance;
+		this._iframeDocument.documentElement.style.setProperty('--content-line-height-adjust', String(appearance.lineHeight));
+		this._iframeDocument.documentElement.style.setProperty('--content-word-spacing-adjust', String(appearance.wordSpacing));
+		this._iframeDocument.documentElement.style.setProperty('--content-letter-spacing-adjust', String(appearance.letterSpacing));
+		this._iframeDocument.documentElement.classList.toggle('use-original-font', appearance.useOriginalFont);
+
+		let pageWidth;
+		switch (appearance.pageWidth) {
+			case PageWidth.Narrow:
+				pageWidth = 'narrow';
+				break;
+			case PageWidth.Normal:
+				pageWidth = 'normal';
+				break;
+			case PageWidth.Full:
+				pageWidth = 'full';
+				break;
+		}
+		this._iframeDocument.documentElement.dataset.pageWidth = pageWidth;
+		this._handleViewUpdate();
+	}
+
+	setFontFamily(fontFamily: string) {
+		this._iframeDocument.documentElement.style.setProperty('--content-font-family', fontFamily);
+		this._renderAnnotations(true);
+	}
+
+	setHyphenate(hyphenate: boolean) {
+		this._iframeDocument.documentElement.classList.toggle('hyphenate', hyphenate);
+		this._renderAnnotations(true);
+	}
+
+	setPenActive(penActive: boolean) {
+		if (penActive) {
+			this._markPenActive();
+		}
+		else {
+			this._clearPenActive();
+		}
+	}
+
+	setPenExclusive(penExclusive: boolean) {
+		this._penExclusive = penExclusive;
+	}
+
+	setReadAloudState(state: ReadAloudStateSnapshot): void {
+		if (!state.popupOpen) {
+			this._hideReadAloudJumpButton();
+		}
+		let updatedState = this._readAloud.setState(state);
+		if (updatedState) {
+			this._options.onSetReadAloudState(updatedState);
+		}
+	}
+
+	get hasReadAloudTarget(): boolean {
+		return this._readAloud.hasTarget;
+	}
+
+	// ***
+	// Public methods to control the view from the outside
+	// ***
+
+	focus() {
+		this._iframe.focus();
+	}
+
+	zoomIn() {
+		this.zoomBy(0.1);
+	}
+
+	zoomOut() {
+		this.zoomBy(-0.1);
+	}
+
+	zoomBy(delta: number) {
+		let scale = this.scale;
+		if (scale === undefined) scale = 1;
+		scale += delta;
+		scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, scale));
+		this._setScale(scale);
+		this._handleViewUpdate();
+	}
+
+	zoomReset() {
+		this._setScale(1);
+		this._handleViewUpdate();
+	}
+
+	protected abstract _setScale(scale: number): void;
+
+	setSpotlight(key: SpotlightKey, selector: Selector | null, timeout: number | null = 2000) {
+		if (selector) {
+			this._spotlights.set(key, selector);
+		}
+		else {
+			this._spotlights.delete(key);
+		}
+		this._renderAnnotations();
+
+		if (selector === null || timeout === null) return;
+
+		setTimeout(() => {
+			if (this._spotlights.get(key) === selector) {
+				this._spotlights.delete(key);
+				this._renderAnnotations(true);
+			}
+		}, timeout);
+	}
+
+	protected _getSpotlightColor(key: SpotlightKey): string {
+		switch (key) {
+			case SpotlightKey.Navigation:
+				return SELECTION_COLOR;
+			case SpotlightKey.ReadAloudActiveSegment:
+				return READ_ALOUD_ACTIVE_SEGMENT_COLOR;
+			case SpotlightKey.ReadAloudActiveSentence:
+				return READ_ALOUD_ACTIVE_SENTENCE_COLOR;
+			default:
+				throw new Error('Unknown highlight key: ' + key);
+		}
+	}
+
+	navigate(location: NavLocation, options: NavigateOptions = {}) {
+		if (!options.skipHistory) {
+			this._onManualNavigation();
+		}
+
+		if (location.annotationID) {
+			options.block ||= 'center';
+			options.ifNeeded ??= true;
+
+			let annotation = this._annotationsByID.get(location.annotationID);
+			if (!annotation) {
+				return;
+			}
+			let selector = annotation.position;
+			this.navigateToSelector(selector, options);
+		}
+		else if (location.position) {
+			options.block ||= 'center';
+			options.ifNeeded ??= true;
+
+			let selector = location.position as Selector;
+			this.navigateToSelector(selector, options);
+			this.setSpotlight(SpotlightKey.Navigation, selector);
+		}
+	}
+
+	navigateBack() {
+		this._onManualNavigation();
+		this._history.navigateBack();
+	}
+
+	navigateForward() {
+		this._onManualNavigation();
+		this._history.navigateForward();
+	}
+
+	abstract print(): Promise<void>;
+}
+
+export type DOMViewOptions<State extends DOMViewState, Data> = {
+	primary?: boolean;
+	mobile?: boolean;
+	preview?: boolean;
+	readOnly?: boolean;
+	container: Element;
+	tools: Record<ToolType, Tool>;
+	tool: Tool;
+	platform: Platform;
+	location?: NavLocation;
+	selectedAnnotationIDs: string[];
+	annotations: WADMAnnotation[];
+	showAnnotations: boolean;
+	lightTheme: Theme | null;
+	darkTheme: Theme | null;
+	colorScheme: ColorScheme | null;
+	annotationPopup: AnnotationPopupParams<WADMAnnotation> | null;
+	selectionPopup: SelectionPopupParams<WADMAnnotation> | null;
+	overlayPopup: OverlayPopupParams | null;
+	findState: FindState;
+	viewState?: State;
+	fontFamily?: string;
+	hyphenate?: boolean;
+	penActive?: boolean;
+	penExclusive?: boolean;
+	readAloudState: ReadAloudStateSnapshot;
+	readAloudVoices: Map<string, string>,
+	onSetOutline: (outline: OutlineItem[]) => void;
+	onChangeViewState: (state: State, primary?: boolean) => void;
+	onChangeViewStats: (stats: ViewStats) => void;
+	onSetDataTransferAnnotations: (dataTransfer: DataTransfer, annotation: NewAnnotation<WADMAnnotation> | NewAnnotation<WADMAnnotation>[], fromText?: boolean) => void;
+	onAddAnnotation: (annotation: NewAnnotation<WADMAnnotation>, select?: boolean) => WADMAnnotation;
+	onUpdateAnnotations: (annotations: Partial<Annotation>[]) => void;
+	onOpenLink: (url: string) => void;
+	onSelectAnnotations: (ids: string[], triggeringEvent?: KeyboardEvent | MouseEvent) => void;
+	onSetSelectionPopup: (params?: SelectionPopupParams<WADMAnnotation> | null) => void;
+	onSetAnnotationPopup: (params?: AnnotationPopupParams<WADMAnnotation> | null) => void;
+	onSetOverlayPopup: (params?: OverlayPopupParams) => void;
+	onSetFindState: (state?: FindState) => void;
+	onSetReadAloudState: (state: ReadAloudStateDelta) => void;
+	onSetZoom?: (iframe: HTMLIFrameElement, zoom: number) => void;
+	onOpenViewContextMenu: (params: {
+		x: number;
+		y: number;
+		overlay?: ViewContextMenuOverlay;
+		position?: Position;
+	}) => void;
+	onOpenAnnotationContextMenu: (params: { ids: string[], x: number, y: number, view: boolean }) => void;
+	onFocus: () => void;
+	onTabOut: (isShiftTab?: boolean) => void;
+	onKeyUp: (event: KeyboardEvent) => void;
+	onKeyDown: (event: KeyboardEvent) => void;
+	onEPUBEncrypted: () => void;
+	onFocusAnnotation: (annotation: WADMAnnotation) => void;
+	onBackdropTap?: (event: PointerEvent) => void;
+	getLocalizedString?: (name: string) => string;
+	data: Data & {
+		buf?: Uint8Array<ArrayBuffer>,
+		url?: string
+	};
+};
+
+export interface DOMViewState {
+	scale?: number;
+	appearance?: Partial<ReflowableAppearance>;
+}
+
+export interface CustomScrollIntoViewOptions extends Omit<ScrollIntoViewOptions, 'inline'> {
+	block?: 'center' | 'start';
+	ifNeeded?: boolean;
+	visibilityMargin?: number;
+	offsetBlock?: number;
+}
+
+export interface NavigateOptions extends CustomScrollIntoViewOptions {
+	skipHistory?: boolean;
+
+	/** Don't refresh the user anchor as part of this navigation. */
+	keepAnchor?: boolean;
+}
+
+export const enum SpotlightKey {
+	Navigation = 'Navigation',
+	ReadAloudActiveSegment = 'ReadAloudActiveSegment',
+	ReadAloudActiveSentence = 'ReadAloudActiveSentence',
+}
+
+export default DOMView;

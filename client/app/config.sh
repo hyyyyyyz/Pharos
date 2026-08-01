@@ -1,0 +1,79 @@
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Version of Gecko to build with
+GECKO_VERSION_MAC="140.12.0esr"
+GECKO_VERSION_LINUX="140.12.0esr"
+GECKO_VERSION_WIN="140.12.0esr"
+RUST_VERSION=1.86.0
+
+# URL prefix for custom builds of Firefox components
+custom_components_url="https://download.zotero.org/dev/firefox-components/"
+custom_components_hash_mac=""
+custom_components_hash_win_x64="de075a96b3fba226382d9625ff0ad755b1baa41fff1c3307cc4c9d0d98720c87"
+custom_components_hash_win_arm64="105d20e38a03eed6e86e4eba54ae5907f904c4688ed6832950842152bc22153a"
+custom_components_hash_win32="69ec0b87ae48143b6985fa2ba33d8ceff851bd9a92587fa609a38e817d895bbe"
+
+APP_NAME="Pharos"
+APP_ID="pharos\@pharos.selab.top"
+
+# Whether to sign builds
+SIGN=0
+
+# OS X Developer ID certificate information.
+#
+# Empty, and left that way deliberately. This was Zotero's own certificate
+# hash; keeping it here would name a certificate this project cannot use and
+# does not own. Pharos builds are unsigned until someone with an Apple Developer
+# account sets this (and the NOTARIZATION_* values below) in config-custom.sh,
+# which is sourced at the end of this file and is not in the repository.
+#
+# An unsigned build still runs on macOS -- the first launch needs Control-click,
+# Open, because Gatekeeper will not open it from a double-click.
+DEVELOPER_ID=""
+# Keychain and keychain password, if not building via the GUI
+KEYCHAIN=""
+KEYCHAIN_PASSWORD=""
+NOTARIZATION_BUNDLE_ID=""
+NOTARIZATION_USER=""
+NOTARIZATION_TEAM_ID=""
+NOTARIZATION_PASSWORD=""
+
+# Paths for Windows installer build
+NSIS_DIR='C:\Program Files (x86)\NSIS\'
+
+SIGNTOOL_DELAY=5
+
+# Directory for unpacked binaries
+STAGE_DIR="$DIR/staging"
+# Directory for packed binaries
+DIST_DIR="$DIR/dist"
+
+SOURCE_REPO_URL="https://github.com/zotero/zotero"
+S3_BUCKET="zotero-download"
+S3_CI_ZIP_PATH="ci/client"
+S3_DIST_PATH="client"
+
+DEPLOY_HOST="deploy.zotero"
+DEPLOY_PATH="www/www-production/public/download/client"
+
+BUILD_PLATFORMS=""
+NUM_INCREMENTALS=6
+
+if [ "`uname`" = "Darwin" ]; then
+	shopt -s expand_aliases
+fi
+
+if [ "`uname -o 2> /dev/null`" = "Cygwin" ]; then
+	export WIN_NATIVE=1
+else
+	export WIN_NATIVE=0
+fi
+
+# Make utilities (mar/mbsdiff) available in the path
+PATH="$DIR/xulrunner/bin:$PATH"
+
+if [ -f "$DIR/config-custom.sh" ]; then
+	. "$DIR/config-custom.sh"
+fi
+
+unset DIR

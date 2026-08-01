@@ -1,0 +1,76 @@
+//
+// Variables
+// --------------------------------------------------
+
+
+// Dimensions
+// --------------------------------------------------
+
+$space-min:    4px;
+$space-xs:     8px;
+$space-sm:    12px;
+$space-md:    16px;
+$space-lg:    24px;
+$space-xl:    32px;
+$space-xxl:   48px;
+$space-max:   64px;
+
+$space-thumb: 42px;
+
+$height-toolbar: 41px;
+
+
+// Typography
+// --------------------------------------------------
+
+$font-family-sans-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+$font-family-base:       $font-family-sans-serif;
+
+$font-size-base:   13px;
+
+$font-size-h1: 20px;
+$font-size-h2: 16px;
+
+$line-height-base:           1.539;
+$line-height-computed:       ceil($font-size-base * $line-height-base);
+
+// Components
+// --------------------------------------------------
+
+$padding-base-vertical: 2px;
+
+$padding-base-horizontal: $space-xs;
+$padding-large-horizontal: $space-sm;
+
+$border-radius-small: 3px;
+$border-radius-base:  4px;
+$border-radius-large: 6px;
+
+$border-width: 1px;
+
+$separator-width: 1px;
+
+// Buttons
+// --------------------------------------------------
+
+$btn-disabled-opacity: 0.5;
+$shadow-button: 0 0.5px 2.5px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+
+// Range inputs
+// --------------------------------------------------
+
+$range-input-thumb-size: 16px;
+
+// Z-index master list
+// --------------------------------------------------
+
+$z-index-sidebar: 10;
+$z-index-sidebar-resizer: 20;
+$z-index-split-view-resizer: 21;
+$z-index-toolbar: 30;
+$z-index-popup: 40;
+$z-index-overlay: 50;
+$z-index-find-popup: 70;
+$z-index-freeze-cover: 80;
+$z-index-error-bar: 90;
+$z-index-context-menu: 100;

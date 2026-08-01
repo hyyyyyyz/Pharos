@@ -1,0 +1,175 @@
+.toolbar {
+	left: 0;
+	right: 0;
+	z-index: $z-index-toolbar;
+	cursor: default;
+	position: relative;
+	display: flex;
+	justify-content: space-between;
+	-moz-window-dragging: drag;
+	user-select: none;
+	color: #404040;
+	font-size: 13px;
+	height: $height-toolbar !important;
+	min-height: 41px;
+	margin: 0;
+	padding-inline: 8px 4px;
+	padding-block: 0;
+	min-width: 1px;
+	background: var(--material-toolbar);
+	border-bottom: var(--material-panedivider);
+
+	.start,
+	.center,
+	.end {
+		display: flex;
+		align-items: center;
+	}
+
+	.start,
+	.center {
+		gap: 4px;
+	}
+
+	.end {
+		justify-content: flex-end;
+		padding-inline-end: var(--toolbar-placeholder-width);
+		gap: 9px;
+	}
+
+	.custom-sections {
+		display: flex;
+		padding: 0 3px;
+		gap: 3px;
+	}
+
+	.toolbar-button, .toolbar-text-input {
+		-moz-window-dragging: no-drag;
+	}
+
+	#pageNumber {
+		width: 52px;
+		text-align: right;
+	}
+
+	#numPages {
+		color: var(--fill-secondary);
+		margin-left: 0;
+		display: flex;
+
+		div {
+			position: absolute;
+		}
+	}
+
+	.divider {
+		width: 1px;
+		height: 20px;
+		border-radius: 0.5px;
+		background: var(--fill-quinary);
+		margin: 0 4px;
+	}
+
+	.reading-progress {
+		$padding: 4px;
+		$height-track: 2px;
+		$size-handle: 10px;
+
+		position: absolute;
+		bottom: calc(-1px - $padding);
+		inset-inline: 0;
+		height: $padding * 2 + $height-track;
+		overflow-x: clip;
+		-moz-window-dragging: no-drag;
+
+		.track {
+			position: absolute;
+			bottom: $padding;
+			inset-inline-start: 0;
+			width: calc(var(--value) * 100%);
+			height: $height-track;
+			background: var(--accent-blue);
+		}
+
+		.handle {
+			position: absolute;
+			width: $size-handle;
+			height: $size-handle;
+			inset-inline-start: calc(var(--value) * 100% - $size-handle / 2);
+			top: calc($padding + ($height-track - $size-handle) / 2);
+			background: var(--accent-blue);
+			border-radius: 50%;
+
+			transition: opacity 100ms ease-in, transform 100ms ease-in-out;
+			opacity: 0;
+			transform: scale(0);
+		}
+
+		&:hover .handle {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+
+	@include macOS-inactive-opacity;
+}
+
+[dir=rtl] .toolbar {
+	.sidebar-toggle {
+		transform: scaleX(-1);
+	}
+}
+
+[dir=ltr] .toolbar {
+	.context-pane-toggle .standard-view {
+		transform: scaleX(-1);
+	}
+}
+
+.toolbar-button {
+	color: var(--fill-secondary);
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 5px;
+
+	&:hover {
+		background-color: var(--fill-quinary);
+	}
+
+	&:active, &.active, &.active-pseudo-class-fix {
+		background-color: var(--fill-quarternary);
+	}
+
+	&[disabled] {
+		pointer-events: none;
+	}
+
+	.progress-ring {
+		width: 28px;
+		height: 28px;
+		padding: 6px;
+	}
+}
+
+.toolbar-dropdown-button {
+	gap: 4px;
+	width: 40px;
+}
+
+.toolbar-text-input {
+	padding: 0 7px;
+	background: var(--material-background);
+	border-radius: 5px;
+	border: var(--material-border-quinary);
+	height: 28px;
+	width: 100%;
+
+	&:focus {
+		outline: none;
+		border-color: rgba(0, 0, 0, 0);
+		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-search);
+	}
+}

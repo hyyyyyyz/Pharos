@@ -1,0 +1,209 @@
+// Prevent window background overflows window border
+#main-window {
+	background-color: initial;
+}
+
+// Prevent background flicker
+#browser {
+	background: var(--material-tabbar);
+}
+
+#titlebar {
+	height: var(--tab-min-height);
+	flex-direction: row;
+	-moz-box-pack: center;
+	pointer-events: none;
+	-moz-appearance: -moz-window-titlebar;
+	// fx140: Titlebar is transparent by default, so add background and border
+	// Use Mozilla titlebar color
+	background-color: ActiveCaption;
+	&:-moz-window-inactive {
+		background-color: InactiveCaption;
+	}
+	border-bottom: var(--material-panedivider);
+
+	// fx140: Add border radius to match window corners
+	border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
+	border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
+}
+
+#toolbar-menubar {
+	pointer-events: none;
+	visibility: visible;
+	// space for 30*30 icon
+	margin: 0 8px;
+	height: var(--tab-min-height);
+	appearance: none;
+	flex: 1;
+
+	@include inactive-opacity;
+}
+
+#menubar-items {
+	pointer-events: all;
+	-moz-window-dragging: drag;
+}
+
+#main-menubar {
+	height: var(--tab-min-height);
+}
+
+.titlebar-buttonbox {
+	pointer-events: all;
+	margin: 0 10px;
+}
+
+.titlebar-button {
+	position: static;
+	// Fix KDE rendering bug
+	z-index: 1;
+
+	// Fix X11 button background rendering bug
+	pointer-events: none;
+	-moz-window-dragging: drag;
+	background: transparent !important;
+
+	.toolbarbutton-icon {
+		pointer-events: all;
+		-moz-window-dragging: no-drag;
+	}
+}
+
+.titlebar-icon-container {
+	display: none;
+}
+
+// Following rules from https://searchfox.org/mozilla-central/source/browser/themes/linux/browser.css
+
+/**
+ * Titlebar drawing:
+ *
+ * GTK windows have both a window radius (exposed via the
+ * `-moz-gtk-csd-titlebar-radius`) environment variable, and a window shadow
+ * (which we can't read back from GTK). Note that the -moz-window-decorations
+ * (in X11) or the compositor (in Wayland) does draw the shadow corners
+ * already.
+ */
+:root[customtitlebar] {
+	background-color: transparent;
+
+	&[sizemode="normal"]:not([gtktiledwindow="true"]) {
+		/* This takes care of drawing our window decorations on X11 */
+		-moz-default-appearance: -moz-window-decorations;
+		appearance: auto;
+
+		#navigator-toolbox,
+		dialog::backdrop {
+			border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
+			border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
+		}
+
+		/* stylelint-disable-next-line media-query-no-invalid */
+		// @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
+			#navigator-toolbox {
+				/* The body clip below covers this. */
+				border-radius: 0;
+			}
+
+			body,
+			dialog::backdrop {
+				/* Use an uniform clip to allow WebRender to optimize it better */
+				border-radius: env(-moz-gtk-csd-titlebar-radius);
+			}
+		// }
+	}
+}
+
+/* The button box must appear on top of the navigator-toolbox in order for
+ * click and hover mouse events to work properly for the button in the restored
+ * window state. Otherwise, elements in the navigator-toolbox, like the menubar,
+ * can swallow those events. */
+.titlebar-buttonbox {
+	z-index: 1;
+	align-items: stretch;
+}
+
+@media (-moz-gtk-csd-reversed-placement) {
+	.titlebar-buttonbox {
+		order: -1;
+	}
+}
+
+.titlebar-button {
+	appearance: none;
+	color: inherit;
+	align-items: center;
+	padding: 0;
+	padding-inline: calc(env(-moz-gtk-csd-titlebar-button-spacing) / 2);
+
+	> .toolbarbutton-icon {
+		border-radius: 100%;
+		background-position: center center;
+		background-repeat: no-repeat;
+		-moz-context-properties: stroke;
+		stroke: currentColor;
+		/* Roughly the Adwaita size */
+		width: 24px;
+		height: 24px;
+		/* Matches the libadwaita transition */
+		transition: background-color .2s ease;
+	}
+
+	&:hover > .toolbarbutton-icon {
+		background-color: color-mix(in srgb, currentColor 15%, transparent);
+	}
+
+	&:hover:active > .toolbarbutton-icon {
+		background-color: color-mix(in srgb, currentColor 30%, transparent);
+	}
+
+	&:focus-visible > .toolbarbutton-icon {
+		outline: var(--focus-outline);
+		outline-offset: var(--focus-outline-inset);
+	}
+}
+
+.titlebar-max {
+	order: env(-moz-gtk-csd-maximize-button-position);
+	> .toolbarbutton-icon {
+		background-image: -moz-symbolic-icon(window-maximize-symbolic);
+	}
+}
+
+.titlebar-restore {
+	order: env(-moz-gtk-csd-maximize-button-position);
+	> .toolbarbutton-icon {
+		background-image: -moz-symbolic-icon(window-restore-symbolic);
+	}
+}
+
+@media not (-moz-gtk-csd-maximize-button) {
+	.titlebar-restore,
+	.titlebar-max {
+		display: none;
+	}
+}
+
+.titlebar-close {
+	order: env(-moz-gtk-csd-close-button-position);
+
+	> .toolbarbutton-icon {
+		background-image: -moz-symbolic-icon(window-close-symbolic);
+	}
+
+	@media not (-moz-gtk-csd-close-button) {
+		display: none;
+	}
+}
+
+.titlebar-min {
+	order: env(-moz-gtk-csd-minimize-button-position);
+
+	> .toolbarbutton-icon {
+		background-image: -moz-symbolic-icon(window-minimize-symbolic);
+	}
+
+	@media not (-moz-gtk-csd-minimize-button) {
+		display: none;
+	}
+}

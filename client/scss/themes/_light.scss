@@ -1,0 +1,132 @@
+// Pharos light theme.
+//
+// The palette is the brand's, measured off the logo and carried over verbatim
+// from the web client (frontend/src/design/tokens.ts):
+//
+//     navy  #0C2040   the P mark, and the body text colour
+//     gold  #F8C040   the beam
+//     teal  #189090   the secondary wedge, success
+//     paper #F7F2E9   the ground
+//
+// The ground and the gold share a hue (82 vs 84): one warm family, with the
+// navy as the single cool anchor opposite them. Every neutral here is therefore
+// warm -- a faint cream cast rather than the cold blue-grey Zotero ships.
+//
+// Two constraints shaped the values that are not simply lifted from the web
+// palette:
+//
+// 1. derive-colors composites fill-quarternary, fill-quinary, color-stripe and
+//    color-menu against their surface using `100% * (1 - alpha)` as the mix
+//    weight. Those four MUST stay translucent -- at alpha 1 the weight collapses
+//    to 0% and the composite returns the fill at full strength instead of a
+//    faint tint. So where the web client states a solid hex, the compositing
+//    equation was solved backwards for an overlay that renders that exact hex
+//    over the page ground. The overlays come out warm brown, not navy: a navy
+//    tint on cream reads cold and grey, which is what "some buttons are still
+//    blue" was describing in the web client.
+//
+// 2. Values the web palette expresses in oklch are resolved to hex here. Sass
+//    needs to parse these as colours (derive-colors calls color.alpha,
+//    color.change and color.mix on them) and oklch() literals only became Sass
+//    colours in very recent Dart Sass.
+$-colors: (
+    // A lifted brand blue, for informational accents that need to read as
+    // "blue" while staying in the brand's hue.
+    accent-azure: #4a7fb5,
+    // 灯塔蓝. This is the app accent -- see the macOS/Linux override in
+    // scss/base/_base.scss, which otherwise defers to the system accent colour.
+    accent-blue: #182e4e,
+    accent-blue10: #182e4e1a,
+    accent-blue30: #182e4e4d,
+    accent-blue50: #182e4e80,
+    accent-gold: #f8c041,
+    // Stays a real green, NOT the brand teal. accent-green and accent-teal are
+    // two separate entries of $item-pane-sections (attachments vs libraries &
+    // collections), a category palette whose whole job is mutual
+    // distinguishability -- unifying them onto the brand teal made those two
+    // sidenav icons the same colour. Success states use accent-teal below,
+    // which is the brand value the web client uses for the 已译 badge.
+    accent-green: #418e47,
+    accent-orange: #d97642,
+    accent-red: #c2412f,
+    accent-teal: #179090,
+    // Paper-white, not pure white -- pure white on cream reads as a hole.
+    accent-white: #fffcf7,
+    // The label drawn ON the accent, e.g. a selected row's text. It has to be
+    // paired with the accent per theme rather than being a fixed light colour:
+    // this theme's accent is dark so the label is cream (13.33:1), but the dark
+    // theme lifts its accent to #82a6dd, where a cream label is 2.02:1 and
+    // fails WCAG outright. Upstream never had to solve this because macOS and
+    // Linux took SelectedItem/SelectedItemText from the OS as a matched pair.
+    accent-text: #fffcf7,
+    accent-wood-dark: #8a6a4f,
+    accent-wood: #b5793f,
+    accent-yellow: #e0a423,
+    // The default highlighter. Per-annotation colours override this through
+    // --highlight-color, so existing annotations keep the colour they were
+    // saved with; only the default changes.
+    accent-highlight: #f8c04080,
+    fill-primary: #0c2040,
+    fill-secondary: #4a5b72,
+    // Darkened from the web client's #8A93A0, which renders 2.79:1 on this
+    // ground and so fails WCAG AA even at large sizes. #677079 is the same hue
+    // at 4.52:1, which clears AA for body text.
+    fill-tertiary: #677079,
+    // Warm tints, solved so they render the web client's hover (#EFE7D9),
+    // stripe (#F3EDE2) and faintest fill (#F5F0E6) over the page ground.
+    fill-quarternary: #85550412,
+    fill-quinary: #724b0008,
+    fill-senary: #938e5305,
+    color-background: #f7f2e9,
+    color-background30: #f7f2e94d,
+    color-background50: #f7f2e980,
+    color-background70: #f7f2e9b2,
+    // Translucent, like upstream's #00000026 -- a border has to TINT whatever
+    // it lands on, not paint a fixed line. Stating the web client's #E3DACA as
+    // an opaque value collapsed two things: it made color-border identical to
+    // color-panedivider, so --material-border and --material-panedivider (7 and
+    // 25 sites) stopped being distinguishable; and on the gold banner it
+    // rendered at 1.09:1, i.e. invisible. This overlay composites to exactly
+    // #E3DACA over the page ground, and still darkens anything else it crosses.
+    color-border: #68470c24,
+    color-border50: #68470c12,
+    color-button: #fffcf7,
+    color-control: #fffcf7,
+    color-invalid: #c2412f,
+    color-invalid-background: #f7e4de,
+    // Alpha kept near Zotero's own (0.72) because --color-menu-opaque is derived
+    // by scaling each channel by the alpha, so changing it shifts that
+    // derived colour too.
+    color-menu: #fffcf7b8,
+    // Opaque and deliberately stronger than color-border: this is the asserting
+    // structural line between panes, so it takes the web client's strong border
+    // (--c-bds) rather than the soft one.
+    color-panedivider: #cfc3ae,
+    color-sidepane: #f1eadd,
+    color-tabbar: #f1eadd,
+    color-toolbar: #f4eee3,
+    color-scrollbar: rgb(198, 188, 170),
+    color-scrollbar-hover: rgb(140, 128, 108),
+    color-scrollbar-background: transparent,
+    color-stripe: #724b0008,
+    // Tag colours are deliberately left as Zotero's. Users assign these to tags
+    // and the choice is persisted, so rebranding them would silently restyle
+    // tags someone already coloured.
+    tag-blue: #2ea8e5,
+    tag-gray: #aaa,
+    tag-green: #5fb236,
+    tag-indigo: #576dd9,
+    tag-magenta: #e56eee,
+    tag-orange: #f19837,
+    tag-plum: #a6507b,
+    tag-purple: #a28ae5,
+    tag-red: #ff6666,
+    tag-teal: #009980,
+    tag-yellow: #ffd400,
+);
+
+@media (prefers-color-scheme: light) {
+    :root {
+        @include derive-colors($-colors);
+    }
+}

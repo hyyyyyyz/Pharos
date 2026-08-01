@@ -1,0 +1,16 @@
+itemFields-eventPlace = مكان الحدث
+itemFields-originalDate = التاريخ الأصلي
+itemFields-originalPlace = المكان الأصلي
+itemFields-originalPublisher = الناشر الأصلي
+itemFields-partNumber = رقم الجزء
+itemFields-partTitle = عنوان الجزء
+itemFields-priorityDate = تاريخ الأولوية
+itemFields-sessionTitle = عنوان الجلسة
+creatorTypes-chair = الرئيس
+creatorTypes-creator = المؤلف
+creatorTypes-executiveProducer = المنتج التنفيذي
+creatorTypes-host = المضيف
+creatorTypes-narrator = الراوي
+creatorTypes-originalCreator = المنشئ الأصلي
+creatorTypes-organizer = المنظم
+creatorTypes-seriesCreator = منشئ السلسلة

@@ -1,0 +1,24 @@
+#zotero-create-parent-container {
+	.title {
+		font-size: 1.4em;
+		font-weight: 700;
+		// Let the dialog get a little wider if the title is long
+		max-width: 550px;
+	}
+	
+	.intro {
+		margin-bottom: .5em;
+		max-width: 550px; // Avoid expanding the dialog too wide; instead, in some languages, the intro text will wrap.
+	}
+	
+	.body {
+		align-items: center;
+		display: flex;
+		margin-bottom: 1em;
+
+		input {
+			flex: 1;
+			margin-left: 0;
+		}
+	}
+}

@@ -1,0 +1,98 @@
+#!/bin/bash -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+APP_ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname $APP_ROOT_DIR)"
+
+# Set ZOTERO_PROFILE environment variable to choose profile
+profile_args=()
+if [ -n "${ZOTERO_PROFILE:-}" ]; then
+	profile_args=(-p "$ZOTERO_PROFILE")
+fi
+
+FORCE_FULL=0
+NO_REBUILD=0
+SKIP_BUNDLED_FILES=0
+DEBUGGER=0
+while getopts "rfnbd" opt; do
+	case $opt in
+		r)
+			# Deprecated -- rebuilding is now the default
+			echo "-r is deprecated -- rebuilding is now the default (use -n to skip)" >&2
+			;;
+		
+		f)
+			FORCE_FULL=1
+			;;
+		
+		n)
+			NO_REBUILD=1
+			;;
+		
+		b)
+			SKIP_BUNDLED_FILES=1
+			;;
+		
+		d)
+			DEBUGGER=1
+			;;
+		
+		\?)
+			exit 1
+			;;
+	esac
+done
+
+# Remove options from $@
+shift $((OPTIND-1))
+
+if [ $NO_REBUILD -eq 0 ]; then
+	PARAMS=""
+	if [ $DEBUGGER -eq 1 ]; then
+		PARAMS="-t"
+	fi
+	if [ $FORCE_FULL -eq 1 ]; then
+		PARAMS="$PARAMS -f"
+	fi
+
+	# Check if build watch is running
+	# If not, run now
+	if ! ps u | grep js-build/build.js | grep -v grep > /dev/null; then
+		echo "Running JS build process"
+		echo
+		cd $ROOT_DIR
+		# TEMP: --openssl-legacy-provider avoids a build error in pdf.js
+		NODE_OPTIONS=--openssl-legacy-provider node js-build/build.js
+		echo
+	fi
+
+	"$SCRIPT_DIR/dir_build" $PARAMS
+fi
+
+PARAMS=""
+if [ $SKIP_BUNDLED_FILES -eq 1 ]; then
+	PARAMS="$PARAMS -ZoteroSkipBundledFiles"
+fi
+if [ $DEBUGGER -eq 1 ]; then
+	PARAMS="$PARAMS -jsdebugger"
+else
+	PARAMS="$PARAMS -jsconsole"
+fi
+
+if [ "`uname`" = "Darwin" ]; then
+	command="$APP_NAME.app/Contents/MacOS/zotero"
+elif [ "`uname`" = "Linux" ]; then
+	if [[ "`uname -m`" = "aarch64" ]]; then
+		command="${APP_NAME}_linux-arm64/zotero"
+	else
+		command="${APP_NAME}_linux-x86_64/zotero"
+	fi
+elif [ "`uname -o 2> /dev/null`" = "Cygwin" ]; then
+	command="${APP_NAME}_win-x64/zotero.exe"
+else
+	echo "Unknown platform" >&2
+	exit 1
+fi
+
+echo
+"$APP_ROOT_DIR/staging/$command" "${profile_args[@]}" -ZoteroDebugText $PARAMS "$@"

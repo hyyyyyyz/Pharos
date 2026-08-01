@@ -1,0 +1,72 @@
+<!--
+    ***** BEGIN LICENSE BLOCK *****
+
+    Copyright © 2026 Pharos Contributors
+                     https://pharos.selab.top
+
+    This file is part of Pharos, which is derived from Zotero.
+
+    Pharos is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Pharos is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with Pharos.  If not, see <http://www.gnu.org/licenses/>.
+
+    ***** END LICENSE BLOCK *****
+-->
+
+<vbox id="zotero-prefpane-pharos" onload="event.waitUntil(Zotero_Preferences.Pharos.init())">
+	<groupbox>
+		<label><html:h2 data-l10n-id="pharos-prefs-account-header"/></label>
+
+		<!-- Signed out: the sign-in form. -->
+		<vbox id="pharos-signed-out">
+			<html:div data-l10n-id="pharos-prefs-account-intro" class="pharos-prefs-intro"/>
+			<html:div class="pharos-prefs-field">
+				<html:label for="pharos-email" data-l10n-id="pharos-prefs-email"/>
+				<html:input id="pharos-email" type="email" autocomplete="off"/>
+			</html:div>
+			<html:div class="pharos-prefs-field">
+				<html:label for="pharos-password" data-l10n-id="pharos-prefs-password"/>
+				<html:input id="pharos-password" type="password" autocomplete="off"/>
+			</html:div>
+			<hbox align="center">
+				<button id="pharos-sign-in" data-l10n-id="pharos-prefs-sign-in"
+					oncommand="Zotero_Preferences.Pharos.signIn()"/>
+				<html:div id="pharos-message" class="pharos-prefs-message" role="alert"/>
+			</hbox>
+		</vbox>
+
+		<!-- Signed in: who, and how to leave. -->
+		<vbox id="pharos-signed-in" hidden="true">
+			<html:div class="pharos-prefs-account">
+				<html:span data-l10n-id="pharos-prefs-signed-in-as"/>
+				<html:strong id="pharos-account-email"/>
+			</html:div>
+			<hbox align="center">
+				<button id="pharos-sign-out" data-l10n-id="pharos-prefs-sign-out"
+					oncommand="Zotero_Preferences.Pharos.signOut()"/>
+				<button id="pharos-sign-out-all" data-l10n-id="pharos-prefs-sign-out-all"
+					oncommand="Zotero_Preferences.Pharos.signOutEverywhere()"/>
+			</hbox>
+			<html:div data-l10n-id="pharos-prefs-sign-out-all-help" class="pharos-prefs-help"/>
+		</vbox>
+	</groupbox>
+
+	<groupbox>
+		<label><html:h2 data-l10n-id="pharos-prefs-server-header"/></label>
+		<html:div data-l10n-id="pharos-prefs-server-help" class="pharos-prefs-help"/>
+		<html:div class="pharos-prefs-field">
+			<html:label for="pharos-base-url" data-l10n-id="pharos-prefs-server-url"/>
+			<html:input id="pharos-base-url" type="url"
+				onchange="Zotero_Preferences.Pharos.saveBaseURL()"/>
+		</html:div>
+	</groupbox>
+</vbox>

@@ -1,0 +1,16 @@
+itemFields-eventPlace = Lec'h an darvoud
+itemFields-originalDate = Deiziad orin
+itemFields-originalPlace = Lec'h orin
+itemFields-originalPublisher = Embanner orin
+itemFields-partNumber = Niver al lodenn
+itemFields-partTitle = Titl al lodenn
+itemFields-priorityDate = Deiziad ar priorelezh
+itemFields-sessionTitle = Titl an dalc'h
+creatorTypes-chair = Renet
+creatorTypes-creator = Krouer
+creatorTypes-executiveProducer = Produer dileuriet
+creatorTypes-host = Herberc'hier
+creatorTypes-narrator = Daneveller
+creatorTypes-originalCreator = Krouer orin
+creatorTypes-organizer = Aozer
+creatorTypes-seriesCreator = Krouer an dastumad

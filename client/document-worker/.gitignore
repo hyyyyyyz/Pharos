@@ -1,0 +1,7 @@
+node_modules
+.*
+!.gitignore
+!.gitmodules
+!.editorconfig
+build
+preview/screenshot-*.png

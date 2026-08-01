@@ -1,0 +1,509 @@
+/*
+	***** BEGIN LICENSE BLOCK *****
+	
+	Copyright © 2024 Corporation for Digital Scholarship
+                     Vienna, Virginia, USA
+					http://zotero.org
+	
+	This file is part of Zotero.
+	
+	Zotero is free software: you can redistribute it and/or modify
+	it under the terms of the GNU Affero General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+	
+	Zotero is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU Affero General Public License for more details.
+
+	You should have received a copy of the GNU Affero General Public License
+	along with Zotero.  If not, see <http://www.gnu.org/licenses/>.
+	
+	***** END LICENSE BLOCK *****
+*/
+
+import { Zotero } from "chrome://zotero/content/zotero.mjs";
+
+// Helper functions for citationDialog.js
+export class CitationDialogHelpers {
+	constructor({ doc }) {
+		this.doc = doc;
+		this.smoothResizingPromise = Zotero.Promise.resolve();
+	}
+
+	// shortcut to create a node with specified class and attributes
+	createNode(type, attributes, className) {
+		let node = this.doc.createElement(type);
+		for (let [key, val] of Object.entries(attributes)) {
+			node.setAttribute(key, val);
+		}
+		node.className = className;
+		return node;
+	}
+
+	buildItemTitle(item) {
+		let titleWrapper = this.createNode("div", {}, "title");
+		let titleNode = this.createNode("span", {}, "title-text");
+		titleWrapper.appendChild(titleNode);
+		let title = "";
+		if (!item.isAnnotation()) {
+			title = item.getDisplayTitle();
+		}
+		else if (item.annotationText) {
+			title = Zotero.Utilities.unescapeHTML(item.annotationText.trim().slice(0, 500));
+			titleWrapper.classList.add("annotation-quote");
+			// Add quotation marks around the quoted text
+			titleNode.setAttribute("q-mark-open", Zotero.getString("punctuation.openingQMark"));
+			titleWrapper.setAttribute("q-mark-close", Zotero.getString("punctuation.closingQMark"));
+		}
+		else {
+			title = Zotero.getString(`reader-${item.annotationType}-annotation`);
+		}
+		Zotero.Utilities.Internal.renderItemTitle(title, titleNode);
+		return titleWrapper;
+	}
+
+	// build and return a node with the description (e.g. creator/published/date/etc) of an item
+	buildItemDescription(item) {
+		let descriptionWrapper = this.doc.createElement("div");
+		descriptionWrapper.classList = "description";
+		let wrapTextInSpan = (text, styles = {}) => {
+			let span = this.doc.createElement("span");
+			for (let [style, value] of Object.entries(styles)) {
+				span.style[style] = value;
+			}
+			span.textContent = text;
+			return span;
+		};
+		let addPeriodIfNeeded = (node) => {
+			if (node.textContent.length && node.textContent[node.textContent.length - 1] !== ".") {
+				let period = this.doc.createElement("span");
+				period.textContent = ".";
+				descriptionWrapper.lastChild.setAttribute("no-comma", true);
+				descriptionWrapper.appendChild(period);
+			}
+		};
+		if (item.isNote()) {
+			var date = Zotero.Date.sqlToDate(item.dateModified, true);
+			date = Zotero.Date.toFriendlyDate(date);
+			let dateLabel = wrapTextInSpan(date);
+			
+			var text = item.note;
+			text = Zotero.Utilities.unescapeHTML(text);
+			text = text.trim();
+			text = text.slice(0, 500);
+			var parts = text.split('\n').map(x => x.trim()).filter(x => x.length);
+			if (parts[1]) {
+				dateLabel.textContent += ` ${parts[1]}.`;
+			}
+			descriptionWrapper.appendChild(dateLabel);
+			addPeriodIfNeeded(descriptionWrapper);
+			return descriptionWrapper;
+		}
+
+		if (item.isAnnotation()) {
+			let comment = Zotero.Utilities.unescapeHTML((item.annotationComment || "").trim());
+			comment = comment.slice(0, 500);
+			let parts = comment.split('\n').map(x => x.trim()).filter(x => x.length);
+			if (parts[0]) {
+				let commentSpan = wrapTextInSpan(parts[0]);
+				descriptionWrapper.appendChild(commentSpan);
+			}
+			else {
+				descriptionWrapper.innerText = " ";
+			}
+			return descriptionWrapper;
+		}
+
+		var nodes = [];
+		// Add a red label to retracted items
+		if (Zotero.Retractions.isRetracted(item)) {
+			let label = wrapTextInSpan(Zotero.getString("retraction.banner"), { color: 'var(--accent-red)', 'margin-inline-end': '5px' });
+			label.setAttribute("no-comma", true);
+			nodes.push(label);
+		}
+		var authorDate = "";
+		if (item.firstCreator) authorDate = item.firstCreator;
+		var date = item.getField("date", true, true);
+		if (date && (date = date.substr(0, 4)) !== "0000") {
+			authorDate += ` (${parseInt(date)})`;
+		}
+		authorDate = authorDate.trim();
+		if (authorDate) nodes.push(wrapTextInSpan(authorDate));
+		
+		var publicationTitle = item.getField("publicationTitle", false, true);
+		if (publicationTitle) {
+			let label = wrapTextInSpan(publicationTitle, { fontStyle: 'italics' });
+			nodes.push(label);
+		}
+		
+		var volumeIssue = item.getField("volume");
+		if (item.getField("issue")) volumeIssue += `(${item.getField("issue")})`;
+		if (volumeIssue) nodes.push(wrapTextInSpan(volumeIssue));
+		
+		var publisherPlace = [];
+		if (item.getField("publisher")) publisherPlace.push(item.getField("publisher"));
+		if (item.getField("place")) publisherPlace.push(item.getField("place"));
+		
+		if (publisherPlace.length) nodes.push(wrapTextInSpan(publisherPlace.join(": ")));
+		
+		if (item.getField("pages")) nodes.push(wrapTextInSpan(item.getField("pages")));
+		
+		if (!nodes.length && item.getField("url")) {
+			nodes.push(wrapTextInSpan(item.getField("url")));
+		}
+
+		descriptionWrapper.replaceChildren(...nodes);
+		
+		addPeriodIfNeeded(descriptionWrapper);
+
+		// If no info, add a space so the rows are of the same length
+		if (descriptionWrapper.childElementCount === 0) {
+			descriptionWrapper.innerText = " ";
+		}
+
+		return descriptionWrapper;
+	}
+
+	// build a container for the item nodes in both layouts
+	buildItemsSection(id, headerText, isCollapsible, deckLength, dialogMode) {
+		let section = this.createNode("div", { id }, "section");
+		let header = this.createNode("div", {}, "header");
+		let headerSpan = this.createNode("span", {}, "header-label");
+		let divider = this.createNode("div", {}, "divider");
+		headerSpan.innerText = headerText;
+		header.append(headerSpan);
+		let itemContainer = this.createNode("div", { id: `${id}_container`, role: "group", "aria-label": headerText }, "itemsContainer");
+		section.append(header, itemContainer, divider);
+
+		let buttonGroup = this.createNode("div", {}, "header-btn-group");
+		header.append(buttonGroup);
+
+		if (isCollapsible) {
+			headerSpan.id = `header_${id}`;
+			section.classList.add("expandable");
+			section.style.setProperty('--deck-length', deckLength);
+
+			let addAllBtn = this.createNode("span", { tabindex: -1, 'data-tabindex': 22, role: "button", "aria-describedby": headerSpan.id }, "add-all keyboard-clickable");
+			buttonGroup.append(addAllBtn);
+			
+			if (dialogMode == "list") {
+				headerSpan.setAttribute("role", "button");
+				headerSpan.setAttribute("tabindex", -1);
+				headerSpan.setAttribute("data-tabindex", 21);
+				headerSpan.classList.add("keyboard-clickable");
+			}
+			if (dialogMode == "library") {
+				itemContainer.setAttribute("tabindex", -1);
+				itemContainer.setAttribute("data-tabindex", 30);
+
+				let collapseSectionBtn = this.createNode("button", { tabindex: -1, 'data-tabindex': 21, "aria-describedby": headerSpan.id }, "btn-icon collapse-section-btn keyboard-clickable");
+				this.doc.l10n.setAttributes(collapseSectionBtn, "integration-citationDialog-collapse-section");
+				buttonGroup.prepend(collapseSectionBtn);
+			}
+		}
+		return section;
+	}
+
+	// Create mock item node to use as a the placeholder for cited items that are loading
+	createCitedItemPlaceholder() {
+		let itemNode = this.createNode("div", {
+			role: "option",
+			disabled: true
+		}, "item cited-placeholder");
+		let title = this.createNode("div", {}, "title");
+		let description = this.createNode("div", {}, "description");
+		title.textContent = Zotero.getString("general.loading");
+		description.textContent = " ";
+		itemNode.append(title, description);
+		return itemNode;
+	}
+
+	// Extract locator from a string and return an object: { label: string, page: string, fullLocatorString:string, onlyLocator: bool}
+	// to identify the locator and pass that info to the dialog. If no locator is found, return null.
+	// Locator can be given in its full or short form (with or without trailing period).
+	// Locator must be followed by numbers (e.g. page 10-30) or a string in quotes (e.g. chapter "one two three").
+	// Locators are excluded from the search query, so quotes are required for textual locators to
+	// avoid conflicts with actual search terms.
+	// Whitespace between the locator and the value is not required. These are equivalent:
+	// p10-15, p.10-15, p. 10-15, p 10-15, page10-15, page 10-15, p."testing testing", page "testing testing"
+	// Locators should always be in the end of the string, to avoid conflicts with actual search terms,
+	// so page10-15 in 'history of the US page10-15 and something else' will not be treated as a locator.
+	extractLocator(string) {
+		string = string.trim();
+		// special case: colon followed by numbers (e.g. "History of the US: 10" or just ":10")
+		// counts as a page locator
+		let colonRegex = /^(.*):\s*(\d+(?:[\s,-]*\d*)*)(?:\s*)$/;
+		let colonMatch = colonRegex.exec(string);
+		if (colonMatch) {
+			let beforeColon = colonMatch[1].trim();
+			let pageNumbers = colonMatch[2].trim();
+			// extract the actual colon and whitespace portion from the original string
+			let colonIndex = string.indexOf(':');
+			let pageNumbersIndex = string.indexOf(pageNumbers, colonIndex);
+			let fullLocatorString = string.substring(colonIndex, pageNumbersIndex + pageNumbers.length);
+			return {
+				label: "page",
+				locator: pageNumbers,
+				onlyLocator: beforeColon.length === 0,
+				fullLocatorString
+			};
+		}
+		
+		let words = string.split(" ");
+		let locatorLabel, locatorLabelString, locatorValue;
+		let wordLocatorIndex = 0;
+		// Go through every word
+		for (let word of words) {
+			word = word.toLowerCase();
+			// Check if the current word has a locator label
+			for (let labelCandidate of Zotero.Cite.labels) {
+				let { fullLocator, shortLocator, shortLocatorNoPunctuation } = this.getLocatorLabels(labelCandidate);
+				// Potential locator value is a substring from the current word till the end
+				let potentialLocatorValue = words.slice(wordLocatorIndex).join(" ").trim();
+
+				// Check if this word has a locator label in its full or short form (e.g. "line" or "l" or "l.")
+				// If a locator string is found, check if the string without it is a valid locator value.
+				if (potentialLocatorValue.toLowerCase().startsWith(fullLocator)) {
+					// e.g. 'US history chapter "one and two" '
+					locatorLabelString = fullLocator;
+					// potential locator value: "one and two"
+					potentialLocatorValue = potentialLocatorValue.substring(fullLocator.length).trim();
+				}
+				else if (potentialLocatorValue.toLowerCase().startsWith(shortLocator)) {
+					// e.g. 'US history chapt."one and two" '
+					locatorLabelString = shortLocator;
+					// potential locator value: "one and two"
+					potentialLocatorValue = potentialLocatorValue.substring(shortLocator.length).trim();
+				}
+				else if (potentialLocatorValue.toLowerCase().startsWith(shortLocatorNoPunctuation)) {
+					// e.g. 'US history chapt11-12 '
+					locatorLabelString = shortLocatorNoPunctuation;
+					// potential locator value: 11-12
+					potentialLocatorValue = potentialLocatorValue.substring(shortLocatorNoPunctuation.length).trim();
+				}
+				else {
+					continue;
+				}
+
+				// At this point, potentialLocatorValue should be a string following one of the locator labels
+				// Now, check against a two different ways that locator value can be specified.
+
+				// first candidate is numbers with optional punctuation (e.g. chapt.11-12)
+				let numericRegex = /^(\d+(?:[\s,-:]+\d+)*)(?:\s+)?$/;
+				let numericMatch = numericRegex.exec(potentialLocatorValue.trim());
+				if (numericMatch) {
+					locatorValue = numericMatch[1].trim();
+					locatorLabel = labelCandidate;
+					break;
+				}
+
+				// next candidate is text in quotes (e.g. chapter "one and two")
+				let quoteRegex = /^((?:"[^"]+"|'[^']+'))(?:\s*)$/;
+				let quoteMatch = quoteRegex.exec(potentialLocatorValue.trim());
+				if (quoteMatch) {
+					locatorValue = quoteMatch[1];
+					locatorLabel = labelCandidate;
+					break;
+				}
+			}
+			if (locatorLabel) break;
+			wordLocatorIndex += 1;
+		}
+		if (!locatorLabel || !locatorValue || !locatorLabelString) return null;
+
+		// find the entire locator string - "chapter 'one and two'" ensuring
+		// that fullLocatorString is strictly a part of the larger string (including whitespaces and etc.)
+		let wordsWithLocator = words.slice(wordLocatorIndex).join(" ");
+		let locatorLabelIndex = wordsWithLocator.indexOf(locatorLabelString);
+		let locatorValueIndex = wordsWithLocator.indexOf(locatorValue);
+		let fullLocatorString = wordsWithLocator.substring(locatorLabelIndex, locatorValueIndex + locatorValue.length);
+		return {
+			label: locatorLabel,
+			locator: locatorValue.replace(/['"]/g, ""),
+			onlyLocator: fullLocatorString.length == string.length,
+			fullLocatorString
+		};
+	}
+
+	// Check if a given string is a number, potentially with whitespace, commas, colons, or hyphens
+	isOnlyNumberLocator(string) {
+		return /^[\d\s,:-]*\d[\d\s,:-]*$/.test(string);
+	}
+
+	// calculate the height of the #search-row accounting for margins and border
+	getSearchRowHeight() {
+		let searchRow = this.doc.querySelector("#search-row");
+		let height = searchRow.getBoundingClientRect().height;
+		let win = this.doc.defaultView;
+		let style = win.getComputedStyle(searchRow);
+		let margins = parseInt(style.marginTop) + parseInt(style.marginBottom);
+		let border = 1;
+		return height + margins + border;
+	}
+
+	buildBubbleString(bubbleItem) {
+		let item = bubbleItem.item;
+		let annotationContent = "";
+		// Construct annotation string if relevant
+		if (item.isAnnotation()) {
+			let text = item.annotationText || "";
+			let comment = item.annotationComment || "";
+			if (text) {
+				let annotationText = text.substr(0, 32) + (text.length > 32 ? "…" : "");
+				annotationContent = Zotero.getString("punctuation.openingQMark") + annotationText + Zotero.getString("punctuation.closingQMark");
+			}
+			else if (comment) {
+				let annotationComment = comment.substr(0, 32) + (comment.length > 32 ? "…" : "");
+				annotationContent = annotationComment;
+			}
+			else {
+				annotationContent = Zotero.getString(`reader-${item.annotationType}-annotation`);
+			}
+			while (item.parentItem) {
+				item = item.parentItem;
+			}
+		}
+		// Creator
+		var title;
+		var str = item.getField("firstCreator");
+		
+		// Title, if no creator (getDisplayTitle in order to get case, e-mail, statute which don't have a title field)
+		title = item.getDisplayTitle();
+		title = title.substr(0, 32) + (title.length > 32 ? "…" : "");
+		if (!str && title) {
+			str = Zotero.getString("punctuation.openingQMark") + title + Zotero.getString("punctuation.closingQMark");
+		}
+		else if (!str) {
+			str = Zotero.getString("integration-citationDialog-bubble-empty");
+		}
+		
+		// Date
+		var date = item.getField("date", true, true);
+		if (date && (date = date.substr(0, 4)) !== "0000") {
+			str += ", " + parseInt(date);
+		}
+
+		// If original item is an annotation, return the bubble string with the annotation info
+		if (bubbleItem.item.isAnnotation()) {
+			return str + " " + annotationContent;
+		}
+		
+		// Locator
+		if (bubbleItem.locator) {
+			// Try to fetch the short form of the locator label. E.g. "p." for "page"
+			// If there is no locator label, default to "page" for now
+			let label = (Zotero.Cite.getLocatorString(bubbleItem.label || 'page', 'short') || '').toLocaleLowerCase();
+			
+			str += `, ${label} ${bubbleItem.locator}`;
+		}
+		
+		// Prefix
+		if (bubbleItem.prefix && Zotero.CiteProc.CSL.ENDSWITH_ROMANESQUE_REGEXP) {
+			let prefix = bubbleItem.prefix.substr(0, 10) + (bubbleItem.prefix.length > 10 ? "…" : "");
+			str = prefix
+				+ (Zotero.CiteProc.CSL.ENDSWITH_ROMANESQUE_REGEXP.test(bubbleItem.prefix) ? " " : "")
+				+ str;
+		}
+		
+		// Suffix
+		if (bubbleItem.suffix && Zotero.CiteProc.CSL.STARTSWITH_ROMANESQUE_REGEXP) {
+			let suffix = bubbleItem.suffix.substr(0, 10) + (bubbleItem.suffix.length > 10 ? "…" : "");
+			str += (Zotero.CiteProc.CSL.STARTSWITH_ROMANESQUE_REGEXP.test(bubbleItem.suffix) ? " " : "") + suffix;
+		}
+		
+		return str;
+	}
+
+	getLocatorLabels(loc) {
+		return {
+			fullLocator: Zotero.Cite.getLocatorString(loc).toLowerCase(),
+			shortLocator: Zotero.Cite.getLocatorString(loc, "short").toLowerCase(),
+			shortLocatorNoPunctuation: Zotero.Cite.getLocatorString(loc, "short").toLowerCase().replace(/[.,]/g, "")
+		};
+	}
+
+	setActiveSegmentedControl(segmentedControlOption) {
+		let segmentedControl = segmentedControlOption.closest(".segmented-switch");
+		let currentActive = segmentedControl.querySelector(".option.active");
+		if (segmentedControlOption === currentActive) return;
+		if (currentActive) {
+			currentActive.classList.remove("active");
+			currentActive.setAttribute("aria-checked", "false");
+		}
+		if (!segmentedControlOption) return;
+		segmentedControlOption.classList.add("active");
+		segmentedControlOption.setAttribute("aria-checked", "true");
+	}
+
+	fetchStoredWindowParams() {
+		try {
+			return JSON.parse(Zotero.Prefs.get("integration.citationDialog.windowParams") || "{}");
+		}
+		catch (e) {
+			return {};
+		}
+	}
+
+	smoothResize(targetWidth, targetHeight, { duration = 300, onComplete } = {}) {
+		let win = this.doc.defaultView;
+		let resolve;
+		this.smoothResizingPromise = new Promise(r => resolve = r);
+		let chromeWidth = win.outerWidth - win.innerWidth;
+		let chromeHeight = win.outerHeight - win.innerHeight;
+
+		// On Linux, animated resizing is too jumpy, so just resize in one step
+		if (Zotero.isLinux) {
+			win.resizeTo(targetWidth, targetHeight);
+			resolve();
+			if (onComplete) {
+				onComplete();
+			}
+			return;
+		}
+
+		let startWidth = win.innerWidth;
+		let startHeight = win.innerHeight;
+		let startX = win.screenX;
+		let startTime = null;
+
+		win.document.documentElement.setAttribute("resizing", "true");
+
+		function step(timestamp) {
+			if (!startTime) startTime = timestamp;
+			let progress = Math.min((timestamp - startTime) / duration, 1);
+			let ease = 1 - Math.pow(1 - progress, 3);
+
+			let w = Math.round(startWidth + (targetWidth - startWidth) * ease);
+			let h = Math.round(startHeight + (targetHeight - startHeight) * ease);
+
+			// Move window left by half the width change so it resizes from both sides equally
+			let currentWidthDelta = (w + chromeWidth) - (startWidth + chromeWidth);
+			let x = Math.round(startX - currentWidthDelta / 2);
+
+			win.moveTo(x, win.screenY);
+			win.resizeTo(w + chromeWidth, h + chromeHeight);
+
+			if (progress < 1) {
+				win.requestAnimationFrame(step);
+			}
+			else {
+				win.document.documentElement.removeAttribute("resizing");
+				resolve();
+				if (onComplete) {
+					onComplete();
+				}
+			}
+		}
+		win.requestAnimationFrame(step);
+	}
+
+	delayNextSmoothResize(delay = 100) {
+		let resolve;
+		this.smoothResizingPromise = new Promise(r => resolve = r);
+		setTimeout(() => {
+			resolve();
+		}, delay);
+	}
+}
