@@ -4156,6 +4156,10 @@ var ZoteroPane = new function () {
 			'unrecognize',
 			'createParent',
 			'reindexItem',
+			// Pharos. Must stay last, matching the order in zoteroPane.xhtml --
+			// this array is index-based against that menupopup's children.
+			'pharosSep',
+			'pharosTranslate',
 		];
 		
 		var m = {};
@@ -4632,7 +4636,17 @@ var ZoteroPane = new function () {
 		menu.childNodes[m.createParent].setAttribute('label', Zotero.getString('pane.items.menu.createParent' + multiple));
 		menu.childNodes[m.recognizePDF].setAttribute('label', Zotero.getString('pane.items.menu.recognizeDocument'));
 		menu.childNodes[m.reindexItem].setAttribute('label', Zotero.getString('pane.items.menu.reindexItem' + multiple));
-		
+
+		// Pharos: offer layout-preserving translation for anything that resolves
+		// to a stored PDF. Evaluated after the rules above so that a view which
+		// has already stripped the menu down -- annotations selected, a
+		// read-only collection -- keeps the last word.
+		if (!annotationsSelected
+				&& items.some(item => Zotero.Pharos.Translate.hasTranslatableAttachment(item))) {
+			show.add(m.pharosSep);
+			show.add(m.pharosTranslate);
+		}
+
 		// Hide and enable all actions by default (so if they're shown they're enabled)
 		for (let i in m) {
 			let pos = m[i];
@@ -6228,6 +6242,28 @@ var ZoteroPane = new function () {
 	this.recognizeSelected = function () {
 		Zotero.RecognizeDocument.recognizeItems(ZoteroPane.getSelectedItems());
 		Zotero.ProgressQueues.get('recognize').getDialog().open();
+	};
+
+
+	/**
+	 * Send the selected PDFs to Pharos for layout-preserving translation.
+	 *
+	 * @param {String} mode - Zotero.Pharos.Translate.MODE_MONO or MODE_DUAL
+	 */
+	this.pharosTranslateSelected = function (mode) {
+		// Checked here rather than by hiding the menu item, so that a user who
+		// has not signed in yet finds out that the feature exists and what it
+		// needs, instead of wondering why it is missing.
+		if (!Zotero.Pharos.API.hasCredentials()) {
+			Services.prompt.alert(
+				window,
+				Zotero.getString('pharos-translate-title'),
+				Zotero.getString('pharos-error-signed-out-detail')
+			);
+			return;
+		}
+		Zotero.Pharos.Translate.translateItems(ZoteroPane.getSelectedItems(), mode);
+		Zotero.ProgressQueues.get('pharos-translate').getDialog().open();
 	};
 	
 	

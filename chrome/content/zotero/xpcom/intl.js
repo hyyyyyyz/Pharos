@@ -87,6 +87,9 @@ Zotero.Intl = new function () {
 			'integration.ftl',
 			'note-editor.ftl',
 			'preferences.ftl',
+			// Pharos strings live in their own file so that a hand-merge of an
+			// upstream change to zotero.ftl cannot collide with them.
+			'pharos.ftl',
 			// More FTL files can be hardcoded here, or added later with
 			// Zotero.ftl.addResourceIds(['...'])
 		], true);

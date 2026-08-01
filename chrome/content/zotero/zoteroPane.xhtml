@@ -54,6 +54,15 @@
 		<html:link rel="localization" href="browser/browserSets.ftl"/>
 		<html:link rel="localization" href="zotero.ftl"/>
 		<html:link rel="localization" href="reader.ftl"/>
+		<!-- Needed for data-l10n-id on Pharos elements in this document. This is
+		     a different resource list from the one Zotero.ftl uses for
+		     getString(): document.l10n resolves only what is declared here, and
+		     an unresolvable id makes DOM localization reject, which surfaces as
+		     buildItemContextMenu() rejecting with undefined, nowhere near the
+		     element that caused it.
+		     (No double hyphens in this comment: XML forbids them, and the whole
+		     document then fails to parse rather than reporting anything useful.) -->
+		<html:link rel="localization" href="pharos.ftl"/>
 	</linkset>
 	
 	<script>
@@ -1027,6 +1036,22 @@
 			<menuitem class="menuitem-iconic zotero-menuitem-unrecognize" label="&zotero.items.menu.unrecognize;" oncommand="ZoteroPane.unrecognizeSelected()"/>
 			<menuitem class="menuitem-iconic zotero-menuitem-create-parent" oncommand="ZoteroPane_Local.createParentItemsFromSelected();"/>
 			<menuitem class="menuitem-iconic zotero-menuitem-reindex" oncommand="ZoteroPane_Local.reindexItem();"/>
+			<!-- Pharos. Kept last, and last in buildItemContextMenu's `options`
+			     array too: that array is index-based against this list, so the
+			     two orders have to agree. -->
+			<menuseparator/>
+			<menu class="menu-iconic zotero-menuitem-pharos-translate" data-l10n-id="pharos-translate-menu">
+				<menupopup>
+					<menuitem
+						data-l10n-id="pharos-translate-menu-mono"
+						oncommand="ZoteroPane.pharosTranslateSelected(Zotero.Pharos.Translate.MODE_MONO);"
+					/>
+					<menuitem
+						data-l10n-id="pharos-translate-menu-dual"
+						oncommand="ZoteroPane.pharosTranslateSelected(Zotero.Pharos.Translate.MODE_DUAL);"
+					/>
+				</menupopup>
+			</menu>
 		</menupopup>
 
 		<!-- Tag Selector -->
