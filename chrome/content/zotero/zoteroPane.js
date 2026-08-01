@@ -6257,6 +6257,21 @@ var ZoteroPane = new function () {
 	 * have yet, and putting them in the item tree would blur the line between
 	 * the library and today's candidates.
 	 */
+	/** Open literature discovery. Same reasoning as the digest window. */
+	this.openPharosDiscovery = function () {
+		let existing = Services.wm.getMostRecentWindow('pharos:discovery');
+		if (existing) {
+			existing.focus();
+			return;
+		}
+		window.openDialog(
+			'chrome://zotero/content/pharosDiscovery.xhtml',
+			'pharos-discovery',
+			'chrome,centerscreen,resizable,dialog=no'
+		);
+	};
+
+
 	this.openPharosDaily = function () {
 		let existing = Services.wm.getMostRecentWindow('pharos:daily');
 		if (existing) {

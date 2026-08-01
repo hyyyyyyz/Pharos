@@ -99,3 +99,30 @@ pharos-daily-highlight-contribution = Contribution
 pharos-daily-highlight-innovation = Novelty
 pharos-daily-highlight-method = Method
 pharos-daily-highlight-results = Results
+
+## Literature discovery
+
+pharos-discovery-menu = Find Literature…
+pharos-discovery-window =
+    .title = Find Literature
+pharos-discovery-placeholder =
+    .placeholder = Search arXiv and OpenAlex…
+pharos-discovery-search = Search
+pharos-discovery-searching = Searching…
+pharos-discovery-hint = Search arXiv and OpenAlex, and Pharos will read what it finds.
+pharos-discovery-empty = Nothing matched.
+pharos-discovery-error = The search failed.
+# $count (Number) - results returned
+pharos-discovery-count = { $count } results
+# $count (Number) - times the paper has been cited
+pharos-discovery-citations = { $count } citations
+pharos-discovery-analyze = Read It
+pharos-discovery-analyzing = Reading…
+pharos-discovery-open = Open
+
+pharos-discovery-section-contribution = Contribution
+pharos-discovery-section-core-trick = Key idea
+pharos-discovery-section-method = Method
+pharos-discovery-section-results = Results
+pharos-discovery-section-limitations = Limitations
+pharos-discovery-rules-note = Summarised without a model. Use "Read It" for a proper reading.

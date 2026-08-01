@@ -99,3 +99,30 @@ pharos-daily-highlight-contribution = 贡献
 pharos-daily-highlight-innovation = 创新点
 pharos-daily-highlight-method = 方法
 pharos-daily-highlight-results = 结果
+
+## 文献探索
+
+pharos-discovery-menu = 文献探索…
+pharos-discovery-window =
+    .title = 文献探索
+pharos-discovery-placeholder =
+    .placeholder = 搜索 arXiv 与 OpenAlex…
+pharos-discovery-search = 搜索
+pharos-discovery-searching = 搜索中…
+pharos-discovery-hint = 搜索 arXiv 与 OpenAlex，Pharos 会替你读一遍。
+pharos-discovery-empty = 没有匹配结果。
+pharos-discovery-error = 搜索失败。
+# $count (Number) - 返回的结果数
+pharos-discovery-count = { $count } 条结果
+# $count (Number) - 被引次数
+pharos-discovery-citations = 被引 { $count }
+pharos-discovery-analyze = 精读
+pharos-discovery-analyzing = 阅读中…
+pharos-discovery-open = 打开
+
+pharos-discovery-section-contribution = 贡献
+pharos-discovery-section-core-trick = 核心思路
+pharos-discovery-section-method = 方法
+pharos-discovery-section-results = 结果
+pharos-discovery-section-limitations = 局限
+pharos-discovery-rules-note = 该摘要由规则生成，未经模型阅读。可点「精读」获取模型解读。

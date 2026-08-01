@@ -96,68 +96,26 @@ Zotero.Pharos.Daily = new function () {
 	 * @param {Integer[]} [options.collections]
 	 * @return {Promise<Zotero.Item>} the created item
 	 */
-	this.saveToLibrary = async function (paper, { libraryID, collections } = {}) {
-		libraryID = libraryID || Zotero.Libraries.userLibraryID;
-
-		let item = new Zotero.Item('preprint');
-		item.libraryID = libraryID;
-		item.setField('title', paper.title);
-		if (paper.abstract) {
-			item.setField('abstractNote', paper.abstract);
-		}
-		if (paper.arxiv_id) {
-			item.setField('archiveID', `arXiv:${paper.arxiv_id}`);
-			item.setField('repository', 'arXiv');
-		}
-		if (paper.arxiv_url) {
-			item.setField('url', paper.arxiv_url);
-		}
-		if (paper.published_at) {
-			// The API returns an ISO timestamp; Zotero wants a date field it can
-			// parse, and the day is the part that matters for a preprint.
-			item.setField('date', String(paper.published_at).slice(0, 10));
-		}
-		item.setCreators(
-			(paper.authors || []).map(name => ({
-				creatorType: 'author',
-				...Zotero.Utilities.cleanAuthor(name, 'author', name.includes(',')),
-			}))
-		);
-		if (collections && collections.length) {
-			item.setCollections(collections);
-		}
-		await item.saveTx();
-
-		// The model's reading goes in as a note rather than into Extra: it is
-		// prose, it is long, and Extra is a metadata field that ends up in
-		// exports and citations.
-		let noteText = this.buildNote(paper);
-		if (noteText) {
-			let note = new Zotero.Item('note');
-			note.libraryID = libraryID;
-			note.parentItemID = item.id;
-			note.setNote(noteText);
-			await note.saveTx();
-		}
-
-		if (paper.pdf_url) {
-			try {
-				await Zotero.Attachments.importFromURL({
-					libraryID,
-					url: paper.pdf_url,
-					parentItemID: item.id,
-					contentType: 'application/pdf',
-					title: `${paper.arxiv_id || 'arXiv'}.pdf`,
-				});
-			}
-			catch (e) {
-				// The metadata is worth keeping even when arXiv refuses the PDF,
-				// so this does not undo the item.
-				Zotero.logError(e);
-			}
-		}
-
-		return item;
+	this.saveToLibrary = function (paper, { libraryID, collections } = {}) {
+		return Zotero.Pharos.Library.saveExternalPaper({
+			itemType: 'preprint',
+			fields: {
+				title: paper.title,
+				abstractNote: paper.abstract,
+				archiveID: paper.arxiv_id ? `arXiv:${paper.arxiv_id}` : null,
+				repository: paper.arxiv_id ? 'arXiv' : null,
+				url: paper.arxiv_url,
+				// The API returns an ISO timestamp; the day is the part that
+				// matters for a preprint.
+				date: paper.published_at ? String(paper.published_at).slice(0, 10) : null,
+			},
+			authors: paper.authors,
+			noteHTML: this.buildNote(paper),
+			pdfURL: paper.pdf_url,
+			pdfTitle: `${paper.arxiv_id || 'arXiv'}.pdf`,
+			libraryID,
+			collections,
+		});
 	};
 
 	/**
@@ -167,36 +125,29 @@ Zotero.Pharos.Daily = new function () {
 	 * @return {String} empty if the paper has not been read yet
 	 */
 	this.buildNote = function (paper) {
+		// Branching on read_status rather than on whether summary_zh is truthy,
+		// which the backend's own schema asks clients to do.
 		if (paper.read_status != 'done') {
 			return '';
 		}
-		let esc = str => Zotero.Utilities.htmlSpecialChars(String(str));
-		let parts = [`<h2>${esc(paper.title)}</h2>`];
-
-		if (paper.summary_zh) {
-			parts.push(`<p>${esc(paper.summary_zh)}</p>`);
-		}
 
 		const HIGHLIGHT_KEYS = ['contribution', 'innovation', 'method', 'results'];
-		if (paper.highlights) {
-			let rows = HIGHLIGHT_KEYS
-				.filter(key => paper.highlights[key])
-				.map(key => `<li><strong>${esc(Zotero.getString('pharos-daily-highlight-' + key))}</strong>: `
-					+ `${esc(paper.highlights[key])}</li>`);
-			if (rows.length) {
-				parts.push(`<ul>${rows.join('')}</ul>`);
-			}
-		}
-
+		let footer = null;
 		if (paper.matched_domain) {
-			parts.push(`<p>${esc(Zotero.getString('pharos-daily-matched'))}: `
-				+ `${esc(paper.matched_domain)}`
+			footer = `${Zotero.getString('pharos-daily-matched')}: ${paper.matched_domain}`
 				+ (paper.matched_keywords && paper.matched_keywords.length
-					? ` (${esc(paper.matched_keywords.join(', '))})`
-					: '')
-				+ '</p>');
+					? ` (${paper.matched_keywords.join(', ')})`
+					: '');
 		}
 
-		return parts.join('\n');
+		return Zotero.Pharos.Library.buildNote({
+			title: paper.title,
+			summary: paper.summary_zh,
+			sections: HIGHLIGHT_KEYS.map(key => ({
+				label: Zotero.getString('pharos-daily-highlight-' + key),
+				text: paper.highlights && paper.highlights[key],
+			})),
+			footer,
+		});
 	};
 };

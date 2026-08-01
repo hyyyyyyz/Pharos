@@ -166,7 +166,10 @@ const xpcomFilesLocal = [
 	'pharos/api',
 	'pharos/translate',
 	'pharos/chat',
+	// Before daily and discovery: both call into it at load time.
+	'pharos/library',
 	'pharos/daily',
+	'pharos/discovery',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";
