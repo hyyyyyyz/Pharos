@@ -756,6 +756,9 @@
 					
 					<menu id="toolsMenu" label="&toolsMenu.label;" accesskey="&toolsMenu.accesskey;">
 						<menupopup id="menu_ToolsPopup" onpopupshowing="ZoteroStandalone.onToolsMenuOpen(event)">
+							<menuitem id="menu_pharosProjects" class="menu-type-library"
+									data-l10n-id="pharos-projects-menu"
+									oncommand="ZoteroPane.openPharosProjects();"/>
 							<menuitem id="menu_pharosDiscovery" class="menu-type-library"
 									data-l10n-id="pharos-discovery-menu"
 									oncommand="ZoteroPane.openPharosDiscovery();"/>

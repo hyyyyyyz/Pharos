@@ -6258,6 +6258,21 @@ var ZoteroPane = new function () {
 	 * the library and today's candidates.
 	 */
 	/** Open literature discovery. Same reasoning as the digest window. */
+	/** Open research projects. Same reasoning as the other two windows. */
+	this.openPharosProjects = function () {
+		let existing = Services.wm.getMostRecentWindow('pharos:projects');
+		if (existing) {
+			existing.focus();
+			return;
+		}
+		window.openDialog(
+			'chrome://zotero/content/pharosProjects.xhtml',
+			'pharos-projects',
+			'chrome,centerscreen,resizable,dialog=no'
+		);
+	};
+
+
 	this.openPharosDiscovery = function () {
 		let existing = Services.wm.getMostRecentWindow('pharos:discovery');
 		if (existing) {

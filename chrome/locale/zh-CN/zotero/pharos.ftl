@@ -119,6 +119,9 @@ pharos-discovery-citations = 被引 { $count }
 pharos-discovery-analyze = 精读
 pharos-discovery-analyzing = 阅读中…
 pharos-discovery-open = 打开
+pharos-discovery-add-to-project = 归入项目
+pharos-discovery-pick-project = 这篇论文归入哪个研究项目？
+pharos-discovery-added-to-project = 已归入
 
 pharos-discovery-section-contribution = 贡献
 pharos-discovery-section-core-trick = 核心思路
@@ -126,3 +129,42 @@ pharos-discovery-section-method = 方法
 pharos-discovery-section-results = 结果
 pharos-discovery-section-limitations = 局限
 pharos-discovery-rules-note = 该摘要由规则生成，未经模型阅读。可点「精读」获取模型解读。
+
+## 研究项目
+
+pharos-projects-menu = 研究项目…
+pharos-projects-window =
+    .title = 研究项目
+pharos-projects-loading = 加载中…
+pharos-projects-empty = 还没有项目。请先在 Pharos 网页端创建。
+pharos-projects-error = 无法加载项目。
+pharos-projects-none = 暂无内容。
+pharos-projects-question = 研究问题
+pharos-projects-advance = 推进阶段
+pharos-projects-save-note = 存为笔记
+# $count (Number) - 项目依据的论文数
+pharos-projects-sources = 文献来源（{ $count }）
+# $count (Number) - 项目已写下的记录数
+pharos-projects-artifacts = 研究记录（{ $count }）
+
+pharos-projects-stage-discovery = 文献调研
+pharos-projects-stage-ideation = 构思
+pharos-projects-stage-planning = 方案设计
+pharos-projects-stage-experimentation = 实验
+pharos-projects-stage-analysis = 分析
+pharos-projects-stage-claims = 结论
+pharos-projects-stage-drafting = 撰写
+pharos-projects-stage-review = 评审
+pharos-projects-stage-complete = 已完成
+
+pharos-projects-type-hypothesis = 假设
+pharos-projects-type-experiment-plan = 实验方案
+pharos-projects-type-result = 实验结果
+pharos-projects-type-claim = 论断
+pharos-projects-type-draft = 草稿
+pharos-projects-type-review = 评审意见
+
+pharos-projects-status-draft = 草稿
+pharos-projects-status-ready = 就绪
+pharos-projects-status-verified = 已验证
+pharos-projects-status-rejected = 已否决

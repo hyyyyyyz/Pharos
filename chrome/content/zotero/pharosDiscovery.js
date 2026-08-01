@@ -177,6 +177,11 @@ var Zotero_Pharos_Discovery = new function () {
 			actions.append(analyze);
 		}
 
+		let file = document.createElement('button');
+		file.textContent = Zotero.getString('pharos-discovery-add-to-project');
+		file.addEventListener('click', () => this.addToProject(result, file));
+		actions.append(file);
+
 		if (result.url) {
 			let open = document.createElement('button');
 			open.textContent = Zotero.getString('pharos-discovery-open');
@@ -200,6 +205,47 @@ var Zotero_Pharos_Discovery = new function () {
 			button.disabled = false;
 			button.textContent = Zotero.getString('pharos-discovery-analyze');
 			this._setStatus(e.message || Zotero.getString('pharos-discovery-error'));
+		}
+	};
+
+	/**
+	 * File a result into a research project as a source.
+	 *
+	 * Uses the platform's own picker rather than a bespoke dialog: the choice is
+	 * one name from a short list, and a project list that is fetched only when
+	 * someone actually files something keeps the common case -- searching and
+	 * saving -- from paying for it.
+	 */
+	this.addToProject = async function (result, button) {
+		button.disabled = true;
+		try {
+			let projects = await Zotero.Pharos.Projects.list();
+			if (!projects.length) {
+				this._setStatus(Zotero.getString('pharos-projects-empty'));
+				return;
+			}
+			let selected = {};
+			let ok = Services.prompt.select(
+				window,
+				Zotero.getString('pharos-discovery-add-to-project'),
+				Zotero.getString('pharos-discovery-pick-project'),
+				projects.map(p => p.name),
+				selected
+			);
+			if (!ok) {
+				return;
+			}
+			await Zotero.Pharos.Projects.addSource(projects[selected.value].id, result.id);
+			button.textContent = Zotero.getString('pharos-discovery-added-to-project');
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._setStatus(e.message || Zotero.getString('pharos-discovery-error'));
+		}
+		finally {
+			// Left enabled on success too: the same paper can legitimately
+			// support more than one project.
+			button.disabled = false;
 		}
 	};
 

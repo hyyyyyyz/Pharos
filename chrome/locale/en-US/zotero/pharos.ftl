@@ -119,6 +119,9 @@ pharos-discovery-citations = { $count } citations
 pharos-discovery-analyze = Read It
 pharos-discovery-analyzing = Reading…
 pharos-discovery-open = Open
+pharos-discovery-add-to-project = Add to Project
+pharos-discovery-pick-project = Which project should this paper support?
+pharos-discovery-added-to-project = Added
 
 pharos-discovery-section-contribution = Contribution
 pharos-discovery-section-core-trick = Key idea
@@ -126,3 +129,42 @@ pharos-discovery-section-method = Method
 pharos-discovery-section-results = Results
 pharos-discovery-section-limitations = Limitations
 pharos-discovery-rules-note = Summarised without a model. Use "Read It" for a proper reading.
+
+## Research projects
+
+pharos-projects-menu = Research Projects…
+pharos-projects-window =
+    .title = Research Projects
+pharos-projects-loading = Loading…
+pharos-projects-empty = No projects yet. Create one in the Pharos web app.
+pharos-projects-error = Could not load projects.
+pharos-projects-none = Nothing here yet.
+pharos-projects-question = Research question
+pharos-projects-advance = Advance Stage
+pharos-projects-save-note = Save as Note
+# $count (Number) - papers this project rests on
+pharos-projects-sources = Sources ({ $count })
+# $count (Number) - records written for this project
+pharos-projects-artifacts = Records ({ $count })
+
+pharos-projects-stage-discovery = Discovery
+pharos-projects-stage-ideation = Ideation
+pharos-projects-stage-planning = Planning
+pharos-projects-stage-experimentation = Experimentation
+pharos-projects-stage-analysis = Analysis
+pharos-projects-stage-claims = Claims
+pharos-projects-stage-drafting = Drafting
+pharos-projects-stage-review = Review
+pharos-projects-stage-complete = Complete
+
+pharos-projects-type-hypothesis = Hypothesis
+pharos-projects-type-experiment-plan = Experiment plan
+pharos-projects-type-result = Result
+pharos-projects-type-claim = Claim
+pharos-projects-type-draft = Draft
+pharos-projects-type-review = Review
+
+pharos-projects-status-draft = Draft
+pharos-projects-status-ready = Ready
+pharos-projects-status-verified = Verified
+pharos-projects-status-rejected = Rejected
