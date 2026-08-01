@@ -15,9 +15,15 @@ function makePath {
 	eval $__assignTo="'$__path'"
 }
 
+# The staged build is named after APP_NAME, so read it from the same config the
+# build scripts use rather than hardcoding it -- upstream's literal "Zotero.app"
+# left this pointing at a path the rebranded build never produces, and the test
+# runner failed only after a full rebuild had already run.
+. "$ROOT_DIR/app/config.sh"
+
 if [ -z "$Z_EXECUTABLE" ]; then
 	if [ "`uname`" == "Darwin" ]; then
-		Z_EXECUTABLE="$ROOT_DIR/app/staging/Zotero.app/Contents/MacOS/zotero"
+		Z_EXECUTABLE="$ROOT_DIR/app/staging/$APP_NAME.app/Contents/MacOS/zotero"
 	else
 		arch=""
 		if [ "$(uname -m)" = "aarch64" ]; then
@@ -25,7 +31,7 @@ if [ -z "$Z_EXECUTABLE" ]; then
 		else
 			arch="x86_64"
 		fi
-		Z_EXECUTABLE="$ROOT_DIR/app/staging/Zotero_linux-$arch/zotero"
+		Z_EXECUTABLE="$ROOT_DIR/app/staging/${APP_NAME}_linux-$arch/zotero"
 	fi
 fi
 
