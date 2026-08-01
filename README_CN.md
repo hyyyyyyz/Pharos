@@ -19,6 +19,7 @@
 [浏览器客户端](https://pharos.selab.top/) ·
 [架构说明](docs/ARCHITECTURE.md) ·
 [科研工作流](docs/RESEARCH_WORKFLOW.md) ·
+[路线图](docs/ROADMAP.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>
@@ -164,7 +165,7 @@ Pharos/
 ├── zotero-connector/        Zotero 7/8 安全扩展传输层
 ├── site/                    Three.js/Vite GitHub Pages 宣传站
 ├── scripts/                 环境和翻译引擎安装工具
-├── docs/                    架构与科研工作流规范
+├── docs/                    架构、路线图、决策记录与工作流规范
 └── assets/brand/            品牌标志、海报和架构图
 ```
 
@@ -341,6 +342,13 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - 桌面客户端已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 
 下一阶段的重点包括页面级证据定位、基于原文的可靠问答、证据感知的研究想法工作流、沙箱实验执行、结果与论文主张强绑定，以及受证据约束的写作与审阅流程。详细约束见 [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)。
+
+## 参与开发
+
+先读 [`AGENTS.md`](AGENTS.md)。它是人类和 agent 共用的操作手册，并指向另外两份
+用来保证方向一致的文档：[`docs/ROADMAP.md`](docs/ROADMAP.md)（其中「不做什么」
+一节比目标更重要）和 [`docs/DECISIONS.md`](docs/DECISIONS.md)（记录那些关键决定
+为什么是现在这样）。
 
 ## 许可证
 

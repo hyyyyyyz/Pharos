@@ -20,6 +20,7 @@ idea through a durable research workflow — in one self-hosted platform.
 [Web App](https://pharos.selab.top/) ·
 [Architecture](docs/ARCHITECTURE.md) ·
 [Research workflow](docs/RESEARCH_WORKFLOW.md) ·
+[Roadmap](docs/ROADMAP.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>
@@ -225,7 +226,7 @@ Pharos/
 ├── zotero-connector/        secure Zotero 7/8 extension transport
 ├── site/                    Three.js/Vite GitHub Pages marketing site
 ├── scripts/                 environment and engine setup utilities
-├── docs/                    architecture and research-workflow specifications
+├── docs/                    architecture, roadmap, decisions, workflow specs
 └── assets/brand/            shared logos, poster, and architecture artwork
 ```
 
@@ -444,6 +445,15 @@ The next major workstreams are page-addressable evidence, grounded paper Q&A,
 an evidence-aware idea workflow, sandboxed experiment execution, claim-to-result
 bindings, and an evidence-constrained drafting/review pipeline. The detailed
 contract is recorded in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
+
+## Contributing
+
+Read [`AGENTS.md`](AGENTS.md) first. It is the operating manual for both human
+and agent contributors, and it points at the two documents that keep separate
+contributors aimed the same way: [`docs/ROADMAP.md`](docs/ROADMAP.md), whose
+"Not doing" section matters more than its goals, and
+[`docs/DECISIONS.md`](docs/DECISIONS.md), which records why the load-bearing
+choices are what they are.
 
 ## License
 
