@@ -1,0 +1,297 @@
+.toolbar {
+	-moz-appearance: none;
+	user-select: none;
+	color: #404040;
+	font-size: 12px;
+	cursor: default;
+	display: flex;
+	justify-content: space-between;
+	height: 41px !important;
+	min-height: 41px;
+	margin: 0;
+	padding: 0 4px;
+	min-width: 1px;
+	background: var(--material-toolbar);
+	border-bottom: var(--material-panedivider);
+
+	.start {
+		display: flex;
+		align-items: center;
+		width: 30px;
+	}
+
+	.middle {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px;
+
+		& > :not(:first-child) {
+			margin-left: 2px;
+		}
+	}
+
+	.end {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	@media (-moz-platform: macos) {
+		-moz-window-dragging: drag;
+	}
+	@media not (-moz-platform: macos) {
+		-moz-window-dragging: no-drag;
+	}
+
+	// Currently setting inactive opacity for buttons only to prevent transparent dropdowns
+	.toolbar-button {
+		@include macOS-inactive-opacity;
+	}
+}
+
+// Allow a bit more narrow note editor width without resulting in toolbar button wrapping
+@media (max-width: 310px) {
+	.toolbar .middle {
+		gap: 2px;
+	}
+}
+
+@media (max-width: 298px) {
+	.toolbar .middle {
+		gap: 0;
+	}
+}
+
+.toolbar-button {
+	color: var(--fill-secondary);
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: space-around;
+	border-radius: 5px;
+
+	@if not $mobile {
+		// hover effect only makes sense on non-touch device
+		&:hover {
+			background-color: var(--fill-quinary);
+		}
+	}
+
+	&:active,
+	&.active {
+		background-color: var(--fill-quarternary);
+	}
+}
+
+[dir=rtl] .toolbar-button-return {
+	transform: scaleX(-1);
+}
+
+.toolbar-button-toggleContextPane {
+	// To align with the tab bar buttons in the client, where there is a 1px separator
+	margin-left: 1px;
+
+	&.standard:-moz-locale-dir(ltr) {
+		transform: scaleX(-1);
+	}
+}
+
+.dropdown {
+	position: relative;
+
+	.popup {
+		top: 30px;
+		position: absolute;
+		z-index: 200;
+		box-shadow: 0 0 24px 0 rgba(0,0,0,0.12);
+		border-radius: 5px;
+		background: var(--material-toolbar);
+		border: var(--material-panedivider);
+		color: var(--fill-primary);
+		padding: 5px;
+		font-size: 12px;
+
+		.toolbar-button {
+			color: var(--fill-primary);
+		}
+	}
+}
+
+.text-dropdown {
+	.popup {
+		width: 150px;
+
+		.inline-options {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+
+			.line {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				gap: 4px;
+
+				& > :not(:first-child) {
+					margin-left: 2px;
+				}
+			}
+		}
+
+		.separator {
+			height: 1px;
+			background-color: var(--color-panedivider);
+			margin: 4px 9px;
+
+			&:last-child {
+				display: none;
+			}
+		}
+
+		.block-options {
+			h1, h2, h3, h4, h5, h6, pre, span {
+				margin:0;
+				padding: 0;
+			}
+
+			p {
+				line-height: 1.5;
+			}
+
+			h1 {
+				font-size: 17px;
+			}
+
+			h2 {
+				font-size: 15px;
+			}
+
+			h3 {
+				font-size: 13px;
+			}
+
+			.option {
+				width: 100%;
+				height: 28px;
+				border-radius: 5px;
+				padding-inline-start: 22px;
+				display: flex;
+				align-items: center;
+
+				&:hover {
+					background-color: var(--fill-quinary);
+				}
+
+				&.active:before {
+					content: '✓';
+					position: absolute;
+					margin-inline-start: -17px;
+					height: 28px;
+					display: flex;
+					align-items: center;
+				}
+			}
+		}
+	}
+}
+
+.color-dropdown {
+	.popup {
+		width: 164px;
+		display: flex;
+		flex-direction: column;
+		padding: 5px;
+		max-height: 350px;
+		overflow-y: auto;
+
+		.option {
+			height: 28px;
+			display: flex;
+			align-items: center;
+			width: 100%;
+			border-radius: 5px;
+			padding-inline-start: 22px;
+			padding-inline-end: 10px;
+
+			gap: 6px;
+
+			&:hover {
+				background-color: var(--fill-quinary);
+			}
+
+			.icon {
+				display: flex;
+
+			}
+
+			.name {
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+
+			}
+
+			&.active:before {
+				content: '✓';
+				position: absolute;
+				margin-inline-start: -17px;
+				height: 28px;
+				display: flex;
+				align-items: center;
+			}
+		}
+
+		.separator {
+			height: 1px;
+			background-color: var(--color-panedivider);
+			margin: 4px 9px;
+
+			&:last-child {
+				display: none;
+			}
+		}
+	}
+}
+
+.align-dropdown,
+.insert-dropdown {
+	.popup {
+		display: flex;
+		padding: 5px;
+		gap: 4px;
+	}
+}
+
+.more-dropdown {
+	.popup {
+		display: flex;
+		flex-direction: column;
+
+		.separator {
+			height: 1px;
+			background-color: var(--color-panedivider);
+			margin: 4px 9px;
+
+			&:last-child {
+				display: none;
+			}
+		}
+
+		.option {
+			white-space: nowrap;
+			height: 28px;
+			display: flex;
+			align-items: center;
+			width: 100%;
+			border-radius: 5px;
+			padding-inline-start: 10px;
+			padding-inline-end: 10px;
+
+			&:hover {
+				background-color: var(--fill-quinary);
+			}
+		}
+	}
+}

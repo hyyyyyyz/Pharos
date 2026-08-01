@@ -1,0 +1,196 @@
+@use "sass:map";
+
+item-pane-sidenav {
+	&:not([hidden]) {
+		display: flex;
+	}
+	flex-direction: column;
+	border-inline-start: var(--material-panedivider);
+	padding: 6px 4px 0;
+	align-items: center;
+	gap: 6px;
+	background: var(--material-sidepane);
+	position: relative; // Stop item pane content from overlapping
+	width: $width-sidenav;
+	height: auto;
+
+	&.stacked {
+		width: auto;
+		height: $width-sidenav;
+		flex-direction: row;
+		border-inline-start: none;
+		border-top: var(--material-panedivider);
+		padding-inline-start: 6px;
+		padding-inline-end: 0;
+		padding-block: 4px;
+	}
+
+	.inherit-flex {
+		display: flex;
+		flex-direction: inherit;
+		flex-wrap: inherit;
+		align-items: inherit;
+		justify-content: inherit;
+		gap: inherit;
+	}
+	
+	.highlight {
+		border-radius: 5px;
+		background-color: var(--fill-quinary);
+	}
+
+	.pin-wrapper {
+		position: relative;
+		// Disable pointer events here, re-enable on the button, so that :hover styles are only applied
+		// when the button itself is hovered
+		pointer-events: none;
+
+		&::after {
+			content: '';
+			position: absolute;
+			top: 1px;
+			inset-inline-end: 1px;
+			width: 12px;
+			height: 12px;
+			border-radius: 50%;
+		}
+
+		&.pinnable {
+			&.pinned::after {
+				background-color: var(--accent-blue);
+				background-image: icon-url("8/universal/pin.svg");
+				background-position: center;
+				background-repeat: no-repeat;
+			}
+		}
+	}
+
+	.btn {
+		// TODO: Extract button styles?
+		
+		width: 28px;
+		height: 28px;
+		margin: 0;
+		padding: 4px;
+		pointer-events: all;
+		background-repeat: no-repeat;
+		background-position: center;
+		-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+		border-radius: 5px;
+		box-sizing: border-box;
+
+		&:disabled,
+		&[disabled="true"] {
+			opacity: 60%;
+			pointer-events: none;
+		}
+
+		&:hover {
+			background-color: var(--fill-quinary);
+		}
+
+		&:active {
+			background-color: var(--fill-quarternary);
+		}
+		
+		@each $pane, $color in $item-pane-sections {
+			&[data-pane="#{$pane}"] {
+				background-image: url("chrome://zotero/skin/itempane/20/#{$pane}.svg");
+				fill: $color;
+				stroke: $color;
+			}
+		}
+
+		// Notes context pane button
+		&[data-pane="context-notes"] {
+			background-image: url("chrome://zotero/skin/itempane/20/multi-notes.svg");
+			fill: map.get($item-pane-sections, "notes");
+			stroke: map.get($item-pane-sections, "notes");
+		}
+		
+		&[data-action="locate"], &[data-action="toggle-pane"] {
+			color: var(--fill-secondary);
+		}
+
+		&[data-action="locate"] {
+			@include svgicon-menu("go-to", "universal", "20");
+
+			// Locate is flipped in RTL
+			&:-moz-locale-dir(rtl) {
+				transform: scaleX(-1);
+			}
+		}
+
+		&[data-action="toggle-pane"] {
+			@include svgicon-menu("sidebar", "universal", "20");
+
+			// ...And Toggle Item/Context Pane is flipped in LTR
+			&:-moz-locale-dir(ltr) {
+				transform: scaleX(-1);
+			}
+
+			// Hide in Stacked mode, since we show it in the toolbar instead
+			@include state("item-pane-sidenav.stacked") {
+				&, & + .divider {
+					display: none;
+				}
+			}
+		}
+
+		&[custom] {
+			@media (prefers-color-scheme: light) {
+				background-image: var(--custom-sidenav-icon-light);
+			}
+			@media (prefers-color-scheme: dark) {
+				background-image: var(--custom-sidenav-icon-dark);
+			}
+			fill: var(--fill-secondary);
+			stroke: var(--fill-secondary);
+			-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+		}
+	}
+	
+	&:not(.stacked) > .divider {
+		width: 20px;
+		height: 0;
+		border-bottom: 1px solid var(--fill-quinary);
+	}
+	
+	&.stacked > .divider {
+		width: 0;
+		height: 20px;
+		border-inline-end: 1px solid var(--fill-quinary);
+	}
+
+	.context-menu {
+		@include macOS-hide-menu-icons;
+	}
+
+	.drop-indicator {
+		position: absolute;
+		display: block;
+		background-color: var(--color-accent);
+		z-index: 1000;
+		--drop-indicator-size: 2px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	&.stacked .drop-indicator {
+		left: var(--drop-indicator-offset);
+		top: 0;
+		width: var(--drop-indicator-size);
+		height: 28px;
+		margin-block: 4px;
+	}
+
+	&:not(.stacked) .drop-indicator {
+		top: var(--drop-indicator-offset);
+		left: 0;
+		width: 28px;
+		height: var(--drop-indicator-size);
+		margin-inline: 4px;
+	}
+}

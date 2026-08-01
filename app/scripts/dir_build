@@ -1,0 +1,181 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+APP_ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+. "$APP_ROOT_DIR/config.sh"
+. "$SCRIPT_DIR/utils.sh"
+
+function usage {
+	cat >&2 <<DONE
+Usage: $0 [options]
+
+If -p is omitted, platform (and, for Windows/Linux, architecture) default to the host system.
+Architecture is ignored for Mac builds, which are always shipped as universal binaries.
+
+Options
+ -p PLATFORM        Platform to build (m=Mac, w=Windows, l=Linux)
+ -a ARCH            Target architecture (arm64, x64, i686, win32) — **Windows/Linux only**
+ -t                 add devtools
+ -f                 force a full rebuild instead of updating the staged build in place
+DONE
+	exit 1
+}
+
+platform=""
+arch=""
+devtools=0
+force_full=0
+while getopts "tp:a:f" opt; do
+	case $opt in
+		t)
+			devtools=1
+			;;
+		p)
+			for (( i=0; i<${#OPTARG}; i++ )); do
+				case ${OPTARG:i:1} in
+					m) platform="m";;
+					w) platform="w";;
+					l) platform="l";;
+					*)
+						echo "$0: Invalid platform option ${OPTARG:i:1}" >&2
+						usage
+						;;
+				esac
+			done
+			;;
+		a)
+			arch="$OPTARG"
+			;;
+		f)
+			force_full=1
+			;;
+		\?)
+			usage
+			;;
+	esac
+done
+
+# Derive platform from host if not provided
+if [[ -z $platform ]]; then
+	case "$(uname -s)" in
+		Darwin)  platform="m" ;;
+		Linux)   platform="l" ;;
+		CYGWIN*|MINGW*) platform="w" ;;
+	esac
+fi
+
+# Handle architecture rules
+if [[ $platform = "m" ]]; then
+	# No arch for Mac — ignore anything provided
+	if [[ -n $arch ]]; then
+		echo "Ignoring -a $arch for Mac build (universal binary)" >&2
+	fi
+	arch=""
+else
+	# Windows / Linux: derive arch if not supplied
+	if [[ -z $arch ]]; then
+		case "$(uname -m)" in
+			arm64|aarch64) arch="arm64" ;;
+			x86_64)         arch="x64"   ;;
+			i?86)           arch="i686"  ;;
+		esac
+	fi
+fi
+
+CHANNEL="source"
+
+# Remove stale symlinks left behind in build/ when source files are deleted,
+# which would otherwise break the build
+if [ -d "$ROOT_DIR/build" ]; then
+	# With -L, -type l matches only broken symlinks
+	stale_links=$(find -L "$ROOT_DIR/build" -type l -print)
+	if [ -n "$stale_links" ]; then
+		echo "Removing stale symlinks from build/:" >&2
+		echo "$stale_links" >&2
+		while IFS= read -r link; do
+			rm "$link"
+		done <<< "$stale_links"
+	fi
+fi
+
+# Try to update the staged build in place instead of doing a full rebuild
+if [[ $force_full -eq 0 ]]; then
+	incr_cmd=("$SCRIPT_DIR/incremental_update" -p "$platform")
+	[[ -n $arch ]] && incr_cmd+=( -a "$arch" )
+	[[ $devtools -eq 1 ]] && incr_cmd+=( -t )
+	set +e
+	"${incr_cmd[@]}"
+	incr_status=$?
+	set -e
+	if [ $incr_status -ne 2 ]; then
+		exit $incr_status
+	fi
+fi
+
+# Pharos: detached copy of Zotero with no git metadata. This hash only labels
+# the build, so fall back to a timestamp.
+#
+# It must be exactly 9 characters: prepare_build truncates with [0:9], sized for
+# git short hashes, and does so silently -- a longer label like
+# "pharos-<YYYYmmddHHMM>" came out as "pharos-20" on every single build, making
+# every build indistinguishable. %y%j%H%M is yy + day-of-year + HH + MM = 9,
+# which is unique to the minute within a year and survives intact.
+if git -C "$ROOT_DIR" rev-parse --short HEAD >/dev/null 2>&1; then
+	hash=$(git -C "$ROOT_DIR" rev-parse --short HEAD)
+else
+	hash="$(date +%y%j%H%M)"
+fi
+
+build_dir=$(mktemp -d)
+manifest_tmp=""
+cleanup() {
+	rm -rf "$build_dir"
+	if [ -n "$manifest_tmp" ]; then
+		rm -f "$manifest_tmp"
+	fi
+}
+trap cleanup EXIT
+
+# Snapshot the state of build/ and app/ before the build for later incremental
+# updates
+app_hash=""
+if [ -d "$ROOT_DIR/build" ]; then
+	manifest_tmp=$(mktemp)
+	generate_build_manifest "$ROOT_DIR/build" > "$manifest_tmp"
+	app_hash=$(generate_app_hash "$APP_ROOT_DIR")
+fi
+
+"$SCRIPT_DIR/prepare_build" -s "$ROOT_DIR/build" -o "$build_dir" -c "$CHANNEL" -m "$hash"
+
+build_cmd=("$APP_ROOT_DIR/build.sh" -d "$build_dir" -p "$platform" -c "$CHANNEL" -s -q)
+[[ -n $arch ]] && build_cmd+=( -a "$arch" )
+[[ $devtools -eq 1 ]] && build_cmd+=( -t )
+
+"${build_cmd[@]}"
+
+# Save manifest for future incremental updates
+if [ -n "$manifest_tmp" ]; then
+	if [[ -z "${ZOTERO_TEST:-}" ]] || [[ "${ZOTERO_TEST:-}" == "0" ]]; then
+		include_tests=0
+	else
+		include_tests=1
+	fi
+	{
+		echo "#format=2"
+		echo "#include_tests=$include_tests"
+		echo "#devtools=$devtools"
+		echo "#app_hash=$app_hash"
+		cat "$manifest_tmp"
+	} > "$STAGE_DIR/.build-manifest"
+fi
+
+# Ad-hoc-sign the Word dylib so it works on Apple Silicon. This only needs to
+# happen when the staged build is fully rebuilt -- incremental updates don't
+# touch the dylib.
+if [[ $platform = "m" ]] && [[ "$(uname -s)" = "Darwin" ]]; then
+	"$SCRIPT_DIR/codesign_local" "$STAGE_DIR/Pharos.app"
+fi
+
+echo Done

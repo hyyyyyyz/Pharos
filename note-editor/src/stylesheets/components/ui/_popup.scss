@@ -1,0 +1,67 @@
+.popup-container .popup {
+	position: absolute;
+	display: flex;
+	z-index: 100;
+	font-size: 12px;
+	background: var(--material-toolbar);
+	border: var(--material-panedivider);
+	padding: 5px;
+	border-radius: 5px;
+	box-shadow: 0 0 24px 0 rgba(0, 0, 0, 0.12);
+	@include popover-pointer($width: 10px, $height: 5px);
+
+	button {
+		user-select: none;
+		padding: 4px;
+		border-radius: 5px;
+		cursor: default;
+		display: flex;
+		align-items: center;
+		text-align: center;
+		color: var(--fill-secondary);
+
+		&:not(:first-child) {
+			margin-left: 5px;
+		}
+
+		&:hover {
+			background: var(--fill-quinary);
+		}
+
+		.icon {
+			display: flex;
+			align-items: center;
+			justify-content: space-around;
+			margin-inline-end: 7px;
+		}
+
+		.title {
+			color: var(--fill-primary);
+		}
+	}
+}
+
+.link-popup {
+	.link {
+		width: 200px;
+		display: flex;
+		flex: 1;
+		overflow: hidden;
+		align-items: center;
+
+		a {
+			text-overflow: ellipsis;
+			overflow: hidden;
+			white-space: nowrap;
+			margin-left: 2px;
+		}
+
+		input {
+			width: 100%;
+			border: none;
+			outline: none;
+			color: inherit;
+			background-color: transparent;
+		}
+	}
+}

@@ -1,0 +1,405 @@
+//
+// Mixins
+//
+
+@use "sass:math";
+@mixin popover-pointer($width, $height, $offset: 50%, $position: null) {
+	$border-x: math.div($width, 2);
+	$border-y: $height;
+
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		border: solid transparent;
+		border-width: $border-y $border-x;
+
+	}
+
+	#{if($position == "bottom-center", "&", "&[class*='bottom-center']")} {
+		&::before,
+		&::after {
+			border-top-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			left: 50%;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			top: (-$border-y - 1px);
+			border-bottom-color: var(--color-panedivider);
+		}
+
+		&::after {
+			top: -$border-y;
+			border-bottom-color: var(--color-background);
+		}
+	}
+
+
+	#{if($position == "top-center", "&", "&[class*='top-center']")} {
+		&::before,
+		&::after {
+			border-bottom-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			left: 50%;
+			/*! rtl:end:ignore */
+
+		}
+
+		&::before {
+			bottom: (-$border-y - 1px);
+			border-top-color: var(--color-panedivider);
+		}
+
+		&::after {
+			bottom: -$border-y;
+			border-top-color: var(--color-background);
+		}
+	}
+
+	#{if($position == "left-center", "&", "&[class*='left-center']")} {
+		&::before,
+		&::after {
+			/*! rtl:begin:ignore */
+			border-right-width: 0;
+			transform: translateY(-8px);
+			top: 50%;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			/*! rtl:begin:ignore */
+			right: (-$border-x - 1px);
+			border-left-color: var(--color-panedivider);
+			/*! rtl:end:ignore */
+		}
+
+		&::after {
+			/*! rtl:begin:ignore */
+			right: -$border-x;
+			border-left-color: var(--color-background);
+			/*! rtl:end:ignore */
+		}
+	}
+
+	#{if($position == "right-center", "&", "&[class*='right-center']")} {
+		&::before,
+		&::after {
+			/*! rtl:begin:ignore */
+			border-left-width: 0;
+			transform: translateY(-8px);
+			top: 50%;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			/*! rtl:begin:ignore */
+			left: (-$border-x - 1px);
+			border-right-color: var(--color-panedivider);
+			/*! rtl:end:ignore */
+		}
+
+		&::after {
+			/*! rtl:begin:ignore */
+			left: -$border-x;
+			border-right-color: var(--color-background);
+			/*! rtl:end:ignore */
+		}
+	}
+
+	// ---
+
+	#{if($position == "top-left", "&", "&[class*='top-left']")} {
+		&::before,
+		&::after {
+			border-bottom-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			left: 20px;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			bottom: (-$border-y - 1px);
+			border-top-color: var(--color-panedivider);
+		}
+
+		&::after {
+			bottom: -$border-y;
+			border-top-color: var(--color-background);
+		}
+	}
+
+	#{if($position == "top-right", "&", "&[class*='top-right']")} {
+		&::before,
+		&::after {
+			border-bottom-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			right: 20px;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			bottom: (-$border-y - 1px);
+			border-top-color: var(--color-panedivider);
+		}
+
+		&::after {
+			bottom: -$border-y;
+			border-top-color: var(--color-background);
+		}
+	}
+
+	#{if($position == "bottom-left", "&", "&[class*='bottom-left']")} {
+		&::before,
+		&::after {
+			border-top-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			left: 20px;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			top: (-$border-y - 1px);
+			border-bottom-color: var(--color-panedivider);
+		}
+
+		&::after {
+			top: -$border-y;
+			border-bottom-color: var(--color-background);
+		}
+	}
+
+	#{if($position == "bottom-right", "&", "&[class*='bottom-right']")} {
+		&::before,
+		&::after {
+			border-top-width: 0;
+			transform: translateX(-$border-x);
+			/*! rtl:begin:ignore */
+			right: 20px;
+			/*! rtl:end:ignore */
+		}
+
+		&::before {
+			top: (-$border-y - 1px);
+			border-bottom-color: var(--color-panedivider);
+		}
+
+		&::after {
+			top: -$border-y;
+			border-bottom-color: var(--color-background);
+		}
+	}
+}
+
+// An implementation of Firefox light-dark() CSS mixin, which is not supported in 102
+@mixin light-dark($prop, $light-color, $dark-color) {
+	@media (prefers-color-scheme: light) {
+		#{$prop}: $light-color;
+	}
+	@media (prefers-color-scheme: dark) {
+		#{$prop}: $dark-color;
+	}
+}
+
+@mixin macOS-inactive-opacity {
+	$selector: &;
+	@at-root {
+		@media (-moz-platform: macos) {
+			#{$selector} {
+				&:-moz-window-inactive {
+					opacity: 0.6;
+				}
+			}
+		}
+	}
+}
+
+@mixin pdf-page-image-dark-light {
+	$selector: &;
+	@at-root {
+		:root[data-color-scheme="dark"] #{$selector} {
+			filter: brightness(0.8);
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root:not([data-color-scheme]) {
+				#{$selector} {
+					filter: brightness(0.8);
+				}
+			}
+		}
+	}
+}
+
+@mixin popup {
+	position: absolute;
+	z-index: $z-index-find-popup;
+	background: var(--material-toolbar);
+	border-radius: 6px;
+	box-shadow: 0 0   3px  0 rgba(0, 0, 0, 0.55),
+				0 8px 40px 0 rgba(0, 0, 0, 0.25),
+				0 0   3px  0 rgba(255, 255, 255, 0.1) inset;
+	display: flex;
+	flex-direction: column;
+}
+
+@mixin control-popup {
+	@include popup;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	min-width: 200px;
+
+	.row {
+		&.checkbox {
+			display: flex;
+
+			input {
+				margin-inline-end: 10px;
+			}
+		}
+
+		&.buttons {
+			display: flex;
+			justify-content: flex-end;
+			gap: 8px;
+		}
+
+		&.radio {
+			user-select: none;
+			border: 0;
+			margin-top: 8px;
+
+			legend {
+				font-size: rem(11); // Replaced $toolbar-field-font-size
+				font-weight: bold;
+				padding-bottom: 4px;
+			}
+
+			.choice {
+				&:not(:last-child) {
+					padding-bottom: 5px;
+				}
+
+				display: flex;
+				align-items: center;
+
+				input:focus-visible {
+					box-shadow: 0 0 0 2px rgba(#0a6cf5, 0.5), 0 0 0 1px #a5afc1; // Replaced rgba($accent-color, 0.5), $search-box-shadow
+				}
+
+				input:-moz-focusring {
+					box-shadow: 0 0 0 2px rgba(#0a6cf5, 0.5), 0 0 0 1px #a5afc1; // Replaced rgba($accent-color, 0.5), $search-box-shadow
+				}
+
+				label {
+					padding-left: 5px;
+				}
+			}
+		}
+	}
+
+	progress {
+		width: 100%;
+	}
+
+	input[type=radio]:disabled + label {
+		color: var(--fill-secondary);
+	}
+
+	input[type=text] {
+		padding: 0 7px;
+		background: var(--material-background);
+		border-radius: 5px;
+		border: var(--material-border-quinary);
+		height: 22px;
+
+		&:disabled {
+			color: var(--fill-tertiary);
+		}
+	}
+
+	.form-button {
+		height: 22px;
+		padding: 0 7px;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		border-radius: 5px;
+		background: var(--material-button);
+		box-shadow: $shadow-button;
+
+		&.primary {
+			background: linear-gradient(180deg, rgba(255, 255, 255, 0.17) 0%, rgba(255, 255, 255, 0.00) 100%), var(--accent-blue);
+			color: var(--accent-white);
+
+			&:active:not(:disabled), &.active:not(:disabled), &.active-pseudo-class-fix:not(:disabled) {
+				background: linear-gradient(to bottom, rgba(255, 255, 255, 0.25), rgba(0, 0, 0, 0.05)), darken(#0a6cf5, 6%); // Replaced $gradient-btn-active-bg
+			}
+		}
+
+		&:-moz-focusring {
+			box-shadow: 0 0 0 4px rgba(#0a6cf5, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.15), 0 1px 0 1px rgba(0, 0, 0, 0.03), 0 1px 0 rgba(0, 0, 0, 0.12); // Replaced $overlay-btn-focus-box-shadow
+		}
+
+		&:focus-visible {
+			box-shadow: 0 0 0 4px rgba(#0a6cf5, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.15), 0 1px 0 1px rgba(0, 0, 0, 0.03), 0 1px 0 rgba(0, 0, 0, 0.12); // Replaced $overlay-btn-focus-box-shadow
+		}
+
+		&:active:not(:disabled), &.active:not(:disabled), &.active-pseudo-class-fix:not(:disabled) {
+			background: var(--fill-quarternary);
+		}
+
+		&:disabled {
+			opacity: 0.7;
+		}
+
+		@media (-moz-platform: macos) {
+			&:-moz-window-inactive {
+				background: var(--material-button);
+				box-shadow: $shadow-button;
+			}
+		}
+	}
+}
+
+@mixin link-button {
+	display: inline;
+	appearance: none;
+	margin: 0;
+	padding: 0;
+	background: none;
+	border: none;
+	outline: none;
+	color: var(--accent-blue);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+@mixin loading-spinner {
+	color: var(--fill-secondary);
+	animation: rotating 0.5s steps(12) infinite;
+}
+
+// EPUBView sets .mask-resizing while debouncing resize.
+// Use it to apply a blur and transform masking intermediate layout shifts.
+// (Transform properties are set in EPUBView.)
+@mixin handle-mask-resizing {
+	transform-origin: top left;
+	filter: blur(0px);
+	transition: filter 0.2s ease-in;
+
+	&.mask-resizing {
+		filter: blur(10px);
+		transition: filter 0.1s ease-in;
+		position: absolute;
+	}
+}

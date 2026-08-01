@@ -1,0 +1,760 @@
+"use strict";
+
+describe("Zotero.Utilities.Internal", function () {
+	var ZUI;
+		
+	before(function () {
+		ZUI = Zotero.Utilities.Internal;
+	});
+	
+	
+	
+	describe("#md5()", function () {
+		it("should generate hex string given file path", async function () {
+			var file = OS.Path.join(getTestDataDirectory().path, 'test.png');
+			assert.equal(
+				Zotero.Utilities.Internal.md5(Zotero.File.pathToFile(file)),
+				'93da8f1e5774c599f0942dcecf64b11c'
+			);
+		})
+	})
+	
+	
+	describe("#md5Async()", function () {
+		it("should generate hex string given file path", async function () {
+			var file = OS.Path.join(getTestDataDirectory().path, 'test.png');
+			assert.equal(
+				await Zotero.Utilities.Internal.md5Async(file),
+				'93da8f1e5774c599f0942dcecf64b11c'
+			);
+		});
+		
+		it("should generate hex string given file path for file bigger than chunk size", async function () {
+			var tmpDir = Zotero.getTempDirectory().path;
+			var file = OS.Path.join(tmpDir, 'md5Async');
+			
+			let encoder = new TextEncoder();
+			let arr = encoder.encode("".padStart(100000, "a"));
+			await OS.File.writeAtomic(file, arr);
+			
+			assert.equal(
+				await Zotero.Utilities.Internal.md5Async(file),
+				'1af6d6f2f682f76f80e606aeaaee1680'
+			);
+			
+			await OS.File.remove(file);
+		});
+		
+		it("should return false for a nonexistent file", async function () {
+			var tmpDir = Zotero.getTempDirectory().path;
+			var file = OS.Path.join(tmpDir, 'nonexistent-asawefaweoihafa');
+			assert.isFalse(await ZUI.md5Async(file));
+		});
+		
+		it("should return hash for an empty file", async function () {
+			const emptyHash = 'd41d8cd98f00b204e9800998ecf8427e';
+			
+			var tmpDir = Zotero.getTempDirectory().path;
+			var file = OS.Path.join(tmpDir, 'empty-file');
+			await IOUtils.write(file, new Uint8Array());
+			
+			assert.equal(await ZUI.md5Async(file), emptyHash);
+			
+			await IOUtils.remove(file);
+		});
+	})
+	
+	
+	describe("#gzip()/gunzip()", function () {
+		it("should compress and decompress a Unicode text string", async function () {
+			var text = "Voilà! \u1F429";
+			var compstr = await Zotero.Utilities.Internal.gzip(text);
+			assert.isAbove(compstr.length, 0);
+			assert.notEqual(compstr.length, text.length);
+			var str = await Zotero.Utilities.Internal.gunzip(compstr);
+			assert.equal(str, text);
+		});
+	});
+	
+	
+	describe("#decodeUTF8()", function () {
+		it("should properly decode binary string", async function () {
+			let text = String.fromCharCode.apply(null, new Uint8Array([226, 130, 172]));
+			let utf8 = Zotero.Utilities.Internal.decodeUTF8(text);
+			assert.equal(utf8, "€");
+		});
+	});
+	
+	
+	describe("#containsEmoji()", function () {
+		it("should return true for text with an emoji", function () {
+			assert.isTrue(Zotero.Utilities.Internal.containsEmoji("🐩 Hello 🐩"));
+		});
+		
+		it("should return true for text with an emoji with text representation that use Variation Selector-16", function () {
+			assert.isTrue(Zotero.Utilities.Internal.containsEmoji("This is a ⭐️"));
+		});
+		
+		it("should return true for text with an emoji made up of multiple characters with ZWJ", function () {
+			assert.isTrue(Zotero.Utilities.Internal.containsEmoji("I am a 👨‍🌾"));
+		});
+		
+		it("should return false for integer", function () {
+			assert.isFalse(Zotero.Utilities.Internal.containsEmoji("0"));
+		});
+	});
+	
+	describe("#delayGenerator", function () {
+		var spy;
+		
+		before(function () {
+			spy = sinon.spy(Zotero.Promise, "delay");
+		});
+		
+		afterEach(function () {
+			spy.resetHistory();
+		});
+		
+		after(function () {
+			spy.restore();
+		});
+		
+		it("should delay for given amounts of time without limit", async function () {
+			var intervals = [1, 2];
+			var gen = Zotero.Utilities.Internal.delayGenerator(intervals);
+			
+			// When intervals are exhausted, keep using last interval
+			var testIntervals = intervals.slice();
+			testIntervals.push(intervals[intervals.length - 1]);
+			
+			for (let i of testIntervals) {
+				let val = await gen.next().value;
+				assert.isTrue(val);
+				assert.isTrue(spy.calledWith(i));
+				spy.resetHistory();
+			}
+		});
+		
+		it("should return false when maxTime is reached", async function () {
+			var intervals = [5, 10];
+			var gen = Zotero.Utilities.Internal.delayGenerator(intervals, 30);
+			
+			// When intervals are exhausted, keep using last interval
+			var testIntervals = intervals.slice();
+			testIntervals.push(intervals[intervals.length - 1]);
+			
+			for (let i of testIntervals) {
+				let val = await gen.next().value;
+				assert.isTrue(val);
+				assert.isTrue(spy.calledWith(i));
+				spy.resetHistory();
+			}
+			
+			// Another interval would put us over maxTime, so return false immediately
+			let val = await gen.next().value;
+			assert.isFalse(val);
+			assert.isFalse(spy.called);
+		});
+	});
+	
+	
+	describe("#extractExtraFields()", function () {
+		it("should ignore 'Type: note', 'Type: attachment', and 'Type: annotation'", function () {
+			for (let type of ['note', 'attachment', 'annotation']) {
+				let str = `Type: ${type}`;
+				let { itemType, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+				assert.isNull(itemType, type);
+				assert.equal(extra, `Type: ${type}`, type);
+			}
+		});
+		
+		it("should ignore numeric values for Type", function () {
+			for (let type of ['3']) {
+				let str = `Type: ${type}`;
+				let { itemType, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+				assert.isNull(itemType, type);
+				assert.equal(extra, `Type: ${type}`, type);
+			}
+		});
+		
+		it("should use the first mapped Zotero type for a CSL type", function () {
+			var str = 'type: personal_communication';
+			var { itemType, fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(itemType, 'letter');
+		});
+		
+		it("should extract a field", function () {
+			var val = '10.1234/abcdef';
+			var str = `DOI: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('DOI'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a field for a given item", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			var val = '10.1234/abcdef';
+			var str = `DOI: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('DOI'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a base-mapped field for a given item", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'book' });
+			var val = 'Foo';
+			var str = `medium: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('medium'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a CSL field", function () {
+			var val = '10.1234/abcdef';
+			var str = `container-title: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, Zotero.Schema.CSL_TEXT_MAPPINGS['container-title'].length);
+			assert.equal(fields.get('publicationTitle'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a CSL field for a given item type", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			var val = '10.1234/abcdef';
+			var str = `container-title: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('publicationTitle'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a field with different case", function () {
+			var val = '10.1234/abcdef';
+			var str = `doi: ${val}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('DOI'), val);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a field with other fields, text, and whitespace", function () {
+			var date = '2020-04-01';
+			var doi = '10.1234/abcdef';
+			var str = `Line 1\nDate: ${date}\nFoo: Bar\nDOI: ${doi}\n\nLine 2`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 2);
+			assert.equal(fields.get('date'), date);
+			assert.equal(fields.get('DOI'), doi);
+			assert.equal(extra, 'Line 1\nFoo: Bar\n\nLine 2');
+		});
+		
+		it("should extract the first instance of a field", function () {
+			var date1 = '2020-04-01';
+			var date2 = '2020-04-02';
+			var str = `Date: ${date1}\nDate: ${date2}`;
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('date'), date1);
+			assert.equal(extra, "Date: " + date2);
+		});
+		
+		it("shouldn't extract a field from a line that begins with a whitespace", function () {
+			var str = '\n number-of-pages: 11';
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 0);
+		});
+		
+		it("shouldn't extract a field that already exists on the item", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'book' });
+			item.setField('numPages', 10);
+			var str = 'number-of-pages: 11';
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 0);
+		});
+		
+		it("should extract a CSL date field", function () {
+			var str = 'issued: 2000';
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 1);
+			assert.equal(fields.get('date'), 2000);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a CSL name", function () {
+			var str = 'container-author: Last || First';
+			var { creators, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.lengthOf(creators, 1);
+			assert.propertyVal(creators[0], 'creatorType', 'bookAuthor');
+			assert.propertyVal(creators[0], 'firstName', 'First');
+			assert.propertyVal(creators[0], 'lastName', 'Last');
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should extract a CSL name that's valid for a given item type", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'bookSection' });
+			var str = 'container-author: Last || First';
+			var { creators, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.lengthOf(creators, 1);
+			assert.propertyVal(creators[0], 'creatorType', 'bookAuthor');
+			assert.propertyVal(creators[0], 'firstName', 'First');
+			assert.propertyVal(creators[0], 'lastName', 'Last');
+			assert.strictEqual(extra, '');
+		});
+		
+		it("shouldn't extract a CSL name that's not valid for a given item type", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'journalArticle' });
+			var str = 'container-author: Last || First';
+			var { creators, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.lengthOf(creators, 0);
+			assert.strictEqual(extra, str);
+		});
+		
+		it("shouldn't extract a creator if creators of same type already exist", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'book' });
+			item.setCreator(0, { creatorType: 'author', name: 'Foo' });
+			var str = 'author: Bar';
+			var { fields, creators, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 0);
+			assert.lengthOf(creators, 0);
+		});
+		
+		it("should extract a creator if creators of the same type don't exist", function () {
+			var item = createUnsavedDataObject('item', { itemType: 'book' });
+			item.setCreator(0, { creatorType: 'author', name: 'Foo' });
+			var str = 'editor: Bar';
+			var { fields, creators, extra } = Zotero.Utilities.Internal.extractExtraFields(str, item);
+			assert.equal(fields.size, 0);
+			assert.lengthOf(creators, 1);
+			assert.equal(creators[0].creatorType, 'editor');
+			assert.equal(creators[0].name, 'Bar');
+		});
+		
+		it("should extract the citeproc-js cheater syntax", function () {
+			var issued = '{:number-of-pages:11}\n{:issued:2014}';
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(issued);
+			assert.equal(fields.size, 2);
+			assert.equal(fields.get('numPages'), 11);
+			assert.equal(fields.get('date'), 2014);
+			assert.strictEqual(extra, '');
+		});
+		
+		it("should ignore empty creator in citeproc-js cheater syntax", function () {
+			var str = '{:author: }\n';
+			var { fields, extra } = Zotero.Utilities.Internal.extractExtraFields(str);
+			assert.equal(fields.size, 0);
+			assert.strictEqual(extra, str);
+		});
+	});
+	
+	describe("#combineExtraFields", function () {
+		var originalDate = "1887";
+		var publicationPlace = "New York";
+		var doi = '10.1234/123456789';
+		var fieldMap = new Map();
+		fieldMap.set('originalDate', originalDate);
+		fieldMap.set('publicationPlace', publicationPlace);
+		fieldMap.set('DOI', doi);
+		var fieldStr = `DOI: ${doi}\nOriginal Date: ${originalDate}\nPublication Place: ${publicationPlace}`;
+		
+		it("should create 'field: value' pairs from field map", function () {
+			var extra = "";
+			var newExtra = ZUI.combineExtraFields(extra, fieldMap);
+			assert.equal(newExtra, fieldStr);
+		});
+		
+		it("should add fields above existing Extra content", function () {
+			var extra = "This is a note.";
+			var newExtra = ZUI.combineExtraFields(extra, fieldMap);
+			assert.equal(newExtra, fieldStr + '\n' + extra);
+		});
+		
+		it("should replace existing fields", function () {
+			var extra = "This is a note.\nOriginal Date: 1886\nFoo: Bar";
+			var newExtra = ZUI.combineExtraFields(extra, fieldMap);
+			assert.equal(
+				newExtra,
+				fieldStr.split(/\n/).filter(x => !x.startsWith('Original Date')).join("\n")
+					+ "\nThis is a note.\nOriginal Date: 1887\nFoo: Bar"
+			);
+		});
+	});
+	
+	describe("#extractIdentifiers()", function () {
+		it("should extract ISBN-10", async function () {
+			var id = "0838985890";
+			var identifiers = ZUI.extractIdentifiers(id);
+			assert.lengthOf(identifiers, 1);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.propertyVal(identifiers[0], "ISBN", id);
+		});
+		
+		it("should extract ISBN-13", async function () {
+			var identifiers = ZUI.extractIdentifiers("978-0838985892");
+			assert.lengthOf(identifiers, 1);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.propertyVal(identifiers[0], "ISBN", "9780838985892");
+		});
+		
+		it("should extract multiple ISBN-13s", async function () {
+			var identifiers = ZUI.extractIdentifiers("978-0838985892 9781479347711 ");
+			assert.lengthOf(identifiers, 2);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.lengthOf(Object.keys(identifiers[1]), 1);
+			assert.propertyVal(identifiers[0], "ISBN", "9780838985892");
+			assert.propertyVal(identifiers[1], "ISBN", "9781479347711");
+		});
+		
+		it("should extract DOI", async function () {
+			var id = "10.4103/0976-500X.85940";
+			var identifiers = ZUI.extractIdentifiers(id);
+			assert.lengthOf(identifiers, 1);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.propertyVal(identifiers[0], "DOI", id);
+		});
+		
+		it("should extract PMID", async function () {
+			var identifiers = ZUI.extractIdentifiers("1 PMID:24297125,222 3-4 1234567890, 123456789");
+			assert.lengthOf(identifiers, 4);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.lengthOf(Object.keys(identifiers[1]), 1);
+			assert.lengthOf(Object.keys(identifiers[2]), 1);
+			assert.lengthOf(Object.keys(identifiers[3]), 1);
+			assert.propertyVal(identifiers[0], "PMID", "1");
+			assert.propertyVal(identifiers[1], "PMID", "24297125");
+			assert.propertyVal(identifiers[2], "PMID", "222");
+			assert.propertyVal(identifiers[3], "PMID", "123456789");
+		});
+		
+		it("should extract multiple old and new style arXivs", async function () {
+			var identifiers = ZUI.extractIdentifiers("0706.0044 arXiv:0706.00441v1,12345678,hep-ex/9809001v1, math.GT/0309135.");
+			assert.lengthOf(identifiers, 4);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.lengthOf(Object.keys(identifiers[1]), 1);
+			assert.lengthOf(Object.keys(identifiers[2]), 1);
+			assert.lengthOf(Object.keys(identifiers[3]), 1);
+			assert.propertyVal(identifiers[0], "arXiv", "0706.0044");
+			assert.propertyVal(identifiers[1], "arXiv", "0706.00441");
+			assert.propertyVal(identifiers[2], "arXiv", "hep-ex/9809001");
+			assert.propertyVal(identifiers[3], "arXiv", "math.GT/0309135");
+		});
+
+		it("should extract ADS bibcodes", async function () {
+			var identifiers = ZUI.extractIdentifiers("9 2021wfc..rept....8D, 2022MSSP..16208010Y.");
+			assert.lengthOf(identifiers, 2);
+			assert.lengthOf(Object.keys(identifiers[0]), 1);
+			assert.lengthOf(Object.keys(identifiers[1]), 1);
+			assert.propertyVal(identifiers[0], "adsBibcode", "2021wfc..rept....8D");
+			assert.propertyVal(identifiers[1], "adsBibcode", "2022MSSP..16208010Y");
+		});
+	});
+	
+	describe("#resolveLocale()", function () {
+		var availableLocales;
+		
+		before(function () {
+			availableLocales = Services.locale.availableLocales;
+		});
+		
+		function resolve(locale) {
+			return Zotero.Utilities.Internal.resolveLocale(locale, availableLocales);
+		}
+		
+		it("should return en-US for en-US", function () {
+			assert.equal(resolve('en-US'), 'en-US');
+		});
+		
+		it("should return en-US for en", function () {
+			assert.equal(resolve('en'), 'en-US');
+		});
+		
+		it("should return fr-FR for fr-FR", function () {
+			assert.equal(resolve('fr-FR'), 'fr-FR');
+		});
+		
+		it("should return fr-FR for fr", function () {
+			assert.equal(resolve('fr'), 'fr-FR');
+		});
+		
+		it("should return ar for ar", function () {
+			assert.equal(resolve('ar'), 'ar');
+		});
+		
+		it("should return pt-PT for pt", function () {
+			assert.equal(resolve('pt'), 'pt-PT');
+		});
+		
+		it("should return zh-CN for zh-CN", function () {
+			assert.equal(resolve('zh-CN'), 'zh-CN');
+		});
+		
+		it("should return zh-TW for zh-TW", function () {
+			assert.equal(resolve('zh-TW'), 'zh-TW');
+		});
+		
+		it("should return zh-CN for zh", function () {
+			assert.equal(resolve('zh'), 'zh-CN');
+		});
+	});
+	
+	describe("#camelToTitleCase()", function () {
+		it("should convert 'fooBar' to 'Foo Bar'", function () {
+			assert.equal(Zotero.Utilities.Internal.camelToTitleCase('fooBar'), 'Foo Bar');
+		});
+		
+		it("should keep all-caps strings intact", function () {
+			assert.equal(Zotero.Utilities.Internal.camelToTitleCase('DOI'), 'DOI');
+		});
+		
+		it("should convert 'fooBAR' to 'Foo BAR'", function () {
+			assert.equal(Zotero.Utilities.Internal.camelToTitleCase('fooBAR'), 'Foo BAR');
+		});
+
+	});
+	
+	describe("#getNextName()", function () {
+		it("should get the next available numbered name", function () {
+			var existing = ['Name', 'Name 1', 'Name 3'];
+			assert.equal(Zotero.Utilities.Internal.getNextName('Name', existing), 'Name 2');
+		});
+		
+		it("should return 'Name 1' if no numbered names", function () {
+			var existing = ['Name'];
+			assert.equal(Zotero.Utilities.Internal.getNextName('Name', existing), 'Name 1');
+		});
+		
+		it("should return 'Name' if only numbered names", function () {
+			var existing = ['Name 1', 'Name 3'];
+			assert.equal(Zotero.Utilities.Internal.getNextName('Name', existing), 'Name');
+		});
+		
+		it("should trim given name if trim=true", function () {
+			var existing = ['Name', 'Name 1', 'Name 2', 'Name 3'];
+			assert.equal(Zotero.Utilities.Internal.getNextName('Name 2', existing, true), 'Name 4');
+		});
+	});
+
+	describe("#parseURL()", function () {
+		var f;
+		before(() => {
+			f = Zotero.Utilities.Internal.parseURL;
+		});
+
+		describe("#fileName", function () {
+			it("should contain filename", function () {
+				assert.propertyVal(f('http://example.com/abc/def.html?foo=bar'), 'fileName', 'def.html');
+			});
+
+			it("should be empty if no filename", function () {
+				assert.propertyVal(f('http://example.com/abc/'), 'fileName', '');
+			});
+		});
+
+		describe("#fileExtension", function () {
+			it("should contain extension", function () {
+				assert.propertyVal(f('http://example.com/abc/def.html?foo=bar'), 'fileExtension', 'html');
+			});
+
+			it("should be empty if no extension", function () {
+				assert.propertyVal(f('http://example.com/abc/def'), 'fileExtension', '');
+			});
+
+			it("should be empty if no filename", function () {
+				assert.propertyVal(f('http://example.com/abc/'), 'fileExtension', '');
+			});
+		});
+
+		describe("#fileBaseName", function () {
+			it("should contain base name", function () {
+				assert.propertyVal(f('http://example.com/abc/def.html?foo=bar'), 'fileBaseName', 'def');
+			});
+
+			it("should equal filename if no extension", function () {
+				assert.propertyVal(f('http://example.com/abc/def'), 'fileBaseName', 'def');
+			});
+
+			it("should be empty if no filename", function () {
+				assert.propertyVal(f('http://example.com/abc/'), 'fileBaseName', '');
+			});
+		});
+	});
+
+	describe("OpenURL", function () {
+		var item;
+		
+		before(async function () {
+			item = await createDataObject('item', { title: 'Foo Bar', date: '2024-12-19' });
+		})
+		
+		after(function () {
+			Zotero.Prefs.clear('openURL.resolver');
+		});
+		
+		describe("#resolve()", function () {
+			it("should add trailing '?' if no query string", async function () {
+				Zotero.Prefs.set("openURL.resolver", "https://resolver.ebsco.com/c/abcdef/result");
+				var url = Zotero.Utilities.Internal.OpenURL.resolve(item);
+				assert.include(url, 'result?url_ver=Z39.88-2004');
+			});
+			
+			it("should add trailing '&' if already a query string", async function () {
+				Zotero.Prefs.set("openURL.resolver", "https://resolver.ebscohost.com/openurl?custid=abcdef&groupid=main&profile=ftf&authtype=ip,uid");
+				var url = Zotero.Utilities.Internal.OpenURL.resolve(item);
+				assert.include(url, 'authtype=ip,uid&url_ver=Z39.88-2004');
+			});
+			
+			it("should add trailing '?' after /login?url=", async function () {
+				Zotero.Prefs.set("openURL.resolver", "https://proxy.school.edu/login?url=https://resolver.ebscohost.com/openurl");
+				var url = Zotero.Utilities.Internal.OpenURL.resolve(item);
+				assert.include(url, 'openurl?url_ver=Z39.88-2004');
+			});
+			
+			it("shouldn't add trailing '?' after /login?url= if URL already ends in '?'", async function () {
+				Zotero.Prefs.set("openURL.resolver", "https://proxy.school.edu/login?url=https://resolver.ebscohost.com/openurl?");
+				var url = Zotero.Utilities.Internal.OpenURL.resolve(item);
+				assert.include(url, 'openurl?url_ver=Z39.88-2004');
+			});
+		});
+	});
+
+	describe("#renderItemTitle()", function () {
+		function renderToElement(title) {
+			let elem = new DOMParser().parseFromString('<div></div>', 'text/html')
+				.querySelector('div');
+			Zotero.Utilities.Internal.renderItemTitle(title, elem);
+			return elem;
+		}
+		
+		function renderToHTML(title) {
+			return renderToElement(title).innerHTML;
+		}
+		
+		function renderToTextViaHTML(title) {
+			return renderToElement(title).textContent;
+		}
+		
+		function renderToText(title) {
+			return Zotero.Utilities.Internal.renderItemTitle(title);
+		}
+		
+		it("should render a title without tags unchanged", function () {
+			assert.equal(renderToHTML('My Title'), 'My Title');
+			assert.equal(renderToHTML('1 < 2'), '1 &lt; 2');
+			assert.equal(renderToHTML('<<ATTENTION>> READ THIS'), '&lt;&lt;ATTENTION&gt;&gt; READ THIS');
+		});
+
+		it("should preserve non-tag angle brackets", function () {
+			assert.equal(renderToHTML('<i>0 < p ≤ 1</i>'), '<i>0 &lt; p ≤ 1</i>');
+			assert.equal(renderToText('<i>0 < p ≤ 1</i>'), '0 < p ≤ 1');
+			assert.equal(
+				renderToHTML('Restricted isometry constants where <i>ℓ<sup>p</sup></i> sparse recovery can fail for <i>0 < p ≤ 1</i>'),
+				'Restricted isometry constants where <i>ℓ<sup>p</sup></i> sparse recovery can fail for <i>0 &lt; p ≤ 1</i>'
+			);
+			assert.equal(renderToHTML('1<x <i>abc</i>'), '1&lt;x <i>abc</i>');
+			assert.equal(renderToHTML('<i>f(x) for x<1</i>'), '<i>f(x) for x&lt;1</i>');
+		});
+
+		it("should render single-level tags", function () {
+			let examples = [
+				'My <i>Title</i> XYZ',
+				'My <b>Title</b> XYZ',
+				'My <sub>Title</sub> XYZ',
+				'My <sup>Title</sup> XYZ',
+			];
+			for (let example of examples) {
+				assert.equal(renderToHTML(example), example);
+			}
+
+			assert.equal(renderToHTML('My <span class="nocase">Title</span> XYZ'), 'My <span>Title</span> XYZ');
+			// Citeproc wants no space, DOM output includes space. Confusing!
+			assert.equal(
+				renderToHTML('My <span style="font-variant:small-caps;">Title</span> XYZ'),
+				'My <span style="font-variant: small-caps;">Title</span> XYZ'
+			);
+		});
+
+		it("should render a tag nested inside a different tag", function () {
+			let examples = [
+				'My <i><b>Title</b></i> XYZ',
+				'My <b><i>Title</i></b> XYZ',
+				'My <sub><i>Title</i></sub> XYZ',
+			];
+			for (let example of examples) {
+				assert.equal(renderToHTML(example), example);
+			}
+		});
+
+		it("should preserve mismatched opening and closing tags", function () {
+			assert.equal(
+				renderToHTML('My <i><b>Title</i> XYZ'),
+				'My <i>&lt;b&gt;Title</i> XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <b>Title</i></b> XYZ'),
+				'My <b>Title&lt;/i&gt;</b> XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <sub><span class="font-variant:small-caps;">Title</sub> XYZ'),
+				'My <sub>&lt;span class="font-variant:small-caps;"&gt;Title</sub> XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <sub><span class="font-variant:small-caps;">Title</sub></span> XYZ'),
+				'My <sub>&lt;span class="font-variant:small-caps;"&gt;Title</sub>&lt;/span&gt; XYZ'
+			);
+		});
+
+		it("should preserve matched but unsupported tags", function () {
+			assert.equal(
+				renderToHTML('My <em>Title</em> XYZ'),
+				'My &lt;em&gt;Title&lt;/em&gt; XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <strong>Title</strong> XYZ'),
+				'My &lt;strong&gt;Title&lt;/strong&gt; XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <span class="font-variant: small-caps;">Title</span> XYZ'), // Extra space
+				'My &lt;span class="font-variant: small-caps;"&gt;Title&lt;/span&gt; XYZ'
+			);
+			assert.equal(
+				renderToHTML('My <span>Title</span> XYZ'), // Extra space
+				'My &lt;span&gt;Title&lt;/span&gt; XYZ'
+			);
+		});
+
+		it("should invert a tag nested inside itself", function () {
+			assert.equal(
+				renderToHTML('<i>A <i>Title</i> in Italics</i>'),
+				'<i>A <span style="font-style: normal;">Title</span> in Italics</i>'
+			);
+			assert.equal(
+				renderToHTML('<b>A <b>Title</b> in Bold</b>'),
+				'<b>A <span style="font-weight: normal;">Title</span> in Bold</b>'
+			);
+		});
+
+		it("should invert a tag nested inside itself, with a different tag in between", function () {
+			assert.equal(
+				renderToHTML('<i>A <span class="nocase"><i>Title</i></span> in Italics</i>'),
+				'<i>A <span><span style="font-style: normal;">Title</span></span> in Italics</i>'
+			);
+		});
+
+		it("should render the same text directly and via DOM", function () {
+			let examples = [
+				'Basic Title',
+				'Complicated <i>Title</i>',
+				'Complicated <i>Title</i> With More Text',
+				'Nested <i>T<b>i</b>tle</i> With More Text',
+				'Self-Nested <i>T<i>i</i>tle</i> With More Text',
+				'Fe<sub>1−<i>x</i></sub>O',
+				'Title with <marquee>INVALID TAGS</marquee> <strong>like this</strong>',
+			];
+			for (let example of examples) {
+				assert.equal(renderToTextViaHTML(example), renderToText(example));
+			}
+		});
+	});
+});

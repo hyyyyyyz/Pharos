@@ -1,0 +1,63 @@
+
+#split-view, .split-view {
+	position: absolute;
+	inset-inline-start: 0;
+	inset-inline-end: 0;
+	top: 41px;
+	bottom: var(--bottom-placeholder-height);
+	display: flex;
+
+	.primary-view, .secondary-view {
+		display: flex;
+		position: relative;
+		overflow: hidden;
+
+		// Don't affect iframes inside popups
+		& > iframe {
+			display: flex;
+			width: 100%;
+			border: 0;
+			visibility: hidden; // Prevent iframe flashing while loading
+
+			@include handle-mask-resizing;
+
+			&.loaded {
+				visibility: visible;
+			}
+		}
+	}
+
+	.primary-view {
+		flex-grow: 1;
+	}
+
+	.secondary-view {
+		display: none;
+	}
+}
+
+body.enable-vertical-split-view {
+	.primary-view {
+		width: 0;
+	}
+
+	.secondary-view {
+		display: flex !important;
+		width: var(--split-view-size);
+	}
+}
+
+body.enable-horizontal-split-view {
+	.primary-view {
+		height: 0;
+	}
+
+	#split-view, .split-view {
+		flex-direction: column;
+
+		.secondary-view {
+			display: flex !important;
+			height: var(--split-view-size);
+		}
+	}
+}

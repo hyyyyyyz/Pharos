@@ -1,0 +1,93 @@
+:host, #annotation-render-root {
+	position: absolute;
+	inset: 0;
+	direction: ltr;
+	writing-mode: horizontal-tb;
+	pointer-events: none;
+	user-select: none;
+}
+
+.annotation-container {
+	z-index: 2147483647;
+	pointer-events: none;
+	position: absolute;
+	inset: 0;
+	background: transparent;
+	overflow: visible;
+
+	&:focus {
+		outline: none;
+	}
+}
+
+// Safari: Scale each annotation, because scaling applied to other elements
+// doesn't affect getClientRects()
+:host(:is(:root.is-safari *)) .annotation-container {
+	scale: var(--scale, none);
+	transform-origin: 0 0;
+}
+
+// :focus instead of :focus-visible because Chromium doesn't support :focus-visible
+// on SVG elements
+#annotation-render-root:not(.keyboard-focus) *:focus {
+	outline: none;
+}
+
+.annotation-container.blended {
+	mix-blend-mode: multiply;
+}
+
+.annotation-div {
+	cursor: default;
+	pointer-events: auto;
+}
+
+.inherit-pointer-events {
+	pointer-events: auto;
+}
+
+.disable-pointer-events {
+	pointer-events: none !important;
+
+	.inherit-pointer-events {
+		pointer-events: none !important;
+	}
+
+	.needs-pointer-events {
+		display: none !important;
+	}
+}
+
+.resizer {
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.resizer.resizer-vertical {
+	cursor: row-resize;
+	touch-action: none;
+}
+
+@media (any-pointer: coarse) {
+	.resizer {
+		stroke: transparent;
+		stroke-width: 20px;
+		margin: -10px;
+	}
+}
+
+@mixin -dark-rules() {
+	.annotation-container.blended {
+		mix-blend-mode: screen;
+	}
+}
+
+#annotation-render-root[data-color-scheme=dark] {
+	@include -dark-rules();
+}
+
+@media print {
+	:host {
+		display: none !important;
+	}
+}

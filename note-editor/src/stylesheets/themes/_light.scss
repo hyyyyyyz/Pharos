@@ -1,0 +1,110 @@
+// Pharos light theme for the note editor.
+//
+// The note editor keeps its own copy of the theme map (it builds as a separate
+// bundle), so this must be kept in step with scss/themes/_light.scss in the
+// main tree -- that file carries the reasoning for each value. The map here is
+// a strict subset: no tag-*, accent-azure, accent-highlight, color-stripe,
+// color-invalid or color-background30.
+
+@use 'sass:color';
+@use "sass:map";
+
+$-colors: (
+    accent-blue: #182e4e,
+    accent-blue10: #182e4e1a,
+    accent-blue30: #182e4e4d,
+    accent-blue50: #182e4e80,
+    accent-gold: #f8c041,
+    accent-green: #179090,
+    accent-orange: #d97642,
+    accent-red: #c2412f,
+    accent-teal: #179090,
+    accent-white: #fffcf7,
+    accent-wood-dark: #8a6a4f,
+    accent-wood: #b5793f,
+    accent-yellow: #e0a423,
+    fill-primary: #0c2040,
+    fill-secondary: #4a5b72,
+    fill-tertiary: #677079,
+    fill-quarternary: #85550412,
+    fill-quinary: #724b0008,
+    fill-senary: #938e5305,
+    // The note surface itself is the raised paper, not the page ground: a note
+    // is a sheet laid on the desk.
+    color-background: #fffcf7,
+    color-background50: #fffcf780,
+    color-background70: #fffcf7b2,
+    color-border: #e3daca,
+    color-border50: #ede6d9,
+    color-button: #fffcf7,
+    color-control: #fffcf7,
+    color-menu: #fffcf7b8,
+    color-panedivider: #e3daca,
+    color-sidepane: #f1eadd,
+    color-tabbar: #f1eadd,
+    color-toolbar: #f4eee3,
+    color-scrollbar: rgb(198, 188, 170),
+    color-scrollbar-hover: rgb(140, 128, 108),
+    color-scrollbar-background: transparent,
+);
+
+@mixin -light-rules() {
+    @each $name, $color in $-colors {
+        --#{$name}: #{$color};
+    }
+    
+    // composite (opaque) colors
+    --color-quinary-on-background: #{color.mix(
+        map.get($-colors, "color-background"), color.change(map.get($-colors, "fill-quinary"), $alpha: 1), 100% * (1 - color.alpha(map.get($-colors, "fill-quinary")))
+    )};
+    --color-quarternary-on-background: #{color.mix(
+        map.get($-colors, "color-background"), color.change(map.get($-colors, "fill-quarternary"), $alpha: 1), 100% * (1 - color.alpha(map.get($-colors, "fill-quarternary")))
+    )};
+    --color-quarternary-on-sidepane: #{color.mix(
+        map.get($-colors, "color-sidepane"), color.change(map.get($-colors, "fill-quarternary"), $alpha: 1), 100% * (1 - color.alpha(map.get($-colors, "fill-quarternary")))
+    )};
+
+    // background materials
+    --material-background: var(--color-background);
+    --material-background50: var(--color-background50);
+    --material-background70: var(--color-background70);
+    --material-button: var(--color-button);
+    --material-control: var(--color-control);
+    --material-menu: var(--color-menu);
+    --material-sidepane: var(--color-sidepane);
+    --material-tabbar: var(--color-tabbar);
+    --material-toolbar: var(--color-toolbar);
+    --material-mix-quinary: var(--color-quinary-on-background);
+    --material-mix-quarternary: var(--color-quarternary-on-background);
+
+    // border materials
+    --material-border-transparent: 1px solid transparent;
+    --material-border: 1px solid var(--color-border);
+    --material-border50: 1px solid var(--color-border50);
+    --material-panedivider: 1px solid var(--color-panedivider);
+    --material-border-quinary: 1px solid var(--fill-quinary);
+    --material-border-quarternary: 1px solid var(--fill-quarternary);
+}
+
+ @if $platform == 'web' {
+    :root {
+        // fallback for browsers that do not support color-schemes (e.g., Safari 11)
+        @include -light-rules();
+    }
+        
+    :root[data-color-scheme=light] {
+            @include -light-rules();
+        }
+    
+        @media (prefers-color-scheme: light) {
+            :root:not([data-color-scheme]) {
+                @include -light-rules();
+            }
+        }
+ } @else {
+    @media (prefers-color-scheme: light) {
+        :root {
+            @include -light-rules();
+        }
+    }
+ }

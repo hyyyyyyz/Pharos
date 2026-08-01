@@ -1,0 +1,175 @@
+.banner-container > .banner {
+	// Upstream hardcodes a neutral grey per scheme (#4b4b4b / #b4b4b4). Both are
+	// exactly what --fill-secondary already resolves to in the Pharos themes, so
+	// the per-scheme branches collapse into the theme variable and the pressed
+	// state stays in the warm (light) or navy (dark) family on its own.
+	--banner-link-active: var(--fill-secondary);
+	
+	@include macOS-normalize-controls;
+
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	text-align: center;
+	position: relative;
+	white-space: nowrap;
+	overflow: hidden;
+	
+	line-height: 2.2em;
+	font-size: 13.5px;
+	padding-top: 2px;
+	padding-bottom: 2px;
+	padding-inline-start: 1em;
+	padding-inline-end: 8px;
+	font-weight: 600;
+	
+	label[is="text-link"], .link {
+		color: inherit;
+		border: none;
+		margin: 0;
+		padding-inline: 0.5em;
+	}
+	
+	.close-btn {
+		border-radius: 4px;
+		display: flex;
+		
+		&:hover {
+			background-color: var(--color-background30);
+		}
+		
+		.icon {
+			width: 20px;
+			height: 20px;
+			@include svgicon("x-8", "universal", "16");
+			color: inherit;
+			padding-block: 4px;
+			box-sizing: border-box;
+		}
+	}
+	
+	.message {
+		margin-inline-end: .8em;
+	}
+
+	.spacer {
+		flex: 1;
+	}
+
+	.link {
+		&:active {
+			color: var(--banner-link-active);
+		}
+	}
+}
+
+// Add drop shadow after banner that's followed by another
+//
+// We set a z-index in ZoteroPane.setBannerZIndexes() to make this work
+.banner-container:has(~ .banner-container:not([collapsed="true"])) {
+	box-shadow: 0px 1px 4px 0px rgba(0, 0, 0, 0.25);
+}
+
+#post-upgrade-container, #mac-word-plugin-install-container {
+	background: var(--material-background);
+}
+
+#post-upgrade-banner {
+	// Same reasoning as the informational banners below: a navy tint over cream
+	// reads as cold grey, so this is warmed instead.
+	background: color-mix(in oklab, var(--accent-gold) 32%, var(--material-background));
+	color: var(--fill-primary);
+	flex-wrap: wrap;
+	gap: 8px;
+	font-weight: normal;
+	
+	.link {
+		color: var(--accent-blue);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	
+	#post-upgrade-appver {
+		font-weight: 600;
+	}
+	
+	#post-upgrade-new-features-link {
+		padding-inline: unset;
+	}
+	
+	#post-upgrade-buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-inline-start: auto;
+
+		@media (-moz-platform: windows), (-moz-platform: linux) {
+			button {
+				height: 24px;
+				margin: 0 !important;
+			}
+		}
+	}
+}
+
+#retracted-items-banner {
+	background: var(--accent-red);
+	color: var(--accent-white);
+
+	label[is="text-link"] {
+		margin-inline-start: 0.3em;
+
+		&:active {
+			color: var(--color-invalid-background);
+		}
+	}
+}
+
+// Informational banners sit on the page ground, so they are tinted with the
+// brand gold rather than with --accent-blue30: a 30% navy over cream composites
+// to a cold grey, i.e. a blue-grey slab across the top of a warm page, which is
+// the one thing this palette exists to avoid.
+//
+// Mixed rather than used at full strength -- these are ambient notices, not the
+// beacon -- and mixed `in oklab` so the blend cannot detour through an
+// intermediate hue the way polar oklch interpolation does.
+#mac-word-plugin-install-banner,
+#file-renaming-banner {
+	background: color-mix(in oklab, var(--accent-gold) 32%, var(--material-background));
+	color: var(--fill-primary);
+	font-weight: normal;
+	border-bottom: 1px solid var(--color-border);
+}
+
+#mac-word-plugin-install-remind-later {
+	margin-inline-end: .4em;
+}
+
+// Upstream gives this one a full-strength yellow; it is the most urgent of the
+// ambient banners, so it keeps that emphasis at full brand gold.
+#sync-reminder-banner {
+	background: var(--accent-gold);
+	border-bottom: 1px solid var(--color-border);
+	color: var(--fill-primary);
+}
+
+#architecture-warning-container {
+	background-color: var(--accent-red);
+	color: var(--accent-white);
+
+	.message {
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		overflow: hidden;
+	}
+
+	a {
+		border: none;
+		color: inherit;
+		margin: 0;
+		padding: 0 .5em;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		overflow: hidden;
+	}
+}

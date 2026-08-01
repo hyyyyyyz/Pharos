@@ -1,0 +1,210 @@
+describe("Zotero.Cite", function () {
+	after(function () {
+		Zotero.locale = 'en-US';
+	});
+	
+	describe("#getLocatorString()", function () {
+		it("should get 'book' in en-US", function () {
+			Zotero.locale = 'en-US';
+			assert.equal(Zotero.Cite.getLocatorString('book'), 'Book');
+		});
+		
+		it("should get 'sub-verbo' in en-US", function () {
+			Zotero.locale = 'en-US';
+			assert.equal(Zotero.Cite.getLocatorString('sub-verbo'), 'Sub verbo');
+		});
+		
+		it("should get 'timestamp' in en-US", function () {
+			Zotero.locale = 'en-US';
+			assert.equal(Zotero.Cite.getLocatorString('timestamp'), 'Timestamp');
+		});
+		
+		it("should get 'book' in fr-FR", function () {
+			Zotero.locale = 'fr-FR';
+			assert.equal(Zotero.Cite.getLocatorString('book'), 'Livre');
+		});
+	});
+	
+	describe("#getAbbreviation()", function () {
+		it("should drop accented stop-words when auto-abbreviating", function () {
+			var obj = { default: { 'container-title': {} } };
+			Zotero.Cite.getAbbreviation(
+				"default", obj, "default", "container-title", "Jahrbuch für Heimatkunde"
+			);
+			assert.equal(
+				obj.default['container-title']['Jahrbuch für Heimatkunde'],
+				"Jahrb. Heimatkunde"
+			);
+		});
+	});
+	
+	describe("#retrieveLocale()", function () {
+		it("should handle locale with script code", async function () {
+			var item = new Zotero.Item;
+			item.fromJSON({
+				itemType: "book",
+				title: "Test Book",
+				edition: "2"
+			});
+			await item.saveTx();
+			
+			var style = Zotero.Styles.get('http://www.zotero.org/styles/chicago-notes-bibliography');
+			var cslEngine = style.getCiteProc('sr-Latn-RS');
+			
+			var output = Zotero.Cite.makeFormattedBibliographyOrCitationList(cslEngine, [item], "text");
+			assert.include(output, 'izd');
+		});
+
+		it("should use closest available locale for locale without a CSL locale", async function () {
+			var item = new Zotero.Item;
+			item.fromJSON({
+				itemType: "book",
+				title: "Test Book",
+				edition: "2"
+			});
+			await item.saveTx();
+
+			var style = Zotero.Styles.get('http://www.zotero.org/styles/chicago-notes-bibliography');
+			var cslEngine = style.getCiteProc('sr-RS');
+
+			var output = Zotero.Cite.makeFormattedBibliographyOrCitationList(cslEngine, [item], "text");
+			assert.include(output, 'изд');
+		});
+	});
+	
+	describe("#extraToCSL()", function () {
+		it("should convert Extra field values to the more restrictive citeproc-js cheater syntax", function () {
+			var str1 = 'Original Date: 2017\n' // uppercase/spaces converted to lowercase/hyphens
+				+ 'Archive-Place: New York\n' // allow hyphen even with title case
+				+ 'Container title: Title\n' // mixed case
+				+ 'DOI: 10.0/abc\n' // certain fields are uppercase
+				+ 'Archive Location: Foo\n' // requires an underscore
+				+ 'Original Publisher Place:  London, UK\n' // extra space OK
+				+ 'Type: dataset'
+				+ '\n\n'
+				+ "Ignore other strings: they're not fields\n"
+				+ 'This is just some text.'
+			var str2 = 'original-date: 2017\n'
+				+ 'archive-place: New York\n'
+				+ 'container-title: Title\n'
+				+ 'DOI: 10.0/abc\n'
+				+ 'archive_location: Foo\n'
+				+ 'original-publisher-place:  London, UK\n'
+				+ 'type: dataset'
+				+ '\n\n'
+				+ "Ignore other strings: they're not fields\n"
+				+ 'This is just some text.';
+			assert.equal(Zotero.Cite.extraToCSL(str1), str2);
+		});
+		
+		it("should convert Zotero field names to CSL fields", function () {
+			var str1 = 'publicationTitle: My Publication';
+			var str2 = 'container-title: My Publication';
+			assert.equal(Zotero.Cite.extraToCSL(str1), str2);
+		});
+		
+		it("should convert capitalized and spaced Zotero field names to CSL fields", function () {
+			var str1 = 'Publication Title: My Publication\nDate: 1989';
+			var str2 = 'container-title: My Publication\nissued: 1989';
+			assert.equal(Zotero.Cite.extraToCSL(str1), str2);
+		});
+		
+		it("should convert lowercase 'doi' to uppercase", function () {
+			var str1 = 'doi: 10.0/abc';
+			var str2 = 'DOI: 10.0/abc';
+			assert.equal(Zotero.Cite.extraToCSL(str1), str2);
+		});
+		
+		it("should handle a single-character field name", function () {
+			var str = 'a: ';
+			assert.equal(Zotero.Cite.extraToCSL(str), str);
+		});
+	});
+	
+	describe("previewCitationCluster()", function () {
+		before(async function () {
+			if (Zotero.Prefs.get('cite.useCiteprocRs')) {
+				this.skip();
+			}
+			await Zotero.Styles.init();
+			await Zotero.Styles.install(
+				{ file: OS.Path.join(getTestDataDirectory().path, 'apa.csl') },
+				'http://www.zotero.org/styles/apa',
+				true
+			);
+		});
+		
+		async function makeEngineWithCitation() {
+			let item = new Zotero.Item;
+			item.fromJSON({
+				itemType: "book",
+				title: "Preview Test",
+				creators: [{ creatorType: "author", firstName: "Jane", lastName: "Smith" }],
+				date: "2019"
+			});
+			await item.saveTx();
+			let style = Zotero.Styles.get('http://www.zotero.org/styles/apa');
+			let cslEngine = style.getCiteProc('en-US', 'rtf');
+			cslEngine.processCitationCluster(
+				{
+					citationID: "CITATION-1",
+					citationItems: [{ id: item.id }],
+					properties: { noteIndex: 1 }
+				},
+				[], []
+			);
+			return { cslEngine, item };
+		}
+		
+		function assertStateRestored(cslEngine, item) {
+			assert.equal(cslEngine.opt.mode, 'rtf');
+			assert.lengthOf(cslEngine.registry.citationreg.citationByIndex, 1);
+			// Processor should still render in its native format
+			let text = cslEngine.previewCitationCluster(
+				{ citationItems: [{ id: item.id }], properties: { noteIndex: 2 } },
+				[["CITATION-1", 1]], [], "rtf"
+			);
+			assert.equal(text, "(Smith, 2019)");
+		}
+		
+		it("shouldn't modify processor state if an item can't be retrieved", async function () {
+			let { cslEngine, item } = await makeEngineWithCitation();
+			assert.throws(() => {
+				cslEngine.previewCitationCluster(
+					{ citationItems: [{ id: 999999999 }], properties: { noteIndex: 2 } },
+					[["CITATION-1", 1]], [], "html"
+				);
+			});
+			assertStateRestored(cslEngine, item);
+			cslEngine.free();
+		});
+		
+		it("shouldn't modify processor state if rendering fails", async function () {
+			let { cslEngine, item } = await makeEngineWithCitation();
+			let stub = sinon.stub(cslEngine, 'process_CitationCluster')
+				.throws(new Error("simulated rendering error"));
+			assert.throws(() => {
+				cslEngine.previewCitationCluster(
+					{ citationItems: [{ id: item.id }], properties: { noteIndex: 2 } },
+					[["CITATION-1", 1]], [], "html"
+				);
+			});
+			stub.restore();
+			assertStateRestored(cslEngine, item);
+			cslEngine.free();
+		});
+	});
+	
+	it("shouldn't hang during disambiguation (https://github.com/Juris-M/citeproc-js/issues/179)", async function () {
+		var item1 = new Zotero.Item;
+		item1.fromJSON({"key":"WB338HGS","version":0,"itemType":"journalArticle","creators":[{"firstName":"Carl G.","lastName":"de Boer","creatorType":"author"},{"firstName":"John P.","lastName":"Ray","creatorType":"author"},{"firstName":"Nir","lastName":"Hacohen","creatorType":"author"},{"firstName":"Aviv","lastName":"Regev","creatorType":"author"}],"tags":[{"tag":"CRISPR/Cas9","type":1},{"tag":"Enhancers","type":1},{"tag":"Gene regulation","type":1},{"tag":"Transcriptional regulation","type":1},{"tag":"Gene expression","type":1},{"tag":"Pooled screen","type":1},{"tag":"R","type":1}],"date":"June 3, 2020","title":"MAUDE: inferring expression changes in sorting-based CRISPR screens","journalAbbreviation":"Genome Biology","pages":"134","volume":"21","issue":"1","abstractNote":"","ISSN":"1474-760X","url":"https://doi.org/10.1186/s13059-020-02046-8","DOI":"10.1186/s13059-020-02046-8","publicationTitle":"Genome Biology","libraryCatalog":"BioMed Central","accessDate":"2021-02-17T02:40:40Z","shortTitle":"MAUDE"});
+		await item1.saveTx();
+		var item2 = new Zotero.Item;
+		item2.fromJSON({"key":"U2L8PVTW","version":0,"itemType":"journalArticle","creators":[{"firstName":"Carl G.","lastName":"de Boer","creatorType":"author"},{"firstName":"Eeshit Dhaval","lastName":"Vaishnav","creatorType":"author"},{"firstName":"Ronen","lastName":"Sadeh","creatorType":"author"},{"firstName":"Esteban Luis","lastName":"Abeyta","creatorType":"author"},{"firstName":"Nir","lastName":"Friedman","creatorType":"author"},{"firstName":"Aviv","lastName":"Regev","creatorType":"author"}],"tags":[],"title":"Deciphering eukaryotic gene-regulatory logic with 100 million random promoters","publicationTitle":"Nature Biotechnology","rights":"2019 The Author(s), under exclusive licence to Springer Nature America, Inc.","volume":"38","issue":"1","pages":"56-65","date":"2020-01","DOI":"10.1038/s41587-019-0315-8","ISSN":"1546-1696","url":"https://www.nature.com/articles/s41587-019-0315-8","abstractNote":"","language":"en","libraryCatalog":"www.nature.com","accessDate":"2021-02-17T02:40:52Z"});
+		await item2.saveTx();
+		var items = [item1, item2];
+		var style = Zotero.Styles.get('http://www.zotero.org/styles/elsevier-harvard');
+		var cslEngine = style.getCiteProc('en-US');
+		var output = Zotero.Cite.makeFormattedBibliographyOrCitationList(cslEngine, items, "html");
+	});
+});

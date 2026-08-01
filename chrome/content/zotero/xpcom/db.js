@@ -1,0 +1,2339 @@
+/*
+    ***** BEGIN LICENSE BLOCK *****
+    
+    Copyright © 2009 Center for History and New Media
+                     George Mason University, Fairfax, Virginia, USA
+                     http://zotero.org
+    
+    This file is part of Zotero.
+    
+    Zotero is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    
+    Zotero is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+    
+    You should have received a copy of the GNU Affero General Public License
+    along with Zotero.  If not, see <http://www.gnu.org/licenses/>.
+    
+    ***** END LICENSE BLOCK *****
+*/
+
+"use strict";
+
+// Exclusive locking mode (default) prevents access to Zotero database while Zotero is open
+// and speeds up DB access (http://www.sqlite.org/pragma.html#pragma_locking_mode).
+// Normal mode is more convenient for development, but risks database corruption, particularly if
+// the same database is accessed simultaneously by multiple Zotero instances.
+const DB_LOCK_EXCLUSIVE = true;
+
+Zotero.DBConnection = function (dbNameOrPath) {
+	if (!dbNameOrPath) {
+		throw ('DB name not provided in Zotero.DBConnection()');
+	}
+	
+	this.MAX_BOUND_PARAMETERS = 999;
+	this.DB_CORRUPTION_STRINGS = [
+		"database disk image is malformed",
+		"2152857611"
+	];
+	
+	ChromeUtils.defineESModuleGetters(this, {
+		Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+	});
+	
+	this.closed = false;
+	this.skipBackup = false;
+	
+	// JS Date
+	this.__defineGetter__('transactionDate', function () {
+		if (this._transactionDate) {
+			this._lastTransactionDate = this._transactionDate;
+			return this._transactionDate;
+		}
+		
+		throw new Error("Transaction not in progress");
+		
+		// Use second granularity rather than millisecond
+		// for comparison purposes
+		var d = new Date(Math.floor(new Date / 1000) * 1000);
+		this._lastTransactionDate = d;
+		return d;
+	});
+	// SQL DATETIME
+	this.__defineGetter__('transactionDateTime', function () {
+		var d = this.transactionDate;
+		return Zotero.Date.dateToSQL(d, true);
+	});
+	// Unix timestamp
+	this.__defineGetter__('transactionTimestamp', function () {
+		var d = this.transactionDate;
+		return Zotero.Date.toUnixTimestamp(d);
+	});
+	
+	// Absolute path to DB
+	if (dbNameOrPath.startsWith('/') || (Zotero.isWin && dbNameOrPath.includes('\\'))) {
+		this._dbName = PathUtils.filename(dbNameOrPath).replace(/\.sqlite$/, '');
+		this._dbPath = dbNameOrPath;
+		this._externalDB = true;
+	}
+	// DB name in data directory
+	else {
+		this._dbName = dbNameOrPath;
+		this._dbPath = Zotero.DataDirectory.getDatabase(dbNameOrPath);
+		this._externalDB = false;
+	}
+	this._shutdown = false;
+	this._connection = null;
+	this._transactionID = null;
+	this._transactionDate = null;
+	this._lastTransactionDate = null;
+	this._transactionRollback = false;
+	this._transactionNestingLevel = 0;
+	this._commitCount = 0;
+	this._callbacks = {
+		begin: [],
+		commit: [],
+		rollback: [],
+		current: {
+			commit: [],
+			rollback: []
+		}
+	};
+	this._dbIsCorrupt = null
+	this._checkingCorruption = false;
+	this._handlingCorruption = false;
+	this._corruptionHandlers = [];
+	this._idleCallbacks = [];
+	this._onlineBackupInProgress = false;
+	this._onConnectCallbacks = [];
+	this._loadedExtensions = new Set();
+
+	this._transactionPromise = null;
+	
+	if (dbNameOrPath == 'zotero') {
+		this.IncompatibleVersionException = function (msg, dbClientVersion) {
+			this.message = msg;
+			this.dbClientVersion = dbClientVersion;
+		}
+		this.IncompatibleVersionException.prototype = Object.create(Error.prototype);
+	}
+}
+
+/////////////////////////////////////////////////////////////////
+//
+// Public methods
+//
+/////////////////////////////////////////////////////////////////
+Zotero.defineProperty(Zotero.DBConnection.prototype, 'path', {
+	get: function () {
+		return this._dbPath;
+	}
+});
+
+
+/**
+ * Test a read-only connection to the database, throwing any errors that occur
+ *
+ * @return	void
+ */
+Zotero.DBConnection.prototype.test = function () {
+	return this._getConnectionAsync().then(() => {});
+}
+
+
+Zotero.DBConnection.prototype.parseQueryAndParams = function (sql, params) {
+	// If single scalar value, wrap in an array
+	if (!Array.isArray(params)) {
+		if (typeof params == 'string' || typeof params == 'number' || typeof params == 'object'
+				|| params === null) {
+			params = [params];
+		}
+		else {
+			params = [];
+		}
+	}
+	// Otherwise, since we might make changes, only work on a copy of the array
+	else {
+		params = params.concat();
+	}
+	
+	// Find placeholders
+	if (params.length) {
+		let matches = sql.match(/\?\d*/g);
+		if (!matches) {
+			throw new Error("Parameters provided for query without placeholders "
+				+ "[QUERY: " + sql + "]");
+		}
+		else {
+			// Count numbered parameters (?1) properly
+			let num = 0;
+			let numbered = {};
+			for (let i = 0; i < matches.length; i++) {
+				let match = matches[i];
+				if (match == '?') {
+					num++;
+				}
+				else {
+					numbered[match] = true;
+				}
+			}
+			num += Object.keys(numbered).length;
+			
+			if (params.length != num) {
+				throw new Error("Incorrect number of parameters provided for query "
+					+ "(" + params.length + ", expecting " + num + ") "
+					+ "[QUERY: " + sql + "]");
+			}
+		}
+		
+		// First, determine the type of query using first word
+		let queryMethod = sql.match(/^[^\s\(]*/)[0].toLowerCase();
+		
+		// Reset lastIndex, since regexp isn't recompiled dynamically
+		let placeholderRE = /\s*[=,(]\s*\?/g;
+		for (var i=0; i<params.length; i++) {
+			// Find index of this parameter, skipping previous ones
+			matches = placeholderRE.exec(sql);
+			
+			if (typeof params[i] == 'boolean') {
+				throw new Error("Invalid boolean parameter " + i + " '" + params[i] + "' "
+					+ "[QUERY: " + sql + "]");
+			}
+			else if (params[i] === undefined) {
+				throw new Error('Parameter ' + i + ' is undefined [QUERY: ' + sql + ']');
+			}
+			
+			if (params[i] !== null) {
+				// Force parameter type if specified
+				
+				// Int
+				if (typeof params[i]['int'] != 'undefined') {
+					params[i] = parseInt(params[i]['int']);
+					if (isNaN(params[i])) {
+						throw new Error("Invalid bound parameter " + i + " integer value '" + params[i] + "' "
+							+ "[QUERY: " + sql + "]")
+					}
+				}
+				// String
+				else if (typeof params[i]['string'] != 'undefined') {
+					params[i] = params[i]['string'] + "";
+				}
+				
+				continue;
+			}
+			
+			//
+			// Replace NULL bound parameters with hard-coded NULLs
+			//
+			if (!matches) {
+				throw new Error("Null parameter provided for a query without placeholders "
+					+ "-- use false or undefined [QUERY: " + sql + "]");
+			}
+			
+			if (matches[0].trim().indexOf('=') == -1) {
+				if (queryMethod == 'select') {
+					throw new Error("NULL cannot be used for parenthesized placeholders "
+						+ "in SELECT queries [QUERY: " + sql + "]");
+				}
+				var repl = matches[0].replace('?', 'NULL');
+			}
+			else if (queryMethod == 'select') {
+				var repl = ' IS NULL';
+			}
+			else {
+				var repl = '=NULL';
+			}
+			
+			var subpos = matches.index;
+			var sublen = matches[0].length;
+			sql = sql.substring(0, subpos) + repl + sql.substr(subpos + sublen);
+			
+			//Zotero.debug("Hard-coding null bound parameter " + i);
+			
+			params.splice(i, 1);
+			i--;
+		}
+		if (!params.length) {
+			params = [];
+		}
+	}
+	else if (/\?/g.test(sql)) {
+		throw new Error("Parameters not provided for query containing placeholders "
+			+ "[QUERY: " + sql + "]");
+	}
+	
+	return [sql, params];
+};
+
+
+Zotero.DBConnection.prototype.addCallback = function (type, cb) {
+	switch (type) {
+		case 'begin':
+		case 'commit':
+		case 'rollback':
+			break;
+			
+		default:
+			throw ("Invalid callback type '" + type + "' in DB.addCallback()");
+	}
+	
+	var id = this._callbacks[type].length;
+	this._callbacks[type][id] = cb;
+	return id;
+}
+
+
+Zotero.DBConnection.prototype.addCurrentCallback = function (type, cb) {
+	this.requireTransaction();
+	this._callbacks.current[type].push(cb);
+}
+
+
+Zotero.DBConnection.prototype.removeCallback = function (type, id) {
+	switch (type) {
+		case 'begin':
+		case 'commit':
+		case 'rollback':
+			break;
+			
+		default:
+			throw ("Invalid callback type '" + type + "' in DB.removeCallback()");
+	}
+	
+	delete this._callbacks[type][id];
+}
+
+
+/*
+ * Used on shutdown to rollback all open transactions
+ *
+ * TODO: update or remove
+ */
+Zotero.DBConnection.prototype.rollbackAllTransactions = function () {
+	if (this.transactionInProgress()) {
+		var level = this._transactionNestingLevel;
+		this._transactionNestingLevel = 0;
+		try {
+			this.rollbackTransaction();
+		}
+		catch (e) {}
+		return level ? level : true;
+	}
+	return false;
+}
+
+
+Zotero.DBConnection.prototype.getColumns = function (table) {
+	return this.queryAsync("PRAGMA table_info(" + table + ")")
+	.then(function (rows) {
+		return rows.map(row => row.name);
+	})
+	.catch(function (e) {
+		this._debug(e, 1);
+		return false;
+	});
+}
+
+
+/**
+* Find the next lowest numeric suffix for a value in table column
+*
+* For example, if "Untitled" and "Untitled 2" and "Untitled 4",
+* returns "Untitled 3"
+*
+* If _name_ alone is available, returns that
+**/
+Zotero.DBConnection.prototype.getNextName = async function (libraryID, table, field, name) {
+	Zotero.debug("WARNING: Zotero.DB.getNextName() is deprecated -- "
+		+ "use Zotero.Utilities.Internal.getNextName() instead", 2);
+	
+	if (typeof name == 'undefined') {
+		[libraryID, table, field, name] = [null, libraryID, table, field];
+	}
+	
+	var sql = "SELECT SUBSTR(" + field + ", " + (name.length + 1) + ") FROM " + table
+		+ " WHERE libraryID=? AND " + field + " LIKE ? ORDER BY " + field;
+	var params = [libraryID, name + "%"];
+	var suffixes = await this.columnQueryAsync(sql, params);
+	suffixes.filter(x => x.match(/^( [0-9]+)?$/));
+	
+	// If none found or first one has a suffix, use default name
+	if (!suffixes.length || suffixes[0]) {
+		return name;
+	}
+	
+	suffixes.sort(function (a, b) {
+		return parseInt(a) - parseInt(b);
+	});
+	
+	var i = 1;
+	while (suffixes[i] === "") {
+		i++;
+	}
+	var num = 2;
+	while (suffixes[i] == num) {
+		while (suffixes[i+1] && suffixes[i] == suffixes[i+1]) {
+			i++;
+		}
+		i++;
+		num++;
+	}
+	return name + ' ' + num;
+};
+
+
+//
+// Async methods
+//
+//
+// Zotero.DB.executeTransaction(async function (conn) {
+//     var created = await Zotero.DB.queryAsync("CREATE TEMPORARY TABLE tmpFoo (foo TEXT, bar INT)");
+//     
+//     // created == true
+//     
+//     var result = await Zotero.DB.queryAsync("INSERT INTO tmpFoo VALUES ('a', ?)", 1);
+//     
+//     // result == 1
+//     
+//     await Zotero.DB.queryAsync("INSERT INTO tmpFoo VALUES ('b', 2)");
+//     await Zotero.DB.queryAsync("INSERT INTO tmpFoo VALUES ('c', 3)");
+//     await Zotero.DB.queryAsync("INSERT INTO tmpFoo VALUES ('d', 4)");
+//     
+//     var value = await Zotero.DB.valueQueryAsync("SELECT foo FROM tmpFoo WHERE bar=?", 2);
+//     
+//     // value == "b"
+//     
+//     var vals = await Zotero.DB.columnQueryAsync("SELECT foo FROM tmpFoo");
+//     
+//     // '0' => "a"
+//     // '1' => "b"
+//     // '2' => "c"
+//     // '3' => "d"
+//     
+//     let rows = await Zotero.DB.queryAsync("SELECT * FROM tmpFoo");
+//     for (let i=0; i<rows.length; i++) {
+//         let row = rows[i];
+//         // row.foo == 'a', row.bar == 1
+//         // row.foo == 'b', row.bar == 2
+//         // row.foo == 'c', row.bar == 3
+//         // row.foo == 'd', row.bar == 4
+//     }
+// });
+//
+/**
+ * @param {Function} func - Async function containing `await Zotero.DB.queryAsync()` and similar
+ * @param {Object} [options]
+ * @param {Boolean} [options.disableForeignKeys] - Disable foreign key checks before the
+ *    transaction and re-enable after, while preventing any other queries from running.
+ *    `queryAsync()` and similar within `func` must pass `ignoreDBLock: true` or they'll hang.
+ *    (`PRAGMA foreign_keys=OFF|ON` is a no-op during a transaction, so it can't just be set within
+ *    the function.)
+ * @return {Promise} - Promise for result of generator function
+ */
+Zotero.DBConnection.prototype.executeTransaction = async function (func, options = {}) {
+	var resolve;
+	
+	var startedTransaction = false;
+	var id = Zotero.Utilities.randomString();
+	
+	try {
+		while (this._transactionID) {
+			await Promise.race([
+				this.waitForTransaction(id),
+				new Promise((resolve, reject) => setTimeout(
+					() => reject(new Zotero.DBConnection.TimeoutError()),
+					options.waitTimeout || 30000
+				))
+			]);
+		}
+		startedTransaction = true;
+		this._transactionID = id;
+		
+		Zotero.debug(`Beginning DB transaction ${id}`, 4);
+		
+		this._transactionPromise = new Zotero.Promise(function () {
+			resolve = arguments[0];
+		});
+		
+		// Set a timestamp for this transaction
+		this._transactionDate = new Date(Math.floor(new Date / 1000) * 1000);
+		
+		// Run begin callbacks
+		for (var i=0; i<this._callbacks.begin.length; i++) {
+			if (this._callbacks.begin[i]) {
+				this._callbacks.begin[i](id);
+			}
+		}
+		
+		let result;
+		let resolveDBLockPromise;
+		try {
+			let conn = this._getConnection(options) || (await this._getConnectionAsync(options));
+			
+			if (func.constructor.name == 'GeneratorFunction') {
+				throw new Error("Zotero.DB.executeTransaction() no longer takes a generator function "
+					+ "-- pass an async function instead");
+			}
+			
+			if (options.disableForeignKeys) {
+				this._dbLockPromise = new Promise(function () {
+					resolveDBLockPromise = arguments[0];
+				});
+				await this.queryAsync("PRAGMA foreign_keys=OFF", [], { ignoreDBLock: true });
+			}
+			
+			result = await conn.executeTransaction(func);
+			this._commitCount++;
+			Zotero.debug(`Committed DB transaction ${id}`, 4);
+		}
+		finally {
+			if (options.disableForeignKeys) {
+				await this.queryAsync("PRAGMA foreign_keys=ON", [], { ignoreDBLock: true });
+				if (resolveDBLockPromise) {
+					resolveDBLockPromise();
+					this._dbLockPromise = undefined;
+				}
+			}
+		}
+		
+		// Clear transaction time
+		if (this._transactionDate) {
+			this._transactionDate = null;
+		}
+		
+		this._transactionID = null;
+		
+		// Function to run once transaction has been committed but before any
+		// permanent callbacks
+		if (options.onCommit) {
+			this._callbacks.current.commit.push(options.onCommit);
+		}
+		this._callbacks.current.rollback = [];
+		
+		// Run temporary commit callbacks
+		var f;
+		while (f = this._callbacks.current.commit.shift()) {
+			await Promise.resolve(f(id));
+		}
+		
+		// Run commit callbacks
+		for (var i=0; i<this._callbacks.commit.length; i++) {
+			if (this._callbacks.commit[i]) {
+				await this._callbacks.commit[i](id);
+			}
+		}
+		
+		return result;
+	}
+	catch (e) {
+		if (e instanceof Zotero.DBConnection.TimeoutError) {
+			Zotero.debug(`Timed out waiting for transaction ${id}`, 1);
+		}
+		else {
+			Zotero.debug(`Rolled back DB transaction ${id}`, 1);
+			Zotero.debug(e.message, 1);
+		}
+		if (startedTransaction) {
+			this._transactionID = null;
+		}
+		
+		// Function to run once transaction has been committed but before any
+		// permanent callbacks
+		if (options.onRollback) {
+			this._callbacks.current.rollback.push(options.onRollback);
+		}
+		
+		// Run temporary commit callbacks
+		var f;
+		while (f = this._callbacks.current.rollback.shift()) {
+			await Promise.resolve(f(id));
+		}
+		
+		// Run rollback callbacks
+		for (var i=0; i<this._callbacks.rollback.length; i++) {
+			if (this._callbacks.rollback[i]) {
+				await Promise.resolve(this._callbacks.rollback[i](id));
+			}
+		}
+		
+		throw e;
+	}
+	finally {
+		// Process all resolvers
+		if (resolve) {
+			resolve.call();
+		}
+	}
+};
+
+
+Zotero.DBConnection.prototype.inTransaction = function () {
+	return !!this._transactionID;
+}
+
+
+Zotero.DBConnection.prototype.waitForTransaction = function (id) {
+	if (!this._transactionID) {
+		return Promise.resolve();
+	}
+	if (Zotero.Debug.enabled) {
+		Zotero.debug(`Waiting for DB transaction ${this._transactionID} to finish`
+			+ (id ? ` to start ${id}` : ""), 4);
+		Zotero.debug(Zotero.Debug.filterStack((new Error).stack), 5);
+	}
+	return this._transactionPromise;
+};
+
+
+Zotero.DBConnection.prototype.requireTransaction = function () {
+	if (!this._transactionID) {
+		throw new Error("Not in transaction");
+	}
+	return this._transactionID;
+};
+
+
+/**
+ * @param {String} sql SQL statement to run
+ * @param {Array|String|Integer} [params] SQL parameters to bind
+ * @return {Promise|Array} A promise for an array of rows. The individual
+ *                         rows are Proxy objects that return values from the
+ *                         underlying mozIStorageRows based on column names.
+ */
+Zotero.DBConnection.prototype.queryAsync = async function (sql, params, options = {}) {
+	try {
+		let onRow = null;
+		let conn = this._getConnection(options) || (await this._getConnectionAsync(options));
+		if (!options || !options.noParseParams) {
+			[sql, params] = this.parseQueryAndParams(sql, params);
+		}
+		
+		if (this._dbLockPromise && !options.ignoreDBLock) {
+			Zotero.debug(`Waiting for DB lock to be released: ${sql}`, 2);
+			await this._dbLockPromise;
+		}
+		
+		if (Zotero.Debug.enabled) {
+			this.logQuery(sql, params, options);
+		}
+		var failed = false;
+		if (options && options.onRow) {
+			// Errors in onRow don't stop the query unless the 'cancel' function is called
+			onRow = function (row, cancel) {
+				try {
+					options.onRow(row, cancel);
+				}
+				catch (e) {
+					failed = e;
+					cancel();
+				}
+			}
+		}
+		let rows;
+		if (options && options.noCache) {
+			rows = await conn.execute(sql, params, onRow);
+		}
+		else {
+			rows = await conn.executeCached(sql, params, onRow);
+		}
+		if (failed) {
+			throw failed;
+		}
+		// Parse out the SQL command being used
+		let op = sql.match(/^[^a-z]*[^ ]+/i);
+		if (op) {
+			op = op.toString().toLowerCase();
+		}
+		
+		// If SELECT statement, return result
+		if (op == 'select' || op == 'pragma') {
+			if (onRow) {
+				return;
+			}
+			// Fake an associative array with a proxy
+			let handler = {
+				get: function (target, name) {
+					// Ignore promise check
+					if (name == 'then') {
+						return undefined;
+					}
+					
+					try {
+						return target.getResultByName(name);
+					}
+					catch (e) {
+						Zotero.debug(e, 1);
+						var msg = "DB column '" + name + "' not found";
+						Zotero.debug(msg, 1);
+						throw new Error(msg);
+					}
+				},
+				has: function (target, name) {
+					try {
+						return !!target.getResultByName(name);
+					} catch (e) {
+						return false;
+					}
+				}
+			};
+			for (let i=0, len=rows.length; i<len; i++) {
+				rows[i] = new Proxy(rows[i], handler);
+			}
+			return rows;
+		}
+		else {
+			// lastInsertRowID is unreliable for async queries, so we don't bother
+			// returning it for INSERT and REPLACE queries
+			return;
+		}
+	}
+	catch (e) {
+		await this._checkException(e);
+		
+		if (e.errors && e.errors[0]) {
+			var eStr = e + "";
+			eStr = eStr.indexOf("Error: ") == 0 ? eStr.substr(7): e;
+			throw new Error(eStr + ' [QUERY: ' + sql + '] '
+				+ (params
+					? '[PARAMS: '
+						+ (Array.isArray(params)
+							? params.map(x => JSON.stringify(x)).join(', ')
+							: JSON.stringify(params)
+						) + '] '
+					: '')
+				+ '[ERROR: ' + e.errors[0].message + ']');
+		}
+		else {
+			throw e;
+		}
+	}
+};
+
+
+Zotero.DBConnection.prototype.queryTx = function (sql, params, options) {
+	return this.executeTransaction(async function () {
+		options = options || {};
+		delete options.tx;
+		return this.queryAsync(sql, params, options);
+	}.bind(this));
+};
+
+
+/**
+ * @param {String} sql  SQL statement to run
+ * @param {Array|String|Integer} [params]  SQL parameters to bind
+ * @return {Promise<Array|Boolean>}  A promise for either the value or FALSE if no result
+ */
+Zotero.DBConnection.prototype.valueQueryAsync = async function (sql, params, options = {}) {
+	try {
+		let conn = this._getConnection(options) || (await this._getConnectionAsync(options));
+		[sql, params] = this.parseQueryAndParams(sql, params);
+		
+		if (this._dbLockPromise && !options.ignoreDBLock) {
+			Zotero.debug(`Waiting for DB lock to be released: ${sql}`, 2);
+			await this._dbLockPromise;
+		}
+		
+		if (Zotero.Debug.enabled) {
+			this.logQuery(sql, params, options);
+		}
+		let rows;
+		if (options && options.noCache) {
+			rows = await conn.execute(sql, params);
+		}
+		else {
+			rows = await conn.executeCached(sql, params);
+		}
+		return rows.length ? rows[0].getResultByIndex(0) : false;
+	}
+	catch (e) {
+		if (e.errors && e.errors[0]) {
+			var eStr = e + "";
+			eStr = eStr.indexOf("Error: ") == 0 ? eStr.substr(7): e;
+			throw new Error(eStr + ' [QUERY: ' + sql + '] '
+				+ (params ? '[PARAMS: ' + params.join(', ') + '] ' : '')
+				+ '[ERROR: ' + e.errors[0].message + ']');
+		}
+		else {
+			throw e;
+		}
+	}
+};
+
+
+/**
+ * @param {String} sql SQL statement to run
+ * @param {Array|String|Integer} [params] SQL parameters to bind
+ * @return {Promise<Object>}  A promise for a proxied storage row
+ */
+Zotero.DBConnection.prototype.rowQueryAsync = async function (sql, params) {
+	var rows = await this.queryAsync(sql, params);
+	return rows.length ? rows[0] : false;
+};
+
+
+/**
+ * @param {String} sql SQL statement to run
+ * @param {Array|String|Integer} [params] SQL parameters to bind
+ * @return {Promise<Array>}  A promise for an array of values in the column
+ */
+Zotero.DBConnection.prototype.columnQueryAsync = async function (sql, params, options = {}) {
+	try {
+		let conn = this._getConnection(options) || (await this._getConnectionAsync(options));
+		[sql, params] = this.parseQueryAndParams(sql, params);
+		
+		if (this._dbLockPromise && !options.ignoreDBLock) {
+			Zotero.debug(`Waiting for DB lock to be released: ${sql}`, 2);
+			await this._dbLockPromise;
+		}
+		
+		if (Zotero.Debug.enabled) {
+			this.logQuery(sql, params, options);
+		}
+		let rows;
+		if (options && options.noCache) {
+			rows = await conn.execute(sql, params);
+		}
+		else {
+			rows = await conn.executeCached(sql, params);
+		}
+		var column = [];
+		for (let i=0, len=rows.length; i<len; i++) {
+			column.push(rows[i].getResultByIndex(0));
+		}
+		return column;
+	}
+	catch (e) {
+		if (e.errors && e.errors[0]) {
+			var eStr = e + "";
+			eStr = eStr.indexOf("Error: ") == 0 ? eStr.substr(7): e;
+			throw new Error(eStr + ' [QUERY: ' + sql + '] '
+				+ (params ? '[PARAMS: ' + params.join(', ') + '] ' : '')
+				+ '[ERROR: ' + e.errors[0].message + ']');
+		}
+		else {
+			throw e;
+		}
+	}
+};
+
+
+Zotero.DBConnection.prototype.logQuery = function (sql, params = [], options) {
+	if (options && options.debug === false) return;
+	var msg = sql;
+	if (params.length && (!options || options.debugParams !== false)) {
+		msg += " [";
+		for (let i = 0; i < params.length; i++) {
+			let param = params[i];
+			let paramType = typeof param;
+			if (paramType == 'string') {
+				msg += "'" + param + "', ";
+			}
+			else {
+				msg += param + ", ";
+			}
+		}
+		msg = msg.substr(0, msg.length - 2) + "]";
+	}
+	Zotero.debug(msg, 4);
+}
+
+
+Zotero.DBConnection.prototype.tableExists = async function (table, db) {
+	await this._getConnectionAsync();
+	var prefix = db ? db + '.' : '';
+	var sql = `SELECT COUNT(*) FROM ${prefix}sqlite_master WHERE type='table' AND tbl_name=?`;
+	var count = await this.valueQueryAsync(sql, [table]);
+	return !!count;
+};
+
+
+Zotero.DBConnection.prototype.columnExists = async function (table, column) {
+	await this._getConnectionAsync();
+	var sql = `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`;
+	var count = await this.valueQueryAsync(sql, [table, column]);
+	return !!count;
+};
+
+
+Zotero.DBConnection.prototype.indexExists = async function (index, db) {
+	await this._getConnectionAsync();
+	var prefix = db ? db + '.' : '';
+	var sql = `SELECT COUNT(*) FROM ${prefix}sqlite_master WHERE type='index' AND name=?`;
+	return !!(await this.valueQueryAsync(sql, [index]));
+};
+
+
+Zotero.DBConnection.prototype.parseSQLFile = function (sql) {
+	var nonCommentRE = /^[^-]/;
+	var trailingCommentRE = /^(.*?)(?:--.+)?$/;
+	
+	sql = sql.trim()
+		// Ugly hack to parse triggers with embedded semicolons
+		.replace(/;---/g, "TEMPSEMI")
+		.split("\n")
+		.filter(x => nonCommentRE.test(x))
+		.map(x => x.match(trailingCommentRE)[1])
+		.join("");
+	if (sql.substr(-1) == ";") {
+		sql = sql.substr(0, sql.length - 1);
+	}
+	
+	var statements = sql.split(";")
+		.map(x => x.replace(/TEMPSEMI/g, ";"));
+	
+	return statements;
+};
+
+
+/**
+ * Parse SQL string and execute transaction with all statements
+ *
+ * @return {Promise}
+ */
+Zotero.DBConnection.prototype.executeSQLFile = async function (sql) {
+	this.requireTransaction();
+	var statements = this.parseSQLFile(sql);
+	var statement;
+	while (statement = statements.shift()) {
+		await this.queryAsync(statement, false, { noCache: true });
+	}
+};
+
+
+/*
+ * Implements nsIObserver
+ */
+Zotero.DBConnection.prototype.observe = async function (subject, topic, data) {
+	switch (topic) {
+		case 'idle':
+			try {
+				await this.backUpDatabase({ online: true });
+				await this.vacuum();
+				// The main vacuum covers only the main database, so let callers reclaim space in
+				// their own attached databases (e.g., the full-text index) here too
+				for (let callback of this._idleCallbacks) {
+					try {
+						await callback();
+					}
+					catch (e) {
+						Zotero.logError(e);
+					}
+				}
+				// Truncate the WAL file so that a crash or force-quit leaves behind as
+				// little stale WAL data as possible. A leftover -wal file is replayed into
+				// whatever file next occupies the database path (e.g., a backup manually
+				// copied into place), corrupting it, and an empty one is harmless.
+				if (this._connection) {
+					await this.queryAsync("PRAGMA wal_checkpoint(TRUNCATE)");
+				}
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+			break;
+	}
+}
+
+
+Zotero.DBConnection.prototype.numCachedStatements = function () {
+	return this._connection._connectionData._cachedStatements.size;
+};
+
+
+Zotero.DBConnection.prototype.getCachedStatements = function () {
+	return [...this._connection._connectionData._cachedStatements].map(x => x[0]);
+};
+
+
+/**
+ * Vacuum the database using VACUUM INTO and perform an atomic file swap
+ *
+ * Creates a compacted copy of the database without blocking writes during
+ * the copy phase, then closes the connection and atomically replaces the
+ * original file if no writes occurred during compaction.
+ *
+ * @param {Object} [options]
+ * @param {Boolean} [options.force] - Skip time/freelist/disk-space checks
+ * @return {Promise<Boolean>} - Whether vacuum was performed
+ */
+Zotero.DBConnection.prototype.vacuum = async function ({ force } = {}) {
+	if (this._externalDB) {
+		return false;
+	}
+
+	if (this.inTransaction()) {
+		await this.waitForTransaction();
+	}
+
+	if (!force) {
+		// Check time threshold
+		let lastVacuum = Zotero.Prefs.get('vacuum.lastTime') || 0;
+		let intervalDays = Zotero.Prefs.get('vacuum.interval') || 14;
+		let intervalSeconds = intervalDays * 24 * 60 * 60;
+		let nowSeconds = Math.floor(Date.now() / 1000);
+		if ((nowSeconds - lastVacuum) < intervalSeconds) {
+			Zotero.debug("Database was vacuumed recently -- skipping");
+			return false;
+		}
+
+		// Check freelist threshold
+		let freelistCount = await this.valueQueryAsync("PRAGMA freelist_count");
+		let pageCount = await this.valueQueryAsync("PRAGMA page_count");
+		let threshold = Zotero.Prefs.get('vacuum.freelistThreshold') || 10;
+		if (pageCount > 0 && (freelistCount / pageCount * 100) < threshold) {
+			Zotero.debug(`Database freelist is ${freelistCount}/${pageCount} pages `
+				+ `(${(freelistCount / pageCount * 100).toFixed(1)}%) `
+				+ `-- below ${threshold}% threshold, skipping`);
+			return false;
+		}
+
+		// Check disk space
+		let dbFile = Zotero.File.pathToFile(this._dbPath);
+		let dbSize = (await IOUtils.stat(this._dbPath)).size;
+		let freeSpace = dbFile.diskSpaceAvailable;
+		if (freeSpace < dbSize) {
+			Zotero.debug(`Not enough disk space to vacuum database `
+				+ `(${freeSpace} available, ${dbSize} needed) -- skipping`);
+			return false;
+		}
+	}
+
+	let tmpFile = this._dbPath + '.vacuum.tmp';
+
+	try {
+		// Clean up any leftover temp file from a previous failed attempt
+		if (await IOUtils.exists(tmpFile)) {
+			await IOUtils.remove(tmpFile);
+		}
+
+		Zotero.debug("Vacuuming database");
+		let t = new Date();
+
+		let commitCountBefore = this._commitCount;
+
+		// Disable auto_vacuum for the output file if previously enabled -- periodic VACUUM handles
+		// compaction, and auto_vacuum causes fragmentation
+		await this.queryAsync("PRAGMA auto_vacuum=0");
+
+		// VACUUM INTO creates a compacted copy as a snapshot of committed data. Concurrent writes
+		// in WAL are NOT included in the output.
+		await this.queryAsync(`VACUUM INTO '${tmpFile.replace(/'/g, "''")}'`);
+
+		// Block other code from reopening the connection during the swap
+		let resolveVacuumPromise;
+		this._offlineBackupPromise = new Promise(function () {
+			resolveVacuumPromise = arguments[0];
+		});
+
+		try {
+			// Close the database -- this waits for any in-flight transactions and checkpoints WAL
+			await this.closeDatabase();
+
+			// If any writes happened between VACUUM INTO start and close, the compacted copy is
+			// stale -- abort
+			if (this._commitCount !== commitCountBefore) {
+				Zotero.debug("Database was modified during vacuum -- aborting swap", 1);
+				await IOUtils.remove(tmpFile);
+				return false;
+			}
+
+			// Atomic swap
+			await IOUtils.move(tmpFile, this._dbPath);
+
+			Zotero.Prefs.set('vacuum.lastTime', Math.floor(Date.now() / 1000));
+			Zotero.debug("Vacuumed database in " + (new Date() - t) + " ms");
+
+			return true;
+		}
+		finally {
+			this._offlineBackupPromise = null;
+			resolveVacuumPromise();
+		}
+	}
+	catch (e) {
+		Zotero.logError(e);
+		try {
+			if (await IOUtils.exists(tmpFile)) {
+				await IOUtils.remove(tmpFile);
+			}
+		}
+		catch (e2) {
+			Zotero.logError(e2);
+		}
+		return false;
+	}
+};
+
+
+// TEMP
+Zotero.DBConnection.prototype.info = async function () {
+	var info = {};
+	var pragmas = ['auto_vacuum', 'cache_size', 'journal_mode', 'main.locking_mode', 'page_size', 'synchronous'];
+	for (let p of pragmas) {
+		info[p] = await Zotero.DB.valueQueryAsync(`PRAGMA ${p}`);
+	}
+	return info;
+};
+
+
+Zotero.DBConnection.prototype.quickCheck = async function () {
+	var ok = await this.valueQueryAsync("PRAGMA quick_check(1)");
+	return ok == 'ok';
+};
+
+
+Zotero.DBConnection.prototype.integrityCheck = async function () {
+	var ok = await this.valueQueryAsync("PRAGMA integrity_check(1)");
+	return ok == 'ok';
+};
+
+
+/**
+ * Load a bundled SQLite extension (e.g., 'fts5') on the connection.
+ *
+ * Mozilla's mozStorage doesn't compile FTS in by default and disables generic extension loading,
+ * but it does allow loading specific bundled extensions by name. The module is registered per
+ * connection, so call this once: the extension is remembered and re-loaded automatically when the
+ * connection is reopened (e.g., after a vacuum()), before onConnect() callbacks run, so callers
+ * don't have to reload it themselves.
+ */
+Zotero.DBConnection.prototype.loadExtension = async function (name) {
+	var conn = await this._getConnectionAsync();
+	var result = conn._connectionData._dbConn.loadExtension(name);
+	// Remember it so it can be re-loaded on the next reconnect
+	this._loadedExtensions.add(name);
+	return result;
+};
+
+
+Zotero.DBConnection.prototype.isCorruptionError = function (e) {
+	return this.DB_CORRUPTION_STRINGS.some(x => e.message?.includes(x))
+		// Opening a corrupted or non-database file can throw with this nsresult and no
+		// matching message text
+		|| e.result == Cr.NS_ERROR_FILE_CORRUPTED;
+};
+
+
+/**
+ * Register a callback to run when a corruption error occurs but the main database checks out,
+ * meaning an attached database (e.g., the rebuildable full-text index) is corrupt. The callback
+ * can rebuild it. Run deferred, after the failing operation unwinds.
+ */
+Zotero.DBConnection.prototype.addCorruptionHandler = function (handler) {
+	this._corruptionHandlers.push(handler);
+};
+
+
+/**
+ * Register a callback to run during the database's idle maintenance, after the periodic backup and
+ * vacuum. Lets code with its own attached database do maintenance (e.g., vacuuming) on the same
+ * idle trigger.
+ */
+Zotero.DBConnection.prototype.onIdle = function (callback) {
+	this._idleCallbacks.push(callback);
+};
+
+
+/**
+ * Close the database
+ * @param {Boolean} [permanent] If true, throw an error instead of
+ *     allowing code to re-open the database again
+ */
+Zotero.DBConnection.prototype.closeDatabase = async function (permanent) {
+	if (this._connection) {
+		// TODO: Replace with automatic detection of likely improperly cached statements
+		// (multiple similar statements, "tmp_", embedded ids)
+		if (Zotero.isSourceBuild) {
+			try {
+				Zotero.debug("Cached DB statements: " + this.numCachedStatements());
+			}
+			catch (e) {
+				Zotero.logError(e, 1);
+			}
+		}
+		
+		Zotero.debug("Closing database");
+
+		// Checkpoint WAL before closing so all data is in the main file
+		// and -wal file is truncated. Use _connection.execute() directly
+		// to avoid deadlocking with _offlineBackupPromise in queryAsync.
+		//
+		// Skip this if the database is flagged as corrupt, since checkpointing would write
+		// potentially bad WAL data into the database file, which might be a valid file that a
+		// stale WAL file is being incorrectly replayed into.
+		if (!this._dbIsCorrupt) {
+			try {
+				Zotero.debug("PRAGMA wal_checkpoint(TRUNCATE)");
+				await this._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		}
+		
+		this.closed = true;
+		await this._connection.close();
+		this._connection = undefined;
+		this._connection = permanent ? false : null;
+		Zotero.debug("Database closed");
+	}
+};
+
+
+/**
+ * Register a callback to run after the SQLite connection is opened, including after it has
+ * been closed and reopened (e.g., after vacuum()). Use this for per-connection state that
+ * doesn't persist across reopens, such as ATTACHed databases or temp tables.
+ *
+ * The callback is not invoked for the connection that's already open at registration time --
+ * the caller is responsible for any initial setup.
+ *
+ * @param {Function} callback - Async function called with no arguments after each (re)open
+ */
+Zotero.DBConnection.prototype.onConnect = function (callback) {
+	this._onConnectCallbacks.push(callback);
+};
+
+
+/**
+ * @deprecated
+ */
+Zotero.DBConnection.prototype.backupDatabase = async function (_suffix, _force) {
+	Zotero.debug("backupDatabase(suffix, force) is now backUpDatabase({ suffix, force }) -- update your code");
+	return this.backUpDatabase({ suffix: arguments[0], force: arguments[1] });
+};
+
+/**
+ * @param {Object} [options]
+ * @param {Boolean} [options.force] - Perform backup even if not enough time has passed since last one
+ * @param {String} [options.suffix] - Suffix to add to 'zotero.sqlite.' before 'bak' (e.g., '123'
+ *     for zotero.sqlite.123.bak)
+ * @param {Boolean} [options.online] - Perform an online incremental backup without closing connection
+ */
+Zotero.DBConnection.prototype.backUpDatabase = async function ({ force, suffix, online } = {}) {
+	if (this.skipBackup || this._externalDB || Zotero.skipLoading) {
+		this._debug("Skipping backup of database '" + this._dbName + "'", 1);
+		return false;
+	}
+	
+	var storageService = Services.storage;
+	
+	var numBackups = Zotero.Prefs.get("backup.numBackups");
+	if (!suffix) {
+		// Skip regular backups if numBackups is 0
+		if (numBackups < 1) {
+			return false;
+		}
+		if (numBackups > 24) {
+			numBackups = 24;
+		}
+	}
+	
+	if (Zotero.locked && !force) {
+		this._debug("Zotero is locked -- skipping backup of DB '" + this._dbName + "'", 2);
+		return false;
+	}
+	
+	if (this.inTransaction()) {
+		await this.waitForTransaction();
+	}
+	
+	// Skip online backup if a backup is already in progress
+	if (online && (this._offlineBackupPromise || this._onlineBackupInProgress)) {
+		this._debug("Database " + this._dbName + " is already being backed up -- skipping online backup", 2);
+		return false;
+	}
+	
+	// Skip offline backup if one is already in progress, but wait to return until we actually have
+	// an up-to-date backup
+	if (this._offlineBackupPromise) {
+		this._debug("Database " + this._dbName + " is already being backed up -- waiting for backup to finish", 2);
+		return this._offlineBackupPromise;
+	}
+	
+	// On APFS, use cloning for all backups -- it's nearly instant and backup files share
+	// disk blocks via copy-on-write, saving potentially gigabytes of space
+	if (online && Zotero.File.isAPFS(this._dbPath)) {
+		online = false;
+	}
+
+	var resolveOfflineBackupPromise;
+	var success = false;
+	if (online) {
+		this._onlineBackupInProgress = true;
+	}
+	// For offline backups, start a promise that will be resolved when the backup finishes
+	else {
+		this._offlineBackupPromise = new Promise(function () {
+			resolveOfflineBackupPromise = arguments[0];
+		});
+	}
+	
+	try {
+		let corruptMarker = Zotero.File.pathToFile(this._dbPath + '.is.corrupt');
+		if (this._dbIsCorrupt || corruptMarker.exists()) {
+			this._debug("Database '" + this._dbName + "' is marked as corrupt -- skipping backup", 1);
+			return false;
+		}
+		
+		let file = this._dbPath;
+		
+		// For standard backup, make sure last backup is old enough to replace
+		if (!suffix && !force) {
+			let backupFile = this._dbPath + '.bak';
+			if (await OS.File.exists(backupFile)) {
+				let currentDBTime = (await OS.File.stat(file)).lastModificationDate;
+				let lastBackupTime = (await OS.File.stat(backupFile)).lastModificationDate;
+				if (currentDBTime == lastBackupTime) {
+					Zotero.debug("Database '" + this._dbName + "' hasn't changed -- skipping backup");
+					return false;
+				}
+				
+				var now = new Date();
+				var intervalMinutes = Zotero.Prefs.get('backup.interval');
+				var interval = intervalMinutes * 60 * 1000;
+				if ((now - lastBackupTime) < interval) {
+					Zotero.debug("Last backup of database '" + this._dbName
+						+ "' was less than " + intervalMinutes + " minutes ago -- skipping backup");
+					return false;
+				}
+			}
+		}
+		
+		this._debug("Backing up database '" + this._dbName + "'");
+		
+		// Copy via a temporary file so we don't run into disk space issues
+		// after deleting the old backup file
+		var tmpFile = this._dbPath + '.tmp';
+		if (await OS.File.exists(tmpFile)) {
+			try {
+				await OS.File.remove(tmpFile);
+			}
+			catch (e) {
+				if (e.name == 'NS_ERROR_FILE_ACCESS_DENIED') {
+					alert("Cannot delete " + PathUtils.filename(tmpFile));
+				}
+				throw (e);
+			}
+		}
+		
+		if (online) {
+			// Default page size is 4096 bytes, so a 100 MiB database will copy in about 25 seconds
+			// (100 × 1024 × 1024 / 4096 / 256 × 250 / 1000) plus actual copying time, while a 1 GiB
+			// database will copy in 4.25 minutes (1024 × 1024 × 1024 / 4096 / 256 × 250 / 1000 / 60)
+			// plus copying time
+			const PAGES_PER_STEP = 256;
+			await this._connection.backup(tmpFile, PAGES_PER_STEP);
+		}
+		else {
+			try {
+				await this.closeDatabase();
+				await Zotero.File.copyFile(this._dbPath, tmpFile);
+			}
+			catch (e) {
+				Zotero.logError(e);
+				return false;
+			}
+		}
+		
+		// Open the backup to check for corruption
+		try {
+			var connection = storageService.openDatabase(Zotero.File.pathToFile(tmpFile));
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._debug("Database file '" + PathUtils.filename(tmpFile) + "' can't be opened -- skipping backup");
+			if (await OS.File.exists(tmpFile)) {
+				await OS.File.remove(tmpFile);
+			}
+			return false;
+		}
+		finally {
+			if (connection) {
+				let deferred = Zotero.Promise.defer();
+				connection.asyncClose({
+					complete: function () {
+						deferred.resolve();
+					}
+				});
+				await deferred.promise;
+			}
+		}
+		
+		// Special backup
+		if (!suffix && numBackups > 1) {
+			// Remove oldest backup file
+			let targetFile = this._dbPath + '.' + (numBackups - 1) + '.bak';
+			if (await OS.File.exists(targetFile)) {
+				await OS.File.remove(targetFile);
+			}
+			
+			// Shift old versions up
+			for (var i=(numBackups - 1); i>=1; i--) {
+				var targetNum = i;
+				var sourceNum = targetNum - 1;
+				
+				let targetFile = this._dbPath + '.' + targetNum + '.bak';
+				let sourceFile = this._dbPath + '.' + (sourceNum ? sourceNum + '.bak' : 'bak');
+				
+				if (!(await OS.File.exists(sourceFile))) {
+					continue;
+				}
+				
+				Zotero.debug("Moving " + PathUtils.filename(sourceFile)
+					+ " to " + PathUtils.filename(targetFile));
+				await OS.File.move(sourceFile, targetFile);
+			}
+		}
+		
+		let backupFile = this._dbPath + '.' + (suffix ? suffix + '.' : '') + 'bak';
+		
+		// Remove old backup file
+		if (await OS.File.exists(backupFile)) {
+			OS.File.remove(backupFile);
+		}
+		
+		await OS.File.move(tmpFile, backupFile);
+		
+		// A copy preserves the database file's mtime, and the backup interval is measured from
+		// the backup file's mtime, so a forced backup of a long-idle database could be rotated
+		// out a day early. Date forced backups from the backup itself so that they last a full
+		// rotation period.
+		if (force && !suffix) {
+			await IOUtils.setModificationTime(backupFile);
+		}
+		
+		Zotero.debug("Backed up to " + PathUtils.filename(backupFile));
+		success = true;
+		return true;
+	}
+	catch (e) {
+		// Backups are best-effort, so if anything goes wrong dealing
+		// with them -- e.g., an offline backup file on a network drive
+		// that can't be accessed, which fails with ERROR_FILE_OFFLINE
+		// (https://forums.zotero.org/discussion/132201/) -- log the
+		// error and skip the backup rather than letting it block a
+		// schema upgrade or startup.
+		Zotero.logError(e);
+		return false;
+	}
+	finally {
+		if (online) {
+			this._onlineBackupInProgress = false;
+		}
+		else {
+			resolveOfflineBackupPromise(success);
+			this._offlineBackupPromise = undefined;
+		}
+	}
+};
+
+
+/**
+ * Escape '_', '%', and '\' in an SQL LIKE expression so that it can be used with ESCAPE '\' to
+ * prevent the wildcards from having special meaning
+ */
+Zotero.DBConnection.prototype.escapeSQLExpression = function (expr) {
+	return expr.replace(/([_%\\])/g, '\\$1');
+};
+
+
+/////////////////////////////////////////////////////////////////
+//
+// Private methods
+//
+/////////////////////////////////////////////////////////////////
+
+Zotero.DBConnection.prototype._getConnection = function () {
+	if (this._offlineBackupPromise) {
+		return false;
+	}
+	if (this._connection === false) {
+		throw new Error("Database permanently closed; not re-opening");
+	}
+	return this._connection || false;
+}
+
+/*
+ * Retrieve a link to the data store asynchronously
+ */
+Zotero.DBConnection.prototype._getConnectionAsync = async function () {
+	// If a backup is in progress, wait until it's done
+	if (this._offlineBackupPromise) {
+		Zotero.debug("Waiting for database backup to complete", 2);
+		await this._offlineBackupPromise;
+	}
+	
+	if (this._connection) {
+		return this._connection;
+	}
+	else if (this._connection === false) {
+		throw new Error("Database permanently closed; not re-opening");
+	}
+	
+	this._debug("Asynchronously opening database '" + this._dbName + "'");
+	Zotero.debug(this._dbPath);
+	
+	// Get the storage service
+	var store = Services.storage;
+	
+	var file = this._dbPath;
+	var corruptMarker = this._dbPath + '.is.corrupt';
+	
+	var uncleanShutdown = false;
+	if (!this._externalDB) {
+		// If a verified copy of the database file was saved before a restart due to stale
+		// journal files, swap it in. A failure aborts startup, since opening the database
+		// with a pending repair still on disk could let the older copy overwrite newer data
+		// at a later startup.
+		await this._applyPendingRepair();
+		
+		// A non-empty WAL file means the last session didn't close cleanly, since the WAL
+		// is truncated at shutdown
+		try {
+			uncleanShutdown = (await IOUtils.stat(file + '-wal')).size > 0;
+		}
+		catch (e) {
+			if (e.name != 'NotFoundError') {
+				throw e;
+			}
+		}
+	}
+	
+	try {
+		if (await OS.File.exists(corruptMarker)) {
+			throw new Error(this.DB_CORRUPTION_STRINGS[0]);
+		}
+		// Open without an exclusive lock at the OS level so the database can be opened on network
+		// filesystems (e.g., SMB shares), where acquiring the exclusive open lock fails with an I/O
+		// error. We still set locking_mode=EXCLUSIVE below, which gives us a connection-lifetime
+		// SQLite lock (preventing undetected concurrent writes) and keeps the WAL index in heap
+		// memory, avoiding the -shm file that can't be created on a network filesystem. See #4860.
+		this._connection = await Promise.resolve(this.Sqlite.openConnection({
+			path: file,
+			openNotExclusive: true
+		}));
+	}
+	catch (e) {
+		// Don't deal with corrupted external dbs
+		if (this._externalDB) {
+			throw e;
+		}
+		
+		Zotero.logError(e);
+		
+		if (this.isCorruptionError(e)) {
+			await this._handleCorruptionMarker();
+			// Recovery just verified or replaced the database file and removed any journal
+			// files, so the unclean-shutdown integrity check below would be redundant
+			uncleanShutdown = false;
+		}
+		else {
+			// Some other error that we don't yet know how to deal with
+			throw e;
+		}
+	}
+	
+	if (!this._externalDB) {
+		if (DB_LOCK_EXCLUSIVE) {
+			await this.queryAsync("PRAGMA main.locking_mode=EXCLUSIVE");
+		}
+		else {
+			await this.queryAsync("PRAGMA main.locking_mode=NORMAL");
+		}
+
+		// Enable WAL mode for better write performance. With locking_mode=EXCLUSIVE
+		// set first, SQLite uses heap memory for the WAL index instead of shared
+		// memory, so no -shm file is created on disk.
+		await this.queryAsync("PRAGMA journal_mode=WAL");
+		// NORMAL synchronous is safe with WAL -- only risks losing the last
+		// transaction on power loss, not corruption
+		await this.queryAsync("PRAGMA synchronous=NORMAL");
+
+		// Set page cache size to 8MB
+		let pageSize = await this.valueQueryAsync("PRAGMA page_size");
+		let cacheSize = 8192000 / pageSize;
+		await this.queryAsync("PRAGMA cache_size=" + cacheSize);
+		
+		// Enable foreign key checks
+		await this.queryAsync("PRAGMA foreign_keys=true");
+		
+		// If the last session didn't close cleanly, check database integrity, in case the WAL
+		// doesn't belong to the database file (e.g., a stale WAL from a force-quit left in
+		// place while the database file was manually replaced from a backup). A mismatched
+		// WAL can produce subtle data damage rather than outright errors, so use a full
+		// integrity check, which unlike quick_check verifies indexes against table contents.
+		if (uncleanShutdown) {
+			this._debug("Last session didn't close cleanly -- checking database integrity", 1);
+			this._showProgressText('db-checking-integrity');
+			let ok = false;
+			try {
+				ok = (await this.valueQueryAsync("PRAGMA integrity_check(1)")) == 'ok';
+			}
+			catch (e) {
+				// Only a corruption error confirms corruption -- operational errors propagate
+				if (!this.isCorruptionError(e)) {
+					throw e;
+				}
+				Zotero.logError(e);
+			}
+			if (ok) {
+				this._debug("Database integrity OK", 1);
+			}
+			else {
+				let error = new Error(this.DB_CORRUPTION_STRINGS[0]);
+				// The full check verifies index contents that quick_check skips, so don't let
+				// the attached-database quick check overrule it
+				await this._checkException(error, { mainConfirmedCorrupt: true });
+				throw error;
+			}
+		}
+		
+		// Register idle observer for DB backup
+		Zotero.Schema.schemaUpdatePromise.then(() => {
+			Zotero.debug("Initializing DB backup idle observer");
+			var idleService = Components.classes["@mozilla.org/widget/useridleservice;1"]
+				.getService(Components.interfaces.nsIUserIdleService);
+			idleService.addIdleObserver(this, 300);
+		});
+	}
+
+	// Re-load any extensions loaded via loadExtension(), which are registered per connection and
+	// so don't survive a reconnect. Done before the onConnect callbacks, which may depend on them
+	// (e.g., creating FTS5 tables).
+	for (let name of this._loadedExtensions) {
+		try {
+			this._connection._connectionData._dbConn.loadExtension(name);
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+
+	for (let callback of this._onConnectCallbacks) {
+		try {
+			await callback();
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+
+	return this._connection;
+};
+
+
+/**
+ * @param {Error} e
+ * @param {Object} [options]
+ * @param {Boolean} [options.mainConfirmedCorrupt] - Skip the attached-database check because
+ *     the caller already confirmed main-database corruption (e.g., with a full integrity
+ *     check, which detects index inconsistencies that quick_check misses)
+ */
+Zotero.DBConnection.prototype._checkException = async function (e, { mainConfirmedCorrupt } = {}) {
+	if (this._externalDB || !this.isCorruptionError(e) || this._checkingCorruption
+			|| this._handlingCorruption) {
+		return true;
+	}
+
+	var progressToken = this._showProgressText('db-checking-integrity');
+	
+	// A "malformed" error can come from an attached database (e.g., the rebuildable full-text
+	// index) rather than the main file, so confirm the main database is actually corrupt before
+	// offering to restore it. That way a disposable attached DB's corruption doesn't trigger
+	// main-database recovery; the attaching code detects and rebuilds it instead.
+	if (!mainConfirmedCorrupt) {
+		let mainOK = false;
+		this._checkingCorruption = true;
+		try {
+			mainOK = (await this.valueQueryAsync("PRAGMA main.quick_check(1)")) == 'ok';
+		}
+		catch (checkError) {
+			Zotero.logError(checkError);
+			// A check failure other than a corruption error leaves the state of the main
+			// database unknown, so don't start destructive recovery
+			if (!this.isCorruptionError(checkError)) {
+				this._clearProgressText(progressToken);
+				return true;
+			}
+		}
+		finally {
+			this._checkingCorruption = false;
+		}
+		if (mainOK) {
+			Zotero.logError(e);
+			Zotero.debug("Corruption error but the main database passed a check -- skipping "
+				+ "main-database recovery", 1);
+			// Let owners of attached databases (e.g., the full-text index) rebuild them. Deferred
+			// so it runs after the failing operation unwinds -- a rebuild may need to DETACH,
+			// which can't run inside the transaction the error may have come from.
+			for (let handler of this._corruptionHandlers) {
+				Zotero.Promise.delay(0).then(handler).catch(err => Zotero.logError(err));
+			}
+			this._clearProgressText(progressToken);
+			return true;
+		}
+	}
+
+	// Corruption errors from other queries can keep arriving while this runs, since a pending
+	// restart or quit is asynchronous and execution continues until shutdown
+	this._handlingCorruption = true;
+	
+	// Skip backups
+	this._dbIsCorrupt = true;
+	
+	// If the database file is valid and only stale journal files are causing the corruption,
+	// save the verified copy to be swapped in at the next startup and restart
+	try {
+		if (await this._journalFilesExist() && await this._checkValidWithoutJournalFiles(true)) {
+			this._debug("Restarting to recover database from stale journal files", 1);
+			Zotero.skipLoading = true;
+			Zotero.Utilities.Internal.quit(true);
+			return false;
+		}
+	}
+	catch (e2) {
+		Zotero.logError(e2);
+	}
+	
+	const supportURL = 'https://zotero.org/support/kb/corrupted_database';
+	
+	var filename = PathUtils.filename(this._dbPath);
+	
+	var backupDate = null;
+	var backupTime = null;
+	try {
+		let info = await OS.File.stat(this._dbPath + '.bak');
+		backupDate = info.lastModificationDate.toLocaleDateString();
+		backupTime = info.lastModificationDate.toLocaleTimeString();
+		Zotero.debug(`Found ${this._dbPath} with date of ${backupDate}`);
+	}
+	catch (e) {}
+	
+	var ps = Services.prompt;
+	var buttonFlags = ps.BUTTON_POS_0 * ps.BUTTON_TITLE_IS_STRING
+		+ ps.BUTTON_POS_1 * ps.BUTTON_TITLE_CANCEL;
+	
+	var index = ps.confirmEx(null,
+		Zotero.getString('general.error'),
+		Zotero.getString('db.dbCorrupted', [Zotero.appName, filename]) + '\n\n'
+			+ Zotero.getString('db.dbCorrupted.cloudStorage', Zotero.appName) + '\n\n'
+			+ (backupDate
+				? Zotero.getString(
+						'db.dbCorrupted.restoreFromLastAutomaticBackup',
+						[Zotero.appName, backupDate, backupTime]
+					) + '\n\n'
+					+ Zotero.getString('db.dbCorrupted.viewMoreInformation', supportURL)
+				: Zotero.getString('db.dbCorrupted.repairOrRestore', Zotero.appName)),
+		buttonFlags,
+		backupDate ? Zotero.getString('db.dbCorrupted.automaticBackup') : Zotero.getString('general.moreInformation'),
+		null,
+		null,
+		null, {});
+	
+	if (index == 0) {
+		// Write corrupt marker to data directory
+		let file = Zotero.File.pathToFile(this._dbPath + '.is.corrupt');
+		Zotero.File.putContents(file, '');
+		Zotero.skipLoading = true;
+		Zotero.Utilities.Internal.quit(true);
+	}
+	else if (index == 1) {
+		this._handlingCorruption = false;
+		this._clearProgressText(progressToken);
+	}
+	else {
+		Zotero.launchURL(supportURL);
+		Zotero.Utilities.Internal.quit();
+		Zotero.skipLoading = true;
+	}
+	
+	return false;
+};
+
+
+/**
+ * Move any -journal/-wal files along with a database file that's being moved
+ *
+ * SQLite associates journal files with a database by filename, so a stale journal left at the
+ * old path would be replayed into whatever file next occupies it (e.g., a restored backup),
+ * corrupting it. Moving the -wal file along with a .damaged file also keeps committed
+ * transactions that hadn't yet been checkpointed available for data recovery.
+ */
+Zotero.DBConnection.prototype._moveJournalFiles = async function (fromPath, toPath) {
+	for (let suffix of ['-journal', '-wal']) {
+		try {
+			if (await IOUtils.exists(fromPath + suffix)) {
+				this._debug(`Moving '${PathUtils.filename(fromPath + suffix)}' to `
+					+ `'${PathUtils.filename(toPath + suffix)}'`, 1);
+				await IOUtils.move(fromPath + suffix, toPath + suffix);
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+	// A -shm file contains no recoverable data and is rebuilt by SQLite, so just remove it
+	try {
+		await IOUtils.remove(fromPath + '-shm', { ignoreAbsent: true });
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+};
+
+
+/**
+ * Remove any journal files (-journal/-wal/-shm) at a database path so that they aren't
+ * replayed into a database file subsequently placed there
+ *
+ * @return {Boolean} - False if a -journal or -wal file couldn't be removed
+ */
+Zotero.DBConnection.prototype._removeJournalFiles = async function (dbPath) {
+	var success = true;
+	for (let suffix of ['-journal', '-wal', '-shm']) {
+		try {
+			if (await IOUtils.exists(dbPath + suffix)) {
+				this._debug(`Removing '${PathUtils.filename(dbPath + suffix)}'`, 1);
+				await IOUtils.remove(dbPath + suffix);
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+			// A leftover -shm file on its own is harmless, so a failure to remove it
+			// shouldn't invalidate successful -journal/-wal removal
+			if (suffix != '-shm') {
+				success = false;
+			}
+		}
+	}
+	return success;
+};
+
+
+/**
+ * Check whether the database file is valid without its journal files by copying it to a
+ * temporary path, which strips the journal association, and running an integrity check on
+ * the copy
+ *
+ * A database and WAL pair that belong together and are both intact don't produce corruption
+ * errors, so a database that's valid without its WAL while the combined view is corrupt means
+ * the WAL doesn't belong to it.
+ *
+ * @param {Boolean} [keepCopy] - Keep a verified copy at <database>.repair.tmp, to be swapped
+ *     in by _applyPendingRepair() at the next startup
+ * @return {Boolean}
+ */
+Zotero.DBConnection.prototype._checkValidWithoutJournalFiles = async function (keepCopy) {
+	var file = this._dbPath;
+
+	if (!(await IOUtils.exists(file))) {
+		return false;
+	}
+
+	this._debug(`Checking whether database file '${PathUtils.filename(file)}' is valid `
+		+ `without its journal files`, 1);
+	var tmpFile = file + (keepCopy ? '.repair.tmp' : '.check.tmp');
+	var valid = false;
+	try {
+		await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+		await IOUtils.remove(tmpFile + '.verified', { ignoreAbsent: true });
+		// Remove journal files from an earlier interrupted check, which would otherwise be
+		// replayed into the new copy and invalidate the check
+		if (!(await this._removeJournalFiles(tmpFile))) {
+			throw new Error("Couldn't remove journal files of previous temporary copy");
+		}
+		await Zotero.File.copyFile(file, tmpFile);
+		valid = await this._integrityCheckFile(tmpFile);
+		// Record the verified copy's size and mtime so that _applyPendingRepair() can skip
+		// another integrity check after the restart. A crash before verification finishes
+		// leaves no record, so the copy gets checked again at startup.
+		if (valid && keepCopy) {
+			let { size, lastModified } = await IOUtils.stat(tmpFile);
+			await Zotero.File.putContentsAsync(
+				tmpFile + '.verified', JSON.stringify({ size, lastModified })
+			);
+		}
+	}
+	catch (e) {
+		// Only a corruption error marks the database file as invalid -- operational errors
+		// (I/O, permissions) propagate so that recovery is aborted rather than proceeding
+		// destructively
+		if (!this.isCorruptionError(e)) {
+			throw e;
+		}
+		Zotero.logError(e);
+	}
+	finally {
+		if (!valid || !keepCopy) {
+			try {
+				await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+				await IOUtils.remove(tmpFile + '.verified', { ignoreAbsent: true });
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		}
+	}
+	this._debug(valid
+		? "Database file is valid without its journal files"
+		: "Database file isn't valid on its own", 1);
+	return valid;
+};
+
+
+/**
+ * Show a message on the main-window progress meter for a potentially long-running check or
+ * repair, ignoring errors (e.g., if no window exists yet)
+ *
+ * @return {Object|null} - Token for _clearProgressText()
+ */
+Zotero.DBConnection.prototype._showProgressText = function (l10nID) {
+	try {
+		return Zotero.showZoteroPaneProgressMeter(Zotero.ftl.formatValueSync(l10nID));
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return null;
+	}
+};
+
+
+/**
+ * Restore the progress display shown with _showProgressText() to its previous state, leaving
+ * it alone if another operation has changed it since
+ */
+Zotero.DBConnection.prototype._clearProgressText = function (token) {
+	try {
+		Zotero.restoreZoteroPaneProgressMeter(token);
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+};
+
+
+/**
+ * Check whether journal files that can affect database contents (-journal/-wal) exist. A
+ * stale -shm file on its own is harmless, since the WAL index is just rebuilt from the
+ * -wal file.
+ */
+Zotero.DBConnection.prototype._journalFilesExist = async function () {
+	return await IOUtils.exists(this._dbPath + '-journal')
+		|| await IOUtils.exists(this._dbPath + '-wal');
+};
+
+
+/**
+ * Run an integrity check on a database file over a separate connection
+ *
+ * @param {String} path
+ * @param {Boolean} [quick] - Run quick_check instead of a full integrity_check, skipping
+ *     verification of index contents against tables
+ * @return {Boolean}
+ */
+Zotero.DBConnection.prototype._integrityCheckFile = async function (path, quick) {
+	var connection = await this.Sqlite.openConnection({ path });
+	var ok;
+	try {
+		try {
+			let rows = await connection.execute(
+				`PRAGMA ${quick ? 'quick_check' : 'integrity_check'}(1)`
+			);
+			ok = !!rows.length && rows[0].getResultByIndex(0) == 'ok';
+		}
+		finally {
+			await connection.close();
+		}
+	}
+	finally {
+		// Remove journal files that opening the database can leave behind, even if the check
+		// throws. Fail on a removal failure only if the check passed, so that an original
+		// corruption error isn't masked.
+		if (!(await this._removeJournalFiles(path)) && ok) {
+			throw new Error("Couldn't remove journal files left by integrity check");
+		}
+	}
+	return ok;
+};
+
+
+/**
+ * Copy a database file whose only damage is index inconsistencies -- one that fails a full
+ * integrity check but passes a quick check -- and rebuild its indexes with REINDEX, which
+ * recreates them from table contents
+ *
+ * @return {String|false} - Path of the repaired copy if it passes a full integrity check,
+ *     or false if the file can't be repaired this way (e.g., table data contains actual
+ *     UNIQUE violations, which cause REINDEX to fail)
+ */
+Zotero.DBConnection.prototype._reindexToCopy = async function (path) {
+	var tmpFile = path + '.reindex.tmp';
+	try {
+		await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+		// A leftover journal file from an earlier interrupted repair would be replayed into
+		// the new copy, so fail on it as an operational error
+		if (!(await this._removeJournalFiles(tmpFile))) {
+			throw new Error("Couldn't remove journal files of previous reindex copy");
+		}
+		await Zotero.File.copyFile(path, tmpFile);
+		this._debug(`Rebuilding indexes of '${PathUtils.filename(tmpFile)}'`, 1);
+		this._showProgressText('db-repairing');
+		let connection = await this.Sqlite.openConnection({ path: tmpFile });
+		try {
+			try {
+				await connection.execute("REINDEX");
+			}
+			finally {
+				await connection.close();
+			}
+		}
+		finally {
+			await this._removeJournalFiles(tmpFile);
+		}
+		if (await this._integrityCheckFile(tmpFile)) {
+			return tmpFile;
+		}
+	}
+	catch (e) {
+		// Constraint and corruption errors mean the file can't be repaired this way --
+		// operational errors propagate so that recovery is aborted
+		if (!this.isCorruptionError(e) && !/constraint/i.test(e.message ?? '')) {
+			try {
+				await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+			}
+			catch (e2) {
+				Zotero.logError(e2);
+			}
+			throw e;
+		}
+		Zotero.logError(e);
+	}
+	this._debug("Indexes couldn't be rebuilt", 1);
+	try {
+		await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	return false;
+};
+
+
+/**
+ * Replace the database file with a verified copy saved by _checkException() before a restart,
+ * and remove the stale journal files that caused the corruption
+ *
+ * The saved copy is swapped in at startup rather than the journal files being removed at
+ * detection time, since SQLite can checkpoint stale WAL data into the database file when the
+ * connection is closed.
+ *
+ * Also removes temporary files left behind by interrupted checks and repairs.
+ */
+Zotero.DBConnection.prototype._applyPendingRepair = async function () {
+	var file = this._dbPath;
+	var repairFile = file + '.repair.tmp';
+	var verifiedFile = repairFile + '.verified';
+	
+	// Clean up temporary files left behind by an interrupted check or repair
+	for (let tmpFile of [file + '.check.tmp', file + '.bak.reindex.tmp']) {
+		try {
+			await IOUtils.remove(tmpFile, { ignoreAbsent: true });
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+		await this._removeJournalFiles(tmpFile);
+	}
+	
+	if (!(await IOUtils.exists(repairFile))) {
+		try {
+			await IOUtils.remove(verifiedFile, { ignoreAbsent: true });
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+		await this._removeJournalFiles(repairFile);
+		return;
+	}
+	
+	// If the copy still matches the size and mtime recorded after verification, skip another
+	// integrity check
+	var valid = false;
+	try {
+		let { size, lastModified } = JSON.parse(
+			await Zotero.File.getContentsAsync(verifiedFile)
+		);
+		let info = await IOUtils.stat(repairFile);
+		valid = info.size === size && info.lastModified === lastModified;
+	}
+	catch (e) {}
+	// Otherwise verify the copy before replacing the database file with it
+	if (!valid) {
+		this._showProgressText('db-checking-integrity');
+		try {
+			valid = await this._integrityCheckFile(repairFile);
+		}
+		catch (e) {
+			// Only a corruption error marks the copy as invalid for removal -- operational
+			// errors (I/O, permissions) propagate so that startup is aborted and the repair
+			// file preserved
+			if (!this.isCorruptionError(e)) {
+				throw e;
+			}
+			Zotero.logError(e);
+		}
+	}
+	await IOUtils.remove(verifiedFile, { ignoreAbsent: true });
+	if (!valid) {
+		this._debug(`Removing invalid repair file '${PathUtils.filename(repairFile)}'`, 1);
+		await IOUtils.remove(repairFile, { ignoreAbsent: true });
+		return;
+	}
+	
+	this._debug(`Replacing '${PathUtils.filename(file)}' with verified copy saved before `
+		+ `restart`, 1);
+	// A journal file that can't be removed would be replayed into the repaired database, so
+	// fail instead
+	if (!(await this._removeJournalFiles(file))) {
+		throw new Error("Couldn't remove stale journal files -- not applying pending repair");
+	}
+	await IOUtils.move(repairFile, file);
+	await IOUtils.remove(file + '.is.corrupt', { ignoreAbsent: true });
+};
+
+
+/**
+ * If the database file is valid on its own and stale journal files are causing the corruption
+ * -- e.g., a -wal file left behind by a force-quit that no longer matches the database file
+ * because the latter was manually replaced from a backup -- remove the journal files so that
+ * the database file can be used as is.
+ *
+ * Also returns true for a valid database file with no journal files, which can result from an
+ * earlier recovery that was interrupted before the corruption marker was cleared, so that the
+ * file isn't needlessly replaced with an older backup.
+ *
+ * @return {Boolean} - True if the database file is valid and any journal files were removed
+ */
+Zotero.DBConnection.prototype._recoverFromStaleJournalFiles = async function () {
+	if (!(await this._checkValidWithoutJournalFiles())) {
+		return false;
+	}
+	// A journal file that can't be removed would be replayed into the database file as soon
+	// as it was opened, so fail instead
+	if (!(await this._removeJournalFiles(this._dbPath))) {
+		throw new Error("Couldn't remove stale journal files");
+	}
+	return true;
+};
+
+
+/**
+ * @return {Boolean} - True if recovered, false if not
+ */
+Zotero.DBConnection.prototype._handleCorruptionMarker = async function () {
+	var file = this._dbPath;
+	var fileName = PathUtils.filename(file);
+	var backupFile = this._dbPath + '.bak';
+	var corruptMarker = this._dbPath + '.is.corrupt';
+	
+	this._debug(`Database file '${fileName}' corrupted`, 1);
+	
+	this._showProgressText('db-checking-integrity');
+	
+	// If the database file is valid and only stale journal files are causing the corruption,
+	// keep it and skip the backup restore
+	if (await this._recoverFromStaleJournalFiles()) {
+		this._connection = await Promise.resolve(this.Sqlite.openConnection({
+			path: file
+		}));
+		this._debug('Database recovered from stale journal files', 1);
+		if (await OS.File.exists(corruptMarker)) {
+			await OS.File.remove(corruptMarker);
+		}
+		return;
+	}
+	
+	// No backup file! Eek!
+	if (!(await OS.File.exists(backupFile))) {
+		this._debug("No backup file for DB '" + this._dbName + "' exists", 1);
+		
+		let damagedFile;
+		
+		// If database file exists, move it to .damaged
+		if (await OS.File.exists(file)) {
+			this._debug('Saving damaged DB file with .damaged extension', 1);
+			damagedFile = this._dbPath + '.damaged';
+			damagedFile = await Zotero.File.moveToUnique(file, damagedFile);
+			await this._moveJournalFiles(file, damagedFile);
+		}
+		// If it doesn't exist, assume we already showed a warning and moved it
+		else {
+			this._debug(`Database file '${fileName}' doesn't exist!`);
+		}
+		
+		// A journal file that can't be removed would be replayed into the new database, so
+		// fail instead
+		if (!(await this._removeJournalFiles(file))) {
+			throw new Error("Couldn't remove stale journal files");
+		}
+		
+		// Create new main database
+		this._connection = await Promise.resolve(this.Sqlite.openConnection({
+			path: file
+		}));
+		
+		if (await OS.File.exists(corruptMarker)) {
+			await OS.File.remove(corruptMarker);
+		}
+		
+		if (damagedFile) {
+			Zotero.alert(
+				null,
+				Zotero.getString('startupError', Zotero.appName),
+				Zotero.getString(
+					'db.dbCorruptedNoBackup',
+					[Zotero.appName, fileName, PathUtils.filename(damagedFile)]
+				)
+			);
+		}
+		return;
+	}
+	
+	// Save damaged file, unless it was already moved by an interrupted earlier recovery
+	var damagedFile = this._dbPath + '.damaged';
+	if (await OS.File.exists(file)) {
+		this._debug('Saving damaged DB file with .damaged extension', 1);
+		damagedFile = await Zotero.File.moveToUnique(file, damagedFile);
+		await this._moveJournalFiles(file, damagedFile);
+	}
+	
+	// Check the backup file
+	var backupValid = false;
+	var restoreFile = backupFile;
+	try {
+		// Remove any stale backup journal files so that they aren't replayed into the
+		// backup when it's opened
+		if (!(await this._removeJournalFiles(backupFile))) {
+			throw new Error("Couldn't remove backup journal files");
+		}
+		this._debug(`Checking integrity of '${PathUtils.filename(backupFile)}'`, 1);
+		backupValid = await this._integrityCheckFile(backupFile);
+		// If the backup fails only the index checks that a quick check skips, rebuild the
+		// indexes on a copy and restore that instead
+		if (!backupValid && (await this._integrityCheckFile(backupFile, true))) {
+			let repairedFile = await this._reindexToCopy(backupFile);
+			if (repairedFile) {
+				restoreFile = repairedFile;
+				backupValid = true;
+			}
+		}
+	}
+	catch (e) {
+		// Only a corruption error marks the backup as invalid -- operational errors
+		// propagate so that recovery can be retried
+		if (!this.isCorruptionError(e)) {
+			throw e;
+		}
+		Zotero.logError(e);
+	}
+	// Backup is corrupt too
+	if (!backupValid) {
+		if (!(await this._removeJournalFiles(file))) {
+			throw new Error("Couldn't remove stale journal files");
+		}
+		
+		// Create new main database
+		this._connection = await Promise.resolve(this.Sqlite.openConnection({
+			path: file
+		}));
+		
+		Zotero.alert(
+			null,
+			Zotero.getString('general.error'),
+			Zotero.getString(
+				'db.dbRestoreFailed',
+				[Zotero.appName, fileName, PathUtils.filename(damagedFile)]
+			)
+		);
+		
+		if (await OS.File.exists(corruptMarker)) {
+			await OS.File.remove(corruptMarker);
+		}
+		
+		return;
+	}
+
+	// Copy backup file to main DB file
+	this._debug("Restoring database '" + this._dbName + "' from backup file", 1);
+	try {
+		// A journal file that can't be removed would be replayed into the restored database,
+		// so fail instead
+		if (!(await this._removeJournalFiles(file))) {
+			throw new Error("Couldn't remove stale journal files");
+		}
+		await Zotero.File.copyFile(restoreFile, file);
+	}
+	catch (e) {
+		// TODO: deal with low disk space
+		throw e;
+	}
+	finally {
+		if (restoreFile != backupFile) {
+			try {
+				await IOUtils.remove(restoreFile, { ignoreAbsent: true });
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		}
+	}
+	
+	// Open restored database
+	this._connection = await Promise.resolve(this.Sqlite.openConnection({
+		path: file
+	}));
+	this._debug('Database restored', 1);
+	let backupDate = '';
+	let backupTime = '';
+	try {
+		let info = await OS.File.stat(backupFile);
+		backupDate = info.lastModificationDate.toLocaleDateString();
+		backupTime = info.lastModificationDate.toLocaleTimeString();
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	Zotero.alert(
+		null,
+		Zotero.getString('general.warning'),
+		Zotero.getString(
+			'db.dbRestored',
+			[Zotero.appName, fileName, backupDate, backupTime, PathUtils.filename(damagedFile)]
+		) + '\n\n'
+		+ Zotero.getString('db.dbRestored.cloudStorage')
+	);
+	
+	if (await OS.File.exists(corruptMarker)) {
+		await OS.File.remove(corruptMarker);
+	}
+};
+
+
+Zotero.DBConnection.prototype._debug = function (str, level) {
+	var prefix = this._dbName == 'zotero' ? '' : '[' + this._dbName + '] ';
+	Zotero.debug(prefix + str, level);
+}
+
+Zotero.DBConnection.TimeoutError = class TimeoutError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'TimeoutError';
+	}
+};

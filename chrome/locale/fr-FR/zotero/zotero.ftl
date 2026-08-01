@@ -1,0 +1,1172 @@
+general-sentence-separator = { " " }
+general-key-control = Ctrl
+general-key-shift = Maj
+general-key-alt = Alt
+general-key-option = Option
+general-key-command = Commande
+option-or-alt =
+    { PLATFORM() ->
+        [macos] { general-key-option }
+       *[other] { general-key-alt }
+    }
+command-or-control =
+    { PLATFORM() ->
+        [macos] { general-key-command }
+       *[other] { general-key-control }
+    }
+return-or-enter =
+    { PLATFORM() ->
+        [macos] Retour
+       *[other] Entrée
+    }
+delete-or-backspace =
+    { PLATFORM() ->
+        [macos] Supprimer
+       *[other] Supprimer
+    }
+-os-name =
+    { PLATFORM() ->
+        [macos] macOS
+        [windows] Windows
+       *[other] Linux
+    }
+general-print = Imprimer
+general-remove = Supprimer
+general-add = Ajouter
+general-remind-me-later = Me le rappeler plus tard
+general-dont-ask-again = Ne plus demander
+general-choose-file = Sélectionnez un fichier…
+general-open-settings = Ouvrir les paramètres
+general-settings = Paramètres...
+general-help = ?
+general-tag = Marqueur
+general-got-it = Compris
+general-done = Terminé
+general-view-troubleshooting-instructions = Afficher les instructions de dépannage
+general-go-back = Revenir en arrière
+general-accept = Accepter
+general-cancel = Annuler
+cancel-button =
+    .label = { general-cancel }
+general-show-in-library = Montrer dans la bibliothèque
+general-restartApp = Redémarrer { -app-name }
+general-restartInTroubleshootingMode = Redémarrer en mode dépannage
+general-save = Enregistrer
+general-clear = Effacer
+clear-button =
+    .label = { general-clear }
+general-update = Mettre à jour
+general-back = Page précédente
+general-edit = Modifier
+general-cut = Couper
+general-copy = Copier
+general-paste = Coller
+general-find = Rechercher
+general-delete = Supprimer
+general-insert = Insérer
+general-and = et
+general-et-al = et al.
+general-previous = Précédent
+general-next = Suivant
+general-learn-more = En savoir plus
+general-more-information = Plus d'informations
+general-warning = Avertissement
+general-type-to-continue = Tapez “{ $text }” pour continuer.
+general-continue = Continuer
+general-red = Rouge
+general-orange = Orange
+general-yellow = Jaune
+general-green = Vert
+general-teal = Bleu sarcelle
+general-blue = Bleu
+general-purple = Violet
+general-magenta = Magenta
+general-violet = Violet
+general-maroon = Bordeaux
+general-gray = Gris
+general-black = Noir
+general-loading = Chargement...
+db-checking-integrity = Checking database integrity…
+db-repairing = Repairing database…
+citation-style-label = Style de citation :
+language-label = Langue :
+menu-custom-group-submenu =
+    .label = Plus d'options...
+menu-file-show-in-finder =
+    .label = Afficher dans Finder
+menu-file-show-file =
+    .label = Localiser le fichier
+menu-file-show-files =
+    .label = Localiser les fichiers
+menu-print =
+    .label = { general-print }
+menu-density =
+    .label = Densité
+add-attachment = Ajouter une pièce jointe
+new-note = Nouvelle note
+menu-add-by-identifier =
+    .label = Ajouter par un identifiant…
+menu-add-attachment =
+    .label = { add-attachment }
+menu-add-standalone-file-attachment =
+    .label = Ajouter un fichier...
+menu-add-standalone-linked-file-attachment =
+    .label = Ajouter un lien vers un fichier…
+menu-add-child-file-attachment =
+    .label = Joindre un fichier…
+menu-add-child-linked-file-attachment =
+    .label = Joindre un lien vers un fichier…
+menu-add-child-linked-url-attachment =
+    .label = Ajouter un lien Web…
+menu-new-note =
+    .label = { new-note }
+menu-new-standalone-note =
+    .label = Nouvelle note indépendante
+menu-new-item-note =
+    .label = Nouvelle note de document
+menu-restoreToLibrary =
+    .label = Restaurer vers la bibliothèque
+menu-deletePermanently =
+    .label = Supprimer définitivement…
+menu-tools-plugins =
+    .label = Extensions
+menu-view-columns-move-left =
+    .label = Déplacer la colonne à gauche
+menu-view-columns-move-right =
+    .label = Déplacer la colonne à droite
+menu-view-hide-context-annotation-rows =
+    .label = Masquer les annotations qui ne correspondent pas
+menu-view-note-font-size =
+    .label = Taille des caractères dans les notes
+menu-view-note-tab-font-size =
+    .label = Taille des caractères dans l'onglet des notes
+menu-show-tabs-menu =
+    .label = Afficher le menu des onglets
+menu-edit-copy-annotation =
+    .label =
+        { $count ->
+            [one] Copier l'annotation
+            [many] Copier { $count } annotations
+           *[other] Copier { $count } annotations
+        }
+main-window-command =
+    .label = Bibliothèque
+main-window-key =
+    .key = L
+zotero-toolbar-tabs-menu =
+    .tooltiptext = Lister tous les onglets
+filter-collections = Filtrer les collections
+zotero-collections-search =
+    .placeholder = { filter-collections }
+zotero-collections-search-btn =
+    .tooltiptext = { filter-collections }
+zotero-tabs-menu-filter =
+    .placeholder = Rechercher dans les onglets
+zotero-tabs-menu-close-button =
+    .title = Fermer l'onglet
+zotero-toolbar-tabs-scroll-forwards =
+    .title = Faire défiler en avant
+zotero-toolbar-tabs-scroll-backwards =
+    .title = Faire défiler en arrière
+toolbar-add-attachment =
+    .tooltiptext = { add-attachment }
+recently-read = Lectures récentes
+collections-menu-show-recently-read =
+    .label = Afficher { recently-read }
+item-menu-remove-from-recently-read =
+    .label = Retirer de { recently-read }…
+items-section-collections-selected =
+    { $count ->
+        [one] { $count } collection sélectionnée
+        [many] { $count } collections sélectionnées
+       *[other] { $count } collections sélectionnées
+    }
+items-section-searches-selected =
+    { $count ->
+        [one] { $count } recherche enregistrée sélectionnée
+        [many] { $count }  recherches enregistrées sélectionnées
+       *[other] { $count }  recherches enregistrées sélectionnées
+    }
+items-section-sources-selected =
+    { $count ->
+        [one] { $count } source sélectionnée
+        [many] { $count } sources sélectionnées
+       *[other] { $count } sources sélectionnées
+    }
+items-section-library-collections =
+    { $count ->
+        [one] { $library } ({ $count } collection sélectionnée)
+        [many] { $library } ({ $count } collections sélectionnées)
+       *[other] { $library } ({ $count } collections sélectionnées)
+    }
+items-section-library-searches =
+    { $count ->
+        [one] { $library } ({ $count }  recherche enregistrée sélectionnée)
+        [many] { $library } ({ $count }  recherches enregistrées sélectionnées)
+       *[other] { $library } ({ $count }  recherches enregistrées sélectionnées)
+    }
+items-section-library-sources =
+    { $count ->
+        [one] { $library } ({ $count } source sélectionnée)
+        [many] { $library } ({ $count } sources sélectionnées)
+       *[other] { $library } ({ $count } sources sélectionnées)
+    }
+items-section-library-recently-read = { $library } ({ recently-read })
+items-section-library = { $library }
+collections-menu-rename =
+    .label = Renommer
+edit-saved-search = Modifier la recherche enregistrée
+collections-menu-edit-search =
+    .label = Modifier la recherche
+collections-menu-duplicate-search =
+    .label = Dupliquer la recherche
+collections-menu-move-collection =
+    .label = Déplacer vers
+collections-menu-copy-collection =
+    .label = Copier vers
+collections-menu-export =
+    .label = Exporter…
+collections-menu-generate-report =
+    .label = Établir un rapport...
+collections-menu-create-bibliography =
+    .label = Créer une bibliographie…
+collections-menu-unsubscribe =
+    .label = Se désabonner...
+collections-menu-delete =
+    .label =
+        { $count ->
+            [one] Supprimer la collection…
+            [many] Supprimer les collections…
+           *[other] Supprimer les collections…
+        }
+collections-menu-delete-with-items =
+    .label =
+        { $count ->
+            [one] Supprimer la collection et ses documents…
+            [many] Supprimer les collections et leurs documents…
+           *[other] Supprimer les collections et leurs documents…
+        }
+collections-menu-delete-search =
+    .label =
+        { $count ->
+            [one] Supprimer la recherche...
+            [many] Supprimer les recherches...
+           *[other] Supprimer les recherches...
+        }
+collections-delete-title =
+    { $count ->
+        [one] Supprimer la collection
+        [many] Supprimer les collections
+       *[other] Supprimer les collections
+    }
+collections-delete-message =
+    { $count ->
+        [one] Voulez-vous vraiment supprimer cette collection?
+        [many] Voulez-vous vraiment supprimer { $count } collections?
+       *[other] Voulez-vous vraiment supprimer { $count } collections?
+    }
+collections-delete-keep-items =
+    { $count ->
+        [one] Les documents contenus dans cette collection ne seront pas supprimés.
+        [many] Les documents contenus dans ces collections ne seront pas supprimés.
+       *[other] Les documents contenus dans ces collections ne seront pas supprimés.
+    }
+collections-delete-with-items-title =
+    { $count ->
+        [one] Supprimer la collection et ses documents
+        [many] Supprimer les collections et leurs documents
+       *[other] Supprimer les collections et leurs documents
+    }
+collections-delete-with-items-message =
+    { $count ->
+        [one] Voulez-vous vraiment supprimer cette collection et déplacer tous les documents qu'elle contient vers la Corbeille?
+        [many] Voulez-vous vraiment supprimer { $count } collections et déplacer tous les documents qu'elles contiennent vers la Corbeille?
+       *[other] Voulez-vous vraiment supprimer { $count } collections et déplacer tous les documents qu'elles contiennent vers la Corbeille?
+    }
+collections-delete-search-title =
+    { $count ->
+        [one] Supprimer la recherche
+        [many] Supprimer les recherches
+       *[other] Supprimer les recherches
+    }
+collections-delete-search-message =
+    { $count ->
+        [one] Are you sure you want to delete this search?
+       *[other] Are you sure you want to delete { $count } searches?
+    }
+item-creator-moveDown =
+    .label = Descendre
+item-creator-moveToTop =
+    .label = Déplacer au début
+item-creator-moveUp =
+    .label = Remonter
+item-menu-viewAttachment =
+    .label =
+        Ouvrir { $numAttachments ->
+            [one]
+                { $attachmentType ->
+                    [pdf] PDF
+                    [epub] EPUB
+                    [snapshot] capture
+                    [note] note
+                   *[other] pièce jointe
+                }
+           *[other]
+                { $attachmentType ->
+                    [pdf] PDFs
+                    [epub] EPUBs
+                    [snapshot] captures
+                    [note] notes
+                   *[other] pièces jointes
+                }
+        } { $openIn ->
+            [tab] dans un nouvel onglet
+            [window] dans une nouvelle fenêtre
+           *[other] { "" }
+        }
+item-menu-add-file =
+    .label = Fichier
+item-menu-add-linked-file =
+    .label = Fichier lié
+item-menu-add-url =
+    .label = Lien Web
+item-menu-change-parent-item =
+    .label = Changer de document parent…
+item-menu-relate-items =
+    .label = Associer les documents
+view-online = Afficher en ligne
+item-menu-option-view-online =
+    .label = { view-online }
+item-button-view-online =
+    .tooltiptext = { view-online }
+file-renaming-file-renamed-to = Fichier renommé en { $filename }
+itembox-button-options =
+    .tooltiptext = Ouvrir le menu contextuel
+itembox-button-merge =
+    .aria-label = Sélectionner une version du champ { $field }
+create-parent-intro = Entrer un DOI, ISBN, PMID, arXiv ID ou bibcode ADS pour identifier ce fichier :
+reader-use-dark-mode-for-content =
+    .label = Utiliser le mode sombre pour le contenu
+update-updates-found-intro-minor = Une mise-à-jour pour { -app-name } est disponible :
+update-updates-found-desc = Il est recommandé d'appliquer cette mise à jour dès que possible.
+import-window =
+    .title = Importer
+import-where-from = D'où voulez-vous importer ?
+import-online-intro-title = Introduction
+import-source-file =
+    .label = Un fichier (BibTeX, RIS, Zotero RDF, etc.)
+import-source-folder =
+    .label = Un dossier de PDFs ou d'autres fichiers
+import-source-online =
+    .label = Importer de { $targetApp } en ligne
+import-options = Options
+import-importing = Importation…
+import-create-collection =
+    .label = Placer les collections et les documents importés dans une nouvelle collection
+import-recreate-structure =
+    .label = Reproduire l'organisation des dossiers sous forme de collections
+import-fileTypes-header = Types de fichiers à importer
+import-fileTypes-pdf =
+    .label = PDFs
+import-fileTypes-other =
+    .placeholder = Autre fichiers sur modèle, séparés par des virgules (par ex. *.jpg, *.png)
+import-file-handling = Gestion des fichiers
+import-file-handling-store =
+    .label = Copier les fichiers dans le répertoire de stockage de { -app-name }
+import-file-handling-link =
+    .label = Lien vers l'emplacement original des fichiers.
+import-fileHandling-description = Les fichiers liés ne peuvent pas être synchronisés par { -app-name }.
+import-online-new =
+    .label = Télécharger uniquement les nouveaux documents ; ne pas mettre à jour les documents importés précédemment
+import-mendeley-username = Nom d’utilisateur
+import-mendeley-password = Mot de passe
+general-error = Erreur
+file-interface-import-error = Une erreur s'est produite lors de la tentative d'importation du fichier sélectionné. Veuillez vérifier que le fichier est valide et réessayez.
+file-interface-import-complete = Importation terminée
+file-interface-items-were-imported =
+    { $numItems ->
+        [0] Aucun document n'a été importé
+        [one] Un document importé
+       *[other] { $numItems } documents importés
+    }
+file-interface-items-were-relinked =
+    { $numRelinked ->
+        [0] Aucun lien n'a été rétabli
+        [one] Un lien rétabli
+       *[other] { $numRelinked } liens rétablis
+    }
+import-mendeley-encrypted = La base de données Mendeley sélectionnée n'est pas lisible, peut-être parce qu'elle est chiffrée. Voir <a data-l10n-name="mendeley-import-kb">Comment importer une bibliothèque Mendeley dans Zotero ?</a> pour plus d'informations.
+file-interface-import-error-translator = Une erreur s'est produite pendant l'importation du fichier sélectionné par  “{ $translator }”. Assurez-vous que le fichier est valide et réessayez.
+import-online-intro = A l'étape suivante, il vous sera demandé de vous connecter à { $targetAppOnline } et d'y donner accès à { -app-name }. Cette autorisation est nécessaire pour importer votre bibliothèque { $targetApp } dans { -app-name }.
+import-online-intro2 = { -app-name } ne verra ni n'enregistrera jamais votre mot de passe { $targetApp }.
+import-online-form-intro = Veuillez entrer vos informations de connexion à { $targetAppOnline }. Cette autorisation est nécessaire pour importer votre bibliothèque { $targetApp } dans { -app-name }.
+import-online-wrong-credentials = Connexion à { $targetApp } refusée. Veuillez vérifier vos informations de connexion et réessayer.
+import-online-blocked-by-plugin = L'importation ne peut pas aboutir avec l'extension { $plugin } installée. Veuillez désactiver cette extension et réessayer.
+import-online-relink-only =
+    .label = Lier à nouveau les citations de Mendeley Desktop
+import-online-relink-kb = { general-more-information }
+import-online-connection-error = { -app-name } n'a pas pu se connecter à { $targetApp }. Veuillez vérifier votre connexion Internet et réessayer.
+tab-title-multiple-collections = Multiple
+items-table-cell-notes =
+    .aria-label =
+        { $count ->
+            [one] { $count } note
+            [many] { $count } notes
+           *[other] { $count } notes
+        }
+items-column-added-by = Ajouté par
+items-column-modified-by = Modifié par
+items-column-last-read = Dernière lecture
+report-error =
+    .label = Signaler l'erreur…
+rtfScan-wizard =
+    .title = Analyse d'un fichier RTF
+rtfScan-introPage-description = { -app-name } peut automatiquement extraire et remettre en forme les citations et insérer une bibliographie dans les fichiers RTF. L'application prend actuellement en charge des variations selon les formats suivants :
+rtfScan-introPage-description2 = Pour démarrer, sélectionnez un fichier RTF en lecture et un fichier de sortie ci-dessous :
+rtfScan-input-file = Fichier en lecture
+rtfScan-output-file = Fichier de sortie
+rtfScan-no-file-selected = Aucun fichier sélectionné
+rtfScan-choose-input-file =
+    .label = { general-choose-file }
+    .aria-label = Choisir un fichier en lecture
+rtfScan-choose-output-file =
+    .label = { general-choose-file }
+    .aria-label = Choisir un fichier de sortie
+rtfScan-intro-page = Introduction
+rtfScan-scan-page = Recherche de citations
+rtfScan-scanPage-description = { -app-name } analyse votre document à la recherche de citations. Veuillez patienter.
+rtfScan-citations-page = Vérification des documents cités
+rtfScan-citations-page-description = Veuillez vérifier la liste des citations reconnues pour vous assurer que { -app-name } a correctement sélectionné les documents correspondants. Toutes les citations non reconnues ou ambiguës doivent être résolues avant de continuer.
+rtfScan-style-page = Mise en forme du document
+rtfScan-format-page = Mise en forme des citations
+rtfScan-format-page-description = { -app-name } traite et met en forme votre fichier RTF. Veuillez patienter.
+rtfScan-complete-page = Analyse du RTF terminé
+rtfScan-complete-page-description = Votre document a désormais été analysé et traité. Veuillez vous assurer qu'il a été mis en forme correctement.
+rtfScan-action-find-match =
+    .title = Sélectionner un document correspondant
+rtfScan-action-accept-match =
+    .title = Accepter cette correspondance
+runJS-title = Exécution JavaScript
+runJS-editor-label = Code :
+runJS-run = Exécuter
+runJS-help = { general-help }
+runJS-completed = réussi
+runJS-result =
+    { $type ->
+        [async] Valeur de retour :
+       *[other] Résultat :
+    }
+runJS-run-async = Exécuter en tant que fonction async
+bibliography-window =
+    .title = { -app-name } - Créer une citation/bibliographie
+bibliography-style-label = { citation-style-label }
+bibliography-locale-label = { language-label }
+bibliography-displayAs-label = Afficher les citations en tant que :
+bibliography-advancedOptions-label = Options avancées
+bibliography-outputMode-label = Mode de création :
+bibliography-outputMode-citations =
+    .label =
+        { $type ->
+            [citation] Citations
+            [note] Notes
+           *[other] Citations
+        }
+bibliography-outputMode-bibliography =
+    .label = Bibliographie
+bibliography-outputMethod-label = Méthode de création :
+bibliography-outputMethod-saveAsRTF =
+    .label = Enregistrer au format RTF
+bibliography-outputMethod-saveAsHTML =
+    .label = Enregistrer au format HTML
+bibliography-outputMethod-copyToClipboard =
+    .label = Copier dans le presse-papiers
+bibliography-outputMethod-print =
+    .label = Imprimer
+bibliography-manageStyles-label = Gérer les styles…
+styleEditor-locatorType =
+    .aria-label = Type de localisateur
+styleEditor-locatorInput = Saisie du localisateur
+styleEditor-citationStyle = { citation-style-label }
+styleEditor-locale = { language-label }
+styleEditor-editor =
+    .aria-label = Éditeur de style
+styleEditor-preview =
+    .aria-label = Aperçu
+publications-intro-page = Mes publications
+publications-intro = Les documents que vous ajoutez dans Mes publications seront publiés dans votre profil sur zotero.org. Si vous choisissez d'inclure des fichiers attachés, ces derniers seront rendus publics sous la licence que vous spécifiez. N'ajoutez que des travaux que vous avez créés vous-mêmes et n'ajoutez des fichiers que si vous avez le droit de les distribuer publiquement et seulement si vous le souhaitez.
+publications-include-checkbox-files =
+    .label = Inclure les fichiers
+publications-include-checkbox-notes =
+    .label = Inclure les notes
+publications-include-adjust-at-any-time = Vous pouvez en tout temps ajuster ce qui s'affiche dans la collection Mes publications.
+publications-intro-authorship =
+    .label = Je suis l'auteur de ce travail.
+publications-intro-authorship-files =
+    .label = Je suis l'auteur de ce travail et j'ai le droit de distribuer les fichiers qui y sont attachés
+publications-sharing-page = Choisissez comment votre travail peut être partagé
+publications-sharing-keep-rights-field =
+    .label = Conserver le contenu existant du champ "Autorisations"
+publications-sharing-keep-rights-field-where-available =
+    .label = Conserver le contenu existant du champ "Autorisations" lorsqu'il est rempli
+publications-sharing-text = Vous pouvez vous réserver tous les droits sur votre travail, le publier sous licence Creative Commons, ou le placer dans le domaine public. Dans tous les cas, le travail sera rendu public via zotero.org.
+publications-sharing-prompt = Comment votre travail peut-il être partagé par les autres ?
+publications-sharing-reserved =
+    .label = Non, ne publier mon travail que sur zotero.org
+publications-sharing-cc =
+    .label = Oui, sous licence Creative Commons
+publications-sharing-cc0 =
+    .label = Oui, et placer mon travail dans le domaine public
+publications-license-page = Choisir une licence Creative Commons
+publications-choose-license-text = Une licence Creative Commons permet aux autres de copier et redistribuer votre travail pour autant qu'il vous crédite correctement, fournisse le lien de la licence et indique si des modifications ont été apportées. Des conditions supplémentaires peuvent être spécifiées plus bas.
+publications-choose-license-adaptations-prompt = Autoriser de modifier et partager votre travail ?
+publications-choose-license-yes =
+    .label = Oui
+    .accesskey = Y
+publications-choose-license-no =
+    .label = Non
+    .accesskey = N
+publications-choose-license-sharealike =
+    .label = Oui, tant que les autres le partage selon les mêmes conditions
+    .accesskey = S
+publications-choose-license-commercial-prompt = Autoriser une utilisation commerciale de votre travail ?
+publications-buttons-add-to-my-publications =
+    .label = Ajouter à Mes publications
+publications-buttons-next-sharing =
+    .label = Suivant : partager
+publications-buttons-next-choose-license =
+    .label = Choisir une licence
+licenses-cc-0 = Versement au domaine public en vertu de CC0 1.0 Universel.
+licenses-cc-by = Licence Creative Commons Attribution 4.0 International
+licenses-cc-by-nd = Licence Creative Commons Attribution - Pas de modification 4.0 International
+licenses-cc-by-sa = Licence Creative Commons Attribution - Partage dans les mêmes conditions 4.0 International
+licenses-cc-by-nc = Licence Creative Commons Attribution - Pas d’utilisation commerciale 4.0 International
+licenses-cc-by-nc-nd = Licence Creative Commons Attribution - Pas d’utilisation commerciale - Pas de modification 4.0 International
+licenses-cc-by-nc-sa = Licence Creative Commons Attribution - Pas d’utilisation commerciale - Partage dans les mêmes conditions 4.0 International
+licenses-cc-more-info = Assurez-vous d'avoir lu les <a data-l10n-name="license-considerations">Avertissements à l’attention des donneurs de licence</a> de Creative Commons avant de placer votre œuvre sous une licence CC. Notez que la licence que vous appliquez ne peut être révoquée, même si vous choisissez ultérieurement des conditions différentes ou si vous cessez de publier l'œuvre.
+licenses-cc0-more-info = Assurez-vous d'avoir lu la <a data-l10n-name="license-considerations">FAQ CC0</a> de Creative Commons avant de placer votre travail sous la licence CC0. Veuillez noter que placer votre travail dans le domaine public est irréversible, même si vous choisissez plus tard des conditions différentes ou si vous cessez la publication de ce travail.
+debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-menuitem =
+    .label = Redémarrer en mode dépannage…
+    .accesskey = i
+restart-in-troubleshooting-mode-dialog-title = { general-restartInTroubleshootingMode }
+restart-in-troubleshooting-mode-dialog-description = { -app-name } va redémarrer avec toutes les extensions désactivées. Quelques fonctionnalités pourraient ne pas répondre correctement tant que le mode dépannage est activé.
+menu-ui-density =
+    .label = Densité
+menu-ui-density-comfortable =
+    .label = Confortable
+menu-ui-density-compact =
+    .label = Compact
+pane-item-details = Détails du document
+pane-info = Info
+pane-abstract = Résumé
+pane-attachments = Fichiers joints
+pane-notes = Notes
+pane-note-info = Info de la note
+pane-libraries-collections = Bibliothèques et collections
+pane-tags = Marqueurs
+pane-related = Connexe
+pane-attachment-info = Info de la pièce jointe
+pane-attachment-preview = Aperçu
+pane-attachment-annotations = Annotations
+pane-header-attachment-associated =
+    .label = Renommer le fichier associé
+item-details-pane =
+    .aria-label = { pane-item-details }
+section-info =
+    .label = { pane-info }
+section-abstract =
+    .label = { pane-abstract }
+section-attachments =
+    .label =
+        { $count ->
+            [one] { $count } pièce jointe
+            [many] { $count } pièces jointes
+           *[other] { $count } pièces jointes
+        }
+section-attachment-preview =
+    .label = { pane-attachment-preview }
+section-attachments-annotations =
+    .label =
+        { $count ->
+            [one] { $count } annotation
+            [many] { $count } annotations
+           *[other] { $count } annotations
+        }
+section-attachments-move-to-trash-message = Voulez-vous vraiment mettre “{ $title }” à la corbeille ?
+section-notes =
+    .label =
+        { $count ->
+            [one] { $count } note
+            [many] { $count } notes
+           *[other] { $count } notes
+        }
+section-libraries-collections =
+    .label = { pane-libraries-collections }
+section-tags =
+    .label =
+        { $count ->
+            [one] { $count } marqueur
+            [many] { $count } marqueurs
+           *[other] { $count } marqueurs
+        }
+section-related =
+    .label = { $count } connexes
+section-attachment-info =
+    .label = { pane-attachment-info }
+section-button-remove =
+    .tooltiptext = { general-remove }
+section-button-add =
+    .tooltiptext = { general-add }
+section-button-expand =
+    .dynamic-tooltiptext = Développer la section
+    .label = Développer la section { $section }
+section-button-collapse =
+    .dynamic-tooltiptext = Réduire la section
+    .label = Réduire la section { $section }
+annotations-count =
+    { $count ->
+        [one] { $count } annotation
+        [many] { $count } annotations
+       *[other] { $count } annotations
+    }
+section-button-annotations =
+    .title = { annotations-count }
+    .aria-label = { annotations-count }
+attachment-preview =
+    .aria-label = { pane-attachment-preview }
+sidenav-info =
+    .tooltiptext = { pane-info }
+sidenav-abstract =
+    .tooltiptext = { pane-abstract }
+sidenav-attachments =
+    .tooltiptext = { pane-attachments }
+sidenav-notes =
+    .tooltiptext = { pane-notes }
+sidenav-note-info =
+    .tooltiptext = { pane-note-info }
+sidenav-attachment-info =
+    .tooltiptext = { pane-attachment-info }
+sidenav-attachment-preview =
+    .tooltiptext = { pane-attachment-preview }
+sidenav-attachment-annotations =
+    .tooltiptext = { pane-attachment-annotations }
+sidenav-libraries-collections =
+    .tooltiptext = { pane-libraries-collections }
+sidenav-tags =
+    .tooltiptext = { pane-tags }
+sidenav-related =
+    .tooltiptext = { pane-related }
+sidenav-main-btn-grouping =
+    .aria-label = { pane-item-details }
+sidenav-reorder-up =
+    .label = Déplacer la section vers le haut
+sidenav-reorder-down =
+    .label = Déplacer la section vers le bas
+sidenav-reorder-reset =
+    .label = Réinitialiser l'ordre des sections
+toggle-item-pane =
+    .tooltiptext = Masquer/afficher le panneau des documents
+toggle-context-pane =
+    .tooltiptext = Masquer/afficher le panneau de contexte
+pin-section =
+    .label = Épingler la section
+unpin-section =
+    .label = Désépingler la section
+collapse-other-sections =
+    .label = Réduire toutes les sections
+expand-all-sections =
+    .label = Développer toutes les sections
+abstract-field =
+    .placeholder = Ajouter un résumé…
+tag-field =
+    .aria-label = { general-tag }
+tagselector-search =
+    .placeholder = Filtrer les marqueurs
+context-notes-search =
+    .placeholder = Rechercher dans les notes
+context-notes-return-button =
+    .aria-label = { general-go-back }
+new-collection = Nouvelle collection…
+menu-new-collection =
+    .label = { new-collection }
+toolbar-new-collection =
+    .tooltiptext = { new-collection }
+new-collection-dialog =
+    .title = Nouvelle collection
+    .buttonlabelaccept = Créer une collection
+new-collection-name = Nom :
+new-collection-create-in = Créer dans :
+show-publications-menuitem =
+    .label = Afficher Mes publications
+attachment-info-title = Titre
+attachment-info-filename = Nom du fichier
+attachment-info-accessed = Date de consultation
+attachment-info-pages = Pages
+attachment-info-modified = Modifié le
+attachment-info-index = Indexé
+attachment-info-convert-note =
+    .label =
+        Convertir en { $type ->
+            [standalone] note indépendante
+            [child] note fille
+           *[unknown] nouvelle note
+        }
+    .tooltiptext = L'ajout de notes à une pièce jointe n'est plus pris en charge, mais vous pouvez modifier cette note en la convertissant en une note séparée.
+section-note-info =
+    .label = { pane-note-info }
+note-info-title = Titre
+note-info-parent-item = Document parent
+note-info-parent-item-button =
+    { $hasParentItem ->
+        [true] { $parentItemTitle }
+       *[false] None
+    }
+    .title =
+        { $hasParentItem ->
+            [true] Voir le document parent dans la bibliothèque
+           *[false] Voir la note dans la bibliothèque
+        }
+note-info-date-created = Créé
+note-info-date-modified = Modifié le
+note-info-size = Taille
+note-info-word-count = Nombre de mots
+note-info-character-count = Nombre de caractères
+item-title-empty-note = Note sans titre
+attachment-preview-placeholder = Aucune pièce jointe à prévisualiser
+attachment-rename-from-parent =
+    .tooltiptext = Renommer le fichier pour correspondre au document parent
+account-log-in = Se connecter
+account-not-logged-in-text = Connectez-vous à votre compte Zotero pour synchroniser vos données.
+account-error-login-session-expired = Votre session a expiré. Veuillez réessayer.
+toggle-preview =
+    .label =
+        { $type ->
+            [open] Masquer
+            [collapsed] Afficher
+           *[unknown] Masquer/afficher
+        } l'aperçu de la pièce jointe
+annotation-image-not-available = [Image non disponible]
+quicksearch-mode =
+    .aria-label = Mode de recherche rapide
+quicksearch-input =
+    .aria-label = Recherche rapide
+    .placeholder = { $placeholder }
+    .aria-description = { $placeholder }
+advanced-search = Recherche avancée
+menuitem-advanced-search =
+    .label = { advanced-search }
+quicksearch-advanced-search-button =
+    .tooltiptext = { advanced-search }
+    .aria-label = { advanced-search }
+advanced-search-close =
+    .tooltiptext = Fermer la recherche avancée
+advanced-search-expand =
+    .tooltiptext = Développer la recherche avancée
+advanced-search-collapse =
+    .tooltiptext = Compacter la recherche avancée
+item-pane-header-view-as =
+    .label = Voir en tant que
+item-pane-header-none =
+    .label = Aucune
+item-pane-header-title =
+    .label = Titre
+item-pane-header-titleCreatorYear =
+    .label = Titre, Créateur, Année
+item-pane-header-bibEntry =
+    .label = Entrée de bibliographie
+item-pane-header-more-options =
+    .label = Plus d'options
+item-pane-message-items-selected =
+    { $count ->
+        [0] Aucun document sélectionné
+        [one] { $count }  document sélectionné
+       *[other] { $count }  documents sélectionnés
+    }
+item-pane-message-collections-selected =
+    { $count ->
+        [one] { $count } collection sélectionnée
+        [many] { $count } collections sélectionnées
+       *[other] { $count } collections sélectionnées
+    }
+item-pane-message-searches-selected =
+    { $count ->
+        [one] { $count } recherche sélectionnée
+        [many] { $count } recherches sélectionnées
+       *[other] { $count } recherches sélectionnées
+    }
+item-pane-message-objects-selected =
+    { $count ->
+        [one] { $count } objet sélectionné
+        [many] { $count } objets sélectionnés
+       *[other] { $count } objets sélectionnés
+    }
+item-pane-message-unselected =
+    { $count ->
+        [0] Aucun document dans cette vue
+        [one] { $count } document dans cette vue
+       *[other] { $count } documents dans cette vue
+    }
+item-pane-message-objects-unselected =
+    { $count ->
+        [0] Aucun objet dans cette vue
+        [one] { $count } objet dans cette vue
+       *[other] { $count } objets dans cette vue
+    }
+item-pane-duplicates-merge-items =
+    .label =
+        { $count ->
+            [one] Fusionner { $count } document
+            [many] Fusionner { $count } documents
+           *[other] Fusionner { $count } documents
+        }
+locate-library-lookup-no-resolver = Vous devez choisir un résolveur dans le panneau { $pane } des préférences { -app-name }
+architecture-win32-warning-message = Passez à { -app-name } 64-bit pour de meilleures performances. Vos données ne seront pas affectées.
+architecture-warning-action = Télécharger { -app-name } version 64-bit
+architecture-x64-on-arm64-message = Vous utilisez { -app-name } en mode émulation. Une version native de { -app-name } s'exécutera plus efficacement.
+architecture-x64-on-arm64-action = Télécharger { -app-name } pour ARM64
+first-run-guidance-authorMenu = { -app-name } vous permet aussi d'indiquer des éditeurs et des traducteurs. Vous pouvez changer un auteur en éditeur ou en traducteur par une sélection dans ce menu.
+first-run-guidance-readAloud = { -app-name } peut désormais vous lire vos documents à haute voix en utilisant des voix au son naturel.
+advanced-search-remove-btn =
+    .tooltiptext = Supprimer la condition
+advanced-search-add-btn =
+    .tooltiptext = Ajouter une condition
+advanced-search-group-btn =
+    .tooltiptext = Ajouter un groupe de conditions
+advanced-search-remove-group-btn =
+    .tooltiptext = Supprimer le groupe
+advanced-search-ungroup-btn =
+    .tooltiptext = Dégrouper les conditions
+advanced-search-result-level-menu =
+    .aria-label = Result type
+advanced-search-result-level-prefix-root =
+    .value = Rechercher
+advanced-search-join-prefix-root =
+    .value = matching
+advanced-search-result-level-any =
+    .label = tous les documents
+advanced-search-result-level-item =
+    .label = documents de niveau supérieur
+advanced-search-result-level-attachment =
+    .label = fichiers joints
+advanced-search-result-level-note =
+    .label = notes
+advanced-search-result-level-annotation =
+    .label = annotations
+advanced-search-binding-menu =
+    .aria-label = Match against the same item
+advanced-search-binding-separate =
+    .label = séparément
+advanced-search-binding-same-attachment =
+    .label = dans le même fichier joint
+advanced-search-binding-same-note =
+    .label = dans la même note
+advanced-search-binding-same-annotation =
+    .label = dans la même annotation
+advanced-search-of-the-following =
+    .value = of the following
+advanced-search-binding-hint-attachment =
+    .value = Ces conditions peuvent correspondre à des fichiers joints distincts.
+advanced-search-binding-hint-note =
+    .value = Ces conditions peuvent correspondre à des notes distinctes.
+advanced-search-binding-hint-annotation =
+    .value = Ces conditions peuvent correspondre à des annotations distinctes.
+advanced-search-level-warning-mixed = Ces conditions ne peuvent pas toutes correspondre au même document, cette recherche ne trouvera donc jamais aucun résultat. Essayez de faire correspondre “{ $matchAny }” de ces conditions, ou choisissez le type de résultat “{ $topLevelItems }”.
+advanced-search-level-warning-unreachable = Cette recherche contient une condition incompatible avec le type de résultat choisi. Sélectionnez le type de résultat “{ $topLevelItems }” ou supprimez la condition incompatible.
+advanced-search-group-warning-unreachable =
+    A condition here cannot be in the same { $entity ->
+        [attachment] attachment
+        [note] note
+       *[annotation] annotation
+    }. Match these separately or remove the incompatible condition.
+advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-bind-same-attachment =
+    .label = Correspondre au même fichier joint
+advanced-search-bind-same-note =
+    .label = Correspondre à la même note.
+advanced-search-bind-same-annotation =
+    .label = Correspondre à la même annotation
+advanced-search-conditions-menu =
+    .aria-label = Condition de recherche
+    .label = { $label }
+advanced-search-operators-menu =
+    .aria-label = Opérateur
+    .label = { $label }
+advanced-search-condition-input =
+    .aria-label = Valeur
+    .label = { $label }
+search-operator-isEmpty = is empty
+search-operator-isNotEmpty = is not empty
+search-conditions-tooltip-fields = Champs :
+search-conditions-collection = Collection (de Zotero)
+search-conditions-savedSearch = Recherche enregistrée
+search-conditions-itemTypeID = Type de document
+search-conditions-tag = Marqueur
+search-conditions-numTags = # of Tags
+search-conditions-numNotes = # of Notes
+search-conditions-numAttachments = # of Attachments
+search-conditions-numAnnotations = # of Annotations
+search-conditions-note = Note
+search-conditions-childNote = Note fille
+search-conditions-creator = Créateur
+search-conditions-thesisType = Type de thèse
+search-conditions-reportType = Type de rapport
+search-conditions-videoRecordingFormat = Format d'enregistrement vidéo
+search-conditions-audioFileType = Type de fichier audio
+search-conditions-audioRecordingFormat = Format d'enregistrement audio
+search-conditions-letterType = Type de lettre
+search-conditions-interviewMedium = Média de l'interview
+search-conditions-manuscriptType = Type de manuscrit
+search-conditions-presentationType = Type de présentation
+search-conditions-mapType = Type de carte
+search-conditions-artworkMedium = Support de l'illustration
+search-conditions-dateModified = Date de modification
+search-conditions-fulltextContent = Contenu de la pièce jointe
+search-conditions-programmingLanguage = Langage de programmation
+search-conditions-fileTypeID = Type de fichier joint
+search-conditions-attachmentStorageType = Attachment Storage Type
+search-conditions-lastRead = Dernière pièce jointe lue
+search-conditions-annotationText = Texte de l'annotation
+search-conditions-annotationComment = Commentaire de l'annotation
+search-conditions-annotationType = Type d'annotation
+search-conditions-annotationColor = Couleur d'annotation
+search-conditions-annotationAuthor = Auteur de l'annotation
+search-conditions-anyField = N’importe quel champ
+search-conditions-titleCreatorYear = Titre, Créateur, Année
+search-conditions-submenu-attachment = Pièce jointe
+search-conditions-submenu-annotation = Annotation
+search-conditions-short-fulltextContent = Contenu
+search-conditions-short-fileTypeID = Type de fichier
+search-conditions-short-attachmentStorageType = Storage Type
+search-conditions-short-lastRead = Dernière lecture
+search-conditions-short-annotationText = Texte
+search-conditions-short-annotationComment = Commentaire
+search-conditions-short-annotationType = Type
+search-conditions-short-annotationColor = Couleur
+search-conditions-short-annotationAuthor = Auteur
+find-pdf-files-added =
+    { $count ->
+        [one] { $count } fichier ajouté
+        [many] { $count } fichiers ajoutés
+       *[other] { $count } fichiers ajoutés
+    }
+select-items-window =
+    .title = Sélectionner les documents
+select-items-dialog =
+    .buttonlabelaccept = Sélectionner
+select-items-convertToStandalone =
+    .label = Convertir en document indépendant
+select-items-convertToStandaloneAttachment =
+    .label =
+        { $count ->
+            [one] Convertir en pièce jointe indépendante
+            [many] Convertir en pièces jointes indépendantes
+           *[other] Convertir en pièces jointes indépendantes
+        }
+select-items-convertToStandaloneNote =
+    .label =
+        { $count ->
+            [one] Convertir en note indépendante
+            [many] Convertir en notes indépendantes
+           *[other] Convertir en notes indépendantes
+        }
+file-type-webpage = Page web
+file-type-image = Image
+file-type-pdf = PDF
+file-type-audio = Audio
+file-type-video = Vidéo
+file-type-presentation = Présentation
+file-type-document = Document
+file-type-ebook = Livre numérique
+attachment-storage-type-storedFile = Stored File
+attachment-storage-type-linkedFile = Linked File
+attachment-storage-type-webLink = Web Link
+post-upgrade-message = Vous avez été mis à niveau vers <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! Découvrez <a data-l10n-name="new-features-link">les nouveautés</a>.
+post-upgrade-remind-me-later =
+    .label = { general-remind-me-later }
+post-upgrade-done =
+    .label = { general-done }
+text-action-paste-and-search =
+    .label = Coller et rechercher
+mac-word-plugin-install-message = Zotero doit avoir accès aux données de Word pour installer l'extension Word.
+mac-word-plugin-install-folder-message = { -app-name } a besoin d'accéder au dossier de démarrage de Word pour installer l'extension Word.
+mac-word-plugin-install-action-button =
+    .label = Installer l'extension Word
+mac-word-plugin-install-remind-later-button =
+    .label = { general-remind-me-later }
+mac-word-plugin-install-dont-ask-again-button =
+    .label = { general-dont-ask-again }
+mac-word-plugin-install-folder-dialog-title = Installez l'extension dans le dossier de démarrage de Word
+mac-word-plugin-install-folder-dialog-button = Installer
+mac-word-plugin-install-wrong-folder-selected = Le dossier proposé doit être sélectionné. Veuillez réessayer sans choisir un autre dossier.
+file-renaming-banner-message = { -app-name } synchronise désormais automatiquement les noms des fichiers joints lorsque vous modifiez des documents.
+file-renaming-banner-documentation-link = { general-learn-more }
+file-renaming-banner-settings-link = { general-settings }
+connector-version-warning = Le connecteur { -app-name } doit être mis à jour pour fonctionner avec cette version de { -app-name }.
+userjs-pref-warning = Certains paramètres de { -app-name } ont été modifiés à l'aide d'une méthode non prise en charge. { -app-name } va les rétablir et redémarrer.
+migrate-extra-fields-progress-message = Migration des nouveaux champs depuis le champ Extra
+search-normalization-progress-message = Indexing items for search
+long-tag-fixer-window-title =
+    .title = Scinder les marqueurs
+long-tag-fixer-button-dont-split =
+    .label = Ne pas scinder
+menu-normalize-attachment-titles =
+    .label = Normaliser les titres de pièces jointes...
+normalize-attachment-titles-title = Normaliser les titres de pièces jointes
+normalize-attachment-titles-text = { -app-name } renomme automatiquement les fichiers sur le disque à l'aide des métadonnées du document parent, mais il utilise des titres distincts et plus simples tels que « Full Text PDF », « Preprint PDF » ou « PDF » pour les pièces jointes principales. La liste des documents reste ainsi plus claire et les informations ne sont pas dupliquées. Dans les anciennes versions de { -app-name }, de même que lors de l'utilisation de certaines extensions, les titres des pièces jointes pouvaient être modifiés inutilement pour correspondre aux noms de fichiers. Souhaitez-vous mettre à jour les pièces jointes sélectionnées afin d'utiliser des titres plus simples ? Seules les pièces jointes principales dont les titres correspondent aux noms de fichier seront modifiées.
+banner-close-button =
+    .aria-label = Ignorer la notification
+plugins-blocked-plugin =
+    .message = Cette extension a été désactivée par { -app-name }.
+data-dir-unsupported-storage = Cela peut se produire si le répertoire de données de { -app-name } se trouve dans un dossier de stockage en nuage (OneDrive, Dropbox, etc.) ou sur un partage réseau.
+login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
+os-keystore-save-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
+        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
+    }
+os-keystore-migrate-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
+        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
+    }
+search-button =
+    .label = Rechercher
+save-search-new-button =
+    .label = Enregistrer la recherche...
+save-search-edit-button =
+    .label = Enregistrer
+save-search-name-title = Enregistrer la recherche
+save-search-name-message = Saisissez un nom pour la recherche enregistrée :
+saved-search-close-confirmation-title = Modification de la recherche enregistrée
+saved-search-close-confirmation-body = Souhaitez-vous enregistrer les modifications que vous avez apportées à cette recherche enregistrée ?
+item-pane-batch-editing-prompt =
+    .aria-label = Modification groupée
+item-pane-batch-editing-enable =
+    .label = Modifier plusieurs documents...
+item-pane-batch-editing-multiple-values-placeholder = Multiple
+item-pane-batch-editing-clear-values = Effacer toutes les valeurs
+item-pane-batch-editing-header =
+    { $count ->
+        [one] Editing { $count } item
+       *[other] Editing { $count } items
+    }
+item-pane-batch-editing-done =
+    .label = { general-done }
+undo-action-edit-metadata =
+    { $count ->
+        [one] Modifier les métadonnées
+        [many] Modifier les métadonnées pour { $count } documents
+       *[other] Modifier les métadonnées pour { $count } documents
+    }
+undo-action-edit-field =
+    { $count ->
+        [one] Edit of “{ $field }”
+       *[other] Edit of “{ $field }” for { $count } Items
+    }
+undo-action-normalize-attachment-titles = Normaliser le titre de la pièce jointe
+undo-action-trash =
+    { $count ->
+        [one] Mettre à la corbeille le document
+        [many] Mettre à la corbeille { $count } documents
+       *[other] Mettre à la corbeille { $count } documents
+    }
+undo-action-restore-items =
+    { $count ->
+        [one] Restaurer le document
+        [many] Restaurer { $count } documents
+       *[other] Restaurer { $count } documents
+    }
+undo-action-trash-collection =
+    { $count ->
+        [one] Mettre à la corbeille la collection
+        [many] Mettre à la corbeille { $count } collections
+       *[other] Mettre à la corbeille { $count } collections
+    }
+undo-action-trash-search =
+    { $count ->
+        [one] Mettre à la corbeille la recherche enregistrée
+        [many] Mettre à la corbeille { $count } recherches enregistrées
+       *[other] Mettre à la corbeille { $count } recherches enregistrées
+    }
+undo-action-restore-collection =
+    { $count ->
+        [one] Restaurer la collection
+        [many] Restaurer { $count } collections
+       *[other] Restaurer { $count } collections
+    }
+undo-action-restore-objects =
+    { $count ->
+        [one] Restaurer l'objet
+        [many] Restaurer { $count } objets
+       *[other] Restaurer { $count } objets
+    }
+undo-action-add-to-collection =
+    { $count ->
+        [one] Ajouter à la collection
+        [many] Ajouter { $count } documents à la collection
+       *[other] Ajouter { $count } documents à la collection
+    }
+undo-action-remove-from-collection =
+    { $count ->
+        [one] Retirer de la collection
+        [many] Retirer { $count } documents de la collection
+       *[other] Retirer { $count } documents de la collection
+    }
+undo-action-move-to-collection =
+    { $count ->
+        [one] Déplacer vers la collection
+        [many] Déplacer { $count } documents vers la collection.
+       *[other] Déplacer { $count } documents vers la collection.
+    }
+undo-action-rename-collection = Renommer la collection
+undo-action-move-collection = Déplacer la collection
+undo-action-add-tag =
+    { $count ->
+        [one] Ajouter le marqueur
+        [many] Ajouter le marqueur à { $count } documents
+       *[other] Ajouter le marqueur à { $count } documents
+    }
+undo-action-change-tag = Change Tag
+undo-action-split-tag = Scinder le marqueur
+undo-action-remove-tag =
+    { $count ->
+        [one] Retirer le marqueur
+        [many] Retirer le marqueur de { $count } documents
+       *[other] Retirer le marqueur de { $count } documents
+    }
+undo-action-remove-tags-from-item =
+    { $count ->
+        [one] Retirer le marqueur
+        [many] Retirer { $count } marqueurs
+       *[other] Retirer { $count } marqueurs
+    }
+undo-action-remove-all-tags = Retirer tous les marqueurs
+undo-action-edit-note = Modifier la note
+undo-action-add-creator = Ajouter un auteur
+undo-action-remove-creator = Supprimer un auteur
+undo-action-edit-creator = Editer un auteur
+undo-action-reorder-creator = Reorder Creator
+undo-action-change-type = Changer le type du document
+undo-action-change-parent-item =
+    { $count ->
+        [one] Change Parent Item
+       *[other] Change Parent for { $count } Items
+    }
+undo-action-convert-to-standalone =
+    { $count ->
+        [one] Convertir en document indépendant
+        [many] Convertir { $count } éléments en document indépendants
+       *[other] Convertir { $count } éléments en documents indépendants
+    }
+undo-action-add-related = Add Related
+undo-action-remove-related = Remove Related
+undo-action-merge-items =
+    { $count ->
+        [one] Fusionner le document
+        [many] Fusionner { $count } documents
+       *[other] Fusionner { $count } documents
+    }
+menu-edit-undo-action = Annuler { $action }
+menu-edit-redo-action = Répéter { $action }

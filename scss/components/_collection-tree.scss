@@ -1,0 +1,183 @@
+// Themed icons -- separate SVGs per color in dark/, light/, white/
+$themed-icons: (
+	collection, duplicates, feed, feed-error, feed-library, feed-updating, groups, library,
+	library-group, publications, trash-full, trash, unfiled, retracted, search,
+);
+
+// Universal icons -- single SVG with context-fill, colored via CSS
+// Map of icon name to fill color variable
+$universal-icons: (
+	recent: --tag-purple,
+);
+
+@mixin -themed-icon-rules {
+	@each $icon in $themed-icons {
+		.icon-css.icon-#{$icon} {
+			@include focus-states using ($color) {
+				@include svgicon($icon, $color, "16", "collection-tree");
+			}
+		}
+	}
+}
+
+@mixin -universal-icon-rules {
+	@each $icon, $fill in $universal-icons {
+		.icon-css.icon-#{$icon} {
+			@include svgicon($icon, "universal", "16", "collection-tree");
+			@include focus-states using ($color) {
+				@if $color == "white" {
+					fill: white;
+				}
+				@else {
+					fill: var(#{$fill});
+				}
+			}
+		}
+	}
+}
+
+@include focus-states using ($color) {
+	@include -themed-icon-rules;
+}
+
+.focus-states-target {
+	.row {
+		@include -themed-icon-rules;
+	}
+}
+
+@include -universal-icon-rules;
+
+.focus-states-target {
+	.row {
+		@include -universal-icon-rules;
+	}
+}
+
+#zotero-collections-pane {
+	min-width: $min-width-collections-pane;
+	max-width: var(--max-width-collections-pane);
+	width: $min-width-collections-pane;
+	flex-grow: 0;
+	flex-shrink: 1;
+	background: var(--material-sidepane);
+}
+
+#zotero-collections-tree-container {
+	height: 5.2em;
+}
+
+#zotero-collections-tree {
+	width: 100%;
+
+	#main-window & {
+		// virtualized-table has a default background (--material-background)
+		// which is what we want in most places, including dialogs that include
+		// #zotero-collections-tree, however main window collection tree is an
+		// exception
+		background: transparent;
+	}
+
+	.virtualized-table {
+		overflow-y: auto;
+		flex: 1 0;
+		text-overflow: ellipsis;
+
+		.row {
+			.icon-css:not(.twisty) {
+				width: 16px;
+				height: 16px;
+			}
+	
+			@each $icon in $themed-icons {
+				.icon-css.icon-#{$icon} {
+					@include focus-states(
+						".row.selected",
+						".virtualized-table:focus-within"
+					) using ($color) {
+						@include svgicon($icon, $color, "16", "collection-tree");
+					}
+				}
+			}
+			
+			&.selected {
+				border-radius: 0;
+
+				&.first-selected {
+					border-top-left-radius: 5px;
+					border-top-right-radius: 5px;
+				}
+
+				&.last-selected {
+					border-bottom-left-radius: 5px;
+					border-bottom-right-radius: 5px;
+				}
+			}
+		}
+
+		.row.flashing:not(.drop) {
+			animation: row-flash 0.2s ease-in-out 2;
+		}
+		
+		.row.flashing.drop {
+			animation: row-flash-selected 0.2s ease-in-out 2;
+		}
+	}
+
+	.virtualized-table-body {
+		padding: 0 8px 8px;
+		scrollbar-color: var(--color-scrollbar) var(--color-scrollbar-background);
+	}
+	
+	// Highlight takes priority over selection
+	.row.highlighted.selected {
+		background: var(--highlight-color, var(--accent-highlight));
+	}
+
+	.cell.primary {
+		display: flex;
+		align-items: center;
+		// Stretch the cell to full height
+		align-self: stretch;
+
+		:not(.cell-text) {
+			flex-shrink: 0
+		}
+
+		.cell-text {
+			flex-shrink: 1;
+			text-overflow: ellipsis;
+			overflow: hidden;
+			margin-left: 4px;
+		}
+
+		input.cell-text {
+			// Stretch the input to full height and be centered vertically
+			align-self: stretch;
+			border: none;
+			outline: color-mix(in srgb, var(--color-accent) 80%, var(--material-background)) solid 2px;
+			padding: 1px 2px;
+			margin-right: 5px;
+			width: 100%;
+			font-size: inherit;
+			pointer-events: auto;
+			background: var(--material-background);
+		}
+
+		.cell-icon {
+			min-width: 16px;
+		}
+	}
+}
+
+// flashing effect applied to the row container when it is about to be expanded on dragover
+// two different background colors are used for containers with .drop class and without
+@keyframes row-flash {
+	0%, 100% { background-color: transparent; }
+	50% { background-color: var(--accent-azure); }
+}
+
+@keyframes row-flash-selected {
+	0%, 100% { background-color: var(--fill-secondary); }
+	50% { background-color:  var(--accent-blue50); }
+}

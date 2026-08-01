@@ -1,0 +1,146 @@
+/*
+	***** BEGIN LICENSE BLOCK *****
+	
+	Copyright © 2025 Corporation for Digital Scholarship
+					 Vienna, Virginia, USA
+					 https://www.zotero.org
+	
+	This file is part of Zotero.
+	
+	Zotero is free software: you can redistribute it and/or modify
+	it under the terms of the GNU Affero General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+	
+	Zotero is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU Affero General Public License for more details.
+	
+	You should have received a copy of the GNU Affero General Public License
+	along with Zotero.  If not, see <http://www.gnu.org/licenses/>.
+	
+	***** END LICENSE BLOCK *****
+*/
+
+"use strict";
+
+{
+	class ScaffoldItemPreviews extends XULElementBase {
+		content = MozXULElement.parseXULToFragment(`
+			<html:div class="switcher">
+				<button label="&lt;" class="previous"/>
+				<html:div><html:span class="current"/>/<html:span class="max"/></html:div>
+				<button label="&gt;" class="next"/>
+			</html:div>
+			<deck/>
+		`);
+		
+		_previews = [];
+
+		_deck;
+		
+		_switcher;
+
+		init() {
+			this._deck = this.querySelector('deck');
+			this._switcher = this.querySelector('.switcher');
+			
+			this.querySelector('.previous').addEventListener('command', () => {
+				this._deck.selectedIndex--;
+				this._renderPreviews();
+			});
+			this.querySelector('.next').addEventListener('command', () => {
+				this._deck.selectedIndex++;
+				this._renderPreviews();
+			});
+		}
+		
+		/**
+		 * @param {any} preItem JSON item
+		 * @param {any} [postItem] JSON item (defaults to cleaned version of preItem)
+		 * @returns {ScaffoldItemPreview}
+		 */
+		createPreviewForItemPair(preItem, postItem) {
+			let preview = document.createXULElement('scaffold-item-preview');
+			preview.itemPair = [preItem, postItem];
+			return preview;
+		}
+		
+		clearPreviews() {
+			this._previews = [];
+			this._deck.selectedIndex = 0;
+			this._deck.replaceChildren();
+			this._updateVisibility();
+		}
+
+		/**
+		 * @param {ScaffoldItemPreview[]} previews
+		 */
+		setPreviews(previews) {
+			this._previews = previews;
+			this._deck.selectedIndex = 0;
+			this._renderPreviews();
+			this._updateVisibility();
+		}
+
+		/**
+		 * @param {ScaffoldItemPreview} preview
+		 */
+		addPreview(preview) {
+			this._previews.push(preview);
+			this._renderPreviews();
+			this._updateVisibility();
+		}
+
+		/**
+		 * @param {any} preItem JSON item
+		 * @param {any} [postItem] JSON item (defaults to cleaned version of preItem)
+		 * @returns {ScaffoldItemPreview}
+		 */
+		addItemPair(preItem, postItem) {
+			let preview = this.createPreviewForItemPair(preItem, postItem);
+			this.addPreview(preview);
+			return preview;
+		}
+		
+		_updateVisibility() {
+			if (this._deck.childElementCount) {
+				if (this.hidden) {
+					let splitterPane = this.closest('splitter + *');
+					if (splitterPane) {
+						// If the pane hasn't been resized, it won't have a fixed width,
+						// so it'll grow when wrapping text is added. Fix its width now.
+						splitterPane.style.width = splitterPane.getBoundingClientRect().width + 'px';
+					}
+					this.hidden = false;
+				}
+			}
+			else {
+				this.hidden = true;
+			}
+		}
+
+		_renderPreviews() {
+			this._deck.replaceChildren(
+				...this._previews.map((preview, i) => {
+					if (i === this._deck.selectedIndex) {
+						return preview;
+					}
+					return document.createXULElement('hbox');
+				})
+			);
+			
+			if (this._deck.children.length > 1) {
+				this._switcher.hidden = false;
+				this._switcher.querySelector('.current').textContent = this._deck.selectedIndex + 1;
+				this._switcher.querySelector('.max').textContent = this._deck.children.length;
+			}
+			else {
+				this._switcher.hidden = true;
+			}
+		}
+	}
+
+	customElements.define('scaffold-item-previews', ScaffoldItemPreviews);
+}

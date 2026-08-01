@@ -1,0 +1,48 @@
+//
+// Button
+// --------------------------------------------------
+
+.btn {
+	font: {
+		family: inherit;
+		size: inherit;
+	}
+	line-height: inherit;
+	color: inherit;
+	text-align: center;
+	-moz-appearance: none;
+
+	&[disabled],
+	&.disabled {
+		opacity: $btn-disabled-opacity;
+	}
+}
+
+.btn-icon {
+	.icon {
+		svg, img {
+			vertical-align: middle;
+		}
+	}
+	span.menu-marker {
+		-moz-appearance: none;
+		display: inline-block;
+		margin-left: 4px;
+	}
+}
+
+button {
+	@media (-moz-platform: macos) {
+		// Prevent ugly non-native button styles on macOS
+		max-height: 25px;
+		margin: 0 -2px -1px;
+	}
+	
+	@media (-moz-platform: linux) {
+		// fx140 form element styling fix
+		appearance: none;
+		border-radius: 5px;
+		border: 1px solid ThreeDShadow;
+		padding: 0.3em 1.5em;
+	}
+}

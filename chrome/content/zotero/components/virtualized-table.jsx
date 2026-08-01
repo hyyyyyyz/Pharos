@@ -1,0 +1,2262 @@
+/*
+	***** BEGIN LICENSE BLOCK *****
+	
+	Copyright © 2019 Corporation for Digital Scholarship
+                     Vienna, Virginia, USA
+					http://zotero.org
+	
+	This file is part of Zotero.
+	
+	Zotero is free software: you can redistribute it and/or modify
+	it under the terms of the GNU Affero General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+	
+	Zotero is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
+	GNU Affero General Public License for more details.
+
+	You should have received a copy of the GNU Affero General Public License
+	along with Zotero.	If not, see <http://www.gnu.org/licenses/>.
+	
+	***** END LICENSE BLOCK *****
+*/
+
+'use strict';
+
+const React = require('react');
+const PropTypes = require('prop-types');
+const cx = require('classnames');
+const WindowedList = require('./windowed-list');
+const Draggable = require('./draggable');
+const { CSSIcon, getCSSIcon } = require('components/icons');
+
+const TYPING_TIMEOUT = 1000;
+// TODO: Move these to CSS variables
+const MINIMUM_ROW_HEIGHT = 20; // px
+const RESIZER_WIDTH = 5; // px
+const COLUMN_MIN_WIDTH = 20;
+const COLUMN_PADDING = 16; // N.B. MUST BE INLINE WITH CSS!!!
+
+const noop = () => 0;
+
+/**
+ * Somewhat corresponds to nsITreeSelection
+ * https://udn.realityripple.com/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsITreeSelection
+ *
+ * @property pivot {Number} The selection "pivot". This is the first item the user selected as part of
+ * 		a ranged select (i.e. shift-select).
+ * @property focused {Number} The currently selected/focused item.
+ * @property count {Number} The number of selected items
+ * @property selected {Set} The set of currently selected items
+ * @property selectEventsSuppressed {Boolean} Controls whether select events are triggered on selection change.
+ */
+class TreeSelection {
+	/**
+	 * @param tree {VirtualizedTable} The tree where selection occurs. Will be used to issue
+	 * updates.
+	 */
+	constructor(tree) {
+		this._tree = tree;
+		Object.assign(this, {
+			pivot: 0,
+			focused: 0,
+			selected: new Set([]),
+			_selectEventsSuppressed: false
+		});
+	}
+
+	/**
+	 * Returns whether the given index is selected.
+	 * @param index {Number} The index is 0-clamped.
+	 * @returns {boolean}
+	 */
+	isSelected(index) {
+		index = Math.max(0, index);
+		return this.selected.has(index);
+	}
+
+	/**
+	 * Determines if the given index is the beginning of a selection block.
+	 * @param {number} index - The index to check.
+	 * @returns {boolean} - True if the index is the beginning of a selection block, false otherwise.
+	 */
+	isFirstRowOfSelectionBlock(index) {
+		return this.isSelected(index) && !this.selected.has(index - 1);
+	}
+	
+	/**
+	 * Checks if the given index is the end of a selection block.
+	 * @param {number} index - The index to check.
+	 * @returns {boolean} - True if the index is the end of a selection block, false otherwise.
+	 */
+	isLastRowOfSelectionBlock(index) {
+		return this.isSelected(index) && !this.selected.has(index + 1);
+	}
+
+	/**
+	 * Toggles an item's selection state, updates focused item to index.
+	 * @param index {Number} The index is 0-clamped.
+	 * @param shouldDebounce {Boolean} Whether the update to the tree should be debounced
+	 */
+	toggleSelect(index, shouldDebounce) {
+		if (!this._tree.props.isSelectable(index)) return;
+		index = Math.max(0, index);
+		if (this.selected.has(index)) {
+			this.selected.delete(index);
+		}
+		else {
+			this.selected.add(index);
+		}
+
+		if (this.selectEventsSuppressed) return;
+
+		let previousFocused = this.focused;
+		this.pivot = index;
+		this.focused = index;
+		if (this._tree.invalidate) {
+			this._tree.invalidateRow(index);
+			// might extend, truncate, merge or split a selection block
+			// so need to invalidate next and previous rows as well
+			this._tree.invalidateRow(index - 1);
+			this._tree.invalidateRow(index + 1);
+			this._tree.invalidateRow(previousFocused);
+		}
+		this._updateTree(shouldDebounce);
+	}
+
+	clearSelection() {
+		this.selected = new Set();
+		this.pivot = 0;
+		if (this.selectEventsSuppressed) return;
+		
+		if (this._tree.invalidate) {
+			this._tree.invalidate();
+		}
+		this._updateTree();
+	}
+
+	/**
+	 * Selects an item, updates focused item to index.
+	 * @param index {Number} The index is 0-clamped.
+	 * @param shouldDebounce {Boolean} Whether the update to the tree should be debounced
+	 * @returns {boolean} False if nothing to select and select handlers won't be called
+	 */
+	select(index, shouldDebounce) {
+		index = Math.max(0, index);
+		if (!this._tree.props.isSelectable(index)) return;
+		if (this.selected.size == 1 && this.isSelected(index)) {
+			this._updateTree(shouldDebounce);
+			return false;
+		}
+
+		let toInvalidate = new Set(this.selected);
+		toInvalidate.add(index);
+		toInvalidate.add(this.focused);
+		this.selected = new Set([index]);
+		this.focused = index;
+		this.pivot = index;
+
+		if (this.selectEventsSuppressed) return true;
+
+		this._tree.scrollToRow(index);
+		this._updateTree(shouldDebounce);
+		if (this._tree.invalidate) {
+			const rowCount = this._tree.props.getRowCount();
+			toInvalidate.forEach((idx) => {
+				// this._updateTree() may change row count
+				if (idx >= rowCount) return;
+				this._tree.invalidateRow(idx);
+			});
+		}
+		return true;
+	}
+
+	_rangedSelect(from, to, augment, isSelectAll) {
+		from = Math.max(0, from);
+		to = Math.max(0, to);
+		if (!augment) {
+			this.selected = new Set();
+		}
+		for (let i = from; i <= to; i++) {
+			if (this._tree.props.isSelectable(i, isSelectAll)) {
+				this.selected.add(i);
+			}
+		}
+	}
+
+	rangedSelect(from, to, augment, isSelectAll) {
+		this._rangedSelect(from, to, augment, isSelectAll);
+
+		if (this.selectEventsSuppressed) return;
+
+		if (this._tree.invalidate) {
+			if (augment) {
+				this._tree.invalidateRange(from, to);
+			}
+			else {
+				this._tree.invalidate();
+			}
+		}
+		this._updateTree();
+	}
+	
+	selectAll() {
+		this.rangedSelect(0, this._tree.props.getRowCount() - 1, false, true);
+	}
+
+	/**
+	 * Performs a shift-select from current pivot to provided index. Updates focused item to index.
+	 * @param index {Number} The index is 0-clamped.
+	 * @param augment {Boolean} Adds to existing selection if true
+	 * @param shouldDebounce {Boolean} Whether the update to the tree should be debounced
+	 */
+	shiftSelect(index, augment, shouldDebounce) {
+		if (!this._tree.props.isSelectable(index)) return;
+		
+		index = Math.max(0, index);
+		let from = Math.min(index, this.pivot);
+		let to = Math.max(index, this.pivot);
+		let oldFocused = this.focused;
+		this.focused = index;
+		let oldSelected = this.selected;
+		if (augment) {
+			oldSelected = new Set(oldSelected);
+		}
+		this._rangedSelect(from, to, augment);
+
+		if (this.selectEventsSuppressed) return;
+
+		let oldEdges = new Set();
+		for (let oldIndex of oldSelected) {
+			if (!oldSelected.has(oldIndex + 1) || !oldSelected.has(oldIndex - 1)) {
+				oldEdges.add(oldIndex);
+			}
+		}
+
+		if (this._tree.invalidate) {
+			for (let index of this.selected) {
+				if (oldSelected.has(index)) {
+					oldSelected.delete(index);
+					
+					// ensure old and new selection block edges are invalidated
+					if (oldEdges.has(index) || !this.selected.has(index - 1) || !this.selected.has(index + 1)) {
+						this._tree.invalidateRow(index);
+					}
+
+					// skip invalidation for already selected rows, except for edges (above)
+					continue;
+				}
+				this._tree.invalidateRow(index);
+			}
+			for (let index of oldSelected) {
+				this._tree.invalidateRow(index);
+			}
+			this._tree.invalidateRow(oldFocused);
+		}
+		this._updateTree(shouldDebounce);
+	}
+
+	/**
+	 * Calls the onSelectionChange prop on the tree
+	 * @param shouldDebounce {Boolean} Whether the update to the tree should be debounced
+	 * @private
+	 */
+	_updateTree(shouldDebounce) {
+		if (!this.selectEventsSuppressed && this._tree.props.onSelectionChange) {
+			this._tree.props.onSelectionChange(this, shouldDebounce);
+			this._tree._setAriaActiveDescendant();
+		}
+	}
+
+	get count() {
+		return this.selected.size;
+	}
+
+	get selectEventsSuppressed() {
+		return this._selectEventsSuppressed;
+	}
+
+	set selectEventsSuppressed(val) {
+		let valChanged = val !== this._selectEventsSuppressed;
+		this._selectEventsSuppressed = val;
+		if (!val && valChanged) {
+			this._updateTree();
+			if (this._tree.invalidate) {
+				this._tree.invalidate();
+			}
+		}
+	}
+}
+
+// Something to return on selection query before tree initialization
+let TreeSelectionStub = {};
+for (const key of Object.getOwnPropertyNames(TreeSelection.prototype)) {
+	TreeSelectionStub[key] = () => 0;
+}
+TreeSelectionStub = Object.assign(TreeSelectionStub, {
+	pivot: 0,
+	focused: 0,
+	count: 0,
+	selected: new Set([]),
+	selectEventsSuppressed: false
+});
+
+/**
+ * A virtualized-table, inspired by https://github.com/bvaughn/react-virtualized
+ *
+ * Uses a custom windowed-list for fast item rendering and
+ * CSS style injection for fast column resizing
+ *
+ * Exposes the windowed-list to the object creator via a ref
+ * and also includes a bunch of helper methods for invalidating
+ * rows, scrolling, etc.
+ *
+ * Any updates to actual rows being drawn have to be told about
+ * to the windowed-list instance. More fundamental changes like the number and
+ * type of columns, window resizes, etc, have to be told about to the
+ * VirtualizedTable instance via forceUpdate()
+ *
+ * Selection is controlled via the .selection property, which is an
+ * instance of TableSelection. Selection changes perform their own row invalidation
+ * on the windowed-list.
+ */
+class VirtualizedTable extends React.Component {
+	constructor(props) {
+		super(props);
+		this.state = {
+			resizing: null
+		};
+		this._typingString = "";
+		this._jsWindowID = `virtualized-table-list-${Zotero.Utilities.randomString(5)}`;
+		this._containerWidth = props.containerWidth || window.innerWidth;
+		this.className = props.className || "";
+		this.firstColumnExtraWidth = (props.firstColumnExtraWidth) - (COLUMN_PADDING / 2); // missing left-padding of the content cell
+		
+		this._columns = new Columns(this);
+		
+		this._renderedTextHeight = this._getRenderedTextHeight();
+		this._rowHeight = this._getRowHeight();
+		this.selection = new TreeSelection(this);
+
+		// Due to how the Draggable element works dragging (for column dragging and for resizing)
+		// is not handled via React events but via native ones attached on `document`
+		// Since React attaches its event handlers on `document` as well
+		// there is no way to prevent bubbling. Thus we have to do custom
+		// handling to prevent header resorting when "mouseup" event is issued
+		// after dragging actions
+		this.isHeaderMouseUp = true;
+		
+		this._isMouseDrag = false;
+
+		this.preventScrollKeys = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", " ", "PageUp", "PageDown"]);
+		this.onSelection = oncePerAnimationFrame(this._onSelection);
+
+		// Create a map of custom row heights (if provided) so `this._renderItem` can apply the correct per-row height
+		this._customRowHeightMap = Object.fromEntries(props.customRowHeights ?? []);
+	}
+
+	static defaultProps = {
+		label: '',
+		role: 'grid',
+		linesPerRow: 1,
+
+		showHeader: false,
+		// Array of column objects like the ones in itemTreeColumns.js
+		columns: [],
+		onColumnSort: noop,
+		onColumnPickerMenu: noop,
+		getColumnPrefs: () => ({}),
+		storeColumnPrefs: noop,
+		staticColumns: false,
+		alternatingRowColors: Zotero.isMac ? ['-moz-OddTreeRow', '-moz-EvenTreeRow'] : null,
+
+		firstColumnExtraWidth: 0,
+
+		// Render with display: none
+		hide: false,
+
+		multiSelect: false,
+
+		// When true, the last selected row can't be toggled off, so the selection
+		// never becomes empty through user action
+		requireSelection: false,
+
+		// When true, the header row of the section currently at the top of the view is
+		// pinned to the top while scrolling (see isSectionHeader)
+		stickySectionHeaders: false,
+		// Returns whether the row at the given index begins a section, i.e., should be
+		// pinned to the top while its section is scrolled through
+		isSectionHeader: () => false,
+
+		onSelectionChange: noop,
+
+		// The below are for arrow-key navigation
+		isSelectable: () => true,
+		getParentIndex: noop,
+		isContainer: noop,
+		isContainerEmpty: noop,
+		isContainerOpen: noop,
+		toggleOpenState: noop,
+
+		// If you want to perform custom key handling it should be in this function
+		// if it returns false then virtualized-table's own key handler won't run
+		onKeyDown: () => true,
+		onKeyUp: noop,
+
+		onDragOver: noop,
+		onDrop: noop,
+
+		// Enter, double-clicking
+		onActivate: noop(),
+
+		onItemContextMenu: noop(),
+	};
+
+	static propTypes = {
+		id: PropTypes.string.isRequired,
+
+		getRowCount: PropTypes.func.isRequired,
+		
+		renderItem: PropTypes.func.isRequired,
+		// Row height specified as lines of text per row. Defaults to 1
+		linesPerRow: PropTypes.number,
+		// Do not adjust for Zotero-defined font scaling
+		disableFontSizeScaling: PropTypes.bool,
+		// An array of two elements for alternating row colors
+		alternatingRowColors: PropTypes.array,
+		// For screen-readers
+		label: PropTypes.string,
+		role: PropTypes.string,
+
+		showHeader: PropTypes.bool,
+		// Array of column objects like the ones in itemTreeColumns.js
+		columns: PropTypes.array,
+		onColumnPickerMenu: PropTypes.func,
+		onColumnSort: PropTypes.func,
+		getColumnPrefs: PropTypes.func,
+		storeColumnPrefs: PropTypes.func,
+		getDefaultColumnOrder: PropTypes.func,
+		// Makes columns unmovable, unsortable, etc
+		staticColumns: PropTypes.bool,
+		// Used for initial column widths calculation
+		containerWidth: PropTypes.number,
+		// If first column is injected with extra stuff, like an item icon
+		// and we need to reserve extra min-width for it, set this prop
+		firstColumnExtraWidth: PropTypes.number,
+
+		// Internal windowed-list ref
+		treeboxRef: PropTypes.func,
+
+		// Render with display: none
+		hide: PropTypes.bool,
+
+		multiSelect: PropTypes.bool,
+
+		requireSelection: PropTypes.bool,
+
+		stickySectionHeaders: PropTypes.bool,
+		isSectionHeader: PropTypes.func,
+
+		onSelectionChange: PropTypes.func,
+
+		// The below are for arrow-key navigation
+		isSelectable: PropTypes.func,
+		getParentIndex: PropTypes.func,
+		isContainer: PropTypes.func,
+		isContainerEmpty: PropTypes.func,
+		isContainerOpen: PropTypes.func,
+		toggleOpenState: PropTypes.func,
+		
+		// A function with signature (index:Number) => result:String which will be used
+		// for find-as-you-type navigation. Find-as-you-type is disabled if prop is undefined.
+		getRowString: PropTypes.func,
+
+		// If you want to perform custom key handling it should be in this function
+		// if it returns false then virtualized-table's own key handler won't run
+		onKeyDown: PropTypes.func,
+		onKeyUp: PropTypes.func,
+
+		onDragOver: PropTypes.func,
+		onDrop: PropTypes.func,
+
+		// Enter, double-clicking
+		onActivate: PropTypes.func,
+		
+		onFocus: PropTypes.func,
+
+		onItemContextMenu: PropTypes.func,
+		customRowHeights: PropTypes.array,
+		getRowHeight: PropTypes.func,
+	};
+
+	// ------------------------ Selection Methods ------------------------- //
+		
+	_preventKeyboardScrolling = (e) => {
+		if (this.preventScrollKeys.has(e.key)) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.nativeEvent) {
+				if (e.nativeEvent.preventDefault) {
+					e.nativeEvent.preventDefault();
+				}
+				if (e.nativeEvent.stopPropagation) {
+					e.nativeEvent.stopPropagation();
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Ensure the tree scrolls when dragging over top and bottom parts of it
+	 */
+	_onDragOver = (e) => {
+		let tree = e.currentTarget;
+		if (tree.id != this.props.id) return;
+		let { y, height } = tree.getBoundingClientRect();
+		let yBott = y + height;
+		let threshold = this._rowHeight / 3;
+		let scrollHeight = this._rowHeight * 3;
+		if (e.clientY - y <= threshold) {
+			// Already at top
+			if (tree.scrollTop === 0) return;
+			let scrollTo = Math.max(tree.scrollTop - scrollHeight, 0);
+			tree.scrollTop = scrollTo;
+		}
+		else if (yBott - e.clientY <= threshold) {
+			// Already at bottom
+			if (tree.scrollTop === tree.scrollHeight - tree.clientHeight) return;
+			let scrollTo = Math.min(
+				tree.scrollTop + scrollHeight,
+				tree.scrollHeight - tree.clientHeight
+			);
+			tree.scrollTop = scrollTo;
+		}
+		this.props.onDragOver && this.props.onDragOver(e)
+	}
+
+	/**
+	 * Handles page up/down jumps
+	 *
+	 * @param {Integer} direction - -1 for up, 1 for down
+	 * @param {Boolean} selectTo
+	 */
+	_onJumpSelect(direction, selectTo, toggleSelection) {
+		if (direction == 1) {
+			const lastVisible = this._jsWindow.getLastVisibleRow();
+			if (this.selection.focused != lastVisible) {
+				return this.onSelection(lastVisible, selectTo, toggleSelection);
+			}
+		}
+		else {
+			const firstVisible = this._jsWindow.getFirstVisibleRow();
+			if (this.selection.focused != firstVisible) {
+				return this.onSelection(firstVisible, selectTo, toggleSelection);
+			}
+		}
+		const height = document.getElementById(this._jsWindowID).clientHeight;
+		const numRows = Math.floor(height / this._rowHeight);
+		let destination = this.selection.focused + (direction * numRows);
+		const rowCount = this.props.getRowCount();
+		destination = Math.min(destination, rowCount - 1);
+		destination = Math.max(0, destination);
+		return this.onSelection(destination, selectTo, toggleSelection);
+	}
+
+	/**
+	 * Handles key down events in the tree's container.
+	 *
+	 * @param {Event} e
+	 */
+	_onKeyDown = (e) => {
+		if (this.props.onKeyDown && this.props.onKeyDown(e) === false) return;
+
+		this._preventKeyboardScrolling(e);
+
+		if (e.altKey) return;
+		
+		const shiftSelect = e.shiftKey;
+		const moveFocused = Zotero.isMac ? e.metaKey : e.ctrlKey;
+		const toggleSelection = shiftSelect && moveFocused;
+		const rowCount = this.props.getRowCount();
+
+		switch (e.key) {
+		case "ArrowUp":
+			let prevSelect = this.selection.focused - 1;
+			while (prevSelect > 0 && !this.props.isSelectable(prevSelect)) {
+				prevSelect--;
+			}
+			prevSelect = Math.max(0, prevSelect);
+			this.onSelection(prevSelect, shiftSelect, toggleSelection, moveFocused, e.repeat);
+			break;
+
+		case "ArrowDown":
+			let nextSelect = this.selection.focused + 1;
+			while (nextSelect < rowCount && !this.props.isSelectable(nextSelect)) {
+				nextSelect++;
+			}
+			nextSelect = Math.min(nextSelect, rowCount - 1);
+			this.onSelection(nextSelect, shiftSelect, toggleSelection, moveFocused, e.repeat);
+			break;
+
+		case "Home":
+			this.onSelection(0, shiftSelect, toggleSelection, moveFocused);
+			break;
+
+		case "End":
+			this.onSelection(rowCount - 1, shiftSelect, toggleSelection, moveFocused);
+			break;
+			
+		case "PageUp":
+			if (!Zotero.isMac) {
+				this._onJumpSelect(-1, shiftSelect, toggleSelection, e.repeat);
+			}
+			else {
+				this._jsWindow.scrollTo(this._jsWindow.scrollOffset - this._jsWindow.getWindowHeight() + this._rowHeight);
+			}
+			break;
+			
+		case "PageDown":
+			if (!Zotero.isMac) {
+				this._onJumpSelect(1, shiftSelect, toggleSelection, e.repeat);
+			}
+			else {
+				this._jsWindow.scrollTo(this._jsWindow.scrollOffset + this._jsWindow.getWindowHeight() - this._rowHeight);
+			}
+			break;
+			
+		// Select All
+		case "a":
+			if (this.props.multiSelect
+					&& !e.shiftKey
+					&& (Zotero.isMac ? (e.metaKey && !e.ctrlKey) : e.ctrlKey)) {
+				this.selection.selectAll();
+			}
+			break;
+			
+		case " ":
+			if (this._typingString.length <= 0) {
+				this.onSelection(this.selection.focused, false, true);
+				return;
+			}
+			break;
+		
+		case "Enter":
+			this._activateNode(e);
+			return;
+		}
+		
+		if (e.key == 'ContextMenu' || (e.key == 'F10' && e.shiftKey)) {
+			let selectedElem = document.querySelector(`#${this._jsWindowID} [aria-selected=true]`);
+			let boundingRect = selectedElem.getBoundingClientRect();
+			this.props.onItemContextMenu(
+				e,
+				window.screenX + boundingRect.left + 50,
+				window.screenY + boundingRect.bottom
+			);
+			return;
+		}
+
+		if (this.props.getRowString && !(e.ctrlKey || e.metaKey) && e.key.length == 1) {
+			this._handleTyping(e.key);
+		}
+		
+		if (shiftSelect || moveFocused) return;
+		
+		switch (e.key) {
+		case Zotero.arrowPreviousKey:
+			const parentIndex = this.props.getParentIndex(this.selection.focused);
+			if (this.props.isContainer(this.selection.focused)
+					&& !this.props.isContainerEmpty(this.selection.focused)
+					&& this.props.isContainerOpen(this.selection.focused)) {
+				this.toggleOpenState(this.selection.focused);
+			}
+			else if (parentIndex != -1) {
+				this.onSelection(parentIndex);
+			}
+			break;
+
+		case Zotero.arrowNextKey:
+			if (this.props.isContainer(this.selection.focused)
+					&& !this.props.isContainerEmpty(this.selection.focused)) {
+				if (!this.props.isContainerOpen(this.selection.focused)) {
+					this.toggleOpenState(this.selection.focused);
+				}
+				else {
+					this.onSelection(this.selection.focused + 1);
+				}
+			}
+			break;
+		}
+	}
+	
+	_handleTyping = (char) => {
+		char = char.toLowerCase();
+		this._typingString += char;
+		let allSameChar = true;
+		for (let i = this._typingString.length - 1; i >= 0; i--) {
+			if (char != this._typingString[i]) {
+				allSameChar = false;
+				break;
+			}
+		}
+		const rowCount = this.props.getRowCount();
+		if (allSameChar) {
+			for (let i = this.selection.focused + 1, checked = 0; checked < rowCount; i++, checked++) {
+				i %= rowCount;
+				let rowString = this.props.getRowString(i);
+				if (rowString && rowString.toLowerCase().indexOf(char) == 0) {
+					if (i != this.selection.focused) {
+						this.scrollToRow(i);
+						this.onSelection(i);
+					}
+					break;
+				}
+			}
+		}
+		else {
+			// Stop at the row before the selection's focus
+			// but don't set a negative stop point, or we'll loop infinitely
+			let stopRow = Math.max(this.selection.focused - 1, 0);
+			for (let i = (this.selection.focused) % rowCount; i != stopRow; i = (i + 1) % rowCount) {
+				let rowString = this.props.getRowString(i);
+				if (rowString.toLowerCase().indexOf(this._typingString) == 0) {
+					if (i != this.selection.focused) {
+						this.scrollToRow(i);
+						this.onSelection(i);
+					}
+					break;
+				}
+			}
+		}
+		clearTimeout(this._typingTimeout);
+		this._typingTimeout = setTimeout(() => {
+			this._typingString = "";
+		}, TYPING_TIMEOUT);
+	}
+	
+	_onDragStart = () => {
+		this._isMouseDrag = true;
+	}
+	
+	_onDragEnd = async () => {
+		// macOS force-click sometimes causes a second mouseup event to be fired some time later
+		// causing a collection change on dragend, so we add a delay here. It shouldn't cause any issues
+		// because isMouseDrag is only used in mouseup handler to exactly prevent from accidentally switching
+		// selection after dragend.
+		if (Zotero.isMac) {
+			await Zotero.Promise.delay(500);
+		}
+		this._isMouseDrag = false;
+	}
+	
+	_handleMouseDown = async (e, index) => {
+		const modifierClick = e.shiftKey || e.ctrlKey || e.metaKey;
+		// All modifier clicks handled in mouseUp per mozilla itemtree convention
+		if (!modifierClick && !this.selection.isSelected(index)) {
+			this._onSelection(index, false, false);
+		}
+		this.focus();
+	}
+
+	// Prevent clicks on buttons in cells from selecting the row
+	_captureMouseUpDown = (event) => {
+		let clickableCell = event.target.closest('.cell.clickable');
+		if (clickableCell) {
+			event.stopPropagation();
+		}
+	};
+
+	_handleContextMenu = async (e, index) => {
+		if (e.target.localName === 'input') {
+			// Do not hijack context menu on inputs, fixes #5374
+			return;
+		}
+		if (!this.selection.isSelected(index)) {
+			this._onSelection(index, false, false);
+		}
+		this.props.onItemContextMenu(e, e.screenX, e.screenY);
+		this.focus();
+	}
+	
+	_handleMouseUp = async (e, index) => {
+		const shiftSelect = e.shiftKey;
+		const augment = e.ctrlKey || e.metaKey;
+		if (this._isMouseDrag || e.button != 0) {
+			// other mouse buttons are ignored
+			this._isMouseDrag = false;
+			return;
+		}
+
+		// Double-click with shift does not trigger dblclick event, so we handle it here
+		if (shiftSelect && e.detail === 2) {
+			this._activateNode(e, [index]);
+		}
+
+		this._onSelection(index, shiftSelect, augment);
+		this.focus();
+	}
+
+	_activateNode = (event, indices) => {
+		indices = indices || Array.from(this.selection.selected);
+		if (!indices.length) return;
+		
+		if (this.props.onActivate) {
+			this.props.onActivate(event, indices);
+		}
+	}
+
+	/**
+	 * Scroll the row into view. Delegates to windowed-list
+	 *
+	 * @param index {Number}
+	 */
+	scrollToRow(index) {
+		if (!this._jsWindow) return;
+		// When a sticky section header is pinned at the top of the view, it overlays the rows
+		// below it. Reserve a row's worth of space so a row scrolled up into view lands below the
+		// pinned header rather than behind it.
+		let topOffset = 0;
+		if (this.props.stickySectionHeaders && !this.props.isSectionHeader(index)
+				&& this._getSectionHeaderIndices().some(i => i < index)) {
+			topOffset = this._rowHeight;
+		}
+		this._jsWindow.scrollToRow(index, false, topOffset);
+	}
+
+	/**
+	 * Updates the selection object
+	 *
+	 * @param {Number} index
+	 *        The index of the item in a full DFS traversal (ignoring collapsed
+	 *        nodes). Ignored if `item` is undefined.
+	 * @param {Boolean} shiftSelect
+	 * 		  If true will select from focused up to index (does not update pivot)
+	 * @param {Boolean} toggleSelection
+	 * 		  If true will add to selection
+	 * @param {Boolean} moveFocused
+	 * 		  Will move focus without adding anything to the selection
+	 */
+	_onSelection = (index, shiftSelect, toggleSelection, moveFocused, shouldDebounce) => {
+		if (this.selection.selectEventsSuppressed) return;
+		
+		if (!this.props.multiSelect && (shiftSelect || toggleSelection || moveFocused)) {
+			return;
+		}
+		else if (shiftSelect) {
+			this.selection.shiftSelect(index, toggleSelection, shouldDebounce);
+		}
+		else if (toggleSelection) {
+			// Don't allow toggling off the last selected row when a selection is required
+			if (this.props.requireSelection
+					&& this.selection.count === 1 && this.selection.isSelected(index)) {
+				return;
+			}
+			this.selection.toggleSelect(index, shouldDebounce);
+		}
+		else if (moveFocused) {
+			let previousFocused = this.selection.focused;
+			this.selection.focused = index;
+			this.selection.pivot = index;
+			this.invalidateRow(previousFocused);
+			this.invalidateRow(index);
+			this.selection._updateTree(shouldDebounce);
+		}
+		// Normal selection
+		else if (!toggleSelection) {
+			// Non-selectable rows (e.g. a sticky library header) are a no-op, including no
+			// scroll-to-row below -- otherwise clicking the header at index 0 jumps to the top
+			if (!this.props.isSelectable(index)) {
+				return;
+			}
+			this.selection.select(index, shouldDebounce);
+		}
+		// If index is not selectable and this is not normal selection we return
+		else if (!this.props.isSelectable(index)) {
+			return;
+		}
+		// None of the previous conditions were satisfied, so nothing changes
+		else {
+			return;
+		}
+
+		this.scrollToRow(index);
+	}
+	
+	// ------------------------ Column Methods ------------------------- //
+
+	_handleResizerDragStart = (index, event) => {
+		if (event.button !== 0) return false;
+		event.stopPropagation();
+		this.isHeaderMouseUp = false;
+		const result = this._getResizeColumns(index);
+		// No resizable columns on the left/right
+		if (!result) return false;
+		
+		this.setState({ resizing: index });
+		
+		let onResizeData = {};
+		const columns = this._getVisibleColumns();
+		for (let i = 0; i < columns.length; i++) {
+			let elem = event.target.parentNode.parentNode.children[i];
+			onResizeData[columns[i].dataKey] = elem.getBoundingClientRect().width;
+		}
+		this._columns.onResize(onResizeData);
+		this._isMouseDrag = true;
+	}
+
+	_handleResizerDrag = (event) => {
+		event.stopPropagation();
+		const result = this._getResizeColumns();
+		if (!result) return;
+		const [aColumn, bColumn, resizingColumn] = result;
+		const a = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(aColumn.dataKey)}`);
+		const b = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(bColumn.dataKey)}`);
+		const resizing = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(resizingColumn.dataKey)}`);
+		const aRect = a.getBoundingClientRect();
+		const bRect = b.getBoundingClientRect();
+		const resizingRect = resizing.getBoundingClientRect();
+		let offset = aRect.left;
+		if (aColumn.dataKey != resizingColumn.dataKey && !Zotero.rtl) {
+			offset += resizingRect.width;
+		}
+		const widthSum = aRect.width + bRect.width;
+		const aColumnPadding = aColumn.iconLabel ? 0 : COLUMN_PADDING;
+		const bColumnPadding = bColumn.iconLabel ? 0 : COLUMN_PADDING;
+		const aMinWidth = (aColumn.minWidth ? aColumn.minWidth : COLUMN_MIN_WIDTH) + aColumnPadding;
+		const bMinWidth = (bColumn.minWidth ? bColumn.minWidth : COLUMN_MIN_WIDTH) + bColumnPadding;
+		const aMaxWidth = widthSum - bMinWidth;
+		const aDragWidth = event.clientX - (RESIZER_WIDTH / 2) - offset;
+		// Constrain the drag position to the min and max widths
+		const aColumnWidth = Math.min(aMaxWidth, Math.max(aMinWidth, aDragWidth));
+		const bColumnWidth = widthSum - aColumnWidth;
+		let onResizeData = {};
+		onResizeData[aColumn.dataKey] = aColumnWidth;
+		onResizeData[bColumn.dataKey] = bColumnWidth;
+		this._columns.onResize(onResizeData);
+	};
+	
+	/**
+	 * Get all columns including hidden ones
+	 */
+	_getColumns() {
+		return this._columns.getAsArray();
+	}
+	
+	_getVisibleColumns() {
+		return this._getColumns().filter(col => !col.hidden);
+	}
+	
+	_getResizeColumns(index) {
+		index = typeof index != "undefined" ? index : this.state.resizing;
+		let resizingColumn, aColumn, bColumn;
+		const columns = this._getVisibleColumns().sort((a, b) => a.ordinal - b.ordinal);
+		aColumn = resizingColumn = columns[index - 1];
+		bColumn = columns[index];
+		if (aColumn.fixedWidth) {
+			for (let i = index - 2; i >= 0; i--) {
+				aColumn = columns[i];
+				if (!aColumn.fixedWidth) break;
+			}
+			if (aColumn.fixedWidth) {
+				// All previous columns are fixed width
+				return;
+			}
+		}
+		if (bColumn.fixedWidth) {
+			for (let i = index + 1; i < columns.length; i++) {
+				bColumn = columns[i];
+				if (!bColumn.fixedWidth) break;
+			}
+			if (bColumn.fixedWidth) {
+				// All following columns are fixed width
+				return;
+			}
+		}
+		if (Zotero.rtl) {
+			return [bColumn, aColumn, resizingColumn];
+		}
+		return [aColumn, bColumn, resizingColumn];
+	}
+
+	/**
+	 * Toggle [title] attribute on cells when text is truncated
+	 * so that a tooltip gets displayed on hover.
+	 * @param event
+	 */
+	_handleMouseOver = (event) => {
+		let elem = event.target;
+		let cell = elem.closest('.cell');
+		if (!cell || elem.classList.contains('cell-icon')) return;
+		let textElem = elem.querySelector('.label, .cell-text');
+		// .label is used in the header, .cell-text on primary cells,
+		// otherwise the .cell element if its immediate child is a text node
+		// should be used.
+		if (!textElem) {
+			if (!elem.childNodes.length || elem.childNodes[0].nodeType != window.Node.TEXT_NODE) return;
+			textElem = elem;
+		}
+		// We need to set the [title] attribute on the .label element in the header
+		if (textElem.classList.contains('label')) elem = textElem;
+		if (textElem.offsetWidth < textElem.scrollWidth) {
+			elem.setAttribute('title', textElem.textContent);
+		}
+		else {
+			elem.removeAttribute('title');
+		}
+	}
+
+	_handleResizerDragStop = (event) => {
+		event.stopPropagation();
+		const result = this._getResizeColumns();
+		if (!result) return;
+		let resizeData = {};
+		for (const column of result) {
+			const elem = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(column.dataKey)}`)
+			resizeData[column.dataKey] = elem.getBoundingClientRect().width;
+		}
+		this._columns.onResize(resizeData, true);
+		this.setState({ resizing: null });
+	}
+		
+	_handleColumnDragStart = (index, event) => {
+		if (event.button !== 0 || this.props.staticColumns) return false;
+		// Remember for sorting
+		this._headerMouseDownIndex = index;
+		this.setState({ draggingColumn: index });
+		this._isMouseDrag = true;
+	}
+
+	_handleColumnDragStop = (event, cancelled) => {
+		if (!cancelled && typeof this.state.draggingColumn == "number") {
+			const { index } = this._findColumnDragPosition(event.clientX);
+			// If inserting before the column that was being dragged
+			// there is nothing to do
+			if (this.state.draggingColumn != index) {
+				const visibleColumns = this._getVisibleColumns();
+				const dragColumn = this._getColumns().findIndex(
+					col => col == visibleColumns[this.state.draggingColumn]);
+				// Insert as final column (before end of list)
+				let insertBeforeColumn = this._getColumns().length;
+				// index == visibleColumns.length if dragged to the end of the view to be ordered
+				// as the final column
+				if (index < visibleColumns.length) {
+					insertBeforeColumn = this._getColumns().findIndex(col => col == visibleColumns[index]);
+				}
+				this._columns.setOrder(dragColumn, insertBeforeColumn);
+			}
+		}
+		this.setState({ draggingColumn: null, dragColumnX: null });
+	}
+
+	_handleColumnDrag = (event) => {
+		const { offsetX } = this._findColumnDragPosition(event.clientX);
+		this.isHeaderMouseUp = false;
+		this.setState({ dragColumnX: offsetX });
+	}
+
+	_handleHeaderMouseUp = (event, dataKey, index) => {
+		if (!this.isHeaderMouseUp || event.button !== 0) {
+			this.isHeaderMouseUp = true;
+			return;
+		}
+		// The mousedown event occurred on a different column so we shouldn't sort
+		if (this._headerMouseDownIndex != index) return;
+		this._columns.toggleSort(this._getColumns().findIndex(column => column.dataKey == dataKey));
+	}
+
+	_findColumnDragPosition(x) {
+		const headerRect = document.querySelector(`#${this.props.id} .virtualized-table-header`).getBoundingClientRect();
+		
+		let coords = Array.from(document.querySelectorAll(`#${this.props.id} .virtualized-table-header .resizer`))
+			.map((elem) => {
+				const rect = elem.getBoundingClientRect();
+				// accounting for resizer offset
+				return rect.x + rect.width/2;
+			});
+		// Adding leftmost position, since there's no left resizer
+		coords.splice(0, 0, headerRect.x);
+		// and the rightmost position for the same reason
+		coords.push(headerRect.x + headerRect.width);
+		
+		let index = 0;
+		let closestVal = Math.abs(coords[index] - x);
+		for (let i = 1; i < coords.length; i++) {
+			let distance = Math.abs(coords[i] - x);
+			if (distance < closestVal) {
+				closestVal = distance;
+				index = i;
+			}
+		}
+		return {index, offsetX: coords[index] - headerRect.x};
+	}
+
+	componentDidMount() {
+		this._jsWindow = new WindowedList(this._getWindowedListOptions());
+		this._jsWindow.initialize();
+		this._jsWindow.render();
+		this._updateWidth();
+		this.props.treeboxRef && this.props.treeboxRef(this._jsWindow);
+	
+		this._setXulTooltip();
+
+		this._topDiv.style.setProperty("--first-column-extra-width", `${this.firstColumnExtraWidth}px`);
+		this._resizeObserver = new ResizeObserver(() => this.rerender());
+		this._resizeObserver.observe(this._jsWindow.targetElement);
+
+		if (this.props.stickySectionHeaders) {
+			this._jsWindow.targetElement.addEventListener('scroll', this._updateStickySectionHeader, { passive: true });
+			// The pinned header overlays the rows, so reject drops on it rather than letting
+			// them reach the body's drop handler (which would treat them as a list drop)
+			this._stickyHeader.addEventListener('dragover', this._rejectStickyHeaderDrop);
+			this._stickyHeader.addEventListener('drop', this._rejectStickyHeaderDrop);
+			this._updateStickySectionHeader();
+		}
+	}
+
+	componentWillUnmount() {
+		this._resizeObserver?.disconnect();
+		if (this.props.stickySectionHeaders && this._jsWindow) {
+			this._jsWindow.targetElement.removeEventListener('scroll', this._updateStickySectionHeader);
+		}
+		this._jsWindow.destroy();
+	}
+	
+	componentDidUpdate(prevProps) {
+		if (this.props.id !== prevProps.id
+				|| this.props.columns !== prevProps.columns) {
+			this._columns = new Columns(this);
+			this.forceUpdate();
+		}
+	}
+
+	/**
+	 * Make HTML [title] attribute display a tooltip. Without this
+	 * HTML [title] attribute when embedded in a XUL window does not
+	 * trigger a tooltip to be displayed
+	 * @private
+	 */
+	_setXulTooltip() {
+		// Make sure container xul element has a tooltip set
+		let xulElem = this._topDiv;
+		while (xulElem && xulElem.namespaceURI !== "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul") {
+			xulElem = xulElem.parentElement;
+		}
+		if (!xulElem) return;
+		if (xulElem.getAttribute('tooltip') != 'html-tooltip') {
+			xulElem.setAttribute('tooltip', 'html-tooltip');
+		}
+		if (document.querySelector('tooltip#html-tooltip')) return;
+		let tooltip = document.createXULElement('tooltip');
+		tooltip.id = 'html-tooltip';
+		tooltip.addEventListener('popupshowing', function(e) {
+			let tooltipTitleNode = tooltip.triggerNode?.closest('div *[title], iframe *[title], browser *[title]');
+			if (tooltipTitleNode) {
+				this.setAttribute('label', tooltipTitleNode.getAttribute('title'));
+				return;
+			}
+			e.preventDefault();
+		});
+
+		let popupset = document.querySelector('popupset');
+		if (!popupset) {
+			popupset = document.createXULElement('popupset');
+			document.documentElement.appendChild(popupset);
+		}
+		popupset.appendChild(tooltip);
+	}
+	
+	_getWindowedListOptions() {
+		return {
+			getItemCount: this.props.getRowCount,
+			itemHeight: this._rowHeight,
+			renderItem: this._renderItem.bind(this),
+			targetElement: document.getElementById(this._jsWindowID),
+			customRowHeights: this.props.customRowHeights ?? []
+		};
+	}
+
+	_renderItem(index, oldElem = null) {
+		let node = this.props.renderItem(index, this.selection, oldElem, this._getColumns());
+		if (!node.dataset.eventHandlersAttached) {
+			node.dataset.eventHandlersAttached = true;
+			node.addEventListener('dragstart', e => this._onDragStart(e, index), { passive: true });
+			node.addEventListener('dragend', e => this._onDragEnd(e, index), { passive: true });
+			node.addEventListener('mousedown', e => this._handleMouseDown(e, index), { passive: true });
+			node.addEventListener('mouseup', this._captureMouseUpDown, { capture: true });
+			node.addEventListener('mousedown', this._captureMouseUpDown, { capture: true });
+			node.addEventListener('contextmenu', e => this._handleContextMenu(e, index), { passive: true });
+			node.addEventListener('mouseup', e => this._handleMouseUp(e, index), { passive: true });
+			node.addEventListener('dblclick', e => this._activateNode(e, [index]), { passive: true });
+		}
+		node.style.height = (index in this._customRowHeightMap ? this._customRowHeightMap[index] : this._rowHeight) + 'px';
+		node.id = this.props.id + "-row-" + index;
+		// Row striping restarts at each section header, so every section's first row is
+		// the same shade (see _sectionRelativeIndex); without section headers this is just
+		// the row index
+		let stripeIndex = this._sectionRelativeIndex(index);
+		node.classList.toggle('odd', stripeIndex % 2 == 1);
+		node.classList.toggle('even', stripeIndex % 2 == 0);
+		if (!node.hasAttribute('role')) {
+			node.setAttribute('role', 'row');
+		}
+		if (this.selection.isSelected(index)) {
+			node.setAttribute('aria-selected', true);
+		}
+		else {
+			node.removeAttribute('aria-selected');
+		}
+		return node;
+	}
+
+	_renderHeaderCells = () => {
+		return this._getVisibleColumns().map((column, index) => {
+			let columnName = formatColumnName(column);
+			let label = columnName;
+			// Allow custom icons to be used in column headers
+			if (column.iconPath) {
+				column.iconLabel = <span
+					className="icon icon-bg"
+					style={{backgroundImage: `url("${column.iconPath}")`}}>
+				</span>;
+			}
+			if (column.iconLabel) {
+				label = column.iconLabel;
+			}
+			if (column.htmlLabel) {
+				if (React.isValidElement(column.htmlLabel)) {
+					label = column.htmlLabel;
+				} else if (typeof column.htmlLabel === "string") {
+					label = <span dangerouslySetInnerHTML={{ __html: column.htmlLabel }} />;
+				}
+			}
+			let resizer = (<Draggable
+				onDragStart={this._handleResizerDragStart.bind(this, index)}
+				onDrag={this._handleResizerDrag}
+				onDragStop={this._handleResizerDragStop}
+				className={`resizer ${column.dataKey}`}
+				key={column.label + '-resizer'}>
+				<div/>
+			</Draggable>);
+			if (index == 0) {
+				resizer = "";
+			}
+			let sortIndicator = "";
+			if (!column.iconLabel && column.sortDirection) {
+				sortIndicator = <CSSIcon name="sort-indicator" className={"icon-8 sort-indicator " + (column.sortDirection === 1 ? "ascending" : "descending")} />;
+			}
+			const className = cx("cell", column.className, { dragging: this.state.draggingColumn == index },
+				{ "cell-icon": !!column.iconLabel });
+			return (<Draggable
+				onDragStart={this._handleColumnDragStart.bind(this, index)}
+				onDrag={this._handleColumnDrag}
+				onDragStop={this._handleColumnDragStop}
+				className={className}
+				delay={500}
+				key={columnName + '-draggable'}>
+				<div
+					key={columnName}
+					onMouseUp={e => this._handleHeaderMouseUp(e, column.dataKey, index)}>
+					{resizer}
+					<span
+						key={columnName + '-label'}
+						className={`label ${column.dataKey}`}
+						{...(column.iconLabel ? { title: columnName } : {})}
+						>
+						{label}
+					</span>
+					{sortIndicator}
+				</div>
+			</Draggable>);
+		});
+	}
+		
+	render() {
+		let header = "";
+		let columnDragMarker = "";
+		if (this.props.columns.length && this.props.showHeader) {
+			const headerCells = this._renderHeaderCells();
+			const headerClassName = cx("virtualized-table-header", { "static-columns": this.props.staticColumns });
+			header = (<div
+				className={headerClassName}
+				onContextMenu={this.props.onColumnPickerMenu}>
+				{headerCells}
+			</div>);
+			if (typeof this.state.dragColumnX == 'number') {
+				columnDragMarker = <div className="column-drag-marker" style={{ left: this.state.dragColumnX }} />;
+			}
+		}
+		let props = {
+			onKeyDown: this._onKeyDown,
+			onKeyUp: e => this.props.onKeyUp && this.props.onKeyUp(e),
+			onDragOver: this._onDragOver,
+			onDrop: e => this.props.onDrop && this.props.onDrop(e),
+			onFocus: e => this.props.onFocus && this.props.onFocus(e),
+			onMouseOver: e => this._handleMouseOver(e),
+			className: cx(["virtualized-table",
+				// For selected items icon color, see scss mixin svgicon and focus-states
+				"focus-states-target",
+				{
+				resizing: this.state.resizing,
+				'multi-select': this.props.multiSelect
+			},
+				this.className
+			]),
+			id: this.props.id,
+			ref: ref => this._topDiv = ref,
+			tabIndex: 0,
+			role: this.props.role,
+			// XUL's chromedir attribute doesn't work with CSS :dir selectors,
+			// so we'll manually propagate the locale's script direction to the
+			// table.
+			dir: Zotero.Locale.defaultScriptDirection(Zotero.locale),
+		};
+		if (this.props.hide) {
+			props.style = { display: "none" };
+		}
+		if (this.props.label) {
+			props['aria-label'] = this.props.label;
+		}
+		if (this.props.columns.length && this.props.showHeader) {
+			props['aria-multiselectable'] = this.props.multiSelect;
+			props['aria-colcount'] = this._getVisibleColumns().length;
+		}
+		if (this.props.role == 'treegrid') {
+			props['aria-readonly'] = true;
+		}
+		let jsWindowProps = {
+			id: this._jsWindowID,
+			// Reserve a scrollbar gutter when there are sticky section headers (see CSS), so the
+			// scrollbar doesn't float over the content. Without it a macOS overlay scrollbar
+			// overlaps the rows, and the opaque pinned header -- which must paint above the rows
+			// to occlude them, and so above the scrollbar -- covers the scrollbar's edge.
+			className: "virtualized-table-body"
+				+ (this.props.stickySectionHeaders ? " has-sticky-section-headers" : ""),
+			onFocus: (e) => {
+				if (e.target.id == this._jsWindowID) {
+					// Focus should always remain on the list itself.
+					this._topDiv.focus();
+				}
+			},
+			tabIndex: -1,
+		};
+		return (
+			<div {...props}>
+				{columnDragMarker}
+				{header}
+				<div {...jsWindowProps}>
+					{/* Pinned copy of the current section's header. Lives inside the scrolling
+					    body (as its first child, before the windowed-list) and pins with
+					    position: sticky, so its width tracks the body's content box automatically
+					    and it lines up with the rows without any JS geometry. */}
+					{this.props.stickySectionHeaders
+						&& <div
+							className="virtualized-table-sticky-section-header"
+							ref={ref => this._stickyHeader = ref}
+							aria-hidden="true"
+						>
+							<div
+								className="virtualized-table-sticky-section-header-content"
+								ref={ref => this._stickyHeaderContent = ref}
+							/>
+						</div>}
+				</div>
+			</div>
+		);
+	}
+
+	/**
+	 * Invalidates the underlying windowed-list
+	 */
+	invalidate() {
+		if (!this._jsWindow) return;
+		this._jsWindow.invalidate();
+		this._updateWidth();
+		this._refreshStickySectionHeader();
+	}
+
+	/**
+	 * Rerenders/renders the underlying windowed-list. Use for container size changes
+	 * to render missing items and update widths
+	 */
+	rerender = () => {
+		if (!this._jsWindow) return;
+		this._jsWindow.render();
+		this._updateWidth();
+		this._refreshStickySectionHeader();
+	}
+
+	// ------------------------ Sticky Section Headers ------------------------ //
+
+	/**
+	 * Make a drop on the pinned header a no-op. Not preventing the default on dragover leaves
+	 * it an invalid drop target (so no drop fires), and stopping propagation keeps the event
+	 * from the body's handlers, which would otherwise allow the drop and treat it as a drop on
+	 * the list. The header occludes a row, but dropping on it shouldn't act on that row.
+	 */
+	_rejectStickyHeaderDrop = (e) => {
+		e.stopPropagation();
+		if (e.type == 'dragover' && e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'none';
+		}
+	}
+
+	/**
+	 * The set of section-header rows can change whenever the row model changes, so drop
+	 * the cached indices and repin. Called after the list is invalidated/rerendered.
+	 */
+	_refreshStickySectionHeader() {
+		if (!this.props.stickySectionHeaders) return;
+		this._sectionHeaderIndices = null;
+		this._stickyHeaderIndex = null;
+		this._updateStickySectionHeader();
+	}
+
+	/**
+	 * The stripe index of a row, so striping restarts at each section header. The header
+	 * counts as the section's first (unstriped) row, so the data row right below it is
+	 * striped; subsequent rows alternate. Without section headers this is just the row
+	 * index, preserving the normal whole-list striping (first row unstriped).
+	 */
+	_sectionRelativeIndex(index) {
+		let base = -1;
+		for (let headerIndex of this._getSectionHeaderIndices()) {
+			if (headerIndex <= index) {
+				base = headerIndex;
+			}
+			else {
+				break;
+			}
+		}
+		// No header above: stripe from the top (first row unstriped). With a header above,
+		// the header is the unstriped row 0, so the row below it (index - base == 1) is striped.
+		return base === -1 ? index : index - base;
+	}
+
+	/**
+	 * Indices of all section-header rows, ascending. Cached until the row model changes.
+	 */
+	_getSectionHeaderIndices() {
+		// Only trees that opt into section headers have them
+		if (!this.props.stickySectionHeaders) {
+			return [];
+		}
+		if (this._sectionHeaderIndices) {
+			return this._sectionHeaderIndices;
+		}
+		let indices = [];
+		let count = this.props.getRowCount();
+		for (let i = 0; i < count; i++) {
+			if (this.props.isSectionHeader(i)) {
+				indices.push(i);
+			}
+		}
+		this._sectionHeaderIndices = indices;
+		return indices;
+	}
+
+	/**
+	 * Pin the header of the section currently at the top of the view, pushing it up as
+	 * the next section's header scrolls into it, and reuse the consumer's renderItem so the
+	 * pinned copy matches the real header row's appearance.
+	 *
+	 * The pinned header is the first child of the scrolling body and stays put via position:
+	 * sticky, taking its width from the body's content box so it lines up with the rows. The
+	 * outer element has zero height (so it adds no space to the flow); the inner (opaque)
+	 * element holds the rendered header, overflows downward over the rows, and is the part that
+	 * translates, so a header pushed up by the next section is clipped at the top of the body
+	 * (by the body's own overflow) rather than spilling over the column header.
+	 */
+	_updateStickySectionHeader = () => {
+		if (!this.props.stickySectionHeaders || !this._stickyHeader || !this._jsWindow) {
+			return;
+		}
+		let clip = this._stickyHeader;
+		let content = this._stickyHeaderContent;
+		let headerIndices = this._getSectionHeaderIndices();
+		let scrollTop = this._jsWindow.targetElement.scrollTop;
+		// The section in view is the last header at or above the top of the view; the
+		// next header (if any) is what pushes it up
+		let currentIndex = -1;
+		let nextIndex = -1;
+		for (let index of headerIndices) {
+			if (this._jsWindow._getItemPosition(index) <= scrollTop) {
+				currentIndex = index;
+			}
+			else {
+				nextIndex = index;
+				break;
+			}
+		}
+		// Show the pinned copy only once the header row has scrolled up past the top edge of
+		// the view
+		let stuck = currentIndex != -1
+			&& scrollTop > this._jsWindow._getItemPosition(currentIndex);
+		if (!stuck) {
+			clip.style.display = 'none';
+			this._stickyHeaderIndex = null;
+			return;
+		}
+		clip.style.display = '';
+		clip.classList.add('stuck');
+		// Re-render only when the pinned section changes. Use _renderItem (not the raw
+		// renderItem prop) so the pinned copy gets the same post-processing as a real row
+		// (e.g. the tree's indent/twisty spacer), then drop its id to avoid duplicating the
+		// real row's.
+		if (this._stickyHeaderIndex !== currentIndex) {
+			this._stickyHeaderIndex = currentIndex;
+			let node = this._renderItem(currentIndex);
+			node.removeAttribute('id');
+			// Strip the focus ring: focus defaults to row 0, which can be a header, but a
+			// pinned header shouldn't show focus
+			node.classList.remove('focused');
+			content.textContent = '';
+			content.appendChild(node);
+		}
+		// Geometry is all CSS now: the clip is the first child of the scrolling body, has zero
+		// height (so it takes no space in the flow and the rows below aren't shifted down), and
+		// pins itself with position: sticky. Its content overflows downward over the rows and
+		// gets its width from the body's content box, so it lines up with the real rows.
+		// Push the pinned header up as the next section's header approaches the top
+		let translateY = 0;
+		if (nextIndex != -1) {
+			let nextTop = this._jsWindow._getItemPosition(nextIndex) - scrollTop;
+			if (nextTop < this._rowHeight) {
+				translateY = nextTop - this._rowHeight;
+			}
+		}
+		content.style.transform = `translateY(${translateY}px)`;
+	}
+	
+	updateFontSize = () => {
+		if (this.props.disableFontSizeScaling) {
+			Zotero.warn("Attempting to update font size on a VirtualizedTable with a font scaling "
+				+ "disabled. Change the prop instead.");
+			return;
+		}
+		this._rowHeight = this._getRowHeight();
+		
+		if (!this._jsWindow) return;
+		this._jsWindow.update(this._getWindowedListOptions());
+		this._jsWindow.invalidate();
+	};
+
+	/**
+	 * @param customRowHeights an array of tuples specifying row index and row height: e.g. [[1, 10], [5, 10]]
+	 */
+	updateCustomRowHeights = (customRowHeights=[]) => {
+		this._customRowHeightMap = Object.fromEntries(customRowHeights);
+		return this._jsWindow.update({customRowHeights});
+	};
+	
+	_getRowHeight() {
+		if (this.props.getRowHeight) {
+			return this.props.getRowHeight(this);
+		}
+		let rowHeight = this.props.linesPerRow * this._renderedTextHeight;
+		if (!this.props.disableFontSizeScaling) {
+			rowHeight *= Zotero.Prefs.get('fontSize');
+		}
+		
+		rowHeight += Zotero.Prefs.get('uiDensity') === 'comfortable' ? 11 : 5;
+
+		// @TODO: Check row height across platforms and remove commented code below
+		// padding
+		// This is weird, but Firefox trees always had different amount of padding on
+		// different OSes
+		// if (Zotero.isMac) {
+		// 	rowHeight *= 1.4;
+		// }
+		// else if (Zotero.isWin) {
+		// 	rowHeight *= 1.2;
+		// }
+		// else {
+		// 	rowHeight *= 1.1;
+		// }
+		rowHeight = Math.round(Math.max(MINIMUM_ROW_HEIGHT, rowHeight));
+		return rowHeight;
+	}
+
+	_getRenderedTextHeight() {
+		let div = document.createElement('div');
+		div.style.visibility = "hidden";
+		div.style.lineHeight = "1.3333333333333333";
+		div.textContent = "Zotero";
+		document.documentElement.appendChild(div);
+		let height = window.getComputedStyle(div).height;
+		document.documentElement.removeChild(div);
+		return parseFloat(height.split('px')[0]);
+	}
+	
+	_updateWidth() {
+		if (!this.props.showHeader) return;
+		const jsWindow = document.querySelector(`#${this._jsWindowID} .windowed-list`);
+		if (!jsWindow) return;
+		const header = document.querySelector(`#${this.props.id} .virtualized-table-header`);
+		const scrollbarWidth = jsWindow.parentElement.getBoundingClientRect().width - jsWindow.parentElement.clientWidth;
+
+		header.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
+	}
+
+	/**
+	 * Rerender a row in the underlying windowed-list
+	 * @param index
+	 */
+	invalidateRow(index) {
+		if (!this._jsWindow) return;
+		this._jsWindow.rerenderItem(index);
+	}
+
+	/**
+	 * Rerender a row range in the underlying windowed-list
+	 * @param startIndex
+	 * @param endIndex
+	 */
+	invalidateRange(startIndex, endIndex) {
+		if (!this._jsWindow) return;
+		for (; startIndex <= endIndex; startIndex++) {
+			this._jsWindow.rerenderItem(startIndex);
+		}
+	}
+
+	/**
+	 * When performing custom event handling on rendered rows this allows to ensure that the
+	 * focus returns to the virtualized table for kb selection and other event handling
+	 */
+	focus() {
+		setTimeout(() => this._topDiv.focus());
+	}
+	
+	
+	rowIsVisible(row) {
+		if (!this._jsWindow) return false;
+		return row >= this._jsWindow.getFirstVisibleRow()
+			&& row <= this._jsWindow.getLastVisibleRow();
+	}
+
+	toggleOpenState(index, ...args) {
+		let onToggleOpenState = this.props.toggleOpenState;
+		if (typeof onToggleOpenState == 'function') return onToggleOpenState(index, ...args);
+	}
+
+	async _resetColumns() {
+		this._columns = new Columns(this);
+		return new Promise((resolve) => {
+			this.forceUpdate(() => {
+				this._jsWindow.invalidate();
+				resolve();
+			});
+		})
+	}
+	
+	// Set aria-activedescendant on table container
+	_setAriaActiveDescendant() {
+		if (!this.selection.count) return;
+		let selected = this._jsWindow?.getElementByIndex(this.selection.focused);
+		if (selected) {
+			this._topDiv.setAttribute("aria-activedescendant", selected.id);
+		}
+	}
+}
+
+/**
+ * VirtualizedTree wraps VirtualizedTable to provide common tree affordances:
+ * - Adds an indent spacer based on depth to the first visible cell
+ * - Adds a twisty for non-empty containers
+ * - Sets tree-specific ARIA attributes on rows and the container
+ * - Wires twisty mouse handlers to toggle container open state
+ *
+ * Consumers should provide isContainer/isContainerEmpty/isContainerOpen/onToggleOpenState
+ * and getParentIndex(index) to compute ancestry.
+ */
+class VirtualizedTree extends VirtualizedTable {
+	static propTypes = { ...VirtualizedTable.propTypes,
+		getParentIndex: PropTypes.func.isRequired,
+		isContainer: PropTypes.func.isRequired,
+		isContainerEmpty: PropTypes.func.isRequired,
+		isContainerOpen: PropTypes.func.isRequired,
+		onToggleOpenState: PropTypes.func.isRequired,
+	}
+
+	_toggledOpenStateIndex = null;
+
+	constructor(props) {
+		super(props);
+		this.className += " virtualized-tree";
+		this.firstColumnExtraWidth += 16; // 16px for twisty
+	}
+
+	toggleOpenState(index, ...args) {
+		this._toggledOpenStateIndex = index;
+		return this.props.onToggleOpenState(index, ...args);
+	}
+
+	_renderItem(index, oldElem=null) {
+		let node = super._renderItem(index, oldElem);
+		if (!(node instanceof (node?.ownerDocument?.defaultView || window).Element)) {
+			return node;
+		}
+		node = this._addIndentAndTwisty(node, index);
+		this._setRowAria(node, index);
+		return node;
+	}
+
+	_getDepth(index) {
+		let depth = 0;
+		try {
+			let parent = typeof this.props.getParentIndex == 'function' ? this.props.getParentIndex(index) : -1;
+			while (parent != -1 && typeof parent == 'number') {
+				depth++;
+				parent = this.props.getParentIndex(parent);
+			}
+		}
+		catch (e) {}
+		return depth;
+	}
+	
+	/**
+	 * Adds an indent spacer and twisty to the first cell of the node
+	 * 
+	 * We add it to the first cell instead of as a separate pseudo-cell or just elements before
+	 * the first cell because otherwise it messes with column spacing.
+	 * 
+	 * @param node {HTMLElement} The rendered item row
+	 * @param index {number} The index of the node being rendered
+	 * @returns {HTMLElement}
+	 */
+	_addIndentAndTwisty(node, index) {
+		let firstCell = node.querySelector('.cell');
+		if (!firstCell) return node;
+
+		let twisty;
+		if (this.props.isContainerEmpty(index)) {
+			twisty = firstCell.querySelector('.spacer-twisty');
+			if (!twisty) {
+				twisty = node.ownerDocument.createElement('span');
+				firstCell.prepend(twisty);
+				twisty.classList.add('spacer-twisty');
+			}
+			firstCell.querySelector(`:scope > .twisty`)?.remove();
+		}
+		else {
+			twisty = firstCell.querySelector('.twisty');
+			if (!twisty) {
+				twisty = getCSSIcon('twisty');
+				twisty.classList.add('twisty');
+				twisty.style.pointerEvents = 'auto';
+				twisty.addEventListener('mousedown', (event) => event.stopPropagation());
+				twisty.addEventListener('mouseup', (event) => {
+					this.toggleOpenState(index);
+					event.stopPropagation();
+				}, { passive: true });
+				twisty.addEventListener('dblclick', (event) => event.stopImmediatePropagation(), { passive: true });
+				firstCell.prepend(twisty);
+			}
+			firstCell.querySelector(`:scope > .spacer-twisty`)?.remove();
+
+			// Apply the twisty animation
+			if (this._toggledOpenStateIndex == index) {
+				twisty.classList.toggle('open', !this.props.isContainerOpen(index));
+				requestAnimationFrame(() => {
+					twisty.classList.toggle('open', this.props.isContainerOpen(index));
+					this._toggledOpenStateIndex = null;
+				});
+			}
+			else {
+				twisty.classList.toggle('open', this.props.isContainerOpen(index));
+			}
+		}
+
+		let indentSpan = firstCell.querySelector('.cell-indent');
+		if (!indentSpan) {
+			indentSpan = node.ownerDocument.createElement('span');
+			indentSpan.className = 'cell-indent';
+			firstCell.prepend(indentSpan);
+		}
+		// Use padding for indent similar to ItemTree
+		const CHILD_INDENT = 16;
+		indentSpan.style.paddingInlineStart = (CHILD_INDENT * this._getDepth(index)) + 'px';
+
+		return node;
+	}
+
+	_setRowAria(node, index) {
+		const depth = this._getDepth(index);
+		node.setAttribute('role', 'treeitem');
+		node.setAttribute('aria-level', depth + 1);
+		if (!this.props.isContainerEmpty(index)) {
+			node.setAttribute('aria-expanded', !!this.props.isContainerOpen(index));
+		}
+		else {
+			node.removeAttribute('aria-expanded');
+		}
+	}
+}
+
+VirtualizedTree.propTypes = Object.assign({}, VirtualizedTable.propTypes);
+VirtualizedTree.defaultProps = Object.assign({}, VirtualizedTable.defaultProps, { role: 'tree' });
+
+/**
+ * Create a function that calls the given function `fn` only once per animation
+ * frame.
+ *
+ * @param {Function} fn
+ * @returns {Function}
+ */
+function oncePerAnimationFrame(fn) {
+	let animationId = null;
+	let argsToPass = null;
+	return function(...args) {
+		argsToPass = args;
+		if (animationId !== null) {
+			return;
+		}
+
+		let debouncedFn = () => {
+			fn.call(this, ...argsToPass);
+			animationId = null;
+			argsToPass = null;
+		};
+
+		if (typeof requestAnimationFrame == 'undefined') {
+			animationId = setTimeout(debouncedFn, 20);
+		} else {
+			animationId = requestAnimationFrame(debouncedFn);
+		}
+	};
+}
+
+var Columns = class {
+	constructor(virtualizedTable) {
+		this._virtualizedTable = virtualizedTable;
+
+		this._styleKey = virtualizedTable.props.id;
+
+		this._initializeStyleMap();
+
+		let columnsSettings = this._getPrefs();
+
+		let columns = this._columns = [];
+		for (let column of virtualizedTable.props.columns) {
+			// Fixed width columns can sometimes somehow obtain a width property
+			// this fixes it for users that may have run into the bug
+			if (column.fixedWidth && typeof columnsSettings[column.dataKey] == "object") {
+				delete columnsSettings[column.dataKey].width;
+			}
+			// Don't load column settings for disabled columns (they are overriden to be hidden)
+			column = Object.assign({}, column, column.disabled ? {} : columnsSettings[column.dataKey]);
+			column.className = cx(column.className, column.dataKey, column.dataKey + this._cssSuffix,
+				{ 'fixed-width': column.fixedWidth });
+			if (column.type) {
+				column.className += ` cell-${column.type}`;
+			}
+			if (column.fixedWidth) {
+				column.originalWidth = column.width;
+			}
+			if (column.staticWidth) {
+				column.originalMinWidth = column.minWidth || 20;
+			}
+			columns.push(column);
+		}
+		// Sort columns by their `ordinal` field
+		columns.sort((a, b) => a.ordinal - b.ordinal);
+		// And then reset `ordinal` fields since there might be duplicates
+		// if new columns got added recently
+		columns.forEach((column, index) => column.ordinal = index);
+
+		// Compute initial CSS widths for visible columns. Widths are not persisted
+		// from here — they flow to disk only when the user resizes (see onResize).
+		let columnWidths = {};
+		for (let column of columns) {
+			if (column.disabled || column.hidden) continue;
+			if (column.width) {
+				columnWidths[column.dataKey] = column.width;
+			}
+			else {
+				column.flex = column.flex || 1;
+				columnWidths[column.dataKey] = column.width = this._computeFlexWidth(column);
+			}
+		}
+
+		// Set column width CSS rules
+		this.onResize(columnWidths);
+	}
+
+	_initializeStyleMap() {
+		const stylesheetClass = this._styleKey + "-style";
+		this._cssSuffix = '-' + this._styleKey;
+		this._stylesheet = document.querySelector(`.${stylesheetClass}`);
+		if (this._stylesheet) {
+			this._columnStyleMap = {};
+			for (let i = 0; i < this._stylesheet.sheet.cssRules.length; i++) {
+				const selector = this._stylesheet.sheet.cssRules[i].selectorText;
+				const dataKey = selector.slice(1, selector.length - this._cssSuffix.length);
+				this._columnStyleMap[dataKey] = i;
+			}
+			for (let i = 0; i < this._virtualizedTable.props.columns.length; i++) {
+				let column = this._virtualizedTable.props.columns[i];
+				let escapedDataKey = window.CSS.escape(column.dataKey);
+				if (escapedDataKey in this._columnStyleMap) continue;
+				const ruleIndex = Object.keys(this._columnStyleMap).length;
+				this._stylesheet.sheet.insertRule(`.${escapedDataKey + this._cssSuffix} {flex-basis: 100px}`, ruleIndex);
+				this._columnStyleMap[escapedDataKey] = ruleIndex;
+			}
+		} else {
+			this._stylesheet = document.createElement('style');
+			this._stylesheet.className = stylesheetClass;
+			document.children[0].appendChild(this._stylesheet);
+			this._columnStyleMap = {};
+			for (let i = 0; i < this._virtualizedTable.props.columns.length; i++) {
+				let column = this._virtualizedTable.props.columns[i];
+				let escapedDataKey = window.CSS.escape(column.dataKey);
+				this._stylesheet.sheet.insertRule(`.${escapedDataKey + this._cssSuffix} {flex-basis: 100px}`, i);
+				this._columnStyleMap[escapedDataKey] = i;
+			}
+		}
+	}
+
+	_getColumnPrefsToPersist(column) {
+		let persistKeys = new Set(column.zoteroPersist); 
+		if (!persistKeys) persistKeys = new Set();
+		// Always persist
+		['ordinal', 'hidden', 'sortDirection'].forEach(k => persistKeys.add(k));
+		let persistSettings = {};
+		for (const key in column) {
+			if (persistKeys.has(key) || key == 'dataKey') {
+				persistSettings[key] = column[key];
+			}
+		}
+		return persistSettings;
+	}
+
+	_updateVirtualizedTable() {
+		this._virtualizedTable.forceUpdate(() => {
+			this._virtualizedTable._jsWindow.invalidate();
+		});
+	}
+
+	_getPrefs() {
+		return this._virtualizedTable.props.getColumnPrefs();
+	}
+	
+	_storePrefs(prefs) {
+		this._virtualizedTable.props.storeColumnPrefs(prefs);
+	}
+
+	/**
+	 * Programatically sets the injected CSS width rules for each column.
+	 * This is necessary for performance reasons
+	 *
+	 * @param columnWidths {Object} dictionary of columnId: width (px)
+	 */
+	onResize = (columnWidths, storePrefs=false) => {
+		if (storePrefs) {
+			var prefs = this._getPrefs();
+		}
+
+		let visibleColumns = this.getAsArray().filter(column => !column.hidden);
+
+		for (let [dataKey, width] of Object.entries(columnWidths)) {
+			if (typeof dataKey == "number") {
+				dataKey = this._columns[dataKey].dataKey;
+			}
+			const column = this._columns.find(column => column.dataKey == dataKey);
+			if (column.hidden) continue;
+			const styleIndex = this._columnStyleMap[window.CSS.escape(dataKey)];
+			const columnPadding = column.iconLabel ? 0 : COLUMN_PADDING;
+			let cssWidth = width;
+			// It's set in CSS, so we subtract it here to prevent sliding
+			if (column.dataKey === visibleColumns[0].dataKey) {
+				cssWidth -= this._virtualizedTable.firstColumnExtraWidth;
+			}
+			if (column.fixedWidth) {
+				cssWidth = width = column.width;
+			}
+			if (column.fixedWidth && column.width || column.staticWidth) {
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('flex', `0 0`, `important`);
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('max-width', `calc(var(--extra-width, 0px) + ${cssWidth}px`, 'important');
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('min-width', `calc(var(--extra-width, 0px) + ${cssWidth}px`, 'important');
+			} else {
+				width -= columnPadding;
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('flex-basis', `calc(var(--extra-width, 0px) + ${cssWidth}px`);
+			}
+			Zotero.debug(`Columns ${dataKey} width ${width}`);
+			if (storePrefs) {
+				column.width = width;
+				prefs[dataKey] = this._getColumnPrefsToPersist(column);
+			}
+		}
+		if (storePrefs) {
+			this._storePrefs(prefs);
+		}
+	}
+
+	setOrder = (index, insertBefore) => {
+		const column = this._columns[index];
+		if (column.ordinal == insertBefore) return;
+		column.ordinal = insertBefore;
+		this._columns.sort((a, b) => {
+			// newly inserted column goes before the existing column with same `ordinal` value
+			if (a.ordinal == b.ordinal) return a == column ? -1 : 1;
+			return a.ordinal - b.ordinal;
+		});
+
+		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
+
+		let prefs = this._getPrefs();
+		// reassign columns their ordinal values and set the prefs
+		this._columns.forEach((column, index) => {
+			prefs[column.dataKey] = prefs[column.dataKey] || {};
+			prefs[column.dataKey].ordinal = column.ordinal = index;
+		});
+		this._storePrefs(prefs);
+		this._updateVirtualizedTable();
+	}
+	
+	restoreDefaultOrder = () => {
+		let prefs = this._getPrefs();
+		if (this._virtualizedTable.props.getDefaultColumnOrder) {
+			let defaultOrder = this._virtualizedTable.props.getDefaultColumnOrder();
+			for (const column of this._columns) {
+				column.ordinal = defaultOrder[column.dataKey];
+				prefs[column.dataKey].ordinal = defaultOrder[column.dataKey];
+			}
+		}
+		else {
+			for (const column of this._columns) {
+				column.ordinal = this._virtualizedTable.props.columns.findIndex(
+					col => col.dataKey == column.dataKey);
+				prefs[column.dataKey].ordinal = column.ordinal;
+			}
+		}
+		this._columns.sort((a, b) => a.ordinal - b.ordinal);
+
+		// Recover from scenarios where a plugin disables the "title" column and
+		// does not provide its own primary column, or is later removed and the
+		// "title" column is never restored.
+		let hasPrimaryColumn = this._columns.some(c => c.primary && !c.hidden);
+		if (!hasPrimaryColumn) {
+			Zotero.debug(`VirtualizedTable: Missing primary column, re-enabling the "title" column.`);
+			this._columns.find(c => c.dataKey === 'title').hidden = false;
+		}
+		
+		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
+		this._storePrefs(prefs);
+		this._updateVirtualizedTable();
+	}
+
+	toggleHidden(index) {
+		const column = this._columns[index];
+		column.hidden = !column.hidden;
+
+		if (!column.hidden && !column.width && !(column.fixedWidth || column.staticWidth)) {
+			column.width = this._computeFlexWidth(column);
+		}
+
+		let prefs = this._getPrefs();
+		prefs[column.dataKey] = prefs[column.dataKey] || {};
+		prefs[column.dataKey].hidden = column.hidden;
+		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
+		this._storePrefs(prefs);
+		this._updateVirtualizedTable();
+	}
+
+	_computeFlexWidth(column) {
+		const containerWidth = this._virtualizedTable._containerWidth;
+		const visibleColumns = this._columns.filter(c => !c.hidden);
+		let fixedWidth = 0;
+		let totalFlex = 0;
+		for (let col of visibleColumns) {
+			if (col.fixedWidth || col.staticWidth || !col.flex) {
+				fixedWidth += parseFloat(col.width) || col.minWidth || 0;
+			}
+			else {
+				totalFlex++;
+			}
+		}
+		let availableWidth = containerWidth - fixedWidth;
+		return availableWidth / totalFlex * (column.flex || 1);
+	}
+	
+	toggleSort(sortIndex) {
+		if (!this._virtualizedTable.props.onColumnSort) return;
+		
+		var sortedColumn;
+		this._columns.forEach((column, index) => {
+			if (index != sortIndex) {
+				delete column.sortDirection;
+			}
+			else {
+				sortedColumn = column;
+				if (column.sortDirection) {
+					column.sortDirection *= -1;
+				}
+				else {
+					column.sortDirection = column.sortReverse ? -1 : 1;
+				}
+			}
+		});
+		let result = this._virtualizedTable.props.onColumnSort(sortIndex, sortedColumn.sortDirection);
+		this._virtualizedTable.forceUpdate();
+		return result;
+	}
+
+	getAsArray() {
+		return this._columns;
+	}
+};
+
+function renderCell(index, data, column, dir = null) {
+	column = column || { dataKey: "" };
+	if (column.renderCell) {
+		return column.renderCell(index, data, column, dir);
+	}
+	let span = document.createElement('span');
+	span.className = `cell ${column.className}`;
+	if (column.type == 'html') {
+		span.innerHTML = data.replaceAll('&', '&amp;');
+	}
+	else {
+		span.textContent = data;
+	}
+	if (dir) span.dir = dir;
+	return span;
+}
+
+/**
+ * Render button cell (if column.type == "button")
+ * @param {Int} index - index of the row
+ * @param {String} data.iconKey - icon key fetched via getCSSIcon to display the button
+ * @param {Function} data.onClick - click handler of the button
+ * @param {Boolean} data.isFocusable - is the button focusable on Tab
+ * @param {String} data.ariaLabel - aria-label for the button. If not provided,  column label will be used
+ * @param {Boolean} isRowSelected - whether the row is selected
+ * @returns {HTMLElement} - rendered button cell
+ */
+function renderButtonCell(index, data, column, isRowSelected) {
+	let cell = document.createElement('span');
+	cell.className = `cell ${column.className} clickable`;
+	let iconWrapper = document.createElement('span');
+	iconWrapper.setAttribute("role", "button");
+	if (data.isFocusable && isRowSelected) {
+		// if specified, make the button of the selected row focusable
+		iconWrapper.setAttribute("tabindex", "0");
+		iconWrapper.setAttribute("aria-label", data.ariaLabel || column.label);
+		iconWrapper.addEventListener("keydown", (event) => {
+			// space/enter will trigger the click
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				data.onClick(index, event);
+			}
+			// all other keypresses besides tab are ignored and not propagated
+			if (event.key !== "Tab") {
+				event.stopPropagation();
+				event.preventDefault();
+			}
+		});
+	}
+	iconWrapper.className = `icon-action`;
+	cell.append(iconWrapper);
+	let icon = getCSSIcon(data.iconKey);
+	iconWrapper.append(icon);
+	iconWrapper.addEventListener("click", (event) => {
+		data.onClick(index, event);
+	});
+	return cell;
+}
+
+function renderCheckboxCell(index, data, column, dir = null) {
+	let span = document.createElement('span');
+	span.className = `cell checkbox ${column.className}`;
+	if (dir) span.dir = dir;
+	span.setAttribute('role', 'checkbox');
+	span.setAttribute('aria-checked', data);
+	if (data) {
+		let tickIcon = getCSSIcon('tick');
+		tickIcon.classList.add('icon-16');
+		span.appendChild(tickIcon);
+	}
+	return span;
+}
+
+function makeRowRenderer(getRowData) {
+	return function (index, selection, oldDiv, columns) {
+		let div;
+		if (oldDiv) {
+			div = oldDiv;
+			div.innerHTML = "";
+		}
+		else {
+			div = document.createElement('div');
+			div.className = "row";
+		}
+
+		div.classList.toggle('selected', selection.isSelected(index));
+		div.classList.toggle('focused', selection.focused == index);
+		const rowData = getRowData(index);
+		div.classList.toggle('highlighted', !!rowData.highlighted);
+		let ariaLabel = "";
+		
+		if (columns.length) {
+			for (let column of columns) {
+				if (column.hidden) continue;
+
+				if (column.type === 'checkbox') {
+					div.appendChild(renderCheckboxCell(index, rowData[column.dataKey], column));
+				}
+				else if (column.type === 'button') {
+					div.appendChild(renderButtonCell(index, rowData[column.dataKey], column, selection.isSelected(index)));
+				}
+				else {
+					div.appendChild(renderCell(index, rowData[column.dataKey], column));
+				}
+				let columnName = column.label;
+				if (column.label in Zotero.Intl.strings) {
+					columnName = Zotero.getString(column.label);
+				}
+				if (typeof rowData[column.dataKey] === "string") {
+					ariaLabel += `${columnName}: ${rowData[column.dataKey]} `;
+				}
+				else {
+					ariaLabel += `${columnName} `;
+				}
+			}
+		}
+		else {
+			div.appendChild(renderCell(index, rowData));
+		}
+
+		div.setAttribute("aria-label", ariaLabel);
+		return div;
+	};
+}
+
+function formatColumnName(column) {
+	if (column.label in Zotero.Intl.strings) {
+		return Zotero.getString(column.label);
+	}
+	// Dotted keys (.properties) or hyphenated keys with 3+ segments (Fluent)
+	else if (/^[^\s]+\w\.\w[^\s]+$/.test(column.label) || /^\w+(-\w+){2,}$/.test(column.label)) {
+		try {
+			let labelString = Zotero.getString(column.label);
+			if (labelString !== column.label) {
+				return labelString;
+			}
+		}
+		catch (e) {
+			// ignore missing string
+		}
+	}
+	return column.label;
+}
+
+module.exports = VirtualizedTable;
+module.exports.VirtualizedTree = VirtualizedTree;
+
+module.exports.TreeSelection = TreeSelection;
+module.exports.TreeSelectionStub = TreeSelectionStub;
+module.exports.renderCell = renderCell;
+module.exports.renderCheckboxCell = renderCheckboxCell;
+module.exports.makeRowRenderer = makeRowRenderer;
+module.exports.formatColumnName = formatColumnName;

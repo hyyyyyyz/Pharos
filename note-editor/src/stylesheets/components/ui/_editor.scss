@@ -1,0 +1,65 @@
+#editor-container {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+
+	.editor {
+		position: absolute;
+		top: 0;
+		left: 0;
+		bottom: 0;
+		right: 0;
+
+		display: flex;
+		flex-direction: column;
+
+		.editor-core {
+			display: flex;
+			flex: 1;
+			flex-direction: column;
+			overflow: auto;
+			background-color: var(--color-background);
+			--editor-padding-inline: 30px;
+			--editor-padding-block: 20px;
+			--editor-max-inner-width: 70ch;
+			--editor-max-width: calc(var(--editor-max-inner-width) + var(--editor-padding-inline) * 2);
+
+			@if $platform == 'zotero' {
+				font-size: var(--font-size);
+
+				@at-root [contentViewMode="comfortable"] & {
+					.primary-editor {
+						// Need this for wide image/math nodes otherwise content overflows
+						// TODO: Replace with stretch after updating to fx146
+						width: -moz-available;
+						max-width: var(--editor-max-width);
+						min-width: min(100%, var(--editor-max-width));
+						align-self: center;
+					}
+				}
+			}
+
+			.relative-container {
+				position: relative;
+			}
+
+			.primary-editor {
+				flex: 1;
+				// Margins must belong to editor contenteditable area to
+				// allow text selection from the margin
+				padding: var(--editor-padding-block) var(--editor-padding-inline);
+				flex-direction: column;
+
+				& > *:first-child {
+					margin-top: 0;
+				}
+
+				& > *:last-child {
+					margin-bottom: 0;
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,24 @@
+.sidebar-resizer {
+	display: block;
+	top: 41px;
+	bottom: 0;
+	inset-inline-start: var(--sidebar-width);
+	cursor: ew-resize;
+	position: absolute;
+	z-index: $z-index-sidebar-resizer;
+
+	&:before {
+		content: "";
+		height: 100%;
+		width: 7px;
+		position: absolute;
+		margin-inline-start: -3px;
+	}
+
+	&.resizing:after {
+		content: "";
+		position: fixed;
+		inset-block: 0;
+		inset-inline: 0;
+	}
+}

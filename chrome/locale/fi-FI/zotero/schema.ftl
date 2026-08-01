@@ -1,0 +1,16 @@
+itemFields-eventPlace = Tapahtumapaikka
+itemFields-originalDate = Alkuperäinen päivämäärä
+itemFields-originalPlace = Alkuperäinen paikkakunta
+itemFields-originalPublisher = Alkuperäinen julkaisija
+itemFields-partNumber = Osan numero
+itemFields-partTitle = Osan nimi
+itemFields-priorityDate = Etuoikeuspäivä
+itemFields-sessionTitle = Session nimi
+creatorTypes-chair = Puheenjohtaja
+creatorTypes-creator = Tekijä
+creatorTypes-executiveProducer = Vastaava tuottaja
+creatorTypes-host = Isäntä
+creatorTypes-narrator = Kertoja
+creatorTypes-originalCreator = Alkuperäistekijä
+creatorTypes-organizer = Järjestäjä
+creatorTypes-seriesCreator = Sarjan luoja

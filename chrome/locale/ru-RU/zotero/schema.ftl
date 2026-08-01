@@ -1,0 +1,16 @@
+itemFields-eventPlace = Место мероприятия
+itemFields-originalDate = Исходная дата
+itemFields-originalPlace = Исходное место
+itemFields-originalPublisher = Оригинальный издатель
+itemFields-partNumber = Номер части
+itemFields-partTitle = Название части
+itemFields-priorityDate = Дата приоритета
+itemFields-sessionTitle = Название сессии
+creatorTypes-chair = Председатель
+creatorTypes-creator = Автор
+creatorTypes-executiveProducer = Исполнительный продюсер
+creatorTypes-host = Ведущий
+creatorTypes-narrator = Рассказчик
+creatorTypes-originalCreator = Оригинальный создатель
+creatorTypes-organizer = Организатор
+creatorTypes-seriesCreator = Создатель серии

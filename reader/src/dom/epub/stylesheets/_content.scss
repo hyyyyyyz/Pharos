@@ -1,0 +1,250 @@
+/*
+    Many of these styles are from or inspired by Readium CSS:
+    https://github.com/readium/readium-css
+
+    BSD 3-Clause License
+
+    Copyright (c) 2017, Readium
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice, this
+      list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+    * Neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+@namespace epub url('http://www.idpf.org/2007/ops');
+
+@mixin unset-properties($properties...) {
+	@each $property in $properties {
+		#{$property}: unset !important;
+	}
+}
+
+:root {
+	--link-color: #0000ee;
+	--visited-link-color: #551a8b;
+
+	&[data-color-scheme="dark"] {
+		--link-color: #63caff;
+		--visited-link-color: #0099e5;
+	}
+}
+
+:root {
+	background-color: var(--background-color) !important;
+	color: var(--text-color) !important;
+
+	&:not(.fixed-layout) {
+		font-size: calc(var(--content-scale) * 13pt) !important;
+	}
+
+	&:not(.hyphenate) * {
+		hyphens: none !important;
+	}
+
+	&[data-color-scheme="dark"] {
+		:not(:link):not(:visited) {
+			color: inherit !important;
+			// Keep background-image, because some EPUBs use it for image links
+			background-color: transparent !important;
+		}
+	}
+}
+
+body > .sections > .section-container ::selection {
+	background-color: var(--selection-color);
+}
+
+replaced-html {
+	display: block;
+}
+
+replaced-head {
+	display: none !important;
+}
+
+replaced-body {
+	&::before, &::after {
+		content: unset !important;
+		display: none !important;
+	}
+
+	display: block;
+
+	body:not(.fixed-layout) & {
+		// https://readium.org/readium-css/docs/CSS08-defaults.html#dynamic-leading-line-height
+		--content-line-height-compensation: 1;
+		--content-line-height: calc(
+			(1em + (2ex - 1ch) - ((1rem - 16px) * 0.1667))
+			* var(--content-line-height-compensation)
+			* var(--content-line-height-adjust, 1.2)
+		);
+		--content-word-spacing: calc(var(--content-word-spacing-adjust, 0) * 1%);
+		--content-letter-spacing: calc(var(--content-letter-spacing-adjust, 0) * 1em);
+
+		@include unset-properties(
+				margin, padding, width, height, min-width, min-height, max-width, max-height,
+				background, color, border, overflow, font-size
+		);
+
+		:root:not(.use-original-font) & {
+			font-family: var(--content-font-family, "Georgia", serif);
+		}
+		text-align: justify;
+		text-rendering: optimizeLegibility;
+	}
+
+	body:not(.fixed-layout) & {
+		&:lang(bn),
+		&:lang(km),
+		&:lang(ml),
+		&:lang(ta),
+		&:lang(th) {
+			--content-line-height-compensation: 1.067;
+		}
+
+		&:lang(he),
+		&:lang(hi),
+		&:lang(kn),
+		&:lang(pa) {
+			--content-line-height-compensation: 1.1;
+		}
+
+		&:lang(am),
+		&:lang(chr),
+		&:lang(gu),
+		&:lang(ja),
+		&:lang(ko),
+		&:lang(or),
+		&:lang(si),
+		&:lang(zh) {
+			--content-line-height-compensation: 1.167;
+		}
+
+		&, * {
+			line-height: var(--content-line-height) !important;
+			word-spacing: var(--content-word-spacing) !important;
+			letter-spacing: var(--content-letter-spacing) !important;
+		}
+
+		p, [role="paragraph"] {
+			// Really enforce some of our formatting choices on body paragraphs
+			:root:not(.use-original-font) & {
+				font-family: var(--content-font-family, "Georgia", serif);
+			}
+			line-height: var(--content-line-height) !important;
+			word-spacing: var(--content-word-spacing) !important;
+			letter-spacing: var(--content-letter-spacing) !important;
+			background: transparent !important;
+			color: inherit !important;
+
+			widows: 2;
+			orphans: 2;
+			hyphens: auto;
+		}
+
+		:link {
+			color: var(--link-color) !important;
+		}
+
+		:visited {
+			color: var(--visited-link-color) !important;
+		}
+
+		img.clickable-image {
+			cursor: zoom-in;
+		}
+	}
+
+	body.fixed-layout & {
+		@media (pointer: coarse) {
+			// Text selection is pretty much unusable in fixed-layout EPUBs
+			// on mobile because the end handle constantly jumps to the start
+			// of the page, and the content is often made up of out-of-order
+			// absolute divs.
+			// We can hack around this when an annotation tool is selected, but
+			// just disable native selection to avoid trouble.
+			user-select: none;
+			-webkit-user-select: none;
+		}
+	}
+
+	a {
+		text-decoration: none;
+	}
+
+	.sup-like, .sub-like {
+		line-height: 1 !important;
+		position: relative !important;
+		font-size: 66.6% !important;
+	}
+
+	.sup-like {
+		vertical-align: super !important;
+		bottom: 0 !important;
+	}
+
+	.sub-like {
+		vertical-align: sub !important;
+		bottom: -0.2ex;
+	}
+
+	body:not(.footnote-popup-content) & {
+		aside[epub|type="footnote"],
+		aside[epub|type="rearnote"],
+		aside[epub|type="note"] {
+			display: none;
+		}
+	}
+
+	section, div, p, [role="paragraph"], h1, h2, h3, h4, h5, h6, [role="heading"] {
+		&:focus {
+			// Prevent focus ring from appearing on non-interactive virtual cursor targets
+			outline: none;
+		}
+	}
+}
+
+body.footnote-popup-content {
+	replaced-body {
+		text-align: start;
+	}
+
+	* {
+		list-style-type: none !important;
+		border: 0 !important;
+	}
+
+	.section-container {
+		padding: 16px;
+	}
+}
+
+#annotation-overlay {
+	display: contents;
+}
+
+.a11y-cursor-target {
+	outline: none;
+}

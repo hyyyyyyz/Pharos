@@ -1,0 +1,112 @@
+.editor {
+	font-size: rem(12);
+	line-height: calc(4 / 3); // Force browsers to use exact value to avoid rounding glitches
+	position: relative;
+
+	.content {
+		word-wrap: break-word;
+		padding: nem(3) 8px nem(3);
+
+		&:focus {
+			outline: 0;
+			cursor: text;
+			background: var(--material-background);
+		}
+
+		// Placeholder
+		&:empty::before {
+			content: attr(placeholder);
+			color: #6d95e0;
+		}
+
+		&:focus {
+			&:empty::before {
+				color: #707070;
+			}
+		}
+
+		.overflowed & {
+			pointer-events: none;
+		}
+	}
+
+	.renderer {
+		// Note: Renderer can't be zero dimensions or invisible because
+		// element.innerText won't work on some browsers
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.editor-toolbar {
+		font-size: 12px;
+		position: absolute;
+		background: var(--material-toolbar);
+		border: var(--material-panedivider);
+		z-index: 1;
+
+		// 5 (buttons) x 20px / 2 = 50px
+		left: calc(50% - 50px);
+		display: flex;
+
+		margin-top: -20px;
+		height: 20px;
+		border-radius: 5px;
+
+		.button {
+			width: 20px;
+			height: 100%;
+			background-color: transparent;
+			border: none;
+			cursor: pointer;
+			outline: 0;
+			vertical-align: middle;
+			text-align: center;
+
+			&:hover {
+				background-color: var(--fill-quinary);
+			}
+		}
+	}
+}
+
+.preview {
+	.text {
+		.editor {
+			.content {
+				&:empty::before {
+					color: inherit;
+				}
+			}
+		}
+
+		&:focus-visible {
+			outline: 0;
+			box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-search);
+		}
+	}
+}
+
+.expandable-editor {
+	.selected & {
+		pointer-events: all;
+	}
+
+	.content {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	&.expanded {
+		.content {
+			display: block;
+			-webkit-line-clamp: unset;
+			-webkit-box-orient: unset;
+		}
+	}
+}

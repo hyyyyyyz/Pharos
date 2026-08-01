@@ -1,0 +1,48 @@
+.swipe-indicators {
+	display: none;
+}
+
+@media screen {
+	// Can't combine the following two or it would make the specificity higher than
+	// the body.flow-mode-paginated selector below.
+
+	html {
+		margin: 0 !important;
+		padding: 0 !important;
+		// Suppress pan-x action that conflicts with page turning on Android
+		touch-action: pan-y;
+	}
+
+	body {
+		margin: 0 !important;
+		padding: 0 !important;
+	}
+
+	body.fixed-layout > .sections > .section-container {
+		width: calc(var(--page-width) * var(--page-scale, 1) * 1px);
+		height: calc(var(--page-height) * var(--page-scale, 1) * 1px);
+		overflow: hidden;
+
+		> replaced-html {
+			display: block;
+			width: calc(var(--page-width) * 1px);
+			height: calc(var(--page-height) * 1px);
+			transform: scale(var(--page-scale, 1));
+			transform-origin: 0 0;
+		}
+	}
+
+	body.flow-mode-scrolled {
+		@import "layout/scrolled";
+	}
+
+	body.flow-mode-paginated {
+		@import "layout/paginated";
+	}
+}
+
+@media print {
+	body {
+		@import "layout/print";
+	}
+}

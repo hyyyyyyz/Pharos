@@ -1,0 +1,495 @@
+import {
+	ANNOTATION_COLORS,
+	DEFAULT_THEMES,
+	EXTRA_INK_AND_TEXT_COLORS,
+	INK_ANNOTATION_WIDTH_STEPS,
+	TEXT_ANNOTATION_FONT_SIZE_STEPS
+} from './defines';
+import IconEraser from '../../res/icons/16/annotate-eraser.svg';
+import IconHighlight from '../../res/icons/16/annotate-highlight.svg';
+import IconUnderline from '../../res/icons/16/annotate-underline.svg';
+
+function appendCustomItemGroups(name, reader, params) {
+	let itemGroups = [];
+	let finished = false;
+	let append = (...items) => {
+		if (finished) {
+			throw new Error('Append must be called directly and synchronously in the event');
+		}
+		itemGroups.push(items);
+	};
+	let event = new CustomEvent(`customEvent`, { detail: { type: name, reader, append, params } });
+	window.dispatchEvent(event);
+	finished = true;
+	return itemGroups;
+}
+
+function createItemGroup(itemGroups) {
+	return itemGroups.map(items => items.filter(x => x).filter(item => !item.disabled || item.persistent)).filter(items => items.length);
+}
+
+export function createColorContextMenu(reader, params) {
+	let colors = ANNOTATION_COLORS.slice();
+	if (['text', 'ink', 'eraser'].includes(reader._state.tool.type)) {
+		colors.push(...EXTRA_INK_AND_TEXT_COLORS);
+	}
+	return {
+		internal: true,
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			...[
+				reader._state.tool.type === 'eraser'
+					? colors.map(([label, color]) => ({
+						label: reader._getString(label),
+						disabled: reader._state.readOnly,
+						checked: color === reader._state.tool.color,
+						color: color,
+						onCommand: () => reader.setTool({ type: 'ink', color })
+					}))
+					: colors.map(([label, color]) => ({
+						label: reader._getString(label),
+						disabled: reader._state.readOnly,
+						checked: color === reader._state.tool.color,
+						color: color,
+						onCommand: () => reader.setTool({ color })
+					}))
+			],
+			[
+				['ink', 'eraser'].includes(reader._state.tool.type) && {
+					icon: IconEraser,
+					label: reader._getString('reader-eraser'),
+					disabled: reader._state.readOnly,
+					checked: reader._state.tool.type === 'eraser',
+					onCommand: () => reader._state.tool.type === 'ink' ? reader.setTool({ type: 'eraser' }) : reader.setTool({ type: 'ink' })
+				}
+			],
+			[
+				reader._state.tool.type === 'text' && {
+					slider: true,
+					size: reader._state.tool.size,
+					steps: TEXT_ANNOTATION_FONT_SIZE_STEPS,
+					onCommand: (size) => reader.setTool({ size })
+				},
+				reader._state.tool.type === 'ink' && {
+					slider: true,
+					size: reader._state.tool.size,
+					steps: INK_ANNOTATION_WIDTH_STEPS,
+					onCommand: (size) => reader.setTool({ size })
+				},
+				reader._state.tool.type === 'eraser' && {
+					slider: true,
+					size: reader._state.tool.size,
+					steps: INK_ANNOTATION_WIDTH_STEPS,
+					onCommand: (size) => reader.setTool({ size })
+				}
+			],
+			...appendCustomItemGroups('createColorContextMenu', reader, params)
+		])
+	};
+}
+
+export function createReadAloudAnnotationContextMenu(reader, params) {
+	let popup = reader._state.readAloudState.annotationPopup;
+	if (!popup) {
+		return null;
+	}
+	let { annotation } = popup;
+	return {
+		internal: true,
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				{
+					icon: IconHighlight,
+					label: reader._getString('reader-highlight-annotation-short'),
+					checked: annotation.type === 'highlight',
+					onCommand: () => {
+						reader.setReadAloudAnnotationType('highlight');
+						reader.setTextSelectionAnnotationMode('highlight');
+					}
+				},
+				{
+					icon: IconUnderline,
+					label: reader._getString('reader-underline-annotation-short'),
+					checked: annotation.type === 'underline',
+					onCommand: () => {
+						reader.setReadAloudAnnotationType('underline');
+						reader.setTextSelectionAnnotationMode('underline');
+					}
+				}
+			],
+			ANNOTATION_COLORS.map(([label, color]) => ({
+				label: reader._getString(label),
+				checked: color === annotation.color,
+				color: color,
+				onCommand: () => {
+					reader.setReadAloudAnnotationColor(color);
+					if (['highlight', 'underline'].includes(reader.toolType)) {
+						reader.setTool({ color });
+					}
+				}
+			}))
+		])
+	};
+}
+
+export function createViewContextMenu(reader, params) {
+	return {
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				{
+					label: reader._getString('reader-copy-link'),
+					disabled: !(params.overlay && params.overlay.type === 'external-link' && !reader.canCopy),
+					onCommand: () => {
+						navigator.clipboard.writeText(params.overlay.url);
+					}
+				},
+				{
+					label: reader._getString('general-copy'),
+					disabled: !(params.overlay && params.overlay.type === 'math' && !reader.canCopy),
+					onCommand: () => {
+						navigator.clipboard.writeText(params.overlay.tex);
+					}
+				},
+				{
+					label: reader._getString('reader-copy-image'),
+					disabled: !(params.overlay && params.overlay.type === 'image' && !reader.canCopy
+						&& typeof navigator.clipboard.write === 'function'),
+					onCommand: async () => {
+						// Browsers generally only support image/png in the Clipboard API,
+						// so use a canvas to convert to PNG
+						let bitmap = await createImageBitmap(params.overlay.image);
+						let canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+						let ctx = canvas.getContext('bitmaprenderer');
+						ctx.transferFromImageBitmap(bitmap);
+						let blob = await canvas.convertToBlob({ type: 'image/png' });
+						await navigator.clipboard.write([
+							new ClipboardItem({ [blob.type]: blob })
+						]);
+					}
+				},
+			],
+			[
+				{
+					label: reader._getString('general-copy'),
+					disabled: !reader.canCopy,
+					onCommand: () => reader.copy()
+				}
+			],
+			[
+				(reader._platform === 'zotero' || window.dev) && {
+					label: reader._getString('reader-save-image-as'),
+					disabled: !(params.overlay && params.overlay.type === 'image'),
+					onCommand: async () => {
+						// onSaveImageAs() expects PNG
+						let bitmap = await createImageBitmap(params.overlay.image);
+						let canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+						let ctx = canvas.getContext('bitmaprenderer');
+						ctx.transferFromImageBitmap(bitmap);
+						let blob = await canvas.convertToBlob({ type: 'image/png' });
+						reader._onSaveImageAs(blob);
+					},
+				}
+			],
+			[
+				{
+					label: reader._getString('reader-read-aloud-from-here'),
+					disabled: !params.position || !reader._enableReadAloud,
+					onCommand: () => reader.startReadAloudAtPosition(params.position)
+				}
+			],
+			[
+				{
+					label: reader._getString('reader-zoom-in'),
+					disabled: !reader.canZoomIn,
+					persistent: true,
+					onCommand: () => reader.zoomIn()
+				},
+				{
+					label: reader._getString('reader-zoom-out'),
+					disabled: !reader.canZoomOut,
+					persistent: true,
+					onCommand: () => reader.zoomOut()
+				},
+				['epub', 'snapshot'].includes(reader._type) && {
+					label: reader._getString('reader-zoom-reset'),
+					disabled: !reader.canZoomReset,
+					persistent: true,
+					onCommand: () => reader.zoomReset()
+				},
+				reader._type === 'pdf' && {
+					label: reader._getString('reader-zoom-auto'),
+					checked: reader.zoomAutoEnabled,
+					onCommand: () => reader.zoomAuto()
+				},
+				reader._type === 'pdf' && {
+					label: reader._getString('reader-zoom-page-width'),
+					checked: reader.zoomPageWidthEnabled,
+					onCommand: () => reader.zoomPageWidth()
+				},
+				reader._type === 'pdf' && {
+					label: reader._getString('reader-zoom-page-height'),
+					checked: reader.zoomPageHeightEnabled,
+					onCommand: () => reader.zoomPageHeight()
+				},
+			],
+			[
+				{
+					label: reader._getString('reader-split-horizontally'),
+					checked: reader._state.splitType === 'horizontal',
+					onCommand: () => reader.toggleHorizontalSplit()
+				},
+				{
+					label: reader._getString('reader-split-vertically'),
+					checked: reader._state.splitType === 'vertical',
+					onCommand: () => reader.toggleVerticalSplit()
+				}
+			],
+			[
+				{
+					label: reader._getString('reader-next-page'),
+					disabled: !reader.canNavigateToNextPage,
+					persistent: true,
+					onCommand: () => reader.navigateToNextPage()
+				},
+				{
+					label: reader._getString('reader-previous-page'),
+					disabled: !reader.canNavigateToPreviousPage,
+					persistent: true,
+					onCommand: () => reader.navigateToPreviousPage()
+				}
+			],
+			...appendCustomItemGroups('createViewContextMenu', reader, params)
+		])
+	};
+}
+
+export function createAnnotationContextMenu(reader, params) {
+	let annotations = reader._state.annotations.filter(x => params.ids.includes(x.id));
+	let readOnly = reader._state.readOnly || annotations.some(x => x.readOnly);
+	let currentColor = annotations.length === 1 && annotations[0].color;
+	let colors = ANNOTATION_COLORS.slice();
+	if (annotations.every(x => ['text', 'ink'].includes(x.type))) {
+		colors.push(...EXTRA_INK_AND_TEXT_COLORS);
+	}
+	return {
+		internal: true,
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				(reader._platform === 'zotero' || window.dev) && {
+					label: reader._getString('reader-add-to-note'),
+					disabled: !reader._state.enableAddToNote,
+					persistent: true,
+					onCommand: () => reader._onAddToNote(annotations)
+				}
+			],
+			colors.map(([label, color]) => ({
+				label: reader._getString(label),
+				disabled: readOnly,
+				persistent: true,
+				checked: color === currentColor,
+				color: color,
+				onCommand: () => {
+					let annotations = params.ids.map(id => ({ id, color }));
+					reader._annotationManager.updateAnnotations(annotations);
+				}
+			})),
+			[
+				(annotations.every(x => x.type === 'ink') && {
+					slider: true,
+					size: annotations[0].position.width,
+					disabled: readOnly,
+					persistent: true,
+					steps: INK_ANNOTATION_WIDTH_STEPS,
+					onCommand: (width) => {
+						reader._annotationManager.updateAnnotations(annotations.map(({ id, sortIndex }) => ({ id, sortIndex, position: { width } })));
+					}
+				}),
+				(annotations.every(x => x.type === 'text') && {
+					slider: true,
+					size: annotations[0].position.fontSize,
+					disabled: readOnly,
+					persistent: true,
+					steps: TEXT_ANNOTATION_FONT_SIZE_STEPS,
+					onCommand: (fontSize) => {
+						reader._annotationManager.updateAnnotations(annotations.map(({ id, sortIndex, comment, position }) => {
+							position = reader._primaryView.adjustTextAnnotationPosition({
+								comment,
+								position: { ...position, fontSize }
+							});
+							return { id, sortIndex, position };
+						}));
+					}
+				})
+			],
+			[
+				// If context menu was triggered not from a view and, unless it was annotation popup
+				(!params.view || params.popup) && {
+					label: reader._getString('reader-edit-page-number'),
+					disabled: readOnly || reader._type !== 'pdf',
+					persistent: reader._type === 'pdf',
+					onCommand: () => reader._handleOpenPageLabelPopup(params.currentID)
+				},
+				!params.view && {
+					label: reader._getString('reader-edit-annotation-text'),
+					disabled: readOnly || !(
+						params.ids.length === 1
+						&& reader._state.annotations.find(x => x.id === params.ids[0] && ['highlight', 'underline'].includes(x.type))
+						&& !params.popup
+					),
+					persistent: true,
+					onCommand: () => reader._sidebarEditAnnotationText(params.ids[0])
+				}
+			],
+			[
+				(reader._platform === 'zotero' || window.dev) && {
+					label: reader._getString('reader-copy-image'),
+					disabled: !(params.ids.length === 1 && reader._state.annotations.find(x => x.id === params.ids[0] && x.type === 'image')),
+					onCommand: () => {
+						let annotation = reader._state.annotations.find(x => params.ids.includes(x.id));
+						if (annotation) {
+							reader._onCopyImage(annotation.image);
+						}
+					}
+				},
+				(reader._platform === 'zotero' || window.dev) && {
+					label: reader._getString('reader-save-image-as'),
+					disabled: !(params.ids.length === 1 && reader._state.annotations.find(x => x.id === params.ids[0] && x.type === 'image')),
+					onCommand: () => {
+						let annotation = reader._state.annotations.find(x => params.ids.includes(x.id));
+						if (annotation) {
+							reader._onSaveImageAs(annotation.image);
+						}
+					}
+				}
+			],
+			[
+				annotations.every(x => ['highlight', 'underline'].includes(x.type))
+				&& annotations.some(x => x.type === 'underline')
+				&& {
+					label: reader._getString('reader-convert-to-highlight'),
+					disabled: readOnly,
+					persistent: true,
+					onCommand: () => reader.convertAnnotations(params.ids, 'highlight')
+				},
+				annotations.every(x => ['highlight', 'underline'].includes(x.type))
+				&& annotations.some(x => x.type === 'highlight')
+				&& {
+					label: reader._getString('reader-convert-to-underline'),
+					disabled: readOnly,
+					persistent: true,
+					onCommand: () => reader.convertAnnotations(params.ids, 'underline')
+				},
+			],
+			[
+				annotations.length >= 2 && annotations.every(x => x.type === 'ink') && {
+					label: reader._getString('reader-merge'),
+					disabled: readOnly
+						|| (new Set(annotations.map(x => x.color))).size !== 1
+						|| (new Set(annotations.map(x => x.position.pageIndex))).size !== 1,
+					persistent: true,
+					onCommand: () => {
+						let annotation = reader.mergeAnnotations(params.ids);
+						if (annotation) {
+							reader._updateState({ selectedAnnotationIDs: [annotation.id] });
+						}
+					}
+				},
+			],
+			[
+				{
+					label: reader._getString('general-delete'),
+					disabled: readOnly,
+					persistent: true,
+					onCommand: () => reader.deleteAnnotations(params.ids)
+				},
+			],
+			...appendCustomItemGroups('createAnnotationContextMenu', reader, params)
+		])
+	};
+}
+
+export function createThumbnailContextMenu(reader, params) {
+	return {
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				{
+					label: reader._getString('reader-rotate-left'),
+					disabled: reader._state.readOnly,
+					persistent: true,
+					onCommand: () => reader.rotatePages(params.pageIndexes, 270)
+				},
+				{
+					label: reader._getString('reader-rotate-right'),
+					disabled: reader._state.readOnly,
+					persistent: true,
+					onCommand: () => reader.rotatePages(params.pageIndexes, 90)
+				}
+			],
+			[
+				reader._platform === 'zotero' && {
+					label: reader._getString('general-delete'),
+					disabled: reader._state.readOnly,
+					persistent: true,
+					onCommand: () => reader.deletePages(params.pageIndexes)
+				},
+			],
+			...appendCustomItemGroups('createThumbnailContextMenu', reader, params)
+		])
+	};
+}
+
+export function createSelectorContextMenu(reader, params) {
+	return {
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				{
+					label: reader._getString('reader-clear-selection'),
+					disabled: !params.enableClearSelection,
+					persistent: true,
+					onCommand: () => reader.setFilter({ colors: [], tags: [], authors: [] })
+				}
+			],
+			...appendCustomItemGroups('createSelectorContextMenu', reader, params)
+		])
+	};
+}
+
+export function createThemeContextMenu(reader, params) {
+	let readOnly = DEFAULT_THEMES.some(x => x.id === params.theme.id);
+	return {
+		x: params.x,
+		y: params.y,
+		itemGroups: createItemGroup([
+			[
+				{
+					label: reader._getString('general-edit'),
+					disabled: readOnly,
+					persistent: true,
+					onCommand: () => reader._updateState({ themePopup: { theme: params.theme } })
+				},
+				{
+					label: reader._getString('general-delete'),
+					disabled: readOnly,
+					persistent: true,
+					onCommand: () => {
+						let { customThemes } = reader._state;
+						customThemes = customThemes.filter(x => x.id !== params.theme.id);
+						reader._onSaveCustomThemes(customThemes);
+					}
+				}
+			],
+			...appendCustomItemGroups('createThemeContextMenu', reader, params)
+		])
+	};
+}

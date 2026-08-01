@@ -1,0 +1,27 @@
+{
+	"compilerOptions": {
+		"outDir": "./build",
+		"jsx": "react",
+		"allowJs": true,
+		"strict": true,
+		"target": "ES2023",
+		"moduleResolution": "bundler",
+		"module": "esnext",
+		"allowSyntheticDefaultImports": true,
+		"noImplicitOverride": true,
+		"skipLibCheck": true
+	},
+	"include": [
+		"./src",
+	],
+	"exclude": [
+		"./demo",
+		"./pdfjs",
+		"node_modules",
+		"./src/common",
+		"./src/pdf",
+		"./src/*.js",
+		"build",
+		"dist"
+	]
+}
