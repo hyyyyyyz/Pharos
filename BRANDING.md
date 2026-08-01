@@ -91,14 +91,16 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
 
 - [x] **阶段 1**：拉取源码 → 移除 `.git` → 改品牌标识 → 构建出可运行的 `Pharos.app`
 - [x] **阶段 2**：注入 Pharos 配色（浅色 + 深色）
-- [ ] **阶段 3**：接入 Pharos 独有能力
+- [x] **阶段 3**：接入 Pharos 独有能力
   - [x] 后端客户端 `Zotero.Pharos.API`（token 经 OSKeyStore 加密存入登录管理器，
         用独立 login host；401 即清 token，把死墙变回登录提示）
   - [x] 账号设置面板（服务器不可达 ≠ 已退出；改服务器地址强制退出）
   - [x] 保排版翻译（右键 PDF → 仅译文 / 中英对照，译文作为普通附件挂回同一条目）
   - [x] AI 对话（条目面板区块，`API.stream()` 读 NDJSON 流）
   - [x] 每日论文（工具菜单 → 独立窗口，可把论文连同 PDF 与模型解读存入本地文库）
-  - [ ] 文献探索 / 研究项目
+  - [x] 文献探索（工具菜单 → 搜 arXiv/OpenAlex，可精读、可入库、可归入项目）
+  - [x] 研究项目（工具菜单 → 看阶段/来源/记录，推进阶段，记录可存为 Zotero 笔记）
+- [ ] **阶段 4**：GitHub Actions 出 macOS / Windows 安装包
 
 ### 改动 Zotero 时踩过的坑（都不报错，只是行为错）
 
@@ -114,7 +116,10 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
   上游的排序行为。Pharos 对话区块因此排在最后。
 - 窗口的 `onload="X.init()"` 里做的赋值，在 `loadWindow` 返回时**尚未执行**。
   需要等待初始化的句柄必须在脚本加载时就创建，否则 `await undefined` 会静默通过。
-- [ ] **阶段 4**：GitHub Actions 出 macOS / Windows 安装包
+- `git stash -u` 会把**尚未提交的新文件**一并藏起来。期间任何一次构建都会把它们
+  从 `build/` 移除，而 `stash pop` 只恢复源码、不重建——`dir_build` 于是打包了一个
+  缺文件的 build，窗口报 “Missing chrome or resource URL”。排查未提交的改动时，
+  pop 之后要重新 `npm run build`。
 
 ### 阶段 1 验收结果
 
