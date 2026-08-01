@@ -73,3 +73,29 @@ pharos-chat-error-failed = 未能生成回答。
 pharos-chat-error-empty = 没有收到回答。
 
 pharos-error-unreachable = 无法连接到 Pharos 服务器。
+
+## 每日论文
+
+pharos-daily-menu = 每日论文…
+pharos-daily-window =
+    .title = 每日论文
+pharos-daily-refresh = 立即抓取
+pharos-daily-refreshing = 正在扫描 arXiv…
+pharos-daily-loading = 加载中…
+pharos-daily-empty = 这一天还没有内容。
+pharos-daily-error = 无法加载每日论文。
+# $count (Number) - 当天匹配到的论文数
+pharos-daily-count = { $count } 篇
+pharos-daily-unread = 尚未阅读
+pharos-daily-read-failed = 阅读失败
+pharos-daily-save = 加入文库
+pharos-daily-saving = 保存中…
+pharos-daily-saved = 已加入
+pharos-daily-save-failed = 无法保存这篇论文。
+pharos-daily-open = 在 arXiv 打开
+pharos-daily-matched = 命中方向
+
+pharos-daily-highlight-contribution = 贡献
+pharos-daily-highlight-innovation = 创新点
+pharos-daily-highlight-method = 方法
+pharos-daily-highlight-results = 结果

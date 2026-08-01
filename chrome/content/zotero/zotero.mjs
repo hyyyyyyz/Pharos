@@ -166,6 +166,7 @@ const xpcomFilesLocal = [
 	'pharos/api',
 	'pharos/translate',
 	'pharos/chat',
+	'pharos/daily',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";

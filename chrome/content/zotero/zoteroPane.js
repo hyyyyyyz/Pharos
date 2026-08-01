@@ -6250,6 +6250,27 @@ var ZoteroPane = new function () {
 	 *
 	 * @param {String} mode - Zotero.Pharos.Translate.MODE_MONO or MODE_DUAL
 	 */
+	/**
+	 * Open the daily arXiv digest.
+	 *
+	 * A separate window, not a library pane: these are papers the user does not
+	 * have yet, and putting them in the item tree would blur the line between
+	 * the library and today's candidates.
+	 */
+	this.openPharosDaily = function () {
+		let existing = Services.wm.getMostRecentWindow('pharos:daily');
+		if (existing) {
+			existing.focus();
+			return;
+		}
+		window.openDialog(
+			'chrome://zotero/content/pharosDaily.xhtml',
+			'pharos-daily',
+			'chrome,centerscreen,resizable,dialog=no'
+		);
+	};
+
+
 	this.pharosTranslateSelected = function (mode) {
 		// Checked here rather than by hiding the menu item, so that a user who
 		// has not signed in yet finds out that the feature exists and what it

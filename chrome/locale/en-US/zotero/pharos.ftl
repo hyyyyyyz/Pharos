@@ -73,3 +73,29 @@ pharos-chat-error-failed = The answer could not be generated.
 pharos-chat-error-empty = No answer came back.
 
 pharos-error-unreachable = Could not reach the Pharos server.
+
+## Daily arXiv digest
+
+pharos-daily-menu = Daily Papers…
+pharos-daily-window =
+    .title = Daily Papers
+pharos-daily-refresh = Fetch Now
+pharos-daily-refreshing = Sweeping arXiv…
+pharos-daily-loading = Loading…
+pharos-daily-empty = Nothing for this day yet.
+pharos-daily-error = Could not load the digest.
+# $count (Number) - papers matched for the selected day
+pharos-daily-count = { $count } papers
+pharos-daily-unread = Not read yet
+pharos-daily-read-failed = Reading failed
+pharos-daily-save = Save to Library
+pharos-daily-saving = Saving…
+pharos-daily-saved = Saved
+pharos-daily-save-failed = Could not save this paper.
+pharos-daily-open = Open on arXiv
+pharos-daily-matched = Matched
+
+pharos-daily-highlight-contribution = Contribution
+pharos-daily-highlight-innovation = Novelty
+pharos-daily-highlight-method = Method
+pharos-daily-highlight-results = Results

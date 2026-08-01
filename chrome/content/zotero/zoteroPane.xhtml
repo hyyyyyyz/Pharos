@@ -756,6 +756,10 @@
 					
 					<menu id="toolsMenu" label="&toolsMenu.label;" accesskey="&toolsMenu.accesskey;">
 						<menupopup id="menu_ToolsPopup" onpopupshowing="ZoteroStandalone.onToolsMenuOpen(event)">
+							<menuitem id="menu_pharosDaily" class="menu-type-library"
+									data-l10n-id="pharos-daily-menu"
+									oncommand="ZoteroPane.openPharosDaily();"/>
+							<menuseparator class="menu-type-library"/>
 							<menuitem id="menu_rtfScan" class="menu-type-library" label="&zotero.toolbar.rtfScan.label;"
 									command="cmd_zotero_rtfScan"/>
 							<menuseparator class="menu-type-library"/>
