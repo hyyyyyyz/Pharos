@@ -148,6 +148,34 @@ export function SettingsModal(): JSX.Element | null {
     },
   });
 
+  /* --------------------------------------------------- 退出全部设备 */
+
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false);
+
+  /**
+   * Revoke every token this account has been issued, not just this browser's.
+   *
+   * Armed behind a confirm because it is not undoable and it reaches machines
+   * the user is not sitting at: the desktop client and any other tab all stop
+   * working, and nobody who meant "sign out" should discover that afterwards.
+   *
+   * No error branch, deliberately: `api.auth.logoutAll` clears the local session
+   * in a `finally`, so AuthGate has already swapped this whole tree for the
+   * sign-in form by the time a rejection lands — there is nothing left mounted
+   * to show the message in. The local sign-out happening either way is the point
+   * (a token we cannot revoke server-side is one we must at least stop using).
+   */
+  const logoutAll = useMutation({
+    mutationFn: (): Promise<void> => api.auth.logoutAll(),
+    // Settled, not success: the session is gone on both paths, so the cache has
+    // to go on both paths too — see `signOut` for why a surviving cache would
+    // paint this user's library for whoever signs in next on this browser.
+    onSettled: () => {
+      qc.clear();
+      closeSettings();
+    },
+  });
+
   /* -------------------------------------------------------------- Zotero */
 
   const [zUserId, setZUserId] = useState("");
@@ -270,6 +298,9 @@ export function SettingsModal(): JSX.Element | null {
   useEffect(() => {
     if (settingsOpen) return;
     setConfirmUnlink(false);
+    // Same reason as 断开: reopening 设置 must not find 退出全部设备 still armed,
+    // one stray click from signing every device out.
+    setConfirmLogoutAll(false);
     setEditingName(false);
     setZUserId("");
     setZApiKey("");
@@ -419,6 +450,45 @@ export function SettingsModal(): JSX.Element | null {
                     </button>
                   </div>
                 )}
+              </div>
+
+              <div className="ph-set-acct-all">
+                <div className="ph-set-acct-all-text">
+                  <div className="ph-set-acct-all-title">退出全部设备</div>
+                  <div className="ph-set-acct-all-desc">
+                    吊销这个账户已经签发的所有登录令牌，包括当前浏览器、桌面客户端和其他仍然开着的标签页，每台设备都需要重新登录。适合设备丢失或怀疑令牌泄露时使用，执行后无法撤销。
+                  </div>
+                </div>
+                <div className="ph-set-acct-all-actions">
+                  {confirmLogoutAll ? (
+                    <>
+                      <button
+                        type="button"
+                        className="ph-set-btn ph-set-btn--danger"
+                        onClick={() => logoutAll.mutate()}
+                        disabled={logoutAll.isPending}
+                      >
+                        {logoutAll.isPending ? "退出中…" : "确认退出全部设备"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ph-set-btn"
+                        onClick={() => setConfirmLogoutAll(false)}
+                        disabled={logoutAll.isPending}
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="ph-set-btn"
+                      onClick={() => setConfirmLogoutAll(true)}
+                    >
+                      退出全部设备
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Lives on the 账户 tab, not a tab of its own and not 外观:

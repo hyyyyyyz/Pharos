@@ -5,6 +5,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { api } from "../api/client";
 import { Icons } from "../design/icons";
 import {
   RAIL_DEFAULT_WIDTH,
@@ -67,6 +68,21 @@ export function Rail(): JSX.Element {
   const isAdmin = useSession((s) => s.user?.is_admin === true);
   const visibleNav = NAV.filter((item) => !item.adminOnly || isAdmin);
 
+  // The account footer names whoever is actually signed in. It reads the cached
+  // session user, which is seeded from localStorage before the first paint and
+  // corrected by the `/auth/me` AuthGate makes on a cold start — so this is
+  // either the real identity or nothing, never a placeholder that a later
+  // render swaps out. A hard-coded name was the bug: it asserted an identity
+  // the app had never checked, and it said the same thing for every account.
+  const user = useSession((s) => s.user);
+  const signedIn = user !== null;
+  // The address is the account; a display name is a label chosen for it. Show
+  // the label when there is one, and keep the address in the tooltip so a
+  // narrow rail truncating the line never hides *which* account this is.
+  const acctName = user === null ? "未登录" : user.display_name?.trim() || user.email;
+  const acctSub = signedIn ? "设置与账户" : "登录";
+  const acctTitle = user === null ? "登录 Pharos" : `${user.email} · 账户与设置`;
+
   const railExpanded = useUI((s) => s.railExpanded);
   const toggleRail = useUI((s) => s.toggleRail);
   const railWidth = useUI((s) => s.railWidth);
@@ -76,6 +92,18 @@ export function Rail(): JSX.Element {
   const activeModule = useUI((s) => s.activeModule);
   const setModule = useUI((s) => s.setModule);
   const openSettings = useUI((s) => s.openSettings);
+
+  const openAccount = (): void => {
+    if (signedIn) {
+      openSettings("account");
+      return;
+    }
+    // There is no sign-in route to send anyone to: AuthGate swaps the whole
+    // workbench for the sign-in form the moment the session has no token, so
+    // dropping the token IS the way to reach it. Only reachable if a token
+    // outlives its user — the gate otherwise never renders the rail signed out.
+    api.auth.logout();
+  };
 
   const [resizing, setResizing] = useState(false);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
@@ -223,23 +251,26 @@ export function Rail(): JSX.Element {
       {exp ? (
         <button
           type="button"
-          title="账户与设置"
-          onClick={() => openSettings("account")}
+          title={acctTitle}
+          onClick={openAccount}
           className="ph-rail-acct"
         >
           <span className="ph-rail-acct-avatar">
             <Icons.user />
           </span>
           <span className="ph-rail-acct-text">
-            <span className="ph-rail-acct-name">科研用户</span>
-            <span className="ph-rail-acct-sub">设置与账户</span>
+            <span className="ph-rail-acct-name">{acctName}</span>
+            <span className="ph-rail-acct-sub">{acctSub}</span>
           </span>
         </button>
       ) : (
+        // Collapsed, the tooltip is the only thing naming this button — so it
+        // has to carry the same identity the expanded label would have shown.
         <button
           type="button"
-          title="账户与设置"
-          onClick={() => openSettings("account")}
+          title={acctTitle}
+          aria-label={acctTitle}
+          onClick={openAccount}
           className="ph-rail-acct-mini"
         >
           <Icons.user />

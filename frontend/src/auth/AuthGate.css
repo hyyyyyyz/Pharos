@@ -149,6 +149,13 @@
   gap: 8px;
   margin-bottom: 18px;
 }
+/* Invisible rather than absent while the registration probe is in flight, so
+   the panel does not jump when the answer arrives. Not `display: none` and not
+   `opacity: 0`: the first collapses the row, the second would leave clickable,
+   tabbable buttons under an invisible surface. */
+.ph-auth-modes--probing {
+  visibility: hidden;
+}
 
 .ph-auth-mode {
   flex: 1;

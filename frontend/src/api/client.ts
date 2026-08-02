@@ -1,6 +1,7 @@
 import { clearSession, getToken, setSession, setSessionUser } from "../auth/session";
 import type {
   AuthSession,
+  AuthStatus,
   AuthUser,
   ChatMessage,
   Collection,
@@ -166,6 +167,18 @@ export const api = {
   /* ------------------------------------------------------------------ auth */
 
   auth: {
+    /**
+     * Is this instance accepting new accounts? Anonymous by design — the answer
+     * is needed before anyone has a token.
+     *
+     * A rejection here means "unknown", never "closed": a self-hosted backend
+     * older than this route 404s, and an unreachable one throws, and hiding the
+     * sign-up form in either case would lock people out of an instance that is
+     * in fact open. POST /auth/register stays the authority; this only decides
+     * what to draw.
+     */
+    status: (): Promise<AuthStatus> => json<AuthStatus>("/auth/status", {}, { anon: true }),
+
     /** Creates the account and signs in — the backend returns a token, so the
      *  user never has to type the password twice. 403 = registration closed. */
     register: async (data: RegisterBody): Promise<AuthSession> => {

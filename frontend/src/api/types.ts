@@ -43,6 +43,15 @@ export interface AuthSession {
   user: AuthUser;
 }
 
+/**
+ * What an anonymous sign-in screen is allowed to know about this instance:
+ * whether to draw a sign-up form. `GET /api/auth/status` deliberately says
+ * nothing about who is registered or how the server is configured.
+ */
+export interface AuthStatus {
+  allow_registration: boolean;
+}
+
 export interface RegisterBody {
   email: string;
   password: string;

@@ -212,10 +212,18 @@ function SignInForm(): JSX.Element {
   const [submitted, setSubmitted] = useState(false);
   const [pending, setPending] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  /* Discovered, not assumed: the backend 403s registration when
-     `allow_registration` is off, and that is the only way to find out. */
-  const [registrationClosed, setRegistrationClosed] = useState(false);
+  /* Three states, and they are not two: true = open, false = closed, null =
+     unknown. Unknown has to behave like open — a self-hosted backend that
+     predates GET /auth/status, or one that is momentarily unreachable, must not
+     lose its sign-up form on an instance that is in fact accepting accounts.
+     The 403 on submit remains the authority and can still turn this to false. */
+  const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null);
+  /* Separate from the answer, because `null` means both "still asking" and
+     "asked, no answer". Without this the tab row would stay invisible forever
+     against a backend that has no such endpoint. */
+  const [probing, setProbing] = useState(true);
 
+  const registrationClosed = registrationOpen === false;
   const isRegister = mode === "register";
   const trimmedEmail = email.trim();
 
@@ -235,7 +243,39 @@ function SignInForm(): JSX.Element {
       ? `密码至少 ${MIN_PASSWORD} 个字符`
       : null;
 
+  /* Asked once, up front, rather than discovered by making the user type a
+     password and submit it — finding out that a form could never work only
+     after filling it in is the worst of the three outcomes. */
+  useEffect(() => {
+    let cancelled = false;
+    api.auth
+      .status()
+      .then((s) => {
+        if (!cancelled) setRegistrationOpen(s.allow_registration);
+      })
+      .catch(() => {
+        // Unknown, not closed. No console noise either: a backend without this
+        // route is an ordinary state for this screen, not a fault.
+        if (!cancelled) setRegistrationOpen(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProbing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* The tab row is invisible while the probe is in flight, so nobody can be on
+     the register tab when a "closed" answer lands — but a 403 can also close it
+     mid-session, and leaving the form on a mode that cannot submit is the kind
+     of state that only shows up once. */
+  useEffect(() => {
+    if (registrationClosed) setMode("login");
+  }, [registrationClosed]);
+
   const switchMode = (next: Mode) => {
+    if (next === "register" && registrationClosed) return;
     setMode(next);
     setSubmitted(false);
     setServerError(null);
@@ -263,10 +303,10 @@ function SignInForm(): JSX.Element {
       // and AuthGate re-renders to the app. One source of truth, one path in.
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 403 && isRegister) {
-        // Registration is off on this instance. Hide the tab rather than leave
-        // a control that can only ever fail, and put the user back on sign-in.
-        setRegistrationClosed(true);
-        setMode("login");
+        // The authoritative answer, and the only one available when the probe
+        // came back unknown. Hide the tab rather than leave a control that can
+        // only ever fail; the effect above puts the user back on sign-in.
+        setRegistrationOpen(false);
       }
       setServerError(errText(err));
     } finally {
@@ -276,8 +316,14 @@ function SignInForm(): JSX.Element {
 
   return (
     <form className="ph-auth-form" onSubmit={submit} noValidate>
+      {/* Rendered but invisible while the probe is in flight, never removed: an
+          absent row collapses the layout, so the panel would jump the moment
+          the answer arrives — and offering the register tab only to retract it
+          is worse than showing nothing for the length of one request.
+          `visibility: hidden` also takes the buttons out of hit-testing and the
+          tab order, so there is nothing to click or tab into meanwhile. */}
       {!registrationClosed && (
-        <div className="ph-auth-modes">
+        <div className={cx("ph-auth-modes", probing && "ph-auth-modes--probing")}>
           {(["login", "register"] as const).map((m) => (
             <button
               key={m}

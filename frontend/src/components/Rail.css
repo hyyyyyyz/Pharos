@@ -201,6 +201,29 @@ html.ph-rail-resizing * {
   font-weight: 600;
 }
 
+/* Excluded from hover rather than ordered after it: `--active` is a single
+   class, so a bare `:hover` out-specifies it and the current module would lose
+   its accent tint the moment the pointer crossed it.
+   The text colour carries this as much as the fill does: --c-hv sits within a
+   few RGB points of --c-rail in the light theme, so a background swap alone is
+   not perceptible feedback on this surface, only on --c-sf. */
+.ph-rail-item:hover:not(.ph-rail-item--active) {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+/* A not-yet-built entry stays dimmed under the pointer. The dimming is the
+   thing telling the user it will not do anything; hover must not undo it. */
+.ph-rail-item--cs:hover:not(.ph-rail-item--active) {
+  color: var(--c-tx3);
+}
+/* Keyboard users had nothing at all here: no focus ring, so tabbing through the
+   rail moved an invisible selection. Matches .ph-rail-toggle's ring so the two
+   controls in this column focus alike. */
+.ph-rail-item:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 1px;
+}
+
 .ph-rail-item-ic {
   display: flex;
   flex: none;

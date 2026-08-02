@@ -195,6 +195,38 @@
   gap: 6px;
 }
 
+/* 退出全部设备. A row rather than another button in .ph-set-acct-actions: the
+   explanation has to sit *beside* the control, because a bare button labelled
+   退出全部设备 does not say what it revokes, and this one cannot be undone. */
+.ph-set-acct-all {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 0 0;
+  margin-bottom: 18px;
+  border-top: 1px solid var(--c-bd);
+}
+.ph-set-acct-all-text {
+  flex: 1;
+  min-width: 0;
+}
+.ph-set-acct-all-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+.ph-set-acct-all-desc {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--c-tx2);
+}
+.ph-set-acct-all-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 .ph-set-acct-edit {
   display: flex;
   align-items: center;
