@@ -1,80 +1,100 @@
 # Zotero integration architecture
 
-Pharos treats Zotero as a first-class local data source, not as an import
-format. Zotero remains authoritative for bibliographic metadata and local
-attachments. Pharos stores a local mirror for fast navigation and offline
-display, while Pharos-native research projects, ideas, experiments, and AI
-conversations remain separate objects linked back to Zotero entities.
+Pharos desktop is built on Zotero and uses Zotero's local library as its own
+reference-management foundation. Zotero is not an import format and the desktop
+client does not maintain a second mirror of the same items.
 
-## Providers
+The complete data and safety contract lives in
+[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md). This document
+describes how the direct desktop path relates to the remaining web and cloud
+integrations.
 
-All providers implement one entity model and one capability contract:
+## Desktop: direct local library
 
-| Provider | Desktop data | Local files | Realtime | Write-back |
-| --- | --- | --- | --- | --- |
-| Pharos Connector (transport preview) | Negotiated, disabled | Disabled | Disabled | Disabled |
-| Zotero Local API | Complete read projection | Yes | Polling | No |
-| Zotero Cloud | Synced cloud data | Only uploaded files | Remote polling | Scoped API writes |
+After the schema-compatibility migration is complete, Pharos opens the same
+Zotero data directory and uses Zotero's own APIs for:
 
-Provider priority on desktop will be Connector, Local API, then Cloud once the
-Connector advertises tested data capabilities. Today the Connector truthfully
-advertises all data capabilities as disabled, so desktop uses the complete
-Local API projection. Web and mobile clients use Cloud. A cloud link never
-makes a local-only PDF remotely available and Pharos never uploads a Zotero
-attachment without an explicit user action.
+- personal and group libraries;
+- nested collections and many-to-many membership;
+- every Zotero item type;
+- creators, tags, related items, saved searches, and trash;
+- linked and stored attachments, including local-only PDFs;
+- notes, highlights, annotations, citation data, and sync state.
+
+There is no “sync local Zotero” button in this architecture. Opening Pharos
+after closing Zotero shows the same library because it is the same library.
+
+Zotero, Vibero, and Pharos must take turns. SQLite's exclusive lock prevents
+concurrent access; Pharos must turn that low-level error into a clear instruction
+to close the other application.
+
+## Pharos sidecar
+
+Pharos-only records do not belong in Zotero's schema. They live in a versioned
+sidecar and reference a Zotero object through `(libraryID, key)`:
+
+- AI conversations and reusable paper profiles;
+- Daily Papers state and model readings;
+- embeddings and retrieval indexes;
+- translation and model-task metadata;
+- research projects, ideas, experiments, claims, and writing workflow state.
+
+The sidecar can be rebuilt or removed without changing a Zotero item or PDF.
+Where a Pharos record is also synchronized to the backend, it retains both its
+stable Zotero identity and its backend object ID.
+
+## Browser and remote devices: Zotero Cloud
+
+A browser cannot open `zotero.sqlite` or a local attachment directory. The web
+companion may therefore use Zotero OAuth and the Zotero Web API to access the
+part of a user's library that exists in Zotero Cloud.
+
+That path has unavoidable limits:
+
+- a local-only PDF is unavailable until the user explicitly uploads it;
+- OAuth is registered once by the Pharos operator, not once per end user;
+- cloud metadata does not replace the desktop's direct local view;
+- Pharos does not silently upload an attachment or enable cloud write-back.
+
+## Local API and Connector
+
+The Zotero Local API and `zotero-connector/` remain integration tools, not the
+desktop library foundation.
+
+Possible uses include:
+
+- a browser companion talking to a running Zotero instance;
+- explicit automation from another process;
+- a future authenticated notification bridge;
+- compatibility for a thin client that is not built from Zotero source.
+
+They must not be used to mirror the whole library back into the Zotero-derived
+desktop client. That would add latency, lose transaction semantics, and recreate
+the two-authority problem that direct sharing removes.
+
+The current Connector transport preview still advertises data capabilities as
+disabled until pairing, credential-store handoff, notifier behavior, and
+transaction tests are complete.
 
 ## Stable identity
 
 The durable identity of a Zotero entity is:
 
 ```text
-(source_id, library_id, object_key)
+(libraryID, key)
 ```
 
-DOIs and titles are not identifiers. Zotero's numeric internal item IDs are
-also not stable across profiles. Attachments exposed to the WebView receive an
-opaque `public_id`; absolute paths stay inside Rust.
-
-## Local mirror
-
-The desktop client owns a versioned SQLite mirror in its application data
-directory. It stores:
-
-- libraries and group libraries;
-- nested collections and many-to-many item membership;
-- every Zotero item type, including notes and annotations;
-- tags, creators, relations, saved searches, trash state;
-- attachment metadata and private local path locators;
-- full-text index versions, with full content fetched on demand;
-- sync cursors and deletion tombstones.
-
-Raw Zotero JSON is retained alongside projections so new Zotero fields do not
-disappear when an older Pharos client mirrors them. PDF bytes are never copied
-into SQLite.
-
-## Local API phase
-
-The Local API provider talks only to `127.0.0.1:23119`. It uses API version 3,
-fetches the complete object graph, and advances `since` cursors only after a
-successful SQLite transaction. When Zotero is closed, the last mirror remains
-available. The UI calls this operation “连接本机 Zotero”, not “导入”.
-
-## Connector phase
-
-`pharos-connector@selab.top` is a Zotero 7/8 bootstrapped extension. Version
-`0.1.0` establishes the hardened localhost transport and capability handshake;
-it does not yet expose data or writes. Future releases will use Zotero's
-JavaScript API and `Zotero.Notifier` for realtime changes and safe writes. Its
-protected endpoints require a paired bearer token; the pairing UI and
-operating-system credential-store handoff must land before a data capability is
-enabled. The Connector, never Pharos, will perform Zotero transactions.
+For cross-provider records, add the provider/source identity explicitly. DOIs
+and titles are not unique identifiers, and Zotero's numeric `itemID` must not be
+the sole external reference.
 
 ## Security boundaries
 
-- The WebView cannot choose a host, Local API URL, or filesystem path.
-- Localhost Connector requests require authentication; tokens never appear in
-  query strings or logs.
-- The custom attachment protocol accepts opaque IDs and supports byte ranges.
-- Direct writes to `zotero.sqlite` are forbidden.
-- Local attachments remain local unless the user explicitly imports or uploads
-  a file for a Pharos workflow.
+- Development and tests never launch against the real Zotero data directory.
+- Pharos never adds private schema to `zotero.sqlite`.
+- Absolute attachment paths stay inside the desktop process.
+- Local attachments remain local unless the user explicitly invokes a cloud
+  workflow that needs the file.
+- OAuth secrets remain server-side; desktop tokens stay in the OS credential
+  store.
+- A schema mismatch refuses startup instead of migrating the real library.

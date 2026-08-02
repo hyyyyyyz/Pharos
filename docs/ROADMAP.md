@@ -24,7 +24,8 @@ OpenAlex, research projects, an admin console, and one-way Zotero Web API import
 **Web client** — the reading and library UI, the admin console, settings, daily
 papers, discovery, and projects.
 
-**Desktop client** (`client/`, built from Zotero source) — Zotero's library,
+**Desktop client** (`client/`, built from Zotero source) — the primary product
+surface, retaining Zotero's library,
 reader, annotations, citation styles and translators, plus:
 
 | Feature | Where it lives |
@@ -45,6 +46,10 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 - Desktop builds are **unsigned**. macOS needs Control-click, Open on first
   launch. Windows gets a portable archive, not an installer, because the NSIS
   path needs Cygwin and this project has no way to test it.
+- The imported desktop core is currently Zotero `10.0.SOURCE` (userdata schema
+  129), while the supported installed Zotero/Vibero 8 library is schema 123.
+  Until the core is realigned and the copied-library round trip passes, builds
+  remain isolated and must not open the user's real Zotero library.
 - Discovery reads search metadata and abstracts, not full papers.
 - Research projects persist records supplied by the researcher. Nothing runs
   code, allocates GPUs, or validates a metric. A `verified` record is a user's
@@ -63,21 +68,28 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 
 In rough order. Each is a workstream, not a ticket.
 
-1. **Sign and notarise desktop builds.** Needs an Apple Developer account; the
+1. **Make the Zotero foundation version-compatible.** Re-establish the client on
+   Zotero 8.0.5, replay the Pharos product layer, share the Zotero data directory
+   only in release mode, add a Pharos sidecar, and pass the Zotero ↔ Pharos ↔
+   Vibero copied-library round trip.
+2. **Finish the client as the daily-use product.** Close the remaining reader,
+   AI Chat, Daily Papers, discovery, project, data-directory and recovery gaps
+   before treating the web companion as an equal-priority surface.
+3. **Sign and notarise desktop builds.** Needs an Apple Developer account; the
    build already skips notarisation cleanly when credentials are absent, and
    `app/config.sh` documents exactly which values to set. This is the only item
    here blocked on something money buys rather than something we write.
-2. **Page-addressable evidence.** Anchoring a claim to a page and a region
+4. **Page-addressable evidence.** Anchoring a claim to a page and a region
    rather than to a whole document. This is the foundation the next three items
    rest on. *In progress: `PaperChunk` and `Evidence` exist; the client surface
    does not.*
-3. **Grounded paper Q&A** — answers that cite the passage they came from, so a
+5. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
-4. **Evidence-aware idea workflow** — proposing directions that carry the
+6. **Evidence-aware idea workflow** — proposing directions that carry the
    evidence they rest on.
-5. **Claim-to-result bindings** — a claim that knows which result supports it,
+7. **Claim-to-result bindings** — a claim that knows which result supports it,
    and notices when that result changes.
-6. **Writing.** The last stage of the arc, and the one that makes "一体化" true
+8. **Writing.** The last stage of the arc, and the one that makes "一体化" true
    rather than aspirational.
 
 The detailed contract for 2–6 is in
@@ -93,6 +105,9 @@ not a refactor.
   client is built from Zotero source precisely so that none of it is
   reimplemented. Do not write a paper list, a PDF reader, or a metadata
   extractor for the client.
+- **A second primary desktop library or a full Local API mirror.** The desktop
+  client uses Zotero's own library. Local API, Connector and cloud import remain
+  companion integrations, not a duplicate source of truth.
 - **A second desktop shell.** The Tauri client was removed in favour of the
   Zotero-based one. Do not add Electron, Tauri, or another wrapper.
 - **Running translation, or any Python engine, inside the client.** BabelDOC has

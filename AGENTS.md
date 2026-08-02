@@ -31,8 +31,8 @@ backend/        FastAPI, SQLAlchemy, SQLite. The authority for accounts, papers,
                 jobs, AI chat, the daily digest, discovery and projects.
   pharos/       API routers, domain services, storage, engine adapter
   engine_worker/ isolated BabelDOC worker, emits NDJSON progress
-frontend/       React web client. The writing surface and the admin console.
-client/         Desktop client, built from Zotero source. The reading surface.
+frontend/       React web companion. The browser/remote writing surface and admin console.
+client/         Primary desktop client, built from Zotero source. The local research surface.
 site/           Three.js/Vite marketing site (GitHub Pages)
 zotero-connector/ Zotero 7/8 extension transport preview
 docs/           Architecture, research workflow, roadmap, decisions
@@ -76,11 +76,14 @@ to fix.
 These are not style preferences. Breaking one causes data loss, a security
 problem, or a licence violation.
 
-1. **Never touch `~/Zotero`.** The developer's real Zotero library lives there.
-   `-profile` isolates only the Gecko profile, **not** Zotero's data directory,
-   and a build that still identified as Zotero once opened the real library.
-   Always launch development builds through `client/app/scripts/run_pharos_dev`,
-   which passes `-datadir` and refuses that path outright.
+1. **Never test against the real Zotero library.** The production architecture
+   intentionally shares Zotero's library after schema compatibility is proven;
+   development, tests and CI do not. `-profile` isolates only the Gecko profile,
+   **not** Zotero's data directory. Always launch development builds through
+   `client/app/scripts/run_pharos_dev`, which passes `-datadir` and refuses
+   `~/Zotero`. Do not enable the production shared path while the client core is
+   newer than the supported Zotero schema. See
+   [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
 
 2. **Never commit secrets.** `.env` is ignored and must stay that way. API keys
    belong in the backend, encrypted with `PHAROS_CREDENTIAL_SECRET`, or in the
@@ -104,6 +107,11 @@ problem, or a licence violation.
    copyright notices stay as they are, and derived work stays AGPL. Zotero is a
    trademark of the Corporation for Digital Scholarship; this project does not
    use it and is not affiliated.
+
+6. **Do not extend `zotero.sqlite`.** Shared Zotero entities stay entirely in
+   Zotero's schema. Pharos-native local records go in the versioned Pharos
+   sidecar and use `(libraryID, key)` identities. Zotero, Vibero and Pharos may
+   take turns opening a library, but never use it simultaneously.
 
 ## Conventions
 

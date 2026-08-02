@@ -2,7 +2,7 @@ Pharos 桌面客户端
 ================
 
 Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → 写作。
-本仓库是它的**桌面客户端**，基于 [Zotero](https://www.zotero.org/) 源码构建。
+本目录是它的**主桌面客户端**，基于 [Zotero](https://www.zotero.org/) 源码构建。
 
 沿用 Zotero 是有意的：文献管理、PDF 阅读器、标注、引文样式、760+ 网页抓取器，
 这些做了十几年才成熟的东西没有重造的必要。Pharos 加的是 Zotero 没有的部分。
@@ -32,8 +32,21 @@ Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → �
 - **Windows** — 解压后运行 `zotero.exe`。这是便携版，不是安装程序。
 - **Linux** — 解压 `.tar.xz` 后运行 `zotero`。
 
-Pharos 的文库放在 `~/Pharos`，和 Zotero 自己的 `~/Zotero` 完全分开。
-安装 Pharos 不会动你已有的 Zotero 或它的数据。
+## 文库与应用数据
+
+正式产品的目标不是再建一个 `~/Pharos` 文库，而是像 Vibero 一样直接使用用户的
+Zotero 数据目录：条目、分类、附件、PDF、笔记和标注都还是 Zotero 自己的数据。
+Zotero、Vibero、Pharos 可以轮流打开这套文库，但不能同时运行。
+
+Pharos 仍有独立的应用 profile、品牌、协议、凭据和设置；AI 对话、每日论文状态、
+研究工作流等 Pharos 独有数据进入单独的 sidecar，不给 `zotero.sqlite` 增加私有
+表或字段。
+
+**当前安全状态：共享文库尚未启用。** 这份源码的 Zotero 基线是
+`10.0.SOURCE`/schema 129，而本机 Zotero 8.0.5 与 Vibero 8.0 是 schema 123。
+直接打开真实文库会有升级后旧客户端无法再打开的风险。客户端正在回到兼容的
+Zotero 8.0.5 基线；完成前，所有构建仍使用隔离文库。详见
+[`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
 
 ## 从源码构建
 
@@ -44,9 +57,9 @@ app/scripts/dir_build -p m       # 打出 app/staging/Pharos.app（m=Mac w=Win l
 app/scripts/run_pharos_dev       # 用隔离的数据目录启动
 ```
 
-**开发期请始终用 `run_pharos_dev` 启动。** 它强制传 `-datadir`，并在路径等于
+**开发期始终用 `run_pharos_dev` 启动。** 它强制传 `-datadir`，并在路径等于
 `~/Zotero` 时拒绝运行——`-profile` 只隔离 Gecko profile，**不隔离 Zotero 的数据
-目录**，这一点曾经让开发构建去打开了本机真实的 Zotero 库。
+目录**。正式版未来共享文库，不代表开发版可以拿真实数据做迁移和回归测试。
 
 跑测试：
 

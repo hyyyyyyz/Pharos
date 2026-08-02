@@ -160,3 +160,35 @@ anchored or listed per directory.
 `client/test/tests/data`. 134 tracked files. They were already committed and so
 not lost, but any later edit to one of them would have been skipped by `git add`
 without a word.
+
+## 11. The desktop client shares Zotero's library, with schema parity and exclusive access
+
+The Pharos desktop client is a Zotero-derived application and uses the same
+Zotero data directory, `zotero.sqlite`, attachment storage, items, collections,
+notes, and annotations. Pharos keeps a separate application profile, branding,
+credentials, update channel, and `pharos://` protocol. Pharos-native local data
+is stored in a sidecar and linked to Zotero objects by stable library/key
+identities; it never adds private tables or columns to `zotero.sqlite`.
+
+Only one Zotero-derived application may open the shared library at a time. A
+schema mismatch is a hard startup failure, not permission to migrate the user's
+real library. Development, tests, and CI continue to use isolated data
+directories and must never launch against `~/Zotero`.
+
+**Why:** the library is the part of Zotero the user cannot leave behind. Copying
+or mirroring it creates two incomplete authorities, especially for local-only
+PDFs, annotations, collection membership, and sync state. Vibero demonstrates
+the simpler boundary: separate application state, shared Zotero library, and a
+separate feature database.
+
+**Current implementation gate:** the installed Zotero/Vibero 8 library is
+userdata schema 123, while the imported Pharos 10.0.SOURCE core is schema 129
+and already depends on the newer columns. Shared-library mode remains disabled
+until Pharos is aligned to a compatible Zotero core and the round-trip suite in
+[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md) passes.
+
+**Supersedes:** decision 5 as a production architecture. Its development-data
+incident remains valid and is the reason isolated launchers stay mandatory.
+This also supersedes the desktop portion of decision 8. One-way Zotero Cloud
+import remains valid for the browser and remote-device companion, which cannot
+open a local Zotero database.

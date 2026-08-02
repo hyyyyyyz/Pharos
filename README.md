@@ -6,10 +6,11 @@
 
 <img src="assets/brand/wordmark.png" alt="Pharos" width="360" />
 
-### An integrated, evidence-first research workbench
+### A Zotero-derived, evidence-first research workbench
 
-Discover literature, read and translate papers, organize evidence, and carry an
-idea through a durable research workflow — in one self-hosted platform.
+Keep the Zotero library you already depend on, then add literature discovery,
+paper translation, AI reading, evidence, and a durable research workflow in one
+desktop-first platform.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-0C2040.svg)](LICENSE)
 &nbsp;![Status](https://img.shields.io/badge/status-active%20development-F8C040.svg)
@@ -31,11 +32,11 @@ idea through a durable research workflow — in one self-hosted platform.
 
 ## What is Pharos?
 
-Pharos is an open-source research platform for the path from a question to a
-defensible research output. It brings literature discovery, layout-preserving
-paper translation, deep reading, annotations, personal library management,
-daily research monitoring, Zotero sync, and persistent research projects into
-one workbench.
+Pharos is an open-source, Zotero-derived research client for the path from a
+question to a defensible research output. It retains Zotero's mature local
+library, collections, attachments, reader, annotations, citation styles, and
+translators, then adds literature discovery, layout-preserving translation, AI
+reading, daily monitoring, evidence, and persistent research workflows.
 
 It is **not only a PDF translator**. Translation is an important foundation,
 but the product is organized around the wider research loop:
@@ -44,10 +45,11 @@ but the product is organized around the wider research loop:
 discover → screen → read → organize → hypothesize → plan → record → claim → draft → review
 ```
 
-The public [GitHub Pages site](https://hyyyyyyz.github.io/Pharos/) is the
-marketing website. The actual product consists of the React web client (or the
-Zotero-based desktop client), the FastAPI backend, SQLite storage, and an isolated PDF
-translation worker.
+The primary product is the Zotero-derived desktop client. The public
+[GitHub Pages site](https://hyyyyyyz.github.io/Pharos/) is the marketing site;
+the React web app is a browser/remote companion. A FastAPI service provides
+translation, model-backed tasks, accounts, and cross-device records when those
+capabilities are needed.
 
 <div align="center">
   <img src="assets/brand/poster.png" alt="Small research robots reading and organizing papers around the Pharos lighthouse" width="620" />
@@ -120,8 +122,9 @@ contracts and remain future work.
   remains available as a fallback.
 - A desktop client for macOS, Windows and Linux built from Zotero source, so
   the library, PDF reader, annotations, citation styles and 760+ web translators
-  are Zotero's own rather than reimplementations. It keeps its data in `~/Pharos`
-  and never touches an existing Zotero installation.
+  are Zotero's own rather than reimplementations. The target release architecture
+  opens the user's Zotero library directly and keeps only Pharos-specific state
+  in a separate sidecar.
 
 ### AI Chat across web and desktop
 
@@ -149,15 +152,24 @@ in the same window as the reading:
   Tools menu. Anything found can be saved into the local library, PDF and the
   model's reading included.
 
-Its data lives in `~/Pharos`, separate from Zotero's `~/Zotero`. The token for
-the backend is kept in the operating system credential store, encrypted through
-OSKeyStore, and never written to prefs, logs or Git.
+Its application profile, backend token, settings, and Pharos sidecar remain
+separate. The reference library itself is Zotero's: the same items, collections,
+attachments, PDFs, notes, and annotations are available when Zotero, Vibero, or
+Pharos opens it. These applications take turns; they do not open one database
+simultaneously.
+
+The current source tree is still in the compatibility transition: it was copied
+from Zotero 10.0.SOURCE while the supported Zotero/Vibero 8 library uses an
+older schema. Development and release builds remain isolated until the client
+is realigned to Zotero 8.0.5 and the copied-library round trip passes. See
+[`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
 
 ### Connect Zotero
 
-The desktop client needs no Zotero connection: it *is* a Zotero-derived
-application, with its own library in `~/Pharos`. Linking a Zotero account below
-is for the web app, and for moving metadata between the two.
+The desktop client needs no import or Local API mirror: it is a Zotero-derived
+application and, after the compatibility gate above, opens the same local
+library directly. Zotero OAuth below is for the web companion and remote devices
+that cannot access the local database or local-only PDFs.
 
 **Web/cloud connection.** For a self-hosted deployment, register a web application at
 [Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
@@ -185,28 +197,34 @@ The diagram above focuses on the PDF translation execution path. The current
 repository also contains Literature Discovery, Research Projects, and the
 desktop client built from Zotero source.
 
-The FastAPI backend is authoritative for Pharos-native records. Zotero remains
-authoritative for entities imported from Zotero Cloud.
+The architecture has two data planes. Zotero is authoritative for the desktop
+reference library. The Pharos sidecar and optional FastAPI backend own
+Pharos-native records such as AI conversations, Daily Papers state, translation
+tasks, and the research workflow.
 
 ```text
-React web client / Zotero-based desktop client
-                  │
-                  │ REST + Server-Sent Events + bearer-token authentication
-                  ▼
-            FastAPI application
- accounts · library · jobs · daily · discovery · projects · annotations · Zotero
-                  │
-                  │ arm's-length subprocess · NDJSON progress
-                  ▼
-      engine worker → pdf2zh-next → BabelDOC
-                    → mono PDF + bilingual PDF
+Zotero library ← Zotero / Vibero / Pharos desktop (exclusive access)
+                         │
+                         ├── Pharos sidecar (AI, daily, workflow, indexes)
+                         │
+                         └── REST + SSE when a server capability is needed
+                                      ▼
+                                FastAPI service
+                         accounts · jobs · models · remote companion
+                                      │
+                                      ▼
+                         engine worker → BabelDOC
+                                       → mono + bilingual PDF
 ```
 
-- **Backend:** FastAPI, SQLAlchemy 2.x, SQLite in WAL mode, SSE, a
+- **Desktop:** the primary local workbench, built from Zotero source. Shared
+  Zotero data and Pharos sidecar boundaries are defined in
+  [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
+- **Backend:** optional FastAPI services, SQLAlchemy 2.x, SQLite in WAL mode, SSE, a
   content-addressed PDF blob store, and background job managers.
 - **Web client:** React 18, TypeScript, Vite, TanStack Query, Zustand, and pdf.js.
-- **Desktop client:** built from Zotero source (Gecko/XUL, not Electron); the
-  backend and translation engine remain separate services. See `client/`.
+- **Desktop client:** Gecko/XUL, not Electron; local library work remains usable
+  without an account, while model and translation services stay out of process.
 - **Translation boundary:** BabelDOC runs in its own Python environment and OS
   process. The backend consumes NDJSON progress and republishes it over SSE.
 - **External sources:** arXiv, OpenAlex, Crossref, Zotero, and optional
@@ -332,8 +350,8 @@ app/scripts/run_pharos_dev       # launch with an isolated data directory
 
 Always launch development builds through `run_pharos_dev`. It passes `-datadir`
 and refuses to run against `~/Zotero`: `-profile` isolates only the Gecko
-profile, **not** Zotero's data directory, and a build that identified as Zotero
-once opened the developer's real library.
+profile, **not** Zotero's data directory. Production shared-library support does
+not permit development or automated tests to use real data.
 
 Sign in under **Settings → Pharos** to reach the backend. Tagging `v*` builds
 installers through `client/.github/workflows/release.yml`; macOS builds are
@@ -434,10 +452,10 @@ Pharos deliberately distinguishes implemented records from automated research:
 - A `verified` project record is a user decision, not independent reproduction.
 - Tags, paper-level notes, direct arXiv-link import, and one-click
   Discovery-to-Library download are not yet complete end-to-end frontend flows.
-- Zotero cloud sync is metadata-only and one-way into Pharos. Desktop local
-  access includes the complete library graph and local PDFs, but Local API
-  write-back is intentionally disabled. The Connector's future realtime and
-  write capabilities remain gated behind pairing and transaction tests.
+- The desktop target is direct, schema-compatible access to the Zotero library,
+  not a Local API mirror. Zotero Cloud remains a limited companion path for the
+  web app and remote devices; local-only PDFs stay local unless explicitly
+  uploaded.
 - The full product backend is currently self-hosted; GitHub Pages hosts only
   the public marketing site.
 - Desktop builds are unsigned. Signed and notarized releases, a Windows

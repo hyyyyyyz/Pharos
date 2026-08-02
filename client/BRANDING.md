@@ -48,22 +48,40 @@ Pharos 本身已是 AGPL-3.0，二者一致。
 Zotero 官方支持页与论坛。发布前需改掉——否则 Pharos 用户会被引导去 Zotero 论坛提
 我们的 bug。列为阶段 3 收尾项。
 
-## 数据隔离（重要）
+## 应用隔离与共享文库（重要）
 
-改造过程中发现两个会波及**本机真实 Zotero** 的隐患，均已修复：
+品牌身份、Gecko application profile、Zotero 文库、Pharos sidecar 是四个不同
+层次。当前产品方向是：
+
+```text
+Application identity  = Pharos
+Application profile   = Pharos 独立 profile
+Reference library     = Zotero data directory / zotero.sqlite
+Pharos extension data = 独立 sidecar
+```
+
+正式客户端将在 Zotero 核心版本兼容后共享 Zotero 文库；它不会为了共享数据而把
+bundle ID、协议、凭据或用户可见品牌伪装成 Zotero。完整约束见
+[`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
+
+### 早期隔离事故与仍然有效的开发规则
+
+改造过程中发现两个会波及**本机真实 Zotero** 的隐患：
 
 1. **数据目录**。`-profile` 只隔离 Gecko profile，**不隔离 Zotero 数据目录**。
    数据目录由 `DataDirectory.defaultDir = homeDir/CLIENT_NAME` 决定，在 `CLIENT_NAME`
    仍是 `Zotero` 时解析到了 `~/Zotero`，构建版直接去开真实的 `zotero.sqlite`——
    当时只因另一进程持有 SQLite 锁而失败（`NS_ERROR_STORAGE_BUSY`）。若那时真 Zotero
-   未运行，schema 迁移有可能让正版客户端打不开自己的库。改 `CLIENT_NAME` 后默认目录
-   变为 `~/Pharos`，已验证不再触碰 `~/Zotero`。
+   未运行，schema 迁移有可能让正版客户端打不开自己的库。当时把默认目录改为
+   `~/Pharos` 是正确止损，但它不是最终产品架构。当前源码仍停留在这个安全状态，
+   直到 Zotero 8.0.5 兼容迁移和往返测试完成。
 
 2. **自动更新**。`[AppUpdate]` 原本指向 Zotero 官方更新服务器，存在把官方 Zotero 当作
    "更新"下发、静默替换掉 Pharos 的风险，已整段停用。恢复前需先自建更新端点。
 
-开发期一律用 `app/scripts/run_pharos_dev` 启动：它强制传 `-datadir`（默认 `~/PharosDev`），
-并在路径等于 `~/Zotero` 时直接拒绝运行。
+开发期一律用 `app/scripts/run_pharos_dev` 启动：它强制传 `-datadir`（默认
+`~/PharosDev`），并在路径等于 `~/Zotero` 时直接拒绝运行。正式版共享文库与开发版
+隔离并不矛盾；后者是在一次不可逆 schema 事故之前保住真实数据的安全线。
 
 ## 配色映射
 
@@ -126,7 +144,9 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
 - 那 4 个 updater/launcher 归档原本是 **Git LFS 指针**，而分离副本没有 LFS 服务器，
   新克隆拿到的会是指针、构建停在 `check_lfs_file`。共 1.1M，已改为普通 blob。
 
-### 阶段 1 验收结果
+### 阶段 1 历史验收结果
+
+以下结果只证明早期构建没有再误开真实文库，不再代表最终数据架构：
 
 已实测通过：
 

@@ -1,5 +1,12 @@
 # 阶段记录：桌面客户端
 
+> **历史阶段文档。** 本文记录的是早期“独立 `~/Pharos` 文库”实现及其形成原因，
+> 不是当前产品架构。现行方向是：正式客户端在版本兼容验证后直接使用 Zotero 文库，
+> Pharos 独有数据进入 sidecar；开发与测试仍必须隔离。见
+> [`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md) 与
+> [`DECISIONS.md`](DECISIONS.md) 第 11 项。下文保留旧判断，是为了保留事故背景和
+> 当时的工程证据，而不是继续指导产品实现。
+
 从 Zotero 源码构建 Pharos 桌面客户端的四个阶段，以及此后的功能与外观补齐。
 路线与非目标见 [ROADMAP.md](ROADMAP.md)，关键决定的理由见 [DECISIONS.md](DECISIONS.md)，
 改 Zotero 时会静默出错的坑见 [`../client/BRANDING.md`](../client/BRANDING.md)。
@@ -27,9 +34,10 @@
 `zotero.sqlite`，只因另一进程持锁才失败。若当时真 Zotero 未运行，schema 迁移
 有可能让正版客户端打不开自己的库。
 
-修法是改 `CLIENT_NAME`（默认目录变 `~/Pharos`）外加
+当时的止损修法是改 `CLIENT_NAME`（默认目录变 `~/Pharos`）外加
 `app/scripts/run_pharos_dev`——它强制传 `-datadir`，路径等于 `~/Zotero` 时直接
-拒绝运行。开发期必须用它启动。
+拒绝运行。这个隔离仍适用于开发期，但“正式版永久使用独立文库”的结论已被第 11 项
+决策替代。
 
 **自动更新指向 Zotero 官方服务器**，存在把官方 Zotero 当"更新"下发、静默替换掉
 Pharos 的风险。`[AppUpdate]` 整段停用，恢复前需自建端点。

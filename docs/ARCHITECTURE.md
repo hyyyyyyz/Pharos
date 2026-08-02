@@ -12,12 +12,15 @@ flow, figures, tables, and mathematics stay in place; only the prose is
 translated. Output both a Chinese-only (`mono`) PDF and a bilingual
 side-by-side (`dual`) PDF.
 
-**Long-term:** grow from a research-reading assistant into an evidence-first
-Research OS: discover and read papers, turn page-addressable evidence into
-testable ideas, plan and execute bounded experiments, and carry verified claims
-into writing. It remains one backend serving web, desktop (macOS/Windows), and
-mobile clients. The detailed workflow, schemas, checkpoints, and safety contract
-live in [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
+**Long-term:** grow from a Zotero-derived desktop research client into an
+evidence-first Research OS: discover and read papers, turn page-addressable
+evidence into testable ideas, plan and execute bounded experiments, and carry
+verified claims into writing. The desktop client is primary and owns the local
+research experience. The backend supplies model, translation, account, and
+remote-companion capabilities; it is not the authority for the local Zotero
+library. The detailed workflow lives in
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md), and the desktop data contract in
+[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md).
 
 ## 2. Engine choice
 
@@ -64,6 +67,10 @@ Guard `result.no_watermark_*` for `None` before storing (use `getattr`).
 ## 4. Components
 
 ```
+client/                   Zotero-derived primary desktop client
+   ├── Zotero library     shared zotero.sqlite, storage, items, annotations
+   ├── Pharos sidecar     AI/daily/workflow/index state linked by library/key
+   └── REST + SSE         only when a backend capability is needed
 frontend/                 React 18 + Vite + TypeScript, pdf.js
    │  REST + SSE
 backend/                  FastAPI + Uvicorn (native arm64, Python 3.13)
@@ -74,6 +81,11 @@ backend/                  FastAPI + Uvicorn (native arm64, Python 3.13)
    └── storage/           content-addressed blob store: files/<sha256>/{original,mono,dual}.pdf
 backend/engine_worker/    runs in the osx-64 engine env; emits NDJSON progress
 ```
+
+Zotero, Vibero, and Pharos may use one Zotero library in turn, not
+simultaneously. Pharos keeps an independent application profile and never adds
+private schema to `zotero.sqlite`. See the client data document for schema
+compatibility and release gates.
 
 The research v1 is implemented in the same FastAPI application: discovery
 adapters query arXiv/OpenAlex, normalise and deduplicate results, and project
@@ -169,6 +181,23 @@ funstory-ai commercial license.
 
 ## 8. Data model
 
+Pharos has three deliberately separate ownership domains.
+
+### Zotero desktop library
+
+Zotero's schema remains authoritative for items, collections, creators, tags,
+attachments, PDFs, notes, annotations, saved searches, citation data, and sync
+state. The Pharos desktop client uses Zotero's own data model and transactions;
+it does not mirror this graph through the Local API.
+
+### Pharos desktop sidecar
+
+Local-only Pharos records such as AI history, paper profiles, Daily Papers
+state, embeddings, task caches, and research workflow state live outside
+`zotero.sqlite`. They reference Zotero entities by `(libraryID, key)`.
+
+### Optional backend and web companion
+
 - `User` / `ZoteroLink` — account isolation, preferences, and optional Zotero
   credentials/sync state.
 - `Paper(id, user_id, title, authors, source[upload|arxiv], arxiv_id,
@@ -204,8 +233,9 @@ generic artifact row. Their ordering and evidence contract are defined in
 - Future `PaperChunk` + a vector index (sqlite-vec / FAISS) → grounded RAG/Q&A
   and Evidence Ledger over papers.
 - pdf.js text layer + `Highlight`/`Note` → coordinate-anchored annotations.
-- The desktop client is built from Zotero source and talks to the same REST
-  API as the web client; SQLite + on-disk blobs make the whole library portable.
+- The desktop client is built from Zotero source. Its local reference library is
+  usable without the backend; translation, model-backed tasks, and synchronized
+  Pharos records cross the REST API when needed.
 - Discovery providers sit behind normalising adapters. A provider can fail while
   the run persists successful results from another provider as `partial`.
 - Default result analysis is deterministic extraction from title/abstract and is
