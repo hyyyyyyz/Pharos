@@ -362,10 +362,9 @@
 		 * Republish the width on the splitter.
 		 *
 		 * A focusable role="separator" is a window splitter, and a window
-		 * splitter is expected to announce its value. It has no accessible NAME:
-		 * that needs a new string and the locale files belong to another
-		 * workstream at the moment -- until one lands this announces as an
-		 * unnamed separator carrying a number.
+		 * splitter is expected to announce its name and current value. The name
+		 * comes from pharos-rail-resize on the XHTML element; the values change
+		 * here whenever the rail moves.
 		 */
 		_updateSplitter() {
 			if (!this._splitter) {

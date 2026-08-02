@@ -76,29 +76,162 @@ pharos-error-unreachable = 无法连接到 Pharos 服务器。
 
 ## 每日论文
 
+# 用词：模型产出的那份东西一律叫「解读」，不叫「阅读」。
+# 「阅读」是人做的事，两者混用会让「解读失败」读起来像用户读失败了。
+
 pharos-daily-menu = 每日论文…
 pharos-daily-window =
     .title = 每日论文
-pharos-daily-refresh = 立即抓取
-pharos-daily-refreshing = 正在扫描 arXiv…
-pharos-daily-loading = 加载中…
-pharos-daily-empty = 这一天还没有内容。
+# pharos-daily-window 只有属性没有值，Zotero.getString() 读不到它，
+# 在 en-US 下还会直接抛错。要在正文里写模块名，用这一条。
+pharos-daily-heading = 每日论文
 pharos-daily-error = 无法加载每日论文。
+pharos-daily-loading = 载入中…
 # $count (Number) - 当天匹配到的论文数
 pharos-daily-count = { $count } 篇
-pharos-daily-unread = 尚未阅读
-pharos-daily-read-failed = 阅读失败
+pharos-daily-matched = 命中方向
+
+pharos-daily-highlight-contribution = 贡献
+pharos-daily-highlight-innovation = 创新
+pharos-daily-highlight-method = 方法
+pharos-daily-highlight-results = 结果
+
+## 每日论文 · 日期栏
+
+pharos-daily-rail-head = 日期
+pharos-daily-rail-unreachable = 无法连接
+pharos-daily-rail-no-directions = 未配置方向
+pharos-daily-rail-no-match = 无匹配日期
+pharos-daily-rail-empty = 暂无记录
+# $count (Number) - 该日尚未解读的论文数
+pharos-daily-date-pending = { $count } 篇待解读
+
+## 每日论文 · 工具栏
+
+pharos-daily-refresh = 更新
+pharos-daily-refreshing = 更新中
+pharos-daily-refresh-tooltip = 抓取今日 arXiv 并解读
+pharos-daily-filter-all = 全部
+pharos-daily-sort-score = 推荐分
+pharos-daily-sort-time = 时间
+
+## 每日论文 · 更新进度与失败
+
+# $total (Number) - 当前账号已匹配到的论文数
+# $read (Number) - 其中已解读的篇数
+# 数字来自 getStatus().today 或 getDates() 里对应的那一行。
+# 不要用 last_run 的计数：那三列在 _finish_run 才写，整个抓取过程中都是 0。
+pharos-daily-sweep-progress = 正在更新 · 已匹配 { $total } 篇 · 已解读 { $read }
+# $failed (Number) - 解读失败的篇数
+# 只在失败数大于 0 时追加在上一条后面。开头的 " · " 是这条的一部分——
+# Fluent 会吃掉 "=" 后面的前导空格，所以必须写成字符串字面量。
+pharos-daily-sweep-failed = { " " }· 解读失败 { $failed }
+pharos-daily-last-run-failed = 上次更新失败
+# $error (String) - 服务端记下的失败原因
+pharos-daily-last-run-failed-detail = 上次更新失败：{ $error }
+# $error (String)
+pharos-daily-refresh-failed = 更新失败：{ $error }
+# 409 时代替服务端那句英文原文显示
+pharos-daily-refresh-busy = 已经有一次更新在进行中。
+
+## 每日论文 · 未配置解读模型
+
+# 说明而非报错：没有 Key 抓取照样能跑，只是不解读。
+pharos-daily-no-llm = 尚未配置 LLM API Key —— 论文可以正常抓取并按你的方向筛选排序，但无法生成中文解读与评分。这些论文会保持「待解读」，配置后可随时重新解读。
+pharos-daily-no-llm-tooltip = 尚未配置 LLM API Key
+# 解读接口返回 503 时显示
+pharos-daily-read-unavailable = 尚未配置解读模型，无法解读。
+# $name (String) - 服务商名
+# $model (String) - 模型名
+pharos-daily-provider = 解读模型：{ $name } · { $model }
+pharos-daily-provider-none = 未配置解读模型
+
+## 每日论文 · 空状态
+
+pharos-daily-no-directions-title = 尚未配置研究方向
+pharos-daily-no-directions-desc = 每日论文按你自己定义的研究方向筛选 arXiv。当前没有任何启用的方向，因此不会有论文进入这里。在设置中添加一个方向并填入关键词即可开始。
+pharos-daily-disabled-title = 每日论文已关闭
+pharos-daily-disabled-desc = 这个账号关闭了每日论文。抓取仍在继续，但不会有论文进入这里。在「设置 → 每日论文」中重新开启即可。
+pharos-daily-firstuse-title = 每日论文
+pharos-daily-firstuse-desc = 每天自动扫描 arXiv，按你在设置里定义的研究方向筛出相关论文，逐篇生成中文解读、要点与评分。点「更新」抓取第一份日报。
+pharos-daily-nomatch-title = 没有论文匹配你的方向
+pharos-daily-nomatch-desc = 抓取已经运行过，但目前没有任何一篇论文命中你的方向关键词。可以在设置中放宽关键词、增加方向或分类；改动会立即重新筛选，无需重新抓取。
+pharos-daily-directions-label = 当前方向
+pharos-daily-open-settings = 前往设置
+pharos-daily-edit-directions = 调整方向
+pharos-daily-refetch = 重新抓取
+pharos-daily-day-unswept = 该日尚未抓取
+pharos-daily-day-unswept-hint = 周末与公告间隔期通常没有更新
+pharos-daily-day-nomatch = 该日无匹配你方向的论文
+# $fetched (Number) - Day.run.fetched，即那天全站抓回来的总数
+pharos-daily-day-nomatch-hint = 当日共抓取 { $fetched } 篇，均未命中你的关键词
+# 配 pharos-error-unreachable 一起显示
+pharos-daily-unreachable-hint = 请确认 Pharos 服务已启动后重试。
+pharos-daily-detail-empty = 选择一篇论文查看解读
+
+## 每日论文 · 卡片与解读
+
+pharos-daily-pending = 待解读
+pharos-daily-read = 解读
+pharos-daily-reading = 解读中…
+pharos-daily-retry = 重试
+pharos-daily-retrying = 重试中…
+# 论文自身的状态
+pharos-daily-read-failed = 解读失败
+# $error (String) - 上一次解读留下的 read_error。与上一条同时显示：
+# 一条说这篇是什么状态，一条说为什么。不要合并。
+pharos-daily-read-failed-detail = 解读失败：{ $error }
+# $error (String) - 这一次重试自己的失败，显示在第三行
+pharos-daily-retry-failed = 重试失败：{ $error }
+pharos-daily-score-tooltip = 推荐分 · 含你的方向相关度
+pharos-daily-open = arXiv 摘要页
+pharos-daily-open-pdf = PDF
+# 信息栏里没有值时的占位符
+pharos-daily-none = —
+
+## 每日论文 · 导入文库
+
+# 桌面端的「导入文库」是存进本地 Zotero 文库，不是后端的 /import。
+pharos-daily-import = 导入文库
+pharos-daily-importing = 导入中…
+pharos-daily-imported = 已在文库
+# $error (String)
+pharos-daily-import-failed = 导入失败：{ $error }
+
+# 文献探索与研究项目仍在用下面这四条，删掉会让那两个窗口在 en-US 下直接抛错、
+# 在中文下把 id 原样显示出来。等它们也改用 pharos-daily-import* 之后再删。
 pharos-daily-save = 加入文库
 pharos-daily-saving = 保存中…
 pharos-daily-saved = 已加入
 pharos-daily-save-failed = 无法保存这篇论文。
-pharos-daily-open = 在 arXiv 打开
-pharos-daily-matched = 命中方向
 
-pharos-daily-highlight-contribution = 贡献
-pharos-daily-highlight-innovation = 创新点
-pharos-daily-highlight-method = 方法
-pharos-daily-highlight-results = 结果
+## 每日论文 · 详情面板
+
+pharos-daily-section-summary = 中文速览
+pharos-daily-section-highlights = 要点
+pharos-daily-section-scores = 评分
+pharos-daily-section-info = 信息
+pharos-daily-section-abstract = 英文摘要
+
+# 顺序固定：相关、时效、热度、质量、推荐。推荐是加权结论，所以放最后。
+pharos-daily-score-relevance = 相关
+pharos-daily-score-recency = 时效
+pharos-daily-score-popularity = 热度
+pharos-daily-score-quality = 质量
+pharos-daily-score-recommendation = 推荐
+pharos-daily-score-relevance-hint = 与你的研究方向的匹配度，按你的关键词计算
+pharos-daily-score-recency-hint = 论文本身的时效性
+pharos-daily-score-popularity-hint = 论文本身的关注度
+pharos-daily-score-quality-hint = 论文本身的质量
+pharos-daily-score-recommendation-hint = 综合评分，含你的相关度，因此因人而异
+pharos-daily-score-note = 相关与推荐按你的研究方向计算
+
+pharos-daily-info-authors = 作者
+pharos-daily-info-direction = 方向
+pharos-daily-info-direction-hint = 命中的是你的哪个研究方向
+pharos-daily-info-categories = 分类
+pharos-daily-info-keywords = 命中
+pharos-daily-info-keywords-hint = 你的哪些关键词命中了这篇论文
 
 ## 文献探索
 
@@ -189,6 +322,8 @@ pharos-rail-collapse =
 pharos-rail-expand =
     .title = 展开
     .aria-label = 展开模块栏
+pharos-rail-resize =
+    .aria-label = 调整模块栏宽度
 
 ## 管理后台
 

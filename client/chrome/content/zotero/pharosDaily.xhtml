@@ -2,19 +2,27 @@
 
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 <?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
-<?xml-stylesheet href="chrome://zotero/skin/pharosDaily.css" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosDailyView.css" type="text/css"?>
 
 <!DOCTYPE window>
+
+<!-- NOTE: a double hyphen anywhere inside an XML comment stops this whole
+     document parsing and the window comes up blank with nothing logged. The
+     "two hyphens in comments" convention in client/CLAUDE.md is for JS and
+     SCSS; XML is the exception. -->
 
 <window data-l10n-id="pharos-daily-window"
 		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
 		xmlns:html="http://www.w3.org/1999/xhtml"
 		id="pharos-daily-window"
 		windowtype="pharos:daily"
-		width="820" height="640"
+		width="1040" height="700"
 		persist="screenX screenY width height"
 		onload="Zotero_Pharos_Daily.init()"
 		onunload="Zotero_Pharos_Daily.destroy()">
+	<!-- All three are required. data-l10n-id resolves against THIS document's
+	     own resource list, so dropping pharos.ftl renders every id as nothing
+	     and surfaces as a bare `undefined` rejection with no stack. -->
 	<linkset>
 		<html:link rel="localization" href="branding/brand.ftl" />
 		<html:link rel="localization" href="zotero.ftl" />
@@ -26,16 +34,52 @@
 	</script>
 	<script src="chrome://zotero/content/pharosDaily.js"/>
 
+	<!-- Everything below the frame is built in pharosDaily.js. Only the three
+	     panes, the toolbar and the two module-level lines are static, because
+	     they are the parts that exist before any request has come back.
+
+	     Every element here is HTML rather than XUL: a XUL button renders its
+	     `label` attribute and ignores textContent, so a value-only Fluent
+	     message on one produces a blank button. -->
 	<vbox flex="1" id="pharos-daily-root">
-		<hbox id="pharos-daily-toolbar" align="center">
-			<html:select id="pharos-daily-date"/>
-			<button id="pharos-daily-refresh" data-l10n-id="pharos-daily-refresh"/>
-			<spacer flex="1"/>
-			<html:span id="pharos-daily-summary"/>
-		</hbox>
+		<html:div id="pharos-dv" class="pharos-dv">
+			<html:div id="pharos-dv-rail" class="pharos-dv-rail">
+				<html:div id="pharos-dv-rail-head" class="pharos-dv-rail-head"
+					data-l10n-id="pharos-daily-rail-head"/>
+				<html:div id="pharos-dv-dates"/>
+			</html:div>
 
-		<html:div id="pharos-daily-status" role="status"/>
+			<html:div id="pharos-dv-main" class="pharos-dv-main">
+				<html:div id="pharos-dv-bar" class="pharos-dv-bar">
+					<html:span id="pharos-dv-bar-date" class="pharos-dv-bar-date"/>
+					<html:div id="pharos-dv-filters" class="pharos-dv-filters" hidden="hidden"/>
+					<html:div id="pharos-dv-spacer" class="pharos-dv-spacer"/>
+					<html:div id="pharos-dv-sort" class="pharos-dv-sort">
+						<html:button id="pharos-dv-sort-score" class="pharos-dv-sbtn"
+							data-l10n-id="pharos-daily-sort-score"/>
+						<html:button id="pharos-dv-sort-time" class="pharos-dv-sbtn"
+							data-l10n-id="pharos-daily-sort-time"/>
+					</html:div>
+					<html:span id="pharos-dv-count" class="pharos-dv-count"/>
+					<!-- The label lives in its own span so swapping the text
+					     between 更新 and 更新中 cannot take the icon with it. -->
+					<html:button id="pharos-daily-refresh" class="pharos-dv-refresh">
+						<html:span id="pharos-dv-refresh-ic" class="pharos-dv-refresh-ic"/>
+						<html:span id="pharos-dv-refresh-label"/>
+					</html:button>
+				</html:div>
 
-		<html:div id="pharos-daily-list" flex="1"/>
+				<html:div id="pharos-daily-status" class="pharos-dv-note" role="status"/>
+
+				<html:div id="pharos-dv-banner" class="pharos-dv-banner" hidden="hidden">
+					<html:span id="pharos-dv-banner-ic" class="pharos-dv-banner-ic"/>
+					<html:span id="pharos-dv-banner-text" class="pharos-dv-banner-text"/>
+				</html:div>
+
+				<html:div id="pharos-dv-list" class="pharos-dv-list"/>
+			</html:div>
+
+			<html:div id="pharos-dv-detail" class="pharos-dv-detail"/>
+		</html:div>
 	</vbox>
 </window>

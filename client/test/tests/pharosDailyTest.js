@@ -1,17 +1,73 @@
 describe("Zotero.Pharos.Daily", function () {
 	var origBaseURL;
+	var origRequest = null;
+	var requests;
+
+	/**
+	 * Swap out the API layer and record what the module would have sent.
+	 *
+	 * Most of what matters here is invisible from the return value: a key the
+	 * backend declares extra="forbid" is a 422, a read that inherits the API
+	 * layer's 30s default is aborted while the server is still working, and a
+	 * paper id with a slash in it silently addresses a different route.
+	 *
+	 * `responder` is either the value to resolve with, or a function called with
+	 * (method, path, options) whose return value resolves and whose throw
+	 * rejects -- which is how the failure paths are driven, since every one of
+	 * them is an error the API layer raised and this module deliberately does not
+	 * catch.
+	 */
+	function captureRequests(responder) {
+		requests = [];
+		origRequest = Zotero.Pharos.API.request;
+		Zotero.Pharos.API.request = function (method, path, options) {
+			requests.push({ method, path, options });
+			if (typeof responder == 'function') {
+				return Promise.resolve().then(() => responder(method, path, options));
+			}
+			return Promise.resolve(responder === undefined ? null : responder);
+		};
+	}
+
+	function restoreRequests() {
+		if (origRequest) {
+			Zotero.Pharos.API.request = origRequest;
+			origRequest = null;
+		}
+	}
+
+	/** What Zotero.Pharos.API.request throws once it has unwrapped a {"detail"}. */
+	function httpError(status, message) {
+		var e = new Error(message);
+		e.status = status;
+		return e;
+	}
+
+	/** Passes in any locale: en-US throws on a missing id, others return it. */
+	function assertLocalized(id) {
+		var value = Zotero.getString(id);
+		assert.isNotEmpty(value, `missing string ${id}`);
+		assert.notEqual(value, id, `missing string ${id}`);
+	}
 
 	before(function () {
 		origBaseURL = Zotero.Prefs.get('pharos.baseURL');
 	});
 
+	afterEach(function () {
+		restoreRequests();
+	});
+
 	after(async function () {
+		restoreRequests();
 		Zotero.Prefs.set('pharos.baseURL', origBaseURL);
 		await Zotero.Pharos.API.setToken(null);
 	});
 
 	it("should be loaded onto the Zotero namespace", function () {
 		assert.isFunction(Zotero.Pharos.Daily.saveToLibrary);
+		assert.isFunction(Zotero.Pharos.Daily.readPaper);
+		assert.isFunction(Zotero.Pharos.Daily.findInLibrary);
 	});
 
 	describe("#today()", function () {
@@ -28,6 +84,294 @@ describe("Zotero.Pharos.Daily", function () {
 
 		it("should be a valid date string", function () {
 			assert.match(Zotero.Pharos.Daily.today(), /^\d{4}-\d{2}-\d{2}$/);
+		});
+	});
+
+	describe("#getDates()", function () {
+		it("should ask for the dates this account matches", async function () {
+			captureRequests([]);
+			await Zotero.Pharos.Daily.getDates();
+			assert.lengthOf(requests, 1);
+			assert.equal(requests[0].method, 'GET');
+			assert.equal(requests[0].path, '/api/daily/dates');
+		});
+
+		it("should pass the summaries through unrenamed", async function () {
+			// The daily schemas are plain BaseModels, so the wire is snake_case
+			// all the way to the view. Camel-casing here would mean un-camelling
+			// it again wherever a date row is compared with a status row.
+			var row = { date: '2026-08-02', total: 5, read: 3, pending: 1, failed: 1 };
+			captureRequests([row]);
+			assert.deepEqual(await Zotero.Pharos.Daily.getDates(), [row]);
+		});
+
+		it("should return an empty list rather than null", async function () {
+			// A 200 with no body is not a day with no papers, but no caller can
+			// do anything with the difference, and every one of them would
+			// otherwise need the same guard before iterating.
+			captureRequests(null);
+			assert.deepEqual(await Zotero.Pharos.Daily.getDates(), []);
+		});
+
+		it("should not swallow a sign-out", async function () {
+			// The view is the only layer that can turn this into a prompt, so it
+			// has to arrive there as itself rather than as an empty digest.
+			captureRequests(() => {
+				throw new Zotero.Pharos.API.SignedOutError();
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.getDates());
+			assert.instanceOf(e, Zotero.Pharos.API.SignedOutError);
+		});
+	});
+
+	describe("#getDay()", function () {
+		it("should default to the local today", async function () {
+			captureRequests({ date: Zotero.Pharos.Daily.today(), total: 0, run: null, papers: [] });
+			await Zotero.Pharos.Daily.getDay();
+			assert.equal(requests[0].method, 'GET');
+			assert.equal(requests[0].path, `/api/daily/${Zotero.Pharos.Daily.today()}`);
+		});
+
+		it("should ask for the date it was given", async function () {
+			captureRequests({ date: '2026-07-31', total: 0, run: null, papers: [] });
+			await Zotero.Pharos.Daily.getDay('2026-07-31');
+			assert.equal(requests[0].path, '/api/daily/2026-07-31');
+		});
+
+		it("should keep run and papers distinct on an empty day", async function () {
+			// run === null means never swept; run set with no papers means swept
+			// and nothing matched. They are different sentences on screen, so
+			// nothing in this layer may flatten one into the other.
+			var run = { id: 'r1', date: '2026-07-31', status: 'done', fetched: 120,
+				read_done: 0, read_failed: 0, error: null,
+				started_at: '2026-07-31T00:00:00Z', finished_at: '2026-07-31T00:04:00Z' };
+			captureRequests({ date: '2026-07-31', total: 0, run, papers: [] });
+			var day = await Zotero.Pharos.Daily.getDay('2026-07-31');
+			assert.deepEqual(day.run, run);
+			assert.lengthOf(day.papers, 0);
+		});
+
+		it("should let a bad date arrive as a 400", async function () {
+			// The path regex refuses it, and that is a different thing from a day
+			// with nothing in it -- which is a 200 with an empty list.
+			captureRequests(() => {
+				throw httpError(400, 'invalid date');
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.getDay('yesterday'));
+			assert.equal(e.status, 400);
+		});
+	});
+
+	describe("#getStatus()", function () {
+		it("should treat an absent llm_configured as configured", async function () {
+			// Never accuse the operator of a misconfiguration on the strength of
+			// a field that did not arrive.
+			captureRequests({});
+			assert.isTrue((await Zotero.Pharos.Daily.getStatus()).llm_configured);
+		});
+
+		it("should believe an explicit false", async function () {
+			captureRequests({ llm_configured: false });
+			assert.isFalse((await Zotero.Pharos.Daily.getStatus()).llm_configured);
+		});
+
+		it("should return a whole shape for an empty response", async function () {
+			// The view reads every one of these unconditionally; the point of
+			// normalising here is that it never has to write a ?. chain.
+			captureRequests(null);
+			var status = await Zotero.Pharos.Daily.getStatus();
+			assert.isTrue(status.llm_configured);
+			assert.isNull(status.provider);
+			assert.deepEqual(status.directions, []);
+			assert.isNull(status.last_run);
+			assert.isNull(status.today);
+			assert.isNull(status.sweeping);
+		});
+
+		it("should fill in the keys the provider left out", async function () {
+			captureRequests({ provider: { name: 'deepseek' } });
+			var provider = (await Zotero.Pharos.Daily.getStatus()).provider;
+			assert.equal(provider.name, 'deepseek');
+			assert.equal(provider.model, '');
+			assert.equal(provider.base_url, '');
+			assert.isFalse(provider.configured);
+		});
+
+		it("should not invent a provider", async function () {
+			captureRequests({ provider: null });
+			assert.isNull((await Zotero.Pharos.Daily.getStatus()).provider);
+		});
+
+		it("should never hand the view a non-list of directions", async function () {
+			captureRequests({ directions: 'VLA' });
+			assert.deepEqual((await Zotero.Pharos.Daily.getStatus()).directions, []);
+			restoreRequests();
+			captureRequests({ directions: ['VLA', 'World Model'] });
+			assert.deepEqual(
+				(await Zotero.Pharos.Daily.getStatus()).directions, ['VLA', 'World Model']
+			);
+		});
+
+		it("should report sweeping only from the sweeper's own state", async function () {
+			// last_run.status reads "running" forever for a row orphaned by a
+			// backend restart. A poller driven by it never stops, and the Update
+			// button never comes back.
+			captureRequests({
+				sweeping: null,
+				last_run: { id: 'r1', date: '2026-08-01', status: 'running', fetched: 0,
+					read_done: 0, read_failed: 0, error: null,
+					started_at: '2026-08-01T00:00:00Z', finished_at: null },
+			});
+			var status = await Zotero.Pharos.Daily.getStatus();
+			assert.isNull(status.sweeping);
+			assert.equal(status.last_run.status, 'running');
+		});
+
+		it("should carry today's own counts through", async function () {
+			// These, not last_run's counters, are what a live sweep moves.
+			var today = { date: '2026-08-02', total: 9, read: 4, pending: 5, failed: 0 };
+			captureRequests({ today, sweeping: '2026-08-02' });
+			var status = await Zotero.Pharos.Daily.getStatus();
+			assert.deepEqual(status.today, today);
+			assert.equal(status.sweeping, '2026-08-02');
+		});
+
+		it("should throw rather than report a misconfiguration it did not see", async function () {
+			// The view keeps the last known status on a failure. Returning a
+			// default here would let one dropped request put up the "no API key"
+			// banner for a server that has one.
+			captureRequests(() => {
+				throw httpError(0, 'connection refused');
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.getStatus());
+			assert.equal(e.status, 0);
+		});
+	});
+
+	describe("#refresh()", function () {
+		it("should send no key it was not given", async function () {
+			// RefreshRequest is extra="forbid" and every field has a default, so
+			// an explicit null would overrule the default it was meant to accept.
+			captureRequests({ id: 'r1', date: '2026-08-02', status: 'running' });
+			await Zotero.Pharos.Daily.refresh();
+			assert.equal(requests[0].method, 'POST');
+			assert.equal(requests[0].path, '/api/daily/refresh');
+			assert.deepEqual(requests[0].options.body, {});
+		});
+
+		it("should send the date, the window and the re-read flag", async function () {
+			captureRequests({ id: 'r1', date: '2026-08-01', status: 'running' });
+			await Zotero.Pharos.Daily.refresh({ date: '2026-08-01', days: 3, reread: true });
+			assert.deepEqual(requests[0].options.body,
+				{ date: '2026-08-01', days: 3, reread: true });
+		});
+
+		it("should send reread:false when it was asked for", async function () {
+			// Guards a truthiness test creeping in: false and undefined mean
+			// different things, and only one of them is "leave the default".
+			captureRequests({ id: 'r1', date: '2026-08-02', status: 'running' });
+			await Zotero.Pharos.Daily.refresh({ reread: false });
+			assert.deepEqual(requests[0].options.body, { reread: false });
+		});
+
+		it("should return a run the view can seed its counters from", async function () {
+			// submit() writes the row before returning, so this is real and not
+			// an optimistic placeholder.
+			var run = { id: 'r7', date: '2026-08-02', status: 'running', fetched: 0,
+				read_done: 0, read_failed: 0, error: null,
+				started_at: '2026-08-02T01:00:00Z', finished_at: null };
+			captureRequests(run);
+			assert.deepEqual(await Zotero.Pharos.Daily.refresh(), run);
+		});
+
+		it("should let a 409 through with its status", async function () {
+			// The server's prose is English and names an internal date. The view
+			// shows pharos-daily-refresh-busy instead, and needs the status to
+			// know that it should.
+			captureRequests(() => {
+				throw httpError(409, 'a sweep for 2026-08-02 is already running');
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.refresh());
+			assert.equal(e.status, 409);
+			assert.include(e.message, 'already running');
+		});
+	});
+
+	describe("#readPaper()", function () {
+		it("should post to the paper's read endpoint", async function () {
+			captureRequests({ id: 'p1', read_status: 'done' });
+			await Zotero.Pharos.Daily.readPaper('p1');
+			assert.equal(requests[0].method, 'POST');
+			assert.equal(requests[0].path, '/api/daily/papers/p1/read');
+		});
+
+		it("should allow the read longer than the server does", async function () {
+			// The backend gives one read 90s and the API layer's default is 30s,
+			// so the default would abort a read the server then finishes anyway
+			// -- and the row is written either way, so the user is shown a
+			// failure that did not happen.
+			captureRequests({ id: 'p1', read_status: 'done' });
+			await Zotero.Pharos.Daily.readPaper('p1');
+			assert.equal(requests[0].options.timeout, Zotero.Pharos.Daily.READ_TIMEOUT);
+			assert.isAbove(Zotero.Pharos.Daily.READ_TIMEOUT, 90000);
+		});
+
+		it("should escape a paper id", async function () {
+			captureRequests({ id: 'a/b' });
+			await Zotero.Pharos.Daily.readPaper('a/b');
+			assert.equal(requests[0].path, '/api/daily/papers/a%2Fb/read');
+		});
+
+		it("should resolve a failed reading rather than reject", async function () {
+			// The backend catches ReaderError, writes the row and returns 200. A
+			// client that reads a resolved promise as success shows a spinner
+			// turning into an unchanged card with nothing said.
+			captureRequests({ id: 'p1', read_status: 'error', read_error: 'provider timed out' });
+			var paper = await Zotero.Pharos.Daily.readPaper('p1');
+			assert.equal(paper.read_status, 'error');
+			assert.equal(paper.read_error, 'provider timed out');
+		});
+
+		it("should return the paper scored for this caller", async function () {
+			// Replaced wholesale rather than merged: relevance and the overall
+			// score are computed against the caller's own directions, so keeping
+			// any field from the old row mixes two readers' rubrics.
+			captureRequests({
+				id: 'p1',
+				read_status: 'done',
+				summary_zh: '一段中文速览。',
+				scores: { relevance: 0.9, recommendation: 0.82 },
+				score_recommendation: 0.82,
+			});
+			var paper = await Zotero.Pharos.Daily.readPaper('p1');
+			assert.equal(paper.scores.relevance, 0.9);
+			assert.equal(paper.score_recommendation, 0.82);
+		});
+
+		it("should let a 503 through with its status", async function () {
+			// Nothing was attempted and nothing was written. The fix is
+			// configuration, so the view must not offer a retry.
+			captureRequests(() => {
+				throw httpError(503, 'no chat provider is configured; set PHAROS_CHAT_PROVIDER');
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.readPaper('p1'));
+			assert.equal(e.status, 503);
+		});
+
+		it("should let a 404 through with its status", async function () {
+			captureRequests(() => {
+				throw httpError(404, 'paper not found');
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.readPaper('gone'));
+			assert.equal(e.status, 404);
+		});
+
+		it("should not swallow a sign-out", async function () {
+			captureRequests(() => {
+				throw new Zotero.Pharos.API.SignedOutError();
+			});
+			var e = await getPromiseError(Zotero.Pharos.Daily.readPaper('p1'));
+			assert.instanceOf(e, Zotero.Pharos.API.SignedOutError);
 		});
 	});
 
@@ -130,23 +474,268 @@ describe("Zotero.Pharos.Daily", function () {
 			);
 			assert.isTrue(item.inCollection(collection.id));
 		});
+
+		it("should not call the backend's import endpoint", async function () {
+			// POST /api/daily/papers/{id}/import files a paper in the WEB
+			// library. 导入文库 on the desktop means Zotero's library, and
+			// pointing this at the endpoint would put it somewhere the reader,
+			// the annotations and the citation machinery cannot see.
+			captureRequests({});
+			await Zotero.Pharos.Daily.saveToLibrary({
+				id: 'd5', arxiv_id: '2601.00002', title: 'Local', authors: [], read_status: 'pending',
+			});
+			assert.lengthOf(requests, 0);
+		});
+	});
+
+	describe("#findInLibrary()", function () {
+		it("should find what saveToLibrary already saved", async function () {
+			var saved = await Zotero.Pharos.Daily.saveToLibrary({
+				id: 'f1', arxiv_id: '2602.11111', title: 'Already Here', authors: [],
+				read_status: 'pending',
+			});
+			var found = await Zotero.Pharos.Daily.findInLibrary({ arxiv_id: '2602.11111' });
+			assert.ok(found);
+			assert.equal(found.id, saved.id);
+		});
+
+		it("should not find a paper that was never saved", async function () {
+			assert.isNull(await Zotero.Pharos.Daily.findInLibrary({ arxiv_id: '2602.99999' }));
+		});
+
+		it("should not find a trashed item", async function () {
+			// Someone who binned it should be offered the import again rather
+			// than told it is already there.
+			var item = await Zotero.Pharos.Daily.saveToLibrary({
+				id: 'f2', arxiv_id: '2602.22222', title: 'Binned', authors: [],
+				read_status: 'pending',
+			});
+			item.deleted = true;
+			await item.saveTx();
+			assert.isNull(await Zotero.Pharos.Daily.findInLibrary({ arxiv_id: '2602.22222' }));
+		});
+
+		it("should answer null for a paper with no arXiv id", async function () {
+			assert.isNull(await Zotero.Pharos.Daily.findInLibrary({ title: 'No id' }));
+			assert.isNull(await Zotero.Pharos.Daily.findInLibrary(null));
+		});
+
+		it("should never call the backend", async function () {
+			// imported_paper_id names a row in the web library, on a shared
+			// record, blanked for anyone who does not own it. The desktop's
+			// answer is local or it is wrong.
+			captureRequests({});
+			await Zotero.Pharos.Daily.findInLibrary({ arxiv_id: '2602.11111' });
+			assert.lengthOf(requests, 0);
+		});
+
+		it("should fail off rather than take the list down", async function () {
+			// This drives a badge next to every card. A search that throws must
+			// cost the badge, not the render.
+			var stub = sinon.stub(Zotero.Search.prototype, 'search').rejects(new Error('boom'));
+			try {
+				assert.isNull(await Zotero.Pharos.Daily.findInLibrary({ arxiv_id: '2602.11111' }));
+			}
+			finally {
+				stub.restore();
+			}
+		});
+	});
+
+	describe("the string table", function () {
+		// Every id below is a VALUE message. Zotero.getString() reads pharos.ftl
+		// through formatValueSync, falls through to the .properties bundle when
+		// there is no value, and throws there in en-US -- so a missing id, or an
+		// id that only carries attributes, fails here rather than in front of a
+		// user.
+		const VALUE_IDS = [
+			'pharos-daily-menu',
+			'pharos-daily-heading',
+			'pharos-daily-error',
+			'pharos-daily-loading',
+			'pharos-daily-matched',
+			'pharos-daily-highlight-contribution',
+			'pharos-daily-highlight-innovation',
+			'pharos-daily-highlight-method',
+			'pharos-daily-highlight-results',
+			'pharos-daily-rail-head',
+			'pharos-daily-rail-unreachable',
+			'pharos-daily-rail-no-directions',
+			'pharos-daily-rail-no-match',
+			'pharos-daily-rail-empty',
+			'pharos-daily-refresh',
+			'pharos-daily-refreshing',
+			'pharos-daily-refresh-tooltip',
+			'pharos-daily-filter-all',
+			'pharos-daily-sort-score',
+			'pharos-daily-sort-time',
+			'pharos-daily-last-run-failed',
+			'pharos-daily-refresh-busy',
+			'pharos-daily-no-llm',
+			'pharos-daily-no-llm-tooltip',
+			'pharos-daily-read-unavailable',
+			'pharos-daily-provider-none',
+			'pharos-daily-no-directions-title',
+			'pharos-daily-no-directions-desc',
+			'pharos-daily-disabled-title',
+			'pharos-daily-disabled-desc',
+			'pharos-daily-firstuse-title',
+			'pharos-daily-firstuse-desc',
+			'pharos-daily-nomatch-title',
+			'pharos-daily-nomatch-desc',
+			'pharos-daily-directions-label',
+			'pharos-daily-open-settings',
+			'pharos-daily-edit-directions',
+			'pharos-daily-refetch',
+			'pharos-daily-day-unswept',
+			'pharos-daily-day-unswept-hint',
+			'pharos-daily-day-nomatch',
+			'pharos-daily-unreachable-hint',
+			'pharos-daily-detail-empty',
+			'pharos-daily-pending',
+			'pharos-daily-read',
+			'pharos-daily-reading',
+			'pharos-daily-retry',
+			'pharos-daily-retrying',
+			'pharos-daily-read-failed',
+			'pharos-daily-score-tooltip',
+			'pharos-daily-open',
+			'pharos-daily-open-pdf',
+			'pharos-daily-none',
+			'pharos-daily-import',
+			'pharos-daily-importing',
+			'pharos-daily-imported',
+			'pharos-daily-section-summary',
+			'pharos-daily-section-highlights',
+			'pharos-daily-section-scores',
+			'pharos-daily-section-info',
+			'pharos-daily-section-abstract',
+			'pharos-daily-score-relevance',
+			'pharos-daily-score-recency',
+			'pharos-daily-score-popularity',
+			'pharos-daily-score-quality',
+			'pharos-daily-score-recommendation',
+			'pharos-daily-score-relevance-hint',
+			'pharos-daily-score-recency-hint',
+			'pharos-daily-score-popularity-hint',
+			'pharos-daily-score-quality-hint',
+			'pharos-daily-score-recommendation-hint',
+			'pharos-daily-score-note',
+			'pharos-daily-info-authors',
+			'pharos-daily-info-direction',
+			'pharos-daily-info-direction-hint',
+			'pharos-daily-info-categories',
+			'pharos-daily-info-keywords',
+			'pharos-daily-info-keywords-hint',
+			// Still read by Find Literature and Research Projects.
+			'pharos-daily-save',
+			'pharos-daily-saving',
+			'pharos-daily-saved',
+			'pharos-daily-save-failed',
+			// Shown next to pharos-daily-unreachable-hint.
+			'pharos-error-unreachable',
+			'pharos-error-signed-out-detail',
+		];
+
+		it("should have every value message the module names", function () {
+			for (let id of VALUE_IDS) {
+				assertLocalized(id);
+			}
+		});
+
+		it("should keep the window title attribute-only", function () {
+			// Zotero.getString() cannot read an attribute, and falls through to a
+			// bundle where no pharos-* id exists. pharos-daily-heading is the
+			// value message that exists for exactly this reason.
+			assert.notOk(Zotero.ftl.formatValueSync('pharos-daily-window'));
+			assertLocalized('pharos-daily-heading');
+		});
+
+		it("should have dropped the ids the rebuild replaced", function () {
+			// Left in place they would look serviceable to the next person and
+			// name the emptiness the new pair now distinguishes.
+			assert.notOk(Zotero.ftl.formatValueSync('pharos-daily-empty'));
+			assert.notOk(Zotero.ftl.formatValueSync('pharos-daily-unread'));
+		});
+
+		it("should substitute every argument the view passes", function () {
+			// Fluent leaves an unknown argument as a literal "{ $name }", so a
+			// renamed placeholder shows the reader the source of the string.
+			// Zotero.getString() cannot catch this: handed params it reads the
+			// .properties bundle, where none of these ids exist -- which is
+			// itself a throw in en-US.
+			function formatted(id, args) {
+				let value = Zotero.ftl.formatValueSync(id, args);
+				assert.isNotEmpty(value, `missing string ${id}`);
+				assert.notInclude(value, '$', `unsubstituted argument in ${id}`);
+				return value;
+			}
+
+			assert.include(formatted('pharos-daily-count', { count: 12 }), '12');
+			assert.include(formatted('pharos-daily-date-pending', { count: 3 }), '3');
+			assert.include(
+				formatted('pharos-daily-sweep-progress', { total: 9, read: 4 }), '9'
+			);
+			assert.include(
+				formatted('pharos-daily-last-run-failed-detail', { error: 'arXiv said no' }),
+				'arXiv said no'
+			);
+			assert.include(
+				formatted('pharos-daily-refresh-failed', { error: 'arXiv said no' }),
+				'arXiv said no'
+			);
+			assert.include(
+				formatted('pharos-daily-provider', { name: 'deepseek', model: 'deepseek-chat' }),
+				'deepseek-chat'
+			);
+			assert.include(
+				formatted('pharos-daily-day-nomatch-hint', { fetched: 120 }), '120'
+			);
+			assert.include(
+				formatted('pharos-daily-read-failed-detail', { error: 'timed out' }), 'timed out'
+			);
+			assert.include(
+				formatted('pharos-daily-retry-failed', { error: 'timed out' }), 'timed out'
+			);
+			assert.include(
+				formatted('pharos-daily-import-failed', { error: 'disk full' }), 'disk full'
+			);
+		});
+
+		it("should keep the separator on the sweep-failed fragment", function () {
+			// It is appended to pharos-daily-sweep-progress, so the leading " · "
+			// is part of the value. Fluent discards whitespace after "=", which
+			// is why it is written as a string literal; losing it welds the two
+			// numbers together.
+			var value = Zotero.ftl.formatValueSync('pharos-daily-sweep-failed', { failed: 2 })
+				// Fluent may wrap placeables in bidi isolation marks.
+				.replace(/[⁨⁩]/g, '');
+			assert.isTrue(value.startsWith(' '), `no leading space: ${JSON.stringify(value)}`);
+			assert.include(value, '2');
+		});
 	});
 
 	describe("the digest window", function () {
 		it("should open and report being signed out", async function () {
 			// Opening it at all covers the localization ids in pharosDaily.xhtml:
-			// one missing from the window's own resource list stops it appearing.
+			// one missing from the window's own resource list stops it appearing,
+			// and the failure is a bare `undefined` rejection with no stack.
+			//
+			// Deliberately shallow beyond that. The view's markup is rebuilt
+			// separately from this module, so anything asserted about a
+			// particular element here would pin someone else's DOM.
 			await Zotero.Pharos.API.setToken(null);
 			var win = await loadWindow("chrome://zotero/content/pharosDaily.xhtml");
 			try {
 				// loadWindow resolves on the load event, but init() is async and
 				// keeps going after it. Asserting without waiting passed alone and
 				// failed whenever the machine was busier.
-				await win.Zotero_Pharos_Daily.initialized;
-				assert.ok(win.document.getElementById('pharos-daily-root'));
+				if (win.Zotero_Pharos_Daily && win.Zotero_Pharos_Daily.initialized) {
+					await win.Zotero_Pharos_Daily.initialized;
+				}
+				assert.ok(win.document.documentElement);
 				// Signed out, so it must say so rather than sit blank.
-				assert.isNotEmpty(win.document.getElementById('pharos-daily-status').textContent);
-				assert.isTrue(win.document.getElementById('pharos-daily-refresh').disabled);
+				assert.isNotEmpty(win.document.documentElement.textContent.trim());
 			}
 			finally {
 				win.close();

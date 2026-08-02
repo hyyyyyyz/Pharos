@@ -76,29 +76,169 @@ pharos-error-unreachable = Could not reach the Pharos server.
 
 ## Daily arXiv digest
 
+# Vocabulary: the thing a model produces is an "AI reading", and producing one
+# is "Read with AI". Continuous with the backend's own read_status / read_error,
+# and it keeps what a person does distinct from what a model did.
+
 pharos-daily-menu = Daily Papers…
 pharos-daily-window =
     .title = Daily Papers
-pharos-daily-refresh = Fetch Now
-pharos-daily-refreshing = Sweeping arXiv…
-pharos-daily-loading = Loading…
-pharos-daily-empty = Nothing for this day yet.
+# pharos-daily-window has an attribute and no value, so Zotero.getString()
+# cannot read it and throws outright in en-US. Name the module with this.
+pharos-daily-heading = Daily Papers
 pharos-daily-error = Could not load the digest.
+pharos-daily-loading = Loading…
 # $count (Number) - papers matched for the selected day
 pharos-daily-count = { $count } papers
-pharos-daily-unread = Not read yet
-pharos-daily-read-failed = Reading failed
-pharos-daily-save = Save to Library
-pharos-daily-saving = Saving…
-pharos-daily-saved = Saved
-pharos-daily-save-failed = Could not save this paper.
-pharos-daily-open = Open on arXiv
 pharos-daily-matched = Matched
 
 pharos-daily-highlight-contribution = Contribution
 pharos-daily-highlight-innovation = Novelty
 pharos-daily-highlight-method = Method
 pharos-daily-highlight-results = Results
+
+## Daily papers · date rail
+
+pharos-daily-rail-head = Dates
+pharos-daily-rail-unreachable = No connection
+pharos-daily-rail-no-directions = No directions
+pharos-daily-rail-no-match = No matching dates
+pharos-daily-rail-empty = Nothing yet
+# $count (Number) - papers on that date with no reading yet
+pharos-daily-date-pending = { $count } awaiting AI
+
+## Daily papers · toolbar
+
+pharos-daily-refresh = Update
+pharos-daily-refreshing = Updating
+pharos-daily-refresh-tooltip = Fetch today's arXiv and read it
+pharos-daily-filter-all = All
+pharos-daily-sort-score = Score
+pharos-daily-sort-time = Date
+
+## Daily papers · sweep progress and run failures
+
+# $total (Number) - papers this account has matched so far
+# $read (Number) - how many of them have been read
+# Both come from getStatus().today, or the matching getDates() row. NOT from
+# last_run: those three columns are written once at _finish_run and read zero
+# for the whole time a sweep is worth watching.
+pharos-daily-sweep-progress = Updating · { $total } matched · { $read } read
+# $failed (Number) - readings that failed
+# Appended to the line above only when the failed count is above zero. The
+# leading " · " belongs to this value, and Fluent strips whitespace after "=",
+# hence the string literal.
+pharos-daily-sweep-failed = { " " }· { $failed } failed
+pharos-daily-last-run-failed = The last update failed
+# $error (String) - the reason the server recorded
+pharos-daily-last-run-failed-detail = The last update failed: { $error }
+# $error (String)
+pharos-daily-refresh-failed = Update failed: { $error }
+# Shown for a 409 in place of the server's own English prose
+pharos-daily-refresh-busy = An update is already running.
+
+## Daily papers · no reading model
+
+# Informational, never an error: fetching genuinely works without a key.
+pharos-daily-no-llm = No LLM API key is configured. Papers are still fetched, filtered and ranked by your directions, but no Chinese reading or scores can be produced. They stay "Awaiting AI", and can be read at any time once a key is set.
+pharos-daily-no-llm-tooltip = No LLM API key is configured
+# Shown for a 503 from the read endpoint
+pharos-daily-read-unavailable = No reading model is configured, so nothing can be read.
+# $name (String) - the provider
+# $model (String) - the model
+pharos-daily-provider = Reading model: { $name } · { $model }
+pharos-daily-provider-none = No reading model configured
+
+## Daily papers · empty states
+
+pharos-daily-no-directions-title = No research directions yet
+pharos-daily-no-directions-desc = Daily Papers filters arXiv by the research directions you define. No direction is enabled right now, so nothing can reach this view. Add one with a few keywords in Settings to start.
+pharos-daily-disabled-title = Daily Papers is switched off
+pharos-daily-disabled-desc = This account has Daily Papers switched off. The sweep still runs, but nothing reaches this view. Turn it back on under Settings → Daily Papers.
+pharos-daily-firstuse-title = Daily Papers
+pharos-daily-firstuse-desc = Every day this scans arXiv, keeps the papers matching the research directions you defined in Settings, and produces a Chinese reading, highlights and scores for each one. Press Update to fetch the first digest.
+pharos-daily-nomatch-title = No papers matched your directions
+pharos-daily-nomatch-desc = The sweep has run, but not one paper hit your direction keywords. Loosen a keyword, add a direction or add a category in Settings; the change re-filters immediately, with nothing fetched again.
+pharos-daily-directions-label = Your directions
+pharos-daily-open-settings = Open Settings
+pharos-daily-edit-directions = Edit Directions
+pharos-daily-refetch = Fetch Again
+pharos-daily-day-unswept = This day has not been fetched
+pharos-daily-day-unswept-hint = Weekends and announcement gaps usually have nothing
+pharos-daily-day-nomatch = No paper matched your directions on this day
+# $fetched (Number) - Day.run.fetched, the finished sweep's real total
+pharos-daily-day-nomatch-hint = { $fetched } papers were fetched that day; none hit your keywords
+# Paired with pharos-error-unreachable
+pharos-daily-unreachable-hint = Make sure the Pharos service is running, then try again.
+pharos-daily-detail-empty = Select a paper to see its reading
+
+## Daily papers · cards and reading
+
+pharos-daily-pending = Awaiting AI
+pharos-daily-read = Read with AI
+pharos-daily-reading = Reading…
+pharos-daily-retry = Retry
+pharos-daily-retrying = Retrying…
+# The paper's own status
+pharos-daily-read-failed = Reading failed
+# $error (String) - the read_error a previous attempt left behind. Shown
+# alongside the line above: one states the status, the other states why.
+# Do not collapse them.
+pharos-daily-read-failed-detail = Reading failed: { $error }
+# $error (String) - this retry's own failure, on a third line
+pharos-daily-retry-failed = Retry failed: { $error }
+pharos-daily-score-tooltip = Overall score · includes your direction relevance
+pharos-daily-open = arXiv abstract page
+pharos-daily-open-pdf = PDF
+# Stands in for an empty value in the info grid
+pharos-daily-none = —
+
+## Daily papers · importing
+
+# On the desktop, importing means the local Zotero library. It does not call
+# the backend's /import endpoint.
+pharos-daily-import = Import to Library
+pharos-daily-importing = Importing…
+pharos-daily-imported = In Library
+# $error (String)
+pharos-daily-import-failed = Import failed: { $error }
+
+# Find Literature and Research Projects still use the four below. Deleting them
+# makes those two windows throw outright in en-US and render the bare id in
+# zh-CN. Remove once they move to pharos-daily-import* too.
+pharos-daily-save = Save to Library
+pharos-daily-saving = Saving…
+pharos-daily-saved = Saved
+pharos-daily-save-failed = Could not save this paper.
+
+## Daily papers · detail panel
+
+pharos-daily-section-summary = Summary (Chinese)
+pharos-daily-section-highlights = Highlights
+pharos-daily-section-scores = Scores
+pharos-daily-section-info = Details
+pharos-daily-section-abstract = Abstract (English)
+
+# Fixed order: relevance, recency, popularity, quality, recommendation. Overall
+# is last, because it is the weighted conclusion.
+pharos-daily-score-relevance = Relevance
+pharos-daily-score-recency = Recency
+pharos-daily-score-popularity = Attention
+pharos-daily-score-quality = Quality
+pharos-daily-score-recommendation = Overall
+pharos-daily-score-relevance-hint = How closely it matches your research directions, computed from your keywords
+pharos-daily-score-recency-hint = How recent the paper itself is
+pharos-daily-score-popularity-hint = How much attention the paper itself is getting
+pharos-daily-score-quality-hint = The quality of the paper itself
+pharos-daily-score-recommendation-hint = A weighted overall call that includes your own relevance, so it differs per reader
+pharos-daily-score-note = Relevance and Overall are computed from your research directions
+
+pharos-daily-info-authors = Authors
+pharos-daily-info-direction = Direction
+pharos-daily-info-direction-hint = Which of your research directions it matched
+pharos-daily-info-categories = Categories
+pharos-daily-info-keywords = Matched
+pharos-daily-info-keywords-hint = Which of your keywords hit this paper
 
 ## Literature discovery
 
@@ -189,6 +329,8 @@ pharos-rail-collapse =
 pharos-rail-expand =
     .title = Expand
     .aria-label = Expand the module rail
+pharos-rail-resize =
+    .aria-label = Resize the module rail
 
 ## Administrator console
 

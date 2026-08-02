@@ -1,0 +1,986 @@
+// The 每日论文 window.
+//
+// Its own stylesheet, NOT scss/pharosDaily.scss. That file compiles to
+// pharosDaily.css, which is still linked from pharosDiscovery.xhtml and
+// pharosProjects.xhtml, and both of those build their rows out of
+// .pharos-daily-paper / -title / -meta / -summary-text / -pending / -actions
+// and declare their own #pharos-daily-root / -toolbar / -summary / -status /
+// -list. Repurposing any of those names, or deleting the file as dead, silently
+// restyles two other modules with nothing logged anywhere.
+//
+// Metrics come from the web client's DailyView.css so the two products read as
+// one: a 196px rail with 26px rows, a 34px toolbar with 25px controls, a 280px
+// detail pane and a 12px section rhythm.
+
+@import "abstracts/variables";
+@import "abstracts/functions";
+@import "abstracts/mixins";
+@import "abstracts/placeholders";
+
+@import "themes/light";
+@import "themes/dark";
+
+@import "base/base";
+@import "components/button";
+@import "components/window";
+
+// An icon drawn from Zotero's own SVG set.
+//
+// The -moz-context-properties line is the load-bearing part: without it the SVG
+// paints its own colours and ignores the theme entirely, which is how every
+// other icon in the tree follows the palette (see scss/elements/_pharosRail).
+@mixin dv-icon($url, $size) {
+	width: $size;
+	height: $size;
+	flex: 0 0 $size;
+	background-image: url($url);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: $size $size;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+#pharos-daily-root {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--material-background);
+	color: var(--fill-primary);
+
+	// The web client's --c-hv / --c-acs / --c-acsb / --c-err-soft, expressed in
+	// this tree's variables so both themes follow without a second palette.
+	// Every one of them resolves to a theme variable; nothing here is a literal.
+	--pharos-dv-hover: var(--fill-quinary);
+	--pharos-dv-soft: var(--fill-quarternary);
+	--pharos-dv-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	--pharos-dv-accent-line: color-mix(in srgb, var(--color-accent) 34%, transparent);
+	--pharos-dv-err-soft: color-mix(in srgb, var(--accent-red) 13%, transparent);
+
+	// There is no global [hidden] rule in scss/base, so without this every
+	// element toggled with `.hidden = true` stays on screen with no error.
+	[hidden] {
+		display: none;
+	}
+}
+
+// components/button hands every macOS `button` a max-height of 25px and a
+// negative margin, and every Linux one a 1px border and .3em/1.5em of padding.
+// Both would clamp and misalign the 20-28px controls below, which state their
+// own boxes.
+//
+// Written through :where() on purpose: that keeps the selector at the same
+// specificity as the bare `button` rules it is undoing -- so it wins on source
+// order -- while staying BELOW every .pharos-dv-* class, which would otherwise
+// lose its own padding and border to an id-qualified reset.
+:where(#pharos-daily-root) button {
+	appearance: none;
+	margin: 0;
+	padding: 0;
+	max-height: none;
+	min-height: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: default;
+}
+
+.pharos-dv {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+// ================================================================ date rail
+
+.pharos-dv-rail {
+	width: 196px;
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	padding-block: 8px;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-border);
+	overflow-y: auto;
+	min-height: 0;
+}
+
+.pharos-dv-rail-head {
+	padding: 0 8px 6px;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-dv-rail-note {
+	padding: 0 8px;
+	height: 26px;
+	display: flex;
+	align-items: center;
+	font-size: 12px;
+	color: var(--fill-tertiary);
+
+	&.is-err {
+		color: var(--accent-red);
+	}
+}
+
+.pharos-dv-date {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: calc(100% - 8px);
+	height: 26px;
+	flex: none;
+	padding: 0 8px;
+	margin-inline: 4px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-primary);
+	font-size: 12px;
+	text-align: start;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&.is-active,
+	&.is-active:hover {
+		background: var(--pharos-dv-accent-soft);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+}
+
+.pharos-dv-date-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+// The unread badge. Present only on a day that still has 待解读 papers, which
+// is the one number the old single-select date control threw away.
+.pharos-dv-date-pending {
+	flex: none;
+	padding: 2px 5px;
+	border-radius: 20px;
+	background: color-mix(in srgb, var(--accent-gold) 42%, transparent);
+	color: var(--fill-primary);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-dv-date-count {
+	flex: none;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+// =================================================================== centre
+
+.pharos-dv-main {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	border-inline-end: var(--material-border);
+}
+
+// ----------------------------------------------------------------- toolbar
+
+.pharos-dv-bar {
+	flex: none;
+	height: 34px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px;
+	border-block-end: var(--material-border);
+}
+
+.pharos-dv-bar-date {
+	flex: none;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--fill-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+// Scrolls rather than clips: `overflow: hidden` alone amputates the last chip
+// mid-glyph once more than two directions match, which reads as a broken layout
+// and hides a filter the user then cannot reach.
+.pharos-dv-filters {
+	display: flex;
+	gap: 4px;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+
+.pharos-dv-fchip {
+	flex: none;
+	height: 20px;
+	padding: 0 8px;
+	border: var(--material-border);
+	border-radius: 20px;
+	background: transparent;
+	color: var(--fill-secondary);
+	font-size: 11px;
+	white-space: nowrap;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&.is-on {
+		border-color: var(--pharos-dv-accent-line);
+		background: var(--pharos-dv-accent-soft);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+}
+
+.pharos-dv-spacer {
+	flex: 1;
+}
+
+.pharos-dv-sort {
+	flex: none;
+	display: flex;
+	border: var(--material-border);
+	border-radius: 5px;
+	overflow: hidden;
+}
+
+.pharos-dv-sbtn {
+	height: 23px;
+	padding: 0 9px;
+	border: none;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+
+	& + & {
+		border-inline-start: var(--material-border);
+	}
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&.is-on {
+		background: var(--pharos-dv-accent-soft);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+}
+
+.pharos-dv-count {
+	flex: none;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-dv-refresh {
+	flex: none;
+	height: 25px;
+	padding: 0 9px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	border: none;
+	border-radius: 5px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 11.5px;
+	font-weight: 500;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-dv-refresh-ic {
+	@include dv-icon("chrome://zotero/skin/16/universal/sync.svg", 12px);
+
+	&.is-spin {
+		animation: pharos-dv-spin 1.1s linear infinite;
+	}
+}
+
+@keyframes pharos-dv-spin {
+	from {
+		rotate: 0deg;
+	}
+
+	to {
+		rotate: 360deg;
+	}
+}
+
+// ------------------------------------------------ module-level status lines
+
+// One line, carrying whichever of the module-level messages is current: the
+// signed-out notice, live sweep counters, a failed run, a failed refresh.
+.pharos-dv-note {
+	flex: none;
+	padding: 4px 8px;
+	font-size: 11.5px;
+	color: var(--fill-tertiary);
+	border-block-end: var(--material-border);
+	font-variant-numeric: tabular-nums;
+
+	&.is-err {
+		color: var(--accent-red);
+	}
+}
+
+// The "no API key" banner. Informational, never an error: fetching genuinely
+// works without a key, so it must not read as a failure.
+.pharos-dv-banner {
+	flex: none;
+	display: flex;
+	align-items: flex-start;
+	gap: 7px;
+	padding: 8px 10px;
+	background: var(--pharos-dv-accent-soft);
+	border-block-end: 1px solid var(--pharos-dv-accent-line);
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+}
+
+.pharos-dv-banner-ic {
+	@include dv-icon("chrome://zotero/skin/16/universal/info.svg", 14px);
+
+	margin-block-start: 1px;
+	color: var(--color-accent);
+}
+
+.pharos-dv-banner-text {
+	min-width: 0;
+}
+
+// -------------------------------------------------------------------- list
+
+.pharos-dv-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+// ---------------------------------------------------------------- capsules
+
+.pharos-dv-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 6px;
+	border-radius: 20px;
+	font-size: 10.5px;
+	font-weight: 500;
+
+	&::before {
+		content: "";
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	&.is-pending {
+		background: var(--pharos-dv-soft);
+		color: var(--fill-tertiary);
+	}
+
+	&.is-err {
+		background: var(--pharos-dv-err-soft);
+		color: var(--accent-red);
+	}
+}
+
+// ------------------------------------------------------------------- cards
+
+.pharos-dv-card {
+	padding: 7px 10px 8px;
+	border-block-end: var(--material-border);
+	background: transparent;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&.is-selected,
+	&.is-selected:hover {
+		background: var(--pharos-dv-accent-soft);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+}
+
+.pharos-dv-card-top {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+}
+
+// The recommendation score. The tiers exist so a column of cards can be triaged
+// by scanning this badge alone -- an unread paper and a weak one looked
+// identical before, which is exactly the distinction the scoring rubric is
+// emphatic about making visible.
+.pharos-dv-score {
+	flex: none;
+	min-width: 28px;
+	padding: 1px 5px;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	text-align: center;
+	font-size: 11px;
+	line-height: 1.45;
+	font-variant-numeric: tabular-nums;
+
+	&.is-high {
+		background: var(--color-accent);
+		color: var(--color-accent-text);
+		font-weight: 700;
+	}
+
+	&.is-mid {
+		background: var(--pharos-dv-accent-soft);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+
+	&.is-low {
+		background: var(--pharos-dv-soft);
+		color: var(--fill-secondary);
+		font-weight: 500;
+	}
+
+	// Unread: no score exists, and the dashed outline implies none.
+	&.is-none {
+		background: transparent;
+		border: 1px dashed var(--color-border);
+		color: var(--fill-tertiary);
+		font-weight: 400;
+	}
+}
+
+.pharos-dv-domain {
+	flex: none;
+	padding: 1px 6px;
+	border-radius: 20px;
+	background: var(--pharos-dv-soft);
+	color: var(--fill-secondary);
+	font-size: 10.5px;
+	white-space: nowrap;
+}
+
+.pharos-dv-card-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 12.5px;
+	line-height: 1.45;
+	color: var(--fill-primary);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.pharos-dv-card.is-selected .pharos-dv-card-title {
+	font-weight: 600;
+}
+
+// Kept from the desktop's own row rather than dropped to match the web: arXiv
+// author lists run to dozens of names, so the first four carry the attribution
+// and "et al." carries the rest without becoming the tallest thing in the card.
+.pharos-dv-card-meta {
+	margin-block-start: 2px;
+	padding-inline-start: 34px;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pharos-dv-card-sum {
+	margin-block-start: 3px;
+	padding-inline-start: 34px;
+	font-size: 11.5px;
+	line-height: 1.55;
+	color: var(--fill-secondary);
+	// Four lines, not the web's two. A desktop window is taller than a browser
+	// panel and the extra two lines routinely decide a paper without opening it.
+	display: -webkit-box;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+// ----------------------------------------------------------- empty states
+
+.pharos-dv-empty {
+	height: 100%;
+	min-height: 260px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	text-align: center;
+	color: var(--fill-tertiary);
+}
+
+.pharos-dv-empty-text {
+	font-size: 12.5px;
+	line-height: 1.7;
+
+	&.is-err {
+		color: var(--accent-red);
+	}
+}
+
+.pharos-dv-empty-hint {
+	display: block;
+	font-size: 11.5px;
+}
+
+// An inline action inside an empty state, used where the emptiness is caused by
+// the reader's own configuration and the fix is one click away. Styled as a
+// link rather than a button: the panel is a sentence, and a solid control in
+// the middle of it would outweigh the explanation it depends on.
+.pharos-dv-empty-link {
+	margin-block-start: 6px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--color-accent);
+	font-size: 11.5px;
+
+	&:hover {
+		text-decoration: underline;
+	}
+}
+
+.pharos-dv-firstuse {
+	height: 100%;
+	min-height: 340px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 32px;
+}
+
+.pharos-dv-firstuse-inner {
+	max-width: 400px;
+	text-align: center;
+}
+
+// The rail's Daily glyph, at plate size. Written out rather than taken from
+// dv-icon() because the box is 48px and the glyph inside it is 26px.
+.pharos-dv-firstuse-mark {
+	width: 48px;
+	height: 48px;
+	margin: 0 auto 14px;
+	border-radius: 12px;
+	background-color: var(--pharos-dv-accent-soft);
+	background-image: url("chrome://zotero/skin/16/universal/abstract.svg");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 26px 26px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+	color: var(--color-accent);
+}
+
+.pharos-dv-firstuse-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--fill-primary);
+	margin-block-end: 5px;
+}
+
+.pharos-dv-firstuse-desc {
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--fill-secondary);
+	margin-block-end: 16px;
+}
+
+// The reader's current directions, shown under an empty state so the
+// configuration that produced the emptiness can be checked against it without
+// opening settings first. Wraps: a user may have a dozen.
+.pharos-dv-dirs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	margin-block-end: 16px;
+}
+
+.pharos-dv-dirs-k {
+	font-size: 11px;
+	color: var(--fill-tertiary);
+	margin-inline-end: 2px;
+}
+
+.pharos-dv-dirs-v {
+	padding: 1px 7px;
+	border-radius: 20px;
+	background: var(--pharos-dv-soft);
+	color: var(--fill-secondary);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+// Two actions where an empty state has both a fix and a retry. The primary is
+// whichever one the cause points at, so the order is set by the caller.
+.pharos-dv-firstuse-btns {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+.pharos-dv-cta {
+	height: 28px;
+	padding: 0 14px;
+	border: none;
+	border-radius: 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 12.5px;
+	font-weight: 500;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-dv-cta-ghost {
+	height: 28px;
+	padding: 0 14px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 12.5px;
+	font-weight: 500;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+// ============================================================ detail panel
+
+.pharos-dv-detail {
+	width: 280px;
+	flex: none;
+	min-height: 0;
+	overflow-y: auto;
+	background: var(--material-background);
+}
+
+.pharos-dv-detail-empty {
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	text-align: center;
+	color: var(--fill-tertiary);
+	font-size: 12.5px;
+	line-height: 1.7;
+}
+
+.pharos-dv-detail-body {
+	padding: 14px 16px;
+}
+
+.pharos-dv-d-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	line-height: 1.45;
+	color: var(--fill-primary);
+	margin-block-end: 2px;
+}
+
+.pharos-dv-d-sub {
+	font-size: 11.5px;
+	line-height: 1.4;
+	color: var(--fill-tertiary);
+	margin-block-end: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-dv-d-actions {
+	display: flex;
+	gap: 6px;
+	margin-block-end: 12px;
+}
+
+.pharos-dv-d-primary {
+	flex: 1;
+	height: 28px;
+	padding: 0 10px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: none;
+	border-radius: 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 12px;
+	font-weight: 600;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+
+	.pharos-dv-d-ic {
+		@include dv-icon("chrome://zotero/skin/16/universal/plus.svg", 12px);
+	}
+}
+
+.pharos-dv-d-ghost {
+	height: 22px;
+	padding: 0 9px;
+	border: var(--material-border);
+	border-radius: 5px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+	font-weight: 500;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-dv-d-err {
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--accent-red);
+	margin-block-end: 12px;
+	overflow-wrap: anywhere;
+}
+
+// The read state sits above every content section, so an absent summary is
+// never ambiguous between "not read yet" and "read, nothing to say".
+.pharos-dv-d-state {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-block-end: 12px;
+
+	&.is-col {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 6px;
+	}
+
+	&.is-col .pharos-dv-d-err {
+		margin-block-end: 0;
+	}
+}
+
+.pharos-dv-d-state-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+// ---------------------------------------------------------------- sections
+
+.pharos-dv-d-sec {
+	padding-block: 12px;
+	border-block-start: var(--material-border);
+}
+
+.pharos-dv-d-sec-last {
+	padding-block: 12px 0;
+	border-block-start: var(--material-border);
+}
+
+.pharos-dv-d-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--fill-tertiary);
+	margin-block-end: 7px;
+}
+
+.pharos-dv-d-summary {
+	font-size: 12px;
+	line-height: 1.7;
+	color: var(--fill-primary);
+	overflow-wrap: anywhere;
+}
+
+// -------------------------------------------------------------- highlights
+
+.pharos-dv-hl + .pharos-dv-hl {
+	margin-block-start: 8px;
+}
+
+.pharos-dv-hl-k {
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--color-accent);
+	margin-block-end: 2px;
+}
+
+.pharos-dv-hl-v {
+	font-size: 12px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	overflow-wrap: anywhere;
+}
+
+// ------------------------------------------------------------------ scores
+
+.pharos-dv-sc {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 19px;
+}
+
+.pharos-dv-sc-k {
+	flex: none;
+	width: 30px;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+}
+
+.pharos-dv-sc-track {
+	flex: 1;
+	height: 4px;
+	border-radius: 3px;
+	background: var(--pharos-dv-soft);
+	overflow: hidden;
+}
+
+.pharos-dv-sc-bar {
+	display: block;
+	height: 100%;
+	border-radius: 3px;
+	background: var(--fill-tertiary);
+}
+
+.pharos-dv-sc-v {
+	flex: none;
+	width: 24px;
+	text-align: end;
+	font-size: 11px;
+	color: var(--fill-secondary);
+	font-variant-numeric: tabular-nums;
+}
+
+// 推荐 is the weighted conclusion, so it is the one row drawn in the accent.
+.pharos-dv-sc.is-rec {
+	.pharos-dv-sc-k,
+	.pharos-dv-sc-v {
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+
+	.pharos-dv-sc-bar {
+		background: var(--color-accent);
+	}
+}
+
+// 相关 and 推荐 are computed for the signed-in reader; the other three describe
+// the paper. Said once under the block rather than per row, because five rows
+// of qualifier would bury the numbers they qualify.
+.pharos-dv-sc-note {
+	margin-block-start: 7px;
+	font-size: 10.5px;
+	line-height: 1.5;
+	color: var(--fill-tertiary);
+}
+
+// ------------------------------------------------------------ info & links
+
+.pharos-dv-d-grid {
+	display: grid;
+	grid-template-columns: 34px 1fr;
+	gap: 6px 10px;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.pharos-dv-d-k {
+	color: var(--fill-tertiary);
+}
+
+.pharos-dv-d-v {
+	color: var(--fill-primary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-dv-d-abstract {
+	font-size: 12px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-dv-d-links {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+// A button, not an <a href>: these open in the system browser through
+// Zotero.launchURL, never in an in-app tab.
+.pharos-dv-d-link {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--color-accent);
+	font-size: 12px;
+
+	&:hover {
+		text-decoration: underline;
+	}
+
+	.pharos-dv-d-ic {
+		@include dv-icon("chrome://zotero/skin/16/universal/open-link.svg", 12px);
+	}
+}

@@ -429,6 +429,7 @@ describe("Pharos module rail", function () {
 			it("should report the width it is resizing", function () {
 				rail.railWidth = 200;
 				assert.equal(splitter.getAttribute('role'), 'separator');
+				assert.isNotEmpty(splitter.getAttribute('aria-label'));
 				assert.equal(splitter.getAttribute('aria-valuenow'), '200');
 				assert.equal(splitter.getAttribute('aria-valuemin'),
 					String(PharosRail.MIN_WIDTH));
