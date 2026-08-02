@@ -44,6 +44,23 @@ Zotero.Pharos.Chat = new function () {
 	let _paperIDs = new Map();
 
 	/**
+	 * How much of a long thread is worth showing.
+	 *
+	 * Deliberately the backend's own MAX_HISTORY_CHARS (services/ai_chat.py:47),
+	 * applied by the same rule and in the same direction: newest first, stop
+	 * before the budget is exceeded, keep at least one. That budget is what the
+	 * model is actually given -- prepare_chat_request() trims the stored turns
+	 * to it before every question -- so matching it makes the box hold exactly
+	 * what the model remembers. A smaller number here would hide turns it still
+	 * knows, which is the bug this whole path exists to close; a larger one
+	 * would show turns it has already forgotten, which is the same lie the
+	 * other way round.
+	 *
+	 * If the backend's constant moves, this one has to move with it.
+	 */
+	const MAX_HISTORY_CHARS = 48000;
+
+	/**
 	 * Whether chat is possible for an item.
 	 *
 	 * @param {Zotero.Item} item
@@ -74,6 +91,21 @@ Zotero.Pharos.Chat = new function () {
 		}
 		return Zotero.Items.get(item.getAttachments())
 			.find(a => Zotero.Pharos.Translate.canTranslate(a)) || null;
+	};
+
+	/**
+	 * The paper id already resolved for an attachment, or null.
+	 *
+	 * Synchronous and free, unlike resolvePaperID(), which is how an id is
+	 * obtained in the first place and uploads the file to do it. Anything that
+	 * runs merely because an item was selected has to be able to ask the cheap
+	 * question: arrowing down the items list must not upload the library.
+	 *
+	 * @param {Zotero.Item} attachment
+	 * @return {String|null}
+	 */
+	this.getKnownPaperID = function (attachment) {
+		return (attachment && _paperIDs.get(attachment.id)) || null;
 	};
 
 	/**
@@ -148,21 +180,41 @@ Zotero.Pharos.Chat = new function () {
 	};
 
 	/**
+	 * The conversation this paper's thread is already in, or null.
+	 *
+	 * Split out from getOrCreateConversation() because selecting an item is not
+	 * a reason to write a row on the server. A caller that only wants to redraw
+	 * what exists must not create anything by asking.
+	 *
+	 * @param {String} paperID
+	 * @return {Promise<Object|null>} the conversation summary
+	 */
+	this.getLatestConversation = async function (paperID) {
+		let conversations = await Zotero.Pharos.API.request(
+			'GET', `/api/ai/papers/${paperID}/conversations`
+		);
+		// The backend returns these newest-first.
+		return conversations && conversations.length ? conversations[0] : null;
+	};
+
+	/**
 	 * The conversation to continue for this paper, creating one if there is none.
 	 *
 	 * Reuses the most recent rather than starting fresh each time the section is
 	 * opened: closing and reopening the pane should not lose the thread.
 	 *
+	 * The backend then appends to whatever this returns, which means the caller
+	 * owes the user its stored turns -- see getMessages(). Reusing a thread
+	 * without redrawing it is what made the model answer with a memory of turns
+	 * the user could not see.
+	 *
 	 * @param {String} paperID
 	 * @return {Promise<Object>} the conversation summary
 	 */
 	this.getOrCreateConversation = async function (paperID) {
-		let conversations = await Zotero.Pharos.API.request(
-			'GET', `/api/ai/papers/${paperID}/conversations`
-		);
-		if (conversations && conversations.length) {
-			// The backend returns these newest-first.
-			return conversations[0];
+		let conversation = await this.getLatestConversation(paperID);
+		if (conversation) {
+			return conversation;
 		}
 		return Zotero.Pharos.API.request(
 			'POST', `/api/ai/papers/${paperID}/conversations`, { body: {} }
@@ -177,6 +229,48 @@ Zotero.Pharos.Chat = new function () {
 		return Zotero.Pharos.API.request(
 			'GET', `/api/ai/conversations/${conversationID}`
 		);
+	};
+
+	/**
+	 * The turns already stored for a conversation, oldest first.
+	 *
+	 * Nothing is re-sorted here. The backend returns them ordered by
+	 * (created_at, id) -- services/ai_chat.conversation_messages -- and that is
+	 * the order the model was given them in; re-sorting on a client clock would
+	 * be a second opinion about a question the server has already answered.
+	 * Roles are likewise taken as stored: only 'user' and 'assistant' are ever
+	 * written, and anything else would be a schema change this cannot guess at.
+	 *
+	 * A restored thread can legitimately end on a user turn. An aborted or
+	 * failed run keeps the question and saves no partial answer, by design on
+	 * the server side (stream_chat_events, GeneratorExit). That is not damage
+	 * and is shown as it is.
+	 *
+	 * @param {String} conversationID
+	 * @return {Promise<Object[]>} [{ role, content }], oldest first
+	 */
+	this.getMessages = async function (conversationID) {
+		let conversation = await this.getConversation(conversationID);
+		let stored = (conversation && conversation.messages) || [];
+
+		let kept = [];
+		let chars = 0;
+		for (let i = stored.length - 1; i >= 0; i--) {
+			let message = stored[i];
+			if (!message || !message.content
+					|| (message.role != 'user' && message.role != 'assistant')) {
+				continue;
+			}
+			// "kept.length &&" keeps the newest turn whatever its size, so a
+			// single over-long message shows rather than rendering nothing.
+			if (kept.length && chars + message.content.length > MAX_HISTORY_CHARS) {
+				break;
+			}
+			chars += message.content.length;
+			kept.push({ role: message.role, content: message.content });
+		}
+		kept.reverse();
+		return kept;
 	};
 
 	/**
