@@ -39,6 +39,37 @@ Therefore no current Pharos development or release build may open the real
 Zotero database until the core has been aligned to a schema-compatible Zotero
 baseline and the round-trip checks below pass.
 
+### Where today's safety actually comes from
+
+Worth stating precisely, because it is easy to assume the protection lives
+somewhere it does not, and to then either build a redundant guard or remove the
+real one by accident.
+
+The schema gap above is what blocks the **future** shared direction. It is not
+what protects the library **today**. Today's protection is the database
+filename: `zotero.js:874` opens `new Zotero.DBConnection(ZOTERO_CONFIG.ID)`, and
+`ID` is `pharos` (`resource/config.mjs:21`), so the client reads and writes
+`pharos.sqlite` and has no code path that opens `zotero.sqlite` at all. Pointed
+at `~/Zotero` today, a Pharos build would create a second, separate database
+beside the real one rather than migrate it.
+
+Two consequences follow, and they point in opposite directions:
+
+- The migration hazard is currently **structural**, not procedural. It does not
+  depend on anyone remembering a rule. `run_pharos_dev`'s refusal of `~/Zotero`
+  is a second layer, and a worthwhile one — a stray `pharos.sqlite` in the real
+  data directory is still a mess — but it is not the thing standing between the
+  user and a one-way migration.
+- Enabling the shared plane therefore takes **more** than proving schema
+  compatibility. It means deliberately teaching the client to open Zotero's own
+  database file, which is precisely the step that removes the structural
+  protection. Schema alignment is the precondition; changing that filename is
+  the moment the risk becomes real, and it should be the last change made, not
+  an incidental one.
+
+Verified in this tree: `resource/schema/userdata.sql` declares `129`, and
+`ZOTERO_CONFIG.ID` is `pharos`.
+
 ## Shared Zotero data plane
 
 After compatibility work is complete, a normal Pharos release uses the same
