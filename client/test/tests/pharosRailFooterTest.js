@@ -160,9 +160,10 @@ describe("Pharos module rail account footer", function () {
 		});
 
 		it("should be reachable from the keyboard", function () {
-			// Unlike the collapse toggle, which is deliberately out of the tab
-			// order: this is the only route from the main window to signing in,
-			// and a control the keyboard cannot reach is not a route.
+			// This is the only route from the main window to signing in, and a
+			// control the keyboard cannot reach is not a route. The collapse
+			// toggle above it is a tab stop for the same reason; only the module
+			// list is roving, so the rail costs three stops rather than seven.
 			assert.notEqual(footer.getAttribute('tabindex'), '-1');
 			footer.focus();
 			assert.equal(doc.activeElement, footer);
@@ -198,6 +199,25 @@ describe("Pharos module rail account footer", function () {
 			rail.railCollapsed = true;
 			footer.click();
 			assert.deepEqual(opened, ['zotero-prefpane-pharos']);
+		});
+
+		it("should become a square the size of a collapsed module", function () {
+			// The web client swaps in a bare 30px circle here. This keeps one
+			// element in both states so the tooltip, the l10n ids and the click
+			// handler stay on a single node -- which is what the tests above
+			// address -- and matches the collapsed modules instead.
+			rail.railCollapsed = true;
+			var module = rail.querySelector('.pharos-rail-item');
+			var box = footer.getBoundingClientRect();
+			assert.equal(Math.round(box.width),
+				Math.round(module.getBoundingClientRect().width),
+				"the same square the modules become");
+			// The rows are fixed-height chrome and the spacer is what takes the
+			// column's spare height. As ordinary flex items they were compressed
+			// instead, and a 32px row rendering at 25px looks like a slightly
+			// tight rail rather than like a bug.
+			assert.equal(Math.round(box.width), Math.round(box.height),
+				"square, so it centres like the modules do");
 		});
 	});
 });

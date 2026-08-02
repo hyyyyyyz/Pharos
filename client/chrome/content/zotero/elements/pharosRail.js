@@ -44,7 +44,13 @@
 				<html:div class="pharos-rail-brand">
 					<html:span class="pharos-rail-mark"/>
 					<html:span class="pharos-rail-wordmark">Pharos</html:span>
-					<html:button class="pharos-rail-toggle" tabindex="-1"/>
+					<!-- An ordinary tab stop, as the web client's is
+					     (Rail.tsx:168-177). It carried tabindex="-1" before,
+					     which left collapsing the rail as the one thing in it a
+					     keyboard could not do at all: the roving tabindex on the
+					     modules reaches every module, and the account button
+					     keeps its own stop, but this had no route in. -->
+					<html:button class="pharos-rail-toggle"/>
 				</html:div>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
 				<html:div class="pharos-rail-spacer"/>
@@ -72,6 +78,22 @@
 			{ key: 'admin', icon: 'admin', l10n: 'pharos-rail-admin', adminOnly: true },
 		];
 
+		/**
+		 * What the rail may be dragged or keyed to, from the web client's
+		 * store.ts:15-17.
+		 *
+		 * MUST stay in step with the widths in scss/elements/_pharosRail.scss:
+		 * the stylesheet clamps what a drag can produce and these clamp what a
+		 * key press can, and a mismatch shows only as a rail that stops in a
+		 * different place depending on how it was resized.
+		 *
+		 * MIN_WIDTH is 144, not 44. 44 is the collapsed width; between the two
+		 * the labels are clipped while the rail is not actually collapsed.
+		 */
+		static MIN_WIDTH = 144;
+
+		static MAX_WIDTH = 280;
+
 		get module() {
 			return this._module || 'library';
 		}
@@ -94,16 +116,66 @@
 			return this.getAttribute('rail-collapsed') == 'true';
 		}
 
+		/**
+		 * Note that the collapsed state is stored TWICE: here, and again by the
+		 * `rail-collapsed` entry in this element's zotero-persist list. The two
+		 * are written at different moments -- the pref on every toggle, the
+		 * attribute only when a window closes -- so they can hold different
+		 * answers. They are left as they are on purpose; the width beside them
+		 * is persisted once, through zotero-persist alone.
+		 */
 		set railCollapsed(val) {
 			this.setAttribute('rail-collapsed', val ? 'true' : 'false');
 			Zotero.Prefs.set('pharos.rail.collapsed', !!val);
 			this._renderToggle();
 		}
 
+		/**
+		 * The rail's rendered width, rounded to whole pixels.
+		 *
+		 * Read from layout rather than from the inline style, because a drag,
+		 * the stylesheet's default and a restored value all end up in different
+		 * places and only the rendered width knows about all three.
+		 */
+		get railWidth() {
+			return Math.round(this.getBoundingClientRect().width);
+		}
+
+		set railWidth(px) {
+			let width = Math.round(px);
+			if (!Number.isFinite(width)) {
+				return;
+			}
+			width = Math.min(PharosRail.MAX_WIDTH, Math.max(PharosRail.MIN_WIDTH, width));
+			// Both, because two different things read them. The inline style is
+			// what sizes the element -- the stylesheet's own width would win
+			// over a plain attribute -- and the `width` ATTRIBUTE is the only
+			// thing ZoteroPane.serializePersist() copies into pane.persist.
+			this.style.width = `${width}px`;
+			this.setAttribute('width', width);
+			this._updateSplitter();
+		}
+
+		/**
+		 * Back to the stylesheet's width, as double-clicking the web client's
+		 * handle does (Rail.tsx:267-272).
+		 *
+		 * Clears both rather than writing the default back: with neither set,
+		 * the one width in the stylesheet is the only one there is, so the two
+		 * cannot drift apart. It also takes the entry out of pane.persist, since
+		 * serializePersist() records only attributes that are present.
+		 */
+		resetRailWidth() {
+			this.style.removeProperty('width');
+			this.removeAttribute('width');
+			this._updateSplitter();
+		}
+
 		init() {
 			this._nav = this.querySelector('.pharos-rail-nav');
 			this._toggle = this.querySelector('.pharos-rail-toggle');
 			this._deck = document.getElementById('pharos-deck');
+			this._splitter = document.getElementById('pharos-rail-splitter');
 
 			this._toggle.addEventListener('click', () => {
 				this.railCollapsed = !this.railCollapsed;
@@ -112,6 +184,7 @@
 			this.setAttribute('rail-collapsed',
 				Zotero.Prefs.get('pharos.rail.collapsed') ? 'true' : 'false');
 
+			this._initSplitter();
 			this._render();
 			this._renderToggle();
 			this._renderFooter();
@@ -202,6 +275,111 @@
 			this._nav.querySelector('.pharos-rail-item.is-active')?.focus();
 		}
 
+		/**
+		 * Wire the splitter that resizes the rail.
+		 *
+		 * Dragging is the XUL splitter's own; this adds the three things a bare
+		 * <splitter> has no answer for and the web client's handle does -- a
+		 * width that survives a restart, a keyboard, and a double-click that
+		 * puts the width back.
+		 *
+		 * The splitter is a sibling rather than a child, so it is found by id,
+		 * and nothing here assumes it is there: a window that somehow lacks it
+		 * should still have a working rail, just an unresizable one.
+		 */
+		_initSplitter() {
+			if (!this._splitter) {
+				return;
+			}
+
+			// Which of the two places a drag lands in -- an inline width or the
+			// `width` attribute -- has moved between Gecko versions, and
+			// serializePersist() copies only the attribute. Reading the rendered
+			// width back at the end of every drag makes the persisted value
+			// right either way. `command` fires when the splitter settles;
+			// `mouseup` covers a drag that ends without one, and reaches this
+			// element because the splitter captures the pointer for the whole
+			// drag.
+			this._splitter.addEventListener('command', () => this._recordWidth());
+			this._splitter.addEventListener('mouseup', () => this._recordWidth());
+			this._splitter.addEventListener('dblclick', () => this.resetRailWidth());
+			this._splitter.addEventListener('keydown', event => this._handleSplitterKey(event));
+			this._updateSplitter();
+		}
+
+		/**
+		 * Write the width a drag just produced where persistence can find it.
+		 */
+		_recordWidth() {
+			// A collapsed rail is a fixed 44px, and the stylesheet hides the
+			// splitter in that state -- but a drag that started before the rail
+			// collapsed would otherwise record 44 and come back as 144.
+			if (this.railCollapsed) {
+				return;
+			}
+			// Through the setter, which is what clamps it and puts it in both
+			// of the places the two readers look.
+			let width = this.railWidth;
+			this.railWidth = width;
+		}
+
+		/**
+		 * Arrow keys resize the rail; Home and End take it to its limits.
+		 *
+		 * Steps are the web client's (Rail.tsx:139-150). Without this the
+		 * splitter is mouse-only: a keyboard user can select modules and collapse
+		 * the rail, but cannot change its width at all.
+		 */
+		_handleSplitterKey(event) {
+			const STEP = 8;
+			const STEP_LARGE = 24;
+
+			let step = event.shiftKey ? STEP_LARGE : STEP;
+			let width;
+			if (event.key == 'ArrowLeft') {
+				width = this.railWidth - step;
+			}
+			else if (event.key == 'ArrowRight') {
+				width = this.railWidth + step;
+			}
+			else if (event.key == 'Home') {
+				width = PharosRail.MIN_WIDTH;
+			}
+			else if (event.key == 'End') {
+				width = PharosRail.MAX_WIDTH;
+			}
+			else {
+				return;
+			}
+			event.preventDefault();
+			// Home and End would otherwise also reach whatever tree is behind
+			// this and move its selection to the top or the bottom.
+			event.stopPropagation();
+			this.railWidth = width;
+		}
+
+		/**
+		 * Republish the width on the splitter.
+		 *
+		 * A focusable role="separator" is a window splitter, and a window
+		 * splitter is expected to announce its value. It has no accessible NAME:
+		 * that needs a new string and the locale files belong to another
+		 * workstream at the moment -- until one lands this announces as an
+		 * unnamed separator carrying a number.
+		 */
+		_updateSplitter() {
+			if (!this._splitter) {
+				return;
+			}
+			// Falls back to the stylesheet's width rather than reporting 0 while
+			// the window is still being laid out.
+			let width = Math.min(PharosRail.MAX_WIDTH,
+				Math.max(PharosRail.MIN_WIDTH, this.railWidth || PharosRail.MIN_WIDTH));
+			this._splitter.setAttribute('aria-valuemin', PharosRail.MIN_WIDTH);
+			this._splitter.setAttribute('aria-valuemax', PharosRail.MAX_WIDTH);
+			this._splitter.setAttribute('aria-valuenow', width);
+		}
+
 		_renderToggle() {
 			document.l10n.setAttributes(
 				this._toggle,
@@ -273,9 +451,11 @@
 		 * is obtained in the preferences pane, and without one every Pharos module
 		 * is a wall of errors, so the footer has to point at the cure.
 		 *
-		 * Unlike the collapse toggle it keeps its place in the tab order. Sign-in
-		 * is the one thing in this rail a new user has to reach, and a control the
-		 * keyboard cannot reach is not an entry point.
+		 * It keeps its place in the tab order. Sign-in is the one thing in this
+		 * rail a new user has to reach, and a control the keyboard cannot reach
+		 * is not an entry point. The collapse toggle above it is a tab stop for
+		 * the same reason; only the module list is roving, so the rail is three
+		 * stops rather than seven.
 		 */
 		/**
 		 * Repaint the account footer.

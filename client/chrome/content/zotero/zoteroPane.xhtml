@@ -1114,8 +1114,9 @@
 	<hbox flex="1" id="browser">
 		<!-- Pharos: outside tabs-deck so it stays visible on a reader tab, and
 		     left of everything, matching the web client. -->
-		<pharos-rail id="pharos-rail" zotero-persist="rail-collapsed"/>
-		<splitter id="pharos-rail-splitter" resizebefore="closest" resizeafter="closest" tabindex="-1"/>
+		<pharos-rail id="pharos-rail" zotero-persist="rail-collapsed width"/>
+		<splitter id="pharos-rail-splitter" resizebefore="closest" resizeafter="closest"
+		          tabindex="0" role="separator" aria-orientation="vertical"/>
 		<vbox id="appcontent" flex="1">
 			<stack id="zotero-pane-stack" flex="1">
 				<!-- A placeholder to persist pdf-reader sidebar collapse state to avoid introducing another pref -->
