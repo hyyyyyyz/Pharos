@@ -153,7 +153,23 @@ var Zotero_Pharos_Daily = new function () {
 	 *  rather than taking the panel down. */
 	let _inLibrary = new Map();
 
+	/**
+	 * Whether the account is signed out, as of the last render.
+	 *
+	 * Derived, never latched. This document is loaded once and thereafter only
+	 * hidden and re-shown by the rail, so a boolean set to true at startup would
+	 * survive a subsequent sign-in for the life of the application -- the module
+	 * would sit on its signed-out panel with the refresh button disabled and no
+	 * way back short of restarting. `Zotero.Pharos.API` clears the token on a 401
+	 * (api.js `setToken(null)` before it throws SignedOutError), so
+	 * `hasCredentials()` already answers this question correctly at any moment,
+	 * including mid-session sign-out. `_refreshAuth` re-reads it.
+	 */
 	let _signedOut = false;
+
+	/** Whether the initial load sequence ever completed. False after a startup
+	 *  that stopped at the credentials check, which is what onShown() resumes. */
+	let _loaded = false;
 
 	/**
 	 * Settles once init() has finished, however it finished.
@@ -474,20 +490,7 @@ var Zotero_Pharos_Daily = new function () {
 		}
 
 		this._render();
-
-		// Sequential rather than parallel: the empty-state triage reads all
-		// three, and a screen assembled from two of them flashes the wrong
-		// diagnosis on the way to the right one.
-		await this.loadConfig();
-		await this.loadStatus();
-		await this.loadDates();
-		// No explicit selection yet -> the newest digest, which is what someone
-		// opening this window in the morning wants.
-		await this.load(_dates.length ? _dates[0].date : Zotero.Pharos.Daily.today());
-
-		// A sweep may already have been running before this window opened.
-		this._syncPoll();
-		this._render();
+		await this._loadAll();
 	};
 
 	this.destroy = function () {
@@ -811,9 +814,62 @@ var Zotero_Pharos_Daily = new function () {
 		this._render();
 	};
 
+	/**
+	 * The initial data load, factored out so onShown() can run it later.
+	 *
+	 * Sequential rather than parallel: the empty-state triage reads all three,
+	 * and a screen assembled from two of them flashes the wrong diagnosis on the
+	 * way to the right one.
+	 */
+	this._loadAll = async function () {
+		await this.loadConfig();
+		await this.loadStatus();
+		await this.loadDates();
+		// No explicit selection yet -> the newest digest, which is what someone
+		// opening this window in the morning wants.
+		await this.load(_dates.length ? _dates[0].date : Zotero.Pharos.Daily.today());
+		_loaded = true;
+
+		// A sweep may already have been running before this window opened.
+		this._syncPoll();
+		this._render();
+	};
+
+	/** Re-read the credentials. Returns true if the answer changed. */
+	this._refreshAuth = function () {
+		let now = !Zotero.Pharos.API.hasCredentials();
+		let changed = now != _signedOut;
+		_signedOut = now;
+		return changed;
+	};
+
+	/**
+	 * The rail is about to show this panel again.
+	 *
+	 * The browser holding this document gets a `src` once and is thereafter only
+	 * hidden and re-shown, so nothing else would ever tell a module that started
+	 * signed out that it no longer is. Exposed as `PharosView` so the rail does
+	 * not need to know which module it is talking to.
+	 */
+	this.onShown = function () {
+		let changed = this._refreshAuth();
+		if (!_signedOut && !_loaded) {
+			// Deliberately not awaited: the rail is mid-render and must not wait
+			// on the network to finish showing the panel.
+			this._loadAll().catch(e => Zotero.logError(e));
+			return;
+		}
+		if (changed) {
+			this._render();
+		}
+	};
+
 	/* ---------------------------------------------------------------- render */
 
 	this._render = function () {
+		// Cheap, and it is the only thing that keeps a mid-session sign-out or
+		// sign-in from leaving every panel describing a state that ended.
+		this._refreshAuth();
 		this._renderToolbar();
 		this._renderNote();
 		this._renderBanner();
@@ -962,11 +1018,19 @@ var Zotero_Pharos_Daily = new function () {
 			_el.list.append(this._empty(_str('pharos-error-signed-out-detail'), null, true));
 			return;
 		}
-		if (_datesState == 'error' || _dayState == 'error') {
+		// A failed /dates must NOT blank a day that loaded. The two are separate
+		// requests, and the rail already reports the dates failure on its own
+		// (see _renderRail), so the only case where a dates failure belongs here
+		// is the one that left no date to ask about. Gating on either state was
+		// worse than cosmetic: it replaced a fully loaded list -- including the
+		// reading the user had just paid for, since read() reloads the dates --
+		// with an error panel, and `!_dayError` then made it print "make sure
+		// the service is running" about a service that had just answered.
+		if (_dayState == 'error' || (_datesState == 'error' && !_activeDate)) {
 			// The server's own detail wherever there is one. The hint is only
 			// added for a connection that never completed, because "start the
 			// service" is wrong advice for a request the service answered.
-			let unreachable = _dayUnreachable || !_dayError;
+			let unreachable = _dayUnreachable || (!_dayError && _dayState == 'error');
 			_el.list.append(this._empty(
 				_dayError || _str('pharos-daily-error'),
 				unreachable ? _str('pharos-daily-unreachable-hint') : null,
@@ -1372,3 +1436,12 @@ var Zotero_Pharos_Daily = new function () {
 		return section;
 	};
 };
+
+/**
+ * The rail's handle on this view.
+ *
+ * A fixed name so `pharosRail.js` can call `onShown()` without knowing which
+ * module its browser is showing. Modules that have nothing to recheck simply do
+ * not define this.
+ */
+var PharosView = Zotero_Pharos_Daily;

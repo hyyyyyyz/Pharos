@@ -90,6 +90,13 @@ pharos-daily-loading = 载入中…
 # $count (Number) - 当天匹配到的论文数
 pharos-daily-count = { $count } 篇
 pharos-daily-matched = 命中方向
+# 写进 Zotero 笔记的溯源行。这条笔记会永久留在文库里，和用户自己写的读书笔记
+# 长得一模一样，六个月后会被当作自己的理解引用出去。模型只看了摘要
+# （backend/pharos/daily/reader.py：“The model reads this and nothing else”），
+# 所以“方法/结果”两条是从摘要推断的，不是从正文读来的。
+pharos-daily-note-provenance = 以上内容由模型 { $model } 依据英文摘要生成，模型未阅读正文。
+pharos-daily-note-provenance-unknown = 以上内容由模型依据英文摘要生成，模型未阅读正文。
+
 
 pharos-daily-highlight-contribution = 贡献
 pharos-daily-highlight-innovation = 创新
@@ -198,8 +205,10 @@ pharos-daily-imported = 已在文库
 # $error (String)
 pharos-daily-import-failed = 导入失败：{ $error }
 
-# 文献探索与研究项目仍在用下面这四条，删掉会让那两个窗口在 en-US 下直接抛错、
-# 在中文下把 id 原样显示出来。等它们也改用 pharos-daily-import* 之后再删。
+# 研究项目仍在用下面这四条：项目文献里每一行的「加入文库」。删掉会让那个窗口
+# 在 en-US 下直接抛错、在中文下把 id 原样显示出来。等它也改用
+# pharos-daily-import* 之后再删。
+# 文献探索已经有自己的 pharos-discovery-save*，不再借这里。
 pharos-daily-save = 加入文库
 pharos-daily-saving = 保存中…
 pharos-daily-saved = 已加入
@@ -238,69 +247,420 @@ pharos-daily-info-keywords-hint = 你的哪些关键词命中了这篇论文
 pharos-discovery-menu = 文献探索…
 pharos-discovery-window =
     .title = 文献探索
+# pharos-discovery-window 只有属性没有值，Zotero.getString() 读不到它。
+# 要在正文里写模块名，用下面这一条。
+pharos-discovery-heading = 文献探索
+pharos-discovery-subheading = 从研究问题出发；每次检索都保留它用了哪些来源、哪些失败了，以及分析到什么程度。
+pharos-discovery-current-project = 当前项目
+
+## 文献探索 · 检索条件
+
+pharos-discovery-query-label = 研究问题或 Idea
 pharos-discovery-placeholder =
-    .placeholder = 搜索 arXiv 与 OpenAlex…
-pharos-discovery-search = 搜索
-pharos-discovery-searching = 搜索中…
-pharos-discovery-hint = 搜索 arXiv 与 OpenAlex，Pharos 会替你读一遍。
-pharos-discovery-empty = 没有匹配结果。
-pharos-discovery-error = 搜索失败。
-# $count (Number) - 返回的结果数
-pharos-discovery-count = { $count } 条结果
+    .placeholder = 例如：KV cache compression for long-context video generation
+pharos-discovery-search = 运行检索
+pharos-discovery-searching = 正在检索…
+# 这一条必须说清楚：按下「运行检索」时没有任何一篇被读过。
+# 两个来源只返回题录与摘要，模型要逐篇点「生成核心思路」才会被调用。
+pharos-discovery-hint = 输入研究问题后点「运行检索」。arXiv 与 OpenAlex 只返回题录与摘要；中文核心思路要逐篇点「生成核心思路」才会调用模型。
+pharos-discovery-language-hint = arXiv 建议用英文关键词；中文会原样发送，当前不会自动翻译。
+
+pharos-discovery-sources-label = 检索来源
+pharos-discovery-source-arxiv = arXiv
+pharos-discovery-source-arxiv-note = 预印本与最新工作
+pharos-discovery-source-openalex = OpenAlex
+pharos-discovery-source-openalex-note = 跨出版源与引用数
+pharos-discovery-source-unknown = 来源未知
+# 拼接多个来源名时用的分隔符。中文是顿号；en-US 是逗号加空格，
+# 而 Fluent 会吃掉 "=" 之后的空白，所以那一边必须写成字符串字面量。
+pharos-discovery-source-separator = 、
+
+pharos-discovery-project-label = 关联项目
+pharos-discovery-project-none = 暂不关联
+# $name (String) - 项目名称
+pharos-discovery-project-archived = { $name }（已归档）
+pharos-discovery-limit-label = 数量
+pharos-discovery-projects-failed = 项目列表加载失败；仍然可以检索，但暂时无法把结果加入项目。
+
+## 文献探索 · 表单校验
+
+# $min (Number) - 检索词的最少字符数
+pharos-discovery-need-query = 检索词至少需要 { $min } 个字符。
+# $max (Number) - 检索词的最多字符数
+pharos-discovery-query-too-long = 检索词最多 { $max } 个字符。
+pharos-discovery-need-source = 至少选择一个检索来源。
+# $min (Number)
+# $max (Number)
+pharos-discovery-limit-range = 数量需要是 { $min } 到 { $max } 之间的整数。
+# $error (String) - 传输层或服务端给出的原因
+pharos-discovery-search-failed = 检索请求失败：{ $error }
+
+## 文献探索 · 历史栏
+
+pharos-discovery-history-head = 探索记录
+pharos-discovery-history-loading = 正在读取历史…
+pharos-discovery-history-empty = 完成一次检索后，随时可以重新打开它的结果。
+pharos-discovery-history-failed = 无法读取检索历史。
+# $time (String) - 窗口用 Intl.DateTimeFormat 预先格式化好的时间。
+# 是普通字符串，不是 Fluent 的 DATETIME()，不要改成日期参数。
+# $count (Number) - 该次检索留下的结果数
+pharos-discovery-history-meta = { $time } · { $count } 篇
+pharos-discovery-retry = 重试
+# $error (String)
+pharos-discovery-open-failed = 无法打开这次检索：{ $error }
+
+## 文献探索 · 运行状态
+
+pharos-discovery-status-complete = 已完成
+pharos-discovery-status-partial = 部分完成
+pharos-discovery-status-error = 失败
+# 刻意写「未完成」而不是「检索中」：POST /api/discovery/search 是同步的，
+# 只在成功时落库，所以库里留下的 running 行代表请求中途死了，不是还在跑。
+pharos-discovery-status-running = 未完成
+pharos-discovery-status-running-hint = 这次运行没有正常结束，结果可能不完整。重新运行会新建一条记录，不会覆盖它。
+# $count (Number) - 本次留下的结果数
+# $sources (String) - 来源名，已由窗口用 pharos-discovery-source-separator 拼好
+# $time (String) - 预先格式化好的时间，同 pharos-discovery-history-meta
+pharos-discovery-run-meta = { $count } 篇 · { $sources } · { $time }
+pharos-discovery-reuse = 复用条件
+pharos-discovery-reused = 已把历史条件放回检索框，可调整后重新运行。
+pharos-discovery-errors-partial = 部分来源未返回
+pharos-discovery-errors-all = 来源错误
+
+## 文献探索 · 结果提示
+
+# $count (Number) - 找到的候选文献数
+pharos-discovery-notice-complete = 检索完成，找到 { $count } 篇候选文献。
+# $count (Number) - 仍然可用的结果数
+pharos-discovery-notice-partial = 部分来源完成，已保留 { $count } 篇可用结果。
+pharos-discovery-notice-error = 所有来源都失败了。这次运行已经保存，可以从左侧重新打开。
+
+## 文献探索 · 批量加入项目
+
+pharos-discovery-select-all = 全选
+# $count (Number) - 已勾选的论文数
+pharos-discovery-selected = 已选 { $count } 篇
+pharos-discovery-add-to-project = 加入项目
+pharos-discovery-adding = 正在加入…
+# 项目下拉框的标签与提示，不再是弹窗提问。
+pharos-discovery-pick-project = 选择项目
+pharos-discovery-new-project = 新建项目
+pharos-discovery-new-project-head = 新建项目并归档所选文献
+pharos-discovery-new-project-desc = 项目建立后会成为当前项目。
+pharos-discovery-new-project-name =
+    .placeholder = 项目名称
+pharos-discovery-new-project-question =
+    .placeholder = 研究问题（可选）
+# $count (Number) - 将一并加入的论文数
+pharos-discovery-new-project-create = 创建并加入 { $count } 篇
+pharos-discovery-new-project-creating = 正在创建…
+pharos-discovery-need-project = 请先选择一个项目。
+pharos-discovery-need-selection = 请先勾选要加入的论文。
+pharos-discovery-filed = 已在当前项目
+# $name (String) - 目标项目名
+# $added (Number) - 本次新增的篇数
+pharos-discovery-file-result = 已处理「{ $name }」：新增 { $added } 篇
+# $count (Number) - 已经在项目里、这次跳过的篇数
+# 只在数量大于 0 时接在上一条后面，句号由窗口补，和 pharos-daily-sweep-failed 同一套写法。
+pharos-discovery-file-skipped = ，{ $count } 篇已存在
+# $count (Number) - 加入失败的篇数，同样只在大于 0 时追加
+pharos-discovery-file-failed = ，{ $count } 篇加入失败
+# $error (String)
+pharos-discovery-file-error = 加入项目失败：{ $error }
+
+## 文献探索 · 结果卡片
+
+pharos-discovery-rank-tooltip = 本次检索中的排序位次
 # $count (Number) - 被引次数
-pharos-discovery-citations = 被引 { $count }
-pharos-discovery-analyze = 精读
-pharos-discovery-analyzing = 阅读中…
-pharos-discovery-open = 打开
-pharos-discovery-add-to-project = 归入项目
-pharos-discovery-pick-project = 这篇论文归入哪个研究项目？
-pharos-discovery-added-to-project = 已归入
+pharos-discovery-citations = 引用 { $count } 次
+# 标题链接的提示。链接由 Zotero.launchURL 交给系统浏览器打开，所以这里说明白。
+pharos-discovery-open = 在浏览器中打开来源页
+pharos-discovery-pdf = 查看 PDF
+
+pharos-discovery-trick-label = 核心思路
+pharos-discovery-trick-pending = 尚未生成中文核心思路
+pharos-discovery-trick-empty = 模型没有返回核心思路
+pharos-discovery-trick-extracted-tooltip = 摘要里的原句，未经模型阅读
+pharos-discovery-abstract-label = 英文摘要
 
 pharos-discovery-section-contribution = 贡献
 pharos-discovery-section-core-trick = 核心思路
 pharos-discovery-section-method = 方法
 pharos-discovery-section-results = 结果
 pharos-discovery-section-limitations = 局限
+# pharosDiscoveryTest.js 按值相等断言这一条，改一个字测试就红。
+# 里面的「精读」已经和按钮文案（生成核心思路）对不上了，但这是笔记正文而不是界面文案，
+# 措辞漂移单独处理，不在这次改动里破坏一条钉死的断言。
 pharos-discovery-rules-note = 该摘要由规则生成，未经模型阅读。可点「精读」获取模型解读。
+# 精读后，后端会覆盖 summary_zh / 贡献 / 核心思路 / 方法 / 结果，但**故意保留**
+# 规则版的「局限」（backend/pharos/services/projects.py:393-403）。所以那一行仍是
+# 从英文摘要按线索匹配抄出来的原句，模型从未看过它。卡片此时挂着「AI 中文解读」
+# 的标记，若不单独标注，读者会把它当成模型对论文弱点的判断。
+pharos-discovery-limitations-rules = 规则摘录
+pharos-discovery-limitations-rules-hint = 「精读」不覆盖这一项：以下句子由规则从英文摘要中摘出，模型未阅读或评估它。
+# 写进 Zotero 笔记的溯源行。笔记会永久留在文库里，和用户自己的读书笔记
+# 无法区分，而知道来源的那个窗口早就关了。
+pharos-discovery-note-llm = 以上内容由模型 { $model } 依据标题与摘要生成，模型未阅读全文。
+pharos-discovery-note-llm-unknown = 以上内容由模型依据标题与摘要生成，模型未阅读全文。
+pharos-discovery-note-limitations = 其中「局限」一项为规则摘录，非模型判断。
+
+pharos-discovery-mode-rules = 仅摘要规则
+pharos-discovery-mode-llm = AI 中文解读
+# analysis_warning 的本地化替身，直接渲染在卡片里。服务端那句英文原文
+# 放在同一块的 title 上，保证线上返回值仍然可查，但不再是唯一的呈现面。
+pharos-discovery-mode-rules-detail = 只从标题和摘要里抽取原句，没有调用模型，也没有下载或阅读全文。空字段表示摘要里没有明确写。
+# $model (String) - 服务端记下的解读模型名
+pharos-discovery-model = 解读模型：{ $model }
+pharos-discovery-model-unknown = 解读模型未记录
+
+pharos-discovery-analyze = 生成核心思路
+pharos-discovery-analyzing = 生成中…
+pharos-discovery-reanalyze = 重新生成
+
+## 文献探索 · 保存到文库
+
+# 桌面端独有：把这篇论文写成一条真实的 Zotero 条目，网页版没有对应能力。
+# 用自己的 id 而不是继续借 pharos-daily-save*——跨模块借字符串正是这次重建要拆掉的耦合。
+pharos-discovery-save = 保存到文库
+pharos-discovery-saving = 保存中…
+pharos-discovery-saved = 已在文库
+# $error (String)
+pharos-discovery-save-failed = 无法保存这篇论文：{ $error }
+
+## 文献探索 · 生成失败
+
+# 409 和 503 都必须写明规则提取的结果还在。直接抛服务端英文原文时，
+# 用户看不出旧结果有没有被覆盖，那正是这两条要解决的问题。
+pharos-discovery-analyze-no-provider = 服务端没有配置解读模型；规则提取的结果已经保留，没有被覆盖。配置模型后可以随时重新生成。
+pharos-discovery-analyze-provider-failed = 中文核心思路这次没有生成成功；规则提取的结果未被覆盖，稍后可以重试。
+pharos-discovery-analyze-no-abstract = 这条结果没有摘要，没有可读的内容。
+# $error (String)
+pharos-discovery-analyze-failed = 生成失败：{ $error }
+
+## 文献探索 · 空状态
+
+pharos-discovery-first-title = 从一个可以讨论的问题开始
+pharos-discovery-first-desc = 每次检索都会记下它用了哪些来源、抽取了哪些字段，以及这些字段是模型读出来的还是规则抽出来的。没有配置模型时会明确回退为摘要规则提取，并说明这一点。
+# 零结果时的标题
+pharos-discovery-empty = 没有找到可用结果。
+# search.status == 'error' 时代替上一条做标题
+pharos-discovery-error = 搜索失败。
+pharos-discovery-empty-hint = 看看上面的来源错误，或者复用条件后放宽关键词、增加来源。
+
+## 文献探索 · 已停用
+
+# 下面两条的唯一读者是重建前的 pharosDiscovery.js（第 116、250 行）：
+# pharos-discovery-count 由 pharos-discovery-run-meta / -history-meta 接手，
+# pharos-discovery-added-to-project 由批量加入的结果提示接手。
+# 重建还没落地，此刻删掉会让这个窗口在 en-US 下当场抛错，所以先留着——
+# 没人读的字符串是惰性的，而只删一个语言文件才是真的会出事。
+# $count (Number) - 返回的结果数
+pharos-discovery-count = { $count } 条结果
+pharos-discovery-added-to-project = 已归入
+
+## 分析来源
+
+# 两个窗口共用：探索结果和项目文献都带着 analysis_mode，
+# 不渲染它就等于让模型写的和规则抽的看起来一模一样。
+pharos-analysis-mode-llm = AI 深读
+pharos-analysis-mode-rules = 摘要提取
 
 ## 研究项目
 
 pharos-projects-menu = 研究项目…
 pharos-projects-window =
     .title = 研究项目
-pharos-projects-loading = 加载中…
-pharos-projects-empty = 还没有项目。请先在 Pharos 网页端创建。
-pharos-projects-error = 无法加载项目。
-pharos-projects-none = 暂无内容。
-pharos-projects-question = 研究问题
-pharos-projects-advance = 推进阶段
-pharos-projects-save-note = 存为笔记
-# $count (Number) - 项目依据的论文数
-pharos-projects-sources = 文献来源（{ $count }）
-# $count (Number) - 项目已写下的记录数
-pharos-projects-artifacts = 研究记录（{ $count }）
 
-pharos-projects-stage-discovery = 文献调研
-pharos-projects-stage-ideation = 构思
-pharos-projects-stage-planning = 方案设计
-pharos-projects-stage-experimentation = 实验
-pharos-projects-stage-analysis = 分析
-pharos-projects-stage-claims = 结论
-pharos-projects-stage-drafting = 撰写
-pharos-projects-stage-review = 评审
-pharos-projects-stage-complete = 已完成
+## 研究项目 · 阶段
 
-pharos-projects-type-hypothesis = 假设
-pharos-projects-type-experiment-plan = 实验方案
+# 九个阶段的名称与网页版逐条对齐：同一个项目在两个客户端上必须叫同一个名字。
+# 注意 discovery 阶段叫「文献探索」，和探索模块本身重名（pharos-rail-discovery）。
+# 网页版也有这个重名并接受了它，这里跟随以保持一致；时间轴上显示的是短标签「探索」，
+# 只有阶段下拉和面板标题会出现完整的「文献探索」。
+pharos-projects-stage-discovery = 文献探索
+pharos-projects-stage-ideation = Idea 构思
+pharos-projects-stage-planning = 实验规划
+pharos-projects-stage-experimentation = 实验执行
+pharos-projects-stage-analysis = 结果分析
+pharos-projects-stage-claims = 主张整理
+pharos-projects-stage-drafting = 论文草稿
+pharos-projects-stage-review = 反方审阅
+pharos-projects-stage-complete = 项目完成
+
+# 时间轴节点上的短标签。一律用名词：动词（「运行」「分析」）挨着自动化说明，
+# 会被读成一个可以点的按钮。
+pharos-projects-stage-discovery-short = 探索
+pharos-projects-stage-ideation-short = 构思
+pharos-projects-stage-planning-short = 规划
+pharos-projects-stage-experimentation-short = 实验
+pharos-projects-stage-analysis-short = 分析
+pharos-projects-stage-claims-short = 主张
+pharos-projects-stage-drafting-short = 草稿
+pharos-projects-stage-review-short = 审阅
+pharos-projects-stage-complete-short = 完成
+
+# 「研究路径」里每个阶段下面的一行说明
+pharos-projects-stage-discovery-note = 建立问题边界和证据池
+pharos-projects-stage-ideation-note = 形成候选假设与机制
+pharos-projects-stage-planning-note = 冻结指标、基线和停止条件
+pharos-projects-stage-experimentation-note = 记录真实运行与产物
+pharos-projects-stage-analysis-note = 解释结果和替代原因
+pharos-projects-stage-claims-note = 把结果约束成可追溯主张
+pharos-projects-stage-drafting-note = 组织叙事、引用和图表
+pharos-projects-stage-review-note = 找出证据缺口与过度声称
+pharos-projects-stage-complete-note = 冻结当前研究版本
+
+## 研究项目 · 记录类型与状态
+
+# review 既是阶段也是类型。阶段是「反方审阅」，类型是「审阅记录」，
+# 两者不能都渲染成光秃秃的「审阅」——记录卡片会把类型和阶段并排显示。
+pharos-projects-type-hypothesis = 研究假设
+pharos-projects-type-experiment-plan = 实验计划
 pharos-projects-type-result = 实验结果
-pharos-projects-type-claim = 论断
-pharos-projects-type-draft = 草稿
-pharos-projects-type-review = 评审意见
+pharos-projects-type-claim = 论文主张
+pharos-projects-type-draft = 写作草稿
+pharos-projects-type-review = 审阅记录
 
+# verified 是用户自己下的判断，不是系统验过。「已验证」丢掉了动作的主语，
+# 读起来像平台替他核验过；「人工核验」把人放回句子里。见 docs/DECISIONS.md §9。
 pharos-projects-status-draft = 草稿
-pharos-projects-status-ready = 就绪
-pharos-projects-status-verified = 已验证
+pharos-projects-status-ready = 可使用
+pharos-projects-status-verified = 人工核验
 pharos-projects-status-rejected = 已否决
+
+# 项目自身的状态。刻意不叫 pharos-projects-status-*：那个前缀是记录状态，
+# 撞在一起会让按前缀拼 id 的查表函数解析到另一个命名空间里去。
+pharos-projects-state-active = 进行中
+pharos-projects-state-archived = 已归档
+
+## 研究项目 · 项目列表
+
+pharos-projects-list-head = 研究项目
+pharos-projects-new = 新建项目
+pharos-projects-show-archived = 显示已归档
+# $sources (Number) - 该项目的文献数
+# $records (Number) - 该项目的研究记录数
+pharos-projects-item-meta = { $sources } 篇文献 · { $records } 条记录
+pharos-projects-loading = 正在读取项目…
+# 旧值「还没有项目。请先在 Pharos 网页端创建。」是 docs/DECISIONS.md §4 点名的失败：
+# 桌面端自己就能建项目，把用户支去网页端是在说自己做不到。
+pharos-projects-empty = 还没有研究项目
+pharos-projects-none-matched = 没有符合筛选的项目
+pharos-projects-error = 无法加载项目。
+pharos-projects-retry = 重试
+
+## 研究项目 · 空状态与加载失败
+
+pharos-projects-welcome-title = 建立一个可持续推进的研究项目
+pharos-projects-welcome-desc = 项目把探索结果、证据备注、实验计划、真实结果和论文主张放在同一条可追溯路径上。
+pharos-projects-load-failed-title = 项目加载失败
+
+## 研究项目 · 新建
+
+pharos-projects-create-title = 新建研究项目
+pharos-projects-name = 项目名称
+pharos-projects-name-input =
+    .placeholder = 项目名称
+pharos-projects-question-input =
+    .placeholder = 核心研究问题（可选）
+pharos-projects-description-input =
+    .placeholder = 项目说明（可选）
+pharos-projects-create-submit = 创建项目
+pharos-projects-creating = 创建中…
+pharos-projects-cancel = 取消
+# $name (String) - 新建的项目名
+pharos-projects-created = 项目「{ $name }」已创建
+
+## 研究项目 · 头部与生命周期
+
+pharos-projects-question = 核心研究问题
+pharos-projects-description = 项目说明
+pharos-projects-edit = 编辑
+pharos-projects-save = 保存项目
+pharos-projects-saving = 保存中…
+pharos-projects-updated = 项目已更新
+pharos-projects-archive = 归档
+pharos-projects-restore = 恢复
+pharos-projects-delete = 删除
+pharos-projects-delete-confirm = 删除整个项目？
+pharos-projects-delete-submit = 确认删除
+pharos-projects-deleted = 项目已删除
+# $date (String) - 窗口预先格式化好的日期
+pharos-projects-meta-created = 创建于 { $date }
+# $date (String)
+pharos-projects-meta-updated = 更新于 { $date }
+
+## 研究项目 · 研究路径
+
+pharos-projects-path = 研究路径
+pharos-projects-stage-select =
+    .aria-label = 修改项目阶段
+pharos-projects-stage-save = 保存阶段
+pharos-projects-advance = 进入下一阶段
+pharos-projects-advancing = 推进中…
+# $stage (String) - 推进到的阶段名
+pharos-projects-advanced = 已推进到「{ $stage }」
+# $count (Number) - 该阶段下的记录数
+pharos-projects-stage-count = { $count } 条
+pharos-projects-stage-count-none = 无记录
+# 整个窗口里唯一可能被读成「运行这个阶段」的控件，所以把 §9 写在它旁边。
+pharos-projects-stage-help = 点击阶段查看对应记录；阶段下拉可显式回退，所有调整只改变项目状态，不会触发自动实验。
+
+## 研究项目 · 项目文献
+
+pharos-projects-sources-head = 项目文献
+# $count (Number) - 项目依据的论文数
+pharos-projects-sources = { $count } 篇证据来源
+pharos-projects-sources-empty-title = 还没有项目文献
+pharos-projects-sources-empty-desc = 前往「文献探索」检索并选择论文加入这个项目。
+pharos-projects-source-note = 证据备注
+pharos-projects-source-note-empty = 添加纳入理由或证据关系
+pharos-projects-source-note-input =
+    .placeholder = 为什么把这篇论文纳入项目？它支持或反驳了什么？
+pharos-projects-source-note-save = 保存备注
+pharos-projects-source-note-saved = 证据备注已保存
+# $date (String) - 窗口预先格式化好的日期
+pharos-projects-source-added = 加入于 { $date }
+pharos-projects-source-remove = 移除
+pharos-projects-source-remove-confirm = 从项目移除？
+pharos-projects-source-removed = 文献已从项目移除，探索历史仍保留
+# 把某条记录写成一条真正的 Zotero 笔记。这是本模块存在的理由，网页版没有对应能力。
+pharos-projects-save-note = 存为笔记
+
+## 研究项目 · 研究记录
+
+# $count (Number) - 项目已写下的记录数
+pharos-projects-artifacts = { $count } 条研究记录
+pharos-projects-artifact-new = 新建记录
+pharos-projects-artifact-new-title = 新建研究记录
+pharos-projects-artifact-edit-title = 编辑研究记录
+pharos-projects-artifact-stage = 阶段
+pharos-projects-artifact-type = 类型
+pharos-projects-artifact-status = 状态
+pharos-projects-artifact-title = 标题
+pharos-projects-artifact-title-input =
+    .placeholder = 一句话说明这条记录
+pharos-projects-artifact-body = 正文
+pharos-projects-artifact-body-input =
+    .placeholder = 记录假设、实验约束、真实结果、主张或审阅意见。不要把计划写成已经执行。
+pharos-projects-artifact-save = 保存记录
+pharos-projects-artifact-saved = 研究记录已保存
+# status == 'verified' 时代替上一条：在下判断的那一刻再说一次，判断是用户做的。
+pharos-projects-artifact-saved-verified = 记录已保存并标记为人工核验
+pharos-projects-artifact-delete = 删除
+pharos-projects-artifact-delete-confirm = 确认删除？
+pharos-projects-artifact-deleted = 研究记录已删除
+# $date (String)
+pharos-projects-artifact-updated = 更新于 { $date }
+pharos-projects-artifacts-empty-title = 这个阶段还没有记录
+pharos-projects-artifacts-empty-desc = 新建一条真实的科研记录；系统不会替你声称实验已经执行。
+
+## 研究项目 · 已停用
+
+# pharos-projects-none 的唯一读者是重建前的 pharosProjects.js（第 173 行）。
+# 每个空状态现在都有自己的文案，这一条不该再被复用：正是它让「阶段不会触发自动实验」
+# 那块说明看起来像「这里什么都没有」。重建落地前先留着，删掉会让窗口在 en-US 下抛错。
+pharos-projects-none = 暂无内容。
 
 ## 模块栏
 

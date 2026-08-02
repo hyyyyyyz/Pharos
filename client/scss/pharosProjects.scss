@@ -1,0 +1,1272 @@
+// The 研究项目 window.
+//
+// Its own stylesheet, NOT scss/pharosDaily.scss. This window used to link that
+// file's output and build its rows out of .pharos-daily-paper / -title / -meta /
+// -summary-text / -pending / -actions; so did 文献探索, and borrowing one
+// module's classes is what coupled three windows to a single sheet. Nothing here
+// reaches for them. Note that scss/pharosDaily.scss now has no document linking
+// it at all -- check that before assuming it still styles something.
+//
+// Every id and class below is pharos-pv-*, and the two honesty fixes are the
+// reason. The automation notice was a .pharos-daily-pending -- the
+// lowest-contrast italic in the sheet, and the same treatment as the "暂无内容。"
+// placeholder, which made the notice typographically identical to "nothing
+// here". It is an amber callout now, and it sits inside the records panel rather
+// than at the top of the window.
+//
+// Metrics follow the web client's ProjectsView so the two products read as one,
+// expressed in this tree's theme variables. Nothing here is a colour literal:
+// the web's automation callout uses #C98A13 / #B47A0B, which do not follow the
+// dark theme. See client/BRANDING.md.
+
+@import "abstracts/variables";
+@import "abstracts/functions";
+@import "abstracts/mixins";
+@import "abstracts/placeholders";
+
+@import "themes/light";
+@import "themes/dark";
+
+@import "base/base";
+@import "components/button";
+@import "components/window";
+
+// An icon drawn from Zotero's own SVG set.
+//
+// The -moz-context-properties line is the load-bearing part: without it the SVG
+// paints its own colours and ignores the theme entirely. Copied from
+// pharosDailyView.scss rather than shared, because a partial imported by both
+// would compile into both stylesheets and the two windows do not otherwise
+// overlap.
+@mixin pv-icon($url, $size) {
+	width: $size;
+	height: $size;
+	flex: 0 0 $size;
+	background-image: url($url);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: $size $size;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+#pharos-pv-root {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--material-background);
+	color: var(--fill-primary);
+
+	// The web client's --c-hv / --c-acs / --c-acsb / --c-ok-soft / --c-err-soft /
+	// --c-warn, expressed in this tree's variables so both themes follow without
+	// a second palette. Every one resolves to a theme variable.
+	--pharos-pv-hover: var(--fill-quinary);
+	--pharos-pv-soft: var(--fill-quarternary);
+	--pharos-pv-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	--pharos-pv-accent-line: color-mix(in srgb, var(--color-accent) 34%, transparent);
+	--pharos-pv-ok-soft: color-mix(in srgb, var(--accent-teal) 13%, transparent);
+	--pharos-pv-err-soft: color-mix(in srgb, var(--accent-red) 13%, transparent);
+	--pharos-pv-warn-soft: color-mix(in srgb, var(--accent-yellow) 14%, transparent);
+	--pharos-pv-warn-line: var(--accent-orange);
+
+	// There is no global [hidden] rule in scss/base, so without this every
+	// element toggled with `.hidden = true` stays on screen with no error.
+	[hidden] {
+		display: none;
+	}
+}
+
+// components/button hands every macOS `button` a max-height of 25px and a
+// negative margin, and every Linux one a 1px border and .3em/1.5em of padding.
+// Both would clamp and misalign the 20-28px controls below, which state their
+// own boxes.
+//
+// Written through :where() on purpose: that keeps the selector at the same
+// specificity as the bare `button` rules it is undoing -- so it wins on source
+// order -- while staying BELOW every .pharos-pv-* class, which would otherwise
+// lose its own padding and border to an id-qualified reset.
+:where(#pharos-pv-root) button {
+	appearance: none;
+	margin: 0;
+	padding: 0;
+	max-height: none;
+	min-height: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: default;
+}
+
+.pharos-pv {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+// ================================================================== controls
+
+// One ghost button, three modifiers. Every control in the window is one of
+// these; nothing here reaches for a XUL <button>, which renders its `label`
+// attribute and ignores textContent.
+.pharos-pv-btn {
+	flex: none;
+	height: 24px;
+	padding: 0 10px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: var(--material-border);
+	border-radius: 5px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+	font-weight: 500;
+	white-space: nowrap;
+
+	&:hover {
+		background: var(--pharos-pv-hover);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+	}
+
+	&.is-primary {
+		border-color: transparent;
+		background: var(--color-accent);
+		color: var(--color-accent-text);
+
+		&:hover {
+			background: var(--color-accent);
+		}
+	}
+
+	// A committed destructive action: the second click of an inline confirm.
+	&.is-danger {
+		border-color: transparent;
+		background: var(--accent-red);
+		color: var(--color-accent-text);
+	}
+
+	// The first click. Text-weight on purpose -- 删除 must not carry more visual
+	// weight than 编辑 until the confirm has been asked for.
+	&.is-danger-text {
+		border-color: transparent;
+		background: none;
+		color: var(--accent-red);
+
+		&:hover {
+			background: var(--pharos-pv-err-soft);
+		}
+	}
+}
+
+.pharos-pv-input,
+.pharos-pv-textarea,
+.pharos-pv-select {
+	width: 100%;
+	min-width: 0;
+	padding: 4px 7px;
+	border: var(--material-border);
+	border-radius: 5px;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	font: inherit;
+	font-size: 12px;
+
+	&:focus {
+		outline: none;
+		border-color: var(--pharos-pv-accent-line);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+	}
+}
+
+.pharos-pv-textarea {
+	min-height: 60px;
+	line-height: 1.6;
+	resize: vertical;
+}
+
+.pharos-pv-label {
+	display: block;
+	margin-block-end: 3px;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--fill-tertiary);
+}
+
+// A capsule. Everything that classifies rather than describes is one of these.
+.pharos-pv-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 7px;
+	border-radius: 20px;
+	background: var(--pharos-pv-soft);
+	color: var(--fill-secondary);
+	font-size: 10.5px;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+// =================================================================== sidebar
+
+.pharos-pv-sidebar {
+	width: 232px;
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	padding-block: 8px;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-border);
+}
+
+.pharos-pv-side-head {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 8px 6px;
+}
+
+.pharos-pv-side-title {
+	flex: none;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-pv-side-count {
+	flex: 1;
+	min-width: 0;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-pv-new {
+	flex: none;
+	height: 20px;
+	padding: 0 8px;
+	border: none;
+	border-radius: 5px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 11px;
+	font-weight: 500;
+	white-space: nowrap;
+
+	&:disabled {
+		opacity: 0.5;
+	}
+}
+
+// ------------------------------------------------------------- create form
+
+.pharos-pv-create {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0 6px 8px;
+	padding: 8px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+}
+
+.pharos-pv-create-head {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-pv-create-field {
+	display: flex;
+	flex-direction: column;
+}
+
+.pharos-pv-create-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}
+
+.pharos-pv-form-error {
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--accent-red);
+	overflow-wrap: anywhere;
+}
+
+// ---------------------------------------------------------- archive toggle
+
+.pharos-pv-archive-filter {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0 10px 6px;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+
+	input {
+		margin: 0;
+	}
+
+	// Sibling rather than :has() on the label: :has() landed in Gecko 121 and
+	// this tree still builds against an ESR that predates it, where the whole
+	// rule would be dropped at parse time with nothing logged.
+	input:disabled ~ span {
+		opacity: 0.5;
+	}
+}
+
+// ------------------------------------------------------------ project rows
+
+.pharos-pv-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding-inline: 4px;
+}
+
+// Rows, not <option>s. The bare select carried the name and nothing else: which
+// stage a project is at, whether it is archived, and how much is in it were all
+// invisible until it was opened.
+.pharos-pv-item {
+	display: block;
+	width: 100%;
+	padding: 5px 8px;
+	margin-block-end: 1px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-primary);
+	text-align: start;
+
+	&:hover {
+		background: var(--pharos-pv-hover);
+	}
+
+	&.is-active,
+	&.is-active:hover {
+		background: var(--pharos-pv-accent-soft);
+	}
+}
+
+.pharos-pv-item-top {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+}
+
+.pharos-pv-item-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.pharos-pv-item.is-active .pharos-pv-item-name {
+	font-weight: 600;
+	color: var(--color-accent);
+}
+
+.pharos-pv-state-dot {
+	flex: none;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--accent-teal);
+
+	&.is-archived {
+		background: var(--fill-tertiary);
+	}
+}
+
+.pharos-pv-item-stage {
+	margin-block-start: 1px;
+	font-size: 10.5px;
+	color: var(--fill-secondary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pharos-pv-item-meta {
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+// One class, four distinct copies: loading, error with a retry, no projects at
+// all, and no project matching the archived filter. The old window printed the
+// same sentence for the last two and sent the reader to the web app for both.
+.pharos-pv-side-state {
+	flex: none;
+	padding: 6px 10px;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+
+	&.is-error {
+		color: var(--accent-red);
+	}
+}
+
+.pharos-pv-side-retry {
+	margin-block-start: 4px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--color-accent);
+	font-size: 11.5px;
+
+	&:hover {
+		text-decoration: underline;
+	}
+}
+
+// ==================================================================== main
+
+.pharos-pv-main {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+// Two live regions rather than one. #pharos-pv-status is polite and carries
+// notices and the signed-out state; #pharos-pv-error is an alert and carries
+// failures. One element doing both jobs meant a success notice and a failed
+// request overwrote each other.
+.pharos-pv-notice {
+	flex: none;
+	padding: 5px 14px;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+	border-block-end: var(--material-border);
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-error {
+	flex: none;
+	padding: 5px 14px;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--accent-red);
+	background: var(--pharos-pv-err-soft);
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-error-hint {
+	display: block;
+	color: var(--fill-secondary);
+}
+
+// The one scroll container in the main column, which is what makes the sticky
+// automation notice inside the records panel stick against something.
+.pharos-pv-desk {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0 14px 18px;
+}
+
+// -------------------------------------------------------- welcome / failed
+
+.pharos-pv-welcome,
+.pharos-pv-load-failed {
+	height: 100%;
+	min-height: 300px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 32px;
+	text-align: center;
+}
+
+.pharos-pv-welcome-inner {
+	max-width: 420px;
+}
+
+.pharos-pv-welcome-mark {
+	width: 48px;
+	height: 48px;
+	margin: 0 auto 14px;
+	border-radius: 12px;
+	background-color: var(--pharos-pv-accent-soft);
+	background-image: url("chrome://zotero/skin/16/universal/folder.svg");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 26px 26px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+	color: var(--color-accent);
+}
+
+.pharos-pv-welcome-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--fill-primary);
+	margin-block-end: 5px;
+}
+
+.pharos-pv-welcome-desc {
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--fill-secondary);
+	margin-block-end: 16px;
+}
+
+.pharos-pv-cta {
+	height: 28px;
+	padding: 0 14px;
+	border: none;
+	border-radius: 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 12.5px;
+	font-weight: 500;
+
+	&:disabled {
+		opacity: 0.5;
+	}
+}
+
+.pharos-pv-load-failed-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--fill-primary);
+	margin-block-end: 5px;
+}
+
+.pharos-pv-load-failed-text {
+	font-size: 12px;
+	line-height: 1.7;
+	color: var(--fill-secondary);
+	margin-block-end: 12px;
+	overflow-wrap: anywhere;
+}
+
+// =================================================================== header
+
+.pharos-pv-header {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding-block: 14px 10px;
+}
+
+.pharos-pv-header-title {
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-pv-kicker {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-block-end: 3px;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+}
+
+.pharos-pv-state {
+	@extend .pharos-pv-chip;
+
+	background: var(--pharos-pv-ok-soft);
+	color: var(--accent-teal);
+
+	&.is-archived {
+		background: var(--pharos-pv-soft);
+		color: var(--fill-tertiary);
+	}
+}
+
+.pharos-pv-title {
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.35;
+	color: var(--fill-primary);
+	overflow-wrap: anywhere;
+}
+
+// project.description, rendered here for the first time. The old window read it
+// off the payload and threw it away.
+.pharos-pv-desc {
+	margin-block-start: 4px;
+	font-size: 12px;
+	line-height: 1.7;
+	color: var(--fill-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-meta {
+	margin-block-start: 5px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 10px;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-pv-header-actions {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+	max-width: 260px;
+}
+
+.pharos-pv-edit {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	margin-block: 12px;
+	border: var(--material-border);
+	border-radius: 8px;
+	background: var(--material-background);
+}
+
+.pharos-pv-edit-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}
+
+.pharos-pv-field {
+	display: flex;
+	flex-direction: column;
+}
+
+// The second half of an inline confirm: the question, then the committed button.
+// A modal would be the obvious thing and is the wrong thing -- a destructive
+// action with no undo should stay next to the row it destroys.
+.pharos-pv-inline-confirm,
+.pharos-pv-delete-confirm {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--accent-red);
+}
+
+// --------------------------------------------------------------- question
+
+.pharos-pv-question {
+	padding: 10px 12px;
+	margin-block-end: 12px;
+	border-inline-start: 2px solid var(--pharos-pv-accent-line);
+	border-radius: 0 6px 6px 0;
+	background: var(--pharos-pv-accent-soft);
+}
+
+.pharos-pv-question-label {
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--color-accent);
+	margin-block-end: 3px;
+}
+
+.pharos-pv-question-text {
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--fill-primary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+// ============================================================= stage path
+
+.pharos-pv-stage-section {
+	padding: 12px;
+	margin-block-end: 12px;
+	border: var(--material-border);
+	border-radius: 8px;
+}
+
+.pharos-pv-section-head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin-block-end: 10px;
+}
+
+.pharos-pv-section-kicker {
+	flex: none;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-pv-section-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--fill-secondary);
+}
+
+.pharos-pv-stage-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-block-end: 12px;
+}
+
+.pharos-pv-stage-controls .pharos-pv-select {
+	width: auto;
+	min-width: 140px;
+	max-width: 100%;
+	height: 24px;
+	padding-block: 0;
+}
+
+// Nine nodes. Scrolls rather than wraps: inside the rail browser the pane can be
+// narrower than the path, and a wrapped timeline reads as two timelines.
+.pharos-pv-timeline {
+	display: flex;
+	align-items: flex-start;
+	gap: 2px;
+	overflow-x: auto;
+	padding-block-end: 4px;
+	scrollbar-width: thin;
+}
+
+.pharos-pv-stage {
+	flex: 1 0 auto;
+	min-width: 62px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	padding: 6px 4px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: none;
+	color: var(--fill-tertiary);
+
+	&:hover {
+		background: var(--pharos-pv-hover);
+	}
+
+	// Reached already. Never `selected`, `open` or `collapsed`: those are
+	// XUL-reserved attribute names and apply layout of their own.
+	&.is-past {
+		color: var(--fill-secondary);
+
+		.pharos-pv-stage-node {
+			background: var(--pharos-pv-soft);
+			color: var(--fill-secondary);
+		}
+	}
+
+	// Where the project actually is.
+	&.is-current {
+		color: var(--color-accent);
+
+		.pharos-pv-stage-node {
+			background: var(--color-accent);
+			color: var(--color-accent-text);
+			font-weight: 700;
+		}
+	}
+
+	// What the records list below is filtered to, which is not necessarily the
+	// stage the project is at: browsing history must not move the project.
+	&.is-viewed {
+		border-color: var(--pharos-pv-accent-line);
+		background: var(--pharos-pv-accent-soft);
+	}
+}
+
+.pharos-pv-stage-node {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--pharos-pv-soft);
+	color: var(--fill-tertiary);
+	font-size: 10.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-pv-stage-short {
+	font-size: 10.5px;
+	line-height: 1.3;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.pharos-pv-stage-count {
+	font-size: 10px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.pharos-pv-stage-help {
+	margin-block-start: 8px;
+	font-size: 10.5px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+}
+
+// ============================================================== work grid
+
+.pharos-pv-workgrid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 12px;
+	align-items: start;
+}
+
+// The rail browser has its own viewport, so this breakpoint applies inside it
+// exactly as it does in the standalone window.
+@media (max-width: 1120px) {
+	.pharos-pv-workgrid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (max-width: 720px) {
+	.pharos-pv-sidebar {
+		width: 176px;
+	}
+}
+
+.pharos-pv-panel {
+	min-width: 0;
+	border: var(--material-border);
+	border-radius: 8px;
+	// No overflow of its own, deliberately: the sticky automation notice inside
+	// .is-artifacts sticks against .pharos-pv-desk, and an overflow value here
+	// would make this element the scrollport instead and pin the notice to a box
+	// that never scrolls.
+}
+
+.pharos-pv-panel-head {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	padding: 10px 12px;
+	border-block-end: var(--material-border);
+}
+
+.pharos-pv-panel-kicker {
+	flex: none;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-pv-panel-count {
+	flex: 1;
+	min-width: 0;
+	font-size: 11.5px;
+	color: var(--fill-secondary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-pv-panel-empty {
+	padding: 24px 16px;
+	text-align: center;
+}
+
+.pharos-pv-panel-empty-title {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--fill-secondary);
+	margin-block-end: 4px;
+}
+
+.pharos-pv-panel-empty-desc {
+	font-size: 11.5px;
+	line-height: 1.7;
+	color: var(--fill-tertiary);
+}
+
+// ============================================================ source cards
+
+.pharos-pv-source-card {
+	padding: 10px 12px;
+
+	& + & {
+		border-block-start: var(--material-border);
+	}
+}
+
+.pharos-pv-source-head {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+// A button, not an <a href>: Zotero.launchURL opens it in the system browser,
+// never in an in-app tab.
+.pharos-pv-source-title {
+	padding: 0;
+	border: none;
+	background: none;
+	text-align: start;
+	font-size: 12.5px;
+	font-weight: 500;
+	line-height: 1.45;
+	color: var(--fill-primary);
+	overflow-wrap: anywhere;
+
+	&.is-link {
+		color: var(--color-accent);
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+}
+
+// Kept from the desktop's own row rather than dropped to match the web, which
+// omits authors entirely: three names carry the attribution and "et al." carries
+// the rest without becoming the tallest thing in the card.
+.pharos-pv-source-meta {
+	font-size: 11px;
+	color: var(--fill-tertiary);
+	overflow-wrap: anywhere;
+}
+
+// ------------------------------------------------------------- provenance
+
+// Where the reading came from. Rendered because summary_zh from a model and
+// summary_zh from a rules extraction were indistinguishable before, and the
+// difference decides how much the sentence below is worth.
+.pharos-pv-source-prov {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	margin-block-start: 6px;
+}
+
+.pharos-pv-analysis {
+	@extend .pharos-pv-chip;
+
+	&.is-ai {
+		background: var(--pharos-pv-accent-soft);
+		color: var(--color-accent);
+	}
+}
+
+.pharos-pv-source-src {
+	@extend .pharos-pv-chip;
+
+	font-weight: 400;
+	color: var(--fill-tertiary);
+}
+
+// source.paper arrives in every GET already; this needs no extra request.
+.pharos-pv-source-paper {
+	@extend .pharos-pv-chip;
+
+	// Struck through as well as recoloured: a chip that says a paper is gone
+	// only by being red says nothing to anyone who cannot see the difference.
+	&.is-deleted {
+		background: var(--pharos-pv-err-soft);
+		color: var(--accent-red);
+		text-decoration: line-through;
+	}
+}
+
+// Backend free text. Rendered verbatim, no id.
+.pharos-pv-analysis-warning {
+	margin-block-start: 6px;
+	padding: 5px 8px;
+	border-inline-start: 2px solid var(--pharos-pv-warn-line);
+	border-radius: 0 5px 5px 0;
+	background: var(--pharos-pv-warn-soft);
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-source-insight {
+	margin-block-start: 6px;
+	font-size: 11.5px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-source-insight-label {
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--color-accent);
+	margin-block-end: 1px;
+}
+
+.pharos-pv-source-rules-note {
+	margin-block-start: 4px;
+	font-size: 10.5px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+}
+
+// ----------------------------------------------------------- evidence note
+
+.pharos-pv-source-note {
+	display: block;
+	width: 100%;
+	margin-block-start: 8px;
+	padding: 6px 8px;
+	border: 1px dashed var(--color-border);
+	border-radius: 5px;
+	background: none;
+	text-align: start;
+	font-size: 11.5px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+
+	&:hover {
+		background: var(--pharos-pv-hover);
+	}
+
+	&.is-empty {
+		color: var(--fill-tertiary);
+	}
+}
+
+.pharos-pv-source-note-label {
+	display: block;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--fill-tertiary);
+	margin-block-end: 2px;
+}
+
+.pharos-pv-note-editor {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-block-start: 8px;
+}
+
+.pharos-pv-note-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}
+
+.pharos-pv-source-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-block-start: 8px;
+}
+
+.pharos-pv-source-added {
+	flex: 1;
+	min-width: 0;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+// ======================================================= automation notice
+
+// DECISIONS §9, expressed in the DOM.
+//
+// It sits inside the records panel, immediately above the artifact list, rather
+// than at the top of the window: a record of type `result` reading "95% accuracy"
+// must not be able to appear detached from the sentence saying nothing executed
+// it. Sticky for the same reason -- with a dozen records in one stage, a
+// panel-top notice still scrolls away from record twelve.
+//
+// Amber, never .pharos-daily-pending. That class is --fill-tertiary + italic,
+// the lowest-contrast text in the sheet, and the same treatment the "暂无内容。"
+// placeholder used, which made the notice read as "nothing here".
+.pharos-pv-automation {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: flex-start;
+	gap: 7px;
+	padding: 8px 12px;
+	background: var(--pharos-pv-warn-soft);
+	border-block-end: var(--material-border);
+	border-inline-start: 2px solid var(--pharos-pv-warn-line);
+	font-size: 11.5px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+}
+
+// There is no warning glyph in 16/universal, so info.svg is tinted by the
+// container's amber instead.
+.pharos-pv-automation-icon {
+	@include pv-icon("chrome://zotero/skin/16/universal/info.svg", 13px);
+
+	margin-block-start: 2px;
+	color: var(--pharos-pv-warn-line);
+}
+
+.pharos-pv-automation-text {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+// ========================================================== artifact cards
+
+.pharos-pv-artifact-card {
+	padding: 10px 12px;
+
+	& + & {
+		border-block-start: var(--material-border);
+	}
+}
+
+.pharos-pv-artifact-top {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	margin-block-end: 4px;
+}
+
+.pharos-pv-artifact-type {
+	@extend .pharos-pv-chip;
+}
+
+.pharos-pv-artifact-stage {
+	@extend .pharos-pv-chip;
+
+	font-weight: 400;
+	color: var(--fill-tertiary);
+}
+
+.pharos-pv-artifact-status {
+	@extend .pharos-pv-chip;
+
+	&.is-draft {
+		background: var(--pharos-pv-soft);
+		color: var(--fill-tertiary);
+	}
+
+	&.is-ready {
+		background: var(--pharos-pv-accent-soft);
+		color: var(--color-accent);
+	}
+
+	// 人工核验 / "Verified by you". A user's judgement, never the platform's.
+	&.is-verified {
+		background: var(--pharos-pv-ok-soft);
+		color: var(--accent-teal);
+	}
+
+	&.is-rejected {
+		background: var(--pharos-pv-err-soft);
+		color: var(--accent-red);
+	}
+}
+
+.pharos-pv-artifact-title {
+	font-size: 12.5px;
+	font-weight: 500;
+	line-height: 1.45;
+	color: var(--fill-primary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-pv-artifact-body {
+	margin-block-start: 4px;
+	font-size: 11.5px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	// Plain text written by a person, so newlines are the only structure it has.
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.pharos-pv-artifact-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-block-start: 8px;
+}
+
+.pharos-pv-artifact-updated {
+	flex: 1;
+	min-width: 0;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+// ------------------------------------------------------------ record editor
+
+.pharos-pv-artifact-editor {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	border-block-end: var(--material-border);
+	background: var(--material-background);
+}
+
+.pharos-pv-editor-head {
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-pv-editor-fields {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+	gap: 8px;
+}
+
+.pharos-pv-editor-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}

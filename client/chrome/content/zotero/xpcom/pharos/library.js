@@ -146,8 +146,13 @@ Zotero.Pharos.Library = new function () {
 		if (rows.length) {
 			parts.push(`<ul>${rows.join('')}</ul>`);
 		}
-		if (footer) {
-			parts.push(`<p>${esc(footer)}</p>`);
+		// An array gets one paragraph per entry. A caller with two footer lines
+		// cannot just join them with "\n": this is HTML, where a newline is
+		// whitespace, and the two would render welded into one sentence -- which
+		// matters when the first line is the "a model wrote this" disclosure and
+		// the second is unrelated metadata.
+		for (let line of (Array.isArray(footer) ? footer : [footer]).filter(Boolean)) {
+			parts.push(`<p>${esc(line)}</p>`);
 		}
 		return parts.join('\n');
 	};

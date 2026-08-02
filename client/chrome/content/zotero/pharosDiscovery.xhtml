@@ -2,18 +2,30 @@
 
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 <?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
-<?xml-stylesheet href="chrome://zotero/skin/pharosDaily.css" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosDiscovery.css" type="text/css"?>
 
 <!DOCTYPE window>
+
+<!-- NOTE: a double hyphen anywhere inside an XML comment stops this whole
+     document parsing and the window comes up blank with nothing logged. The
+     "two hyphens in comments" convention in client/CLAUDE.md is for JS and
+     SCSS; XML is the exception.
+
+     This window no longer links pharosDaily.css. That file is still the
+     stylesheet for Research Projects, which builds .pharos-daily-* rows of its
+     own; borrowing it here is what coupled the two modules together. -->
 
 <window data-l10n-id="pharos-discovery-window"
 		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
 		xmlns:html="http://www.w3.org/1999/xhtml"
 		id="pharos-discovery-window"
 		windowtype="pharos:discovery"
-		width="860" height="680"
+		width="1060" height="720"
 		persist="screenX screenY width height"
 		onload="Zotero_Pharos_Discovery.init()">
+	<!-- All three are required. data-l10n-id resolves against THIS document's
+	     own resource list, so dropping pharos.ftl renders every id as nothing
+	     and surfaces as a bare `undefined` rejection with no stack. -->
 	<linkset>
 		<html:link rel="localization" href="branding/brand.ftl" />
 		<html:link rel="localization" href="zotero.ftl" />
@@ -25,17 +37,173 @@
 	</script>
 	<script src="chrome://zotero/content/pharosDiscovery.js"/>
 
-	<vbox flex="1" id="pharos-daily-root">
-		<hbox id="pharos-daily-toolbar" align="center">
-			<html:input id="pharos-discovery-query" type="search"
-					data-l10n-id="pharos-discovery-placeholder" data-l10n-attrs="placeholder"/>
-			<button id="pharos-discovery-search" data-l10n-id="pharos-discovery-search"/>
-			<spacer flex="1"/>
-			<html:span id="pharos-daily-summary"/>
-		</hbox>
+	<!-- Everything list-shaped is built in pharosDiscovery.js. Only the shell,
+	     the rail frame, the composer and the two run containers are static,
+	     because they are the parts that exist before any request comes back.
 
-		<html:div id="pharos-daily-status" role="status"/>
+	     Every element below is HTML rather than XUL: a XUL button renders its
+	     `label` attribute and ignores textContent, so a value-only Fluent
+	     message on one produces a blank button.
 
-		<html:div id="pharos-daily-list" flex="1"/>
+	     `collapsed`, `hidden`, `disabled`, `selected` and `open` are XUL
+	     reserved attribute names that apply layout of their own, so they are
+	     used only for their real meaning. Custom state is an is-* class or a
+	     data-* attribute. -->
+	<vbox flex="1" id="pharos-discovery-root">
+		<html:div id="pharos-ds" class="pharos-ds">
+
+			<html:div id="pharos-ds-rail" class="pharos-ds-rail">
+				<html:div id="pharos-ds-rail-head" class="pharos-ds-rail-head">
+					<html:span class="pharos-ds-rail-title"
+						data-l10n-id="pharos-discovery-history-head"/>
+					<html:span id="pharos-ds-rail-count" class="pharos-ds-rail-count"/>
+				</html:div>
+				<html:div id="pharos-ds-history" class="pharos-ds-history"/>
+				<html:div id="pharos-ds-rail-note" class="pharos-ds-rail-note">
+					<html:span id="pharos-ds-rail-note-text"/>
+					<html:button id="pharos-ds-rail-retry" class="pharos-ds-rail-retry"
+						type="button" data-l10n-id="pharos-discovery-retry"/>
+				</html:div>
+			</html:div>
+
+			<html:div id="pharos-ds-main" class="pharos-ds-main">
+				<html:div id="pharos-ds-head" class="pharos-ds-head">
+					<html:div class="pharos-ds-head-text">
+						<html:h1 class="pharos-ds-title"
+							data-l10n-id="pharos-discovery-heading"/>
+						<html:p class="pharos-ds-sub"
+							data-l10n-id="pharos-discovery-subheading"/>
+					</html:div>
+					<html:div id="pharos-ds-context" class="pharos-ds-context">
+						<html:span class="pharos-ds-context-k"
+							data-l10n-id="pharos-discovery-current-project"/>
+						<html:span id="pharos-ds-context-name" class="pharos-ds-context-v"/>
+					</html:div>
+				</html:div>
+
+				<!-- A form so that Enter submits and the fields are one group to
+				     a screen reader. Every button inside it states type=button:
+				     the default is submit, which would fire both the click
+				     handler and the submit handler and run the search twice. -->
+				<html:form id="pharos-ds-composer" class="pharos-ds-composer">
+					<html:label class="pharos-ds-field">
+						<html:span class="pharos-ds-field-k"
+							data-l10n-id="pharos-discovery-query-label"/>
+						<html:textarea id="pharos-discovery-query" class="pharos-ds-query"
+							rows="3" maxlength="500"
+							data-l10n-id="pharos-discovery-placeholder"
+							data-l10n-attrs="placeholder"/>
+						<html:small class="pharos-ds-fieldnote"
+							data-l10n-id="pharos-discovery-language-hint"/>
+					</html:label>
+
+					<html:div class="pharos-ds-composer-foot">
+						<html:fieldset id="pharos-ds-sources" class="pharos-ds-sources">
+							<html:legend class="pharos-ds-field-k"
+								data-l10n-id="pharos-discovery-sources-label"/>
+							<html:label class="pharos-ds-source is-on" data-source="arxiv">
+								<html:input id="pharos-ds-source-arxiv" type="checkbox"/>
+								<html:span>
+									<html:strong class="pharos-ds-source-name"
+										data-l10n-id="pharos-discovery-source-arxiv"/>
+									<html:small class="pharos-ds-source-note"
+										data-l10n-id="pharos-discovery-source-arxiv-note"/>
+								</html:span>
+							</html:label>
+							<html:label class="pharos-ds-source is-on" data-source="openalex">
+								<html:input id="pharos-ds-source-openalex" type="checkbox"/>
+								<html:span>
+									<html:strong class="pharos-ds-source-name"
+										data-l10n-id="pharos-discovery-source-openalex"/>
+									<html:small class="pharos-ds-source-note"
+										data-l10n-id="pharos-discovery-source-openalex-note"/>
+								</html:span>
+							</html:label>
+						</html:fieldset>
+
+						<html:label class="pharos-ds-field pharos-ds-compact">
+							<html:span class="pharos-ds-field-k"
+								data-l10n-id="pharos-discovery-project-label"/>
+							<html:select id="pharos-ds-project" class="pharos-ds-select"/>
+						</html:label>
+
+						<html:label class="pharos-ds-field pharos-ds-compact is-limit">
+							<html:span class="pharos-ds-field-k"
+								data-l10n-id="pharos-discovery-limit-label"/>
+							<html:input id="pharos-ds-limit" class="pharos-ds-number"
+								type="number" min="1" max="50" value="20"/>
+						</html:label>
+
+						<html:button id="pharos-discovery-search" class="pharos-ds-run"
+							type="button"/>
+					</html:div>
+
+					<html:p id="pharos-ds-hint" class="pharos-ds-hint" role="status"/>
+					<html:p id="pharos-ds-form-error" class="pharos-ds-hint is-err"
+						role="alert"/>
+				</html:form>
+
+				<html:div id="pharos-ds-notice" class="pharos-ds-notice" role="status"/>
+
+				<html:div id="pharos-ds-run" class="pharos-ds-run">
+					<html:div id="pharos-ds-run-head" class="pharos-ds-run-head">
+						<html:div class="pharos-ds-run-headtext">
+							<html:span id="pharos-ds-status" class="pharos-ds-status"/>
+							<html:h2 id="pharos-ds-run-query" class="pharos-ds-run-query"/>
+							<html:p id="pharos-ds-run-meta" class="pharos-ds-run-meta"/>
+						</html:div>
+						<html:button id="pharos-ds-reuse" class="pharos-ds-ghost"
+							type="button" data-l10n-id="pharos-discovery-reuse"/>
+					</html:div>
+
+					<!-- Shown only for a persisted `running` row, which means an
+					     interrupted request rather than one in flight: POST
+					     /api/discovery/search is synchronous and commits only on
+					     success. Nothing here polls or animates. -->
+					<html:div id="pharos-ds-runwarn" class="pharos-ds-runwarn"
+						data-l10n-id="pharos-discovery-status-running-hint"/>
+
+					<html:div id="pharos-ds-errors" class="pharos-ds-errors"/>
+
+					<html:div id="pharos-ds-selbar" class="pharos-ds-selbar">
+						<html:label class="pharos-ds-selall">
+							<html:input id="pharos-ds-selall-box" type="checkbox"/>
+							<html:span data-l10n-id="pharos-discovery-select-all"/>
+						</html:label>
+						<html:span id="pharos-ds-selcount" class="pharos-ds-selcount"/>
+						<html:div class="pharos-ds-selspacer"/>
+						<html:select id="pharos-ds-file-project" class="pharos-ds-select"/>
+						<html:button id="pharos-ds-file" class="pharos-ds-primary"
+							type="button"/>
+						<html:button id="pharos-ds-new-project" class="pharos-ds-ghost"
+							type="button" data-l10n-id="pharos-discovery-new-project"/>
+					</html:div>
+
+					<html:form id="pharos-ds-newproject" class="pharos-ds-newproject">
+						<html:div class="pharos-ds-newproject-text">
+							<html:strong data-l10n-id="pharos-discovery-new-project-head"/>
+							<html:span data-l10n-id="pharos-discovery-new-project-desc"/>
+						</html:div>
+						<html:input id="pharos-ds-newproject-name" type="text"
+							data-l10n-id="pharos-discovery-new-project-name"
+							data-l10n-attrs="placeholder"/>
+						<html:input id="pharos-ds-newproject-question" type="text"
+							data-l10n-id="pharos-discovery-new-project-question"
+							data-l10n-attrs="placeholder"/>
+						<html:button id="pharos-ds-newproject-create" class="pharos-ds-primary"
+							type="button"/>
+					</html:form>
+
+					<html:div id="pharos-ds-list" class="pharos-ds-list"/>
+				</html:div>
+
+				<html:div id="pharos-ds-empty" class="pharos-ds-empty">
+					<html:span class="pharos-ds-empty-mark"/>
+					<html:h2 id="pharos-ds-empty-title" class="pharos-ds-empty-title"/>
+					<html:p id="pharos-ds-empty-desc" class="pharos-ds-empty-desc"/>
+				</html:div>
+			</html:div>
+
+		</html:div>
 	</vbox>
 </window>

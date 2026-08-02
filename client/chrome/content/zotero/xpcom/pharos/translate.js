@@ -294,10 +294,16 @@ Zotero.Pharos.Translate = new function () {
 			// stage is the engine's own label for what it is doing right now
 			// (parsing, translating, rebuilding); showing it beats a bare
 			// percentage because a long stage otherwise looks like a hang.
-			onProgress(Zotero.getString(
-				'pharos-translate-status-running',
-				[job.stage || '', Math.round(job.progress || 0)]
-			));
+			// Fluent's own formatter, NOT Zotero.getString(id, params): handed a
+			// params argument, getString routes to the .properties bundle, where
+			// no pharos-* id exists -- it throws in en-US and returns the bare id
+			// in zh-CN. Here that threw from inside the poll loop, so an en-US
+			// user lost the translation they were already paying for, at the
+			// first progress tick, with the job still running on the server.
+			onProgress(Zotero.ftl.formatValueSync('pharos-translate-status-running', {
+				stage: job.stage || '',
+				percent: Math.round(job.progress || 0),
+			}));
 		}
 	}
 

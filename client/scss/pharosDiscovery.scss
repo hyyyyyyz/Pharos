@@ -1,0 +1,1164 @@
+// The 文献探索 window.
+//
+// Its own stylesheet. This window used to link pharosDaily.css, which is still
+// the stylesheet for Research Projects: pharosProjects.xhtml links it and
+// pharosProjects.js builds .pharos-daily-paper / -title / -meta / -summary-text
+// / -actions rows and declares #pharos-daily-root / -toolbar / -summary /
+// -status / -list. Repurposing any of those names, or deleting the file as
+// dead, silently restyles Research Projects with nothing logged anywhere.
+// Nothing below uses a pharos-daily-* name.
+//
+// The prefix here is pharos-ds-, parallel to the digest's pharos-dv-, and state
+// modifiers are is-*. `collapsed`, `hidden`, `disabled`, `selected` and `open`
+// are XUL reserved attribute names that apply layout of their own, so none of
+// them is used as custom state.
+
+@import "abstracts/variables";
+@import "abstracts/functions";
+@import "abstracts/mixins";
+@import "abstracts/placeholders";
+
+@import "themes/light";
+@import "themes/dark";
+
+@import "base/base";
+@import "components/button";
+@import "components/window";
+
+// An icon drawn from Zotero's own SVG set. The -moz-context-properties line is
+// the load-bearing part: without it the SVG paints its own colours and ignores
+// the theme entirely.
+@mixin ds-icon($url, $size) {
+	width: $size;
+	height: $size;
+	flex: 0 0 $size;
+	background-image: url($url);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: $size $size;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+#pharos-discovery-root {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--material-background);
+	color: var(--fill-primary);
+
+	// The web client's --c-hv / --c-acs / --c-acsb / --c-err-soft and its
+	// #C98A13 partial colour, expressed in this tree's variables so both themes
+	// follow without a second palette. Every one resolves to a theme variable;
+	// nothing here is a literal.
+	--pharos-ds-hover: var(--fill-quinary);
+	--pharos-ds-soft: var(--fill-quarternary);
+	--pharos-ds-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	--pharos-ds-accent-line: color-mix(in srgb, var(--color-accent) 34%, transparent);
+	--pharos-ds-err-soft: color-mix(in srgb, var(--accent-red) 13%, transparent);
+	--pharos-ds-warn-soft: color-mix(in srgb, var(--accent-gold) 22%, transparent);
+
+	// There is no global [hidden] rule in scss/base, so without this every
+	// element toggled with `.hidden = true` stays on screen with no error.
+	[hidden] {
+		display: none;
+	}
+}
+
+// components/button hands every macOS `button` a max-height of 25px and a
+// negative margin, and every Linux one a 1px border and .3em/1.5em of padding.
+// Both would clamp and misalign the controls below, which state their own boxes.
+//
+// Written through :where() on purpose: that keeps the selector at the same
+// specificity as the bare `button` rules it is undoing, so it wins on source
+// order while staying BELOW every .pharos-ds-* class, which would otherwise lose
+// its own padding and border to an id-qualified reset.
+:where(#pharos-discovery-root) button {
+	appearance: none;
+	margin: 0;
+	padding: 0;
+	max-height: none;
+	min-height: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: default;
+}
+
+// Same reasoning for the form controls: components/window and the platform
+// sheets give these their own metrics, and the composer states its own.
+:where(#pharos-discovery-root) {
+	input[type="text"],
+	input[type="number"],
+	textarea,
+	select {
+		margin: 0;
+		font: inherit;
+	}
+}
+
+.pharos-ds {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+// ============================================================== history rail
+
+.pharos-ds-rail {
+	width: 212px;
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	padding-block: 8px;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-border);
+	min-height: 0;
+}
+
+.pharos-ds-rail-head {
+	flex: none;
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+	padding: 0 10px 6px;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-rail-count {
+	font-variant-numeric: tabular-nums;
+	font-weight: 400;
+}
+
+.pharos-ds-history {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.pharos-ds-rail-note {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	padding: 6px 10px 0;
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+
+	&.is-err {
+		color: var(--accent-red);
+	}
+}
+
+.pharos-ds-rail-retry {
+	padding: 0;
+	color: var(--color-accent);
+	font-size: 11px;
+
+	&:hover {
+		text-decoration: underline;
+	}
+}
+
+.pharos-ds-hitem {
+	display: block;
+	width: calc(100% - 8px);
+	margin-inline: 4px;
+	padding: 5px 8px 6px;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-primary);
+	text-align: start;
+
+	&:hover {
+		background: var(--pharos-ds-hover);
+	}
+
+	&.is-active,
+	&.is-active:hover {
+		background: var(--pharos-ds-accent-soft);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+}
+
+.pharos-ds-hitem-top {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+// The run's outcome, at a glance. Four states, never three: a run that never
+// finished is not the same thing as one that failed, and neither is a partial.
+.pharos-ds-dot {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--fill-tertiary);
+
+	&.is-complete {
+		background: var(--accent-teal);
+	}
+
+	&.is-partial {
+		background: var(--accent-gold);
+	}
+
+	&.is-error {
+		background: var(--accent-red);
+	}
+
+	// Interrupted, not in flight. Hollow rather than animated: nothing is
+	// happening, and a spinner would say otherwise.
+	&.is-running {
+		background: transparent;
+		box-shadow: inset 0 0 0 1.5px var(--fill-tertiary);
+	}
+}
+
+.pharos-ds-hitem-query {
+	flex: 1;
+	min-width: 0;
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pharos-ds-hitem.is-active .pharos-ds-hitem-query {
+	font-weight: 600;
+	color: var(--color-accent);
+}
+
+.pharos-ds-hitem-meta,
+.pharos-ds-hitem-sources {
+	margin-block-start: 2px;
+	padding-inline-start: 12px;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+// ==================================================================== centre
+
+.pharos-ds-main {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow-y: auto;
+}
+
+.pharos-ds-head {
+	flex: none;
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	padding: 14px 16px 10px;
+}
+
+.pharos-ds-head-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-ds-title {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-sub {
+	margin: 4px 0 0;
+	font-size: 11.5px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+	max-width: 62ch;
+}
+
+.pharos-ds-context {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 2px;
+	max-width: 220px;
+}
+
+.pharos-ds-context-k {
+	font-size: 10.5px;
+	letter-spacing: 0.04em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-context-v {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--fill-primary);
+	text-align: end;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
+}
+
+// ================================================================= composer
+
+.pharos-ds-composer {
+	flex: none;
+	margin: 0 16px;
+	padding: 12px;
+	border: var(--material-border);
+	border-radius: 8px;
+	background: var(--color-background);
+}
+
+.pharos-ds-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.pharos-ds-field-k {
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-fieldnote {
+	font-size: 10.5px;
+	line-height: 1.5;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-query {
+	width: 100%;
+	min-height: 56px;
+	padding: 7px 9px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	font-size: 12.5px;
+	line-height: 1.6;
+	resize: vertical;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-ds-composer-foot {
+	display: flex;
+	align-items: flex-end;
+	gap: 12px;
+	margin-block-start: 10px;
+	// Wraps rather than clips below the second breakpoint; see the media query
+	// at the bottom, which is where the fieldset gives up its row.
+	flex-wrap: wrap;
+}
+
+.pharos-ds-sources {
+	flex: 1 1 300px;
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	border: none;
+
+	legend {
+		width: 100%;
+		padding: 0;
+		margin-block-end: 4px;
+	}
+}
+
+// A source is a claim about where the results came from, so the picker names
+// what each one is for rather than showing two bare checkboxes.
+.pharos-ds-source {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 5px 9px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+
+	&:hover {
+		background: var(--pharos-ds-hover);
+	}
+
+	&.is-on {
+		border-color: var(--pharos-ds-accent-line);
+		background: var(--pharos-ds-accent-soft);
+	}
+
+	input {
+		margin: 1px 0 0;
+	}
+}
+
+.pharos-ds-source-name {
+	display: block;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-source-note {
+	display: block;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-compact {
+	flex: 0 0 auto;
+
+	&.is-limit {
+		width: 74px;
+	}
+}
+
+.pharos-ds-select,
+.pharos-ds-number {
+	height: 26px;
+	padding: 0 6px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	font-size: 12px;
+}
+
+.pharos-ds-select {
+	max-width: 190px;
+}
+
+.pharos-ds-number {
+	width: 100%;
+	font-variant-numeric: tabular-nums;
+}
+
+// The search button. `.pharos-ds-run` is also the class on the run container,
+// which is a collision inherited from the DOM contract; the element selector is
+// what keeps the two apart.
+button.pharos-ds-run {
+	flex: none;
+	height: 28px;
+	padding: 0 16px;
+	border-radius: 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 12.5px;
+	font-weight: 500;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-ds-hint {
+	margin: 8px 0 0;
+	font-size: 11px;
+	line-height: 1.65;
+	color: var(--fill-tertiary);
+
+	&.is-err {
+		color: var(--accent-red);
+	}
+}
+
+.pharos-ds-notice {
+	flex: none;
+	margin: 10px 16px 0;
+	padding: 7px 10px;
+	border-radius: 6px;
+	background: var(--pharos-ds-soft);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+	line-height: 1.6;
+
+	&.is-err {
+		background: var(--pharos-ds-err-soft);
+		color: var(--accent-red);
+	}
+}
+
+// ====================================================================== run
+
+.pharos-ds-run {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 14px 16px 0;
+}
+
+.pharos-ds-run-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+}
+
+.pharos-ds-run-headtext {
+	flex: 1;
+	min-width: 0;
+}
+
+// The run's outcome, spelled out. A run with a status nobody recognises reads
+// as a failure, because the alternative is claiming a success nobody verified.
+.pharos-ds-status {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: 20px;
+	background: var(--pharos-ds-soft);
+	color: var(--fill-secondary);
+	font-size: 10.5px;
+	font-weight: 600;
+
+	&.is-complete {
+		background: color-mix(in srgb, var(--accent-teal) 18%, transparent);
+		color: var(--accent-teal);
+	}
+
+	&.is-partial,
+	&.is-running {
+		background: var(--pharos-ds-warn-soft);
+		color: var(--fill-primary);
+	}
+
+	&.is-error {
+		background: var(--pharos-ds-err-soft);
+		color: var(--accent-red);
+	}
+}
+
+.pharos-ds-run-query {
+	margin: 4px 0 0;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.45;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-run-meta {
+	margin: 3px 0 0;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-ds-ghost {
+	flex: none;
+	height: 26px;
+	padding: 0 11px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+
+	&:hover {
+		background: var(--pharos-ds-hover);
+	}
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-ds-runwarn {
+	margin-block-start: 9px;
+	padding: 7px 10px;
+	border-radius: 6px;
+	background: var(--pharos-ds-warn-soft);
+	color: var(--fill-primary);
+	font-size: 11.5px;
+	line-height: 1.6;
+}
+
+// One row per provider. Joining them into a sentence would detach each reason
+// from the name it belongs to.
+.pharos-ds-errors {
+	margin-block-start: 9px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--pharos-ds-err-soft);
+}
+
+.pharos-ds-errors-head {
+	display: block;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--accent-red);
+	margin-block-end: 3px;
+}
+
+.pharos-ds-error-row {
+	display: flex;
+	gap: 6px;
+	margin: 2px 0 0;
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+}
+
+.pharos-ds-error-source {
+	flex: none;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-error-msg {
+	min-width: 0;
+	word-break: break-word;
+}
+
+// ================================================================ selection
+
+.pharos-ds-selbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-block-start: 12px;
+	padding: 7px 10px;
+	border: var(--material-border);
+	border-radius: 8px;
+	background: var(--color-background);
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.pharos-ds-selall {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	color: var(--fill-secondary);
+}
+
+.pharos-ds-selcount {
+	font-size: 11.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-ds-selspacer {
+	flex: 1;
+	min-width: 8px;
+}
+
+.pharos-ds-primary {
+	flex: none;
+	height: 26px;
+	padding: 0 13px;
+	border-radius: 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font-size: 11.5px;
+	font-weight: 500;
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-ds-newproject {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-block-start: 8px;
+	padding: 9px 10px;
+	border: 1px solid var(--pharos-ds-accent-line);
+	border-radius: 8px;
+	background: var(--pharos-ds-accent-soft);
+
+	input {
+		flex: 1 1 180px;
+		min-width: 0;
+		height: 26px;
+		padding: 0 8px;
+		border: var(--material-border);
+		border-radius: 6px;
+		background: var(--material-background);
+		color: var(--fill-primary);
+		font-size: 12px;
+	}
+}
+
+.pharos-ds-newproject-text {
+	flex: 1 1 100%;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+
+	strong {
+		color: var(--fill-primary);
+		margin-inline-end: 5px;
+	}
+}
+
+// ==================================================================== cards
+
+.pharos-ds-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-block: 12px;
+}
+
+.pharos-ds-card {
+	display: flex;
+	gap: 10px;
+	padding: 10px 12px;
+	border: var(--material-border);
+	border-radius: 8px;
+	background: var(--color-background);
+
+	&.is-selected {
+		border-color: var(--pharos-ds-accent-line);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+}
+
+.pharos-ds-card-select {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	padding-block-start: 1px;
+}
+
+.pharos-ds-check {
+	display: flex;
+}
+
+.pharos-ds-rank {
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.pharos-ds-card-body {
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-ds-card-titlerow {
+	display: flex;
+	min-width: 0;
+}
+
+.pharos-ds-card-title {
+	min-width: 0;
+	text-align: start;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.45;
+	color: var(--fill-primary);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+
+	// A link, not a control: the destination is a web page, and Zotero.launchURL
+	// hands it to the system browser.
+	&.is-link {
+		color: var(--color-accent);
+		cursor: pointer;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+}
+
+.pharos-ds-card-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 6px;
+	margin-block-start: 3px;
+	font-size: 11px;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-meta-item {
+	min-width: 0;
+
+	// Inherits the row's own colour rather than taking one of the fill-quaternary
+	// overlays: those are ~7% alpha, meant for backgrounds, and a separator
+	// painted in one is invisible on the card.
+	& + &::before {
+		content: "·";
+		margin-inline-end: 6px;
+	}
+}
+
+// ------------------------------------------------------------- the key idea
+
+// Filled from Discovery.trick() alone. The three states are visually distinct
+// on purpose: a model's Chinese reading, a sentence lifted out of the English
+// abstract, and nothing at all used to be indistinguishable, which is how a raw
+// abstract came to be presented as an AI summary.
+.pharos-ds-trick {
+	margin-block-start: 7px;
+	padding: 6px 9px;
+	border-radius: 6px;
+	background: var(--pharos-ds-soft);
+
+	&.is-ai {
+		background: var(--pharos-ds-accent-soft);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	&.is-empty {
+		background: transparent;
+		border: 1px dashed var(--color-border);
+	}
+}
+
+.pharos-ds-trick-k {
+	display: block;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-trick-v {
+	margin: 2px 0 0;
+	font-size: 12px;
+	line-height: 1.65;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-trick.is-empty .pharos-ds-trick-v {
+	color: var(--fill-tertiary);
+	font-style: italic;
+}
+
+// ------------------------------------------------------- analysis provenance
+
+// Visible, inline, localized. The server's own English sentence is the title of
+// this block, so the wire value stays inspectable without being the only place
+// the fact appears.
+.pharos-ds-warn {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin-block-start: 6px;
+	padding: 6px 9px;
+	border-radius: 6px;
+	background: var(--pharos-ds-warn-soft);
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+}
+
+.pharos-ds-warn-ic {
+	@include ds-icon("chrome://zotero/skin/16/universal/info.svg", 13px);
+
+	margin-block-start: 1px;
+	color: var(--fill-secondary);
+}
+
+.pharos-ds-warn-text {
+	min-width: 0;
+}
+
+// ------------------------------------------------- extracted structure fields
+
+.pharos-ds-hls {
+	margin-block-start: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pharos-ds-hl {
+	display: flex;
+	gap: 6px;
+	font-size: 11px;
+	line-height: 1.65;
+}
+
+.pharos-ds-hl-k {
+	flex: none;
+	min-width: 4em;
+	font-weight: 600;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-hl-v {
+	min-width: 0;
+	color: var(--fill-secondary);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+// ------------------------------------------------------------- the abstract
+
+// The only place result.abstract appears, always under its own heading and
+// clamped, so it stays legible without being able to pass for analysis.
+.pharos-ds-abs {
+	margin-block-start: 6px;
+}
+
+.pharos-ds-abs-k {
+	display: block;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-ds-abs-v {
+	margin: 1px 0 0;
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+// --------------------------------------------------------------- card foot
+
+// Per-card, never in the module-level notice: a 409 or a 503 leaves the stored
+// rules result intact, and the message about it belongs beside the result that
+// survived.
+.pharos-ds-card-err {
+	margin-block-start: 7px;
+	padding: 6px 9px;
+	border-radius: 6px;
+	background: var(--pharos-ds-err-soft);
+	color: var(--accent-red);
+	font-size: 11px;
+	line-height: 1.6;
+}
+
+.pharos-ds-card-foot {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 8px;
+	margin-block-start: 8px;
+}
+
+.pharos-ds-card-state {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 5px;
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-ds-mode {
+	padding: 1px 7px;
+	border-radius: 20px;
+	background: var(--pharos-ds-soft);
+	color: var(--fill-secondary);
+	font-size: 10px;
+	font-weight: 600;
+	white-space: nowrap;
+
+	&.is-ai {
+		background: var(--pharos-ds-accent-soft);
+		color: var(--color-accent);
+	}
+}
+
+.pharos-ds-model,
+.pharos-ds-filed {
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	white-space: nowrap;
+}
+
+.pharos-ds-filed {
+	color: var(--accent-teal);
+}
+
+.pharos-ds-card-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+}
+
+.pharos-ds-abtn {
+	height: 24px;
+	padding: 0 10px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11px;
+	white-space: nowrap;
+
+	&:hover {
+		background: var(--pharos-ds-hover);
+	}
+
+	&.is-accent {
+		border-color: var(--pharos-ds-accent-line);
+		background: var(--pharos-ds-accent-soft);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+// ============================================================ empty states
+
+.pharos-ds-empty {
+	flex: 1;
+	min-height: 220px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 24px;
+	text-align: center;
+
+	&.is-small {
+		flex: none;
+		min-height: 0;
+		padding: 22px 24px 28px;
+	}
+}
+
+.pharos-ds-empty-mark {
+	width: 48px;
+	height: 48px;
+	margin-block-end: 14px;
+	border-radius: 12px;
+	background-color: var(--pharos-ds-accent-soft);
+	background-image: url("chrome://zotero/skin/16/universal/magnifier.svg");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 26px 26px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+	color: var(--color-accent);
+}
+
+.pharos-ds-empty.is-small .pharos-ds-empty-mark {
+	display: none;
+}
+
+.pharos-ds-empty-title {
+	margin: 0;
+	font-size: 14.5px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-ds-empty-desc {
+	margin: 6px 0 0;
+	max-width: 52ch;
+	font-size: 12px;
+	line-height: 1.7;
+	color: var(--fill-secondary);
+}
+
+// ============================================================== responsive
+
+// `persist` means an existing profile reopens this window at whatever size it
+// last had, including the pre-rebuild 860x680, so neither breakpoint is
+// hypothetical. Both match DiscoveryView.css.
+@media (max-width: 1180px) {
+	.pharos-ds-composer-foot {
+		align-items: stretch;
+	}
+
+	.pharos-ds-sources {
+		flex: 1 1 100%;
+	}
+
+	button.pharos-ds-run {
+		margin-inline-start: auto;
+	}
+}
+
+@media (max-width: 820px) {
+	.pharos-ds {
+		flex-direction: column;
+	}
+
+	// The rail becomes a horizontal strip: at this width a 212px column is a
+	// third of the window, and the runs are what the reader came back for.
+	.pharos-ds-rail {
+		width: auto;
+		max-height: 132px;
+		border-inline-end: none;
+		border-block-end: var(--material-border);
+	}
+
+	.pharos-ds-context {
+		align-items: flex-start;
+		max-width: none;
+	}
+
+	.pharos-ds-head {
+		flex-direction: column;
+		gap: 8px;
+	}
+}
+
+// The limitations row after a deep read.
+//
+// The backend leaves that one field at its rules value while flipping the card
+// to "AI reading", so it needs to disown the chip the rest of the card earned.
+// Quiet rather than alarming: it is a provenance note, not a warning.
+.pharos-ds-hl.is-rules {
+	.pharos-ds-hl-v {
+		color: var(--fill-secondary);
+	}
+}
+
+.pharos-ds-hl-src {
+	margin-inline-start: 4px;
+	padding: 0 4px;
+	border: 1px solid var(--fill-quarternary);
+	border-radius: 3px;
+	font-size: 0.85em;
+	font-weight: 400;
+	color: var(--fill-tertiary);
+	white-space: nowrap;
+}

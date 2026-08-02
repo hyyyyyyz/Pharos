@@ -290,12 +290,26 @@ Zotero.Pharos.Daily = new function () {
 		}
 
 		const HIGHLIGHT_KEYS = ['contribution', 'innovation', 'method', 'results'];
-		let footer = null;
+
+		// Provenance first, and unconditional. This note is filed as a child of a
+		// real preprint item that also carries the PDF, in a container Zotero
+		// convention treats as user-authored -- so without this line, a model's
+		// inference is indistinguishable from the reader's own notes six months
+		// later, and gets quoted as such. The model saw the abstract and nothing
+		// else (backend/pharos/daily/reader.py), which is what makes the 方法 and
+		// 结果 bullets inferences rather than readings, so the line says both
+		// where the text came from and how little the model was given.
+		let provenance = paper.read_model
+			? Zotero.ftl.formatValueSync('pharos-daily-note-provenance',
+				{ model: paper.read_model })
+			: Zotero.getString('pharos-daily-note-provenance-unknown');
+
+		let footer = [provenance];
 		if (paper.matched_domain) {
-			footer = `${Zotero.getString('pharos-daily-matched')}: ${paper.matched_domain}`
+			footer.push(`${Zotero.getString('pharos-daily-matched')}: ${paper.matched_domain}`
 				+ (paper.matched_keywords && paper.matched_keywords.length
 					? ` (${paper.matched_keywords.join(', ')})`
-					: '');
+					: ''));
 		}
 
 		return Zotero.Pharos.Library.buildNote({

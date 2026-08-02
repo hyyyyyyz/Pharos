@@ -384,6 +384,48 @@ describe("Zotero.Pharos.Daily", function () {
 			}), '');
 		});
 
+		// The note is filed as a child of a real preprint carrying the PDF, in a
+		// container Zotero convention treats as user-authored. Without this line
+		// a model's inference is indistinguishable from the reader's own notes
+		// six months later, and the model only ever saw the abstract.
+		it("should say a model wrote it, and name the model", function () {
+			var note = Zotero.Pharos.Daily.buildNote({
+				title: 'A paper',
+				read_status: 'done',
+				summary_zh: 'The summary.',
+				read_model: 'some-model-v2',
+			});
+			assert.include(note, 'some-model-v2');
+			assert.include(note, Zotero.ftl.formatValueSync(
+				'pharos-daily-note-provenance', { model: 'some-model-v2' }));
+		});
+
+		it("should still disclose the model when the model is unknown", function () {
+			var note = Zotero.Pharos.Daily.buildNote({
+				title: 'A paper',
+				read_status: 'done',
+				summary_zh: 'The summary.',
+			});
+			assert.include(note,
+				Zotero.getString('pharos-daily-note-provenance-unknown'));
+		});
+
+		// A "\n"-joined footer renders welded into one sentence, because this is
+		// HTML and a newline is whitespace -- which would run the disclosure into
+		// the unrelated matched-direction line.
+		it("should keep the disclosure in its own paragraph", function () {
+			var note = Zotero.Pharos.Daily.buildNote({
+				title: 'A paper',
+				read_status: 'done',
+				summary_zh: 'The summary.',
+				read_model: 'm',
+				matched_domain: 'robotics',
+			});
+			assert.notInclude(note, '\n' + Zotero.getString('pharos-daily-matched'));
+			assert.include(note, '</p>');
+			assert.isAbove(note.split('<p>').length, 2);
+		});
+
 		it("should include the summary and highlights", function () {
 			var note = Zotero.Pharos.Daily.buildNote({
 				title: 'A paper',

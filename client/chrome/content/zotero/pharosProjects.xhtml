@@ -2,18 +2,26 @@
 
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 <?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
-<?xml-stylesheet href="chrome://zotero/skin/pharosDaily.css" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosProjects.css" type="text/css"?>
 
 <!DOCTYPE window>
+
+<!-- NOTE: a double hyphen anywhere inside an XML comment stops this whole
+     document parsing and the window comes up blank with nothing logged. The
+     "two hyphens in comments" convention in client/CLAUDE.md is for JS and
+     SCSS; XML is the exception. -->
 
 <window data-l10n-id="pharos-projects-window"
 		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
 		xmlns:html="http://www.w3.org/1999/xhtml"
 		id="pharos-projects-window"
 		windowtype="pharos:projects"
-		width="880" height="700"
+		width="1200" height="760"
 		persist="screenX screenY width height"
 		onload="Zotero_Pharos_Projects.init()">
+	<!-- All three are required. data-l10n-id resolves against THIS document's
+	     own resource list, so dropping pharos.ftl renders every id as nothing
+	     and surfaces as a bare `undefined` rejection with no stack. -->
 	<linkset>
 		<html:link rel="localization" href="branding/brand.ftl" />
 		<html:link rel="localization" href="zotero.ftl" />
@@ -25,16 +33,48 @@
 	</script>
 	<script src="chrome://zotero/content/pharosProjects.js"/>
 
-	<vbox flex="1" id="pharos-daily-root">
-		<hbox id="pharos-daily-toolbar" align="center">
-			<html:select id="pharos-projects-select"/>
-			<button id="pharos-projects-advance" data-l10n-id="pharos-projects-advance"/>
-			<spacer flex="1"/>
-			<html:span id="pharos-daily-summary"/>
-		</hbox>
+	<!-- Only the frame is static: the two panes, the sidebar head, the archived
+	     toggle and the two live regions, because those are the parts that exist
+	     before any request has come back. Everything else is built in
+	     pharosProjects.js.
 
-		<html:div id="pharos-daily-status" role="status"/>
+	     Every element below the vbox is HTML rather than XUL. A XUL button
+	     renders its `label` attribute and ignores textContent, so a value-only
+	     Fluent message on one produces a blank button; and document.createElement
+	     in this document produces HTML elements anyway, so a static XUL control
+	     would not match what the script builds beside it. -->
+	<vbox flex="1" id="pharos-pv-root">
+		<html:div id="pharos-pv" class="pharos-pv">
+			<html:aside id="pharos-pv-sidebar" class="pharos-pv-sidebar">
+				<html:div class="pharos-pv-side-head">
+					<html:span class="pharos-pv-side-title"
+						data-l10n-id="pharos-projects-list-head"/>
+					<html:small id="pharos-pv-count" class="pharos-pv-side-count"/>
+					<html:button id="pharos-pv-new" class="pharos-pv-new"
+						data-l10n-id="pharos-projects-new"/>
+				</html:div>
 
-		<html:div id="pharos-daily-list" flex="1"/>
+				<html:form id="pharos-pv-create" class="pharos-pv-create" hidden="true"/>
+
+				<html:label class="pharos-pv-archive-filter">
+					<html:input id="pharos-pv-show-archived" type="checkbox"/>
+					<html:span data-l10n-id="pharos-projects-show-archived"/>
+				</html:label>
+
+				<html:div id="pharos-pv-list" class="pharos-pv-list"/>
+				<html:div id="pharos-pv-side-state" class="pharos-pv-side-state"/>
+			</html:aside>
+
+			<html:main id="pharos-pv-main" class="pharos-pv-main">
+				<!-- Two regions, not one. Polite notices and the signed-out state
+				     go to the first; failures go to the second, which is an alert.
+				     One element doing both jobs meant a success notice and a failed
+				     request overwrote each other. -->
+				<html:div id="pharos-pv-status" class="pharos-pv-notice" role="status"/>
+				<html:div id="pharos-pv-error" class="pharos-pv-error" role="alert"/>
+
+				<html:div id="pharos-pv-desk" class="pharos-pv-desk"/>
+			</html:main>
+		</html:div>
 	</vbox>
 </window>

@@ -434,12 +434,32 @@
 		 */
 		_ensureLoaded(key) {
 			let browser = document.getElementById(`pharos-view-${key}`);
-			if (!browser || browser.getAttribute('src')) {
+			if (!browser) {
 				return;
 			}
-			browser.setAttribute('src', `chrome://zotero/content/pharos${
-				key.charAt(0).toUpperCase() + key.slice(1)
-			}.xhtml`);
+			if (!browser.getAttribute('src')) {
+				browser.setAttribute('src', `chrome://zotero/content/pharos${
+					key.charAt(0).toUpperCase() + key.slice(1)
+				}.xhtml`);
+				return;
+			}
+			// Already loaded, and it will never load again: this browser is only
+			// ever hidden and re-shown, so its document and every module-level
+			// variable in it live as long as the main window does. Without a
+			// signal here, a module that decided it was signed out before the
+			// user signed in stays that way until the application restarts.
+			//
+			// Optional by design -- a module that has nothing to recheck simply
+			// does not define it, and this stays a no-op rather than a contract
+			// every view has to satisfy.
+			try {
+				browser.contentWindow?.PharosView?.onShown?.();
+			}
+			catch (e) {
+				// A view that throws while refreshing must not stop the rail from
+				// showing it; the stale panel is a better outcome than no panel.
+				Zotero.logError(e);
+			}
 		}
 
 		/**
