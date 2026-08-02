@@ -398,3 +398,101 @@ pharos-prefs-provider-clear-confirm = 删除该账号保存的个人模型配置
 pharos-prefs-provider-cleared = 个人模型配置已清除。
 pharos-prefs-provider-cleared-server = 个人模型配置已清除，已恢复使用服务器模型。
 pharos-prefs-provider-clear-failed = 无法清除模型配置。
+
+## 外观
+
+pharos-prefs-appearance-pane = 外观
+
+pharos-prefs-appearance-scheme-header = 配色方案
+pharos-prefs-appearance-scheme = 配色方案：
+pharos-prefs-appearance-scheme-auto =
+    .label = 跟随系统
+pharos-prefs-appearance-scheme-light =
+    .label = 浅色
+pharos-prefs-appearance-scheme-dark =
+    .label = 深色
+pharos-prefs-appearance-scheme-help = 「跟随系统」随操作系统切换。此项与「常规」中的同名设置是同一个。
+
+pharos-prefs-appearance-accent-header = 强调色
+pharos-prefs-appearance-accent-help = 仅用于关键处：选中行、激活图标、焦点框与链接。
+pharos-prefs-appearance-accent-group =
+    .aria-label = 强调色
+pharos-prefs-appearance-accent-note = 浅色主题下每个强调色都会加深，以保证作为文字落在纸色底上仍然可读。
+
+pharos-prefs-appearance-accent-pharos = 灯塔蓝
+pharos-prefs-appearance-accent-beacon = 灯塔金
+pharos-prefs-appearance-accent-mint = 薄荷
+pharos-prefs-appearance-accent-sky = 天蓝
+pharos-prefs-appearance-accent-pine = 松绿
+pharos-prefs-appearance-accent-indigo = 靛蓝
+pharos-prefs-appearance-accent-lilac = 丁香
+pharos-prefs-appearance-accent-coral = 珊瑚
+pharos-prefs-appearance-accent-amber = 琥珀
+pharos-prefs-appearance-accent-stone = 石青
+
+pharos-auth-window =
+    .title = 登录 Pharos
+
+pharos-auth-tagline = 从文献发现到研究推进的一体化科研工作台
+
+# 海报图缺失时显示在品牌面板上
+pharos-auth-poster-sub = 照亮文献之海
+
+pharos-auth-mode-login = 登录
+pharos-auth-mode-register = 注册
+
+pharos-auth-email = 邮箱
+pharos-auth-email-placeholder =
+    .placeholder = you@example.com
+pharos-auth-email-required = 请输入邮箱
+pharos-auth-email-invalid = 邮箱格式不正确
+
+pharos-auth-password = 密码
+pharos-auth-password-placeholder =
+    .placeholder = ••••••••
+# $min (Number) - 后端要求的最短密码长度
+pharos-auth-password-placeholder-register =
+    .placeholder = 至少 { $min } 个字符
+pharos-auth-password-required = 请输入密码
+# $min (Number) - 后端要求的最短密码长度
+pharos-auth-password-short = 密码至少 { $min } 个字符
+
+pharos-auth-display-name = 显示名称
+pharos-auth-display-name-optional = · 可选
+pharos-auth-display-name-placeholder =
+    .placeholder = 留空则使用邮箱
+
+pharos-auth-submit-sign-in = 登录
+pharos-auth-submit-register = 创建账户
+pharos-auth-submitting-sign-in = 登录中…
+pharos-auth-submitting-register = 创建中…
+
+pharos-auth-register-note = 注册即拥有独立文库 · 你的论文与翻译只有你能看到
+pharos-auth-registration-closed = 本实例已关闭注册 · 请使用已有账户登录
+
+# 越过登录页的出口。文库、阅读器与标注全部在本地，没有账号也能用。
+pharos-auth-skip = 暂不登录
+pharos-auth-skip-note = 文库、阅读器与标注无需账号即可使用。之后可在「设置 → Pharos」中登录。
+
+# 按本地日期选一句。写给在长长的读文献的一天开始时打开它的人，
+# 语气是安静的鼓励而非口号：不为「你来了」道贺，也不许诺产品能带来什么。
+pharos-auth-greeting-0 = 愿今天有一篇，正好照亮你卡住的地方
+pharos-auth-greeting-1 = 读不完的文献，一篇一篇来
+pharos-auth-greeting-2 = 慢一点也没关系，读懂比读完重要
+pharos-auth-greeting-3 = 好问题比好答案更难得
+pharos-auth-greeting-4 = 今天也在往前，哪怕只挪了一点
+pharos-auth-greeting-5 = 灯亮着，海就不算太黑
+pharos-auth-greeting-6 = 你正在做的事，值得慢慢做
+pharos-auth-greeting-7 = 先读一篇，再说别的
+
+# Shown in place of an address when no one is signed in.
+pharos-rail-account-none = 未登录
+pharos-rail-account-settings = 设置与账号
+# Sub-label of the signed-out footer. It says what the button does, because
+# signing in is the only thing worth doing from that state.
+pharos-rail-account-sign-in = 点击登录
+# Names the button when the rail is collapsed and the labels are hidden.
+pharos-rail-account-tooltip =
+    .title = 设置与账号
+pharos-rail-account-sign-in-tooltip =
+    .title = 登录 Pharos

@@ -164,6 +164,8 @@ const xpcomFilesLocal = [
 	// Pharos. Loaded last so that everything these build on -- HTTP, prefs,
 	// OSKeyStore, the data layer -- is already present on the Zotero namespace.
 	'pharos/api',
+	// Before the views: they read the accent when they paint.
+	'pharos/theme',
 	'pharos/translate',
 	'pharos/chat',
 	// Before daily and discovery: both call into it at load time.

@@ -199,3 +199,95 @@
 		transform: scaleX(-1);
 	}
 }
+
+// The account footer.
+//
+// A spacer takes the leftover height so the account sits on the floor of the
+// rail whatever the window's height and however many modules there are -- the
+// same arrangement as the web client's.
+
+.pharos-rail-spacer {
+	flex: 1;
+	// The modules are a list that can grow to fill the column; without a floor
+	// the account would end up touching the last of them.
+	min-height: 8px;
+}
+
+.pharos-rail-acct {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 0 0 0 4px;
+	height: 38px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-secondary);
+	font: inherit;
+	text-align: start;
+	cursor: default;
+	min-width: 0;
+
+	&:hover {
+		background: var(--fill-quinary);
+	}
+
+	&:focus-visible {
+		outline: var(--width-focus-border) solid var(--color-focus-border);
+		outline-offset: -1px;
+	}
+}
+
+.pharos-rail-acct-avatar {
+	width: 24px;
+	height: 24px;
+	flex: 0 0 24px;
+	border-radius: 50%;
+	// Shorthand first, as with the toggle: written after background-image it
+	// resets it and the glyph disappears.
+	background: var(--color-quarternary-on-sidepane)
+		url("chrome://zotero/skin/20/universal/account.svg") no-repeat center / 15px 15px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+.pharos-rail-acct-text {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-rail-acct-name,
+.pharos-rail-acct-sub {
+	// An address is longer than this column will ever be, and the rail is
+	// resizable, so it has to lose gracefully rather than widen the column.
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.pharos-rail-acct-name {
+	color: var(--fill-primary);
+}
+
+.pharos-rail-acct-sub {
+	font-size: 0.85em;
+	color: var(--fill-tertiary);
+}
+
+// Collapsed: the avatar alone, centred, the way the modules keep only their
+// icons. The button stays -- it is the only route from here to signing in.
+#pharos-rail[rail-collapsed="true"] {
+	.pharos-rail-acct-text {
+		display: none;
+	}
+
+	.pharos-rail-acct {
+		justify-content: center;
+		padding-inline: 0;
+	}
+}

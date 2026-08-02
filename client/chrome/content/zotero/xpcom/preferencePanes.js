@@ -93,6 +93,14 @@ Zotero.PreferencePanes = {
 			defaultXUL: true,
 		},
 		{
+			id: 'zotero-subpane-pharos-appearance',
+			parent: 'zotero-prefpane-pharos',
+			label: 'pharos-prefs-appearance-pane',
+			src: 'chrome://zotero/content/preferences/preferences_pharos_appearance.xhtml',
+			scripts: ['chrome://zotero/content/preferences/preferences_pharos_appearance.js'],
+			defaultXUL: true,
+		},
+		{
 			// A subpane of the Pharos pane: directions are long-lived configuration
 			// that belongs beside the account, not in the digest window a user
 			// opens to read today's papers.

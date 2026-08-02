@@ -1,0 +1,65 @@
+// Pharos appearance pane.
+//
+// Only the accent picker needs styling: the colour scheme row above it is a
+// label and a radiogroup, both of which the shared preferences styles already
+// handle.
+//
+// The swatch colour arrives as --pharos-accent-swatch, set per button by
+// preferences_pharos_appearance.js. It cannot come from here -- the ten values
+// depend on the accent AND on the theme in effect, and are computed in JS.
+
+#zotero-subpane-pharos-appearance {
+	.pharos-appearance-help {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		margin-block-end: 8px;
+	}
+
+	.pharos-appearance-accents {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-block-end: 8px;
+	}
+
+	.pharos-appearance-accent {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px 4px 6px;
+		border: var(--material-border);
+		border-radius: 5px;
+		background: var(--material-button);
+		color: var(--fill-primary);
+
+		@include focus-ring;
+
+		&:hover {
+			background: var(--fill-quinary);
+		}
+
+		// The selected accent is marked with its own colour, so the picker says
+		// which one is on without relying on the app around it having finished
+		// repainting.
+		&.selected {
+			border-color: var(--pharos-accent-swatch, var(--color-accent));
+			background: var(--fill-quarternary);
+		}
+	}
+
+	.pharos-appearance-accent-dot {
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		background: var(--pharos-accent-swatch, var(--color-accent));
+		// A ring rather than a border, so a swatch close to the surface colour
+		// still has an edge. Translucent black works over both themes; a fixed
+		// colour would have to pick one and be wrong on the other.
+		box-shadow: inset 0 0 0 1px #0000001a;
+		flex: 0 0 auto;
+	}
+
+	.pharos-appearance-accent-name {
+		white-space: nowrap;
+	}
+}

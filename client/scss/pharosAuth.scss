@@ -1,0 +1,351 @@
+// The sign-in gate.
+//
+// Its own stylesheet because this is a standalone modal window rather than part
+// of the library UI, but it pulls in the same theme so the palette matches.
+//
+// The metrics come from the web client's AuthGate.css rather than being
+// reinvented, so the two gates read as the same screen: a 320px form column,
+// 30px inputs on a 6px radius, a 7px-radius mode switch, and a 32px primary
+// button. The colours do NOT come from there -- they are Zotero's theme
+// variables, so this window follows the app's light/dark theme like every other
+// surface instead of pinning the web client's hexes.
+
+@import "abstracts/variables";
+@import "abstracts/functions";
+@import "abstracts/mixins";
+@import "abstracts/placeholders";
+
+@import "themes/light";
+@import "themes/dark";
+
+@import "base/base";
+@import "components/window";
+
+// [hidden] on an HTML element inside a XUL document still needs saying: several
+// of these are display:flex or display:grid, and that wins over the UA rule.
+#pharos-auth-root [hidden] {
+	display: none;
+}
+
+// Split gate: a large poster on the left, a narrow sign-in column on the right.
+// The column is a fixed width and the poster takes whatever is left, so the
+// ratio stays "big | small" at every size the window can be dragged to.
+#pharos-auth-root {
+	// Said explicitly rather than relying on the XUL box defaults: both columns
+	// centre their contents vertically, which needs them to have been stretched
+	// to the window's height first.
+	align-items: stretch;
+	min-height: 0;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	font-size: 12px;
+}
+
+//
+// The poster
+//
+
+#pharos-auth-poster {
+	flex: 1;
+	min-width: 0;
+	position: relative;
+	overflow: hidden;
+	// Shown until the artwork loads, and left showing if it never does. Reads
+	// as a deliberate brand panel rather than as a missing image.
+	background:
+		radial-gradient(120% 90% at 28% 18%, var(--accent-gold), transparent 62%),
+		linear-gradient(155deg, var(--color-background) 10%, var(--fill-quarternary) 100%);
+}
+
+#pharos-auth-poster-img {
+	position: absolute;
+	inset: 0;
+	display: block;
+	width: 100%;
+	height: 100%;
+	// Fill the column rather than letterbox. The asset is 5:4, mildly
+	// landscape, and cover always crops from the centre -- so anything that
+	// must survive is inside the middle ~80%.
+	object-fit: cover;
+
+	// Set by _initPoster() when the image fails to resolve, which uncovers the
+	// fallback beneath. `hidden` would do as well, but an attribute the CSS
+	// owns keeps the JS from having to know which of the two layers wins.
+	&[data-failed="true"] {
+		display: none;
+	}
+}
+
+#pharos-auth-poster-fallback {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+}
+
+#pharos-auth-poster-title {
+	font-size: 26px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--fill-primary);
+}
+
+#pharos-auth-poster-sub {
+	font-size: 12.5px;
+	letter-spacing: 0.18em;
+	color: var(--fill-secondary);
+}
+
+// Below this the poster would be a useless sliver, so the form takes the whole
+// window instead of being squeezed.
+@media (max-width: 620px) {
+	#pharos-auth-poster {
+		display: none;
+	}
+
+	#pharos-auth-side {
+		flex: 1;
+		width: auto;
+		border-inline-start: none;
+	}
+}
+
+//
+// The sign-in column
+//
+
+#pharos-auth-side {
+	flex: none;
+	width: 360px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 18px;
+	padding: 24px;
+	background: var(--material-sidepane);
+	border-inline-start: var(--material-border);
+}
+
+#pharos-auth-panel {
+	width: 320px;
+	max-width: 100%;
+}
+
+#pharos-auth-brand {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+#pharos-auth-wordmark {
+	font-size: 22px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	color: var(--fill-primary);
+}
+
+#pharos-auth-tagline {
+	margin: 6px 0 20px;
+	text-align: center;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--fill-tertiary);
+}
+
+//
+// Mode switch
+//
+
+#pharos-auth-modes {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 18px;
+
+	// Invisible rather than absent while the registration probe is in flight,
+	// so the panel does not jump when the answer arrives.
+	&[data-probing="true"] {
+		visibility: hidden;
+	}
+}
+
+.pharos-auth-mode {
+	flex: 1;
+	height: 30px;
+	border-radius: 7px;
+	cursor: pointer;
+	font: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	border: var(--material-border);
+	background: transparent;
+	color: var(--fill-secondary);
+
+	@include focus-ring;
+
+	&:hover {
+		background: var(--fill-quinary);
+	}
+
+	&.is-active {
+		border-color: var(--color-accent);
+		background: var(--fill-quarternary);
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+}
+
+//
+// Fields
+//
+
+.pharos-auth-label {
+	display: block;
+	margin-bottom: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--fill-secondary);
+}
+
+.pharos-auth-label-sub {
+	font-weight: 400;
+	color: var(--fill-tertiary);
+}
+
+.pharos-auth-input {
+	width: 100%;
+	height: 30px;
+	padding: 0 10px;
+	margin-bottom: 12px;
+	border-radius: 6px;
+	border: var(--material-border);
+	background: var(--color-background);
+	color: var(--fill-primary);
+	font: inherit;
+	font-size: 12px;
+
+	@include focus-ring;
+
+	&::placeholder {
+		color: var(--fill-tertiary);
+	}
+
+	&[aria-invalid="true"] {
+		border-color: var(--accent-red);
+	}
+}
+
+.pharos-auth-err {
+	margin-bottom: 12px;
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--accent-red);
+}
+
+// Inline validation sits directly under its field, so it replaces the input's
+// bottom margin rather than adding to it.
+.pharos-auth-input[aria-invalid="true"] + .pharos-auth-err {
+	margin-top: -8px;
+}
+
+// Louder than a field error, because it is the whole reason the attempt failed.
+.pharos-auth-alert {
+	margin-bottom: 14px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--accent-red);
+	color: var(--accent-red);
+	font-size: 11.5px;
+	line-height: 1.55;
+	overflow-wrap: anywhere;
+}
+
+.pharos-auth-note {
+	margin-top: 12px;
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--fill-tertiary);
+}
+
+// When it explains a closed registration it leads the form instead of trailing
+// it, so it is read before the fields rather than after.
+#pharos-auth-closed {
+	margin-top: 0;
+	margin-bottom: 16px;
+}
+
+//
+// Actions
+//
+
+.pharos-auth-submit {
+	width: 100%;
+	height: 32px;
+	padding: 0 16px;
+	border-radius: 6px;
+	border: none;
+	background: var(--color-accent);
+	color: var(--color-accent-text);
+	font: inherit;
+	font-size: 12.5px;
+	font-weight: 600;
+	cursor: pointer;
+
+	@include focus-ring;
+
+	&:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+}
+
+#pharos-auth-skip-row {
+	display: flex;
+	margin-top: 18px;
+	padding-top: 14px;
+	border-top: var(--material-border);
+}
+
+.pharos-auth-ghost {
+	flex: 1;
+	height: 30px;
+	padding: 0 16px;
+	border-radius: 6px;
+	border: var(--material-border);
+	background: transparent;
+	color: var(--fill-secondary);
+	font: inherit;
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+
+	@include focus-ring;
+
+	&:hover:not(:disabled) {
+		background: var(--fill-quinary);
+	}
+
+	&:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+}
+
+#pharos-auth-skip-note {
+	margin-top: 8px;
+}
+
+//
+// Foot
+//
+
+#pharos-auth-foot {
+	font-size: 10.5px;
+	line-height: 1.5;
+	text-align: center;
+	color: var(--fill-tertiary);
+}

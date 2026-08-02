@@ -1,0 +1,162 @@
+<!--
+    ***** BEGIN LICENSE BLOCK *****
+
+    Copyright © 2026 Pharos Contributors
+                     https://pharos.selab.top
+
+    This file is part of Pharos, which is derived from Zotero.
+
+    Pharos is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Pharos is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with Pharos.  If not, see <http://www.gnu.org/licenses/>.
+
+    ***** END LICENSE BLOCK *****
+-->
+
+<!--
+    Appearance: colour scheme and accent, in one place, the way the web client
+    presents them.
+
+    The colour scheme control is bound to browser.theme.toolbar-theme, which is
+    Zotero's existing pref for this and Gecko's own lever for the colour scheme
+    of chrome documents. It is therefore the SAME control that already sits in
+    General, not a copy of it: preferences.js gives every element with a
+    `preference` attribute an observer on that pref, so the two stay in step in
+    both directions with nothing to keep in sync by hand. Introducing a Pharos
+    scheme pref instead would mean two settings that can disagree, and the loser
+    would be the one the platform actually reads.
+
+    The accents are declared here rather than built in JS so that their names go
+    through the pane's own localization pass. A name built in JS would need
+    document.l10n.translateFragment, and a data-l10n-id that resolves against
+    the wrong document's link set rejects with a bare undefined and no stack.
+    The keys are checked against Zotero.Pharos.Theme at load, because a list
+    that has drifted shows the wrong swatch rather than failing.
+-->
+
+<!--
+    There is no onunload attribute here on purpose, even though preferences.js
+    dispatches an unload event at each pane root. `onload` is a
+    GlobalEventHandlers attribute and so becomes a listener on a XUL element;
+    `unload` belongs to WindowEventHandlers, and an inline one on anything that
+    is not a window is not reliably turned into anything. The pane registers its
+    own unload listener in init() instead, and it has to run: preferences.js
+    nukes the pane's sandbox straight afterwards, so an observer left registered
+    would throw on every later accent change.
+-->
+<vbox id="zotero-subpane-pharos-appearance" class="main-section subpane"
+	onload="Zotero_Preferences.PharosAppearance.init()">
+
+	<groupbox>
+		<label><html:h2 data-l10n-id="pharos-prefs-appearance-scheme-header"/></label>
+
+		<hbox align="center">
+			<label id="pharos-appearance-scheme-label"
+				data-l10n-id="pharos-prefs-appearance-scheme"
+				control="pharos-appearance-scheme"/>
+			<radiogroup orient="horizontal" id="pharos-appearance-scheme"
+				preference="browser.theme.toolbar-theme"
+				aria-labelledby="pharos-appearance-scheme-label">
+				<radio data-l10n-id="pharos-prefs-appearance-scheme-auto" value="2"/>
+				<radio data-l10n-id="pharos-prefs-appearance-scheme-light" value="1"/>
+				<radio data-l10n-id="pharos-prefs-appearance-scheme-dark" value="0"/>
+			</radiogroup>
+		</hbox>
+
+		<html:div class="pharos-appearance-help"
+			data-l10n-id="pharos-prefs-appearance-scheme-help"/>
+	</groupbox>
+
+	<groupbox>
+		<label><html:h2 data-l10n-id="pharos-prefs-appearance-accent-header"/></label>
+
+		<html:div class="pharos-appearance-help"
+			data-l10n-id="pharos-prefs-appearance-accent-help"/>
+
+		<!--
+		    role="group" and aria-pressed rather than a radiogroup: a radiogroup
+		    promises arrow-key navigation between its options, and these are ten
+		    ordinary buttons in the tab order. Claiming the role without the
+		    behaviour is worse for a screen reader than not claiming it.
+
+		    The group's label is attribute-only in the .ftl on purpose. A Fluent
+		    message with a value replaces the element's textContent, which here
+		    would delete every button in it.
+		-->
+		<html:div id="pharos-appearance-accents" class="pharos-appearance-accents"
+			role="group" data-l10n-id="pharos-prefs-appearance-accent-group">
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="pharos">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-pharos"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="beacon">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-beacon"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="mint">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-mint"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="sky">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-sky"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="pine">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-pine"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="indigo">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-indigo"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="lilac">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-lilac"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="coral">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-coral"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="amber">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-amber"/>
+			</html:button>
+
+			<html:button type="button" class="pharos-appearance-accent" data-accent="stone">
+				<html:span class="pharos-appearance-accent-dot"/>
+				<html:span class="pharos-appearance-accent-name"
+					data-l10n-id="pharos-prefs-appearance-accent-stone"/>
+			</html:button>
+		</html:div>
+
+		<html:div class="pharos-appearance-help"
+			data-l10n-id="pharos-prefs-appearance-accent-note"/>
+	</groupbox>
+</vbox>

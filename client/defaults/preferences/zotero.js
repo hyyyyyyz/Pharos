@@ -281,3 +281,12 @@ pref("extensions.zotero.pharos.rail.collapsed", false);
 // admin entry while it renders. A render-time convenience, never a permission:
 // every admin endpoint is gated server-side.
 pref("extensions.zotero.pharos.isAdmin", false);
+
+// Set when someone dismisses the sign-in gate with "skip for now". The
+// library, reader and annotations are local and need no account, so the
+// gate must be escapable; signing in later clears this.
+pref("extensions.zotero.pharos.auth.skipped", false);
+
+// The chosen accent. getAccent() falls back for an unset or unrecognised
+// value, so this is a declaration rather than a requirement.
+pref("extensions.zotero.pharos.appearance.accent", "pharos");

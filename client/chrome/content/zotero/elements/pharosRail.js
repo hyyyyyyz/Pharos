@@ -47,6 +47,14 @@
 					<html:button class="pharos-rail-toggle" tabindex="-1"/>
 				</html:div>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
+				<html:div class="pharos-rail-spacer"/>
+				<html:button class="pharos-rail-acct">
+					<html:span class="pharos-rail-acct-avatar"/>
+					<html:span class="pharos-rail-acct-text">
+						<html:span class="pharos-rail-acct-name"/>
+						<html:span class="pharos-rail-acct-sub"/>
+					</html:span>
+				</html:button>
 			</html:div>
 		`);
 
@@ -106,6 +114,7 @@
 
 			this._render();
 			this._renderToggle();
+			this._renderFooter();
 
 			// Re-check against the server and redraw. isAdmin() reads a cached pref
 			// so the first paint needs no round trip, but an operator promoted
@@ -254,6 +263,101 @@
 			browser.setAttribute('src', `chrome://zotero/content/pharos${
 				key.charAt(0).toUpperCase() + key.slice(1)
 			}.xhtml`);
+		}
+
+		/**
+		 * The account footer: who is signed in, and the way to the account pane.
+		 *
+		 * Sits at the bottom of the column behind a spacer, as it does in the web
+		 * client. Signed out it is the way in rather than a dead label: the token
+		 * is obtained in the preferences pane, and without one every Pharos module
+		 * is a wall of errors, so the footer has to point at the cure.
+		 *
+		 * Unlike the collapse toggle it keeps its place in the tab order. Sign-in
+		 * is the one thing in this rail a new user has to reach, and a control the
+		 * keyboard cannot reach is not an entry point.
+		 */
+		/**
+		 * Repaint the account footer.
+		 *
+		 * Public because the sign-in gate closes from outside this element and the
+		 * footer would otherwise keep saying "signed out" until the next restart.
+		 * Reaching into _renderFooter() from zoteroPane.js would work today and
+		 * break the moment this element is refactored.
+		 */
+		refreshAccount() {
+			this._renderFooter();
+		}
+
+		_renderFooter() {
+			let button = this.querySelector('.pharos-rail-acct');
+
+			button.addEventListener('click', () => {
+				// The pane id is the one preferencePanes.js registers for Pharos.
+				// openPreferences() hands an unknown id to navigateToPane, which
+				// simply finds nothing -- a typo here opens the window on the
+				// wrong pane rather than failing, so the test pins the pair.
+				Zotero.Utilities.Internal.openPreferences('zotero-prefpane-pharos');
+			});
+
+			// Painted from the cached address first -- the same pref the
+			// preferences pane paints from. Waiting for the server would show
+			// every signed-in user "not signed in" for the length of a round
+			// trip, on every window that opens.
+			this._paintAccount(Zotero.Prefs.get('pharos.accountEmail'));
+
+			if (!Zotero.Pharos.API.hasCredentials()) {
+				return;
+			}
+			Zotero.Pharos.API.verify()
+				.then((user) => {
+					// null is not a guess: verify() returns it only after a 401
+					// cleared the token, so the account really is signed out.
+					Zotero.Prefs.set('pharos.accountEmail', user ? user.email : '');
+					this._paintAccount(user ? user.email : null);
+				})
+				// An unreachable server is not evidence about anyone's account.
+				// Keep the cached address rather than signing the user out of the
+				// UI the first time the wifi drops.
+				.catch(e => Zotero.logError(e));
+		}
+
+		/**
+		 * Paint the footer for an address, or for nobody.
+		 *
+		 * @param {String|null} email
+		 */
+		_paintAccount(email) {
+			let button = this.querySelector('.pharos-rail-acct');
+			let name = button.querySelector('.pharos-rail-acct-name');
+			let sub = button.querySelector('.pharos-rail-acct-sub');
+			// Both halves matter: a cached address outlives the token it was
+			// cached beside, since a 401 clears the token from under it, and an
+			// address with no token is not a signed-in account.
+			let signedIn = !!email && Zotero.Pharos.API.hasCredentials();
+
+			if (signedIn) {
+				// The id has to come off before the text goes in: DOM
+				// localization retranslates anything still carrying one, which
+				// would drop the placeholder back over the address.
+				name.removeAttribute('data-l10n-id');
+				name.textContent = email;
+			}
+			else {
+				// Emptied rather than merely relabelled: DOM localization fills
+				// the element on its own schedule, and an address must not sit
+				// there naming an account that has just been signed out of.
+				name.textContent = '';
+				document.l10n.setAttributes(name, 'pharos-rail-account-none');
+			}
+			document.l10n.setAttributes(sub, signedIn
+				? 'pharos-rail-account-settings'
+				: 'pharos-rail-account-sign-in');
+			// The label is hidden when the rail is collapsed, so the tooltip is
+			// the only thing naming this button in that state.
+			document.l10n.setAttributes(button, signedIn
+				? 'pharos-rail-account-tooltip'
+				: 'pharos-rail-account-sign-in-tooltip');
 		}
 	}
 

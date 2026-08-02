@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosAuth.css" type="text/css"?>
+
+<!DOCTYPE window>
+
+<!-- The sign-in gate, shown modally over the main window at startup.
+
+     Two columns, like the web client's AuthGate: a large brand poster on the
+     left and a narrow sign-in column on the right. The poster is decorative,
+     so it is aria-hidden and the whole panel drops out on a narrow window
+     rather than being squeezed into a stripe.
+
+     Every control is an HTML element rather than a XUL one so that the layout
+     and the metrics can be carried over from the web client verbatim. -->
+
+<window data-l10n-id="pharos-auth-window"
+		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+		xmlns:html="http://www.w3.org/1999/xhtml"
+		id="pharos-auth-window"
+		windowtype="pharos:auth"
+		width="900" height="580"
+		onload="Zotero_Pharos_Auth.init()"
+		onunload="Zotero_Pharos_Auth.destroy()">
+	<linkset>
+		<html:link rel="localization" href="branding/brand.ftl" />
+		<html:link rel="localization" href="zotero.ftl" />
+		<html:link rel="localization" href="pharos.ftl" />
+	</linkset>
+
+	<script>
+		Services.scriptloader.loadSubScript("chrome://zotero/content/include.js", this);
+	</script>
+	<script src="chrome://zotero/content/pharosAuth.js"/>
+
+	<hbox flex="1" id="pharos-auth-root">
+		<html:aside id="pharos-auth-poster" aria-hidden="true">
+			<!-- The fallback sits underneath and shows through once the image
+			     is known to be missing; see _initPoster() for why it cannot
+			     simply be decided at parse time. -->
+			<html:div id="pharos-auth-poster-fallback">
+				<html:div id="pharos-auth-poster-title">Pharos</html:div>
+				<html:div id="pharos-auth-poster-sub" data-l10n-id="pharos-auth-poster-sub"/>
+			</html:div>
+			<html:img id="pharos-auth-poster-img" alt=""
+					src="chrome://zotero/skin/pharos-poster.png"/>
+		</html:aside>
+
+		<html:main id="pharos-auth-side">
+			<html:div id="pharos-auth-panel">
+				<html:div id="pharos-auth-brand">
+					<html:span id="pharos-auth-wordmark">Pharos</html:span>
+				</html:div>
+				<html:div id="pharos-auth-tagline" data-l10n-id="pharos-auth-tagline"/>
+
+				<!-- Not an html:form. Submitting a form inside a XUL window is a
+				     navigation, and suppressing it is one more thing to get
+				     wrong; Enter is wired up in JS instead, the same way the
+				     preferences pane does it. -->
+				<html:div id="pharos-auth-form">
+					<html:div id="pharos-auth-modes" role="tablist" data-probing="true">
+						<html:button type="button" class="pharos-auth-mode is-active"
+								id="pharos-auth-mode-login" role="tab" data-mode="login"
+								data-l10n-id="pharos-auth-mode-login"/>
+						<html:button type="button" class="pharos-auth-mode"
+								id="pharos-auth-mode-register" role="tab" data-mode="register"
+								data-l10n-id="pharos-auth-mode-register"/>
+					</html:div>
+
+					<html:div id="pharos-auth-closed" class="pharos-auth-note" hidden="hidden"
+							data-l10n-id="pharos-auth-registration-closed"/>
+
+					<html:label class="pharos-auth-label" for="pharos-auth-email"
+							data-l10n-id="pharos-auth-email"/>
+					<html:input id="pharos-auth-email" class="pharos-auth-input" type="email"
+							autocomplete="username" autocapitalize="none" spellcheck="false"
+							maxlength="320"
+							data-l10n-id="pharos-auth-email-placeholder"
+							data-l10n-attrs="placeholder"/>
+					<html:div id="pharos-auth-email-error" class="pharos-auth-err" hidden="hidden"/>
+
+					<html:label class="pharos-auth-label" for="pharos-auth-password"
+							data-l10n-id="pharos-auth-password"/>
+					<html:input id="pharos-auth-password" class="pharos-auth-input" type="password"
+							autocomplete="current-password" maxlength="1024"
+							data-l10n-id="pharos-auth-password-placeholder"
+							data-l10n-attrs="placeholder"/>
+					<html:div id="pharos-auth-password-error" class="pharos-auth-err" hidden="hidden"/>
+
+					<html:div id="pharos-auth-name-row" hidden="hidden">
+						<html:label class="pharos-auth-label" for="pharos-auth-name">
+							<html:span data-l10n-id="pharos-auth-display-name"/>
+							<html:span class="pharos-auth-label-sub"
+									data-l10n-id="pharos-auth-display-name-optional"/>
+						</html:label>
+						<html:input id="pharos-auth-name" class="pharos-auth-input"
+								autocomplete="nickname" maxlength="128"
+								data-l10n-id="pharos-auth-display-name-placeholder"
+								data-l10n-attrs="placeholder"/>
+					</html:div>
+
+					<!-- The server's own words, not copy of ours: mapping them
+					     would mean guessing which failure occurred, and guessing
+					     wrong on a 409 or a rate limit leaves the user with no
+					     idea what to change. -->
+					<html:div id="pharos-auth-alert" class="pharos-auth-alert" role="alert"
+							hidden="hidden"/>
+
+					<html:button type="button" id="pharos-auth-submit" class="pharos-auth-submit"
+							data-l10n-id="pharos-auth-submit-sign-in"/>
+
+					<html:div id="pharos-auth-register-note" class="pharos-auth-note"
+							hidden="hidden" data-l10n-id="pharos-auth-register-note"/>
+				</html:div>
+
+				<!-- The way past the gate. A user with no Pharos account still
+				     gets the library, the reader and annotations, all of which
+				     are local and need no backend at all. -->
+				<html:div id="pharos-auth-skip-row">
+					<html:button type="button" id="pharos-auth-skip" class="pharos-auth-ghost"
+							data-l10n-id="pharos-auth-skip"/>
+				</html:div>
+				<html:div id="pharos-auth-skip-note" class="pharos-auth-note"
+						data-l10n-id="pharos-auth-skip-note"/>
+			</html:div>
+
+			<html:div id="pharos-auth-foot"/>
+		</html:main>
+	</hbox>
+</window>

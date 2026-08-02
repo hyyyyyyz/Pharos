@@ -438,6 +438,11 @@ const { CommandLineOptions } = ChromeUtils.importESModule("chrome://zotero/conte
 		Zotero.debug('Triggering "zotero-loaded" event');
 		Services.obs.notifyObservers(Zotero, "zotero-loaded", null);
 		
+		// The chosen accent, applied over the one compiled into the theme.
+		// Idempotent, and the earlier it runs the shorter the single frame in
+		// which a window still shows the compiled default.
+		Zotero.Pharos.Theme.init();
+
 		Zotero.debug('Initializing Word Processor plugins');
 		Zotero.Integration.init();
 		await Zotero.Plugins.init();

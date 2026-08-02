@@ -405,3 +405,103 @@ pharos-prefs-provider-clear-failed = Could not clear the model settings.
 
 
 # =============================================================================
+
+## Appearance
+
+pharos-prefs-appearance-pane = Appearance
+
+pharos-prefs-appearance-scheme-header = Color Scheme
+pharos-prefs-appearance-scheme = Color scheme:
+pharos-prefs-appearance-scheme-auto =
+    .label = Automatic
+pharos-prefs-appearance-scheme-light =
+    .label = Light
+pharos-prefs-appearance-scheme-dark =
+    .label = Dark
+pharos-prefs-appearance-scheme-help = Automatic follows the operating system. This is the same setting as the one under General.
+
+pharos-prefs-appearance-accent-header = Accent Color
+pharos-prefs-appearance-accent-help = Used only where it counts: selected rows, active icons, focus rings and links.
+pharos-prefs-appearance-accent-group =
+    .aria-label = Accent color
+pharos-prefs-appearance-accent-note = In the light theme every accent is deepened so that it stays readable as text on the paper background.
+
+pharos-prefs-appearance-accent-pharos = Pharos Blue
+pharos-prefs-appearance-accent-beacon = Beacon Gold
+pharos-prefs-appearance-accent-mint = Mint
+pharos-prefs-appearance-accent-sky = Sky
+pharos-prefs-appearance-accent-pine = Pine
+pharos-prefs-appearance-accent-indigo = Indigo
+pharos-prefs-appearance-accent-lilac = Lilac
+pharos-prefs-appearance-accent-coral = Coral
+pharos-prefs-appearance-accent-amber = Amber
+pharos-prefs-appearance-accent-stone = Stone
+
+pharos-auth-window =
+    .title = Sign in to Pharos
+
+pharos-auth-tagline = One workbench for the whole arc, from finding a paper to moving the research forward
+
+# Shown over the brand panel when the poster artwork is missing.
+pharos-auth-poster-sub = Lighting the sea of literature
+
+pharos-auth-mode-login = Sign In
+pharos-auth-mode-register = Register
+
+pharos-auth-email = Email
+pharos-auth-email-placeholder =
+    .placeholder = you@example.com
+pharos-auth-email-required = Enter your email
+pharos-auth-email-invalid = That does not look like an email address
+
+pharos-auth-password = Password
+pharos-auth-password-placeholder =
+    .placeholder = ••••••••
+# $min (Number) - the backend's minimum password length
+pharos-auth-password-placeholder-register =
+    .placeholder = At least { $min } characters
+pharos-auth-password-required = Enter your password
+# $min (Number) - the backend's minimum password length
+pharos-auth-password-short = Password must be at least { $min } characters
+
+pharos-auth-display-name = Display name
+pharos-auth-display-name-optional = · optional
+pharos-auth-display-name-placeholder =
+    .placeholder = Leave blank to use your email
+
+pharos-auth-submit-sign-in = Sign In
+pharos-auth-submit-register = Create Account
+pharos-auth-submitting-sign-in = Signing in…
+pharos-auth-submitting-register = Creating…
+
+pharos-auth-register-note = Registering gives you your own library · only you can see your papers and translations
+pharos-auth-registration-closed = Registration is closed on this instance · sign in with an existing account
+
+# The way past the gate. Everything local -- the library, the reader,
+# annotations -- works without an account.
+pharos-auth-skip = Skip for now
+pharos-auth-skip-note = The library, the reader and annotations work without an account. You can sign in later in Settings → Pharos.
+
+# One line, chosen by the local date. Quiet encouragement for someone opening
+# this at the start of a long reading day -- nothing congratulates the user for
+# showing up, and nothing promises what the product will do for them.
+pharos-auth-greeting-0 = May one of today's papers light up exactly where you are stuck
+pharos-auth-greeting-1 = The reading list never ends. One paper at a time
+pharos-auth-greeting-2 = Slower is fine. Understanding beats finishing
+pharos-auth-greeting-3 = A good question is rarer than a good answer
+pharos-auth-greeting-4 = Still moving forward today, even if only a little
+pharos-auth-greeting-5 = With the lamp lit, the sea is not so dark
+pharos-auth-greeting-6 = What you are doing is worth doing slowly
+pharos-auth-greeting-7 = Read one paper first. The rest can wait
+
+# Shown in place of an address when no one is signed in.
+pharos-rail-account-none = Not signed in
+pharos-rail-account-settings = Settings & account
+# Sub-label of the signed-out footer. It says what the button does, because
+# signing in is the only thing worth doing from that state.
+pharos-rail-account-sign-in = Sign in
+# Names the button when the rail is collapsed and the labels are hidden.
+pharos-rail-account-tooltip =
+    .title = Settings & account
+pharos-rail-account-sign-in-tooltip =
+    .title = Sign in to Pharos
