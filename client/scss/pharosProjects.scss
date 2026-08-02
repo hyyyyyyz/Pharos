@@ -1,11 +1,11 @@
 // The 研究项目 window.
 //
-// Its own stylesheet, NOT scss/pharosDaily.scss. This window used to link that
-// file's output and build its rows out of .pharos-daily-paper / -title / -meta /
+// Its own stylesheet. This window used to link scss/pharosDaily.scss's output
+// and build its rows out of .pharos-daily-paper / -title / -meta /
 // -summary-text / -pending / -actions; so did 文献探索, and borrowing one
 // module's classes is what coupled three windows to a single sheet. Nothing here
-// reaches for them. Note that scss/pharosDaily.scss now has no document linking
-// it at all -- check that before assuming it still styles something.
+// reaches for them, and that sheet has since been deleted -- once each window
+// had its own, no document linked it and none of its classes were still used.
 //
 // Every id and class below is pharos-pv-*, and the two honesty fixes are the
 // reason. The automation notice was a .pharos-daily-pending -- the

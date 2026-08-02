@@ -1,6 +1,7 @@
 describe("Zotero.Pharos.Daily", function () {
 	var origBaseURL;
 	var origRequest = null;
+	var origHasCredentials = null;
 	var requests;
 
 	/**
@@ -34,6 +35,10 @@ describe("Zotero.Pharos.Daily", function () {
 			Zotero.Pharos.API.request = origRequest;
 			origRequest = null;
 		}
+		if (origHasCredentials) {
+			Zotero.Pharos.API.hasCredentials = origHasCredentials;
+			origHasCredentials = null;
+		}
 	}
 
 	/** What Zotero.Pharos.API.request throws once it has unwrapped a {"detail"}. */
@@ -48,6 +53,105 @@ describe("Zotero.Pharos.Daily", function () {
 		var value = Zotero.getString(id);
 		assert.isNotEmpty(value, `missing string ${id}`);
 		assert.notEqual(value, id, `missing string ${id}`);
+	}
+
+	/** The date every fixture below is filed under. */
+	const DAY = '2026-08-02';
+
+	/** A DailyPaperOut carrying every field the panel reads. */
+	function makePaper(overrides) {
+		return Object.assign({
+			id: 'p1',
+			arxiv_id: '2601.00001',
+			title: 'A Paper',
+			authors: ['Ada Lovelace', 'Alan Turing'],
+			abstract: 'An abstract.',
+			arxiv_url: 'https://arxiv.org/abs/2601.00001',
+			pdf_url: null,
+			published_at: `${DAY}T00:00:00Z`,
+			venue: null,
+			categories: ['cs.AI'],
+			matched_domain: 'VLA',
+			matched_keywords: ['vla'],
+			read_status: 'pending',
+			read_error: null,
+			read_model: null,
+			summary_zh: '',
+			highlights: null,
+			scores: null,
+			score_recommendation: null,
+		}, overrides);
+	}
+
+	/**
+	 * Answer the four requests the panel makes on open.
+	 *
+	 * `extra` is consulted first and its `undefined` means "not mine", so a test
+	 * states only the path it is about -- and may return a pending promise for
+	 * it, which is how the mid-request cases below are driven.
+	 */
+	function digest({ papers = [], dates, status, config, extra } = {}) {
+		var run = {
+			id: 'r1', date: DAY, status: 'done', fetched: 80,
+			read_done: papers.length, read_failed: 0, error: null,
+			started_at: `${DAY}T00:00:00Z`, finished_at: `${DAY}T00:05:00Z`,
+		};
+		var day = { date: DAY, total: papers.length, run, papers };
+		return function (method, path, options) {
+			if (extra) {
+				let answer = extra(method, path, options);
+				if (answer !== undefined) {
+					return answer;
+				}
+			}
+			if (path == '/api/daily/config') {
+				return config || { enabled: true, categories: ['cs.AI'], max_per_day: 20 };
+			}
+			if (path == '/api/daily/status') {
+				return status || {
+					llm_configured: true,
+					provider: { name: 'deepseek', model: 'deepseek-chat', configured: true },
+					directions: ['VLA'],
+					last_run: run,
+					today: null,
+					sweeping: null,
+				};
+			}
+			if (path == '/api/daily/dates') {
+				return dates || [{
+					date: DAY, total: papers.length, read: 0,
+					pending: papers.length, failed: 0,
+				}];
+			}
+			if (/^\/api\/daily\/\d{4}-\d{2}-\d{2}$/.test(path)) {
+				return day;
+			}
+			return null;
+		};
+	}
+
+	/**
+	 * Open the digest with the API layer stubbed and a token pretended.
+	 *
+	 * hasCredentials() is faked rather than a token actually stored: storing one
+	 * goes through OSKeyStore, which is a real keychain on some machines, and
+	 * nothing here needs the token itself.
+	 */
+	async function withPanel(responder, fn) {
+		captureRequests(responder);
+		origHasCredentials = Zotero.Pharos.API.hasCredentials;
+		Zotero.Pharos.API.hasCredentials = () => true;
+		var win = await loadWindow("chrome://zotero/content/pharosDaily.xhtml");
+		try {
+			// loadWindow resolves on the load event, but init() is async and keeps
+			// going after it.
+			await win.Zotero_Pharos_Daily.initialized;
+			await fn(win, win.document, win.Zotero_Pharos_Daily);
+		}
+		finally {
+			win.close();
+			restoreRequests();
+		}
 	}
 
 	before(function () {
@@ -783,5 +887,260 @@ describe("Zotero.Pharos.Daily", function () {
 				win.close();
 			}
 		});
+	});
+
+	// Everything below fails SILENTLY when it regresses: no throw, no logged
+	// error, and a screen that looks entirely plausible to anyone who is not the
+	// person whose scroll position, selection or error message it just moved.
+	describe("the digest panel", function () {
+		function detailOf(doc) {
+			return doc.getElementById('pharos-dv-detail');
+		}
+
+		it("should not rebuild the detail panel a poll did not change", async function () {
+			// _tick() renders twice per list refresh for the length of a sweep.
+			// Restoring scrollTop is not enough on its own: a text selection
+			// cannot be restored once its nodes are gone, so the subtree has to
+			// survive, which is what node identity here pins.
+			await withPanel(digest({
+				papers: [makePaper({ id: 'p1' }),
+					makePaper({ id: 'p2', arxiv_id: '2601.00002', title: 'Another' })],
+			}), async function (win, doc, view) {
+				view.selectPaper('p1');
+				var detail = detailOf(doc);
+				var body = detail.firstChild;
+				assert.ok(body, 'nothing was drawn for the selected paper');
+
+				view._render();
+				view._render();
+				assert.strictEqual(detail.firstChild, body,
+					'the panel was torn down and rebuilt with nothing changed');
+			});
+		});
+
+		it("should keep the reader's place, and start a new paper at the top",
+			async function () {
+				// Two separate contracts, and only the second one needs code:
+				// replaceChildren() and the append that follows it run inside one
+				// synchronous call, so no layout ever sees the box empty and the
+				// offset survives a rebuild by itself -- which is right for a poll
+				// redrawing the same paper and wrong for the paper the reader just
+				// clicked, who would otherwise land halfway down it.
+				var abstract = 'A very long abstract sentence. '.repeat(1200);
+				await withPanel(digest({
+					papers: [makePaper({ id: 'p1', abstract }),
+						makePaper({ id: 'p2', arxiv_id: '2601.00002', title: 'Another', abstract })],
+					extra: (method, path) => {
+						if (path == '/api/daily/papers/p1/read') {
+							return makePaper({
+								id: 'p1',
+								abstract,
+								read_status: 'done',
+								summary_zh: '一段中文速览。',
+							});
+						}
+						return undefined;
+					},
+				}), async function (win, doc, view) {
+					view.selectPaper('p1');
+					var detail = detailOf(doc);
+					detail.scrollTop = 120;
+					assert.isAbove(detail.scrollTop, 0, 'the panel does not scroll to test');
+					var scroll = detail.scrollTop;
+
+					// A poll during a sweep, then a read: both redraw this paper.
+					view._render();
+					assert.equal(detail.scrollTop, scroll);
+					await view.read({ id: 'p1' });
+					assert.include(detail.textContent, '一段中文速览。');
+					assert.equal(detail.scrollTop, scroll);
+
+					// A different paper is a different document.
+					view.selectPaper('p2');
+					assert.equal(detail.scrollTop, 0);
+				});
+			});
+
+		it("should not show one paper's read failure on another paper's card",
+			async function () {
+				// A read is allowed 180s, which is a long time to ask someone to
+				// sit on one card. Held module-wide, the failure of A's read was
+				// printed under B as if B had failed -- a specific, plausible,
+				// false statement.
+				var fail;
+				var pending = new Promise((resolve, reject) => {
+					fail = reject;
+				});
+				await withPanel(digest({
+					papers: [makePaper({ id: 'p1' }),
+						makePaper({ id: 'p2', arxiv_id: '2601.00002', title: 'Another' })],
+					extra: (method, path) => (path == '/api/daily/papers/p1/read'
+						? pending
+						: undefined),
+				}), async function (win, doc, view) {
+					var detail = detailOf(doc);
+					view.selectPaper('p1');
+					var reading = view.read({ id: 'p1' });
+					assert.include(detail.textContent,
+						Zotero.getString('pharos-daily-reading'));
+
+					// The reader moves on while A is still in flight.
+					view.selectPaper('p2');
+					assert.notInclude(detail.textContent,
+						Zotero.getString('pharos-daily-reading'),
+						"B's button claims a read that is running on A");
+					assert.isFalse(detail.querySelector('.pharos-dv-d-ghost').disabled,
+						"B's button is disabled by a read running on A");
+
+					fail(httpError(500, 'ZZQQ the provider exploded'));
+					await reading;
+					assert.notInclude(detail.textContent, 'ZZQQ',
+						"A's failure was printed under B");
+
+					// And it is still there when they go back to the paper it
+					// actually belongs to.
+					view.selectPaper('p1');
+					assert.include(detail.textContent, 'ZZQQ');
+				});
+			});
+
+		it("should not show one paper's import failure on another paper's card",
+			async function () {
+				var fail;
+				var pending = new Promise((resolve, reject) => {
+					fail = reject;
+				});
+				var stub = sinon.stub(Zotero.Pharos.Daily, 'saveToLibrary').returns(pending);
+				try {
+					await withPanel(digest({
+						papers: [makePaper({ id: 'p1' }),
+							makePaper({ id: 'p2', arxiv_id: '2601.00002', title: 'Another' })],
+					}), async function (win, doc, view) {
+						var detail = detailOf(doc);
+						view.selectPaper('p1');
+						var importing = view.importToLibrary({ id: 'p1' });
+						assert.include(detail.textContent,
+							Zotero.getString('pharos-daily-importing'));
+
+						view.selectPaper('p2');
+						assert.notInclude(detail.textContent,
+							Zotero.getString('pharos-daily-importing'));
+						assert.isFalse(doc.getElementById('pharos-dv-import').disabled);
+
+						fail(new Error('ZZQQ the disk is full'));
+						await importing;
+						assert.notInclude(detail.textContent, 'ZZQQ');
+
+						view.selectPaper('p1');
+						assert.include(detail.textContent, 'ZZQQ');
+					});
+				}
+				finally {
+					stub.restore();
+				}
+			});
+
+		it("should stop saying In Library once the item is trashed", async function () {
+			// findInLibrary() deliberately does not match a trashed item --
+			// someone who binned it should be offered the import again -- but the
+			// memo in front of it had no invalidation, and this document is
+			// loaded once and never reloaded, so the answer stood for the rest of
+			// the application session with the button disabled.
+			var item = await Zotero.Pharos.Daily.saveToLibrary({
+				id: 'seed', arxiv_id: '2603.12345', title: 'Trashable', authors: [],
+				read_status: 'pending',
+			});
+			await withPanel(digest({
+				papers: [makePaper({ id: 'p1', arxiv_id: '2603.12345' })],
+			}), async function (win, doc, view) {
+				view.selectPaper('p1');
+				var button = () => doc.getElementById('pharos-dv-import');
+				// Bounded: waitForCallback's `timeout` is in SECONDS, and its
+				// default of 10000 would sit here for the best part of three hours
+				// if this ever regressed.
+				await waitForCallback(() => button().disabled, 50, 5);
+				assert.include(button().textContent,
+					Zotero.getString('pharos-daily-imported'));
+
+				item.deleted = true;
+				await item.saveTx();
+
+				await waitForCallback(() => !button().disabled, 50, 5);
+				assert.include(button().textContent,
+					Zotero.getString('pharos-daily-import'));
+			});
+		});
+
+		it("should let the keyboard select a paper", async function () {
+			// The dates beside it are real buttons and the toolbar controls are
+			// too, so without this the one thing a keyboard could not reach was
+			// the paper -- and with it, the whole detail panel.
+			await withPanel(digest({
+				papers: [makePaper({ id: 'p1' }),
+					makePaper({ id: 'p2', arxiv_id: '2601.00002', title: 'Another' })],
+			}), async function (win, doc) {
+				var cards = doc.querySelectorAll('.pharos-dv-card');
+				assert.lengthOf(cards, 2);
+				// The second card in DOM order, whichever paper the sort put
+				// there -- asserting on a title would pin the tie-break instead.
+				var card = cards[1];
+				assert.equal(card.getAttribute('tabindex'), '0');
+				assert.isFalse(card.classList.contains('is-selected'));
+
+				card.dispatchEvent(new win.KeyboardEvent('keydown',
+					{ key: 'Enter', bubbles: true }));
+				assert.isTrue(card.classList.contains('is-selected'));
+				assert.include(detailOf(doc).textContent,
+					card.querySelector('.pharos-dv-card-title').textContent);
+			});
+		});
+
+		it("should refetch the list at a third of the poll cadence", async function () {
+			// _tick() increments its counter BEFORE testing it, so LIST_EVERY is
+			// a divisor and not a count of skipped ticks. At 2 the list rebuilt
+			// on every second tick -- half the cadence the constant's own comment
+			// promises the next person who tunes it.
+			await withPanel(digest({ papers: [makePaper()] }),
+				async function (win, doc, view) {
+					requests.length = 0;
+					await view._tick();
+					await view._tick();
+					assert.lengthOf(requests.filter(r => r.path == '/api/daily/dates'), 0);
+					await view._tick();
+					assert.lengthOf(requests.filter(r => r.path == '/api/daily/dates'), 1);
+				});
+		});
+
+		it("should offer the service hint only for a request nothing answered",
+			async function () {
+				// Decided from the exception, not by comparing _errorText()'s
+				// output with a localized string: that made control flow depend on
+				// the wording of a message a translator is free to change.
+				await withPanel(digest({
+					extra: (method, path) => {
+						if (/^\/api\/daily\/\d{4}-\d{2}-\d{2}$/.test(path)) {
+							throw httpError(0, 'connection refused');
+						}
+						return undefined;
+					},
+				}), function (win, doc) {
+					assert.include(doc.getElementById('pharos-dv-list').textContent,
+						Zotero.getString('pharos-daily-unreachable-hint'));
+				});
+
+				await withPanel(digest({
+					extra: (method, path) => {
+						if (/^\/api\/daily\/\d{4}-\d{2}-\d{2}$/.test(path)) {
+							throw httpError(500, 'ZZQQ the database is on fire');
+						}
+						return undefined;
+					},
+				}), function (win, doc) {
+					var list = doc.getElementById('pharos-dv-list');
+					assert.include(list.textContent, 'ZZQQ');
+					assert.notInclude(list.textContent,
+						Zotero.getString('pharos-daily-unreachable-hint'));
+				});
+			});
 	});
 });

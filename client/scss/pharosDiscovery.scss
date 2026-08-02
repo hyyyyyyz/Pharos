@@ -5,11 +5,12 @@
 // pharosDaily.css, and the note that stood here claimed that file was still the
 // stylesheet for Research Projects. That stopped being true when the windows
 // were split, and the note outlived it -- which is worse than no note, because
-// it tells the next reader not to check. What is true now: pharosProjects.xhtml
-// links pharosProjects.css, pharosDaily.xhtml links pharosDailyView.css, and no
-// document links pharosDaily.css at all, so scss/pharosDaily.scss styles
-// nothing. Verify that yourself before treating it as live, and do not couple
-// this window back to it.
+// it tells the next reader not to check.
+//
+// What is true now: pharosProjects.xhtml links pharosProjects.css,
+// pharosDaily.xhtml links pharosDailyView.css, and scss/pharosDaily.scss has
+// been deleted, having ended up with no document linking it and no class of its
+// own still in use.
 // Nothing below uses a pharos-daily-* name.
 //
 // The prefix here is pharos-ds-, parallel to the digest's pharos-dv-, and state

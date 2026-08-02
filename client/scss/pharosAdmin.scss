@@ -1,9 +1,10 @@
 // The administrator console.
 //
-// Its own stylesheet rather than sharing pharosDaily.css with the other Pharos
-// views: those are all lists of papers and genuinely have one shape, while this
-// is a table, a set of counters and a modal. It pulls in the same theme, so the
-// palette matches without the layout having to.
+// Its own stylesheet, as every Pharos window now has. It was the first to split
+// off from the sheet the other windows once shared: those are lists of papers
+// and genuinely have one shape, while this is a table, a set of counters and a
+// modal. It pulls in the same theme, so the palette matches without the layout
+// having to.
 
 @import "abstracts/variables";
 @import "abstracts/functions";

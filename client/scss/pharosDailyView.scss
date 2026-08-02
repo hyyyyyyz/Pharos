@@ -427,6 +427,16 @@
 		background: var(--pharos-dv-hover);
 	}
 
+	// The card is focusable -- see _card() in pharosDaily.js. Drawn as an
+	// outline rather than with @include focus-ring, which draws with a
+	// box-shadow: .is-selected below uses box-shadow for its accent bar, one
+	// declaration would silently replace the other, and the card a keyboard user
+	// has just moved to is exactly the one that is selected.
+	&:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: -2px;
+	}
+
 	&.is-selected,
 	&.is-selected:hover {
 		background: var(--pharos-dv-accent-soft);
@@ -877,9 +887,26 @@
 	height: 19px;
 }
 
+// FIXED width, and wide enough for a word rather than for two Chinese
+// characters. 30px was copied from the web client's .ph-dv-sc-k, which only
+// ever renders 相关/时效/热度/质量/推荐; the desktop ships en-US for the same
+// markup, where these read Relevance / Recency / Attention / Quality / Overall
+// at roughly 52px. As flex items with the default min-width: auto they refused
+// to shrink, so every row started its track at a different x -- and a track of
+// a different length draws a different-length bar for the same 6.0, which is
+// the one thing the bars exist to make comparable.
+//
+// Not content-sized either (a flex item cannot share a width with the item on
+// the row above; only a grid column can): a fixed track start is the point.
+// Anything longer than this ellipsizes, and the row's own tooltip carries the
+// full sentence for the dimension either way.
 .pharos-dv-sc-k {
 	flex: none;
-	width: 30px;
+	width: 56px;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-size: 11px;
 	color: var(--fill-tertiary);
 }
@@ -933,9 +960,16 @@
 
 // ------------------------------------------------------------ info & links
 
+// The key column sizes to the longest label rather than to 34px, which was the
+// web client's .ph-dv-d-grid and fits 作者/方向/分类/命中 and nothing else. A
+// FIXED grid track clamps its items' automatic minimum size to the track (CSS
+// Grid §6.6), so en-US "Categories" (~63px at 12px) overflowed the track and
+// the 10px gap and painted over the value beside it. max-content is shared by
+// every row of the grid, so the values still line up in one column; the 34px
+// floor keeps the Chinese layout at the metric it was drawn for.
 .pharos-dv-d-grid {
 	display: grid;
-	grid-template-columns: 34px 1fr;
+	grid-template-columns: minmax(34px, max-content) 1fr;
 	gap: 6px 10px;
 	font-size: 12px;
 	line-height: 1.5;

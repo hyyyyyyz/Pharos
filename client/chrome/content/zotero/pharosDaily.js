@@ -23,11 +23,25 @@
 */
 
 /**
- * The daily arXiv digest window.
+ * The daily arXiv digest.
  *
- * Its own window rather than a pane in the library: the digest is a list of
- * papers you do NOT have yet, and mixing them into the item tree would blur the
- * line between "my library" and "today's candidates".
+ * A panel in the main window, not a window of its own. zoteroPane.js's
+ * openPharosDaily() sets the rail's module, and elements/pharosRail.js points
+ * <browser id="pharos-view-daily"> at this document. It is still kept out of the
+ * item tree -- the digest is a list of papers you do NOT have yet, and mixing
+ * them in would blur the line between "my library" and "today's candidates" --
+ * but that is a different statement from "its own window", and the difference is
+ * load-bearing rather than cosmetic.
+ *
+ * That browser is given a `src` ONCE and is thereafter only hidden and re-shown,
+ * so this document does not unload until the main window does, and every
+ * module-level variable below lives as long as the application. Anything cached
+ * here that the rest of the session can invalidate has to say how it finds out:
+ * _signedOut is derived from hasCredentials() on every render, _inLibrary is
+ * re-checked by the item observer registered in _init(), and onShown() is what
+ * wakes a panel that started signed out. A cache added without one of those is a
+ * bug that first appears in the second hour of a session, which is the hardest
+ * kind to attribute.
  *
  * Three panes, matching the web client's module one for one -- a date rail, the
  * day's papers, and everything the model produced about the selected one. The
@@ -75,8 +89,13 @@ var Zotero_Pharos_Daily = new function () {
 	 * How often, in poll ticks, the rail and the list are refetched during a
 	 * sweep. The status call is cheap and decides when the sweep ended; the
 	 * other two rebuild the whole list, so they run at a third of the cadence.
+	 *
+	 * Three, not two: _tick() increments _polls BEFORE testing it, so this is
+	 * the divisor of the tick counter and not a count of skipped ticks. At 2 the
+	 * list refetched on every second tick -- half the cadence, 50% more full
+	 * rebuilds than the line above promises the next person tuning this.
 	 */
-	const LIST_EVERY = 2;
+	const LIST_EVERY = 3;
 
 	/** A run error or a read error can be a whole traceback; a line is what fits. */
 	const ERR_MAX = 160;
@@ -143,15 +162,56 @@ var Zotero_Pharos_Daily = new function () {
 	let _domain = null;
 	let _selectedID = null;
 
-	let _reading = false;
-	let _readError = null;
-	let _importing = false;
-	let _importError = null;
+	/**
+	 * The in-flight and failed attempts, keyed by paper id. Never module-wide.
+	 *
+	 * A read is allowed 180s (Daily.READ_TIMEOUT), which is a long time to ask
+	 * someone to sit on one card and not click anything. Held in one flag and
+	 * one message the way these were, selecting another paper mid-request left
+	 * the reader looking at B's card labelled 解读中… and disabled with nothing
+	 * happening to B -- and when A's request finally failed, at A's error
+	 * printed under B as if it were B's own. A specific, plausible, false
+	 * sentence is the worst thing this panel can put on screen.
+	 */
+	let _reading = new Set();
+	let _readErrors = new Map();
+	let _importing = new Set();
+	let _importErrors = new Map();
 
-	/** paper id -> Zotero.Item or null. Populated lazily by findInLibrary(),
-	 *  which never throws, so a failed lookup reads as "not in the library"
-	 *  rather than taking the panel down. */
+	/**
+	 * paper id -> { token, item }: whether the paper is already in MY library,
+	 * and what the library looked like when that was answered.
+	 *
+	 * Populated lazily by findInLibrary(), which never throws, so a failed
+	 * lookup reads as "not in the library" rather than taking the panel down.
+	 *
+	 * The token is what keeps the answer honest. findInLibrary() deliberately
+	 * does not match a trashed item -- someone who binned it should be offered
+	 * the import again -- but this document is loaded once and never reloaded,
+	 * so a memo with no invalidation goes on saying 已在文库 for the rest of the
+	 * application session, with the button disabled and no way back short of a
+	 * restart. _libraryToken is bumped by the item observer registered in
+	 * _init(); the previous answer is KEPT while the re-check runs, so an
+	 * unrelated item edit does not flash the button back to 导入文库 and out
+	 * again.
+	 */
 	let _inLibrary = new Map();
+	let _libraryToken = 0;
+	let _notifierID = null;
+
+	/** The item events that can change findInLibrary()'s answer: an import made
+	 *  anywhere else, an archiveID edited or an item restored from the trash,
+	 *  and the two ways an item leaves. */
+	const LIBRARY_EVENTS = ['add', 'modify', 'trash', 'delete'];
+
+	/** What _renderDetail() last drew, and for which paper. See _detailKey(). */
+	let _detailDrawn = null;
+	let _detailDrawnID = null;
+
+	/** Set by destroy(). Everything below that resumes after an await checks it:
+	 *  the awaits outlive the document, and the timer they re-arm outlives the
+	 *  window. */
+	let _destroyed = false;
 
 	/**
 	 * Whether the account is signed out, as of the last render.
@@ -221,6 +281,20 @@ var Zotero_Pharos_Daily = new function () {
 	}
 
 	/**
+	 * Whether a failure was a connection that never completed, as opposed to
+	 * something the server answered.
+	 *
+	 * Asked of the exception rather than of the sentence _errorText() produced
+	 * for it. The string comparison this replaces made control flow depend on
+	 * the value of a LOCALIZED display string -- so a translator rewording one
+	 * message silently turned "the service is not running" into "the service
+	 * answered with an error", with nothing anywhere to say so.
+	 */
+	function _isUnreachable(e) {
+		return e instanceof Zotero.HTTP.TimeoutException || !e || !e.message || e.status === 0;
+	}
+
+	/**
 	 * What to show the user for a failed request.
 	 *
 	 * The server's own `detail` wherever there is one -- Zotero.Pharos.API
@@ -228,10 +302,17 @@ var Zotero_Pharos_Daily = new function () {
 	 * occurred. A connection that never completed is the exception: its message
 	 * names the URL and "status code 0", which is not something anyone can act
 	 * on.
+	 *
+	 * Through _str(), not Zotero.getString(): this runs inside catch blocks, and
+	 * getString() throws in en-US for an id it cannot resolve. A throw here
+	 * escapes the handler that called it, so load() would leave _dayState at
+	 * 'loading' and the module would sit on 载入中… forever -- the precise
+	 * failure _str() exists to prevent, reached through the one path that is
+	 * already coping with an error.
 	 */
 	function _errorText(e) {
-		if (e instanceof Zotero.HTTP.TimeoutException || !e || !e.message || e.status === 0) {
-			return Zotero.getString('pharos-error-unreachable');
+		if (_isUnreachable(e)) {
+			return _str('pharos-error-unreachable');
 		}
 		return e.message;
 	}
@@ -483,6 +564,24 @@ var Zotero_Pharos_Daily = new function () {
 		// the XUL button it replaced needed both and rendered a blank label.
 		_el.refresh.addEventListener('click', () => this.refresh());
 
+		// The one thing this module caches about the local library is whether a
+		// paper is already in it, and the library is edited from everywhere else
+		// in the application. Registered before the credentials check so a
+		// module that starts signed out and is woken by onShown() still has it.
+		_notifierID = Zotero.Notifier.registerObserver({
+			notify: (event, type) => {
+				if (type != 'item' || !LIBRARY_EVENTS.includes(event)) {
+					return;
+				}
+				// Not a clear(): dropping the answers would flash every 已在文库
+				// button back to 导入文库 until the re-check landed, including
+				// the 'add' this module's own import fires. The token is what
+				// makes the kept answer provisional.
+				_libraryToken++;
+				this._renderDetail();
+			}
+		}, ['item'], 'pharosDaily');
+
 		if (!Zotero.Pharos.API.hasCredentials()) {
 			_signedOut = true;
 			this._render();
@@ -495,9 +594,21 @@ var Zotero_Pharos_Daily = new function () {
 
 	this.destroy = function () {
 		// Otherwise a sweep observed here keeps polling after the window is gone.
+		//
+		// The flag is the part that actually covers that. _tick() nulls
+		// _pollTimer on its first line and then awaits three requests, so for
+		// most of its life there is no timer to clear -- and the continuation
+		// would re-arm one through _syncPoll() and render into a torn-down
+		// document, both of which fail silently because nothing is left to
+		// notice.
+		_destroyed = true;
 		if (_pollTimer) {
 			clearTimeout(_pollTimer);
 			_pollTimer = null;
+		}
+		if (_notifierID) {
+			Zotero.Notifier.unregisterObserver(_notifierID);
+			_notifierID = null;
 		}
 	};
 
@@ -589,7 +700,7 @@ var Zotero_Pharos_Daily = new function () {
 			_papers = [];
 			_dayState = 'error';
 			_dayError = _errorText(e);
-			_dayUnreachable = _dayError == Zotero.getString('pharos-error-unreachable');
+			_dayUnreachable = _isUnreachable(e);
 		}
 		// A reload can retire the selected paper; the detail panel must not go
 		// on showing a row that is no longer in the day.
@@ -638,12 +749,16 @@ var Zotero_Pharos_Daily = new function () {
 			return;
 		}
 		_selectedID = id;
-		// These belong to an attempt on the paper being left behind.
-		_readError = null;
-		_importError = null;
+		// Nothing is cleared here any more: an attempt belongs to the paper it
+		// was made on, and _reading/_readErrors/_importing/_importErrors are
+		// keyed by paper id, so leaving this one takes its state with it and
+		// coming back finds it again.
+		//
 		// Classes only, so the list does not rebuild and lose its scroll offset.
 		for (let card of _el.list.querySelectorAll('.pharos-dv-card')) {
-			card.classList.toggle('is-selected', card.dataset.paperId == id);
+			let on = card.dataset.paperId == id;
+			card.classList.toggle('is-selected', on);
+			card.setAttribute('aria-pressed', on ? 'true' : 'false');
 		}
 		this._renderDetail();
 	};
@@ -699,11 +814,13 @@ var Zotero_Pharos_Daily = new function () {
 	 * this request.
 	 */
 	this.read = async function (paper) {
-		if (_reading) {
+		// Per paper, so a double click on one card is still refused while a read
+		// running on another does not lock the button the reader is looking at.
+		if (_reading.has(paper.id)) {
 			return;
 		}
-		_reading = true;
-		_readError = null;
+		_reading.add(paper.id);
+		_readErrors.delete(paper.id);
 		this._renderDetail();
 		try {
 			let updated = await Zotero.Pharos.Daily.readPaper(paper.id);
@@ -725,14 +842,14 @@ var Zotero_Pharos_Daily = new function () {
 			if (e.status === 503) {
 				// Nothing was attempted and nothing was written: the fix is
 				// configuration, not another click.
-				_readError = _str('pharos-daily-read-unavailable');
+				_readErrors.set(paper.id, _str('pharos-daily-read-unavailable'));
 			}
 			else {
-				_readError = _errorText(e);
+				_readErrors.set(paper.id, _errorText(e));
 			}
 		}
 		finally {
-			_reading = false;
+			_reading.delete(paper.id);
 		}
 		this._render();
 	};
@@ -746,22 +863,25 @@ var Zotero_Pharos_Daily = new function () {
 	 * with authors, archiveID, the PDF and the model's reading as a child note.
 	 */
 	this.importToLibrary = async function (paper) {
-		if (_importing) {
+		// Keyed like read(): saving downloads the PDF, so this is not instant
+		// either, and a second paper must not wear the first one's spinner.
+		if (_importing.has(paper.id)) {
 			return;
 		}
-		_importing = true;
-		_importError = null;
+		_importing.add(paper.id);
+		_importErrors.delete(paper.id);
 		this._renderDetail();
 		try {
 			let item = await Zotero.Pharos.Daily.saveToLibrary(paper);
-			_inLibrary.set(paper.id, item);
+			_inLibrary.set(paper.id, { token: _libraryToken, item });
 		}
 		catch (e) {
 			Zotero.logError(e);
-			_importError = _fmt('pharos-daily-import-failed', { error: _clip(_errorText(e)) });
+			_importErrors.set(paper.id,
+				_fmt('pharos-daily-import-failed', { error: _clip(_errorText(e)) }));
 		}
 		finally {
-			_importing = false;
+			_importing.delete(paper.id);
 		}
 		this._renderDetail();
 	};
@@ -769,6 +889,9 @@ var Zotero_Pharos_Daily = new function () {
 	/* ---------------------------------------------------------------- polling */
 
 	this._syncPoll = function () {
+		if (_destroyed) {
+			return;
+		}
 		if (_busy() && !_pollTimer) {
 			_polls = 0;
 			_pollTimer = setTimeout(() => this._tick(), POLL_MS);
@@ -789,6 +912,13 @@ var Zotero_Pharos_Daily = new function () {
 		// forever for a row orphaned by a backend restart, and polling on that
 		// polls forever.
 		let ok = await this.loadStatus();
+		// The window can have gone during that request, and destroy() had no
+		// timer to cancel because the first line above cleared it. Checked here
+		// as well as in _render()/_syncPoll() so the two remaining requests are
+		// not sent at all.
+		if (_destroyed) {
+			return;
+		}
 		if (!ok) {
 			// _sweeping is already cleared, so the button comes back rather than
 			// staying disabled behind a server this window cannot reach.
@@ -867,6 +997,13 @@ var Zotero_Pharos_Daily = new function () {
 	/* ---------------------------------------------------------------- render */
 
 	this._render = function () {
+		// Every await in this file settles into a document that may already be
+		// gone -- load(), read() and importToLibrary() all render on the way
+		// out. replaceChildren() on a torn-down node throws nothing and shows
+		// nobody anything, so the guard has to be here rather than at each call.
+		if (_destroyed) {
+			return;
+		}
 		// Cheap, and it is the only thing that keeps a mid-session sign-out or
 		// sign-in from leaving every panel describing a state that ended.
 		this._refreshAuth();
@@ -1168,7 +1305,27 @@ var Zotero_Pharos_Daily = new function () {
 	this._card = function (paper) {
 		let card = _div('pharos-dv-card' + (paper.id == _selectedID ? ' is-selected' : ''));
 		card.dataset.paperId = paper.id;
+
+		// Reachable from the keyboard, the way every date in the rail already is
+		// -- those are real buttons, so the dates, the sort toggle, the chips and
+		// 更新 could all be tabbed to, and then a paper could not be selected at
+		// all, which put the entire detail panel (summary, highlights, scores,
+		// 导入文库, 解读) out of reach. A div rather than a <button> because the
+		// card is a stack of line-clamped paragraphs; the role and the key
+		// handler are what make it announce and behave as the control it is.
+		card.tabIndex = 0;
+		card.setAttribute('role', 'button');
+		card.setAttribute('aria-pressed', paper.id == _selectedID ? 'true' : 'false');
 		card.addEventListener('click', () => this.selectPaper(paper.id));
+		card.addEventListener('keydown', (event) => {
+			if (event.key != 'Enter' && event.key != ' ') {
+				return;
+			}
+			// Space would otherwise page the list, and it is the half of the
+			// button contract a div does not get for free.
+			event.preventDefault();
+			this.selectPaper(paper.id);
+		});
 
 		let top = _div('pharos-dv-card-top');
 		let score = _span('pharos-dv-score ' + _scoreTier(paper.score_recommendation),
@@ -1211,9 +1368,106 @@ var Zotero_Pharos_Daily = new function () {
 
 	/* --------------------------------------------------------- detail panel */
 
+	/**
+	 * Everything _renderDetail() draws, as one string.
+	 *
+	 * This panel holds the longest content in the module -- the Chinese summary,
+	 * four highlight blocks and the whole English abstract -- and _tick() renders
+	 * twice per list refresh, so during a sweep it was torn down and rebuilt
+	 * every 1.5s. That destroyed any selection the reader was dragging, every
+	 * time, for the length of the sweep: the text they were about to copy is
+	 * anchored in nodes replaceChildren() throws away, and unlike a scroll offset
+	 * a selection cannot be put back afterwards. So the panel is rebuilt only
+	 * when something it draws has actually changed.
+	 *
+	 * EVERY input _renderDetail() and its helpers read has to appear here. One
+	 * that does not is a panel that silently stops updating -- add to this in
+	 * the same commit that adds to those.
+	 */
+	function _detailKey(paper) {
+		if (!paper) {
+			return 'none';
+		}
+		let entry = _inLibrary.get(paper.id);
+		return JSON.stringify([
+			paper,
+			_reading.has(paper.id),
+			_readErrors.get(paper.id) || null,
+			_importing.has(paper.id),
+			_importErrors.get(paper.id) || null,
+			!!(entry && entry.item),
+			!_status || _status.llm_configured,
+		]);
+	}
+
+	/**
+	 * Answer "is this already in MY library" for one paper, at most once per
+	 * state of the library.
+	 *
+	 * Called before _detailKey() rather than from inside _importRow(), so the
+	 * pending answer is already recorded when the key is taken: started from
+	 * inside the render it feeds, the first key would say "not looked up" and
+	 * the second "looked up, not found", and the panel would rebuild a second
+	 * time under a reader who had just started selecting text.
+	 *
+	 * The answer is a local archiveID search, not paper.imported_paper_id --
+	 * that column names a row in the web library and is blanked for anyone who
+	 * does not own it.
+	 */
+	this._ensureInLibrary = function (paper) {
+		let entry = _inLibrary.get(paper.id);
+		if (entry && entry.token === _libraryToken) {
+			return;
+		}
+		// The previous answer is kept, and only its token moves: until the
+		// re-check lands, "in the library" is still the best thing known.
+		_inLibrary.set(paper.id, { token: _libraryToken, item: entry ? entry.item : null });
+		let token = _libraryToken;
+		Zotero.Pharos.Daily.findInLibrary(paper).then((item) => {
+			// The library changed again while this was running, and a newer
+			// lookup is already on its way with a better answer.
+			if (token !== _libraryToken) {
+				return;
+			}
+			let current = _inLibrary.get(paper.id);
+			if (current && current.item === item) {
+				return;
+			}
+			_inLibrary.set(paper.id, { token, item });
+			if (_selectedID == paper.id) {
+				this._renderDetail();
+			}
+		});
+	};
+
 	this._renderDetail = function () {
-		_el.detail.replaceChildren();
+		if (_destroyed) {
+			return;
+		}
 		let paper = _selected();
+		if (paper) {
+			this._ensureInLibrary(paper);
+		}
+		let key = _detailKey(paper);
+		if (key === _detailDrawn) {
+			return;
+		}
+		let differentPaper = !paper || paper.id != _detailDrawnID;
+		_detailDrawn = key;
+		_detailDrawnID = paper ? paper.id : null;
+
+		_el.detail.replaceChildren();
+		if (differentPaper) {
+			// A different paper is a different document and belongs at the top.
+			//
+			// This is the ONLY scroll handling the panel needs, and it is the
+			// opposite of what it looks like: replaceChildren() and the append
+			// below run inside one synchronous call, so no layout ever observes
+			// the box empty and the offset is NOT lost on a rebuild -- which is
+			// right for a poll redrawing the same paper and wrong for a paper the
+			// reader has just clicked, who would otherwise land halfway down it.
+			_el.detail.scrollTop = 0;
+		}
 		if (!paper) {
 			_el.detail.append(_div('pharos-dv-detail-empty', _str('pharos-daily-detail-empty')));
 			return;
@@ -1225,8 +1479,9 @@ var Zotero_Pharos_Daily = new function () {
 			(paper.arxiv_id || '') + (paper.venue ? ` · ${paper.venue}` : '')));
 
 		body.append(this._importRow(paper));
-		if (_importError) {
-			body.append(_div('pharos-dv-d-err', _importError));
+		let importError = _importErrors.get(paper.id);
+		if (importError) {
+			body.append(_div('pharos-dv-d-err', importError));
 		}
 
 		// The read state is stated before any content, so an empty section is
@@ -1285,28 +1540,21 @@ var Zotero_Pharos_Daily = new function () {
 	};
 
 	this._importRow = function (paper) {
-		// The answer to "is this already in MY library" is a local archiveID
-		// search, not paper.imported_paper_id -- that column names a row in the
-		// web library and is blanked for anyone who does not own it.
-		if (!_inLibrary.has(paper.id)) {
-			_inLibrary.set(paper.id, null);
-			Zotero.Pharos.Daily.findInLibrary(paper).then((item) => {
-				_inLibrary.set(paper.id, item);
-				if (_selectedID == paper.id) {
-					this._renderDetail();
-				}
-			});
-		}
-		let existing = _inLibrary.get(paper.id);
+		// Answered by _ensureInLibrary(), which _renderDetail() has already
+		// called: the lookup must not start from inside the render whose key
+		// depends on it.
+		let entry = _inLibrary.get(paper.id);
+		let existing = entry && entry.item;
+		let importing = _importing.has(paper.id);
 
 		let actions = _div('pharos-dv-d-actions');
 		let button = _btn('pharos-dv-d-primary');
 		button.id = 'pharos-dv-import';
-		button.disabled = !!existing || _importing;
+		button.disabled = !!existing || importing;
 		button.append(_span('pharos-dv-d-ic'));
 		let label = existing
 			? 'pharos-daily-imported'
-			: _importing ? 'pharos-daily-importing' : 'pharos-daily-import';
+			: importing ? 'pharos-daily-importing' : 'pharos-daily-import';
 		button.append(_span('pharos-dv-d-primary-label', _str(label)));
 		button.addEventListener('click', () => this.importToLibrary(paper));
 		actions.append(button);
@@ -1320,15 +1568,19 @@ var Zotero_Pharos_Daily = new function () {
 		row.append(this._readChip(paper));
 
 		let canRead = !_status || _status.llm_configured;
+		// This paper's own read, not any read: a request running on another card
+		// used to disable this button and label it 解读中… with nothing at all
+		// happening to the paper in front of the reader.
+		let reading = _reading.has(paper.id);
 		let label;
-		if (_reading) {
+		if (reading) {
 			label = failed ? 'pharos-daily-retrying' : 'pharos-daily-reading';
 		}
 		else {
 			label = failed ? 'pharos-daily-retry' : 'pharos-daily-read';
 		}
 		let button = _btn('pharos-dv-d-ghost', _str(label));
-		button.disabled = _reading || !canRead;
+		button.disabled = reading || !canRead;
 		if (!canRead) {
 			// Reading would 503, so the button says why up front rather than
 			// letting the click fail with nothing to act on.
@@ -1339,14 +1591,17 @@ var Zotero_Pharos_Daily = new function () {
 		block.append(row);
 
 		// The stored failure, then the failure of the retry itself. Two
-		// different events; collapsing them would hide the newer one.
+		// different events; collapsing them would hide the newer one. Both
+		// belong to THIS paper -- a message keyed by nothing was worse than
+		// collapsing them, because it attributed one paper's failure to another.
 		if (failed && paper.read_error) {
 			block.append(_div('pharos-dv-d-err', _clip(paper.read_error)));
 		}
-		if (_readError) {
+		let readError = _readErrors.get(paper.id);
+		if (readError) {
 			block.append(_div('pharos-dv-d-err', _fmt(
 				failed ? 'pharos-daily-retry-failed' : 'pharos-daily-read-failed-detail',
-				{ error: _clip(_readError) }
+				{ error: _clip(readError) }
 			)));
 		}
 		return block;
