@@ -808,8 +808,13 @@ export interface AdminProviders {
   providers: AdminProvider[];
   translator: string;
   chat_provider: string;
-  /** The engine actually in force after the missing-key fallback. Differing
-   *  from `translator` means translation silently degraded to the free engine. */
+  /** The engine actually in force after the missing-key fallback.
+   *
+   *  NOT comparable to `translator` by equality: for `openai` and `custom` this
+   *  holds the wire format's name (`openai_compatible`), which never equals the
+   *  provider name. Use `isTranslationDegraded` in `lib/providers.ts` —
+   *  assuming the two are comparable is what put a permanent false
+   *  "translation degraded" banner in the admin console. */
   effective_translator: string;
 }
 

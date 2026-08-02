@@ -1,8 +1,7 @@
 """SQLAlchemy 2.x ORM models.
 
 Only metadata lives in SQLite; the PDFs themselves are content-addressed on
-disk (see :mod:`pharos.storage`). Highlight/Note/Chunk are stubs for future
-reader annotations and RAG (created but unused in the MVP).
+disk (see :mod:`pharos.storage`).
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -663,6 +663,18 @@ class ProjectSource(Base):
     result_id: Mapped[str] = mapped_column(
         ForeignKey("literature_results.id", ondelete="CASCADE"), index=True
     )
+    #: The library paper this source turned out to be, once the user actually has
+    #: the PDF. NULL is the normal state and means abstract-only: a discovery
+    #: result carries a title and an abstract, nothing a page number could point
+    #: into. Setting it is what upgrades every piece of evidence drawn from this
+    #: source from ``abstract_only`` to a real page — see :class:`Evidence`.
+    #:
+    #: SET NULL rather than CASCADE: deleting a paper from the library should
+    #: cost the project its page-level anchoring, not the source and the
+    #: researcher's note about why it was included.
+    paper_id: Mapped[str | None] = mapped_column(
+        ForeignKey("papers.id", ondelete="SET NULL"), index=True, default=None
+    )
     note: Mapped[str | None] = mapped_column(Text, default=None)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -697,3 +709,146 @@ class ProjectArtifact(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     project: Mapped[ResearchProject] = relationship(back_populates="artifacts")
+
+
+# ------------------------------------------------------------------- evidence
+
+
+class PaperChunk(Base):
+    """One page of a paper's text, addressable by page number.
+
+    This is the substrate under every citation Pharos will ever make. A claim is
+    only checkable if a reader can be sent to the page it came from, and
+    ``Paper.full_text`` -- one flat run of text with the page breaks normalised
+    away -- cannot do that. Chunks keep the boundary the flat text throws out.
+
+    **One page, one chunk.** Not a fixed token window: a window boundary is an
+    artefact of the chunker and means nothing to a reader, whereas "page 7" is
+    something they can act on. ``ordinal`` exists so a page can later be split
+    into several chunks (a two-column layout, or a page too long for a model's
+    context) without changing the page contract or the primary key.
+
+    ``char_start``/``char_end`` are this chunk's span inside the paper's
+    ``full_text``, which is exact because both are produced by the same
+    extraction pass. They are NULL when the alignment is unknown -- ``full_text``
+    is capped, so a long document's later pages exist as chunks but have no
+    corresponding span in the truncated flat text. NULL says "we do not know"
+    rather than pointing at the wrong characters.
+
+    Rows are written once at ingestion and never edited. ``extraction_version``
+    records which extractor produced them, so a later improvement can find and
+    replace its predecessor's output instead of guessing whether a re-run is
+    needed.
+    """
+
+    __tablename__ = "paper_chunks"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "page_no", "ordinal", name="uq_paper_chunk_page"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    #: Duplicated from the paper, as everywhere else in this schema, so every
+    #: lookup can carry an owner predicate directly rather than trusting a join
+    #: to stay consistent.
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    #: 1-based, matching :class:`Highlight` and matching what a PDF reader shows.
+    page_no: Mapped[int] = mapped_column(Integer)
+    #: Position within the page. 0 while one page is one chunk.
+    ordinal: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    char_start: Mapped[int | None] = mapped_column(Integer, default=None)
+    char_end: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: Bumped when the extraction changes shape, not when its output happens to
+    #: differ. Lets a backfill target exactly the rows an older version wrote.
+    extraction_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Evidence(Base):
+    """One statement, anchored to where it came from.
+
+    The chain the research contract requires (``docs/RESEARCH_WORKFLOW.md`` §8)
+    is claim → evidence statement → paper identity → page + section → exact
+    quote. This row is the middle of it: it names a paper, says as precisely as
+    it honestly can *where* in that paper, and records what kind of thing the
+    text is.
+
+    Two columns carry the weight, and they answer different questions.
+
+    ``kind`` -- who wrote this text: a verbatim ``quote`` from the paper, a
+    human's ``note``, a deterministic ``rule_summary``, or a
+    ``model_inference``. Collapsing these was the failure the contract was
+    written against: a model's paraphrase rendered like a quotation is a
+    fabricated citation, and the difference is invisible once both are grey text
+    in a panel.
+
+    ``locator`` -- how precisely it is placed. ``page`` means ``page_no`` is a
+    real page from a real extraction. ``abstract_only`` means the paper's full
+    text was never available (a discovery result, a metadata-only import) and the
+    statement rests on the abstract. ``unlocated`` means the text is genuine but
+    its position is not known.
+
+    The check constraint is the contract's "页面未知时不能生成看似精确的页码"
+    made structural: ``page_no`` may only be non-NULL when ``locator`` is
+    ``page``. A plausible-looking page number is worse than no page number,
+    because it survives review -- a reader who turns to page 7 and finds nothing
+    has lost their trust in every other citation too. Enforcing it in the schema
+    rather than in a service means no future write path can bypass it.
+    """
+
+    __tablename__ = "evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "(locator = 'page' AND page_no IS NOT NULL) "
+            "OR (locator != 'page' AND page_no IS NULL)",
+            name="ck_evidence_page_requires_page_locator",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    #: The paper identity in the chain. Required: evidence that cannot name its
+    #: source is not evidence.
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    #: Optional home. Evidence can be gathered while reading, before it belongs
+    #: to any project.
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_projects.id", ondelete="CASCADE"), index=True, default=None
+    )
+    #: The chunk this was taken from, when it was taken from one. SET NULL rather
+    #: than CASCADE: re-running extraction replaces chunks, and evidence must
+    #: outlive that -- it keeps its own copy of the quote and its page number.
+    chunk_id: Mapped[str | None] = mapped_column(
+        ForeignKey("paper_chunks.id", ondelete="SET NULL"), default=None
+    )
+    #: "quote" | "note" | "rule_summary" | "model_inference"
+    kind: Mapped[str] = mapped_column(String(16))
+    #: "page" | "abstract_only" | "unlocated"
+    locator: Mapped[str] = mapped_column(String(16))
+    #: 1-based. NULL unless ``locator`` is "page" -- see the check constraint.
+    page_no: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: JSON array of {x, y, w, h} in PDF user-space units at scale 1, the same
+    #: convention as :class:`Highlight`, so a region can be drawn in the reader.
+    #: NULL when the extraction gave text without geometry, which is the normal
+    #: case -- an invented rectangle is the same lie as an invented page.
+    rects: Mapped[str | None] = mapped_column(Text, default=None)
+    #: The text itself: verbatim when ``kind`` is "quote", authored otherwise.
+    text: Mapped[str] = mapped_column(Text)
+    #: What this evidence is being offered as support for. Optional, because
+    #: evidence is often collected before the claim it will serve exists.
+    statement: Mapped[str | None] = mapped_column(Text, default=None)
+
+    # --- provenance -------------------------------------------------------
+    # Required by the contract for every automated product. All NULL for
+    # human-authored evidence, which is itself the record that a person wrote it.
+    provider: Mapped[str | None] = mapped_column(String(32), default=None)
+    model: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: Schema/workflow version of the process that produced this row.
+    workflow_version: Mapped[str | None] = mapped_column(String(16), default=None)
+    #: Hash of the exact input the producer saw, so a later reader can tell
+    #: whether the source has changed underneath the conclusion.
+    input_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

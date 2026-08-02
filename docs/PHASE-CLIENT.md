@@ -179,8 +179,6 @@ Zotero 的主窗口就是应用本体。所以做成**覆盖在主窗口上的�
 - **构建未签名**。macOS 首次启动需 Control-点击、选"打开"。设置
   `DEVELOPER_ID` 与 `NOTARIZATION_*` 即可，构建在凭据缺失时会干净跳过并说明
 - Windows 是便携包而非安装器
-- 内部 Python 包仍叫 `xuanzang`
-- 网页版 `AdminView.tsx` 的"翻译降级"判据写错了（`effective_translator !=
-  translator`，但走中转的实例这两个值永远不等），会常驻显示假警告。客户端用的是
-  正确判据
 - 随旧 Tauri 客户端消失的 Workspace、Codex 互通、深链接**没有替代品**
+- 页面级证据的**客户端界面还没有**。后端的 `PaperChunk` / `Evidence` 已经落地，
+  但阅读器里还没有"选中一段 → 存为证据"的动作

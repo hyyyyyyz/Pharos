@@ -52,11 +52,12 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 - Zotero cloud sync is metadata-only and one-way into Pharos.
 - Tags, paper-level notes, direct arXiv-link import and one-click
   discovery-to-library are not complete end-to-end in the web client.
-- The client's user-facing help links still point at Zotero's support pages and
-  forums. They must be changed before any public release, or Pharos users will
-  file our bugs in Zotero's forum.
-- The internal Python package is still named `xuanzang`, from an earlier
-  direction. Renaming it is mechanical but touches imports everywhere.
+- Discovery sources are abstract-only until the paper is in the library. A
+  source with no `paper_id` cannot carry a page number, and evidence drawn from
+  it is marked `abstract_only` rather than given a plausible-looking one.
+- The web client has no test runner at all — `tsc -b` and a production build are
+  the only gates. A pure predicate that decided whether to show a "translation
+  degraded" banner was wrong for a year because nothing could have caught it.
 
 ## Next
 
@@ -64,21 +65,22 @@ In rough order. Each is a workstream, not a ticket.
 
 1. **Sign and notarise desktop builds.** Needs an Apple Developer account; the
    build already skips notarisation cleanly when credentials are absent, and
-   `app/config.sh` documents exactly which values to set.
-2. **Point help and support links at Pharos.** See the gap above.
-3. **Page-addressable evidence.** Anchoring a claim to a page and a region
+   `app/config.sh` documents exactly which values to set. This is the only item
+   here blocked on something money buys rather than something we write.
+2. **Page-addressable evidence.** Anchoring a claim to a page and a region
    rather than to a whole document. This is the foundation the next three items
-   rest on.
-4. **Grounded paper Q&A** — answers that cite the passage they came from, so a
+   rest on. *In progress: `PaperChunk` and `Evidence` exist; the client surface
+   does not.*
+3. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
-5. **Evidence-aware idea workflow** — proposing directions that carry the
+4. **Evidence-aware idea workflow** — proposing directions that carry the
    evidence they rest on.
-6. **Claim-to-result bindings** — a claim that knows which result supports it,
+5. **Claim-to-result bindings** — a claim that knows which result supports it,
    and notices when that result changes.
-7. **Writing.** The last stage of the arc, and the one that makes "一体化" true
+6. **Writing.** The last stage of the arc, and the one that makes "一体化" true
    rather than aspirational.
 
-The detailed contract for 3–7 is in
+The detailed contract for 2–6 is in
 [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
 
 ## Not doing

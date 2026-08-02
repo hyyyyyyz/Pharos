@@ -5,6 +5,7 @@ import type { AdminProbeResult, AdminUser } from "../api/types";
 import { Icons } from "../design/icons";
 import { useSession } from "../store";
 import "./AdminView.css";
+import { isTranslationDegraded } from "../lib/providers";
 
 type Tab = "users" | "providers";
 
@@ -388,13 +389,7 @@ function ProvidersPanel(): JSX.Element {
     }
   };
 
-  const degraded = useMemo(() => {
-    const d = providers.data;
-    if (!d) return false;
-    // The configured translator lost to the keyless fallback — i.e. its key is
-    // missing or unusable and translation quietly got worse.
-    return d.translator !== "bing" && d.translator !== "google" && d.effective_translator !== d.translator;
-  }, [providers.data]);
+  const degraded = useMemo(() => isTranslationDegraded(providers.data), [providers.data]);
 
   if (providers.isLoading) return <p className="ph-admin-empty">载入中…</p>;
   if (providers.isError)
