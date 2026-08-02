@@ -659,10 +659,25 @@ export function DailyView(): JSX.Element {
           </div>
         )}
         {dates.map((d) => (
+          // Same treatment as the paper cards, for the same reason: switching
+          // days is the only route to any digest but the newest, so a bare
+          // onClick puts every earlier day out of a keyboard user's reach. A
+          // <div> rather than a <button> because the row is a three-column grid;
+          // role and tabIndex give it the semantics without the layout.
           <div
             key={d.date}
+            role="button"
+            tabIndex={0}
+            aria-pressed={d.date === activeDate}
             className={d.date === activeDate ? "ph-dv-date is-active" : "ph-dv-date"}
             onClick={() => setDailyDate(d.date)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                // Space would otherwise scroll the rail out from under the row.
+                e.preventDefault();
+                setDailyDate(d.date);
+              }
+            }}
           >
             <span className="ph-dv-date-text">{d.date}</span>
             {d.pending > 0 && (

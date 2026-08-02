@@ -618,6 +618,20 @@
    background is claimed as well, so "where am I" is answered by the same cue
    the pointer gets. Inset offset because the cards are full-bleed inside a
    scroller: an outward ring is clipped on the first and last rows. */
+/* The date rows carry the same keyboard affordance as the cards, and need the
+   same treatment: the rail already tints on hover and again on is-active, so a
+   default ring alone reads as one of those rather than as focus. Inset, because
+   the rows are full-bleed inside a scroller and an outward ring is clipped on
+   the first and last of them. */
+.ph-dv-date:focus-visible {
+  outline: 2px solid var(--c-ac, #5b53d6);
+  outline-offset: -2px;
+  background: var(--c-hv);
+}
+.ph-dv-date.is-active:focus-visible {
+  background: var(--c-acs);
+}
+
 .ph-dv-card:focus-visible {
   outline: 2px solid var(--c-ac, #5b53d6);
   outline-offset: -2px;
