@@ -53,7 +53,7 @@ Each component is independent. Run the tests for what you touched.
 cd backend && .venv/bin/pytest
 
 # Web client
-cd frontend && npm run build && npx tsc -b
+cd frontend && npm test && npm run build && npx tsc -b
 
 # Desktop client
 cd client

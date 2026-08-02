@@ -55,9 +55,11 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 - Discovery sources are abstract-only until the paper is in the library. A
   source with no `paper_id` cannot carry a page number, and evidence drawn from
   it is marked `abstract_only` rather than given a plausible-looking one.
-- The web client has no test runner at all — `tsc -b` and a production build are
-  the only gates. A pure predicate that decided whether to show a "translation
-  degraded" banner was wrong for a year because nothing could have caught it.
+- The web client's tests (Vitest, `npm test`) cover `src/lib` only. Components
+  and views still have no gate but `tsc -b` and a production build, which is how
+  a pure predicate deciding whether to show a "translation degraded" banner
+  stayed wrong for a year. That predicate is pinned now; the React surface is
+  not.
 
 ## Next
 
