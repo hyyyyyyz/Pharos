@@ -71,7 +71,12 @@ var Zotero_Pharos_Projects = new function () {
 	let _projects = [];
 	let _listState = 'loading'; // loading | ready | error
 	let _listError = null;
-	let _showArchived = false;
+
+	/** Shown, like the web's ProjectsView. An account whose projects are all
+	 *  archived used to open this window on 没有符合筛选的项目 and an empty desk
+	 *  while the same account opened the web on a full list -- the same
+	 *  checkbox, opposite initial state, and nothing on screen to say which. */
+	let _showArchived = true;
 
 	let _selectedID = null;
 	let _project = null;
@@ -119,6 +124,25 @@ var Zotero_Pharos_Projects = new function () {
 	let _noteSourceID = null;
 	let _noteDraft = '';
 	let _noteSaving = false;
+
+	/**
+	 * What this session has already filed into the local library: discovery
+	 * result ids for 加入文库, record ids for 存为笔记.
+	 *
+	 * Module level, not on the button. Every _render() rebuilds both controls --
+	 * an edit, an archive, a stage save, an inline confirm, and the render inside
+	 * _mutate()'s finally all do -- so a "已保存" written onto the element is gone
+	 * by the next pass. Neither call underneath de-duplicates:
+	 * saveExternalPaper() does `new Zotero.Item(itemType)` and saveArtifactAsNote()
+	 * does `new Zotero.Item('note')` unconditionally, so a second click writes a
+	 * second real item into the user's library and both clicks report success.
+	 * 文献探索 keeps the same set for the same reason.
+	 *
+	 * Not cleared on project switch: the library is one library, and a paper
+	 * filed from one project is still filed when it appears under another.
+	 */
+	let _savedSources = new Set();
+	let _savedArtifacts = new Set();
 
 	/**
 	 * Settles once init() has finished, however it finished.
@@ -406,6 +430,17 @@ var Zotero_Pharos_Projects = new function () {
 			: (project.artifacts || []).length;
 	}
 
+	/**
+	 * What 加入文库 saves, keyed the way the library sees it.
+	 *
+	 * The discovery result, not the project source: the same paper filed into two
+	 * projects is two ProjectSource rows and one item in the library, and keying
+	 * on the source id would offer to save it a second time.
+	 */
+	function _sourceKey(source) {
+		return (source.result && source.result.id) || source.id;
+	}
+
 	/** Kept from the desktop's own row rather than dropped to match the web,
 	 *  which omits authors entirely. */
 	function _authorText(authors) {
@@ -492,10 +527,25 @@ var Zotero_Pharos_Projects = new function () {
 			this._render();
 		});
 		// Submitting an HTML form inside a chrome document would try to navigate
-		// the docshell out from under the window.
+		// the docshell out from under the window. Kept as the guard it is, but it
+		// is NOT how Enter reaches createProject(): implicit submission needs
+		// either a submit button or exactly one field that blocks it, and this
+		// form has neither -- every control is type="button" on purpose, to avoid
+		// firing the form on the same click that already ran onClick, and there
+		// are two text inputs. So `submit` never fires here.
 		_el.create.addEventListener('submit', (event) => {
 			event.preventDefault();
 			this.createProject();
+		});
+		// Which is why Enter is handled outright, the way 文献探索 handles it on
+		// its query field. Inputs only: Enter inside the description textarea is a
+		// newline, and swallowing it would cost the user the one multi-line field
+		// in the form.
+		_el.create.addEventListener('keydown', (event) => {
+			if (event.key == 'Enter' && event.target.localName == 'input') {
+				event.preventDefault();
+				this.createProject();
+			}
 		});
 
 		if (!Zotero.Pharos.API.hasCredentials()) {
@@ -566,11 +616,19 @@ var Zotero_Pharos_Projects = new function () {
 
 	this.select = async function (projectID) {
 		_selectedID = projectID;
-		_project = null;
-		_viewedStage = null;
 		_projectState = 'loading';
 		_projectError = null;
 		_closeEditors();
+		// Render what is already in hand rather than blanking the desk. The list
+		// payload is not a stub: GET /api/projects returns full ProjectOut rows
+		// with `sources` and `artifacts` eager-loaded, and _projects holds them --
+		// they are what Discovery's 已在当前项目 chip reads. Setting _project =
+		// null here emptied the header, the research question, the stage path and
+		// both panels on every project switch, over data the window already had.
+		// The web renders straight through for the same reason.
+		let cached = _projects.find(p => p.id == projectID) || null;
+		_project = cached;
+		_viewedStage = cached ? cached.stage : null;
 		_notice = _str('pharos-projects-loading');
 		_error = null;
 		this._render();
@@ -978,15 +1036,21 @@ var Zotero_Pharos_Projects = new function () {
 	/**
 	 * 加入文库 on a source row. Desktop-only; the web has no equivalent.
 	 *
-	 * The button reports its own outcome rather than going through the render
-	 * pass, because nothing about the project changed.
+	 * The button reports its own outcome without a render pass, because nothing
+	 * about the project changed -- but the fact that it succeeded is recorded in
+	 * _savedSources, not on the button, because the next render rebuilds it.
 	 */
 	this.saveSource = async function (source, button) {
+		let key = _sourceKey(source);
+		if (_savedSources.has(key)) {
+			return;
+		}
 		button.disabled = true;
 		let original = button.textContent;
 		button.textContent = _str('pharos-daily-saving');
 		try {
 			await Zotero.Pharos.Discovery.saveToLibrary(source.result);
+			_savedSources.add(key);
 			button.textContent = _str('pharos-daily-saved');
 		}
 		catch (e) {
@@ -1001,11 +1065,15 @@ var Zotero_Pharos_Projects = new function () {
 	/** 存为笔记. The module's reason for existing: a claim ends up beside the
 	 *  papers it was argued from, searchable with everything else. */
 	this.saveArtifactNote = async function (artifact, project, button) {
+		if (_savedArtifacts.has(artifact.id)) {
+			return;
+		}
 		button.disabled = true;
 		let original = button.textContent;
 		button.textContent = _str('pharos-daily-saving');
 		try {
 			await Zotero.Pharos.Projects.saveArtifactAsNote(artifact, project);
+			_savedArtifacts.add(artifact.id);
 			button.textContent = _str('pharos-daily-saved');
 		}
 		catch (e) {
@@ -1047,8 +1115,13 @@ var Zotero_Pharos_Projects = new function () {
 		_el.new.disabled = _signedOut || _creating;
 		_el.showArchived.disabled = _signedOut;
 		_el.showArchived.checked = _showArchived;
-		_el.count.textContent = _listState == 'ready' && visible.length
-			? String(visible.length)
+		// The account's projects, not the rows the filter left. The web puts
+		// projects.length in this same slot, and a badge that counted the visible
+		// rows reported a smaller number for the same account -- and blanked
+		// itself at zero, removing the one place that would have said the account
+		// has projects the filter is hiding.
+		_el.count.textContent = _listState == 'ready' && !_signedOut
+			? String(_projects.length)
 			: '';
 
 		this._renderCreateForm();
@@ -1168,9 +1241,11 @@ var Zotero_Pharos_Projects = new function () {
 		if (_signedOut) {
 			return;
 		}
-		if (_projectState == 'loading') {
-			// The status region carries 正在读取项目…; a skeleton here would just
-			// be a second thing saying it.
+		if (_projectState == 'loading' && !_project) {
+			// Nothing cached to render through -- the very first selection of the
+			// session, or a project that arrived from somewhere other than the
+			// list. The status region carries 正在读取项目…; a skeleton here would
+			// just be a second thing saying it.
 			return;
 		}
 		if (_projectState == 'error') {
@@ -1186,7 +1261,10 @@ var Zotero_Pharos_Projects = new function () {
 		if (_editOpen) {
 			_el.desk.append(this._renderEdit());
 		}
-		if (_project.research_question) {
+		// Not while the edit form is open: the same text is loaded in that form's
+		// 研究问题 textarea directly above, so an edit in progress would sit beside
+		// the stale saved copy of itself with nothing saying which is which.
+		if (_project.research_question && !_editOpen) {
 			let block = _div('pharos-pv-question');
 			block.append(_div('pharos-pv-question-label', _str('pharos-projects-question')));
 			block.append(_div('pharos-pv-question-text', _project.research_question));
@@ -1472,26 +1550,66 @@ var Zotero_Pharos_Projects = new function () {
 
 		card.append(this._renderProvenance(source, result));
 
-		if (result.analysis_warning) {
-			// Backend free text. Verbatim, no id.
+		if (Zotero.Pharos.Discovery.isRules(result)) {
+			// The disclosure 文献探索 makes, in the same words and in the same
+			// place: a visible localized block ABOVE the content, never a footnote
+			// under it. pharos-discovery-rules-note, which used to be here, is note
+			// body copy -- it tells the reader to press 「精读」, a control that
+			// exists only in the other window and is called 生成核心思路 there --
+			// and it was rendered in the smallest, lowest-contrast text on the
+			// card, below the sentences it was correcting. This id is the one
+			// written for the screen, and it is also the only place either window
+			// says the other half of the truth: no full text was downloaded or
+			// read.
+			// Two sentences: what this is, then where to replace it. The second
+			// matters because the control that produces a model reading exists
+			// only in the 文献探索 window -- naming a button that is not on this
+			// screen is how the old copy sent readers looking for one.
+			//
+			// Two elements rather than one concatenated string. Joining them in
+			// JS would need a separator, and the right separator is
+			// language-dependent: English wants a space between sentences and
+			// Chinese does not. Letting the layout do it keeps that out of the
+			// code and out of the translator's hands.
+			let warn = _div('pharos-pv-analysis-warning',
+				_str('pharos-discovery-mode-rules-detail'));
+			warn.append(_span('pharos-pv-analysis-where',
+				_str('pharos-projects-source-rules-where')));
+			if (result.analysis_warning) {
+				// The server's own English sentence stays inspectable without being
+				// the only surface the fact has.
+				warn.title = String(result.analysis_warning);
+			}
+			card.append(warn);
+		}
+		else if (result.analysis_warning) {
+			// Backend free text. Verbatim, no id. analyze_result nulls the warning
+			// when it records a model reading, so this is not supposed to happen --
+			// and if it does, it is the only thing on the card qualifying what the
+			// model produced.
 			card.append(_div('pharos-pv-analysis-warning', result.analysis_warning));
 		}
+
 		if (result.summary_zh) {
 			card.append(_div('pharos-pv-source-insight', result.summary_zh));
 		}
-		if (result.core_trick) {
-			let block = _div('pharos-pv-source-insight');
-			block.append(_div('pharos-pv-source-insight-label',
-				_str('pharos-discovery-section-core-trick')));
-			block.append(_div(null, result.core_trick));
-			card.append(block);
+
+		// Through Discovery.trick(), never off result.core_trick directly. For a
+		// rules source that field is a sentence cut out of the English abstract
+		// by cue matching or -- when no cue matched -- the paper's own cleaned
+		// TITLE, and printing either under an accent 核心思路 heading presents a
+		// restated title as something a model distilled. The three states are the
+		// three 文献探索 draws, and they are visually distinct there for exactly
+		// this reason.
+		let trick = Zotero.Pharos.Discovery.trick(result);
+		let insight = _div('pharos-pv-source-insight is-' + trick.state);
+		if (trick.state == 'extracted') {
+			insight.title = _str('pharos-discovery-trick-extracted-tooltip');
 		}
-		if (result.analysis_mode == 'rules') {
-			// A rules extraction is a placeholder, and a summary that did not
-			// admit it would be read as the model's own reading.
-			card.append(_div('pharos-pv-source-rules-note',
-				_str('pharos-discovery-rules-note')));
-		}
+		insight.append(_div('pharos-pv-source-insight-label',
+			_str('pharos-discovery-trick-label')));
+		insight.append(_div('pharos-pv-source-insight-text', trick.text));
+		card.append(insight);
 
 		card.append(this._renderSourceNote(source));
 		card.append(this._renderSourceFoot(source));
@@ -1503,22 +1621,47 @@ var Zotero_Pharos_Projects = new function () {
 	 *
 	 * analysis_mode, analysis_model and sources are all in the payload and none
 	 * was rendered before, so a model's summary and a rules extraction of the
-	 * abstract looked identical -- RESEARCH_WORKFLOW.md §10 item 4.
+	 * abstract looked identical -- RESEARCH_WORKFLOW.md §10 item 4, which asks
+	 * for the analysis MODE to be shown and treats the model as the optional
+	 * extra.
 	 */
 	this._renderProvenance = function (source, result) {
 		let row = _div('pharos-pv-source-prov');
-		if (result.analysis_model || result.analysis_mode) {
-			let chip = _span('pharos-pv-analysis', result.analysis_model
-				|| _str(result.analysis_mode == 'llm'
-					? 'pharos-analysis-mode-llm'
-					: 'pharos-analysis-mode-rules'));
-			if (result.analysis_mode == 'llm') {
-				chip.classList.add('is-ai');
-			}
-			row.append(chip);
+
+		// Through the shared helper, and unconditional. isRules() is `!= 'llm'`
+		// on purpose: a mode this build does not know, a missing field or a
+		// half-built object all have to read as rules, because the failure in the
+		// other direction is an English abstract extract presented as a Chinese
+		// AI summary. The test this replaced was `== 'rules'` at three sites and
+		// gated the whole chip on a field being set, so a payload with no
+		// analysis_mode rendered 核心思路 with no disclaimer and no chip at all --
+		// a rules extraction with zero provenance rather than a mislabelled one.
+		let rules = Zotero.Pharos.Discovery.isRules(result);
+		// The mode, in words. The chip used to print result.analysis_model, so
+		// 「AI 深读」 appeared only when the backend had recorded NO model and the
+		// normal case was a bare `deepseek-chat` sitting in the same row as the
+		// source chips -- read as a third retrieval source, with the fact that a
+		// model wrote the paragraph below never stated anywhere on screen. The
+		// mode is the question a reader is asking; the model id is the footnote,
+		// so it follows as plain text rather than as a second capsule.
+		let chip = _span('pharos-pv-analysis',
+			_str(rules ? 'pharos-analysis-mode-rules' : 'pharos-analysis-mode-llm'));
+		if (!rules) {
+			chip.classList.add('is-ai');
 		}
+		row.append(chip);
+		if (!rules) {
+			row.append(_span('pharos-pv-analysis-model', result.analysis_model
+				? _fmt('pharos-discovery-model', { model: result.analysis_model })
+				: _str('pharos-discovery-model-unknown')));
+		}
+
 		for (let name of result.sources || []) {
-			row.append(_span('pharos-pv-source-src', name));
+			// Never the bare lowercase wire id: "arxiv" and "openalex" are not how
+			// either project writes its own name, and sourceName() exists precisely
+			// so no UI prints one.
+			row.append(_span('pharos-pv-source-src',
+				Zotero.Pharos.Discovery.sourceName(name)));
 		}
 		if (source.paper && source.paper.title) {
 			// source.paper arrives in every GET; nothing here calls
@@ -1587,9 +1730,15 @@ var Zotero_Pharos_Projects = new function () {
 			foot.append(remove);
 		}
 
-		// Desktop-only, kept: the paper itself goes into the local library.
-		let save = _action(_str('pharos-daily-save'), null, null);
-		save.addEventListener('click', () => this.saveSource(source, save));
+		// Desktop-only, kept: the paper itself goes into the local library. The
+		// already-filed state is read from _savedSources rather than left on the
+		// element, which the next render replaces.
+		let saved = _savedSources.has(_sourceKey(source));
+		let save = _action(_str(saved ? 'pharos-daily-saved' : 'pharos-daily-save'), null, null);
+		save.disabled = saved;
+		if (!saved) {
+			save.addEventListener('click', () => this.saveSource(source, save));
+		}
 		foot.append(save);
 		return foot;
 	};
@@ -1603,10 +1752,14 @@ var Zotero_Pharos_Projects = new function () {
 		// Which stage's records these are. The list is filtered to the viewed
 		// stage, so a head that did not name it would look like the whole project.
 		head.append(_span('pharos-pv-panel-kicker', _label('stageLabel', _viewedStage)));
-		// The project's total, not the stage's: the timeline carries the
-		// per-stage breakdown, and the sidebar row shows this same number.
+		// The viewed stage's count, so the number and the rows underneath it are
+		// the same set -- which is what the web renders here. The project's total
+		// used to sit in this slot, directly above a list filtered to one stage,
+		// so a project with twelve records and one at the viewed stage read
+		// 「文献探索 · 12 条研究记录」 over a single card. The whole-project number
+		// is still in the sidebar row, and the per-stage breakdown on the timeline.
 		head.append(_span('pharos-pv-panel-count',
-			_fmt('pharos-projects-artifacts', { count: _artifactCount(_project) })));
+			_fmt('pharos-projects-artifacts', { count: _viewedArtifacts().length })));
 		let add = _action(_str('pharos-projects-artifact-new'), null, () => this.newArtifact());
 		add.disabled = _busy || !!_artifactDraft;
 		head.append(add);
@@ -1665,8 +1818,13 @@ var Zotero_Pharos_Projects = new function () {
 		}
 
 		let foot = _div('pharos-pv-artifact-foot');
-		foot.append(_span('pharos-pv-artifact-updated', artifact.updated_at
-			? _fmt('pharos-projects-artifact-updated', { date: _date(artifact.updated_at) })
+		// Falling back to created_at, as the web does. ProjectArtifact.updated_at
+		// defaults to NULL and is only written by a PATCH, so a record that has
+		// never been edited carried no timestamp at all and there was no way to
+		// tell when it had been written.
+		let written = artifact.updated_at || artifact.created_at;
+		foot.append(_span('pharos-pv-artifact-updated', written
+			? _fmt('pharos-projects-artifact-updated', { date: _date(written) })
 			: ''));
 
 		let edit = _action(_str('pharos-projects-edit'), null, () => this.editArtifact(artifact));
@@ -1695,8 +1853,15 @@ var Zotero_Pharos_Projects = new function () {
 			foot.append(del);
 		}
 
-		let save = _action(_str('pharos-projects-save-note'), null, null);
-		save.addEventListener('click', () => this.saveArtifactNote(artifact, _project, save));
+		// Read from _savedArtifacts, not from the button: saveArtifactAsNote()
+		// files a new standalone note every time it is called.
+		let noteSaved = _savedArtifacts.has(artifact.id);
+		let save = _action(
+			_str(noteSaved ? 'pharos-daily-saved' : 'pharos-projects-save-note'), null, null);
+		save.disabled = noteSaved;
+		if (!noteSaved) {
+			save.addEventListener('click', () => this.saveArtifactNote(artifact, _project, save));
+		}
 		foot.append(save);
 
 		card.append(foot);

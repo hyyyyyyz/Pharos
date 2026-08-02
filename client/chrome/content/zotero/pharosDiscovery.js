@@ -47,9 +47,11 @@
 //    files the whole selection in one call, against a <select> that spells the
 //    archived state out.
 //
-// Its own stylesheet, NOT pharosDaily.css. That file styles Research Projects,
-// which builds .pharos-daily-* rows of its own; no pharos-daily-* name appears
-// anywhere below.
+// Its own stylesheet, pharosDiscovery.css, linked from pharosDiscovery.xhtml.
+// This window used to link pharosDaily.css, and this comment used to say that
+// file still styled Research Projects. It does not: Projects links
+// pharosProjects.css and Daily links pharosDailyView.css, so nothing links
+// pharosDaily.css any more. No pharos-daily-* name appears anywhere below.
 var Zotero_Pharos_Discovery = new function () {
 	/** How much of a server error message is worth showing before it stops
 	 *  being a sentence and starts being a stack trace. */
@@ -93,6 +95,10 @@ var Zotero_Pharos_Discovery = new function () {
 
 	let _searching = false;
 	let _filing = false;
+
+	/** A past run whose detail request is in flight. Guards the retry against
+	 *  being pressed twice. */
+	let _opening = false;
 
 	let _el = {};
 
@@ -247,6 +253,33 @@ var Zotero_Pharos_Discovery = new function () {
 		}
 	}
 
+	/** What the notice's retry button will do, or null when it has nothing. */
+	let _retry = null;
+
+	/**
+	 * The module-level notice, with an optional retry.
+	 *
+	 * Not _line() on the notice itself: the retry lives inside that element, and
+	 * assigning textContent would delete it. The button's label is written here
+	 * rather than declared in the XHTML so that #pharos-ds-notice's textContent
+	 * stays exactly the sentence being shown -- a permanently-labelled button
+	 * would make an empty notice read as non-empty to anything inspecting it.
+	 *
+	 * @param {String} text
+	 * @param {Boolean} [isError]
+	 * @param {Function} [retry] - offered as a button beside the text
+	 */
+	function _notice(text, isError, retry) {
+		_line(_el.noticeText, text);
+		_el.notice.hidden = !text;
+		if (isError !== undefined) {
+			_el.notice.classList.toggle('is-err', !!isError);
+		}
+		_retry = text && retry ? retry : null;
+		_el.noticeRetry.hidden = !_retry;
+		_el.noticeRetry.textContent = _retry ? _str('pharos-discovery-retry') : '';
+	}
+
 
 	/* --------------------------------------------------------------- derived */
 
@@ -322,6 +355,8 @@ var Zotero_Pharos_Discovery = new function () {
 			hint: 'pharos-ds-hint',
 			formError: 'pharos-ds-form-error',
 			notice: 'pharos-ds-notice',
+			noticeText: 'pharos-ds-notice-text',
+			noticeRetry: 'pharos-ds-notice-retry',
 			runBox: 'pharos-ds-run',
 			status: 'pharos-ds-status',
 			runQuery: 'pharos-ds-run-query',
@@ -353,7 +388,7 @@ var Zotero_Pharos_Discovery = new function () {
 		_el.file.textContent = _str('pharos-discovery-add-to-project');
 		_el.newCreate.textContent = _fmt('pharos-discovery-new-project-create', { count: 0 });
 		_line(_el.formError, '');
-		_line(_el.notice, '');
+		_notice('');
 		_el.newBox.hidden = true;
 
 		_wire();
@@ -372,6 +407,9 @@ var Zotero_Pharos_Discovery = new function () {
 		}
 
 		_line(_el.hint, _str('pharos-discovery-hint'), false);
+		// An empty composer cannot be submitted, and the button says so from the
+		// first frame rather than at the first keystroke.
+		_validate();
 		_renderHistory();
 
 		// Independent of each other, and neither blocks typing: the composer is
@@ -394,17 +432,26 @@ var Zotero_Pharos_Discovery = new function () {
 				Zotero_Pharos_Discovery.search();
 			}
 		});
-		_el.query.addEventListener('input', _clearFormError);
-		_el.limit.addEventListener('input', _clearFormError);
+		_el.query.addEventListener('input', _validate);
+		_el.limit.addEventListener('input', _validate);
 
 		for (let id of Zotero.Pharos.Discovery.SOURCES) {
 			let box = _el['source-' + id];
 			box.checked = true;
 			box.addEventListener('change', () => {
 				box.closest('.pharos-ds-source').classList.toggle('is-on', box.checked);
-				_clearFormError();
+				_validate();
 			});
 		}
+
+		_el.noticeRetry.addEventListener('click', () => {
+			// Read before calling: the action is expected to rewrite the notice,
+			// and on a second failure it installs a fresh retry of its own.
+			let retry = _retry;
+			if (retry) {
+				retry();
+			}
+		});
 
 		_el.project.addEventListener('change', () => _setProject(_el.project.value));
 		_el.fileProject.addEventListener('change', () => _setProject(_el.fileProject.value));
@@ -442,6 +489,38 @@ var Zotero_Pharos_Discovery = new function () {
 		_line(_el.formError, '');
 	}
 
+	/**
+	 * Reflect whether the composer may be submitted, continuously.
+	 *
+	 * searchProblem() used to run only inside search(), so an unticked source
+	 * pair or a one-character query stayed invisible until the button had been
+	 * pressed and _clearFormError() wiped the answer on the next keystroke. The
+	 * web keeps both hints on screen and the submit disabled for as long as the
+	 * form is invalid (DiscoveryView.tsx:536, 543-544).
+	 */
+	function _validate() {
+		// The signed-out state has already disabled the composer and said why.
+		// Re-enabling it from here would be worse than not validating at all.
+		if (_searching || !Zotero.Pharos.API.hasCredentials()) {
+			return;
+		}
+		let form = _form();
+		let problem = Zotero.Pharos.Discovery.searchProblem(form);
+		_el.run.disabled = !!problem;
+
+		// An empty box is where every search starts, so it is not yet something
+		// to complain about -- but the rest of the form is, and going quiet about
+		// it is how an unticked source pair stays hidden. Re-checked against a
+		// query that only stands in for the one not typed yet and never reaches
+		// the network.
+		if (problem && problem.id == 'pharos-discovery-need-query' && !form.query.trim()) {
+			problem = Zotero.Pharos.Discovery.searchProblem(Object.assign({}, form, {
+				query: 'x'.repeat(Zotero.Pharos.Discovery.MIN_QUERY),
+			}));
+		}
+		_line(_el.formError, problem ? _msg(problem) : '', true);
+	}
+
 
 	/* -------------------------------------------------------------- projects */
 
@@ -457,7 +536,7 @@ var Zotero_Pharos_Discovery = new function () {
 			Zotero.logError(e);
 			_projects = [];
 			_projectsFailed = true;
-			_line(_el.notice, _str('pharos-discovery-projects-failed'), true);
+			_notice(_str('pharos-discovery-projects-failed'), true);
 		}
 		_renderProjects();
 	}
@@ -567,20 +646,37 @@ var Zotero_Pharos_Discovery = new function () {
 			item.classList.add('is-active');
 		}
 
-		let top = _div('pharos-ds-hitem-top');
-		let dot = _span('pharos-ds-dot');
 		// statusStringID fails closed, so an unrecognised status paints as a
 		// failure rather than as a success.
-		dot.classList.add('is-' + Zotero.Pharos.Discovery.statusStringID(search.status)
-			.replace('pharos-discovery-status-', ''));
-		dot.title = _str(Zotero.Pharos.Discovery.statusStringID(search.status));
+		let statusID = Zotero.Pharos.Discovery.statusStringID(search.status);
+		let state = statusID.replace('pharos-discovery-status-', '');
+
+		let top = _div('pharos-ds-hitem-top');
+		let dot = _span('pharos-ds-dot is-' + state);
+		dot.title = _str(statusID);
 		top.append(dot, _span('pharos-ds-hitem-query', search.query));
 		item.append(top);
 
+		// created_at, deliberately, and not the completed_at the run header
+		// prefers: the rail answers "when did I ask this", which is also what the
+		// web rail shows (DiscoveryView.tsx:114).
 		item.append(_div('pharos-ds-hitem-meta', _fmt('pharos-discovery-history-meta', {
 			time: _time(search.created_at),
 			count: search.result_count,
 		})));
+
+		// The outcome in words, for every state except a clean run.
+		//
+		// The dot alone said it in hue, with the word reachable only by hovering.
+		// `partial` means a source died and results are missing, and about one
+		// man in twelve cannot separate its gold from complete's teal -- so a
+		// partial run read as a clean one, and its lower result count was
+		// indistinguishable from a genuinely narrower query. Absence of this line
+		// is what "nothing went wrong" looks like, and it is the only state that
+		// gets to be silent.
+		if (state != 'complete') {
+			item.append(_div('pharos-ds-hitem-state is-' + state, _str(statusID)));
+		}
 		item.append(_div('pharos-ds-hitem-sources',
 			Zotero.Pharos.Discovery.sourceLabel(search.sources)));
 
@@ -596,6 +692,12 @@ var Zotero_Pharos_Discovery = new function () {
 	 * already holds every result. The detail call is the fallback for a row that
 	 * somehow arrived without them, which is also the only place getSearch() is
 	 * needed at all.
+	 *
+	 * That fallback is the only path here that waits on the network, so it is the
+	 * only one that needs to say it is waiting and to offer another go. Without
+	 * both, the previous run stayed on screen unchanged while the request was in
+	 * flight, and a failure left no way forward short of guessing that clicking
+	 * the same rail row again would retry.
 	 */
 	async function _open(searchID) {
 		let cached = _searches.find(s => s.id == searchID);
@@ -603,12 +705,22 @@ var Zotero_Pharos_Discovery = new function () {
 			_show(cached);
 			return;
 		}
+		if (_opening) {
+			return;
+		}
+		_opening = true;
+		_notice(_str('pharos-discovery-opening'), false);
 		try {
 			_show(await Zotero.Pharos.Discovery.getSearch(searchID));
+			_notice('');
 		}
 		catch (e) {
 			Zotero.logError(e);
-			_line(_el.notice, _fmt('pharos-discovery-open-failed', { error: _reason(e) }), true);
+			_notice(_fmt('pharos-discovery-open-failed', { error: _reason(e) }), true,
+				() => _open(searchID));
+		}
+		finally {
+			_opening = false;
 		}
 	}
 
@@ -638,7 +750,7 @@ var Zotero_Pharos_Discovery = new function () {
 		_searching = true;
 		_el.run.disabled = true;
 		_el.run.textContent = _str('pharos-discovery-searching');
-		_line(_el.notice, '');
+		_notice('');
 		try {
 			let search = await Zotero.Pharos.Discovery.search(form.query, {
 				sources: form.sources,
@@ -653,29 +765,32 @@ var Zotero_Pharos_Discovery = new function () {
 		}
 		catch (e) {
 			Zotero.logError(e);
-			_line(_el.notice, _fmt('pharos-discovery-search-failed', { error: _reason(e) }), true);
+			_notice(_fmt('pharos-discovery-search-failed', { error: _reason(e) }), true);
 		}
 		finally {
 			_searching = false;
 			_el.run.disabled = false;
 			_el.run.textContent = _str('pharos-discovery-search');
+			// Not unconditionally re-enabled: the form may have been edited into
+			// an invalid state while the request was in flight.
+			_validate();
 		}
 	};
 
 	function _noticeForRun(search) {
 		if (search.status == 'complete') {
-			_line(_el.notice,
+			_notice(
 				_fmt('pharos-discovery-notice-complete', { count: search.result_count }), false);
 		}
 		else if (search.status == 'partial') {
-			_line(_el.notice,
+			_notice(
 				_fmt('pharos-discovery-notice-partial', { count: search.result_count }), false);
 		}
 		else if (search.status == 'error') {
-			_line(_el.notice, _str('pharos-discovery-notice-error'), true);
+			_notice(_str('pharos-discovery-notice-error'), true);
 		}
 		else {
-			_line(_el.notice, '');
+			_notice('');
 		}
 	}
 
@@ -698,8 +813,8 @@ var Zotero_Pharos_Discovery = new function () {
 		_setProject(_search.project_id && _projects.some(p => p.id == _search.project_id)
 			? _search.project_id
 			: '');
-		_clearFormError();
-		_line(_el.notice, _str('pharos-discovery-reused'), false);
+		_validate();
+		_notice(_str('pharos-discovery-reused'), false);
 		_el.query.focus();
 	}
 
@@ -728,7 +843,12 @@ var Zotero_Pharos_Discovery = new function () {
 			// The run header answers "what did I ask for", so this is the
 			// search's own source list, not any card's.
 			sources: Zotero.Pharos.Discovery.sourceLabel(_search.sources),
-			time: _time(_search.created_at),
+			// When the run FINISHED, which is what a saved record is dated by.
+			// completed_at is written in the same commit that moves the status off
+			// "running" (backend/pharos/services/projects.py:319), so it is set for
+			// every run that ended and null for exactly the interrupted ones --
+			// which is the only case the fallback covers.
+			time: _time(_search.completed_at || _search.created_at),
 		});
 
 		_el.runWarn.hidden = _search.status != 'running';
@@ -879,24 +999,35 @@ var Zotero_Pharos_Discovery = new function () {
 		return row;
 	}
 
+	/**
+	 * Year, venue, providers, citations.
+	 *
+	 * Labelled, as the web labels them (DiscoveryView.tsx:61-68). Bare values
+	 * joined by a middle dot left the reader nothing to tell a venue from a
+	 * provider list -- and a venue that happens to read like a source name, which
+	 * "arXiv" does, was indistinguishable from one.
+	 */
 	function _cardMeta(result) {
 		let meta = _div('pharos-ds-card-meta');
 		let bits = [];
-		// Authors first, and kept: the web client omits them entirely, and on a
-		// desktop row they are what identifies a paper you already know.
+		// Authors first, unlabelled, and kept: the web client omits them
+		// entirely, and on a desktop row they are what identifies a paper you
+		// already know. A list of names needs no label to be read as one.
 		if (result.authors && result.authors.length) {
 			bits.push(result.authors.slice(0, 4).join(', ')
 				+ (result.authors.length > 4 ? ' et al.' : ''));
 		}
 		if (result.year) {
-			bits.push(String(result.year));
+			bits.push(_fmt('pharos-discovery-meta-year', { year: String(result.year) }));
 		}
 		if (result.venue) {
-			bits.push(result.venue);
+			bits.push(_fmt('pharos-discovery-meta-venue', { venue: result.venue }));
 		}
 		// A card answers "who corroborated this paper", which is not the same
 		// list as the run's requested sources.
-		bits.push(Zotero.Pharos.Discovery.sourceLabel(result.sources));
+		bits.push(_fmt('pharos-discovery-meta-sources', {
+			sources: Zotero.Pharos.Discovery.sourceLabel(result.sources),
+		}));
 		// arXiv never sets one, so an arXiv-only result has null here and the
 		// segment is dropped rather than printed as 0.
 		if (typeof result.citation_count == 'number') {
@@ -1118,11 +1249,11 @@ var Zotero_Pharos_Discovery = new function () {
 			return;
 		}
 		if (!_el.fileProject.value) {
-			_line(_el.notice, _str('pharos-discovery-need-project'), true);
+			_notice(_str('pharos-discovery-need-project'), true);
 			return;
 		}
 		if (!_selected.size) {
-			_line(_el.notice, _str('pharos-discovery-need-selection'), true);
+			_notice(_str('pharos-discovery-need-selection'), true);
 			return;
 		}
 
@@ -1139,7 +1270,10 @@ var Zotero_Pharos_Discovery = new function () {
 					? project.sources.map(s => s.result_id)
 					: [],
 			});
-			_reportFiling(outcome, project ? project.name : projectID);
+			// _projectName, never the raw project.name: the suffix that says a
+			// project is archived is the reason the picker was rebuilt, and
+			// dropping it one element further along is the same regression.
+			_reportFiling(outcome, project ? _projectName(project) : projectID);
 			_selected = new Set(outcome.failedIDs);
 			// The 已在当前项目 chips are read from the project's own sources, so
 			// they are stale until the list is re-fetched.
@@ -1148,7 +1282,7 @@ var Zotero_Pharos_Discovery = new function () {
 		}
 		catch (e) {
 			Zotero.logError(e);
-			_line(_el.notice, _fmt('pharos-discovery-file-error', { error: _reason(e) }), true);
+			_notice(_fmt('pharos-discovery-file-error', { error: _reason(e) }), true);
 		}
 		finally {
 			_filing = false;
@@ -1167,7 +1301,7 @@ var Zotero_Pharos_Discovery = new function () {
 		if (outcome.failed) {
 			text += _fmt('pharos-discovery-file-failed', { count: outcome.failed });
 		}
-		_line(_el.notice, text + _stop(), !!outcome.failed);
+		_notice(text + _stop(), !!outcome.failed);
 	}
 
 	/**
@@ -1186,7 +1320,7 @@ var Zotero_Pharos_Discovery = new function () {
 			return;
 		}
 		if (!_selected.size) {
-			_line(_el.notice, _str('pharos-discovery-need-selection'), true);
+			_notice(_str('pharos-discovery-need-selection'), true);
 			return;
 		}
 
@@ -1218,7 +1352,7 @@ var Zotero_Pharos_Discovery = new function () {
 		}
 		catch (e) {
 			Zotero.logError(e);
-			_line(_el.notice, _fmt('pharos-discovery-file-error', { error: _reason(e) }), true);
+			_notice(_fmt('pharos-discovery-file-error', { error: _reason(e) }), true);
 		}
 		finally {
 			_filing = false;

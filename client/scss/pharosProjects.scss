@@ -290,11 +290,6 @@
 	color: var(--fill-primary);
 }
 
-.pharos-pv-create-field {
-	display: flex;
-	flex-direction: column;
-}
-
 .pharos-pv-create-actions {
 	display: flex;
 	gap: 6px;
@@ -979,6 +974,8 @@
 	margin-block-start: 6px;
 }
 
+// The analysis MODE, in words -- never the model id, which used to occupy this
+// capsule and read as a third retrieval source beside arXiv and OpenAlex.
 .pharos-pv-analysis {
 	@extend .pharos-pv-chip;
 
@@ -986,6 +983,15 @@
 		background: var(--pharos-pv-accent-soft);
 		color: var(--color-accent);
 	}
+}
+
+// Deliberately NOT a chip. The model is a footnote to the mode, and a second
+// capsule beside it would put the two back on the same footing.
+.pharos-pv-analysis-model {
+	min-width: 0;
+	font-size: 10.5px;
+	color: var(--fill-tertiary);
+	overflow-wrap: anywhere;
 }
 
 .pharos-pv-source-src {
@@ -1008,7 +1014,11 @@
 	}
 }
 
-// Backend free text. Rendered verbatim, no id.
+// Two things wear this: the localized "no model read this, and no full text was
+// downloaded" block on a rules source, and -- when one somehow arrives on an llm
+// row, which analyze_result is not supposed to allow -- the backend's own
+// sentence verbatim, no id. Both are the same fact at the same weight, which is
+// why they share a treatment.
 .pharos-pv-analysis-warning {
 	margin-block-start: 6px;
 	padding: 5px 8px;
@@ -1021,26 +1031,60 @@
 	overflow-wrap: anywhere;
 }
 
+// The three states are visually distinct on purpose, the way 文献探索 draws
+// them (scss/pharosDiscovery.scss, .pharos-ds-trick): a model's Chinese reading,
+// a sentence lifted out of the English abstract -- or the paper's own title
+// restated, which is what rule_summary() falls back to -- and nothing at all
+// used to arrive in one box under one accent heading, with the correction
+// beneath in the smallest text on the card.
+//
+// An unmodified .pharos-pv-source-insight is summary_zh, which only an llm row
+// has.
 .pharos-pv-source-insight {
 	margin-block-start: 6px;
 	font-size: 11.5px;
 	line-height: 1.65;
 	color: var(--fill-secondary);
 	overflow-wrap: anywhere;
+
+	&.is-ai,
+	&.is-extracted,
+	&.is-empty {
+		padding: 6px 9px;
+		border-radius: 6px;
+	}
+
+	&.is-ai {
+		background: var(--pharos-pv-accent-soft);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	// Cut out of the abstract by cue matching. Neutral, and explicitly not the
+	// accent: the accent in this sheet means a model produced it.
+	&.is-extracted {
+		background: var(--pharos-pv-soft);
+	}
+
+	&.is-empty {
+		border: 1px dashed var(--color-border);
+	}
 }
 
 .pharos-pv-source-insight-label {
 	font-size: 10.5px;
 	font-weight: 600;
-	color: var(--color-accent);
+	color: var(--fill-tertiary);
 	margin-block-end: 1px;
 }
 
-.pharos-pv-source-rules-note {
-	margin-block-start: 4px;
-	font-size: 10.5px;
-	line-height: 1.6;
+// The accent is reserved for the one state that earned it.
+.pharos-pv-source-insight.is-ai .pharos-pv-source-insight-label {
+	color: var(--color-accent);
+}
+
+.pharos-pv-source-insight.is-empty .pharos-pv-source-insight-text {
 	color: var(--fill-tertiary);
+	font-style: italic;
 }
 
 // ----------------------------------------------------------- evidence note
@@ -1127,7 +1171,22 @@
 	align-items: flex-start;
 	gap: 7px;
 	padding: 8px 12px;
-	background: var(--pharos-pv-warn-soft);
+	// Two layers, and the opaque one is the point. --pharos-pv-warn-soft is a
+	// ~14% wash (~11% in dark), and a sticky element with a translucent
+	// background does not hide what it is pinned over -- nothing underneath is
+	// opaque either, since .pharos-pv-panel declares no background and
+	// .pharos-pv-artifact-card is padding only, so the first opaque layer is
+	// #pharos-pv-root. Once a stage has enough records to scroll, artifact titles
+	// and bodies slid visibly through the one element in this window whose whole
+	// purpose is to stay legible above a record reading "95% accuracy". Painting
+	// the wash over --material-background composites to the colour it already
+	// had, and the notice is now genuinely opaque. 文献探索's sticky selection bar
+	// solves this the same way, with a flat --color-background.
+	background-color: var(--material-background);
+	background-image: linear-gradient(
+		var(--pharos-pv-warn-soft),
+		var(--pharos-pv-warn-soft)
+	);
 	border-block-end: var(--material-border);
 	border-inline-start: 2px solid var(--pharos-pv-warn-line);
 	font-size: 11.5px;
@@ -1151,12 +1210,22 @@
 
 // ========================================================== artifact cards
 
-.pharos-pv-artifact-card {
-	padding: 10px 12px;
+// The wrapper the record cards are built into, and the element that must sit
+// directly under the automation notice -- pharosProjectsTest.js asserts exactly
+// that, because anything between the two is a record that can be read without
+// the notice. It owns the separators so that the class does something: the rule
+// was `.pharos-pv-artifact-card + &` at the card, which works with or without a
+// wrapper, and left the wrapper set by the JS with no rule anywhere in the sheet.
+.pharos-pv-artifact-list {
+	min-width: 0;
 
-	& + & {
+	.pharos-pv-artifact-card + .pharos-pv-artifact-card {
 		border-block-start: var(--material-border);
 	}
+}
+
+.pharos-pv-artifact-card {
+	padding: 10px 12px;
 }
 
 .pharos-pv-artifact-top {
@@ -1269,4 +1338,18 @@
 	display: flex;
 	gap: 6px;
 	justify-content: flex-end;
+}
+
+// The second sentence of the rules disclosure -- where to get a model reading.
+//
+// Its own element rather than text joined in JS: English separates sentences
+// with a space and Chinese does not, so the separator belongs in the layout
+// where it can be a margin rather than a character somebody has to remember.
+.pharos-pv-analysis-where {
+	margin-inline-start: 0.35em;
+}
+
+:root:lang(zh) .pharos-pv-analysis-where,
+:root:lang(ja) .pharos-pv-analysis-where {
+	margin-inline-start: 0;
 }

@@ -1,11 +1,15 @@
 // The 文献探索 window.
 //
-// Its own stylesheet. This window used to link pharosDaily.css, which is still
-// the stylesheet for Research Projects: pharosProjects.xhtml links it and
-// pharosProjects.js builds .pharos-daily-paper / -title / -meta / -summary-text
-// / -actions rows and declares #pharos-daily-root / -toolbar / -summary /
-// -status / -list. Repurposing any of those names, or deleting the file as
-// dead, silently restyles Research Projects with nothing logged anywhere.
+// Its own stylesheet, and the only Pharos sheet this window links:
+// pharosDiscovery.xhtml points at pharosDiscovery.css. It used to link
+// pharosDaily.css, and the note that stood here claimed that file was still the
+// stylesheet for Research Projects. That stopped being true when the windows
+// were split, and the note outlived it -- which is worse than no note, because
+// it tells the next reader not to check. What is true now: pharosProjects.xhtml
+// links pharosProjects.css, pharosDaily.xhtml links pharosDailyView.css, and no
+// document links pharosDaily.css at all, so scss/pharosDaily.scss styles
+// nothing. Verify that yourself before treating it as live, and do not couple
+// this window back to it.
 // Nothing below uses a pharos-daily-* name.
 //
 // The prefix here is pharos-ds-, parallel to the digest's pharos-dv-, and state
@@ -191,17 +195,30 @@
 
 .pharos-ds-hitem-top {
 	display: flex;
-	align-items: center;
+	// flex-start rather than center, because the query below wraps to two
+	// lines; the dot's own margin puts it on the first of them.
+	align-items: flex-start;
 	gap: 6px;
 	min-width: 0;
 }
 
 // The run's outcome, at a glance. Four states, never three: a run that never
 // finished is not the same thing as one that failed, and neither is a partial.
+//
+// SHAPE carries the state and colour only reinforces it. `partial` means a
+// source died and results are missing, and roughly one man in twelve cannot
+// separate this gold from the teal beside it -- so a partial that differed by
+// hue alone would be read as a clean run, which is the one mistake this rail
+// exists to prevent. Every variant below survives its colour being removed, and
+// every state except `complete` also spells itself out in
+// .pharos-ds-hitem-state. Same rule the project chips state for themselves at
+// scss/pharosProjects.scss:1002.
 .pharos-ds-dot {
 	flex: none;
 	width: 6px;
 	height: 6px;
+	// Centres the dot on the first line of a 12px/1.45 query: (17.4 - 6) / 2.
+	margin-block-start: 6px;
 	border-radius: 50%;
 	background: var(--fill-tertiary);
 
@@ -209,11 +226,18 @@
 		background: var(--accent-teal);
 	}
 
+	// Half filled: some of what was asked for came back and some did not. The
+	// ring keeps the missing half visible against the rail rather than reading
+	// as a smaller dot.
 	&.is-partial {
-		background: var(--accent-gold);
+		background: linear-gradient(to right,
+			var(--accent-gold) 50%, transparent 50%);
+		box-shadow: inset 0 0 0 1px var(--accent-gold);
 	}
 
+	// The only shape in the set with corners.
 	&.is-error {
+		border-radius: 1px;
 		background: var(--accent-red);
 	}
 
@@ -225,13 +249,36 @@
 	}
 }
 
+// The outcome in words, for everything except a clean run. The dot alone is a
+// colour cue with a hover tooltip, and neither survives a reader who cannot
+// separate the hues and is not hovering.
+.pharos-ds-hitem-state {
+	margin-block-start: 2px;
+	padding-inline-start: 12px;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--fill-secondary);
+
+	&.is-error {
+		color: var(--accent-red);
+	}
+}
+
 .pharos-ds-hitem-query {
 	flex: 1;
 	min-width: 0;
 	font-size: 12px;
+	// Two lines, as the web rail does at a comparable width (224px there, 212px
+	// here). A research question is long -- the module's own placeholder is
+	// 'KV cache compression for long-context video generation' -- so a single
+	// clamped line truncates mid-phrase and two runs on adjacent topics become
+	// the same row.
+	line-height: 1.45;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
 	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .pharos-ds-hitem.is-active .pharos-ds-hitem-query {
@@ -458,9 +505,13 @@
 	font-variant-numeric: tabular-nums;
 }
 
-// The search button. `.pharos-ds-run` is also the class on the run container,
-// which is a collision inherited from the DOM contract; the element selector is
-// what keeps the two apart.
+// The search button, and the only element carrying .pharos-ds-run. The run
+// container used to share the class, with a comment here claiming the element
+// qualifier kept the two apart. It does not: a higher-specificity selector
+// overrides only the properties it re-declares, so the container's display,
+// flex-direction and min-width landed on the button, and every declaration
+// added to the container rule would have followed them. The container is
+// .pharos-ds-runbox now; the collision is gone rather than papered over.
 button.pharos-ds-run {
 	flex: none;
 	height: 28px;
@@ -489,6 +540,9 @@ button.pharos-ds-run {
 
 .pharos-ds-notice {
 	flex: none;
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
 	margin: 10px 16px 0;
 	padding: 7px 10px;
 	border-radius: 6px;
@@ -503,9 +557,25 @@ button.pharos-ds-run {
 	}
 }
 
+.pharos-ds-notice-text {
+	min-width: 0;
+}
+
+// Shown only when the notice describes something that can be attempted again.
+.pharos-ds-notice-retry {
+	flex: none;
+	padding: 0;
+	color: var(--color-accent);
+	font-size: 11.5px;
+
+	&:hover {
+		text-decoration: underline;
+	}
+}
+
 // ====================================================================== run
 
-.pharos-ds-run {
+.pharos-ds-runbox {
 	flex: none;
 	display: flex;
 	flex-direction: column;

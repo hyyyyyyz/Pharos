@@ -51,6 +51,17 @@ describe("Zotero.Pharos.Discovery", function () {
 		assert.notEqual(value, id, `missing string ${id}`);
 	}
 
+	/**
+	 * The same format the window uses, so a time assertion pins which FIELD was
+	 * rendered rather than how it was formatted.
+	 */
+	function fmtTime(iso) {
+		return new Intl.DateTimeFormat(Zotero.locale, {
+			dateStyle: 'medium',
+			timeStyle: 'short',
+		}).format(new Date(iso));
+	}
+
 	/** A LiteratureResultOut, with every field the window reads. */
 	function makeResult(overrides) {
 		return Object.assign({
@@ -866,6 +877,316 @@ describe("Zotero.Pharos.Discovery", function () {
 					assert.isNotEmpty(
 						doc.getElementById('pharos-ds-form-error').textContent
 					);
+				});
+			});
+
+		// The composer used to answer only after the button had been pressed, and
+		// the answer was wiped by the next keystroke. Nothing throws when it goes
+		// back to that; the round trip is simply spent finding out.
+		it("should answer an invalid form before the button is pressed", async function () {
+			await withWindow(() => [], function (win, doc) {
+				var run = doc.getElementById('pharos-discovery-search');
+				var error = doc.getElementById('pharos-ds-form-error');
+				var query = doc.getElementById('pharos-discovery-query');
+				var arxiv = doc.getElementById('pharos-ds-source-arxiv');
+				var openalex = doc.getElementById('pharos-ds-source-openalex');
+
+				function change(el) {
+					el.dispatchEvent(new win.Event('change'));
+				}
+				function type(el, value) {
+					el.value = value;
+					el.dispatchEvent(new win.Event('input'));
+				}
+
+				// An untouched empty box cannot be sent, but is not an error
+				// either: a red line under the field on open is nagging.
+				assert.isTrue(run.disabled);
+				assert.isEmpty(error.textContent);
+
+				// An unticked source pair is not silent just because the query is
+				// still empty -- that is the state nobody would think to check.
+				arxiv.checked = false;
+				change(arxiv);
+				openalex.checked = false;
+				change(openalex);
+				assert.equal(error.textContent,
+					Zotero.getString('pharos-discovery-need-source'));
+				assert.isTrue(run.disabled);
+
+				openalex.checked = true;
+				change(openalex);
+				assert.isEmpty(error.textContent);
+
+				type(query, 'a');
+				assert.isNotEmpty(error.textContent, 'a one-character query said nothing');
+				assert.isTrue(run.disabled);
+
+				type(query, 'kv cache');
+				assert.isEmpty(error.textContent);
+				assert.isFalse(run.disabled);
+			});
+		});
+
+		// A partial run is one where a source died and results are missing. It
+		// used to differ from a clean run by the hue of a 6px dot and a hover
+		// tooltip, which is nothing at all to a reader who cannot separate gold
+		// from teal -- and a partial run's lower result count is indistinguishable
+		// from a genuinely narrower query.
+		it("should say in words that a run was not clean", async function () {
+			await withWindow((method, path) => {
+				if (path == '/api/discovery/searches') {
+					return [
+						makeSearch({ id: 's-ok', query: 'clean run' }),
+						makeSearch({
+							id: 's-part',
+							query: 'partial run',
+							status: 'partial',
+							errors: { openalex: 'HTTP 500' },
+						}),
+						makeSearch({ id: 's-err', query: 'failed run', status: 'error' }),
+						makeSearch({ id: 's-huh', query: 'unknown status', status: 'queued' }),
+					];
+				}
+				return [];
+			}, function (win, doc) {
+				var rows = doc.querySelectorAll('.pharos-ds-hitem');
+				assert.lengthOf(rows, 4);
+
+				var partial = Zotero.getString('pharos-discovery-status-partial');
+				var failed = Zotero.getString('pharos-discovery-status-error');
+
+				// complete is the one state allowed to be silent: nothing is
+				// missing, so there is nothing to disclose.
+				assert.notOk(rows[0].querySelector('.pharos-ds-hitem-state'));
+				assert.notInclude(rows[0].textContent, partial);
+
+				assert.equal(rows[1].querySelector('.pharos-ds-hitem-state').textContent,
+					partial);
+				assert.equal(rows[2].querySelector('.pharos-ds-hitem-state').textContent,
+					failed);
+				// statusStringID fails closed, and the visible word follows it.
+				assert.equal(rows[3].querySelector('.pharos-ds-hitem-state').textContent,
+					failed);
+
+				// The dot still carries the state too, in a shape per state rather
+				// than a hue per state.
+				assert.isTrue(rows[0].querySelector('.pharos-ds-dot')
+					.classList.contains('is-complete'));
+				assert.isTrue(rows[1].querySelector('.pharos-ds-dot')
+					.classList.contains('is-partial'));
+				assert.isTrue(rows[3].querySelector('.pharos-ds-dot')
+					.classList.contains('is-error'));
+			});
+		});
+
+		// The rail is 212px and a research question is long -- the module's own
+		// placeholder is 'KV cache compression for long-context video generation'.
+		// Clamped to one line, two runs on adjacent topics become the same row.
+		it("should give a rail query two lines rather than one clipped one",
+			async function () {
+				await withWindow((method, path) => {
+					if (path == '/api/discovery/searches') {
+						return [makeSearch({
+							query: 'KV cache compression for long-context video generation',
+						})];
+					}
+					return [];
+				}, function (win, doc) {
+					var style = win.getComputedStyle(
+						doc.querySelector('.pharos-ds-hitem-query'));
+					assert.equal(style.getPropertyValue('-webkit-line-clamp'), '2');
+					assert.notEqual(style.whiteSpace, 'nowrap');
+				});
+			});
+
+		// The header dates a saved record, and a record is dated by when it
+		// finished. completed_at is written in the same commit that moves the
+		// status off "running", so it is set for every run that ended.
+		it("should date a run by when it finished", async function () {
+			await withWindow((method, path) => {
+				if (path == '/api/discovery/search') {
+					return makeSearch({
+						created_at: '2026-08-01T10:00:00+00:00',
+						completed_at: '2026-08-02T15:30:00+00:00',
+					});
+				}
+				return [];
+			}, async function (win, doc) {
+				doc.getElementById('pharos-discovery-query').value = 'kv cache';
+				await win.Zotero_Pharos_Discovery.search();
+
+				var meta = doc.getElementById('pharos-ds-run-meta').textContent;
+				assert.include(meta, fmtTime('2026-08-02T15:30:00+00:00'));
+				assert.notInclude(meta, fmtTime('2026-08-01T10:00:00+00:00'));
+			});
+		});
+
+		it("should fall back to the start time for a run that never finished",
+			async function () {
+				// The only case completed_at is null, and the only case the two
+				// agree.
+				await withWindow((method, path) => {
+					if (path == '/api/discovery/search') {
+						return makeSearch({
+							status: 'running',
+							created_at: '2026-08-01T10:00:00+00:00',
+							completed_at: null,
+						});
+					}
+					return [];
+				}, async function (win, doc) {
+					doc.getElementById('pharos-discovery-query').value = 'kv cache';
+					await win.Zotero_Pharos_Discovery.search();
+					assert.include(doc.getElementById('pharos-ds-run-meta').textContent,
+						fmtTime('2026-08-01T10:00:00+00:00'));
+				});
+			});
+
+		// Bare values joined by a middle dot leave nothing to say which token is
+		// the venue and which is the provider list, and "arXiv" is legitimately
+		// either.
+		it("should label the venue and the source list apart", async function () {
+			await withWindow((method, path) => {
+				if (path == '/api/discovery/search') {
+					return makeSearch({
+						results: [makeResult({
+							venue: 'arXiv',
+							sources: ['arxiv', 'openalex'],
+							citation_count: 12,
+						})],
+					});
+				}
+				return [];
+			}, async function (win, doc) {
+				doc.getElementById('pharos-discovery-query').value = 'kv cache';
+				await win.Zotero_Pharos_Discovery.search();
+
+				var meta = doc.querySelector('.pharos-ds-card-meta').textContent;
+				assert.include(meta, Zotero.ftl.formatValueSync(
+					'pharos-discovery-meta-venue', { venue: 'arXiv' }));
+				assert.include(meta, Zotero.ftl.formatValueSync(
+					'pharos-discovery-meta-sources', {
+						sources: Zotero.Pharos.Discovery.sourceLabel(['arxiv', 'openalex']),
+					}));
+				assert.include(meta, Zotero.ftl.formatValueSync(
+					'pharos-discovery-citations', { count: 12 }));
+			});
+		});
+
+		// The one path in this window that waits on the network without saying
+		// so: the previous run stayed on screen unchanged, and a failure left no
+		// way forward short of guessing that the same rail row would retry.
+		it("should show a pending state and a retry when reopening needs a request",
+			async function () {
+				var release;
+				var gate = new Promise((resolve) => {
+					release = resolve;
+				});
+				var detailCalls = 0;
+				await withWindow((method, path) => {
+					if (path == '/api/discovery/searches') {
+						// A row that arrived without its results, which is the only
+						// thing the detail endpoint is there for.
+						return [makeSearch({
+							id: 's9', query: 'earlier question', results: undefined,
+						})];
+					}
+					if (path == '/api/discovery/searches/s9') {
+						detailCalls++;
+						if (detailCalls == 1) {
+							return gate.then(() => {
+								throw httpError(500, 'boom');
+							});
+						}
+						return makeSearch({ id: 's9', query: 'earlier question' });
+					}
+					return [];
+				}, async function (win, doc) {
+					var text = doc.getElementById('pharos-ds-notice-text');
+					var retry = doc.getElementById('pharos-ds-notice-retry');
+
+					doc.querySelector('.pharos-ds-hitem').click();
+					await Zotero.Promise.delay(30);
+					assert.equal(text.textContent,
+						Zotero.getString('pharos-discovery-opening'));
+
+					release();
+					await Zotero.Promise.delay(30);
+					assert.include(text.textContent, 'boom');
+					assert.isFalse(retry.hidden);
+					assert.isNotEmpty(retry.textContent);
+
+					retry.click();
+					await Zotero.Promise.delay(30);
+					assert.equal(detailCalls, 2, 'the retry did not ask again');
+					assert.equal(doc.getElementById('pharos-ds-run-query').textContent,
+						'earlier question');
+					assert.isTrue(doc.getElementById('pharos-ds-notice').hidden);
+					assert.isTrue(retry.hidden);
+				});
+			});
+
+		// The picker spells the archived state out; the confirmation used to
+		// report the raw project.name, which is the same regression one element
+		// further along.
+		it("should keep the archived suffix in the filing confirmation",
+			async function () {
+				await withWindow((method, path) => {
+					if (path == '/api/projects') {
+						return [{
+							id: 'p2', name: 'Old Work', status: 'archived', sources: [],
+						}];
+					}
+					if (path == '/api/discovery/search') {
+						return makeSearch();
+					}
+					if (path == '/api/projects/p2/sources') {
+						return {};
+					}
+					return [];
+				}, async function (win, doc) {
+					doc.getElementById('pharos-discovery-query').value = 'kv cache';
+					await win.Zotero_Pharos_Discovery.search();
+
+					var box = doc.querySelector('.pharos-ds-card input[type="checkbox"]');
+					box.checked = true;
+					box.dispatchEvent(new win.Event('change'));
+
+					var picker = doc.getElementById('pharos-ds-file-project');
+					picker.value = 'p2';
+					picker.dispatchEvent(new win.Event('change'));
+
+					doc.getElementById('pharos-ds-file').click();
+					await Zotero.Promise.delay(60);
+
+					var notice = doc.getElementById('pharos-ds-notice-text').textContent;
+					assert.include(notice, Zotero.ftl.formatValueSync(
+						'pharos-discovery-file-result', {
+							name: Zotero.ftl.formatValueSync(
+								'pharos-discovery-project-archived', { name: 'Old Work' }),
+							added: 1,
+						}));
+					assert.notInclude(notice, Zotero.ftl.formatValueSync(
+						'pharos-discovery-file-result', { name: 'Old Work', added: 1 }),
+					'archived suffix dropped from the confirmation');
+				});
+			});
+
+		// The container and the search button used to share .pharos-ds-run, with
+		// a comment claiming the element qualifier separated them. It does not: a
+		// higher-specificity selector overrides only what it re-declares, so every
+		// property the container rule adds and the button rule does not name lands
+		// on the button, silently.
+		it("should not style the run container and the search button through one class",
+			async function () {
+				await withWindow(() => [], function (win, doc) {
+					var button = doc.getElementById('pharos-discovery-search');
+					var box = doc.getElementById('pharos-ds-run');
+					var shared = Array.from(button.classList)
+						.filter(name => box.classList.contains(name));
+					assert.lengthOf(shared, 0,
+						`the button and the run container share ${shared.join(', ')}`);
 				});
 			});
 	});

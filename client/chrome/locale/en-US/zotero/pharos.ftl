@@ -317,6 +317,10 @@ pharos-discovery-history-failed = Could not load the search history.
 # $count (Number) - results that run left behind
 pharos-discovery-history-meta = { $time } · { $count } papers
 pharos-discovery-retry = Retry
+# Only ever seen when a history row arrived without its results and the detail
+# has to be fetched. Nothing on screen used to change while that request was in
+# flight -- the previous run stayed up, with no way to tell the click landed.
+pharos-discovery-opening = Opening this run…
 # $error (String)
 pharos-discovery-open-failed = Could not open this run: { $error }
 
@@ -385,6 +389,19 @@ pharos-discovery-file-error = Could not file into the project: { $error }
 ## Literature discovery · result card
 
 pharos-discovery-rank-tooltip = Rank within this run
+# The four segments of a card's meta row. All labelled, as the web labels them:
+# bare values joined by a middle dot leave no way to tell the venue from the
+# provider list, and "arXiv" can legitimately be either.
+# $year (String) - the publication year, already stringified by the window
+# English has no year particle, so the value stands alone here. The id exists so
+# that each locale decides for itself; zh-CN appends 年.
+pharos-discovery-meta-year = { $year }
+# $venue (String) - the journal or conference
+pharos-discovery-meta-venue = In: { $venue }
+# $sources (String) - the providers that corroborated this paper, already joined
+#   by the window with pharos-discovery-source-separator. NOT the run's own
+#   requested source list.
+pharos-discovery-meta-sources = Sources: { $sources }
 # $count (Number) - times the paper has been cited
 pharos-discovery-citations = Cited { $count } times
 # Tooltip on the linked title. Zotero.launchURL hands the link to the system
@@ -394,7 +411,10 @@ pharos-discovery-pdf = View PDF
 
 pharos-discovery-trick-label = Key idea
 pharos-discovery-trick-pending = No Chinese key idea yet
-pharos-discovery-trick-empty = The model returned no key idea
+# "Chinese", as in -trick-pending above: what a model produces here is a Chinese
+# reading, and dropping the word makes an empty result read as a missing English
+# one.
+pharos-discovery-trick-empty = The model returned no Chinese key idea
 pharos-discovery-trick-extracted-tooltip = A sentence taken straight from the abstract, unread by any model
 pharos-discovery-abstract-label = Abstract (English)
 
@@ -429,6 +449,11 @@ pharos-discovery-mode-llm = AI reading (Chinese)
 # server's own English sentence goes in the title of the same block, so the wire
 # value stays inspectable without being the only surface it has.
 pharos-discovery-mode-rules-detail = Sentences are extracted from the title and abstract only. No model was called, and no full text was downloaded or read. An empty field means the abstract did not say.
+# Follows the sentence above. That one says where the extract came from; this
+# one says where to go for a model reading -- the control that does it lives only
+# in the Discovery window, so telling the reader to press it here would name a
+# button that does not exist on this screen.
+pharos-projects-source-rules-where = Open this paper in Discovery to generate a model reading.
 # $model (String) - the model the server recorded
 pharos-discovery-model = Read by { $model }
 pharos-discovery-model-unknown = Reading model not recorded

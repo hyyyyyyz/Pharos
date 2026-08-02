@@ -125,6 +125,32 @@ Zotero.Pharos.Projects = new function () {
 	 * needing an argument belongs in the window's own _fmt helper, which goes
 	 * through Zotero.ftl.formatValueSync.
 	 */
+	/**
+	 * One of those five, degraded to its key rather than thrown.
+	 *
+	 * `Zotero.getString(id)` THROWS in en-US for an id Fluent cannot resolve
+	 * (intl.js:178-180), which is right for a caller that wants to know and
+	 * wrong inside a builder: a stage, type or status value from a newer backend
+	 * would take saveArtifactAsNote() down and the note would never be written.
+	 * The projects window wraps every one of these in its own _label() for
+	 * exactly this reason and says so; the note path called them bare and so
+	 * bypassed the guard. The raw key is at least a legible placeholder, and the
+	 * throw is still logged.
+	 *
+	 * @param {Function} lookup - one of the five helpers below
+	 * @param {String} key
+	 * @return {String}
+	 */
+	function _label(lookup, key) {
+		try {
+			return lookup(key);
+		}
+		catch (e) {
+			Zotero.logError(e);
+			return String(key);
+		}
+	}
+
 	this.stageLabel = stage => Zotero.getString('pharos-projects-stage-' + stage);
 	this.stageShort = stage => Zotero.getString('pharos-projects-stage-' + stage + '-short');
 	this.stageNote = stage => Zotero.getString('pharos-projects-stage-' + stage + '-note');
@@ -478,10 +504,14 @@ Zotero.Pharos.Projects = new function () {
 		let esc = str => Zotero.Utilities.htmlSpecialChars(String(str || ''));
 		let parts = [
 			`<h2>${esc(artifact.title)}</h2>`,
+			// Through _label(), never bare: an enum value this build has never
+			// seen would otherwise throw out of here in en-US and the export would
+			// fail with "Localized string not available for pharos-projects-type-…"
+			// rather than write the note.
 			`<p>${esc(project.name)} · `
-				+ `${esc(this.stageLabel(artifact.stage))} · `
-				+ `${esc(this.typeLabel(artifact.type))} · `
-				+ `${esc(this.statusLabel(artifact.status))}</p>`,
+				+ `${esc(_label(this.stageLabel, artifact.stage))} · `
+				+ `${esc(_label(this.typeLabel, artifact.type))} · `
+				+ `${esc(_label(this.statusLabel, artifact.status))}</p>`,
 		];
 		if (artifact.body) {
 			// Written by a person or a model into a plain-text field, so newlines

@@ -306,6 +306,9 @@ pharos-discovery-history-failed = 无法读取检索历史。
 # $count (Number) - 该次检索留下的结果数
 pharos-discovery-history-meta = { $time } · { $count } 篇
 pharos-discovery-retry = 重试
+# 只有历史行没带 results、需要单独取详情时才会出现。请求在飞的时候屏幕上
+# 原本什么都不变，上一次运行还留在那里，读者无从知道点击有没有生效。
+pharos-discovery-opening = 正在打开检索结果…
 # $error (String)
 pharos-discovery-open-failed = 无法打开这次检索：{ $error }
 
@@ -337,9 +340,10 @@ pharos-discovery-notice-error = 所有来源都失败了。这次运行已经保
 
 ## 文献探索 · 批量加入项目
 
-pharos-discovery-select-all = 全选
+# 这两条按网页版逐字对齐：同一个操作区在两个客户端上不该有两种说法。
+pharos-discovery-select-all = 选择全部
 # $count (Number) - 已勾选的论文数
-pharos-discovery-selected = 已选 { $count } 篇
+pharos-discovery-selected = { $count } 篇已选择
 pharos-discovery-add-to-project = 加入项目
 pharos-discovery-adding = 正在加入…
 # 项目下拉框的标签与提示，不再是弹窗提问。
@@ -371,6 +375,15 @@ pharos-discovery-file-error = 加入项目失败：{ $error }
 ## 文献探索 · 结果卡片
 
 pharos-discovery-rank-tooltip = 本次检索中的排序位次
+# 卡片信息行的四段。全部带标签，和网页版一致：光秃秃的值用「·」串起来时，
+# 读者分不出哪一段是刊物名、哪一段是来源列表——而「arXiv」两边都可能出现。
+# $year (String) - 出版年，窗口已转成字符串
+pharos-discovery-meta-year = { $year } 年
+# $venue (String) - 刊物或会议名
+pharos-discovery-meta-venue = 刊载：{ $venue }
+# $sources (String) - 佐证这篇论文的来源，已由窗口用
+#   pharos-discovery-source-separator 拼好。不是本次检索请求的来源列表。
+pharos-discovery-meta-sources = 来源：{ $sources }
 # $count (Number) - 被引次数
 pharos-discovery-citations = 引用 { $count } 次
 # 标题链接的提示。链接由 Zotero.launchURL 交给系统浏览器打开，所以这里说明白。
@@ -379,7 +392,7 @@ pharos-discovery-pdf = 查看 PDF
 
 pharos-discovery-trick-label = 核心思路
 pharos-discovery-trick-pending = 尚未生成中文核心思路
-pharos-discovery-trick-empty = 模型没有返回核心思路
+pharos-discovery-trick-empty = AI 未返回中文核心思路
 pharos-discovery-trick-extracted-tooltip = 摘要里的原句，未经模型阅读
 pharos-discovery-abstract-label = 英文摘要
 
@@ -409,6 +422,9 @@ pharos-discovery-mode-llm = AI 中文解读
 # analysis_warning 的本地化替身，直接渲染在卡片里。服务端那句英文原文
 # 放在同一块的 title 上，保证线上返回值仍然可查，但不再是唯一的呈现面。
 pharos-discovery-mode-rules-detail = 只从标题和摘要里抽取原句，没有调用模型，也没有下载或阅读全文。空字段表示摘要里没有明确写。
+# 接在上一句之后。上一句说明了这份摘录是怎么来的，这一句说去哪里换成模型解读——
+# 「精读」那个控件只存在于文献探索窗口，在这里说「点精读」就是指向一个不存在的按钮。
+pharos-projects-source-rules-where = 可在「文献探索」中打开这篇论文，生成模型解读。
 # $model (String) - 服务端记下的解读模型名
 pharos-discovery-model = 解读模型：{ $model }
 pharos-discovery-model-unknown = 解读模型未记录

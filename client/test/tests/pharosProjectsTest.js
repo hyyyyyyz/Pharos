@@ -158,6 +158,40 @@ describe("Zotero.Pharos.Projects", function () {
 			assert.include(note.getNote(), 'Empty');
 		});
 
+		it("should survive a record type this build has never seen", async function () {
+			// The label helpers are bare Zotero.getString() calls, and an id Fluent
+			// cannot resolve THROWS in en-US (intl.js:178-180) while returning the
+			// bare id in zh-CN. So a stage, type or status from a newer backend took
+			// the whole export down -- in en-US only, which is not the locale this
+			// is developed in. The throw is forced here so the test fails in either.
+			var orig = Zotero.getString;
+			Zotero.getString = function (...args) {
+				if (args[0] == 'pharos-projects-type-a-new-type') {
+					throw new Error('Localized string not available for ' + args[0]);
+				}
+				return orig.apply(Zotero, args);
+			};
+			try {
+				var note = await track(Zotero.Pharos.Projects.saveArtifactAsNote({
+					id: 'a6',
+					title: 'From a newer backend',
+					type: 'a_new_type',
+					stage: 'claims',
+					status: 'ready',
+					body: 'Written anyway.',
+				}, project));
+				var html = note.getNote();
+				assert.include(html, 'From a newer backend');
+				assert.include(html, 'Written anyway.');
+				// The key itself, which is at least a legible placeholder. What must
+				// not happen is the note never being written at all.
+				assert.include(html, 'a_new_type');
+			}
+			finally {
+				Zotero.getString = orig;
+			}
+		});
+
 		it("should file the note into a collection when asked", async function () {
 			var collection = await createDataObject('collection');
 			var note = await track(Zotero.Pharos.Projects.saveArtifactAsNote(
@@ -184,7 +218,7 @@ describe("Zotero.Pharos.Projects", function () {
 				updated_at: '2026-02-03T04:05:06',
 				automation_notice: NOTICE,
 				source_count: 2,
-				artifact_count: 2,
+				artifact_count: 3,
 				sources: [
 					{
 						id: 's1',
@@ -218,7 +252,10 @@ describe("Zotero.Pharos.Projects", function () {
 							sources: ['openalex'],
 							analysis_mode: 'rules',
 							analysis_model: null,
-							summary_zh: '规则抽出来的摘要。',
+							summary_zh: '',
+							// What rule_summary() produces when no cue matched: the
+							// paper's own cleaned title, restated.
+							core_trick: 'A Paper Nobody Read',
 						},
 					},
 				],
@@ -230,6 +267,7 @@ describe("Zotero.Pharos.Projects", function () {
 						status: 'verified',
 						title: 'Recall drops three points',
 						body: '95% accuracy.',
+						created_at: '2026-01-20T00:00:00',
 						updated_at: '2026-02-01T00:00:00',
 					},
 					{
@@ -239,7 +277,20 @@ describe("Zotero.Pharos.Projects", function () {
 						status: 'draft',
 						title: 'Layered quantisation should hold recall',
 						body: '',
+						created_at: '2026-01-09T00:00:00',
 						updated_at: '2026-01-10T00:00:00',
+					},
+					{
+						// Never edited, which is every record until someone PATCHes
+						// it: ProjectArtifact.updated_at defaults to NULL.
+						id: 'a3',
+						stage: 'planning',
+						type: 'experiment_plan',
+						status: 'draft',
+						title: 'Freeze the metrics before running anything',
+						body: '',
+						created_at: '2026-01-08T00:00:00',
+						updated_at: null,
 					},
 				],
 			}, overrides);
@@ -338,11 +389,12 @@ describe("Zotero.Pharos.Projects", function () {
 			});
 
 		it("should load and apply its own stylesheet", async function () {
-			// Four silent failures in one assertion block. A stylesheet that is
+			// Five silent failures in one assertion block. A stylesheet that is
 			// not linked, a [hidden] with no rule behind it (scss/base has no
 			// global one, so an element toggled with .hidden = true stays on
-			// screen), a notice that is not sticky, and a notice painted in the
-			// old low-contrast italic all fail with nothing logged anywhere.
+			// screen), a notice that is not sticky, a notice painted in the old
+			// low-contrast italic, and a sticky notice with a see-through
+			// background all fail with nothing logged anywhere.
 			stubBackend([project()]);
 			var win = await open();
 			try {
@@ -352,6 +404,15 @@ describe("Zotero.Pharos.Projects", function () {
 				assert.notEqual(style.fontStyle, 'italic');
 				assert.notEqual(style.backgroundColor, 'rgba(0, 0, 0, 0)',
 					"the amber callout, not a bare run of text");
+				// OPAQUE. --pharos-pv-warn-soft is a ~14% wash, and nothing under
+				// this element is opaque either -- .pharos-pv-panel declares no
+				// background and .pharos-pv-artifact-card is padding only -- so a
+				// translucent background here let record titles and bodies scroll
+				// visibly through the one element whose whole purpose is to stay
+				// legible above a record reading "95% accuracy". Only manifests
+				// once a stage has enough records to scroll, so nothing catches it.
+				assert.notInclude(style.backgroundColor, 'rgba(',
+					"a sticky notice needs an opaque background");
 
 				var error = win.document.getElementById('pharos-pv-error');
 				assert.isTrue(error.hidden);
@@ -372,16 +433,37 @@ describe("Zotero.Pharos.Projects", function () {
 				var cards = win.document.querySelectorAll('.pharos-pv-source-card');
 				assert.lengthOf(cards, 2);
 
+				// The chip says the MODE, in words. It printed result.analysis_model
+				// before, so 「AI 深读」 appeared only when the backend had recorded
+				// NO model, and the normal case was a bare `deepseek-chat` in a row
+				// of lowercase wire ids -- read as a third retrieval source beside
+				// arxiv and openalex, with the fact that a model wrote the paragraph
+				// below never stated in words anywhere on the screen.
+				// RESEARCH_WORKFLOW.md §10 item 4 asks for the mode to be shown.
 				var llm = cards[0].querySelector('.pharos-pv-analysis');
 				assert.ok(llm);
-				assert.equal(llm.textContent, 'a-test-model');
+				assert.equal(llm.textContent, Zotero.getString('pharos-analysis-mode-llm'));
 				assert.isTrue(llm.classList.contains('is-ai'));
+				// The model is the footnote to it, and not a second capsule.
+				var model = cards[0].querySelector('.pharos-pv-analysis-model');
+				assert.ok(model, "the model is still named");
+				assert.include(model.textContent, 'a-test-model');
+				assert.notInclude(llm.textContent, 'a-test-model');
+				// Display names, never the raw wire ids: sourceName() exists
+				// precisely so no UI prints "arxiv".
+				assert.deepEqual(
+					Array.from(cards[0].querySelectorAll('.pharos-pv-source-src'),
+						el => el.textContent),
+					['arXiv', 'OpenAlex']
+				);
 				assert.equal(
 					cards[0].querySelector('.pharos-pv-analysis-warning').textContent,
 					'Only the abstract was available.'
 				);
 				assert.include(cards[0].textContent, '模型写的中文速览。');
-				assert.include(cards[0].textContent, '分层量化。');
+				var trick = cards[0].querySelector('.pharos-pv-source-insight.is-ai');
+				assert.ok(trick, "a model's core idea keeps the accent treatment");
+				assert.include(trick.textContent, '分层量化。');
 				// The desktop's own author line, which the web omits entirely.
 				assert.include(cards[0].querySelector('.pharos-pv-source-meta').textContent,
 					'et al.');
@@ -389,10 +471,79 @@ describe("Zotero.Pharos.Projects", function () {
 
 				var rules = cards[1].querySelector('.pharos-pv-analysis');
 				assert.ok(rules);
+				assert.equal(rules.textContent, Zotero.getString('pharos-analysis-mode-rules'));
 				assert.isFalse(rules.classList.contains('is-ai'));
-				assert.notEqual(rules.textContent, llm.textContent);
-				assert.ok(cards[1].querySelector('.pharos-pv-source-rules-note'),
-					"a rules summary says so rather than passing as a reading");
+				assert.isNull(cards[1].querySelector('.pharos-pv-analysis-model'),
+					"there is no model to name");
+
+				// The disclosure is a visible block ABOVE the content, in the words
+				// 文献探索 uses -- and it is the only sentence in this window that
+				// says the other half of it: no full text was downloaded or read.
+				var warn = cards[1].querySelector('.pharos-pv-analysis-warning');
+				assert.ok(warn, "a rules summary says so rather than passing as a reading");
+				assert.include(warn.textContent,
+					Zotero.getString('pharos-discovery-mode-rules-detail'));
+				// And it names where to get a model reading. The control that
+				// does it lives only in 文献探索, so this window has to say which
+				// window rather than name a button that is not on this screen.
+				assert.include(warn.textContent,
+					Zotero.getString('pharos-projects-source-rules-where'));
+				// pharos-discovery-rules-note is note BODY copy, and it tells the
+				// reader to press 「精读」 -- a control that exists only in the other
+				// window, where it is called 生成核心思路.
+				assert.notInclude(cards[1].textContent,
+					Zotero.getString('pharos-discovery-rules-note'));
+
+				// core_trick on a rules row is a sentence cut out of the English
+				// abstract, or -- as here -- the paper's own title restated. Never
+				// the accent this sheet reserves for a model's reading.
+				var extracted = cards[1].querySelector('.pharos-pv-source-insight.is-extracted');
+				assert.ok(extracted, "and the extraction is drawn as an extraction");
+				assert.isFalse(extracted.classList.contains('is-ai'));
+				assert.isNull(cards[1].querySelector('.pharos-pv-source-insight.is-ai'));
+			}
+			finally {
+				win.close();
+			}
+		});
+
+		it("should read a source with no analysis mode as a rules extraction", async function () {
+			// Discovery.isRules() is `!= 'llm'` on purpose. This card's own test
+			// was `== 'rules'` and it failed OPEN: a mode a newer backend added, or
+			// a payload that reached this render path without the field, drew
+			// 核心思路 with no disclaimer and no chip at all -- a rules extraction
+			// with ZERO provenance rather than a mislabelled one, which is worse,
+			// because the reader is handed nothing to distrust. Silent in every
+			// locale, and unreachable only while the Pydantic Literal holds.
+			var payload = project();
+			delete payload.sources[0].result.analysis_mode;
+			delete payload.sources[0].result.analysis_model;
+			payload.sources[0].result.summary_zh = '';
+			stubBackend([payload]);
+			var win = await open();
+			try {
+				var card = win.document.querySelector('.pharos-pv-source-card');
+				var chip = card.querySelector('.pharos-pv-analysis');
+				assert.ok(chip, "the chip is never conditional on a field being set");
+				assert.equal(chip.textContent, Zotero.getString('pharos-analysis-mode-rules'));
+				assert.isFalse(chip.classList.contains('is-ai'));
+				assert.isNull(card.querySelector('.pharos-pv-analysis-model'));
+
+				var warn = card.querySelector('.pharos-pv-analysis-warning');
+				assert.ok(warn);
+				assert.include(warn.textContent,
+					Zotero.getString('pharos-discovery-mode-rules-detail'));
+				// And it names where to get a model reading. The control that
+				// does it lives only in 文献探索, so this window has to say which
+				// window rather than name a button that is not on this screen.
+				assert.include(warn.textContent,
+					Zotero.getString('pharos-projects-source-rules-where'));
+				// The server's own English sentence stays inspectable without being
+				// the only surface the fact has.
+				assert.equal(warn.title, 'Only the abstract was available.');
+
+				assert.isNull(card.querySelector('.pharos-pv-source-insight.is-ai'),
+					"nothing on this card may read as a model's own reading");
 			}
 			finally {
 				win.close();
@@ -460,6 +611,110 @@ describe("Zotero.Pharos.Projects", function () {
 				}
 			});
 
+		it("should count the records it is actually showing", async function () {
+			// The head paired a kicker naming the VIEWED stage with the project's
+			// whole-project total, directly above a list filtered to that one
+			// stage -- so it could read 「文献探索 · 12 条研究记录」 over two cards,
+			// and nothing in the row separated the scope of the one from the
+			// other. The web renders viewedArtifacts.length here.
+			stubBackend([project()]);
+			var win = await open();
+			try {
+				var doc = win.document;
+				let head = () => doc.querySelector(
+					'.pharos-pv-panel.is-artifacts .pharos-pv-panel-count').textContent;
+				let rows = () => doc.querySelectorAll(
+					'.pharos-pv-panel.is-artifacts .pharos-pv-artifact-card').length;
+				let expected = () => Zotero.ftl.formatValueSync(
+					'pharos-projects-artifacts', { count: rows() });
+
+				assert.equal(rows(), 1, "the project has three records, one here");
+				assert.equal(head(), expected());
+
+				win.Zotero_Pharos_Projects.viewStage('drafting');
+				assert.equal(rows(), 0);
+				assert.equal(head(), expected());
+			}
+			finally {
+				win.close();
+			}
+		});
+
+		it("should date a record that has never been edited", async function () {
+			// ProjectArtifact.updated_at defaults to NULL and only a PATCH writes
+			// it, so a freshly created record carried no timestamp at all and
+			// there was no way to tell when it had been written. created_at is in
+			// the same payload; the web falls back to it.
+			stubBackend([project()]);
+			var win = await open();
+			try {
+				var doc = win.document;
+				win.Zotero_Pharos_Projects.viewStage('planning');
+				var stamp = doc.querySelector('.pharos-pv-artifact-updated');
+				assert.ok(stamp);
+				assert.isNotEmpty(stamp.textContent);
+				assert.include(stamp.textContent, '2026');
+			}
+			finally {
+				win.close();
+			}
+		});
+
+		it("should keep the project on screen while its detail request is in flight",
+			async function () {
+				// The list payload is not a stub: /api/projects returns full
+				// ProjectOut rows with sources and artifacts eager-loaded, and the
+				// window already holds them. select() used to null _project, and
+				// _renderDesk() returns early for the loading state, so the entire
+				// right-hand pane went blank on every project switch -- over data
+				// the window had in hand. The web renders straight through.
+				var second = project({ id: 'p2', name: 'Second Project' });
+				var backend = stubBackend([project(), second]);
+				var win = await open();
+				try {
+					var doc = win.document;
+					var release;
+					backend.get.callsFake(() => new Promise((resolve) => {
+						release = () => resolve(JSON.parse(JSON.stringify(second)));
+					}));
+
+					var pending = win.Zotero_Pharos_Projects.select('p2');
+					assert.equal(doc.querySelector('.pharos-pv-title').textContent,
+						'Second Project', "the cached row is rendered, not a blank pane");
+					assert.isNotEmpty(doc.querySelectorAll('.pharos-pv-stage'));
+					assert.ok(doc.querySelector('.pharos-pv-panel.is-artifacts'));
+
+					release();
+					await pending;
+					assert.equal(doc.querySelector('.pharos-pv-title').textContent,
+						'Second Project');
+				}
+				finally {
+					win.close();
+				}
+			});
+
+		it("should not show the research question twice while it is being edited",
+			async function () {
+				// The edit form loads the same text into its own 研究问题 textarea
+				// directly above, so an edit in progress sat next to the stale saved
+				// copy of itself with nothing saying which was which.
+				stubBackend([project()]);
+				var win = await open();
+				try {
+					var doc = win.document;
+					assert.ok(doc.querySelector('.pharos-pv-question'));
+					win.Zotero_Pharos_Projects.openEdit();
+					assert.isNull(doc.querySelector('.pharos-pv-question'));
+					assert.isNotEmpty(doc.querySelectorAll('.pharos-pv-edit textarea'));
+					win.Zotero_Pharos_Projects.closeEdit();
+					assert.ok(doc.querySelector('.pharos-pv-question'));
+				}
+				finally {
+					win.close();
+				}
+			});
+
 		it("should list projects as rows carrying stage, state and counts", async function () {
 			stubBackend([project()]);
 			var win = await open();
@@ -477,30 +732,41 @@ describe("Zotero.Pharos.Projects", function () {
 			}
 		});
 
-		it("should hide archived projects until they are asked for", async function () {
-			stubBackend([
-				project(),
-				project({ id: 'p2', name: 'A Shelved Project', status: 'archived' }),
-			]);
-			var win = await open();
-			try {
-				var doc = win.document;
-				assert.lengthOf(doc.querySelectorAll('.pharos-pv-item'), 1);
+		it("should list archived projects by default and hide them on request",
+			async function () {
+				// The web's ProjectsView opens with 显示已归档 ON. The desktop opened
+				// with it off, so the same account saw a full list in the browser
+				// and, if everything it had was archived, 没有符合筛选的项目 over an
+				// empty desk here. list(true) already fetched them either way.
+				stubBackend([
+					project(),
+					project({ id: 'p2', name: 'A Shelved Project', status: 'archived' }),
+				]);
+				var win = await open();
+				try {
+					var doc = win.document;
+					var toggle = doc.getElementById('pharos-pv-show-archived');
+					assert.isTrue(toggle.checked);
 
-				var toggle = doc.getElementById('pharos-pv-show-archived');
-				toggle.checked = true;
-				toggle.dispatchEvent(new win.Event('change'));
+					var rows = doc.querySelectorAll('.pharos-pv-item');
+					assert.lengthOf(rows, 2);
+					assert.isTrue(
+						rows[1].querySelector('.pharos-pv-state-dot')
+							.classList.contains('is-archived')
+					);
 
-				var rows = doc.querySelectorAll('.pharos-pv-item');
-				assert.lengthOf(rows, 2);
-				assert.isTrue(
-					rows[1].querySelector('.pharos-pv-state-dot').classList.contains('is-archived')
-				);
-			}
-			finally {
-				win.close();
-			}
-		});
+					toggle.checked = false;
+					toggle.dispatchEvent(new win.Event('change'));
+					assert.lengthOf(doc.querySelectorAll('.pharos-pv-item'), 1);
+					// The badge counts the ACCOUNT's projects, the way the web does,
+					// so it stays 2 -- it is the only thing on screen that says the
+					// filter is hiding something.
+					assert.equal(doc.getElementById('pharos-pv-count').textContent, '2');
+				}
+				finally {
+					win.close();
+				}
+			});
 
 		it("should say which empty case it is in", async function () {
 			// "还没有研究项目" and "everything is archived and the filter is hiding
@@ -509,10 +775,16 @@ describe("Zotero.Pharos.Projects", function () {
 			stubBackend([project({ status: 'archived' })]);
 			var win = await open();
 			try {
+				var doc = win.document;
+				var toggle = doc.getElementById('pharos-pv-show-archived');
+				toggle.checked = false;
+				toggle.dispatchEvent(new win.Event('change'));
 				assert.equal(
-					win.document.getElementById('pharos-pv-side-state').textContent,
+					doc.getElementById('pharos-pv-side-state').textContent,
 					Zotero.getString('pharos-projects-none-matched')
 				);
+				assert.equal(doc.getElementById('pharos-pv-count').textContent, '1',
+					"the account has one; the filter is what is hiding it");
 			}
 			finally {
 				win.close();
@@ -573,6 +845,100 @@ describe("Zotero.Pharos.Projects", function () {
 					assert.isTrue(submit.disabled);
 					type(win, doc.getElementById('pharos-pv-create-name'), 'A New Project');
 					assert.isFalse(submit.disabled);
+				}
+				finally {
+					win.close();
+				}
+			});
+
+			it("should create a project when Enter is pressed in the name field",
+				async function () {
+					// HTML implicit submission needs either a submit button or
+					// exactly one field that blocks it, and this form has neither:
+					// every control is type="button" on purpose, and there are two
+					// text inputs. So the `submit` handler is unreachable and Enter
+					// did nothing at all -- no error, the key just did not work.
+					stubBackend([project()]);
+					var create = stub('create', async () => project({
+						id: 'p9', name: 'Typed In',
+					}));
+					var win = await open();
+					try {
+						var doc = win.document;
+						win.Zotero_Pharos_Projects.toggleCreate();
+						var name = doc.getElementById('pharos-pv-create-name');
+						type(win, name, 'Typed In');
+						name.dispatchEvent(new win.KeyboardEvent('keydown', {
+							key: 'Enter', bubbles: true, cancelable: true,
+						}));
+						assert.isTrue(create.calledOnce);
+						assert.equal(create.firstCall.args[0].name, 'Typed In');
+						// Let the create settle before the window goes away, or its
+						// closing render runs against a torn-down document.
+						await Zotero.Promise.delay(30);
+					}
+					finally {
+						win.close();
+					}
+				});
+
+			it("should not file the same paper into the library twice", async function () {
+				// The saved state used to live on the button, and every _render()
+				// rebuilds it -- an edit, an archive, a stage save, an inline
+				// confirm, and the render inside _mutate()'s finally all do. Neither
+				// call underneath de-duplicates: saveExternalPaper() does
+				// `new Zotero.Item(itemType)` unconditionally, so the second click
+				// wrote a second real item and both clicks reported success.
+				stubBackend([project()]);
+				var save = sinon.stub(Zotero.Pharos.Discovery, 'saveToLibrary').resolves({});
+				stubs.push(save);
+				var win = await open();
+				try {
+					var doc = win.document;
+					let button = () => doc.querySelector(
+						'.pharos-pv-source-card .pharos-pv-source-foot').lastElementChild;
+					assert.equal(button().textContent, Zotero.getString('pharos-daily-save'));
+
+					await win.Zotero_Pharos_Projects.saveSource(
+						{ id: 's1', result: { id: 'r1' } }, button());
+					assert.isTrue(save.calledOnce);
+
+					// Any render at all rebuilds that foot.
+					win.Zotero_Pharos_Projects.viewStage('ideation');
+					assert.equal(button().textContent, Zotero.getString('pharos-daily-saved'));
+					assert.isTrue(button().disabled);
+					button().click();
+					assert.isTrue(save.calledOnce, "a second click files no second copy");
+				}
+				finally {
+					win.close();
+				}
+			});
+
+			it("should not file the same record as a note twice", async function () {
+				// saveArtifactAsNote() does `new Zotero.Item('note')` every time it
+				// is called, so the duplicate is a second standalone note in the
+				// user's library and only shows up in the item tree.
+				stubBackend([project()]);
+				var save = sinon.stub(Zotero.Pharos.Projects, 'saveArtifactAsNote').resolves({});
+				stubs.push(save);
+				var win = await open();
+				try {
+					var doc = win.document;
+					let button = () => doc.querySelector(
+						'.pharos-pv-artifact-card .pharos-pv-artifact-foot').lastElementChild;
+					assert.equal(button().textContent,
+						Zotero.getString('pharos-projects-save-note'));
+
+					await win.Zotero_Pharos_Projects.saveArtifactNote(
+						{ id: 'a1' }, project(), button());
+					assert.isTrue(save.calledOnce);
+
+					win.Zotero_Pharos_Projects.viewStage('analysis');
+					assert.equal(button().textContent, Zotero.getString('pharos-daily-saved'));
+					assert.isTrue(button().disabled);
+					button().click();
+					assert.isTrue(save.calledOnce, "a second click writes no second note");
 				}
 				finally {
 					win.close();
@@ -764,8 +1130,12 @@ describe("Zotero.Pharos.Projects", function () {
 					assert.isFalse(doc.getElementById('pharos-pv-stage-select').disabled);
 					assert.include(doc.querySelector('.pharos-pv-state').textContent,
 						Zotero.getString('pharos-projects-state-archived'));
-					// And it stays on screen even though the filter has dropped its
-					// row, because 恢复 is the only way back and it lives here.
+
+					// And it stays on screen once the filter drops its row, because
+					// 恢复 is the only way back and it lives here.
+					var toggle = doc.getElementById('pharos-pv-show-archived');
+					toggle.checked = false;
+					toggle.dispatchEvent(new win.Event('change'));
 					assert.isEmpty(doc.querySelectorAll('.pharos-pv-item.is-active'));
 					assert.equal(doc.querySelector('.pharos-pv-title').textContent,
 						'A Shelved Project');

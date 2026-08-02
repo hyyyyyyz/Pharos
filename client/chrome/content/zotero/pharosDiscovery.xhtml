@@ -11,9 +11,12 @@
      "two hyphens in comments" convention in client/CLAUDE.md is for JS and
      SCSS; XML is the exception.
 
-     This window no longer links pharosDaily.css. That file is still the
-     stylesheet for Research Projects, which builds .pharos-daily-* rows of its
-     own; borrowing it here is what coupled the two modules together. -->
+     The sheet linked above is this window's own. It used to be pharosDaily.css,
+     and the note here used to say that file was still the stylesheet for
+     Research Projects. That is no longer true, and a note that overstates its
+     claim stops the next person checking: pharosProjects.xhtml links
+     pharosProjects.css, pharosDaily.xhtml links pharosDailyView.css, and
+     nothing links pharosDaily.css at all. -->
 
 <window data-l10n-id="pharos-discovery-window"
 		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -143,9 +146,16 @@
 						role="alert"/>
 				</html:form>
 
-				<html:div id="pharos-ds-notice" class="pharos-ds-notice" role="status"/>
+				<!-- The retry button carries no data-l10n-id: its label is written
+				     only while it is on screen, so that this element's
+				     textContent is the notice sentence and nothing else. -->
+				<html:div id="pharos-ds-notice" class="pharos-ds-notice" role="status">
+					<html:span id="pharos-ds-notice-text" class="pharos-ds-notice-text"/>
+					<html:button id="pharos-ds-notice-retry"
+						class="pharos-ds-notice-retry" type="button"/>
+				</html:div>
 
-				<html:div id="pharos-ds-run" class="pharos-ds-run">
+				<html:div id="pharos-ds-run" class="pharos-ds-runbox">
 					<html:div id="pharos-ds-run-head" class="pharos-ds-run-head">
 						<html:div class="pharos-ds-run-headtext">
 							<html:span id="pharos-ds-status" class="pharos-ds-status"/>
