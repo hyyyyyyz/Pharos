@@ -176,47 +176,9 @@ Zotero.Pharos.Theme = new function () {
 
 	let _inited = false;
 
-	/**
-	 * Windows already carrying a prefers-color-scheme listener, so that a
-	 * window styled twice -- it is enumerated at startup and again on every
-	 * accent change -- does not accumulate one listener per pass. Weak so a
-	 * closed window is collectable; it also holds the MediaQueryList, which
-	 * otherwise has nothing keeping it alive and stops firing when collected.
-	 */
-	let _watched = new WeakMap();
+	/** The registered sheet, so a change can replace rather than stack. */
+	let _sheetURI = null;
 
-	/**
-	 * Fires for every chrome document created in the process, which is what
-	 * covers the windows and browsers that do not exist yet at startup: a
-	 * preferences window, a standalone note, and the four Pharos views, which
-	 * are <browser type="chrome"> elements in the main window whose src is only
-	 * set the first time each is opened.
-	 *
-	 * The document has no root element yet at this point -- it has not been
-	 * parsed -- so the work waits for DOMContentLoaded.
-	 */
-	let _documentObserver = {
-		observe: function (subject) {
-			try {
-				let win = subject;
-				if (!win || !win.addEventListener) {
-					return;
-				}
-				win.addEventListener('DOMContentLoaded', function () {
-					try {
-						Zotero.Pharos.Theme.applyToDocument(win.document);
-						_watchColorScheme(win);
-					}
-					catch (e) {
-						Zotero.logError(e);
-					}
-				}, { once: true });
-			}
-			catch (e) {
-				Zotero.logError(e);
-			}
-		}
-	};
 
 	/**
 	 * oklch to an sRGB hex string, by way of oklab and linear sRGB.
@@ -259,42 +221,6 @@ Zotero.Pharos.Theme = new function () {
 		return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
 	}
 
-	/**
-	 * Whether a document is currently showing the dark theme.
-	 *
-	 * Asked of the document rather than derived from browser.theme.toolbar-theme
-	 * so that this and the compiled @media blocks can never disagree: they are
-	 * answering the same question through the same mechanism. A document with
-	 * no window -- one built by a test -- is treated as light.
-	 */
-	function _prefersDark(doc) {
-		let win = doc.defaultView;
-		if (!win || !win.matchMedia) {
-			return false;
-		}
-		return win.matchMedia('(prefers-color-scheme: dark)').matches;
-	}
-
-	/**
-	 * Re-derive this window's accent whenever its colour scheme changes, which
-	 * happens both when the user picks Light or Dark in the preferences and
-	 * when the OS flips while the setting is on Automatic.
-	 */
-	function _watchColorScheme(win) {
-		if (!win || !win.matchMedia || _watched.has(win)) {
-			return;
-		}
-		let mql = win.matchMedia('(prefers-color-scheme: dark)');
-		mql.addEventListener('change', function () {
-			try {
-				Zotero.Pharos.Theme.applyToDocument(win.document);
-			}
-			catch (e) {
-				Zotero.logError(e);
-			}
-		});
-		_watched.set(win, mql);
-	}
 
 	/**
 	 * Every chrome document a window is showing: its own, plus any it hosts in
@@ -408,50 +334,70 @@ Zotero.Pharos.Theme = new function () {
 
 
 	/**
-	 * @param {Document} doc
-	 * @param {Boolean} [dark] - which theme to derive against; asked of the
-	 *     document when omitted, which is what callers other than tests want
+	 * Build the user stylesheet.
+	 *
+	 * Scoped with @-moz-document, and the scoping is the whole point. An
+	 * unscoped USER_SHEET reaches every document in the process, which is what
+	 * makes it able to style the reader -- but Zotero loads arbitrary web pages
+	 * too: HiddenBrowser runs with JavaScript enabled for feed translation and
+	 * attachment import, and basicViewer does the same. `--color-accent` is a
+	 * generic enough name to collide with a page's own, and a script that knows
+	 * the names can read the computed values. Limiting it to the three prefixes
+	 * we own keeps that from being our problem.
+	 *
+	 * Both colour schemes are emitted at once, in a @media block, rather than
+	 * the sheet being rebuilt when the OS theme flips: a stylesheet can express
+	 * the condition, so it should.
 	 */
-	this.applyToDocument = function (doc, dark) {
-		if (!doc || !doc.documentElement) {
-			return;
-		}
-		if (dark === undefined) {
-			dark = _prefersDark(doc);
-		}
-		let vars = this.getVars(this.getAccent(), dark);
-		let style = doc.documentElement.style;
-		for (let name in vars) {
-			style.setProperty(name, vars[name]);
-		}
-	};
+	function _buildSheet() {
+		let key = Zotero.Pharos.Theme.getAccent();
+		let scope = 'url-prefix("chrome://"), '
+			+ 'url-prefix("resource://zotero/reader/"), '
+			+ 'url-prefix("resource://zotero/note-editor/")';
 
+		let block = (dark) => {
+			let vars = Zotero.Pharos.Theme.getVars(key, dark);
+			let body = Object.entries(vars)
+				// !important because a USER_SHEET still loses to an author rule
+				// of equal weight, and the compiled themes declare these on
+				// :root exactly as this does.
+				.map(([name, value]) => `\t\t${name}: ${value} !important;`)
+				.join('\n');
+			return `@-moz-document ${scope} {\n\t:root {\n${body}\n\t}\n}`;
+		};
 
-	/** Style a window and everything chrome it is hosting. */
-	this.applyToWindow = function (win) {
-		for (let doc of _chromeDocuments(win)) {
-			this.applyToDocument(doc);
-			_watchColorScheme(doc.defaultView);
-		}
-	};
+		return block(false)
+			+ '\n\n@media (prefers-color-scheme: dark) {\n'
+			+ block(true) + '\n}\n';
+	}
 
 
 	/**
-	 * Push the current accent to every open window.
+	 * Register the accent as a user stylesheet, replacing any previous one.
 	 *
-	 * getEnumerator(null) rather than Zotero.getMainWindows(): the preferences
-	 * window is not a navigator:browser, and it is the one window guaranteed to
-	 * be open at the moment the accent changes.
+	 * One sheet covers every document in the process, so there is no window
+	 * enumeration, no observer for windows opened later, and no frame in which a
+	 * newly opened window still shows the accent that was compiled in.
 	 */
 	this.apply = function () {
-		for (let win of Services.wm.getEnumerator(null)) {
-			try {
-				this.applyToWindow(win);
+		let sss = Cc['@mozilla.org/content/style-sheet-service;1']
+			.getService(Ci.nsIStyleSheetService);
+		let uri = Services.io.newURI(
+			'data:text/css;charset=utf-8,' + encodeURIComponent(_buildSheet())
+		);
+
+		try {
+			if (_sheetURI && sss.sheetRegistered(_sheetURI, sss.USER_SHEET)) {
+				sss.unregisterSheet(_sheetURI, sss.USER_SHEET);
 			}
-			catch (e) {
-				// One unstyleable window must not stop the others
-				Zotero.logError(e);
-			}
+			sss.loadAndRegisterSheet(uri, sss.USER_SHEET);
+			_sheetURI = uri;
+		}
+		catch (e) {
+			// A failure here leaves the compiled accent in place, which is a
+			// working UI in the brand's own colour -- not worth taking the
+			// application down for.
+			Zotero.logError(e);
 		}
 	};
 
@@ -460,10 +406,13 @@ Zotero.Pharos.Theme = new function () {
 	 * Idempotent, because the preferences pane calls it too: the pane is
 	 * useless if startup missed this, and calling it there costs nothing if it
 	 * did not.
-	 *
-	 * Nothing is unregistered. Both hooks live as long as the application does,
-	 * and the only thing they retain is this object.
 	 */
+	/** Test seam: which sheet is currently registered. */
+	this._sheetURIForTests = function () {
+		return _sheetURI;
+	};
+
+
 	this.init = function () {
 		if (_inited) {
 			return;
@@ -471,8 +420,6 @@ Zotero.Pharos.Theme = new function () {
 		_inited = true;
 
 		Zotero.Prefs.registerObserver(PREF_ACCENT, () => this.apply());
-		Services.obs.addObserver(_documentObserver, 'chrome-document-global-created');
-
 		this.apply();
 	};
 };

@@ -90,6 +90,18 @@ class UserOut(BaseModel):
     is_admin: bool = False
 
 
+class AuthStatusOut(BaseModel):
+    """What an unauthenticated client may know about this instance.
+
+    Deliberately just the one field. Anything a caller can read without a token
+    is public, so this answers only the question a sign-in screen actually has —
+    whether to offer a sign-up form — and says nothing about who is registered,
+    how many there are, or how the instance is configured.
+    """
+
+    allow_registration: bool
+
+
 class AuthResponse(BaseModel):
     """What register and login hand back: a token and who it belongs to."""
 
@@ -265,6 +277,24 @@ def _claim_legacy_papers(session: Session, user: User) -> None:
 # --------------------------------------------------------------------------
 # Endpoints
 # --------------------------------------------------------------------------
+
+
+@router.get("/status", response_model=AuthStatusOut)
+def auth_status(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthStatusOut:
+    """Whether this instance is accepting new accounts.
+
+    Anonymous on purpose: a sign-in screen needs the answer before anyone has a
+    token, and hiding a sign-up form that would 403 anyway is the difference
+    between a closed instance and a broken one.
+
+    Clients must treat an ERROR here as "unknown" rather than "closed" — an
+    older self-hosted backend has no such route, and hiding registration because
+    a request failed would lock people out of an instance that is in fact open.
+    ``POST /register`` remains the authority; this only decides what to draw.
+    """
+    return AuthStatusOut(allow_registration=bool(settings.allow_registration))
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)

@@ -180,56 +180,93 @@ describe("Zotero.Pharos.Theme", function () {
 		});
 	});
 
-	describe("#applyToDocument()", function () {
-		it("should set every accent property on the root element", function () {
-			let doc = document.implementation.createHTMLDocument('');
-			Zotero.Prefs.set('pharos.appearance.accent', 'mint');
-			Zotero.Pharos.Theme.applyToDocument(doc, true);
-
-			let style = doc.documentElement.style;
-			let expected = Zotero.Pharos.Theme.getVars('mint', true);
-			for (let name of Object.keys(expected)) {
-				assert.equal(style.getPropertyValue(name), expected[name], name);
-			}
-		});
-
-		it("should derive against the theme it is given", function () {
-			let doc = document.implementation.createHTMLDocument('');
-			Zotero.Prefs.set('pharos.appearance.accent', 'sky');
-
-			Zotero.Pharos.Theme.applyToDocument(doc, false);
-			let light = doc.documentElement.style.getPropertyValue('--accent-blue');
-			Zotero.Pharos.Theme.applyToDocument(doc, true);
-			let dark = doc.documentElement.style.getPropertyValue('--accent-blue');
-
-			assert.notEqual(light, dark);
-			assert.equal(light, Zotero.Pharos.Theme.getVars('sky', false)['--accent-blue']);
-			assert.equal(dark, Zotero.Pharos.Theme.getVars('sky', true)['--accent-blue']);
-		});
-
-		it("should not throw on a document with no root element", function () {
-			assert.doesNotThrow(() => Zotero.Pharos.Theme.applyToDocument(null));
-			assert.doesNotThrow(() => Zotero.Pharos.Theme.applyToDocument({}));
-		});
-	});
-
 	describe("#apply()", function () {
-		it("should follow the pref into an open window", async function () {
-			// The point of the whole module: a window that did not make the
-			// change still has to receive it. This exercises the observer
-			// registered in init(), not a direct call.
-			let root = window.document.documentElement;
-			let dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-			for (let key of ['coral', 'pine']) {
-				Zotero.Prefs.set('pharos.appearance.accent', key);
-				await Zotero.Promise.delay(1);
-				assert.equal(
-					root.style.getPropertyValue('--accent-blue'),
-					Zotero.Pharos.Theme.getVars(key, dark)['--accent-blue'],
-					key
-				);
+		function registeredCSS() {
+			let uri = Zotero.Pharos.Theme._sheetURIForTests();
+			if (!uri) {
+				return null;
 			}
+			let sss = Cc['@mozilla.org/content/style-sheet-service;1']
+				.getService(Ci.nsIStyleSheetService);
+			if (!sss.sheetRegistered(uri, sss.USER_SHEET)) {
+				return null;
+			}
+			// The sheet is a data: URI, so its own text is what to assert on.
+			return decodeURIComponent(
+				uri.spec.replace(/^data:text\/css;charset=utf-8,/, '')
+			);
+		}
+
+		it("should register a user stylesheet", function () {
+			Zotero.Pharos.Theme.apply();
+			assert.isNotNull(registeredCSS(), "a sheet is registered");
+		});
+
+		it("should scope itself away from ordinary web pages", function () {
+			// An unscoped USER_SHEET reaches every document in the process,
+			// including the arbitrary pages HiddenBrowser and basicViewer load
+			// with JavaScript enabled. --color-accent is a generic enough name to
+			// collide with a page's own, and a script that knows the name can
+			// read the computed value.
+			Zotero.Pharos.Theme.apply();
+			let css = registeredCSS();
+			assert.include(css, '@-moz-document');
+			assert.include(css, 'url-prefix("chrome://")');
+			assert.include(css, 'url-prefix("resource://zotero/reader/")');
+			assert.include(css, 'url-prefix("resource://zotero/note-editor/")');
+		});
+
+		it("should carry both colour schemes", function () {
+			// The sheet expresses the condition rather than being rebuilt when
+			// the OS theme flips, so there is nothing to listen for.
+			Zotero.Pharos.Theme.apply();
+			let css = registeredCSS();
+			let key = Zotero.Pharos.Theme.getAccent();
+			assert.include(css, '@media (prefers-color-scheme: dark)');
+			assert.include(css, Zotero.Pharos.Theme.getVars(key, false)['--accent-blue']);
+			assert.include(css, Zotero.Pharos.Theme.getVars(key, true)['--accent-blue']);
+		});
+
+		it("should declare every accent property", function () {
+			Zotero.Prefs.set('pharos.appearance.accent', 'mint');
+			Zotero.Pharos.Theme.apply();
+			let css = registeredCSS();
+			for (let [name, value] of Object.entries(
+					Zotero.Pharos.Theme.getVars('mint', false))) {
+				assert.include(css, name + ': ' + value + ' !important', name);
+			}
+		});
+
+		it("should replace rather than stack on an accent change", function () {
+			// Registering without unregistering would leave the old sheet in
+			// place; which one wins then becomes a question about sheet order
+			// rather than about what the user chose.
+			Zotero.Prefs.set('pharos.appearance.accent', 'coral');
+			Zotero.Pharos.Theme.apply();
+			let coral = registeredCSS();
+			Zotero.Prefs.set('pharos.appearance.accent', 'pine');
+			Zotero.Pharos.Theme.apply();
+			let pine = registeredCSS();
+
+			assert.notEqual(coral, pine);
+			assert.include(pine, Zotero.Pharos.Theme.getVars('pine', false)['--accent-blue']);
+			assert.notInclude(pine, Zotero.Pharos.Theme.getVars('coral', false)['--accent-blue']);
+		});
+
+		it("should re-register when the pref changes", async function () {
+			// The observer registered in init() is the point: a window that did
+			// not make the change still has to receive it, and with one
+			// process-wide stylesheet that means rebuilding the sheet.
+			Zotero.Prefs.set('pharos.appearance.accent', 'sky');
+			await Zotero.Promise.delay(10);
+			let sky = Zotero.Pharos.Theme._sheetURIForTests();
+
+			Zotero.Prefs.set('pharos.appearance.accent', 'lilac');
+			await Zotero.Promise.delay(10);
+			let lilac = Zotero.Pharos.Theme._sheetURIForTests();
+
+			assert.ok(lilac);
+			assert.notEqual(sky && sky.spec, lilac.spec);
 		});
 	});
 });

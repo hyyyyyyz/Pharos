@@ -21,6 +21,7 @@ idea through a durable research workflow — in one self-hosted platform.
 [Architecture](docs/ARCHITECTURE.md) ·
 [Research workflow](docs/RESEARCH_WORKFLOW.md) ·
 [Roadmap](docs/ROADMAP.md) ·
+[Client phases](docs/PHASE-CLIENT.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>

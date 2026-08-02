@@ -54,6 +54,9 @@ PUBLIC = {
     ("GET", "/api/health"),  # liveness probe; returns no user data
     ("POST", "/api/auth/register"),  # creating the account that gets a token
     ("POST", "/api/auth/login"),  # exchanging a password for a token
+    # A sign-in screen has to know whether to draw a sign-up form before anyone
+    # has a token. Returns one boolean and nothing about who is registered.
+    ("GET", "/api/auth/status"),
     # Browser redirect from Zotero cannot carry the localStorage Bearer token;
     # the callback is instead bound to a one-use request token plus HttpOnly
     # browser state and never accepts a user id from the request.

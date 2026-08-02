@@ -20,6 +20,7 @@
 [架构说明](docs/ARCHITECTURE.md) ·
 [科研工作流](docs/RESEARCH_WORKFLOW.md) ·
 [路线图](docs/ROADMAP.md) ·
+[客户端阶段记录](docs/PHASE-CLIENT.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>

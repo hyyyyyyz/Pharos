@@ -60,7 +60,9 @@ cd client
 npm run build                    # transpile JS/JSX, compile SCSS
 app/scripts/dir_build -p m       # package into app/staging/Pharos.app
 app/scripts/run_pharos_dev       # launch with an isolated data directory
-test/runtests.sh -f pharosAPI pharosTranslate pharosChat pharosDaily pharosDiscovery pharosProjects
+test/runtests.sh -f pharosAPI pharosTranslate pharosChat pharosDaily \
+    pharosDiscovery pharosProjects pharosRail pharosRailFooter pharosAdmin \
+    pharosProtocol pharosAuth pharosTheme preferences_pharos preferences_pharos_daily
 ```
 
 For the desktop client, read [`client/BRANDING.md`](client/BRANDING.md) first.
