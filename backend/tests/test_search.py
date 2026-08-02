@@ -26,8 +26,6 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import text
-
 from pharos.api import search as search_api
 from pharos.api.deps import current_user, get_session
 from pharos.db import session as db_session
@@ -36,14 +34,19 @@ from pharos.db.session import FTS_TABLE, fts5_available, init_engine, session_sc
 from pharos.services.search import (
     FULL_TEXT_MAX_CHARS,
     BackfillReport,
+    _fit,
+    _normalise,
     backfill_full_text,
     build_match_expression,
     extract_full_text,
+    extract_pages,
+    flatten_pages,
     parse_query,
     populate_full_text,
     search,
 )
 from pharos.storage.blobs import BlobStore
+from sqlalchemy import text
 
 OWNER = "user-owner"
 OTHER = "user-other"
@@ -757,6 +760,198 @@ def test_populate_full_text_sets_the_column(tmp_path) -> None:
 def test_full_text_cap_is_documented_and_sane() -> None:
     """A regression guard on the number, since it bounds every papers row."""
     assert 100_000 <= FULL_TEXT_MAX_CHARS <= 2_000_000
+
+
+# ------------------------------------------------- page-aware extraction
+
+
+def test_extract_pages_keeps_the_pdf_s_own_page_numbers(tmp_path) -> None:
+    """A page with no text layer must not renumber the pages after it.
+
+    The failure this guards against is the quiet one: if page numbers were the
+    position in the returned list, a single image-only plate would shift every
+    later citation down by one, and each would still look entirely plausible.
+    """
+    pdf = tmp_path / "with-a-plate.pdf"
+    _make_pdf(pdf, ["Introduction to bathymetry", "", "Conclusions about bathymetry"])
+
+    pages = extract_pages(pdf)
+    assert pages is not None
+    assert [p.page_no for p in pages] == [1, 3]
+    assert pages[1].text == "Conclusions about bathymetry"
+
+
+def test_extract_pages_returns_normalised_non_empty_text(tmp_path) -> None:
+    """Two properties the chunk offsets are built on, asserted where they hold."""
+    pdf = tmp_path / "paper.pdf"
+    _make_pdf(pdf, ["Ultramafic   intrusions", "in the craton"])
+
+    pages = extract_pages(pdf)
+    assert pages is not None
+    assert all(p.text and p.text == _normalise(p.text) for p in pages)
+
+
+def test_extract_pages_distinguishes_unreadable_from_textless(tmp_path) -> None:
+    """``None`` and ``[]`` are different answers; the flat column loses that."""
+    junk = tmp_path / "not-a.pdf"
+    junk.write_bytes(b"this is not a pdf at all")
+    blank = tmp_path / "blank.pdf"
+    _make_pdf(blank, ["", ""])
+
+    assert extract_pages(junk) is None
+    assert extract_pages(blank) == []
+    # Both collapse to None once flattened: the column has one way to say
+    # nothing, which is exactly why a caller who needs the difference asks for
+    # pages instead.
+    assert extract_full_text(junk) is None
+    assert extract_full_text(blank) is None
+
+
+def test_extract_pages_stops_on_a_page_boundary(tmp_path) -> None:
+    """The budget buys whole pages: it must never return half of one."""
+    pdf = tmp_path / "book.pdf"
+    _make_pdf(pdf, ["Chapter about sedimentation. " * 8] * 20)
+
+    pages = extract_pages(pdf, max_chars=500)
+    assert pages is not None
+    assert 0 < len(pages) < 20
+    whole = extract_pages(pdf)
+    assert whole is not None
+    assert [p.text for p in pages] == [p.text for p in whole[: len(pages)]]
+
+
+# ------------------------------------- the refactor's equivalence proof
+
+
+def _legacy_extract_full_text(path, *, max_chars: int = FULL_TEXT_MAX_CHARS) -> str | None:
+    """``extract_full_text`` as it was written before extraction became page-aware.
+
+    Kept verbatim so the refactor can be *shown* to preserve behaviour rather
+    than argued to. Three things about the new implementation are not obvious
+    and all three are decided here: it normalises each page and joins with a
+    space where this joined with a newline and normalised the whole string; it
+    drops pages that normalise to nothing, where this kept them; and it charges
+    the read budget before deciding whether a page is worth keeping.
+
+    ``_normalise`` and ``_fit`` are shared with the live code on purpose. The
+    refactor did not touch either, and copying them would prove that two copies
+    of a function agree rather than that two ways of *composing* it do.
+    """
+    chunks: list[str] = []
+    budget = max_chars
+    try:
+        import pymupdf
+
+        with pymupdf.open(path) as doc:
+            for page in doc:
+                page_text = page.get_text("text")
+                if not page_text:
+                    continue
+                chunks.append(page_text)
+                budget -= len(page_text)
+                if budget <= 0:
+                    break
+    except Exception:
+        return None
+
+    joined = _normalise("\n".join(chunks))
+    if not joined:
+        return None
+    return _fit(joined, max_chars)
+
+
+#: Documents chosen for the seams, not for coverage: a page that contributes
+#: nothing, blank pages at each end, whitespace the old whole-string pass would
+#: have collapsed across a page boundary, and text long enough that ``_fit``
+#: has to cut it.
+_EQUIVALENCE_CORPUS: dict[str, list[str]] = {
+    "single": ["Palaeomagnetic reversals in the Deccan traps"],
+    "several": ["Introduction to bathymetry", "Methods", "Conclusions about bathymetry"],
+    "textless middle page": ["Alpha one", "", "Gamma three"],
+    # A page holding one space extracts as " \n": non-empty raw, empty once
+    # normalised. It is the case that decides whether the new implementation
+    # emits a double space where the old one emitted a single, and the only one
+    # in this corpus that a PDF can actually produce.
+    "whitespace-only middle page": ["Alpha one", " ", "Gamma three"],
+    "whitespace-only first page": [" ", "Beta two"],
+    "leading blank": ["", "Beta two"],
+    "trailing blank": ["Alpha one", ""],
+    "all blank": ["", ""],
+    "whitespace at the seams": ["   Alpha one   ", "   Beta two   "],
+    "inner runs": ["Alpha    one\n\n\nstill page one", "Beta\t\ttwo"],
+    "non latin": ["注意力就是你所需要的一切", "Attention Is All You Need"],
+    "long enough to truncate": ["Chapter about sedimentation. " * 30] * 6,
+}
+
+
+@pytest.mark.parametrize("name", sorted(_EQUIVALENCE_CORPUS))
+@pytest.mark.parametrize("max_chars", [FULL_TEXT_MAX_CHARS, 4000, 500, 137, 40, 1])
+def test_page_aware_extraction_reproduces_the_old_flat_text(
+    tmp_path, name: str, max_chars: int
+) -> None:
+    """The proof obligation: same input, same ``full_text``, character for character.
+
+    Run across several caps because the interesting divergences are all at a
+    boundary — the page the budget runs out on, and the word boundary ``_fit``
+    backs up to inside it.
+    """
+    pdf = tmp_path / "equivalence.pdf"
+    _make_pdf(pdf, _EQUIVALENCE_CORPUS[name])
+
+    assert extract_full_text(pdf, max_chars=max_chars) == _legacy_extract_full_text(
+        pdf, max_chars=max_chars
+    )
+
+
+def test_page_aware_extraction_reproduces_the_old_failure(tmp_path) -> None:
+    junk = tmp_path / "not-a.pdf"
+    junk.write_bytes(b"%PDF-1.4 truncated before anything useful")
+    assert extract_full_text(junk) is _legacy_extract_full_text(junk) is None
+
+
+@pytest.mark.parametrize(
+    "raw_pages",
+    [
+        ["one", "two"],
+        ["one\n", "\ntwo"],
+        ["  ", "two"],
+        ["one", "   "],
+        ["\x00\x01", "two"],  # normalises to nothing: no double space allowed
+        ["one", "\x0c"],
+        ["", ""],
+        ["\n\n\n", "\t\t"],
+        ["one ", " two ", " three"],
+        ["    ", "нет"],
+    ],
+)
+def test_per_page_normalisation_matches_the_old_whole_string_pass(raw_pages: list[str]) -> None:
+    """The core of the equivalence, on inputs no PDF generator would produce.
+
+    ``_normalise`` collapses every whitespace run to one space and strips both
+    ends, so a page break was *already* collapsing to a single space inside the
+    old whole-string pass — which is why per-page normalisation joined by one
+    space is the same string. The cases that carry the argument are the pages
+    that normalise to nothing: the old pass folded them into the surrounding
+    whitespace run, so the new one has to drop them entirely rather than join
+    an empty string and emit two spaces where there was one.
+    """
+    old = _normalise("\n".join(raw_pages))
+    new = " ".join(text for text in (_normalise(page) for page in raw_pages) if text)
+    assert old == new
+
+
+def test_flat_text_is_the_pages_flattened(tmp_path) -> None:
+    """The property the chunk offsets rest on, stated as a test.
+
+    If these two could ever differ, every ``char_start``/``char_end`` in the
+    chunk table would be an offset into a string that does not exist.
+    """
+    pdf = tmp_path / "paper.pdf"
+    _make_pdf(pdf, ["Introduction to bathymetry", "", "Conclusions about bathymetry"])
+
+    pages = extract_pages(pdf)
+    assert pages is not None
+    assert flatten_pages(pages) == extract_full_text(pdf)
 
 
 # -------------------------------------------------------------- backfill

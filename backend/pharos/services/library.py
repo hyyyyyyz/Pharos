@@ -12,10 +12,11 @@ from pathlib import Path
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
-from pharos.db.models import Paper
+from pharos.db.models import Paper, PaperChunk
+from pharos.services.chunks import populate_chunks
 from pharos.services.enrich import enrich_by_arxiv, enrich_by_doi, merge
 from pharos.services.metadata import ExtractedMeta, extract_from_pdf
-from pharos.services.search import populate_full_text
+from pharos.services.search import PageText, extract_pages, populate_full_text_from_pages
 from pharos.storage.blobs import BlobStore
 
 #: Total wall-clock budget for registry lookups during an upload. Parsing the
@@ -203,25 +204,68 @@ def _apply_metadata(paper: Paper, meta: ExtractedMeta, source: str) -> None:
         paper.meta_source = source
 
 
-def _index_full_text(paper: Paper, path: Path) -> None:
-    """Extract ``path``'s text onto ``paper`` for search, never failing the upload.
+def _index_text(paper: Paper, path: Path, session: Session) -> None:
+    """Extract ``path``'s text onto ``paper`` — flat column and page chunks — never failing.
 
-    Search is a secondary feature of ingestion; keeping the file is the primary
+    Text is a secondary feature of ingestion; keeping the file is the primary
     one. A paper whose text cannot be read — a scan with no text layer, an
     encrypted PDF, a file that PyMuPDF chokes on — is still a paper the user
-    wants in their library, and it simply is not full-text searchable. So every
-    failure here degrades to "not searchable" rather than propagating.
+    wants in their library, and it simply is not searchable or citable by page.
+    So every failure here degrades to "no text" rather than propagating.
 
-    ``populate_full_text`` already documents that it does not raise, and this
-    still wraps it, for the same reason ``_collect`` wraps ``extract_from_pdf``
+    The extraction functions already document that they do not raise, and this
+    still wraps them, for the same reason ``_collect`` wraps ``extract_from_pdf``
     just above: the guarantee lives in another module that is free to change,
     and the cost of being wrong is a rejected upload of a perfectly good file.
     Belt and braces is the right trade when one side is a whole lost document.
+
+    The PDF is opened **once** and both outputs come from that single pass.
+    Uploads are synchronous — this is wall-clock the user waits — and a second
+    parse would buy nothing: the chunks' offsets are offsets into the flat text,
+    so they have to describe the same characters it was built from, not a
+    second extraction that agrees with the first only as long as nothing about
+    the parse is non-deterministic.
+
+    Three separate suppressions rather than one around the lot, because they
+    fail independently and partial output is worth having. A chunk write that
+    trips a constraint must still leave the paper full-text searchable, and a
+    ``full_text`` too long for some future column must still leave it citable.
     """
+    pages: list[PageText] | None = None
     # Suppressed rather than logged-and-re-raised: nothing about a text
     # extraction failure should be able to reach the uploader.
     with contextlib.suppress(Exception):
-        populate_full_text(paper, path)
+        pages = extract_pages(path)
+    if not pages:
+        # None (unreadable) and [] (no text layer anywhere) both mean there is
+        # nothing to write, and neither is a reason to touch what is already
+        # stored — see ``populate_chunks`` on why an empty extraction must not
+        # be allowed to erase a good one.
+        return
+    with contextlib.suppress(Exception):
+        populate_full_text_from_pages(paper, pages)
+    with contextlib.suppress(Exception):
+        # Ordered after the column is set: the chunk offsets are verified against
+        # ``paper.full_text``, so running this first would find nothing to align
+        # against and store NULL offsets for every page of a perfectly good file.
+        populate_chunks(paper, path, session, pages=pages)
+
+
+def _needs_chunks(session: Session, paper: Paper) -> bool:
+    """Whether this paper has no chunk rows yet.
+
+    Owner-scoped like every other chunk query, and cheap — an index seek on
+    ``paper_id`` returning at most one id, which is what makes it affordable on
+    the re-upload path where the point is to *avoid* work.
+    """
+    return (
+        session.scalar(
+            select(PaperChunk.id)
+            .where(PaperChunk.user_id == paper.user_id, PaperChunk.paper_id == paper.id)
+            .limit(1)
+        )
+        is None
+    )
 
 
 def _require_owner(user_id: str) -> str:
@@ -287,12 +331,14 @@ class LibraryService:
             if existing.meta_extracted_at is None:
                 meta, source = _collect(path, UPLOAD_ENRICH_BUDGET)
                 _apply_metadata(existing, meta, source)
-            if existing.full_text is None:
+            if existing.full_text is None or _needs_chunks(session, existing):
                 # Re-uploading is how a user reaches a paper that predates search
-                # (or whose first extraction found nothing) without an operator
-                # running a backfill. Guarded on None so a re-upload never spends
-                # the parse on a paper that is already indexed.
-                _index_full_text(existing, path)
+                # or chunking (or whose first extraction found nothing) without an
+                # operator running a backfill. Guarded so a re-upload never spends
+                # the parse on a paper that already has both — and asking for
+                # chunks too means a library indexed by the earlier version
+                # upgrades one re-upload at a time rather than staying half done.
+                _index_text(existing, path, session)
             return existing
 
         page_count, title = _pdf_metadata(path, filename)
@@ -307,7 +353,7 @@ class LibraryService:
         session.flush()  # populate paper.id
         meta, source = _collect(path, UPLOAD_ENRICH_BUDGET)
         _apply_metadata(paper, meta, source)
-        _index_full_text(paper, path)
+        _index_text(paper, path, session)
         return paper
 
     def refresh_metadata(

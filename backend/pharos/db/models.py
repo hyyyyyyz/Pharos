@@ -166,7 +166,12 @@ class Paper(Base):
     orig_filename: Mapped[str] = mapped_column(String(512))
     page_count: Mapped[int | None] = mapped_column(Integer, default=None)
     source: Mapped[str] = mapped_column(String(16), default="upload")  # upload | arxiv
-    arxiv_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    #: Indexed because it is one of the two identifiers a discovery result is
+    #: matched against when linking a project source to the library paper it
+    #: turned out to be (``services/projects.py::_match_library_paper``). Note
+    #: the match itself folds case in Python, so this index narrows the scan
+    #: rather than serving the comparison outright.
+    arxiv_id: Mapped[str | None] = mapped_column(String(32), index=True, default=None)
     source_lang: Mapped[str] = mapped_column(String(8), default="en")
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -730,10 +735,20 @@ class PaperChunk(Base):
 
     ``char_start``/``char_end`` are this chunk's span inside the paper's
     ``full_text``, which is exact because both are produced by the same
-    extraction pass. They are NULL when the alignment is unknown -- ``full_text``
-    is capped, so a long document's later pages exist as chunks but have no
-    corresponding span in the truncated flat text. NULL says "we do not know"
-    rather than pointing at the wrong characters.
+    extraction pass. They are NULL when the alignment is unknown: the flat text
+    is trimmed to a character limit that can fall mid-page, so the page holding
+    the cut, and any after it, have no span to point at. NULL says "we do not
+    know" rather than pointing at the wrong characters, and the writer verifies
+    ``full_text[start:end] == text`` rather than trusting its own arithmetic.
+
+    **Chunking stops where ``full_text`` stops.** Both come out of one pass over
+    the PDF and share ``FULL_TEXT_MAX_CHARS`` -- roughly 150 dense pages -- so a
+    book longer than that has no chunks for its tail and evidence cannot be
+    anchored there at all. That is a real limit, not a rounding error, and it is
+    the honest shape: the alternative is a second, larger pass over every upload
+    to serve documents the library is not primarily for. It becomes worth paying
+    when someone actually needs to cite page 300, and ``extraction_version`` is
+    what will let that re-run find the rows to replace.
 
     Rows are written once at ingestion and never edited. ``extraction_version``
     records which extractor produced them, so a later improvement can find and
@@ -813,8 +828,15 @@ class Evidence(Base):
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
     #: Optional home. Evidence can be gathered while reading, before it belongs
     #: to any project.
+    #:
+    #: SET NULL, not CASCADE. The column is nullable precisely because evidence
+    #: exists independently of any project, so deleting a project must return
+    #: its evidence to that unattached state rather than destroy it. Deleting a
+    #: folder is not a request to burn what was filed in it, and the quote and
+    #: its page are the expensive part -- the project was only where they were
+    #: being used. Same reasoning as ``chunk_id`` and ``ProjectSource.paper_id``.
     project_id: Mapped[str | None] = mapped_column(
-        ForeignKey("research_projects.id", ondelete="CASCADE"), index=True, default=None
+        ForeignKey("research_projects.id", ondelete="SET NULL"), index=True, default=None
     )
     #: The chunk this was taken from, when it was taken from one. SET NULL rather
     #: than CASCADE: re-running extraction replaces chunks, and evidence must

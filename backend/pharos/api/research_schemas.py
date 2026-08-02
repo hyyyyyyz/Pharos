@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import object_session
 
 from pharos.api.schemas import as_utc
 from pharos.db.models import (
     LiteratureResult,
     LiteratureSearch,
+    Paper,
     ProjectArtifact,
     ProjectSource,
     ResearchProject,
@@ -79,10 +83,42 @@ class LiteratureSearchOut(BaseModel):
     results: list[LiteratureResultOut]
 
 
+class LinkedPaperOut(BaseModel):
+    """The library paper a source turned out to be, as much as a client renders.
+
+    Deliberately not the full library shape. This is the answer to "can evidence
+    from this source cite a page, and of what" — a title to show, a page count
+    so the client can bound a page reference, and whether the paper is on its way
+    out of the library.
+    """
+
+    id: str
+    title: str
+    page_count: int | None
+    #: Non-null while the paper sits in the recycle bin. The link survives being
+    #: trashed — only a purge clears it — so this is what separates "anchored to
+    #: a paper you have" from "anchored to one you are about to lose".
+    deleted_at: datetime | None
+
+
 class ProjectSourceOut(BaseModel):
     id: str
     project_id: str
     result_id: str
+    #: The library paper this source is, when the user has it. NULL means
+    #: abstract-only: evidence drawn from this source has no page to point at.
+    #:
+    #: NULL is also what a *purged* paper leaves behind, because the FK is
+    #: ON DELETE SET NULL and the schema keeps no tombstone. "Never linked" and
+    #: "linked to a paper that has since been permanently deleted" are therefore
+    #: the same value here, and a client cannot tell them apart. Trashing a
+    #: paper is different and is visible: the link survives and ``paper``
+    #: carries a ``deleted_at``.
+    paper_id: str | None
+    #: Resolved from ``paper_id`` for rendering. Absent whenever ``paper_id``
+    #: is, and — failing closed — also if the id somehow names a paper this
+    #: source's owner does not own.
+    paper: LinkedPaperOut | None
     note: str | None
     added_at: datetime
     result: LiteratureResultOut
@@ -159,6 +195,21 @@ class SourcePatch(BaseModel):
     note: Annotated[str, Field(max_length=projects.MAX_NOTE)] | None
 
 
+class SourcePaperLink(BaseModel):
+    """The library paper a source is being declared to be.
+
+    A sub-resource of its own rather than another optional field on
+    ``SourcePatch``: ``note`` there is required-but-nullable, so folding the
+    link in would mean no client could set one without also rewriting the
+    researcher's note, and ``null`` would then have to mean both "leave it" and
+    "unlink". Linking and unlinking are a PUT and a DELETE on the link itself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
 class ArtifactCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -232,15 +283,64 @@ def search_out(row: LiteratureSearch) -> LiteratureSearchOut:
     )
 
 
-def source_out(row: ProjectSource) -> ProjectSourceOut:
+def _linked_papers(rows: Sequence[ProjectSource]) -> dict[str, Paper]:
+    """Load the library papers ``rows`` point at, in one owner-scoped query.
+
+    ``ProjectSource.paper_id`` is a plain FK with no ORM relationship behind it,
+    so there is nothing for the caller to eager-load and the row has to be
+    fetched here. Fetched for the whole list at once because a project renders
+    every one of its sources in one response, and a per-source lookup would turn
+    that into N+1 queries against the library.
+
+    The owner predicate is redundant — only owner-scoped service code ever
+    writes ``paper_id`` — and it is here anyway because the cost of being wrong
+    is another user's paper title rendered inside this user's project. A row
+    that fails it is simply missing from the map, so the source serialises as
+    unresolved rather than as somebody else's work.
+    """
+    wanted = {row.paper_id for row in rows if row.paper_id}
+    if not wanted:
+        return {}
+    session = object_session(rows[0])
+    if session is None:  # pragma: no cover — every caller serialises inside one
+        return {}
+    owners = {row.user_id for row in rows}
+    found = session.scalars(select(Paper).where(Paper.id.in_(wanted), Paper.user_id.in_(owners)))
+    return {paper.id: paper for paper in found}
+
+
+def _linked_paper_out(row: Paper) -> LinkedPaperOut:
+    return LinkedPaperOut(
+        id=row.id,
+        title=row.title,
+        page_count=row.page_count,
+        deleted_at=as_utc(row.deleted_at),
+    )
+
+
+def _source_out(row: ProjectSource, papers: dict[str, Paper]) -> ProjectSourceOut:
+    paper = papers.get(row.paper_id) if row.paper_id else None
     return ProjectSourceOut(
         id=row.id,
         project_id=row.project_id,
         result_id=row.result_id,
+        paper_id=row.paper_id,
+        paper=_linked_paper_out(paper) if paper is not None else None,
         note=row.note,
         added_at=as_utc(row.added_at),
         result=result_out(row.result),
     )
+
+
+def source_out(row: ProjectSource) -> ProjectSourceOut:
+    """Serialise one source. Prefer :func:`sources_out` for a list — see above."""
+    return _source_out(row, _linked_papers([row]))
+
+
+def sources_out(rows: Sequence[ProjectSource]) -> list[ProjectSourceOut]:
+    """Serialise several sources, resolving all their linked papers in one query."""
+    papers = _linked_papers(rows)
+    return [_source_out(row, papers) for row in rows]
 
 
 def artifact_out(row: ProjectArtifact) -> ProjectArtifactOut:
@@ -277,7 +377,7 @@ def project_out(row: ResearchProject) -> ProjectOut:
         updated_at=as_utc(row.updated_at),
         source_count=len(sources),
         artifact_count=len(artifacts),
-        sources=[source_out(source) for source in sources],
+        sources=sources_out(sources),
         artifacts=[artifact_out(artifact) for artifact in artifacts],
         automation_notice=AUTOMATION_NOTICE,
     )

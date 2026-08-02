@@ -30,6 +30,17 @@
  * library.
  */
 var Zotero_Pharos_Discovery = new function () {
+
+	/**
+	 * A Fluent string with arguments.
+	 *
+	 * Not Zotero.getString(): handed params, that routes to the .properties
+	 * bundle, where none of these ids exist. Fluent's own formatter is what
+	 * reads pharos.ftl.
+	 */
+	function _fmt(id, args) {
+		return Zotero.ftl.formatValueSync(id, args);
+	}
 	let _resolveInit;
 
 	/** Settles once init() has finished. See pharosDaily.js for why this is
@@ -149,7 +160,7 @@ var Zotero_Pharos_Discovery = new function () {
 			bits.push(result.venue);
 		}
 		if (typeof result.citation_count == 'number') {
-			bits.push(Zotero.getString('pharos-discovery-citations', [result.citation_count]));
+			bits.push(_fmt('pharos-discovery-citations', { count: result.citation_count }));
 		}
 		bits.push((result.sources || []).join(' + '));
 		meta.textContent = bits.join(' · ');

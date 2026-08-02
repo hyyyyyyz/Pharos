@@ -4,7 +4,12 @@ Three things live here, in the order the data moves:
 
 1. **Extraction** — pulling a plain-text rendering out of the original PDF and
    parking it on ``Paper.full_text`` (:func:`populate_full_text`, and
-   :func:`backfill_full_text` for papers that predate this module).
+   :func:`backfill_full_text` for papers that predate this module). Extraction
+   is page-aware (:func:`extract_pages`) and the flat column is derived from
+   the pages (:func:`flatten_pages`), not extracted separately — so
+   :mod:`pharos.services.chunks` can persist page-addressable rows whose
+   offsets into ``full_text`` are exact by construction rather than by a
+   second, hopefully-identical parse.
 2. **Query sanitisation** — turning an arbitrary human-typed string into
    something FTS5's ``MATCH`` will actually accept.
 3. **Searching** — :func:`search`, which runs over FTS5 when the SQLite build
@@ -21,6 +26,7 @@ from __future__ import annotations
 
 import html
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +87,100 @@ def _fit(value: str, limit: int) -> str:
     return value[: cut if cut > limit // 2 else limit].rstrip()
 
 
+@dataclass(frozen=True)
+class PageText:
+    """One page of a PDF, still attached to the page it came from."""
+
+    #: The PDF's own page index, 1-based, matching what a reader's page box
+    #: shows and matching :class:`~pharos.db.models.Highlight`.
+    #:
+    #: Carried rather than derived from this page's position in the list, and
+    #: that is the whole point of the field. Pages with no text layer — a scanned
+    #: plate, a full-bleed figure — are not represented at all, so counting list
+    #: positions would shift every later page number down by one and cite the
+    #: rest of the document to the wrong page. A citation that is confidently
+    #: off by one is worse than no citation: a reader who turns to the page and
+    #: finds nothing stops trusting every other page number too.
+    page_no: int
+    #: Already :func:`_normalise`d, and never empty — a page that normalises to
+    #: nothing is dropped rather than stored as ``""``. :func:`flatten_pages`
+    #: and the chunk offsets built on it both depend on those two properties.
+    text: str
+
+
+def extract_pages(path: Path, *, max_chars: int = FULL_TEXT_MAX_CHARS) -> list[PageText] | None:
+    """Return the PDF's text a page at a time, or ``None`` if the file cannot be read.
+
+    Never raises, for the same reason :func:`extract_full_text` does not: this
+    runs inside the upload request, and a paper that cannot be parsed — a scan
+    with no text layer, an encrypted file, a truncated download — is still a
+    perfectly good paper to keep in the library.
+
+    ``None`` and ``[]`` are different answers and the caller may care which it
+    got. ``None`` means the document could not be opened or walked at all;
+    ``[]`` means every page was read and none of them carried text. Only the
+    second is a statement about the document.
+
+    The budget is spent on *raw* page lengths and checked after each page, so
+    reading stops on a page boundary — a 700-page book is indexed up to roughly
+    the cap and not read to completion only to have most of it thrown away.
+    Charging the raw length rather than the normalised one keeps the stopping
+    point identical to what this function's flat-text predecessor did, and it is
+    the conservative direction anyway: normalisation only ever shrinks text, so
+    a raw charge can stop early but never overshoot.
+    """
+    pages: list[PageText] = []
+    budget = max_chars
+    try:
+        import pymupdf
+
+        with pymupdf.open(path) as doc:
+            for page in doc:
+                raw = page.get_text("text")
+                if not raw:
+                    continue
+                budget -= len(raw)
+                text = _normalise(raw)
+                if text:
+                    # A page can be non-empty raw and empty normalised — a stray
+                    # form feed, a run of control characters. It still cost its
+                    # budget above (that is what keeps the stopping point
+                    # unchanged) but there is nothing on it to address.
+                    pages.append(PageText(page_no=page.number + 1, text=text))
+                if budget <= 0:
+                    break
+    except Exception:
+        return None
+    return pages
+
+
+def flatten_pages(pages: Sequence[PageText], *, max_chars: int = FULL_TEXT_MAX_CHARS) -> str | None:
+    """Join pages into the one run of text ``Paper.full_text`` stores.
+
+    Exactly one space between pages, and "exactly" is load-bearing twice over.
+
+    It is what makes this substitutable for normalising the raw pages joined by
+    newline, which is how ``full_text`` used to be built: ``_normalise``
+    collapses *every* run of whitespace to a single space and strips both ends,
+    so a page break — the trailing newline of one page, the separator, the
+    leading indent of the next — was already collapsing to one space inside the
+    old whole-string pass. Per-page normalisation just does the collapsing
+    earlier. Pages that normalise to nothing are absent rather than joined as
+    ``""``, which is what stops them contributing the double space the old
+    single pass would never have produced.
+
+    And it is the arithmetic :mod:`pharos.services.chunks` walks to find each
+    page's span inside the result: page *n* starts after the sum of the earlier
+    pages' lengths plus one separator each. Any other separator, or a
+    variable-width one, would put every span after the first page out by the
+    difference.
+    """
+    flat = " ".join(page.text for page in pages)
+    if not flat:
+        return None
+    return _fit(flat, max_chars)
+
+
 def extract_full_text(path: Path, *, max_chars: int = FULL_TEXT_MAX_CHARS) -> str | None:
     """Return the plain text of a PDF, or ``None`` if it has none to give.
 
@@ -92,40 +192,42 @@ def extract_full_text(path: Path, *, max_chars: int = FULL_TEXT_MAX_CHARS) -> st
 
     ``None`` rather than ``""`` on purpose: the column's documented meaning is
     "extraction never ran or found nothing", and an empty string would be a
-    third state that reads as "we know the paper is empty".
+    third state that reads as "we know the paper is empty". Note that this
+    collapses the distinction :func:`extract_pages` draws between "unreadable"
+    and "no text anywhere" — the column has only one way to say nothing, so the
+    caller that needs the difference has to ask for pages.
     """
-    chunks: list[str] = []
-    budget = max_chars
-    try:
-        import pymupdf
-
-        with pymupdf.open(path) as doc:
-            for page in doc:
-                page_text = page.get_text("text")
-                if not page_text:
-                    continue
-                chunks.append(page_text)
-                budget -= len(page_text)
-                if budget <= 0:
-                    # Stop at a page boundary rather than reading a 700-page
-                    # book to completion only to throw most of it away.
-                    break
-    except Exception:
+    pages = extract_pages(path, max_chars=max_chars)
+    if pages is None:
         return None
+    return flatten_pages(pages, max_chars=max_chars)
 
-    joined = _normalise("\n".join(chunks))
-    if not joined:
-        return None
-    return _fit(joined, max_chars)
+
+def populate_full_text_from_pages(
+    paper: Paper, pages: Sequence[PageText], *, max_chars: int = FULL_TEXT_MAX_CHARS
+) -> bool:
+    """Set ``paper.full_text`` from an extraction the caller already has.
+
+    Split out from :func:`populate_full_text` so the upload path can open the
+    PDF once and feed both outputs — the flat column here, the page rows in
+    :mod:`pharos.services.chunks` — from that single pass. Re-opening it for the
+    second consumer would double the parse cost of every upload, and worse, two
+    parses could in principle disagree, which is precisely what the chunks'
+    offsets into this string must not have to worry about.
+    """
+    flat = flatten_pages(pages, max_chars=max_chars)
+    if flat is None:
+        return False
+    paper.full_text = flat
+    return True
 
 
 def populate_full_text(paper: Paper, path: Path, *, max_chars: int = FULL_TEXT_MAX_CHARS) -> bool:
     """Extract ``path``'s text onto ``paper.full_text``. True if anything was found.
 
-    This is the hook the upload path calls; see :func:`extract_full_text` for why
-    it cannot raise. A paper that yields nothing keeps ``full_text = None``
-    rather than being marked with a blank, so a later backfill can tell "not
-    searchable" from "never looked at".
+    See :func:`extract_full_text` for why it cannot raise. A paper that yields
+    nothing keeps ``full_text = None`` rather than being marked with a blank, so
+    a later backfill can tell "not searchable" from "never looked at".
     """
     extracted = extract_full_text(path, max_chars=max_chars)
     if extracted is None:

@@ -21,6 +21,7 @@ from pharos.api import (
     daily_vault,
     directions,
     discovery,
+    evidence,
     jobs,
     organise,
     papers,
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(annotate.router)
     app.include_router(projects.router)
     app.include_router(discovery.router)
+    app.include_router(evidence.router)
     # BEFORE daily.router, and the order is load-bearing rather than tidy. Both
     # share the /api/daily prefix, and daily.router serves GET /api/daily/{date}
     # whose path segment matches anything — the YYYY-MM-DD pattern on it is a

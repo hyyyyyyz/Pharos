@@ -19,10 +19,12 @@ from pharos.api.research_schemas import (
     ProjectPatch,
     ProjectSourceOut,
     SourceCreate,
+    SourcePaperLink,
     SourcePatch,
     artifact_out,
     project_out,
     source_out,
+    sources_out,
 )
 from pharos.db.models import User
 from pharos.services import projects
@@ -139,6 +141,72 @@ def patch_project_source(
             project_id=project_id,
             source_id=source_id,
             note=body.note,
+        )
+    )
+
+
+@router.post("/{project_id}/sources/autolink", response_model=list[ProjectSourceOut])
+def autolink_project_sources(
+    project_id: str,
+    session: Session = _SESSION_DEP,
+    user: User = _USER_DEP,
+) -> list[ProjectSourceOut]:
+    """Link every unlinked source whose paper is now in the library.
+
+    Returns only the sources this call actually changed, so a client can say
+    what happened rather than diffing the project. An empty list is the normal
+    answer and is not an error: it means nothing new matched.
+
+    Declared before ``/sources/{source_id}/...`` matters not at all here — no
+    other POST route under ``sources`` takes a path parameter — but it is kept
+    adjacent to its siblings so a later addition cannot shadow it unnoticed.
+    """
+    return sources_out(
+        projects.autolink_project_sources(session, user_id=user.id, project_id=project_id)
+    )
+
+
+@router.put("/{project_id}/sources/{source_id}/paper", response_model=ProjectSourceOut)
+def link_source_paper(
+    project_id: str,
+    source_id: str,
+    body: SourcePaperLink,
+    session: Session = _SESSION_DEP,
+    user: User = _USER_DEP,
+) -> ProjectSourceOut:
+    """Anchor a source to a paper in the caller's library.
+
+    A ``paper_id`` naming a paper the caller does not own answers 404, the same
+    as an id that names nothing at all — see ``projects._require_library_paper``
+    for why the two must be indistinguishable.
+    """
+    return source_out(
+        projects.link_source_paper(
+            session,
+            user_id=user.id,
+            project_id=project_id,
+            source_id=source_id,
+            paper_id=body.paper_id,
+        )
+    )
+
+
+@router.delete("/{project_id}/sources/{source_id}/paper", response_model=ProjectSourceOut)
+def unlink_source_paper(
+    project_id: str,
+    source_id: str,
+    session: Session = _SESSION_DEP,
+    user: User = _USER_DEP,
+) -> ProjectSourceOut:
+    """Return a source to abstract-only. The source itself is untouched.
+
+    Answers 200 with the updated source rather than 204: unlike the DELETEs
+    around it this removes a field, not a resource, and the caller wants to see
+    what the source now looks like.
+    """
+    return source_out(
+        projects.unlink_source_paper(
+            session, user_id=user.id, project_id=project_id, source_id=source_id
         )
     )
 

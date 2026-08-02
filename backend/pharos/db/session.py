@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from pharos.db.models import Base
@@ -84,10 +85,46 @@ def init_engine(db_path: Path) -> Engine:
     event.listen(engine, "connect", _configure_sqlite)
     Base.metadata.create_all(engine)
     _add_missing_columns(engine)
+    _add_missing_indexes(engine)
     _init_fts(engine)
     _engine = engine
     _SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
     return engine
+
+
+def _add_missing_indexes(engine: Engine) -> None:
+    """Create indexes the model declares that an existing database lacks.
+
+    ``create_all`` emits a table's indexes only when it creates the table, so
+    marking an existing column ``index=True`` takes effect on fresh databases
+    and silently does not on upgraded ones. Nothing fails -- the queries still
+    return the right rows, just by scanning -- which is precisely why it would
+    go unnoticed until someone with a large library complained about a slow
+    page. ``CREATE INDEX IF NOT EXISTS`` is cheap and idempotent, so the fix is
+    to stop relying on ``create_all`` for this at all.
+
+    Unlike a CHECK constraint (see :func:`_add_missing_columns`), an index CAN
+    be added to a populated table after the fact, which is the whole reason this
+    is fixable here and that one is not.
+    """
+    existing = set()
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+        existing = {row[0] for row in rows}
+
+    for table in Base.metadata.sorted_tables:
+        for index in table.indexes:
+            if index.name in existing:
+                continue
+            try:
+                index.create(bind=engine, checkfirst=True)
+            except OperationalError:
+                # The table itself may be absent on a partially-built database.
+                # A missing index is a performance question, never a correctness
+                # one, so it must not be able to stop the application booting.
+                continue
 
 
 def _add_missing_columns(engine: Engine) -> None:
@@ -101,6 +138,15 @@ def _add_missing_columns(engine: Engine) -> None:
 
     Anything beyond adding a nullable column (dropping, renaming, retyping,
     backfilling) is out of scope and needs a real migration tool.
+
+    One trap worth naming, because it fails silently and in only half the
+    installations: ``ALTER TABLE ADD COLUMN`` cannot carry a CHECK constraint.
+    A constrained column added to an *existing* table would therefore be
+    enforced on every fresh database and on none of the upgraded ones, with
+    nothing raising to say so. ``Evidence``'s page-number constraint is safe
+    only because ``evidence`` is a whole new table, which ``create_all`` writes
+    with its constraints intact. A constraint that matters must arrive with its
+    table, or with a real migration.
     """
     with engine.begin() as conn:
         for table in Base.metadata.sorted_tables:

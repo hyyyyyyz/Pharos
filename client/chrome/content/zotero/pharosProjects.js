@@ -34,6 +34,17 @@ var Zotero_Pharos_Projects = new function () {
 	let _resolveInit;
 	let _project = null;
 
+	/**
+	 * A Fluent string with arguments.
+	 *
+	 * Not Zotero.getString(): handed params, that routes to the .properties
+	 * bundle, where none of these ids exist. Fluent's own formatter is what
+	 * reads pharos.ftl.
+	 */
+	function _fmt(id, args) {
+		return Zotero.ftl.formatValueSync(id, args);
+	}
+
 	/** See pharosDaily.js for why this is created here rather than in onload. */
 	this.initialized = new Promise((resolve) => {
 		_resolveInit = resolve;
@@ -141,11 +152,11 @@ var Zotero_Pharos_Projects = new function () {
 		}
 
 		this._renderSection(
-			Zotero.getString('pharos-projects-sources', [project.source_count]),
+			_fmt('pharos-projects-sources', { count: project.source_count }),
 			(project.sources || []).map(source => this._renderSource(source))
 		);
 		this._renderSection(
-			Zotero.getString('pharos-projects-artifacts', [project.artifact_count]),
+			_fmt('pharos-projects-artifacts', { count: project.artifact_count }),
 			(project.artifacts || []).map(artifact => this._renderArtifact(artifact, project))
 		);
 	};
