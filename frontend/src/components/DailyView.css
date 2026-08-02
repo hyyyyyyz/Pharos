@@ -171,6 +171,20 @@
   flex: 1;
 }
 
+/* The reading model. Truncates rather than pushing the controls off the row:
+   model ids run long ("qwen2.5-72b-instruct-awq") and no part of this bar may
+   be lost to one. The provider name and the full id are on the title. */
+.ph-dv-model {
+  flex: none;
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  cursor: default;
+}
+
 .ph-dv-sort {
   display: flex;
   flex: none;
@@ -594,6 +608,22 @@
   box-shadow: inset 2px 0 0 var(--c-ac);
 }
 .ph-dv-card.is-selected:hover {
+  background: var(--c-acs);
+}
+
+/* Keyboard focus. The card is a control (role="button") that already changes
+   background on hover and again on select, so the ring alone — drawn by the
+   browser, in whatever colour it likes, against whichever of those two
+   backgrounds happens to be underneath — is too easy to lose track of. The
+   background is claimed as well, so "where am I" is answered by the same cue
+   the pointer gets. Inset offset because the cards are full-bleed inside a
+   scroller: an outward ring is clipped on the first and last rows. */
+.ph-dv-card:focus-visible {
+  outline: 2px solid var(--c-ac, #5b53d6);
+  outline-offset: -2px;
+  background: var(--c-hv);
+}
+.ph-dv-card.is-selected:focus-visible {
   background: var(--c-acs);
 }
 

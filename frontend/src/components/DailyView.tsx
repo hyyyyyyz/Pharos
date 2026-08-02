@@ -26,15 +26,24 @@
  *   - "No papers" now has several distinct causes, and they need different
  *     fixes from different people. A day nobody has swept is the operator's
  *     problem; a day that swept 80 papers and matched none of yours is yours,
- *     and is solved in settings. Collapsing the two would leave someone staring
- *     at an empty list with no idea their own configuration caused it, so the
- *     empty states below are deliberately separate and each names its own fix.
+ *     and is solved in settings; a digest that is simply switched off is
+ *     neither, and telling that user to go widen their keywords would send them
+ *     to fix something that is not broken. Collapsing them would leave someone
+ *     staring at an empty list with no idea their own configuration caused it,
+ *     so the empty states below are deliberately separate and each names its
+ *     own fix.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
-import type { DailyHighlights, DailyPaper, DailyScores } from "../api/types";
+import type {
+  DailyDate,
+  DailyHighlights,
+  DailyPaper,
+  DailyProvider,
+  DailyScores,
+} from "../api/types";
 import { Icons } from "../design/icons";
 import {
   chooseDailyVaultDirectory,
@@ -115,6 +124,19 @@ const manifestPaperCount = (manifest: DailyVaultManifest | null): number =>
 /** One decimal, matching the scale the reading prompt scores on. */
 const fmtScore = (v: number | null | undefined): string =>
   v === null || v === undefined ? "—" : v.toFixed(1);
+
+/**
+ * Which model wrote the readings on this screen.
+ *
+ * Every 中文速览, every 要点 and every score in this module is a model's output,
+ * and they are not interchangeable: the same paper read by a different provider
+ * comes back with a different card and a different 推荐分. So the model is named
+ * on screen rather than left to be inferred from the settings page.
+ */
+const providerLabel = (provider: DailyProvider | null): string =>
+  provider === null || !provider.configured || provider.name === ""
+    ? "未配置解读模型"
+    : `解读模型：${provider.name} · ${provider.model}`;
 
 /**
  * Visual weight class for a recommendation score.
@@ -222,8 +244,24 @@ export function DailyView(): JSX.Element {
       refresh.isPending || q.state.data?.sweeping != null ? POLL_MS : false,
   });
 
+  /**
+   * The digest's own on/off switch, which rides on `/daily/config` — NOT on
+   * `/daily/status`, so it needs a request of its own.
+   *
+   * It gets one because this is the single state that hides the whole module,
+   * and it cannot be inferred from an emptiness: with the digest off the backend
+   * matches nothing for this account by construction, so every empty state below
+   * is a symptom of it, and the one that would otherwise fire ("没有论文匹配你的
+   * 方向") sends the user off to widen directions that are working perfectly.
+   */
+  const configQuery = useQuery({
+    queryKey: ["daily", "config"],
+    queryFn: () => api.daily.config.get(),
+  });
+
   const run = statusQuery.data?.last_run ?? null;
   const llmConfigured = statusQuery.data?.llm_configured ?? true;
+  const provider = statusQuery.data?.provider ?? null;
   /** A sweep is in flight — the only condition under which anything polls. */
   const busy = refresh.isPending || statusQuery.data?.sweeping != null;
 
@@ -245,6 +283,35 @@ export function DailyView(): JSX.Element {
   // No explicit selection yet -> show the newest digest, which is what someone
   // opening this module in the morning wants.
   const activeDate = dailyDate ?? dates[0]?.date ?? null;
+
+  /**
+   * The live sweep counters, read off the caller's own per-date summary.
+   *
+   * Deliberately NOT `last_run.fetched` / `.read_done` / `.read_failed`. Those
+   * three columns are written exactly twice: zeroed by `_begin_run` when the
+   * sweep starts, and filled by `_finish_run` when it ends. For the whole
+   * duration of a sweep — minutes — they read 0, and then jump to the totals at
+   * the one moment a progress line has nothing left to report. The date
+   * summaries are recomputed from the paper rows on every request, and the sweep
+   * commits one paper at a time (`_store_reading` and `_store_read_error` each
+   * open their own transaction), so these numbers actually move while it runs.
+   * Do not "simplify" this back to `run.*`.
+   *
+   * They are also the CALLER's counts, which is why the line below says 已匹配
+   * and not 已抓取: one shared sweep fetches the union of everyone's categories,
+   * and only what hits this account's keywords ever reaches this list.
+   */
+  const sweepProgress = useMemo<DailyDate | null>(() => {
+    const status = statusQuery.data;
+    if (status === undefined) return null;
+    // In the gap between "refresh accepted" and "status reports a live sweep",
+    // `sweeping` is still null. This client only ever sweeps today, so today's
+    // summary is the right stand-in for that one poll.
+    const date = status.sweeping ?? status.today?.date ?? null;
+    if (date === null) return null;
+    if (status.today !== null && status.today.date === date) return status.today;
+    return dates.find((d) => d.date === date) ?? null;
+  }, [statusQuery.data, dates]);
 
   const papersQuery = useQuery({
     queryKey: ["daily", "day", activeDate ?? ""],
@@ -544,22 +611,30 @@ export function DailyView(): JSX.Element {
   const statusReady = statusQuery.isSuccess;
 
   /* ----------------------------------------------------- empty-state triage
-     Three different causes, three different fixes, resolved once here so the
-     JSX below reads as a list of cases rather than a nest of conditions.
+     Four different causes, four different fixes, resolved once here so the
+     JSX below reads as a list of cases rather than a nest of conditions. They
+     are ordered by how far upstream the cause sits, and each one suppresses the
+     ones below it.
 
-     `noDirections` wins over everything: with no enabled directions the backend
-     matches nothing by construction, so every other emptiness downstream is a
-     consequence of it and saying "nothing matched" would describe the symptom
-     while hiding the cause. It is reachable only deliberately — a new account is
-     seeded with defaults on first read — so it means "you deleted them all",
-     not "you never set them up", and the copy says so. */
-  const noDirections = statusReady && directions.length === 0;
+     `digestOff` is first: with the module switched off nothing can reach this
+     view no matter how the directions are configured, so every emptiness under
+     it is a symptom. Gated on `isSuccess` rather than on `data?.enabled ===
+     false` — a config that could not be READ is not a config that is off, and
+     this is the one state that hides the whole module.
+
+     `noDirections` is next: with no enabled directions the backend matches
+     nothing by construction, so saying "nothing matched" would describe the
+     symptom while hiding the cause. It is reachable only deliberately — a new
+     account is seeded with defaults on first read — so it means "you deleted
+     them all", not "you never set them up", and the copy says so. */
+  const digestOff = configQuery.isSuccess && !configQuery.data.enabled;
+  const noDirections = statusReady && !digestOff && directions.length === 0;
   /** The install has swept at least once, so an empty rail is the filter's doing
    *  and not a digest that has never run. */
   const everSwept = statusReady && run !== null;
   const railEmpty = datesReady && dates.length === 0;
-  const showFirstUse = railEmpty && !noDirections && !everSwept;
-  const showNothingMatched = railEmpty && !noDirections && everSwept;
+  const showFirstUse = railEmpty && !digestOff && !noDirections && !everSwept;
+  const showNothingMatched = railEmpty && !digestOff && !noDirections && everSwept;
 
   const toSettings = (): void => openSettings(DIRECTIONS_TAB);
 
@@ -574,7 +649,13 @@ export function DailyView(): JSX.Element {
             thing the centre panel spells out — kept terse to match its width. */}
         {railEmpty && (
           <div className="ph-dv-rail-note">
-            {noDirections ? "未配置方向" : everSwept ? "无匹配日期" : "暂无记录"}
+            {digestOff
+              ? "已关闭"
+              : noDirections
+                ? "未配置方向"
+                : everSwept
+                  ? "无匹配日期"
+                  : "暂无记录"}
           </div>
         )}
         {dates.map((d) => (
@@ -618,6 +699,16 @@ export function DailyView(): JSX.Element {
             </div>
           )}
           <div className="ph-dv-spacer" />
+          {/* The reading model, named on the bar. Not a tooltip-only detail:
+              every summary and every score on this screen came out of it, and
+              two providers give the same paper two different cards. Suppressed
+              while the 未配置 banner is up — that banner already says there is
+              no model, and repeating it here would be noise. */}
+          {llmConfigured && provider !== null && (
+            <span className="ph-dv-model" title={providerLabel(provider)}>
+              {provider.model}
+            </span>
+          )}
           <div className="ph-dv-sort">
             <button
               className={sort === "score" ? "ph-dv-sbtn is-on" : "ph-dv-sbtn"}
@@ -649,7 +740,15 @@ export function DailyView(): JSX.Element {
             className="ph-dv-refresh"
             disabled={busy}
             onClick={() => refresh.mutate()}
-            title="抓取今日 arXiv 并解读"
+            // The provider rides along here too, so which model is about to
+            // read today's papers is one hover away from the button that starts
+            // it — including on a narrow window where the bar's own label is
+            // the first thing to be squeezed.
+            title={
+              llmConfigured
+                ? `抓取今日 arXiv 并解读\n${providerLabel(provider)}`
+                : "抓取今日 arXiv 并解读"
+            }
           >
             <span className={busy ? "ph-dv-refresh-ic is-spin" : "ph-dv-refresh-ic"}>
               <Icons.sync />
@@ -658,15 +757,17 @@ export function DailyView(): JSX.Element {
           </button>
         </div>
 
-        {/* Live counters while a sweep runs — the reason the poll exists. The
-            fetched count is the SHARED sweep's, not this reader's: the sweep
-            fetches the union of everyone's categories, so it will usually
-            exceed the number of cards that end up in this list. */}
+        {/* Live counters while a sweep runs — the reason the poll exists. See
+            `sweepProgress` for why these come from the caller's own date
+            summary and not from `last_run`, which reads 0 until the sweep is
+            already over. */}
         {busy && (
           <div className="ph-dv-note">
-            正在更新 · 已抓取 {run?.fetched ?? 0} 篇
-            {run ? ` · 已解读 ${run.read_done}` : ""}
-            {run && run.read_failed > 0 ? ` · 失败 ${run.read_failed}` : ""}
+            正在更新 · 已匹配 {sweepProgress?.total ?? 0} 篇 · 已解读{" "}
+            {sweepProgress?.read ?? 0}
+            {sweepProgress !== null && sweepProgress.failed > 0
+              ? ` · 解读失败 ${sweepProgress.failed}`
+              : ""}
           </div>
         )}
 
@@ -714,7 +815,31 @@ export function DailyView(): JSX.Element {
             </div>
           )}
 
-          {/* ---- cause 1: no directions at all. Nothing can match; say that. */}
+          {/* ---- cause 1: the module is switched off for this account. The
+                  directions are untouched and the shared sweep keeps running;
+                  nothing is delivered here until the switch goes back on, so
+                  that switch is the only fix worth offering. */}
+          {digestOff && (
+            <div className="ph-dv-firstuse">
+              <div className="ph-dv-firstuse-inner">
+                <div className="ph-dv-firstuse-mark">
+                  <Icons.daily size={26} sw={1.2} />
+                </div>
+                <div className="ph-dv-firstuse-title">每日论文已关闭</div>
+                <div className="ph-dv-firstuse-desc">
+                  这个账号关闭了每日论文。抓取仍在继续，你的研究方向也都还在，
+                  但不会有论文进入这里。
+                  <br />
+                  在设置里重新开启即可恢复，历史日期会一并回来。
+                </div>
+                <button className="ph-dv-cta" onClick={toSettings}>
+                  前往设置
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ---- cause 2: no directions at all. Nothing can match; say that. */}
           {noDirections && (
             <div className="ph-dv-firstuse">
               <div className="ph-dv-firstuse-inner">
@@ -735,7 +860,7 @@ export function DailyView(): JSX.Element {
             </div>
           )}
 
-          {/* ---- cause 2: never swept. The digest itself has not run yet. */}
+          {/* ---- cause 3: never swept. The digest itself has not run yet. */}
           {showFirstUse && (
             <div className="ph-dv-firstuse">
               <div className="ph-dv-firstuse-inner">
@@ -766,7 +891,7 @@ export function DailyView(): JSX.Element {
             </div>
           )}
 
-          {/* ---- cause 3: swept, but nothing matched THIS reader. The fix is
+          {/* ---- cause 4: swept, but nothing matched THIS reader. The fix is
                   the user's, so the settings action leads and 更新 follows. */}
           {showNothingMatched && (
             <div className="ph-dv-firstuse">
@@ -800,7 +925,7 @@ export function DailyView(): JSX.Element {
           {/* ---- the same triage for one date the user navigated to. Reachable
                   when a date is selected and then the directions change under
                   it, since `/dates` would no longer list it. */}
-          {papersQuery.isSuccess && papers.length === 0 && !noDirections && (
+          {papersQuery.isSuccess && papers.length === 0 && !digestOff && !noDirections && (
             <div className="ph-dv-empty">
               {dayRun === null ? (
                 <div className="ph-dv-empty-text">
@@ -833,7 +958,27 @@ export function DailyView(): JSX.Element {
               <article
                 key={p.id}
                 className={p.id === dailyPaperId ? "ph-dv-card is-selected" : "ph-dv-card"}
+                // Selecting a card is the ONLY way to fill the detail pane, so
+                // without these the whole right-hand side — 中文速览, 要点,
+                // 评分, 导入文库, 解读 — is unreachable without a mouse, while
+                // every other control on this screen (the sort toggle, the
+                // filter chips, 更新) is a real button and tabs fine.
+                //
+                // Still an <article>, not a <button>: the card is a stack of
+                // line-clamped blocks and a button would fight both the layout
+                // and the text selection. The role and the key handler are what
+                // make it announce and behave as the control it already was.
+                role="button"
+                tabIndex={0}
+                aria-pressed={p.id === dailyPaperId}
                 onClick={() => setDailyPaper(p.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  // Space would otherwise page the list. Both keys are the half
+                  // of the button contract a non-button never gets for free.
+                  event.preventDefault();
+                  setDailyPaper(p.id);
+                }}
               >
                 <div className="ph-dv-card-top">
                   <span

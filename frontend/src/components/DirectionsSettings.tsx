@@ -497,6 +497,26 @@ export function DirectionsSettings(): JSX.Element {
   });
 
   /**
+   * The module's own switch.
+   *
+   * Its own mutation, saved on click rather than joined to the 抓取设置 draft
+   * further down: a switch that silently needs a separate 保存 is a switch that
+   * does not work. Defaults to `true` while the config is loading, because the
+   * only thing this flag can do is hide the whole module, and a request that has
+   * not come back yet is not an account that turned it off.
+   */
+  const digestEnabled = config?.enabled ?? true;
+  const toggleDigest = useMutation({
+    mutationFn: (enabled: boolean) => api.daily.config.update({ enabled }),
+    onSuccess: (saved) => {
+      qc.setQueryData(["daily", "config"], saved);
+      // 每日论文 triages its whole empty state off this flag, and the shared
+      // sweep pools its net only from the accounts that have it on.
+      invalidateFeed(qc);
+    },
+  });
+
+  /**
    * Re-create the defaults, one create call each.
    *
    * Sequential, not `Promise.all`: creates land in call order and position is
@@ -602,6 +622,35 @@ export function DirectionsSettings(): JSX.Element {
           新加的分类要等下一次抓取才会带回论文，之前的日期不会补上。
         </div>
       </div>
+
+      {/* The switch that governs the whole module. It lives here because the
+          每日论文 view can only REPORT being switched off — it offers 前往设置
+          as the fix, and a settings page with no switch on it is not one. */}
+      <div className="ph-dir-row">
+        <div className="ph-dir-main">
+          <div className="ph-dir-name">
+            每日论文
+            {config !== undefined && !config.enabled && (
+              <span className="ph-dir-badge">已关闭</span>
+            )}
+          </div>
+          <div className="ph-dir-kws">
+            关闭后论文不再进入「每日论文」，方向、抓取设置和历史日期都保留，重新开启即可恢复。
+          </div>
+        </div>
+        <div className="ph-dir-acts">
+          <button
+            type="button"
+            className={cx("ph-set-btn", digestEnabled && "ph-dir-btn--on")}
+            onClick={() => toggleDigest.mutate(!digestEnabled)}
+            disabled={configQuery.isPending || toggleDigest.isPending}
+            aria-pressed={digestEnabled}
+          >
+            {digestEnabled ? "启用中" : "已关闭"}
+          </button>
+        </div>
+      </div>
+      {toggleDigest.isError && <div className="ph-set-err">{errText(toggleDigest.error)}</div>}
 
       {/* ------------------------------------------------------------ 方向 */}
 
