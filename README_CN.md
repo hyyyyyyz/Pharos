@@ -22,6 +22,7 @@
 [路线图](docs/ROADMAP.md) ·
 [客户端阶段记录](docs/PHASE-CLIENT.md) ·
 [证据阶段记录](docs/PHASE-EVIDENCE.md) ·
+[界面复刻阶段记录](docs/PHASE-PARITY.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>

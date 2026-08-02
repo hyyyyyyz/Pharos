@@ -24,6 +24,7 @@ desktop-first platform.
 [Roadmap](docs/ROADMAP.md) ·
 [Client phases](docs/PHASE-CLIENT.md) ·
 [Evidence phase](docs/PHASE-EVIDENCE.md) ·
+[Parity phase](docs/PHASE-PARITY.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>
