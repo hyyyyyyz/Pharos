@@ -63,6 +63,27 @@ around a library and a document; a writing environment is built around a
 document being produced. Putting each in the wrong one makes both worse, and it
 is the most common way a feature ends up in the wrong place.
 
+**Amended.** This was read too widely. It was taken to mean the desktop's
+research-projects module should be read-only — the module header said so, and
+the result was a window where a researcher could see their nine stages but only
+ever move forward through them, could not create a project, could not write or
+correct a single record, and was told by an empty state to go and use the web
+app. That is not "writing belongs in the web app". Editing a hypothesis while
+looking at the paper that prompted it is *reading-side* work, and sending someone
+to a browser to do it is exactly the seam this project exists to remove.
+
+The line now falls where the original reasoning actually put it: **the desktop
+owns everything that happens with a paper in front of you**, including the
+records made about it. What stays web-only is composing the manuscript itself —
+long-form writing against a document being produced — plus administration and
+configuration at scale.
+
+The narrower reading also produced a second failure worth naming: capabilities
+were built into `xpcom/pharos/projects.py`'s desktop twin and then never called
+from any UI, so `create`, `getArtifacts` and their neighbours sat as dead code —
+finished work that reached nobody because a decision recorded here said it should
+not.
+
 ## 5. Pharos keeps its own library, in `~/Pharos`
 
 The desktop client's data directory is `~/Pharos`, its database is

@@ -794,10 +794,19 @@ export function ProjectsView(): JSX.Element {
                   </button>
                 </div>
 
-                <div className="ph-proj-automation-note">
-                  <Icons.alert size={15} />
-                  <span title={project.automation_notice}>当前仅保存科研记录，不会运行代码或实验；实验结果与人工核验状态必须由研究者根据真实证据填写。</span>
-                </div>
+                {/* The backend's own sentence, verbatim — never a translation or
+                    a summary of it. `docs/DECISIONS.md` §9 makes this a contract
+                    every client keeps: the notice is worded to avoid implying
+                    anything was executed, and a record that reads like an
+                    experiment result must never appear detached from it. A
+                    paraphrase is a promise the backend did not make, and one
+                    hidden in a `title=` tooltip is not shown at all. */}
+                {project.automation_notice && (
+                  <div className="ph-proj-automation-note">
+                    <Icons.alert size={15} />
+                    <span>{project.automation_notice}</span>
+                  </div>
+                )}
 
                 {artifactDraft !== null && (
                   <form className="ph-proj-artifact-editor" onSubmit={saveArtifact}>
