@@ -32,6 +32,37 @@ describe("Zotero.Pharos.Chat", function () {
 		return s;
 	}
 
+	/**
+	 * Sign in and say what model the account has.
+	 *
+	 * Every section test that gets as far as _restore() needs both: the section
+	 * asks for the provider on selection so that a missing model is reported
+	 * before the composer is used, and an unstubbed lookup would go to the
+	 * network.
+	 */
+	function signedInWith(provider) {
+		stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+		return stub(Zotero.Pharos.Chat, 'getProvider').resolves(provider);
+	}
+
+	/** A stream that emits one fragment and then waits to be aborted. */
+	function stubHangingStream(firstDelta) {
+		return stub(Zotero.Pharos.Chat, 'sendMessage')
+			.callsFake((conversationID, message, { onDelta, signal }) => {
+				if (onDelta) {
+					onDelta(firstDelta);
+				}
+				return new Promise((resolve, reject) => {
+					signal.addEventListener('abort', () => {
+						// What Zotero.Pharos.API.stream() propagates from fetch.
+						let error = new Error('aborted');
+						error.name = 'AbortError';
+						reject(error);
+					});
+				});
+			});
+	}
+
 	before(async function () {
 		win = await loadZoteroPane();
 		zp = win.ZoteroPane;
@@ -121,6 +152,98 @@ describe("Zotero.Pharos.Chat", function () {
 			captureRequests([]);
 			assert.isNull(await Zotero.Pharos.Chat.getLatestConversation('paper-1'));
 			assert.lengthOf(requests, 1);
+		});
+	});
+
+	describe("#listConversations()", function () {
+		it("should keep the backend's newest-first order", async function () {
+			captureRequests([{ id: 'newest' }, { id: 'older' }]);
+			var conversations = await Zotero.Pharos.Chat.listConversations('paper-1');
+			assert.deepEqual(conversations.map(c => c.id), ['newest', 'older']);
+		});
+
+		it("should return an array for an empty body", async function () {
+			// request() answers null for a 200 with nothing in it, and every
+			// caller here iterates the result.
+			captureRequests(null);
+			assert.deepEqual(await Zotero.Pharos.Chat.listConversations('paper-1'), []);
+		});
+	});
+
+	describe("#createConversation()", function () {
+		it("should POST without inventing a title", async function () {
+			// The backend names a conversation after its first question. A title
+			// sent from here would be a worse one that then stuck.
+			captureRequests({ id: 'created', title: '论文对话' });
+			var conversation = await Zotero.Pharos.Chat.createConversation('paper-1');
+			assert.equal(conversation.id, 'created');
+			assert.lengthOf(requests, 1);
+			assert.equal(requests[0].method, 'POST');
+			assert.equal(requests[0].path, '/api/ai/papers/paper-1/conversations');
+			assert.deepEqual(requests[0].options.body, {});
+		});
+	});
+
+	describe("#deleteConversation()", function () {
+		it("should delete the conversation and nothing else", async function () {
+			// The confirmation promises that the paper's index survives. That is
+			// true of the backend -- PaperAiContext is a separate table keyed by
+			// (user, paper) and delete_conversation() never touches it -- and it
+			// stays true only while this client sends exactly one request.
+			captureRequests(null);
+			await Zotero.Pharos.Chat.deleteConversation('conversation-1');
+			assert.lengthOf(requests, 1);
+			assert.equal(requests[0].method, 'DELETE');
+			assert.equal(requests[0].path, '/api/ai/conversations/conversation-1');
+		});
+	});
+
+	describe("#getProvider()", function () {
+		it("should ask once per session", async function () {
+			// Asked on every item switch. Without the cache, arrowing down a
+			// list of papers is one request per row.
+			captureRequests({ configured: true, model: 'gpt-4o-mini' });
+			assert.isTrue((await Zotero.Pharos.Chat.getProvider()).configured);
+			assert.isTrue((await Zotero.Pharos.Chat.getProvider()).configured);
+			assert.lengthOf(requests, 1);
+		});
+
+		it("should ask again when asked to refresh", async function () {
+			// A model configured in the web app mid-session has to be reachable
+			// without restarting the client.
+			var configured = false;
+			captureRequests(() => ({ configured: (configured = !configured) }));
+			assert.isTrue((await Zotero.Pharos.Chat.getProvider()).configured);
+			assert.isFalse((await Zotero.Pharos.Chat.getProvider({ refresh: true })).configured);
+			assert.lengthOf(requests, 2);
+		});
+
+		it("should not remember a failure", async function () {
+			// A cached rejection would be handed to every later caller, forever,
+			// including after the server came back.
+			var fail = true;
+			captureRequests(() => {
+				if (fail) {
+					throw new Error('boom');
+				}
+				return { configured: true };
+			});
+			assert.instanceOf(await getPromiseError(Zotero.Pharos.Chat.getProvider()), Error);
+			fail = false;
+			assert.isTrue((await Zotero.Pharos.Chat.getProvider()).configured);
+		});
+	});
+
+	describe("#getContext()", function () {
+		it("should read without preparing", async function () {
+			// The whole of the section's laziness rests on this being a GET:
+			// ensureContext() would start an extraction, and reporting state
+			// must never do that.
+			captureRequests({ status: 'ready', charCount: 1234, hasSummary: true });
+			var context = await Zotero.Pharos.Chat.getContext('paper-1');
+			assert.equal(context.charCount, 1234);
+			assert.deepEqual(requests.map(r => r.method), ['GET']);
+			assert.equal(requests[0].path, '/api/ai/papers/paper-1/context');
 		});
 	});
 
@@ -321,9 +444,10 @@ describe("Zotero.Pharos.Chat", function () {
 			var item = await createDataObject('item');
 			var attachment = await importPDFAttachment(item);
 
-			stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+			signedInWith({ configured: true });
 			stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
-			stub(Zotero.Pharos.Chat, 'getLatestConversation').resolves({ id: 'conversation-1' });
+			stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+			stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
 			stub(Zotero.Pharos.Chat, 'getMessages').resolves([
 				{ role: 'user', content: 'what is the contribution?' },
 				{ role: 'assistant', content: 'a new sampler' },
@@ -357,13 +481,14 @@ describe("Zotero.Pharos.Chat", function () {
 			await importPDFAttachment(second);
 
 			var release;
-			stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+			signedInWith({ configured: true });
 			// Only the first paper has been resolved this session, so only it
 			// can restore -- which is also what stops the second item's own
 			// load from standing in for the leak this is looking for.
 			stub(Zotero.Pharos.Chat, 'getKnownPaperID')
 				.callsFake(a => (a && a.id == firstPDF.id ? 'paper-1' : null));
-			stub(Zotero.Pharos.Chat, 'getLatestConversation').resolves({ id: 'conversation-1' });
+			stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+			stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
 			stub(Zotero.Pharos.Chat, 'getMessages')
 				.returns(new Promise(resolve => (release = resolve)));
 
@@ -382,17 +507,25 @@ describe("Zotero.Pharos.Chat", function () {
 			// Resolving a paper uploads its file. Doing that on selection would
 			// upload the library one arrow key at a time, which is why the
 			// section stays inert until a question is asked.
+			//
+			// The provider lookup that does happen here is the deliberate
+			// exception: it reads the account's configuration rather than the
+			// paper, and it is the only way a missing model can be reported
+			// before a question has been written and lost.
 			var item = await createDataObject('item');
 			await importPDFAttachment(item);
 
 			stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
-			captureRequests({});
+			captureRequests({ configured: true });
 
 			var box = win.document.getElementById('zotero-editpane-pharos-chat');
 			switchTo(box, item);
 			await Zotero.Promise.delay(50);
 
-			assert.lengthOf(requests, 0);
+			assert.deepEqual(
+				requests.map(r => `${r.method} ${r.path}`),
+				['GET /api/ai/provider']
+			);
 		});
 
 		it("should stay answerable when the thread cannot be loaded", async function () {
@@ -401,9 +534,10 @@ describe("Zotero.Pharos.Chat", function () {
 			var item = await createDataObject('item');
 			await importPDFAttachment(item);
 
-			stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+			signedInWith({ configured: true });
 			stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
-			stub(Zotero.Pharos.Chat, 'getLatestConversation').resolves({ id: 'conversation-1' });
+			stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+			stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
 			stub(Zotero.Pharos.Chat, 'getMessages').rejects(new Error('boom'));
 
 			var box = win.document.getElementById('zotero-editpane-pharos-chat');
@@ -423,9 +557,10 @@ describe("Zotero.Pharos.Chat", function () {
 			var item = await createDataObject('item');
 			await importPDFAttachment(item);
 
-			stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+			signedInWith({ configured: true });
 			stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
-			stub(Zotero.Pharos.Chat, 'getLatestConversation').resolves({ id: 'conversation-1' });
+			stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+			stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
 			stub(Zotero.Pharos.Chat, 'getMessages').resolves([
 				{ role: 'user', content: 'only once' },
 			]);
@@ -438,6 +573,556 @@ describe("Zotero.Pharos.Chat", function () {
 
 			assert.equal(box._messages.childElementCount, 1);
 			assert.equal(Zotero.Pharos.Chat.getMessages.callCount, 1);
+		});
+	});
+
+	describe("item pane section state", function () {
+		/** @see the identical helper above; both describes drive the same box. */
+		function switchTo(box, item) {
+			box.item = null;
+			box.item = item;
+		}
+
+		/** An item with a PDF, selected, with its section handed the item. */
+		async function openBox() {
+			var item = await createDataObject('item');
+			await importPDFAttachment(item);
+			await zp.itemsView.selectItems([item.id]);
+			var box = win.document.getElementById('zotero-editpane-pharos-chat');
+			switchTo(box, item);
+			return { box, item };
+		}
+
+		beforeEach(async function () {
+			await selectLibrary(win);
+			// The provider is account state, so the section deliberately keeps
+			// it across item switches -- which in one long-lived window means
+			// across tests too.
+			win.document.getElementById('zotero-editpane-pharos-chat')._provider = null;
+		});
+
+		describe("no model configured", function () {
+			it("should say so, and where to go, rather than wait for the stream to fail", async function () {
+				// Before this, a missing model reached the user as whatever the
+				// backend's 503 happened to say, in the same grey line the next
+				// action overwrites -- and only after the question had been
+				// written and thrown away.
+				signedInWith({ configured: false, source: 'none' });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var stream = stub(Zotero.Pharos.Chat, 'sendMessage').resolves('');
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+
+				assert.isFalse(box._notice.hidden, "the card is shown");
+				assert.isTrue(box._input.disabled, "the composer is dead on purpose");
+				assert.isTrue(box._send.disabled);
+
+				box._input.value = 'what is the contribution?';
+				await box.send();
+				assert.isFalse(stream.called, "nothing is sent while the gate is up");
+			});
+
+			it("should not gate the composer while the lookup is still in flight", async function () {
+				// null is "not asked yet", not "no model". Gating on it would
+				// blank the composer for a round trip on every selection.
+				stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'getProvider').returns(new Promise(() => {}));
+
+				var { box } = await openBox();
+				await Zotero.Promise.delay(50);
+
+				assert.isNull(box._provider);
+				assert.isTrue(box._notice.hidden);
+				assert.isFalse(box._input.disabled);
+			});
+
+			it("should lift the gate once a model is configured", async function () {
+				signedInWith({ configured: true, source: 'server' });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+
+				assert.isTrue(box._notice.hidden);
+				assert.isFalse(box._input.disabled);
+			});
+
+			it("should show the sign-in card when there is no account", async function () {
+				stub(Zotero.Pharos.API, 'hasCredentials').returns(false);
+				var provider = stub(Zotero.Pharos.Chat, 'getProvider').resolves({ configured: true });
+
+				var { box } = await openBox();
+				await Zotero.Promise.delay(50);
+
+				assert.equal(box._gate(), 'signed-out');
+				assert.isFalse(box._notice.hidden);
+				assert.isTrue(box._input.disabled);
+				assert.isFalse(provider.called, "signed out, nothing is asked of the server");
+			});
+		});
+
+		describe("resting state", function () {
+			it("should report a paper it already understands without preparing one", async function () {
+				// The laziness is deliberate: resolving a paper uploads it. What
+				// this adds is the report, and the report must not become the
+				// preparation.
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+				var ensure = stub(Zotero.Pharos.Chat, 'ensureContext').resolves({});
+				stub(Zotero.Pharos.Chat, 'getContext').resolves({
+					status: 'ready',
+					hasSummary: true,
+					charCount: 41234,
+				});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._phase == 'ready', 10, 5);
+
+				assert.isFalse(ensure.called, "reporting must not prepare");
+				assert.include(box._phaseChars.textContent, '41');
+				assert.isFalse(box._phaseChars.hidden);
+			});
+
+			it("should say the paper is read on the first question when nothing is known", async function () {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+
+				var { box } = await openBox();
+				await Zotero.Promise.delay(50);
+
+				assert.equal(box._phase, 'unknown');
+				assert.equal(
+					box._phaseLabel.textContent,
+					Zotero.getString('pharos-chat-phase-lazy')
+				);
+				assert.isTrue(box._phaseChars.hidden);
+			});
+
+			it("should keep painting when the item's data is not loaded", async function () {
+				// getDisplayTitle() throws UnloadedDataException, and letting it
+				// out abandons the rest of the pass -- every region painted after
+				// the empty state keeps whatever it last showed, including a
+				// delete left live against a conversation that is no longer the
+				// current one. Nothing throws; the section simply stops agreeing
+				// with itself.
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+
+				var { box, item } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				stub(item, 'getDisplayTitle').throws(
+					new Zotero.Exception.UnloadedDataException('not loaded', 'itemData')
+				);
+
+				box._render();
+
+				assert.isTrue(box._emptyPaper.hidden);
+				assert.isFalse(box._input.disabled, "and the rest of the pass still ran");
+				assert.isTrue(box._menuDelete.disabled);
+			});
+
+			it("should offer the starter questions while the thread is empty", async function () {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+
+				var { box, item } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+
+				assert.isFalse(box._empty.hidden);
+				assert.equal(box._starters.childElementCount, 4);
+				assert.equal(box._emptyPaper.textContent, item.getDisplayTitle());
+
+				// A chip's label is the question it asks. Pinning that they are
+				// the same string is what stops one drifting from the other.
+				var send = stub(box, 'send');
+				box._starters.firstChild.click();
+				assert.equal(send.firstCall.args[0], box._starters.firstChild.textContent);
+			});
+		});
+
+		describe("stopping", function () {
+			async function startStreaming() {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true, charCount: 10,
+				});
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({ id: 'conversation-1' });
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._input.value = 'why does this work?';
+				var sent = box.send();
+				await waitForCallback(() => box._busy && Zotero.Pharos.Chat.sendMessage.called, 10, 5);
+				return { box, sent };
+			}
+
+			it("should swap the send button for a stop button while streaming", async function () {
+				stubHangingStream('half an ans');
+				var { box, sent } = await startStreaming();
+
+				assert.isTrue(box._send.hidden);
+				assert.isFalse(box._stop.hidden);
+
+				box.stop();
+				await sent;
+				assert.isFalse(box._stop.hidden === false, "the stop button goes with the stream");
+				assert.isFalse(box._send.hidden);
+			});
+
+			it("should drop the partial answer the backend did not save", async function () {
+				// stream_chat_events() returns on GeneratorExit without saving a
+				// partial answer, so text left on screen is a turn the model does
+				// not have and will not be given back on the next question.
+				stubHangingStream('half an ans');
+				var { box, sent } = await startStreaming();
+				assert.equal(box._messages.childElementCount, 2, "question and a partial answer");
+
+				box.stop();
+				await sent;
+
+				assert.equal(box._messages.childElementCount, 1);
+				assert.isTrue(box._messages.firstChild.classList.contains('is-user'),
+					"the question stays, because the backend kept it");
+			});
+
+			it("should not report a stop as a failure", async function () {
+				// Whoever pressed the button knows why it stopped. An error
+				// banner there reads as something having gone wrong.
+				stubHangingStream('half an ans');
+				var { box, sent } = await startStreaming();
+
+				box.stop();
+				await sent;
+
+				assert.isTrue(box._banner.hidden, "not an error");
+				assert.equal(box._status.textContent, Zotero.getString('pharos-chat-stopped'));
+				assert.isFalse(box._busy);
+				assert.isFalse(box._send.disabled, "the next question can be asked");
+			});
+
+			it("should stay silent when the abort came from switching items", async function () {
+				// The same AbortError, but nobody asked for it and the box now
+				// belongs to another paper.
+				stubHangingStream('half an ans');
+				var { box, sent } = await startStreaming();
+
+				var other = await createDataObject('item');
+				await importPDFAttachment(other);
+				box.item = other;
+				await sent;
+
+				assert.equal(box._status.textContent, '');
+				assert.isTrue(box._banner.hidden);
+				assert.equal(box._messages.childElementCount, 0);
+			});
+		});
+
+		describe("failures", function () {
+			/**
+			 * Ask one question and have the stream fail.
+			 *
+			 * `providerAfter`, when given, is what a *refreshed* lookup answers:
+			 * the section only re-asks after a 503, and modelling that as a
+			 * different answer to the refresh is what makes the test independent
+			 * of when the refresh happens to run.
+			 */
+			async function failWith(error, providerAfter) {
+				stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+				stub(Zotero.Pharos.Chat, 'getProvider').callsFake(({ refresh } = {}) =>
+					Promise.resolve(refresh && providerAfter ? providerAfter : { configured: true }));
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({ status: 'ready', hasSummary: true });
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({ id: 'conversation-1' });
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'conversation-1' }]);
+				stub(Zotero.Pharos.Chat, 'sendMessage').rejects(error);
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._input.value = 'why does this work?';
+				await box.send();
+				return box;
+			}
+
+			it("should keep a failure on screen until it is dismissed", async function () {
+				// It used to go into the status line, which the next thing that
+				// happens overwrites -- so the reason the answer failed was gone
+				// by the time the question had been retyped.
+				var box = await failWith(new Error('the model refused'));
+
+				assert.isFalse(box._banner.hidden);
+				assert.equal(box._bannerText.textContent, 'the model refused');
+
+				// The next action must not erase it.
+				box._setStatus('thinking about something else');
+				assert.isFalse(box._banner.hidden);
+
+				box.querySelector('.pharos-chat-banner-dismiss').click();
+				assert.isTrue(box._banner.hidden);
+			});
+
+			it("should turn the backend's 503 into the card that says where to go", async function () {
+				// A 503 from the stream is the model being unconfigured or
+				// unusable. The sentence on its own leaves the user with
+				// nowhere to click, in a line the next action erases.
+				var error = new Error('请先在设置中配置 OpenAI 兼容模型。');
+				error.status = 503;
+				// The server that just refused says why when asked again.
+				var box = await failWith(error, { configured: false, source: 'none' });
+				await waitForCallback(
+					() => box._provider && box._provider.configured === false, 10, 5
+				);
+
+				assert.isFalse(box._notice.hidden);
+				assert.isTrue(box._input.disabled);
+				assert.isFalse(box._banner.hidden, "and the server's own sentence is kept");
+			});
+
+			it("should clear the failure when the next question is asked", async function () {
+				var box = await failWith(new Error('the model refused'));
+				assert.isFalse(box._banner.hidden);
+
+				Zotero.Pharos.Chat.sendMessage
+					.callsFake((id, message, { onDelta }) => {
+						onDelta('an answer');
+						return Promise.resolve('an answer');
+					});
+				box._input.value = 'try again';
+				await box.send();
+
+				assert.isTrue(box._banner.hidden);
+				assert.equal(box._messages.lastChild.textContent, 'an answer');
+			});
+		});
+
+		describe("conversations", function () {
+			async function openWithConversations(conversations) {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
+				stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves(conversations);
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+
+				var { box } = await openBox();
+				await waitForCallback(
+					() => box._conversations.length == conversations.length, 10, 5
+				);
+				return box;
+			}
+
+			it("should keep the picker hidden until there is a choice to make", async function () {
+				var box = await openWithConversations([{ id: 'c1', title: '只有一个' }]);
+				assert.isTrue(box._sessions.hidden);
+				assert.isFalse(box._newButton.hidden, "but the paper can take another thread");
+			});
+
+			it("should list every thread newest first and select the resumed one", async function () {
+				var box = await openWithConversations([
+					{ id: 'c1', title: 'newest question' },
+					{ id: 'c2', title: 'older question' },
+				]);
+
+				assert.isFalse(box._sessions.hidden);
+				assert.deepEqual(
+					Array.from(box._sessionSelect.options).map(o => o.value),
+					['c1', 'c2']
+				);
+				assert.equal(box._sessionSelect.value, 'c1');
+				assert.equal(box._conversationID, 'c1');
+			});
+
+			it("should repaint the thread when another is chosen", async function () {
+				var box = await openWithConversations([
+					{ id: 'c1', title: 'newest' },
+					{ id: 'c2', title: 'older' },
+				]);
+				Zotero.Pharos.Chat.getMessages.resolves([
+					{ role: 'user', content: 'from the older thread' },
+				]);
+
+				await box._selectConversation('c2');
+
+				assert.equal(box._conversationID, 'c2');
+				assert.equal(box._messages.childElementCount, 1);
+				assert.equal(box._messages.firstChild.textContent, 'from the older thread');
+			});
+
+			it("should start an empty thread without fetching one", async function () {
+				var box = await openWithConversations([{ id: 'c1', title: 'existing' }]);
+				stub(Zotero.Pharos.Chat, 'createConversation').resolves({ id: 'c2', title: '论文对话' });
+				box._addMessage('user', 'from the old thread');
+
+				await box._newConversation();
+
+				assert.equal(box._conversationID, 'c2');
+				assert.equal(box._messages.childElementCount, 0);
+				assert.isTrue(box._historyLoaded,
+					"a conversation created here has nothing stored to go looking for");
+			});
+
+			it("should hide conversation management until the paper has an id", async function () {
+				// Listing conversations is keyed by the paper, and getting that
+				// id costs an upload. Until one has been paid for there is
+				// nothing to list, create against, or delete.
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var list = stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+
+				var { box } = await openBox();
+				await Zotero.Promise.delay(50);
+
+				assert.isFalse(list.called);
+				assert.isTrue(box._newButton.hidden);
+				assert.isTrue(box._moreButton.hidden);
+			});
+
+			it("should not paint one paper's conversation list into another's picker", async function () {
+				// Same race as the thread restore, one round trip further out:
+				// the list arrives after the box has moved on, and a picker
+				// offering the previous paper's threads is not distinguishable
+				// from one that belongs here.
+				var first = await createDataObject('item');
+				var firstPDF = await importPDFAttachment(first);
+				var second = await createDataObject('item');
+				await importPDFAttachment(second);
+
+				var release;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID')
+					.callsFake(a => (a && a.id == firstPDF.id ? 'paper-1' : null));
+				stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				stub(Zotero.Pharos.Chat, 'listConversations')
+					.returns(new Promise(resolve => (release = resolve)));
+
+				var box = win.document.getElementById('zotero-editpane-pharos-chat');
+				switchTo(box, first);
+				await waitForCallback(() => Zotero.Pharos.Chat.listConversations.called, 10, 5);
+
+				box.item = second;
+				release([{ id: 'c1', title: 'about the first paper' }, { id: 'c2', title: 'also' }]);
+				await Zotero.Promise.delay(50);
+
+				assert.lengthOf(box._conversations, 0);
+				assert.isTrue(box._sessions.hidden);
+				assert.isNull(box._conversationID);
+			});
+
+			it("should not adopt a paper id resolved for the item just left", async function () {
+				// Resolving a paper is an upload, and Zotero.HTTP takes no abort
+				// signal, so the first question's round trip carries on after the
+				// user has moved on. Writing that id back would leave the new
+				// paper's box holding the old paper's identity -- and the id is
+				// what the *next* question gets asked about, so nothing on screen
+				// would say anything was wrong.
+				var first = await createDataObject('item');
+				await importPDFAttachment(first);
+				var second = await createDataObject('item');
+				await importPDFAttachment(second);
+
+				var release;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'getContext').resolves(null);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({ status: 'ready', hasSummary: true });
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({ id: 'c1' });
+				stub(Zotero.Pharos.Chat, 'sendMessage').resolves('');
+				stub(Zotero.Pharos.Chat, 'resolvePaperID')
+					.returns(new Promise(resolve => (release = resolve)));
+
+				var box = win.document.getElementById('zotero-editpane-pharos-chat');
+				switchTo(box, first);
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._input.value = 'about the first paper';
+				var sent = box.send();
+				await waitForCallback(() => Zotero.Pharos.Chat.resolvePaperID.called, 10, 5);
+
+				switchTo(box, second);
+				release('paper-for-the-first');
+				await sent;
+
+				assert.isNull(box._paperID);
+				assert.isNull(box._conversationID);
+				assert.isFalse(Zotero.Pharos.Chat.getOrCreateConversation.called);
+			});
+
+			it("should ask before deleting, and delete only the conversation", async function () {
+				var box = await openWithConversations([
+					{ id: 'c1', title: 'newest' },
+					{ id: 'c2', title: 'older' },
+				]);
+				var remove = stub(Zotero.Pharos.Chat, 'deleteConversation').resolves(null);
+
+				// Two steps to a destructive action: the header button opens the
+				// actions, and the action asks.
+				box._moreButton.doCommand();
+				assert.isFalse(box._menu.hidden);
+				box._menuDelete.click();
+				assert.isFalse(box._confirm.hidden);
+				assert.isTrue(box._menu.hidden, "and the actions close behind it");
+				assert.isFalse(remove.called);
+
+				box.querySelector('.pharos-chat-confirm-go').click();
+				await waitForCallback(() => remove.called, 10, 5);
+				await Zotero.Promise.delay(20);
+
+				assert.deepEqual(remove.firstCall.args, ['c1']);
+				assert.deepEqual(box._conversations.map(c => c.id), ['c2'],
+					"and falls back to the newest thread left");
+				assert.equal(box._conversationID, 'c2');
+				assert.isTrue(box._confirm.hidden);
+			});
+
+			it("should let the confirmation be cancelled", async function () {
+				var box = await openWithConversations([{ id: 'c1', title: 'newest' }]);
+				var remove = stub(Zotero.Pharos.Chat, 'deleteConversation').resolves(null);
+
+				box._moreButton.doCommand();
+				box._menuDelete.click();
+				assert.isFalse(box._confirm.hidden);
+				box.querySelector('.pharos-chat-confirm-cancel').click();
+
+				assert.isTrue(box._confirm.hidden);
+				assert.isFalse(remove.called);
+				assert.equal(box._conversationID, 'c1');
+			});
+
+			it("should refuse to delete a thread that is still generating", async function () {
+				// The backend answers 409 for this. Shutting the control off is
+				// what stops the user meeting that as an error.
+				stubHangingStream('half an ans');
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({ status: 'ready', hasSummary: true });
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({ id: 'c1' });
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([{ id: 'c1', title: 'a' }]);
+				var remove = stub(Zotero.Pharos.Chat, 'deleteConversation').resolves(null);
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._input.value = 'why does this work?';
+				var sent = box.send();
+				await waitForCallback(() => box._busy, 10, 5);
+
+				assert.isTrue(box._menuDelete.disabled);
+				await box._deleteConversation();
+				assert.isFalse(remove.called);
+
+				box.stop();
+				await sent;
+				assert.isFalse(box._menuDelete.disabled);
+			});
 		});
 	});
 });

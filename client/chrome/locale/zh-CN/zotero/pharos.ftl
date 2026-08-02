@@ -57,20 +57,96 @@ pharos-prefs-server-url = 地址
 
 ## AI 对话
 
+# 网页版从头到尾叫「AI 对话」。同一个功能在两个客户端上叫两个名字，
+# 是用户唯一无从自己解决的困惑，所以桌面端的「问 Pharos」向网页版看齐。
 section-pharos-chat =
-    .label = 问 Pharos
+    .label = AI 对话
+# 侧边导航按钮的提示，以及 collapsible-section 拿去拼 aria 名称的那一条。
+# 两个 id 都由上游按 data-pane 拼出来（sidenav-${pane} / pane-${pane}），
+# 缺了不报错：DOM 本地化只是 reject，按钮就一直没有提示。
+pane-pharos-chat = AI 对话
+sidenav-pharos-chat =
+    .tooltiptext = AI 对话
 pharos-chat-placeholder =
     .placeholder = 就这篇论文提问…
 pharos-chat-send = 发送
+pharos-chat-stop = 停止
+pharos-chat-dismiss = 关闭
+
+## AI 对话 · 对话管理
+
+section-button-pharos-chat-new =
+    .tooltiptext = 新建对话
+section-button-pharos-chat-more =
+    .tooltiptext = 对话操作
+pharos-chat-session-select =
+    .aria-label = 选择对话
+# 后端在第一次提问时把对话改名为那句问题；还没问过的保持这个默认名。
+pharos-chat-untitled = 论文对话
+pharos-chat-delete = 删除当前对话
+# 这句承诺经过核对：delete_conversation 只删对话本身，论文的正文与模型理解
+# 存在另一张按（用户，论文）建的表里（PaperAiContext），不受影响，所以下次
+# 提问不必重新上传、也不必重新读一遍。对话里的消息则会一并删除——网页版那句
+# 只说了什么会留下，这里把什么会没有也说清楚。
+pharos-chat-delete-confirm = 删除当前 AI 对话？这次对话的消息会一并删除；论文索引会保留，下次提问不必重新上传。
+pharos-chat-delete-go = 删除
+pharos-chat-delete-cancel = 取消
+
+## AI 对话 · 论文状态
+
+# 标题下常驻的一行。它只汇报已知状态，从不为了有话可说而去准备什么——
+# 解析一篇论文要上传整个文件，那笔钱只在用户真的提问时才花。
+pharos-chat-phase-understanding = 正在建立论文理解
+pharos-chat-phase-ready = 已理解这篇论文
+pharos-chat-phase-indexed = 已读取论文正文
+pharos-chat-phase-indexed-no-model = 已读取正文 · 等待配置模型
+pharos-chat-phase-error = 论文理解失败
+# 本次启动还没解析过这篇论文时的说法。网页版这里写「准备论文上下文」，
+# 但桌面端此刻刻意什么都没在准备，照抄会把「不做」说成「在做」。
+pharos-chat-phase-lazy = 首次提问时读取这篇论文
+# $count (Number) - 后端抽取到的字符数
+pharos-chat-phase-chars = 已读取 { $count } 字符
+
+## AI 对话 · 空状态
+
+pharos-chat-empty-ready = 我已经预先理解这篇论文
+pharos-chat-empty-understanding = 正在为这篇论文建立上下文
+pharos-chat-empty-idle = 围绕当前论文开始对话
+# 四个起手问题，与网页版逐字一致。按钮上的字就是发出去的问题本身。
+pharos-chat-starter-contribution = 核心贡献是什么？
+pharos-chat-starter-trick = 真正关键的 trick 是什么？
+pharos-chat-starter-evidence = 实验如何证明方法有效？
+pharos-chat-starter-limitations = 这篇论文有哪些局限？
+
+## AI 对话 · 无法提问时
+
+pharos-chat-signed-out-title = 登录后可以就这篇论文提问
+pharos-chat-signed-out-detail = 论文由 Pharos 后端读取并交给模型，因此需要一个账号。文库、阅读器与标注不受影响。
+pharos-chat-signed-out-action = 前往登录
+
+pharos-chat-no-model-title = 连接你的模型
+# 桌面端故意不提供填写框：API Key 只存在于后端，加密保存，从不经过这台电脑。
+# 所以这里能做的是说清楚这件事，并指向设置里那个只读的模型视图。
+pharos-chat-no-model-detail = 支持 OpenAI 兼容接口。API Key 只能在 Pharos 网页端填写，由服务端加密保存，不会写入这台电脑——因此桌面端没有填写框。设置里可以查看当前生效的模型。
+pharos-chat-no-model-action = 查看模型设置
+
+## AI 对话 · 进度与失败
 
 pharos-chat-status-connecting = 连接中…
 pharos-chat-status-preparing = 正在读取论文…
 pharos-chat-status-thinking = 思考中…
+# 不当作错误显示：按下停止的人知道为什么停了。
+# 后端在中断时不保存半截回答（stream_chat_events 的 GeneratorExit 分支），
+# 所以屏幕上那半截也一并撤掉，否则它就是一条模型并不记得的发言。
+pharos-chat-stopped = 已停止生成，这次回答未保存。
 
 pharos-chat-error-prepare = 无法读取这篇论文。
 pharos-chat-error-prepare-timeout = 读取论文超时。
 pharos-chat-error-failed = 未能生成回答。
 pharos-chat-error-empty = 没有收到回答。
+pharos-chat-error-history = 无法读取这次对话的记录。
+pharos-chat-error-new = 无法新建对话。
+pharos-chat-error-delete = 无法删除这次对话。
 
 pharos-error-unreachable = 无法连接到 Pharos 服务器。
 
@@ -1007,3 +1083,38 @@ pharos-rail-account-tooltip =
     .title = 设置与账号
 pharos-rail-account-sign-in-tooltip =
     .title = 登录 Pharos
+
+## 条目面板的翻译栏。
+##
+## 前两个是 attribute-only（.label / .tooltiptext），Zotero 从 data-pane 拼出这两个
+## id；其余全部是 value message——栏内的代码用 formatValueSync 读它们，而那个函数
+## 对只有属性的消息返回 null。
+
+section-pharos-translate =
+    .label = 翻译
+sidenav-pharos-translate =
+    .tooltiptext = 翻译
+
+# 「本地无译文」而不是「未译」。这一栏只看得见本机文库，网页版或另一台机器上翻译过
+# 的论文它无从知晓，说「未译」就是拿一个文库的证据去断言整个账号的状态。
+pharos-translate-state-unknown = 本地无译文
+pharos-translate-state-unknown-detail = 这里只反映本机文库。在网页版或其他设备上翻译过的论文，这里看不到。
+pharos-translate-state-is-translation = 本篇是译文
+pharos-translate-state-translating = 翻译中
+pharos-translate-state-translating-percent = 翻译中 · { $percent }%
+pharos-translate-state-translated = 已译
+pharos-translate-state-failed = 失败
+
+# 引擎自己的阶段标签是自由文本，有些很长且几分钟不变，读起来像卡死。这三步是网页版
+# 的同一套映射，逐字对应——同一个任务不能在两个界面里被描述成处在不同阶段。
+pharos-translate-stage-parse = 解析版面
+pharos-translate-stage-translate = 翻译正文
+pharos-translate-stage-typeset = 重排版面
+pharos-translate-stage-tooltip = 引擎阶段：{ $stage }
+
+pharos-translate-action-open = 打开译文
+pharos-translate-action-open-named = 打开{ $name }
+pharos-translate-action-open-original = 查看原文
+pharos-translate-action-retry = 重试
+# 进度对话框是唯一能取消运行中任务的地方，所以这不只是「看进度」。
+pharos-translate-action-queue = 查看进度

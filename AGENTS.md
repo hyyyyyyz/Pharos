@@ -60,10 +60,16 @@ cd client
 npm run build                    # transpile JS/JSX, compile SCSS
 app/scripts/dir_build -p m       # package into app/staging/Pharos.app
 app/scripts/run_pharos_dev       # launch with an isolated data directory
-test/runtests.sh -f pharosAPI pharosTranslate pharosChat pharosDaily \
-    pharosDiscovery pharosProjects pharosRail pharosRailFooter pharosAdmin \
-    pharosProtocol pharosAuth pharosTheme preferences_pharos preferences_pharos_daily
+test/runtests.sh pharosAPI pharosTranslate pharosTranslateBox pharosChat \
+    pharosDaily pharosDiscovery pharosProjects pharosProjectsApi pharosRail \
+    pharosRailFooter pharosAdmin pharosProtocol pharosAuth pharosTheme \
+    pharosStrings preferences_pharos preferences_pharos_daily
+node test/check-locale-parity.js  # both locale files define the same ids
 ```
+
+When checking the upstream baseline, run it **without `-f`**. That flag stops at
+the first failure, so a suite with four known pre-existing failures reports a
+misleading `5/6 tests passed -- aborting` and looks like a fresh regression.
 
 For the desktop client, read [`client/BRANDING.md`](client/BRANDING.md) first.
 It records a set of Zotero behaviours that **fail silently** — a menu addressed

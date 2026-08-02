@@ -97,11 +97,12 @@
 			this.render();
 		}
 
-		// "pharos-chat" is listed in both: _builtInPanes is what stops a pane
-		// being treated as a plugin's (which would look for a plugin icon and
-		// find none), and _defaultPanes is the order the buttons appear in.
+		// "pharos-chat" and "pharos-translate" are listed in both: _builtInPanes
+		// is what stops a pane being treated as a plugin's (which would look for
+		// a plugin icon and find none), and _defaultPanes is the order the
+		// buttons appear in.
 		//
-		// It goes LAST, which is not where a reading tool would naturally sit.
+		// They go LAST, which is not where a reading tool would naturally sit.
 		// Reordering moves a pane one *visible* position, then writes the result
 		// back into this list, so a pane that is hidden for some regular items
 		// but not others makes the visible and persisted orders diverge: with
@@ -110,14 +111,22 @@
 		// (note-info, attachment-info, attachment-annotations) never hit this
 		// because they belong to attachment and note items, where the
 		// regular-item panes are hidden instead, so the two orders never
-		// interleave. Anyone who wants it higher can drag it there; that choice
-		// persists.
+		// interleave. Anyone who wants them higher can drag them there; that
+		// choice persists.
+		//
+		// Of the two, "pharos-translate" is the one that goes last, and the
+		// order between them is not arbitrary. Chat is hidden when the item has
+		// no stored PDF; translation is hidden then too, AND when the user is
+		// signed out. So translation is hidden strictly more often than chat is,
+		// and putting it last is what keeps the hidden one always at the tail
+		// instead of wedged between two visible panes -- exactly the arrangement
+		// that made the reorder diverge above.
 		get _defaultPanes() {
-			return ["info", "abstract", "attachments", "notes", "libraries-collections", "tags", "related", "pharos-chat"];
+			return ["info", "abstract", "attachments", "notes", "libraries-collections", "tags", "related", "pharos-chat", "pharos-translate"];
 		}
 
 		get _builtInPanes() {
-			return ["info", "abstract", "attachments", "notes", "note-info", "attachment-info", "attachment-annotations", "libraries-collections", "tags", "related", "pharos-chat"];
+			return ["info", "abstract", "attachments", "notes", "note-info", "attachment-info", "attachment-annotations", "libraries-collections", "tags", "related", "pharos-chat", "pharos-translate"];
 		}
 
 		get container() {

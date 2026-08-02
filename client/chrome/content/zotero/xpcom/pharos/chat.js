@@ -44,6 +44,19 @@ Zotero.Pharos.Chat = new function () {
 	let _paperIDs = new Map();
 
 	/**
+	 * The in-flight or settled promise for the account's model provider.
+	 *
+	 * One per session rather than one per call. Every chat box asks for this on
+	 * every item switch -- a paper whose account has no model has to say so
+	 * before the composer is used, not after a question has been typed and lost
+	 * -- and arrowing down a list of papers would otherwise be one GET per row.
+	 * The answer only changes when the user edits it in the web app, which they
+	 * cannot do without leaving this window, so callers that are about to give
+	 * up pass { refresh: true } instead of paying for freshness everywhere.
+	 */
+	let _provider = null;
+
+	/**
 	 * How much of a long thread is worth showing.
 	 *
 	 * Deliberately the backend's own MAX_HISTORY_CHARS (services/ai_chat.py:47),
@@ -135,6 +148,49 @@ Zotero.Pharos.Chat = new function () {
 	};
 
 	/**
+	 * Which model the backend would answer with, if any.
+	 *
+	 * A missing or unusable provider is the one failure the chat box has to know
+	 * about *before* a question is asked: without it the stream fails with a 503
+	 * whose text is the only explanation the user gets, after they have written
+	 * the question. Cheap enough to ask on selection -- it reads configuration,
+	 * not the paper -- which is why this one is not subject to the laziness that
+	 * governs resolvePaperID().
+	 *
+	 * @param {Object} [options]
+	 * @param {Boolean} [options.refresh] - ask again rather than reuse the
+	 *     session's answer
+	 * @return {Promise<Object>} { configured, source, model, baseUrl, ... }
+	 */
+	this.getProvider = function ({ refresh } = {}) {
+		if (!_provider || refresh) {
+			_provider = Zotero.Pharos.API.request('GET', '/api/ai/provider')
+				.catch((e) => {
+					// A rejection must not be cached: every later caller would
+					// get this same failure, including after the server came
+					// back, and nothing would ever ask again.
+					_provider = null;
+					throw e;
+				});
+		}
+		return _provider;
+	};
+
+	/**
+	 * What the backend has already extracted for a paper, or null.
+	 *
+	 * Read-only and free, unlike ensureContext(), which starts the extraction.
+	 * This is what lets the chat box report a paper it already understands
+	 * without paying to prepare one it does not.
+	 *
+	 * @param {String} paperID
+	 * @return {Promise<Object|null>} { status, charCount, hasSummary, error, ... }
+	 */
+	this.getContext = function (paperID) {
+		return Zotero.Pharos.API.request('GET', `/api/ai/papers/${paperID}/context`);
+	};
+
+	/**
 	 * Make sure the backend has extracted this paper's text.
 	 *
 	 * @param {String} paperID
@@ -142,9 +198,7 @@ Zotero.Pharos.Chat = new function () {
 	 * @return {Promise<Object>} the context
 	 */
 	this.ensureContext = async function (paperID, onProgress) {
-		let context = await Zotero.Pharos.API.request(
-			'GET', `/api/ai/papers/${paperID}/context`
-		);
+		let context = await this.getContext(paperID);
 		if (context && context.status == 'ready') {
 			return context;
 		}
@@ -169,14 +223,29 @@ Zotero.Pharos.Chat = new function () {
 				throw new Error(Zotero.getString('pharos-chat-error-prepare-timeout'));
 			}
 			await Zotero.Promise.delay(POLL_INTERVAL);
-			context = await Zotero.Pharos.API.request(
-				'GET', `/api/ai/papers/${paperID}/context`
-			);
+			context = await this.getContext(paperID);
 			if (!context) {
 				throw new Error(Zotero.getString('pharos-chat-error-prepare'));
 			}
 		}
 		return context;
+	};
+
+	/**
+	 * Every conversation this paper has, newest first.
+	 *
+	 * The order is the backend's (updated_at desc, created_at desc) and is left
+	 * alone: it is what makes conversations[0] the thread the user was last in,
+	 * which is the one getOrCreateConversation() resumes.
+	 *
+	 * @param {String} paperID
+	 * @return {Promise<Object[]>} conversation summaries
+	 */
+	this.listConversations = async function (paperID) {
+		let conversations = await Zotero.Pharos.API.request(
+			'GET', `/api/ai/papers/${paperID}/conversations`
+		);
+		return conversations || [];
 	};
 
 	/**
@@ -190,15 +259,54 @@ Zotero.Pharos.Chat = new function () {
 	 * @return {Promise<Object|null>} the conversation summary
 	 */
 	this.getLatestConversation = async function (paperID) {
-		let conversations = await Zotero.Pharos.API.request(
-			'GET', `/api/ai/papers/${paperID}/conversations`
+		let conversations = await this.listConversations(paperID);
+		return conversations.length ? conversations[0] : null;
+	};
+
+	/**
+	 * Start a second thread about the same paper.
+	 *
+	 * No title: the backend names a conversation after its first question the
+	 * moment one arrives (services/ai_chat.py, prepare_chat_request), so a title
+	 * invented here would be a worse one that also stuck.
+	 *
+	 * @param {String} paperID
+	 * @return {Promise<Object>} the conversation summary
+	 */
+	this.createConversation = function (paperID) {
+		return Zotero.Pharos.API.request(
+			'POST', `/api/ai/papers/${paperID}/conversations`, { body: {} }
 		);
-		// The backend returns these newest-first.
-		return conversations && conversations.length ? conversations[0] : null;
+	};
+
+	/**
+	 * Delete a conversation and the turns in it.
+	 *
+	 * What survives is the expensive half. The paper's extracted text and the
+	 * model's understanding profile live in their own table keyed by (user,
+	 * paper) -- PaperAiContext -- and delete_conversation() does not touch it,
+	 * so the next question about this paper still costs no upload and no
+	 * re-reading. The turns themselves do go: ai_messages cascades off
+	 * ai_conversations.id and the backend opens SQLite with foreign keys on.
+	 *
+	 * Refused with 409 while that conversation is still generating, so a caller
+	 * has to stop the answer first rather than expect this to stop it.
+	 *
+	 * @param {String} conversationID
+	 * @return {Promise}
+	 */
+	this.deleteConversation = function (conversationID) {
+		return Zotero.Pharos.API.request(
+			'DELETE', `/api/ai/conversations/${conversationID}`
+		);
 	};
 
 	/**
 	 * The conversation to continue for this paper, creating one if there is none.
+	 *
+	 * Still the entry point for the first question about a paper. Callers that
+	 * are managing a list explicitly hold their own conversation id and go
+	 * straight to createConversation().
 	 *
 	 * Reuses the most recent rather than starting fresh each time the section is
 	 * opened: closing and reopening the pane should not lose the thread.
@@ -325,8 +433,9 @@ Zotero.Pharos.Chat = new function () {
 		return reply;
 	};
 
-	/** Test seam: drop the cached paper ids. */
+	/** Test seam: drop everything cached for this session. */
 	this._clearCache = function () {
 		_paperIDs.clear();
+		_provider = null;
 	};
 };

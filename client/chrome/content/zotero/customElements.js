@@ -69,6 +69,7 @@ Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemTreeMe
 		['item-pane-sidenav', 'chrome://zotero/content/elements/itemPaneSidenav.js'],
 		['abstract-box', 'chrome://zotero/content/elements/abstractBox.js'],
 		['pharos-chat-box', 'chrome://zotero/content/elements/pharosChatBox.js'],
+		['pharos-translate-box', 'chrome://zotero/content/elements/pharosTranslateBox.js'],
 		['pharos-rail', 'chrome://zotero/content/elements/pharosRail.js'],
 		['collapsible-section', 'chrome://zotero/content/elements/collapsibleSection.js'],
 		['attachments-box', 'chrome://zotero/content/elements/attachmentsBox.js'],

@@ -57,9 +57,12 @@
 						<related-box id="zotero-editpane-related" class="zotero-editpane-related" data-pane="related"/>
 
 						<!-- Pharos. Last, matching _defaultPanes in itemPaneSidenav.js,
-						     which explains why this section in particular cannot sit
-						     in the middle of the order. -->
+						     which explains why these sections in particular cannot
+						     sit in the middle of the order, and why translation
+						     goes after chat rather than before it. -->
 						<pharos-chat-box id="zotero-editpane-pharos-chat" data-pane="pharos-chat"/>
+
+						<pharos-translate-box id="zotero-editpane-pharos-translate" data-pane="pharos-translate"/>
 					</html:div>
 				</html:div>
 			</hbox>

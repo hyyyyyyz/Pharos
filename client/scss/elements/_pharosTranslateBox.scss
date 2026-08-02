@@ -1,0 +1,137 @@
+// Pharos translation state, in the item pane.
+//
+// The pane is narrow and resizable, so nothing here assumes a width: the
+// stepper wraps, the actions wrap, and every string is allowed to break.
+
+#zotero-editpane-pharos-translate {
+	.pharos-translate-headline {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-block-end: 6px;
+	}
+
+	// The four states, in the web client's vocabulary and colours
+	// (frontend/src/lib/model.ts statusMeta). Tokens rather than literals so
+	// both themes follow, and accent-teal rather than accent-green for success
+	// -- see the note in scss/themes/_light.scss on why those two are not
+	// interchangeable. The tints are built with color-mix at the same strengths
+	// the other Pharos surfaces use (scss/pharosProjects.scss), because no *10
+	// variants exist for teal or red.
+	//
+	// is-unknown gets no colour at all, on purpose: colouring "we cannot tell"
+	// would give it the same visual weight as the three states that are actually
+	// known.
+	.pharos-translate-pill {
+		padding: 1px 8px;
+		border-radius: 9px;
+		font-size: 11px;
+		line-height: 16px;
+		white-space: nowrap;
+		background: var(--fill-quinary);
+		color: var(--fill-secondary);
+
+		&.is-running {
+			background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+			color: var(--color-accent);
+		}
+
+		&.is-translated {
+			background: color-mix(in srgb, var(--accent-teal) 13%, transparent);
+			color: var(--accent-teal);
+		}
+
+		&.is-failed {
+			background: color-mix(in srgb, var(--accent-red) 13%, transparent);
+			color: var(--accent-red);
+		}
+	}
+
+	.pharos-translate-track {
+		height: 4px;
+		border-radius: 2px;
+		overflow: hidden;
+		background: var(--fill-quinary);
+		margin-block-end: 6px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-translate-bar {
+		display: block;
+		height: 100%;
+		background: var(--color-accent);
+		// The engine reports progress in jumps, and an unanimated bar makes a
+		// 20-point jump look like a redraw glitch.
+		transition: width 0.3s ease-out;
+	}
+
+	.pharos-translate-steps {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 10px;
+		list-style: none;
+		margin: 0 0 6px;
+		padding: 0;
+		font-size: 11px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	// Done / active / todo, distinguished by weight and colour rather than by a
+	// connector line: at this width the line would be the first thing to break.
+	.pharos-translate-step {
+		color: var(--fill-tertiary);
+
+		&.is-done {
+			color: var(--fill-secondary);
+		}
+
+		&.is-active {
+			color: var(--color-accent);
+			font-weight: 600;
+		}
+	}
+
+	.pharos-translate-status,
+	.pharos-translate-note {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		margin-block-end: 6px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-translate-error {
+		color: var(--accent-red);
+		font-size: 11px;
+		margin-block-end: 6px;
+		// A truncated traceback is still 200 characters of identifiers with no
+		// spaces in them, and it must not widen the pane.
+		overflow-wrap: anywhere;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-translate-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-translate-action {
+		font: inherit;
+	}
+}

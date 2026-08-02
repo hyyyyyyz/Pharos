@@ -1,0 +1,14 @@
+<!-- The AI chat section's icon.
+
+     A speech bubble, drawn in the same idiom as its neighbours in this
+     directory: a 16x16 grid, one even-odd path, and context-fill so it follows
+     the pane's own colour in both themes rather than carrying its own.
+
+     Registered through $item-pane-sections; _collapsibleSection.scss builds an
+     icon-url() from the pane name, so a missing file renders a blank 16x16 in
+     both the section header and the sidenav button, with nothing to say why. -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="pharos-chat">
+<path id="Vector" fill-rule="evenodd" clip-rule="evenodd" d="M1 2H15V12H8.7L5 15V12H1V2ZM2 3V11H6V12.9L8.35 11H14V3H2ZM4 6H12V7H4V6ZM4 8H9V9H4V8Z" fill="context-fill"/>
+</g>
+</svg>

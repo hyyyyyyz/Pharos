@@ -55,22 +55,109 @@ pharos-prefs-server-header = Server
 pharos-prefs-server-help = Pharos is open source and can be self-hosted. Point this at your own instance to use it instead. Changing it signs you out, since a token only works on the server that issued it.
 pharos-prefs-server-url = Address
 
-## Chat
+## AI Chat
 
+# The web client calls this "AI Chat" everywhere. One feature under two names is
+# the one confusion a user cannot resolve on their own, so the desktop's "Ask
+# Pharos" gives way to the web client's name.
 section-pharos-chat =
-    .label = Ask Pharos
+    .label = AI Chat
+# The sidenav button's tooltip, and the value collapsible-section formats into
+# its aria names. Upstream builds both ids from data-pane (sidenav-${pane} /
+# pane-${pane}); a missing one does not throw, it just leaves the button
+# unlabelled, since DOM localization only rejects.
+pane-pharos-chat = AI Chat
+sidenav-pharos-chat =
+    .tooltiptext = AI Chat
 pharos-chat-placeholder =
     .placeholder = Ask about this paper…
 pharos-chat-send = Send
+pharos-chat-stop = Stop
+pharos-chat-dismiss = Dismiss
+
+## AI Chat · Conversations
+
+section-button-pharos-chat-new =
+    .tooltiptext = New Conversation
+section-button-pharos-chat-more =
+    .tooltiptext = Conversation Actions
+pharos-chat-session-select =
+    .aria-label = Choose a conversation
+# The backend renames a conversation after its first question; one that has
+# never been used keeps this default.
+pharos-chat-untitled = Paper conversation
+pharos-chat-delete = Delete This Conversation
+# This promise was checked against the backend: delete_conversation() removes
+# only the conversation. The paper's extracted text and the model's
+# understanding of it live in their own table keyed by (user, paper) --
+# PaperAiContext -- and survive, so the next question still costs no upload and
+# no re-reading. The turns in the conversation do go, which the web client's
+# wording leaves out.
+pharos-chat-delete-confirm = Delete this AI conversation? Its messages go with it. The paper's index is kept, so the next question needs no re-upload.
+pharos-chat-delete-go = Delete
+pharos-chat-delete-cancel = Cancel
+
+## AI Chat · Paper state
+
+# The resting line under the section title. It reports what is known and never
+# causes it: resolving a paper uploads the whole file, and that is paid for only
+# when a question is actually asked.
+pharos-chat-phase-understanding = Building an understanding of this paper
+pharos-chat-phase-ready = This paper is understood
+pharos-chat-phase-indexed = The paper's text has been read
+pharos-chat-phase-indexed-no-model = Text read · waiting for a model
+pharos-chat-phase-error = Could not build an understanding
+# What to say about a paper this session has not resolved. The web client says
+# "preparing paper context" here, but nothing is being prepared on the desktop
+# at this point, and copying it would describe work that deliberately is not
+# happening.
+pharos-chat-phase-lazy = Reads this paper on your first question
+# $count (Number) - characters the backend extracted
+pharos-chat-phase-chars = { $count } characters read
+
+## AI Chat · Empty state
+
+pharos-chat-empty-ready = I have already read this paper
+pharos-chat-empty-understanding = Building context for this paper
+pharos-chat-empty-idle = Start a conversation about this paper
+# Four openings, matching the web client. The label on the button is the
+# question that gets sent.
+pharos-chat-starter-contribution = What is the core contribution?
+pharos-chat-starter-trick = What is the trick that actually matters?
+pharos-chat-starter-evidence = How do the experiments show the method works?
+pharos-chat-starter-limitations = What are this paper's limitations?
+
+## AI Chat · When a question cannot be asked
+
+pharos-chat-signed-out-title = Sign in to ask about this paper
+pharos-chat-signed-out-detail = The Pharos backend reads the paper and calls the model, so this needs an account. Your library, reader and annotations are unaffected.
+pharos-chat-signed-out-action = Sign In
+
+pharos-chat-no-model-title = Connect your model
+# There is deliberately no field to type a key into: the key exists only in the
+# backend, encrypted, and never passes through this computer. What this client
+# can do is say so and point at the read-only view of the model in Settings.
+pharos-chat-no-model-detail = Any OpenAI-compatible endpoint works. The API key can only be entered in the Pharos web app, where the server stores it encrypted — it is never written to this computer, which is why there is no field for it here. Settings shows which model is in use.
+pharos-chat-no-model-action = Show Model Settings
+
+## AI Chat · Progress and failures
 
 pharos-chat-status-connecting = Connecting…
 pharos-chat-status-preparing = Reading the paper…
 pharos-chat-status-thinking = Thinking…
+# Not shown as an error: whoever pressed Stop knows why it stopped. The backend
+# saves no partial answer when a stream is abandoned (stream_chat_events, the
+# GeneratorExit branch), so the partial text goes too -- leaving it would put a
+# turn on screen that the model does not have.
+pharos-chat-stopped = Stopped. That answer was not saved.
 
 pharos-chat-error-prepare = Could not read this paper.
 pharos-chat-error-prepare-timeout = Reading this paper took too long.
 pharos-chat-error-failed = The answer could not be generated.
 pharos-chat-error-empty = No answer came back.
+pharos-chat-error-history = Could not load this conversation.
+pharos-chat-error-new = Could not start a new conversation.
+pharos-chat-error-delete = Could not delete this conversation.
 
 pharos-error-unreachable = Could not reach the Pharos server.
 
@@ -1061,3 +1148,43 @@ pharos-rail-account-tooltip =
     .title = Settings & account
 pharos-rail-account-sign-in-tooltip =
     .title = Sign in to Pharos
+
+## The item pane's translation section.
+##
+## The first two are attribute-only (.label / .tooltiptext); Zotero builds both
+## ids from data-pane. Everything else is a VALUE message -- the section reads
+## them with formatValueSync, which returns null for an attributes-only message.
+
+section-pharos-translate =
+    .label = Translation
+sidenav-pharos-translate =
+    .tooltiptext = Translation
+
+# "No translation here", not "Not translated". This section can see only the
+# local library; a translation made in the web client or on another machine is
+# invisible to it, so "Not translated" would be a claim about the account made
+# from the evidence of one library.
+pharos-translate-state-unknown = No translation here
+pharos-translate-state-unknown-detail = This reflects this library only. A translation made in the web client or on another device does not appear here.
+pharos-translate-state-is-translation = This is a translation
+pharos-translate-state-translating = Translating
+pharos-translate-state-translating-percent = Translating · { $percent }%
+pharos-translate-state-translated = Translated
+pharos-translate-state-failed = Failed
+
+# The engine's own stage label is free text, and some of them are long and sit
+# unchanged for minutes, which reads as a hang. These three are the web client's
+# mapping term for term -- one job must not be described as being at two
+# different steps in two windows.
+pharos-translate-stage-parse = Parsing layout
+pharos-translate-stage-translate = Translating text
+pharos-translate-stage-typeset = Rebuilding layout
+pharos-translate-stage-tooltip = Engine stage: { $stage }
+
+pharos-translate-action-open = Open Translation
+pharos-translate-action-open-named = Open { $name }
+pharos-translate-action-open-original = Open Original
+pharos-translate-action-retry = Retry
+# The progress dialog is the only place a running job can be cancelled, so this
+# is not merely "see the progress".
+pharos-translate-action-queue = Show Progress

@@ -3,19 +3,184 @@
 // The pane is narrow and resizable, so nothing here assumes a width: the
 // messages column is fluid and the composer stacks its button beneath the input
 // rather than beside it.
+//
+// Scoped by id rather than by class because that is the id the item pane's
+// template gives this section. The reader's context pane builds its own
+// item-details per tab, so several elements in one document can carry it --
+// which is fine for a selector and is why nothing in here reaches for the
+// element by id from script.
 
 #zotero-editpane-pharos-chat {
+	// The resting line under the section title. Always present: its job is to
+	// say what is known about the paper, and "nothing yet" is one of the
+	// answers it has to be able to give.
+	.pharos-chat-phase {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		margin-block-end: 8px;
+		color: var(--fill-secondary);
+		font-size: 11px;
+
+		&.is-ready .pharos-chat-phase-label {
+			color: var(--accent-teal);
+		}
+
+		&.is-error .pharos-chat-phase-label {
+			color: var(--accent-red);
+		}
+	}
+
+	.pharos-chat-phase-label {
+		flex: 0 1 auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.pharos-chat-phase-chars {
+		flex: none;
+		color: var(--fill-tertiary);
+		font-variant-numeric: tabular-nums;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-sessions {
+		margin-block-end: 8px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-session {
+		width: 100%;
+		height: 24px;
+		padding: 0 4px;
+		border: var(--material-border);
+		border-radius: 5px;
+		background: var(--material-background);
+		color: var(--fill-primary);
+		font: inherit;
+		font-size: 11px;
+	}
+
+	// The header's "…" opens this rather than a XUL menupopup: everything else
+	// destructive in this client confirms inline, and a popup anchored into a
+	// section whose body animates its own max-height is a lot of machinery for
+	// one button.
+	.pharos-chat-menu {
+		display: flex;
+		justify-content: flex-end;
+		margin-block-end: 8px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-menu-delete {
+		color: var(--accent-red);
+	}
+
+	// Both blocked states -- signed out, and no model configured. A card rather
+	// than a line of status text, because each one names somewhere to go and a
+	// destination has to be clickable.
+	.pharos-chat-notice {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 6px;
+		padding: 10px;
+		margin-block-end: 8px;
+		border: var(--material-border);
+		border-radius: 8px;
+		background: var(--material-background);
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-notice-title {
+		color: var(--fill-primary);
+		font-weight: 600;
+	}
+
+	.pharos-chat-notice-detail {
+		color: var(--fill-secondary);
+		font-size: 11px;
+		line-height: 1.6;
+	}
+
+	.pharos-chat-empty {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-block-end: 8px;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-empty-headline {
+		color: var(--fill-secondary);
+		font-size: 12px;
+	}
+
+	.pharos-chat-empty-paper {
+		// One line: a paper title can be longer than the pane is tall, and the
+		// title attribute carries the rest.
+		overflow: hidden;
+		color: var(--fill-tertiary);
+		font-size: 11px;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-starters {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.pharos-chat-starter {
+		padding: 6px 8px;
+		border: var(--material-border);
+		border-radius: 6px;
+		background: var(--material-background);
+		color: var(--fill-primary);
+		font: inherit;
+		font-size: 11px;
+		line-height: 1.45;
+		text-align: start;
+
+		&:hover {
+			background: var(--fill-quinary);
+		}
+	}
+
 	.pharos-chat-messages {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
 		// Bounded so the composer stays reachable without scrolling the whole
-		// item pane, and min-height keeps the section from collapsing to nothing
-		// before the first message.
-		min-height: 40px;
+		// item pane. No min-height: the empty state above now fills that space,
+		// and reserving a second block for it left a gap under the chips.
 		max-height: 320px;
 		overflow-y: auto;
-		margin-block-end: 8px;
+
+		&:not(:empty) {
+			margin-block-end: 8px;
+		}
 	}
 
 	.pharos-chat-message {
@@ -36,6 +201,66 @@
 		&.is-assistant {
 			background: var(--color-quarternary-on-background);
 		}
+	}
+
+	.pharos-chat-confirm {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		margin-block-end: 8px;
+		border: var(--material-border);
+		border-radius: 6px;
+		background: var(--material-background);
+		color: var(--fill-secondary);
+		font-size: 11px;
+		line-height: 1.5;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-confirm-actions {
+		display: flex;
+		gap: 6px;
+	}
+
+	.pharos-chat-confirm-go {
+		color: var(--accent-red);
+	}
+
+	// Failures stay until they are dismissed. The status line above cannot hold
+	// them: the next thing that happens overwrites it, so a failure written
+	// there is gone before the question that caused it can be retyped.
+	.pharos-chat-banner {
+		display: flex;
+		align-items: flex-start;
+		gap: 6px;
+		padding: 6px 8px;
+		margin-block-end: 8px;
+		border: 1px solid var(--accent-red);
+		border-radius: 6px;
+		background: var(--color-quarternary-on-background);
+		color: var(--fill-primary);
+		font-size: 11px;
+		line-height: 1.5;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.pharos-chat-banner-text {
+		flex: 1;
+		overflow-wrap: anywhere;
+	}
+
+	.pharos-chat-banner-dismiss {
+		flex: none;
+		min-width: 0;
+		padding: 0 6px;
+		margin: 0;
 	}
 
 	.pharos-chat-status {
@@ -59,9 +284,37 @@
 		box-sizing: border-box;
 		resize: vertical;
 		font: inherit;
+
+		&:disabled {
+			opacity: 0.6;
+		}
 	}
 
-	.pharos-chat-send {
-		align-self: flex-end;
+	.pharos-chat-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 6px;
+	}
+
+	.pharos-chat-send[hidden],
+	.pharos-chat-stop[hidden] {
+		display: none;
+	}
+
+	// The header's two controls. The icons have to be declared here rather than
+	// in _collapsibleSection.scss, which only knows about upstream's "add".
+	collapsible-section > .head {
+		toolbarbutton.pharos-chat-new {
+			@include svgicon-menu("plus", "universal", "16");
+		}
+
+		toolbarbutton.pharos-chat-more {
+			@include svgicon-menu("options", "universal", "16");
+		}
+
+		toolbarbutton.pharos-chat-new[hidden],
+		toolbarbutton.pharos-chat-more[hidden] {
+			display: none;
+		}
 	}
 }

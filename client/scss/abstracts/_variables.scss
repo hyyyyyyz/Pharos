@@ -86,9 +86,12 @@ $z-index-loading-cover: 60;
 $item-pane-sections: (
 	"info": var(--accent-blue),
 	"abstract": var(--accent-azure),
-	// The brand gold, so the one Pharos-only section in this list reads as ours
-	// rather than as another Zotero category.
+	// The brand gold, so the Pharos-only sections in this list read as ours
+	// rather than as more Zotero categories. Both take it: they are one family,
+	// and giving translation a category colour of its own would put it in the
+	// same visual class as "tags" or "related".
 	"pharos-chat": var(--accent-gold),
+	"pharos-translate": var(--accent-gold),
 	"attachments": var(--accent-green),
 	"notes": var(--accent-yellow),
 	"note-info": var(--accent-yellow),

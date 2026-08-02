@@ -62,6 +62,22 @@ Zotero.Pharos.Translate = new function () {
 	let _queueProcessing = false;
 	let _cancelled = false;
 
+	/**
+	 * Attachment id -> what this process knows about its most recent run.
+	 *
+	 * Memory only, and the item pane section is built around that limitation
+	 * rather than around this map -- see getState().
+	 *
+	 * Shape: { state, mode, phase, message, progress, stage, stageIndex, error }
+	 */
+	let _jobs = new Map();
+
+	/** Called with an attachment id whenever its entry in _jobs changes. */
+	let _stateListeners = new Set();
+
+	/** The localized filename suffixes, resolved on first use. */
+	let _suffixes = null;
+
 	let _progressQueue = Zotero.ProgressQueues.create({
 		id: 'pharos-translate',
 		title: 'pharos-translate-title',
@@ -72,6 +88,19 @@ Zotero.Pharos.Translate = new function () {
 	});
 
 	_progressQueue.addListener('cancel', function () {
+		// Before _queue is emptied: everything still in it was reported as
+		// running the moment it was queued, and nothing downstream will ever
+		// touch those entries again. Left alone they would sit at "翻译中" in
+		// the item pane for the rest of the session -- the exact stale-forever
+		// state the section exists to remove.
+		for (let entry of _queue) {
+			_setJob(entry.attachment.id, {
+				state: Zotero.Pharos.Translate.STATE_FAILED,
+				phase: null,
+				message: '',
+				error: Zotero.getString('pharos-translate-error-cancelled'),
+			});
+		}
 		_queue = [];
 		_cancelled = true;
 	});
@@ -90,6 +119,58 @@ Zotero.Pharos.Translate = new function () {
 	 */
 	this.MODE_MONO = 'mono';
 	this.MODE_DUAL = 'dual';
+
+	/**
+	 * The four answers getState() is willing to give.
+	 *
+	 * STATE_UNKNOWN is the important one and is not a synonym for "not
+	 * translated". See getState() for what it does and does not mean.
+	 */
+	this.STATE_UNKNOWN = 'unknown';
+	this.STATE_RUNNING = 'running';
+	this.STATE_FAILED = 'failed';
+	this.STATE_TRANSLATED = 'translated';
+
+	/**
+	 * The number of steps the engine's stage strings are collapsed into.
+	 *
+	 * BabelDOC emits a free-form stage label and this module used to hand it
+	 * straight to the progress row. Some of those labels are long and sit
+	 * unchanged for minutes, which reads as a hang rather than as work. The web
+	 * client answers that by mapping the label onto a fixed three-step stepper
+	 * (frontend/src/lib/model.ts stageIndex): whatever the engine calls what it
+	 * is doing, it is laying the page out, translating it, or putting the layout
+	 * back.
+	 *
+	 * The mapping below is the web client's, term for term, deliberately -- a
+	 * user with both surfaces open must not see one job described as being at
+	 * two different steps. The raw label is not thrown away; it travels in the
+	 * job record as `stage` and the item pane section shows it as a tooltip, so
+	 * the engine's own word for it is one hover away.
+	 */
+	this.STAGE_COUNT = 3;
+
+	/**
+	 * @param {String} stage - the engine's raw stage label
+	 * @param {Number} progress - 0-100
+	 * @return {Number} 0, 1 or 2
+	 */
+	this.stageIndex = function (stage, progress) {
+		let s = (stage || '').toLowerCase();
+		if (s.includes('typeset') || s.includes('排版')) {
+			return 2;
+		}
+		if (s.includes('translat') || s.includes('翻译')) {
+			return 1;
+		}
+		if (s.includes('pars') || s.includes('解析') || s.includes('queue')) {
+			return 0;
+		}
+		// An unrecognised label still has a percentage behind it, and a stepper
+		// frozen at step one for a job that is 80% done would be a worse lie
+		// than a rough guess.
+		return Math.min(2, Math.floor(((progress || 0) / 100) * this.STAGE_COUNT));
+	};
 
 	/**
 	 * Whether an item is something this can translate.
@@ -117,14 +198,299 @@ Zotero.Pharos.Translate = new function () {
 	 * @return {Boolean}
 	 */
 	this.hasTranslatableAttachment = function (item) {
+		return !!this.getTranslatableAttachment(item);
+	};
+
+	/**
+	 * The PDF an item's translation state is about, or null.
+	 *
+	 * Synchronous for the same reason hasTranslatableAttachment() is: the item
+	 * pane section is rebuilt on every selection change, including an arrow key
+	 * held down over a list, and must not do I/O to decide whether it belongs on
+	 * screen.
+	 *
+	 * Where a regular item has several PDFs this prefers one that is not itself
+	 * a Pharos translation. Translations are attached to the *same parent* as
+	 * the file they were made from (see _importResult), so a translated paper
+	 * normally has at least two PDF children and the order they come back in is
+	 * not a promise. Picking the translation would show the state of the output
+	 * instead of the state of the source, and offer to translate a translation.
+	 *
+	 * @param {Zotero.Item} item
+	 * @return {Zotero.Item|null}
+	 */
+	this.getTranslatableAttachment = function (item) {
+		if (!item) {
+			return null;
+		}
 		if (this.canTranslate(item)) {
-			return true;
+			return item;
 		}
 		if (!item.isRegularItem()) {
-			return false;
+			return null;
 		}
-		return Zotero.Items.get(item.getAttachments()).some(a => this.canTranslate(a));
+		let attachments = Zotero.Items.get(item.getAttachments())
+			.filter(a => this.canTranslate(a));
+		return attachments.find(a => !this.isTranslation(a)) || attachments[0] || null;
 	};
+
+	/**
+	 * Whether an attachment is a translation this client produced.
+	 *
+	 * Two different questions get answered by two different pieces of evidence,
+	 * and it matters which is which:
+	 *
+	 *   - *Which* paper a translation belongs to comes from the dc:relation
+	 *     _relate() writes. That is the pairing, it is stored, it syncs, and it
+	 *     survives renaming either file.
+	 *   - *Whether* a given PDF is a translation at all comes from the suffix
+	 *     _importResult() puts in its title. There is nowhere better to put that
+	 *     flag: Zotero's relation predicates are a fixed set (Zotero.Relations
+	 *     declares three and validates the namespace prefix), inventing one
+	 *     would sync an unknown predicate to zotero.org, and the Pharos sidecar
+	 *     must not be made load-bearing for a fact about a Zotero item.
+	 *
+	 * The known cost: the suffix is localized, so a user who switches locale
+	 * after translating stops having their older translations recognised as
+	 * translations. What that costs is the label and the role, not the link --
+	 * the relation still shows both files as related, and the reader still opens
+	 * both. It degrades to "we cannot tell", which is the failure this whole
+	 * section is designed to be able to say out loud.
+	 *
+	 * @param {Zotero.Item} item
+	 * @return {Boolean}
+	 */
+	this.isTranslation = function (item) {
+		return !!this.getTranslationMode(item);
+	};
+
+	/**
+	 * Which rendering an attachment is, or null if it is not a translation.
+	 *
+	 * Lets a caller offer the mode a paper does not have yet rather than both --
+	 * a paper with a mono translation needs a "dual" button, not a second mono
+	 * run it would pay full engine time for and then find it already had.
+	 *
+	 * @param {Zotero.Item} item
+	 * @return {String|null} MODE_MONO, MODE_DUAL or null
+	 */
+	this.getTranslationMode = function (item) {
+		let suffix = _translationSuffix(item);
+		if (!suffix) {
+			return null;
+		}
+		return suffix == _suffixes[0] ? this.MODE_MONO : this.MODE_DUAL;
+	};
+
+	/**
+	 * The Pharos translations of an attachment, newest first.
+	 *
+	 * @param {Zotero.Item} attachment
+	 * @return {Zotero.Item[]}
+	 */
+	this.getTranslations = function (attachment) {
+		return _relatedPDFs(attachment).filter(a => this.isTranslation(a));
+	};
+
+	/**
+	 * The PDF a translation was made from, or null.
+	 *
+	 * @param {Zotero.Item} translation
+	 * @return {Zotero.Item|null}
+	 */
+	this.getOriginal = function (translation) {
+		if (!this.isTranslation(translation)) {
+			return null;
+		}
+		return _relatedPDFs(translation).find(a => !this.isTranslation(a)) || null;
+	};
+
+	/**
+	 * Everything known about one item's translation, without touching the
+	 * network.
+	 *
+	 * WHERE THE RESTING STATE COMES FROM, AND WHY
+	 *
+	 * There are two possible authorities. The backend is the real one: it holds
+	 * every job this account has ever run, on any device, with its status and
+	 * its error. This uses the *local library* instead -- the translated
+	 * attachment and the dc:relation tying it to its source -- plus an in-memory
+	 * record of jobs started in this process.
+	 *
+	 * Two reasons, and the second is the one that decided it:
+	 *
+	 *   1. An item pane section renders on every selection change. Asking the
+	 *      backend here would put an HTTP request behind the down-arrow key.
+	 *   2. There is no cheap question to ask it. The backend addresses papers by
+	 *      the sha256 of their bytes, and the client keeps no durable
+	 *      attachment -> paper-id map (Zotero.Pharos.Chat._paperIDs is
+	 *      per-session and explains why). "Ask the backend about this
+	 *      attachment" therefore begins by *uploading the file*, so the naive
+	 *      fix costs a multi-MB POST per row scrolled past, not a GET.
+	 *
+	 * WHAT THIS CANNOT ANSWER, and what is done about it:
+	 *
+	 *   - A translation produced in the web client, or on another machine, that
+	 *     has not synced into this library. There is no local trace of it.
+	 *   - A run that failed, or is running right now, in another session --
+	 *     including this account's own runs before the last restart, since _jobs
+	 *     dies with the process.
+	 *   - Whether a paper the user deleted the translation of was ever
+	 *     translated.
+	 *
+	 * All three collapse into the same shape: no local evidence. That is
+	 * reported as STATE_UNKNOWN and labelled as what is actually known ("no
+	 * translation in this library"), never as "not translated" -- which would be
+	 * a claim about the account, made from a library, and wrong precisely for
+	 * the user who has been translating on the web.
+	 *
+	 * @param {Zotero.Item} item - an attachment, or an item with a PDF
+	 * @return {Object|null} null when translation does not apply to this item
+	 */
+	this.getState = function (item) {
+		let attachment = this.getTranslatableAttachment(item);
+		if (!attachment) {
+			return null;
+		}
+
+		let translations = this.getTranslations(attachment);
+		let job = _jobs.get(attachment.id) || null;
+
+		// A live run outranks everything: it is the newest fact there is. A
+		// failure outranks an existing translation because it is a report on the
+		// most recent attempt, and the translation it did not replace is still
+		// reachable -- `translations` is returned either way, so the section can
+		// say "the last run failed" and still offer the older result.
+		let state;
+		if (job && job.state == this.STATE_RUNNING) {
+			state = this.STATE_RUNNING;
+		}
+		else if (job && job.state == this.STATE_FAILED) {
+			state = this.STATE_FAILED;
+		}
+		else if (translations.length) {
+			state = this.STATE_TRANSLATED;
+		}
+		else {
+			state = this.STATE_UNKNOWN;
+		}
+
+		return {
+			attachment,
+			state,
+			translations,
+			// Only set when the selected item is itself a translation, which is
+			// what the "back to the original" action needs.
+			original: this.getOriginal(attachment),
+			isTranslation: this.isTranslation(attachment),
+			mode: (job && job.mode) || null,
+			phase: (job && job.phase) || null,
+			message: (job && job.message) || '',
+			progress: (job && job.progress) || 0,
+			stage: (job && job.stage) || '',
+			stageIndex: (job && job.stageIndex) || 0,
+			error: (job && job.error) || null,
+		};
+	};
+
+	/**
+	 * Run the failed job again, in the mode it was asked for the first time.
+	 *
+	 * Deliberately not a mode picker. A retry is a statement about the run, not
+	 * a second chance to change your mind, and the mode the user chose is
+	 * already recorded; asking again would make the common case (the server was
+	 * briefly down) two clicks and a decision.
+	 *
+	 * @param {Zotero.Item} attachment
+	 * @return {Promise}
+	 */
+	this.retry = function (attachment) {
+		let job = _jobs.get(attachment.id);
+		return this.translateItems([attachment], (job && job.mode) || this.MODE_MONO);
+	};
+
+	/**
+	 * Subscribe to job-state changes.
+	 *
+	 * Progress arrives from a poll loop rather than from the data layer, so
+	 * Zotero.Notifier never hears about it -- an item pane section watching the
+	 * item would see nothing move until the translation was imported at the very
+	 * end. Listeners are called with the attachment id that changed.
+	 *
+	 * @param {Function} listener
+	 */
+	this.addStateListener = function (listener) {
+		_stateListeners.add(listener);
+	};
+
+	this.removeStateListener = function (listener) {
+		_stateListeners.delete(listener);
+	};
+
+	/** Test seam: forget every job this process has run. */
+	this._clearJobs = function () {
+		_jobs.clear();
+	};
+
+	/**
+	 * Merge a patch into an attachment's job record and tell the listeners.
+	 */
+	function _setJob(itemID, patch) {
+		_jobs.set(itemID, Object.assign({}, _jobs.get(itemID), patch));
+		for (let listener of _stateListeners) {
+			try {
+				listener(itemID);
+			}
+			catch (e) {
+				// One badly-behaved section must not stop the others updating,
+				// and must certainly not break the poll loop it is called from.
+				Zotero.logError(e);
+			}
+		}
+	}
+
+	/**
+	 * The parenthesised suffix _importResult() appended, or null.
+	 */
+	function _translationSuffix(item) {
+		if (!Zotero.Pharos.Translate.canTranslate(item)) {
+			return null;
+		}
+		let name = item.getField('title') || item.attachmentFilename || '';
+		let match = /\(([^()]+)\)(?:\.pdf)?$/i.exec(name.trim());
+		if (!match) {
+			return null;
+		}
+		// Resolved once. This runs for every PDF child of every item the user
+		// arrows past, and the locale cannot change without a restart.
+		if (!_suffixes) {
+			_suffixes = [
+				Zotero.getString('pharos-translate-suffix-mono'),
+				Zotero.getString('pharos-translate-suffix-dual'),
+			];
+		}
+		return _suffixes.includes(match[1]) ? match[1] : null;
+	}
+
+	/**
+	 * Related items that are PDFs we could have made or translated.
+	 *
+	 * The relation is symmetric by construction (_relate writes both halves), so
+	 * this works from either end.
+	 */
+	function _relatedPDFs(item) {
+		if (!item || !item.isAttachment()) {
+			return [];
+		}
+		let out = [];
+		for (let key of item.relatedItems) {
+			let related = Zotero.Items.getByLibraryAndKey(item.libraryID, key);
+			if (related && Zotero.Pharos.Translate.canTranslate(related)) {
+				out.push(related);
+			}
+		}
+		return out;
+	}
 
 	/**
 	 * Queue items for translation and show the progress dialog.
@@ -158,6 +524,21 @@ Zotero.Pharos.Translate = new function () {
 		for (let attachment of attachments) {
 			_progressQueue.addRow(attachment);
 			_queue.push({ attachment, mode });
+			// Marked running on the way into the queue, not when the job
+			// starts. The queue is processed one at a time, so the second of two
+			// selected papers can sit here for minutes; reporting it as anything
+			// other than in progress would invite a second click that queues it
+			// twice.
+			_setJob(attachment.id, {
+				state: Zotero.Pharos.Translate.STATE_RUNNING,
+				mode,
+				phase: 'queued',
+				message: Zotero.getString('pharos-translate-status-queued'),
+				progress: 0,
+				stage: '',
+				stageIndex: 0,
+				error: null,
+			});
 		}
 
 		await _processQueue();
@@ -173,22 +554,44 @@ Zotero.Pharos.Translate = new function () {
 				let { attachment, mode } = _queue.shift();
 				let itemID = attachment.id;
 				try {
-					let translated = await _translateOne(attachment, mode, (message) => {
+					// The queue row still gets one line of prose; the job record
+					// gets the same run in parts, because the item pane section
+					// draws a bar and a stepper out of it rather than a sentence.
+					let translated = await _translateOne(attachment, mode, (message, detail) => {
 						_progressQueue.updateRow(
 							itemID, Zotero.ProgressQueue.ROW_PROCESSING, message
 						);
+						_setJob(itemID, Object.assign({ message }, detail));
 					});
 					_progressQueue.updateRow(
 						itemID,
 						Zotero.ProgressQueue.ROW_SUCCEEDED,
 						translated.getField('title') || translated.attachmentFilename
 					);
+					_setJob(itemID, {
+						state: Zotero.Pharos.Translate.STATE_TRANSLATED,
+						phase: null,
+						message: '',
+						progress: 100,
+						stageIndex: Zotero.Pharos.Translate.STAGE_COUNT - 1,
+						error: null,
+					});
 				}
 				catch (e) {
 					Zotero.logError(e);
 					_progressQueue.updateRow(
 						itemID, Zotero.ProgressQueue.ROW_FAILED, _describeError(e)
 					);
+					// The same truncated text the queue row shows, for the same
+					// reason -- the section has a narrow column too, and an
+					// untruncated traceback would push the retry button off the
+					// bottom of the item pane.
+					_setJob(itemID, {
+						state: Zotero.Pharos.Translate.STATE_FAILED,
+						phase: null,
+						message: '',
+						error: _describeError(e),
+					});
 				}
 			}
 		}
@@ -203,6 +606,7 @@ Zotero.Pharos.Translate = new function () {
 	 * @param {Zotero.Item} attachment
 	 * @param {String} mode
 	 * @param {Function} onProgress - called with a human-readable status string
+	 *     and a structured detail object for the item pane section
 	 * @return {Promise<Zotero.Item>} the attachment for the requested mode; the
 	 *     other rendering, when the job produced one, is imported as well
 	 */
@@ -212,10 +616,14 @@ Zotero.Pharos.Translate = new function () {
 			throw new Error(Zotero.getString('pharos-translate-error-missing-file'));
 		}
 
-		onProgress(Zotero.getString('pharos-translate-status-uploading'));
+		onProgress(Zotero.getString('pharos-translate-status-uploading'), {
+			phase: 'uploading', progress: 0, stage: '', stageIndex: 0,
+		});
 		let paper = await _upload(path, attachment.attachmentFilename);
 
-		onProgress(Zotero.getString('pharos-translate-status-queued'));
+		onProgress(Zotero.getString('pharos-translate-status-queued'), {
+			phase: 'queued', progress: 0, stage: '', stageIndex: 0,
+		});
 		let job = await Zotero.Pharos.API.request(
 			'POST', `/api/papers/${paper.id}/translate`
 		);
@@ -230,7 +638,14 @@ Zotero.Pharos.Translate = new function () {
 			throw new Error(Zotero.getString('pharos-translate-error-no-output'));
 		}
 
-		onProgress(Zotero.getString('pharos-translate-status-downloading'));
+		onProgress(Zotero.getString('pharos-translate-status-downloading'), {
+			// The engine is done by now, so all three steps are behind us; the
+			// remaining wait is a transfer, which the bar already covers.
+			phase: 'downloading',
+			progress: 100,
+			stage: '',
+			stageIndex: Zotero.Pharos.Translate.STAGE_COUNT - 1,
+		});
 		let translated = await _importResult(attachment, paper.id, kind);
 
 		// Both renderings come out of the same job, and the mode was chosen from
@@ -300,10 +715,20 @@ Zotero.Pharos.Translate = new function () {
 			// in zh-CN. Here that threw from inside the poll loop, so an en-US
 			// user lost the translation they were already paying for, at the
 			// first progress tick, with the job still running on the server.
+			//
+			// The raw stage travels on in `detail` as well, where the item pane
+			// section normalises it to a three-step stepper (see stageIndex) and
+			// keeps this string as the stepper's tooltip. Both renderings are
+			// fed from here so that neither can drift from the other.
 			onProgress(Zotero.ftl.formatValueSync('pharos-translate-status-running', {
 				stage: job.stage || '',
 				percent: Math.round(job.progress || 0),
-			}));
+			}), {
+				phase: 'running',
+				progress: Math.round(job.progress || 0),
+				stage: job.stage || '',
+				stageIndex: Zotero.Pharos.Translate.stageIndex(job.stage, job.progress),
+			});
 		}
 	}
 
