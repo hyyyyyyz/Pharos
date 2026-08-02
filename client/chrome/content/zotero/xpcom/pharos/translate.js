@@ -48,6 +48,16 @@ Zotero.Pharos.Translate = new function () {
 	 *  at which we stop believing the job is still alive. */
 	const POLL_TIMEOUT = 30 * 60 * 1000;
 
+	/** How much of a failure fits in a queue row. A backend failure arrives as
+	 *  whatever the engine printed, which can be a whole Python traceback, and
+	 *  the row is one line in a small dialog: untruncated, it blows the column
+	 *  out and pushes everything else off screen. Same length the web client
+	 *  uses (frontend/src/components/ReadingView.tsx ERROR_MAX), and nothing is
+	 *  lost by it -- _processQueue() has already called Zotero.logError() on the
+	 *  error itself, which logs the message in full and debug-logs the error
+	 *  object with its stack. */
+	const ERROR_MAX = 200;
+
 	let _queue = [];
 	let _queueProcessing = false;
 	let _cancelled = false;
@@ -71,8 +81,12 @@ Zotero.Pharos.Translate = new function () {
 	 *
 	 * "mono" is the translated text alone; "dual" interleaves the original and
 	 * the translation page by page. Users who read alongside the source want
-	 * dual; users reading to absorb want mono. Both are produced by the same
-	 * job, so the choice here only decides which file gets attached.
+	 * dual; users reading to absorb want mono.
+	 *
+	 * Both come out of the same job, so this no longer decides which file is
+	 * kept -- whatever the job produced is imported. What it still decides is
+	 * which one the run is reported as having made, and so which one the user
+	 * is handed when it finishes.
 	 */
 	this.MODE_MONO = 'mono';
 	this.MODE_DUAL = 'dual';
@@ -189,7 +203,8 @@ Zotero.Pharos.Translate = new function () {
 	 * @param {Zotero.Item} attachment
 	 * @param {String} mode
 	 * @param {Function} onProgress - called with a human-readable status string
-	 * @return {Promise<Zotero.Item>} the newly created attachment
+	 * @return {Promise<Zotero.Item>} the attachment for the requested mode; the
+	 *     other rendering, when the job produced one, is imported as well
 	 */
 	async function _translateOne(attachment, mode, onProgress) {
 		let path = await attachment.getFilePathAsync();
@@ -216,7 +231,30 @@ Zotero.Pharos.Translate = new function () {
 		}
 
 		onProgress(Zotero.getString('pharos-translate-status-downloading'));
-		return _importResult(attachment, paper.id, kind);
+		let translated = await _importResult(attachment, paper.id, kind);
+
+		// Both renderings come out of the same job, and the mode was chosen from
+		// a context menu before the user had read a word of the paper. Keeping
+		// only the chosen one means changing your mind costs another full run --
+		// minutes of engine time and API budget already spent, thrown away over
+		// a menu click. So the other one is imported too when the job has it,
+		// which is what the web client does by choosing at read time instead.
+		let other = kind == 'dual' ? 'mono' : 'dual';
+		if (other == 'dual' ? job.has_dual : job.has_mono) {
+			try {
+				await _importResult(attachment, paper.id, other);
+			}
+			catch (e) {
+				// The rendering that was asked for is already attached. Failing
+				// the whole translation over the spare one would report failure
+				// for a job that succeeded.
+				Zotero.logError(e);
+			}
+		}
+
+		// The requested one, because it is what the progress row names and what
+		// the user is waiting for.
+		return translated;
 	}
 
 	async function _upload(path, filename) {
@@ -264,7 +302,7 @@ Zotero.Pharos.Translate = new function () {
 	}
 
 	/**
-	 * Download the translated PDF and attach it to the same parent item.
+	 * Download one rendering, attach it beside the original, and relate the two.
 	 */
 	async function _importResult(attachment, paperID, kind) {
 		let buffer = await Zotero.Pharos.API.request(
@@ -285,18 +323,33 @@ Zotero.Pharos.Translate = new function () {
 		let tmpPath = PathUtils.join(Zotero.getTempDirectory().path, filename);
 		await IOUtils.write(tmpPath, new Uint8Array(buffer));
 
+		let options = {
+			file: tmpPath,
+			libraryID: attachment.libraryID,
+			title: filename,
+			contentType: 'application/pdf',
+		};
+		if (attachment.parentItemID) {
+			// Attach to the same parent as the source PDF, so the translation
+			// sits beside the original rather than becoming a loose item.
+			options.parentItemID = attachment.parentItemID;
+		}
+		else {
+			// A top-level PDF has no parent to hang the translation off, and an
+			// attachment cannot parent another attachment. Left at that, the
+			// translation lands in the library root with no collection at all --
+			// findable only by scrolling the whole library, even though the file
+			// it was made from is filed. Following the original into its
+			// collections is the closest thing to adjacency that exists here;
+			// the relation below is what actually links the two. Set instead of
+			// parentItemID, never alongside it: importFromFile throws when given
+			// both.
+			options.collections = attachment.getCollections();
+		}
+
+		let translation;
 		try {
-			return await Zotero.Attachments.importFromFile({
-				file: tmpPath,
-				// Attach to the same parent as the source PDF, so the translation
-				// sits beside the original rather than becoming a loose item. A
-				// top-level PDF has no parent, and passing false is how
-				// importFromFile is told that.
-				parentItemID: attachment.parentItemID || false,
-				libraryID: attachment.libraryID,
-				title: filename,
-				contentType: 'application/pdf',
-			});
+			translation = await Zotero.Attachments.importFromFile(options);
 		}
 		finally {
 			// The import copied the file; leaving the original behind would grow
@@ -307,6 +360,42 @@ Zotero.Pharos.Translate = new function () {
 			catch (e) {
 				Zotero.logError(e);
 			}
+		}
+
+		await _relate(attachment, translation);
+		return translation;
+	}
+
+	/**
+	 * Relate a translation and the PDF it was made from, both ways.
+	 *
+	 * Zotero's relations are not symmetric on their own: addRelatedItem() writes
+	 * a dc:relation on the item it is called on and nothing on the other, so
+	 * relating one side gives a link that exists from the translation and not
+	 * from the paper. Everywhere Zotero relates two items it does both halves
+	 * (zoteroPane.js duplicateSelectedItem, relatedBox.js), and this follows
+	 * that rather than inventing a predicate of its own -- "Related" in the item
+	 * pane is where a user would look, and only dc:relation puts it there.
+	 *
+	 * Deliberately outside any transaction and after the import has committed: a
+	 * translation that is attached but unrelated is still a usable translation,
+	 * and taking the import down over a failed link would trade the whole job
+	 * for the cross-reference.
+	 *
+	 * skipDateModifiedUpdate because relating is bookkeeping, not an edit to the
+	 * paper -- same call Zotero makes when it relates items itself.
+	 */
+	async function _relate(original, translation) {
+		try {
+			if (translation.addRelatedItem(original)) {
+				await translation.saveTx({ skipDateModifiedUpdate: true });
+			}
+			if (original.addRelatedItem(translation)) {
+				await original.saveTx({ skipDateModifiedUpdate: true });
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
 		}
 	}
 
@@ -322,6 +411,8 @@ Zotero.Pharos.Translate = new function () {
 	 * does not use 404 for that -- a client that reported "not found" would send
 	 * the user looking for a problem with the paper instead of a setting they
 	 * can change.
+	 *
+	 * Everything else is whatever the engine said, truncated -- see ERROR_MAX.
 	 */
 	function _describeError(e) {
 		if (e instanceof Zotero.Pharos.API.SignedOutError) {
@@ -330,6 +421,12 @@ Zotero.Pharos.Translate = new function () {
 		if (e.status == 409) {
 			return Zotero.getString('pharos-translate-error-disabled');
 		}
-		return e.message || String(e);
+		let text = (e.message || String(e) || '').trim();
+		if (!text) {
+			// A failure with nothing to say still has to say something: an empty
+			// cell reads as a row that is still running.
+			return Zotero.getString('pharos-translate-error-failed');
+		}
+		return text.length > ERROR_MAX ? text.slice(0, ERROR_MAX) + '…' : text;
 	}
 };

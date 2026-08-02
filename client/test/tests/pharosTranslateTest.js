@@ -140,4 +140,186 @@ describe("Zotero.Pharos.Translate", function () {
 			);
 		});
 	});
+
+	describe("#translateItems()", function () {
+		// Only the network is stood in for. Everything downstream of it -- the
+		// temp file, the import, the relation, the queue row -- is the real
+		// thing, because that is where this module's failures are: none of them
+		// throws, and all of them look like a translation that worked.
+
+		var pdfBytes, origRequest;
+
+		before(async function () {
+			let file = getTestDataDirectory();
+			file.append('test.pdf');
+			pdfBytes = (await IOUtils.read(file.path)).buffer;
+		});
+
+		afterEach(function () {
+			if (origRequest) {
+				Zotero.Pharos.API.request = origRequest;
+				origRequest = null;
+			}
+		});
+
+		/**
+		 * @param {Object} job - what GET /api/jobs/{id} keeps answering
+		 */
+		function stubBackend(job) {
+			origRequest = Zotero.Pharos.API.request;
+			Zotero.Pharos.API.request = async function (method, path) {
+				if (method == 'POST' && path == '/api/papers') {
+					return { id: 'paper-1' };
+				}
+				if (method == 'POST' && /^\/api\/papers\/[^/]+\/translate$/.test(path)) {
+					return { id: 'job-1' };
+				}
+				if (method == 'GET' && path.startsWith('/api/jobs/')) {
+					return job;
+				}
+				if (method == 'GET' && /^\/api\/papers\/[^/]+\/pdf\/(mono|dual)$/.test(path)) {
+					return pdfBytes;
+				}
+				throw new Error(`Unexpected request: ${method} ${path}`);
+			};
+		}
+
+		function queueRow(itemID) {
+			return Zotero.ProgressQueues.get('pharos-translate')
+				.getRows().find(row => row.id == itemID);
+		}
+
+		function suffix(kind) {
+			return Zotero.getString(`pharos-translate-suffix-${kind}`);
+		}
+
+		it("should relate the translation and the original both ways", async function () {
+			this.timeout(20000);
+			// Zotero relations are written per item, so relating one side leaves
+			// a link that exists in one direction only -- and neither direction
+			// throws when it is missing. Without both, the translation is a file
+			// with no route back to the paper it came from.
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			stubBackend({ status: 'done', has_mono: true, has_dual: false });
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_MONO
+			);
+
+			var translation = Zotero.Items.get(item.getAttachments())
+				.find(a => a.id != attachment.id);
+			assert.ok(translation, "the translation was imported");
+			assert.include(attachment.relatedItems, translation.key);
+			assert.include(translation.relatedItems, attachment.key);
+		});
+
+		it("should keep a top-level translation findable", async function () {
+			this.timeout(20000);
+			// A top-level PDF has no parent to hang the translation off, so it
+			// lands as another top-level item. Left there it is unfiled in the
+			// library root, with nothing tying it to the paper it translates.
+			var collection = await createDataObject('collection');
+			var attachment = await importPDFAttachment(null);
+			attachment.setCollections([collection.id]);
+			await attachment.saveTx();
+			stubBackend({ status: 'done', has_mono: true, has_dual: false });
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_MONO
+			);
+
+			assert.lengthOf(attachment.relatedItems, 1);
+			var translation = await Zotero.Items.getByLibraryAndKeyAsync(
+				attachment.libraryID, attachment.relatedItems[0]
+			);
+			assert.include(translation.relatedItems, attachment.key);
+			assert.deepEqual(
+				translation.getCollections(),
+				[collection.id],
+				"filed where the original is filed"
+			);
+		});
+
+		it("should keep both renderings when the job produced both", async function () {
+			this.timeout(20000);
+			// One job produces both, and the mode was picked from a context menu
+			// before the user had read a word. Discarding the other means paying
+			// for the whole run again to change your mind.
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			stubBackend({ status: 'done', has_mono: true, has_dual: true });
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_MONO
+			);
+
+			var titles = Zotero.Items.get(item.getAttachments())
+				.filter(a => a.id != attachment.id)
+				.map(a => a.getField('title'));
+			assert.lengthOf(titles, 2);
+			assert.isTrue(titles.some(t => t.includes(suffix('mono'))), 'mono kept');
+			assert.isTrue(titles.some(t => t.includes(suffix('dual'))), 'dual kept');
+			// The row still names the one that was asked for: the spare is a
+			// bonus, not the result.
+			assert.include(queueRow(attachment.id).message, suffix('mono'));
+		});
+
+		it("should fail when the rendering asked for was not produced", async function () {
+			this.timeout(20000);
+			// Importing the other one instead would silently hand the user a
+			// document in a layout they did not choose.
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			stubBackend({ status: 'done', has_mono: true, has_dual: false });
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_DUAL
+			);
+
+			var row = queueRow(attachment.id);
+			assert.equal(row.status, Zotero.ProgressQueue.ROW_FAILED);
+			assert.equal(row.message, Zotero.getString('pharos-translate-error-no-output'));
+			assert.lengthOf(item.getAttachments(), 1, "nothing was imported");
+		});
+
+		it("should truncate a backend stack trace in the queue row", async function () {
+			this.timeout(20000);
+			// job.error is whatever the engine printed, and the row is one line
+			// in a small dialog. Untruncated, a traceback blows the column out.
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			stubBackend({
+				status: 'error',
+				error: 'Traceback (most recent call last):\n' + 'x'.repeat(4000),
+			});
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_MONO
+			);
+
+			var row = queueRow(attachment.id);
+			assert.equal(row.status, Zotero.ProgressQueue.ROW_FAILED);
+			assert.isAtMost(row.message.length, 201, "200 characters plus the ellipsis");
+			assert.isTrue(row.message.startsWith('Traceback'), "the useful end is kept");
+			assert.isTrue(row.message.endsWith('…'), "and it says it was cut");
+		});
+
+		it("should say something when the failure said nothing", async function () {
+			this.timeout(20000);
+			// An error made of whitespace is still an empty cell, and an empty
+			// cell in a queue reads as a row that is still running.
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			stubBackend({ status: 'error', error: '   ' });
+
+			await Zotero.Pharos.Translate.translateItems(
+				[attachment], Zotero.Pharos.Translate.MODE_MONO
+			);
+
+			var row = queueRow(attachment.id);
+			assert.equal(row.status, Zotero.ProgressQueue.ROW_FAILED);
+			assert.equal(row.message, Zotero.getString('pharos-translate-error-failed'));
+		});
+	});
 });
