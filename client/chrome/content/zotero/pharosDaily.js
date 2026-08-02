@@ -208,6 +208,10 @@ var Zotero_Pharos_Daily = new function () {
 	let _detailDrawn = null;
 	let _detailDrawnID = null;
 
+	/** What _renderRail() last drew. Same reason as _detailDrawn: rebuilding an
+	 *  unchanged subtree destroys focus and selection inside it. */
+	let _railDrawn = null;
+
 	/** Set by destroy(). Everything below that resumes after an await checks it:
 	 *  the awaits outlive the document, and the timer they re-arm outlives the
 	 *  window. */
@@ -1095,6 +1099,18 @@ var Zotero_Pharos_Daily = new function () {
 	};
 
 	this._renderRail = function () {
+		// Skipped when nothing it draws changed. During a sweep this runs every
+		// 1.5s, and rebuilding it moves keyboard focus off whichever date row
+		// had it -- the same defect the detail pane had, with the same cause:
+		// replaceChildren() discards the focused node, and focus falls to the
+		// document. A user arrowing through dates while a sweep runs simply
+		// loses their place, twice a second, with nothing to explain it.
+		let key = _railKey();
+		if (key === _railDrawn) {
+			return;
+		}
+		_railDrawn = key;
+
 		_el.rail.replaceChildren();
 
 		// Exactly one note, or the dates. Never both.
@@ -1384,6 +1400,25 @@ var Zotero_Pharos_Daily = new function () {
 	 * that does not is a panel that silently stops updating -- add to this in
 	 * the same commit that adds to those.
 	 */
+	/**
+	 * Everything _renderRail() reads, as one comparable value.
+	 *
+	 * Every branch of that function is represented here. A new input added there
+	 * and not here means the rail silently stops updating for it -- which is why
+	 * this sits directly above it rather than somewhere tidier.
+	 */
+	function _railKey() {
+		return JSON.stringify([
+			_signedOut,
+			_datesState,
+			_activeDate,
+			_railEmpty(),
+			_noDirections(),
+			_everSwept(),
+			_dates.map(d => [d.date, d.pending, d.total]),
+		]);
+	}
+
 	function _detailKey(paper) {
 		if (!paper) {
 			return 'none';

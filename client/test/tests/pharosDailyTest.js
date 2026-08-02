@@ -918,6 +918,54 @@ describe("Zotero.Pharos.Daily", function () {
 			});
 		});
 
+		it("should not rebuild the date rail a poll did not change", async function () {
+			// Same defect and same cause as the detail panel above, with a
+			// different casualty: replaceChildren() discards the focused node, so
+			// a user arrowing through dates while a sweep runs loses focus twice a
+			// second. Node identity is what pins it -- a rebuild that reproduces
+			// the same markup passes every content assertion and still moves
+			// focus, which is why this asserts identity rather than text.
+			await withPanel(digest({}), async function (win, doc, view) {
+				var rail = doc.getElementById('pharos-dv-rail');
+				var row = rail.firstChild;
+				assert.ok(row, 'nothing was drawn in the rail');
+
+				view._render();
+				view._render();
+				assert.strictEqual(rail.firstChild, row,
+					'the rail was torn down and rebuilt with nothing changed');
+			});
+		});
+
+		it("should rebuild the date rail when a date's pending count moves",
+			async function () {
+				// The skip above is only safe if the signature covers everything
+				// the rail draws. This is the half that cannot be shown by a test
+				// that changes nothing: a pending count that moves without the
+				// rail noticing is silent -- the rail simply goes on showing
+				// yesterday's number, and looks entirely healthy doing it.
+				var pending = 2;
+				await withPanel(digest({
+					papers: [makePaper({ id: 'p1' })],
+					extra: function (method, path) {
+						if (path == '/api/daily/dates') {
+							return [{ date: DAY, total: 5, read: 0, pending, failed: 0 }];
+						}
+						return undefined;
+					},
+				}), async function (win, doc, view) {
+					var rail = doc.getElementById('pharos-dv-rail');
+					assert.include(rail.textContent, '2', 'the fixture count was not drawn');
+
+					pending = 3;
+					await view.loadDates();
+					view._render();
+					assert.include(rail.textContent, '3',
+						'the rail kept a stale count -- the signature does not '
+						+ 'cover pending, so the skip hides real changes');
+				});
+			});
+
 		it("should keep the reader's place, and start a new paper at the top",
 			async function () {
 				// Two separate contracts, and only the second one needs code:
