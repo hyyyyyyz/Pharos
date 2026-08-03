@@ -71,3 +71,39 @@
 		font-size: var(--zotero-font-size);
 	}
 }
+
+// Pharos: the window's own top strip.
+//
+// Upstream stretches #titlebar only under [tabsintitlebar], because the tab
+// strip used to sit in this row and overlap it -- the strip left a gap on the
+// left for the traffic lights and the two shared one line. Pharos moved the tab
+// strip down into the content column so the module rail could be the outermost
+// thing in the window, and that left this row with nothing to give it height.
+// It collapsed, the rail slid up underneath, and the macOS window buttons
+// landed on top of the Pharos wordmark.
+//
+// So the row is reserved explicitly now. It spans the full width, above the
+// rail and everything else, which is the ordinary shape of a macOS application
+// window and the only arrangement where the traffic lights collide with
+// nothing.
+#titlebar {
+	// Matches the tab strip's own height, so moving the strip out of this row
+	// did not change how tall the top of the window is.
+	min-height: var(--tab-min-height);
+	background: var(--material-tabbar);
+	border-bottom: var(--material-panedivider);
+	// The whole strip drags the window: it is the one horizontal band with
+	// nothing else to do, and a title bar the user cannot drag is a title bar
+	// that looks broken.
+	-moz-window-dragging: drag;
+}
+
+// The traffic lights are laid out by the OS from the window's top-left corner,
+// so nothing may sit in that corner but them. Upstream's 10px block margin
+// centred them against a 36px strip; keep that relationship rather than a
+// literal value, so a change to --tab-min-height moves both together.
+@media (-moz-platform: macos) {
+	#titlebar .titlebar-buttonbox {
+		margin-block: calc((var(--tab-min-height) - 16px) / 2);
+	}
+}

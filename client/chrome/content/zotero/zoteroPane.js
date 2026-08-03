@@ -879,7 +879,6 @@ var ZoteroPane = new function () {
 			Zotero.Sync.Runner.updateIcons('animate');
 		}
 
-		ZoteroPane.showPharosGate();
 
 		// The translation column. Registered from here rather than at module load
 		// because ItemTreeManager needs a tree to add it to, and idempotent
@@ -902,33 +901,6 @@ var ZoteroPane = new function () {
 	 * account at all; a client that cannot open its own library because a server
 	 * is down would be worse than one that lets you in.
 	 */
-	this.showPharosGate = function () {
-		if (Zotero.Pharos.API.hasCredentials()
-				// The test harness drives the real application. A modal window
-				// here spins a nested event loop that nothing will dismiss, so
-				// every pane test hangs in its `before` hook.
-				|| Zotero.test
-				|| Zotero.Prefs.get('pharos.auth.skipped')
-				// A second window is not a second startup.
-				|| Zotero.getZoteroPanes().length > 1) {
-			return;
-		}
-		setTimeout(() => {
-			let io = {};
-			window.openDialog(
-				'chrome://zotero/content/pharosAuth.xhtml',
-				'pharos-auth',
-				'chrome,dialog=no,modal,centerscreen,resizable',
-				io
-			);
-			// modal openDialog does not return until the gate closes, so the
-			// rail can be told to re-check now rather than on the next restart.
-			if (io.dataOut && io.dataOut.signedIn) {
-				document.getElementById('pharos-rail')?.refreshAccount?.();
-				Zotero.Pharos.Admin.refresh().catch(e => Zotero.logError(e));
-			}
-		});
-	};
 	
 	
 	function isFullScreen() {

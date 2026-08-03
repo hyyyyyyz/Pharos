@@ -1,10 +1,18 @@
 #tab-bar-container {
-	--safe-area-start: 90px;
+	// 8px, not the 90px upstream reserves here.
+	//
+	// On macOS upstream puts the tab strip in the window's top row, sharing it
+	// with the traffic lights, so the first tab has to start clear of them --
+	// 90px is their width plus a margin. Pharos moved the strip down into the
+	// content column, so that the module rail can be the outermost thing in the
+	// window and the top row belongs to the buttons alone. Nothing on this row
+	// needs making way for any more, and the reservation became a gap between
+	// the strip's own left edge and its first tab.
+	//
+	// 8px is upstream's own value for "the buttons are not here" -- it applied
+	// exactly that in fullscreen, where macOS hides them. So this is that case
+	// made permanent rather than a number invented for the look of it, and the
+	// fullscreen override it replaces is now redundant.
+	--safe-area-start: 8px;
 	--safe-area-end: 0px;
-}
-
-:root:is([sizemode=fullscreen]) {
-	#tab-bar-container {
-		--safe-area-start: 8px;
-	}
 }

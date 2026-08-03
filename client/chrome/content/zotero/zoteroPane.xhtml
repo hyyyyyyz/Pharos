@@ -904,45 +904,6 @@
 		</hbox>
 	</vbox>
 	
-	<!-- Keep in sync with Zotero.test conditional block in overlay.js -->
-	<hbox id="zotero-title-bar">
-		<div xmlns="http://www.w3.org/1999/xhtml" id="tab-bar-container" />
-		<hbox id="zotero-tabs-toolbar" class="zotero-toolbar" align="center">
-			<toolbarbutton id="zotero-tb-tabs-menu" class="zotero-tb-button" tabindex="-1" data-l10n-id="zotero-toolbar-tabs-menu" type="panel"
-				oncommand="if (this.disabled) { event.preventDefault(); return; } Zotero_Tabs.showTabsMenu(undefined, this)"/>
-			<div xmlns="http://www.w3.org/1999/xhtml" class="zotero-tb-separator"></div>
-			<panel id="zotero-tabs-menu-panel" type="arrow" animate="false" is="tabs-menu-panel" tabindex="-1"></panel>
-
-			<hbox id="zotero-pq-buttons">
-			</hbox>
-
-			<toolbarbutton tabindex="-1" id="zotero-tb-sync-error" hidden="true" style="-moz-user-focus: normal;" />
-			
-			<!--
-				We put this here, but it can be used wherever
-				Zotero.Sync.Runner.updateErrorPanel() puts it
-			-->
-			<panel id="zotero-sync-error-panel" type="arrow" animate="false" onpopupshown="
-			const buttons = this.getElementsByTagName('button');
-			if (buttons[0]) {
-				buttons[0].focus();
-			}" />
-			
-			<toolbarbutton id="zotero-tb-sync" tabindex="-1" class="zotero-tb-button" tooltip="_child"
-					oncommand="ZoteroPane.sync()">
-				<tooltip
-						id="zotero-tb-sync-tooltip"
-						onpopupshowing="Zotero.Sync.Runner.registerSyncStatus(this)"
-						onpopuphiding="Zotero.Sync.Runner.registerSyncStatus()"
-						noautohide="true">
-					<label id="zotero-tb-sync-label"/>
-					<label id="zotero-tb-sync-status" class="sync-button-tooltip-status" hidden="true"/>
-					<label id="zotero-tb-sync-last-sync" class="sync-button-tooltip-last-sync"/>
-					<div xmlns="http://www.w3.org/1999/xhtml" class="sync-button-tooltip-messages"/>
-				</tooltip>
-			</toolbarbutton>
-		</hbox>
-	</hbox>
 	
 	<tooltip id="dynamic-tooltip" onpopupshowing="ZoteroPane.setDynamicTooltip(event)"></tooltip>
 	<!-- Global popupset for all context menus -->
@@ -1119,7 +1080,54 @@
 		          tabindex="0" role="separator" aria-orientation="vertical"
 		          data-l10n-id="pharos-rail-resize"/>
 		<vbox id="appcontent" flex="1">
-			<stack id="zotero-pane-stack" flex="1">
+			<!-- The tab strip lives HERE, inside the content column, rather than
+		     across the top of the window. That ordering is the structure, not
+		     decoration: the module rail is the outermost thing in the app, and
+		     tabs belong to the library it opens. Above #browser the strip
+		     spanned the rail too, so the top of the window said "我的文库" while
+		     the rail said 每日论文: two navigation surfaces disagreeing about
+		     where the user was. Matches the web client, where TabBar is
+		     inside main and only in the library module. -->
+	<!-- Keep in sync with Zotero.test conditional block in overlay.js -->
+		<hbox id="zotero-title-bar">
+			<div xmlns="http://www.w3.org/1999/xhtml" id="tab-bar-container" />
+			<hbox id="zotero-tabs-toolbar" class="zotero-toolbar" align="center">
+				<toolbarbutton id="zotero-tb-tabs-menu" class="zotero-tb-button" tabindex="-1" data-l10n-id="zotero-toolbar-tabs-menu" type="panel"
+					oncommand="if (this.disabled) { event.preventDefault(); return; } Zotero_Tabs.showTabsMenu(undefined, this)"/>
+				<div xmlns="http://www.w3.org/1999/xhtml" class="zotero-tb-separator"></div>
+				<panel id="zotero-tabs-menu-panel" type="arrow" animate="false" is="tabs-menu-panel" tabindex="-1"></panel>
+
+				<hbox id="zotero-pq-buttons">
+				</hbox>
+
+				<toolbarbutton tabindex="-1" id="zotero-tb-sync-error" hidden="true" style="-moz-user-focus: normal;" />
+				
+				<!--
+					We put this here, but it can be used wherever
+					Zotero.Sync.Runner.updateErrorPanel() puts it
+				-->
+				<panel id="zotero-sync-error-panel" type="arrow" animate="false" onpopupshown="
+				const buttons = this.getElementsByTagName('button');
+				if (buttons[0]) {
+					buttons[0].focus();
+				}" />
+				
+				<toolbarbutton id="zotero-tb-sync" tabindex="-1" class="zotero-tb-button" tooltip="_child"
+						oncommand="ZoteroPane.sync()">
+					<tooltip
+							id="zotero-tb-sync-tooltip"
+							onpopupshowing="Zotero.Sync.Runner.registerSyncStatus(this)"
+							onpopuphiding="Zotero.Sync.Runner.registerSyncStatus()"
+							noautohide="true">
+						<label id="zotero-tb-sync-label"/>
+						<label id="zotero-tb-sync-status" class="sync-button-tooltip-status" hidden="true"/>
+						<label id="zotero-tb-sync-last-sync" class="sync-button-tooltip-last-sync"/>
+						<div xmlns="http://www.w3.org/1999/xhtml" class="sync-button-tooltip-messages"/>
+					</tooltip>
+				</toolbarbutton>
+			</hbox>
+		</hbox>
+		<stack id="zotero-pane-stack" flex="1">
 				<!-- A placeholder to persist pdf-reader sidebar collapse state to avoid introducing another pref -->
 				<box id="zotero-reader-sidebar-pane" hidden="true" collapsed="true" zotero-persist="collapsed width"/>
 				<tooltip id="html-tooltip" page="true"/>

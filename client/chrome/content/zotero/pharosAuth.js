@@ -526,7 +526,14 @@ var Zotero_Pharos_Auth = new function () {
 		_closing = true;
 		if (this.io) {
 			this.io.dataOut = result;
+			window.close();
+			return;
 		}
+		// Standalone: this window IS the application right now, so it opens the
+		// library before letting go. Opened first so the user never sees an
+		// empty screen between the two, and because a window count of zero is
+		// what tells the platform to quit.
+		Zotero.openMainWindow();
 		window.close();
 	};
 };

@@ -1,5 +1,17 @@
 #titlebar {
-	margin-bottom: calc(0px - var(--tab-min-height));
+	// No negative bottom margin. Upstream pulls this row up by exactly the tab
+	// strip's height so the strip can overlap it: on macOS the tabs and the
+	// window buttons share one line, with the strip leaving a gap on the left
+	// for the buttons.
+	//
+	// Pharos moved the tab strip down into the content column, so the module
+	// rail is the outermost thing in the window. With the strip gone from this
+	// row there is nothing to overlap, and the negative margin simply dragged
+	// the rail up underneath the window buttons -- the traffic lights landed on
+	// top of the Pharos wordmark.
+	//
+	// Reserving the row is what makes the rail full-height and the corner the
+	// buttons' alone, which is the ordinary shape of a macOS window.
 
 	.titlebar-buttonbox {
 		// Fix RTL alignment

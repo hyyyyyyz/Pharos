@@ -110,7 +110,23 @@ var ZoteroCommandLineHandler = {
 		}
 		// Only open main window if we aren't handling an integration command
 		else if (!Zotero.getMainWindow()) {
-			Zotero.openMainWindow();
+			// Sign-in comes FIRST, as its own window, and opens the main window
+			// itself once it is done. It used to be a modal thrown over an
+			// already-visible library, which is the wrong shape twice over: the
+			// library is what the user is being asked to unlock, so showing it
+			// behind the question answers it; and a modal cannot be moved out of
+			// the way, so the one thing on screen that might explain what Pharos
+			// is was covered by the box asking to sign in to it.
+			//
+			// The main window is opened by whichever path finishes -- see
+			// pharosAuth.js `_finish()`. Closing the sign-in window without
+			// answering opens nothing, which is what a sign-in window does.
+			if (Zotero.Pharos?.Auth?.shouldGate()) {
+				Zotero.Pharos.Auth.openGate();
+			}
+			else {
+				Zotero.openMainWindow();
+			}
 		}
 		
 		await Zotero.CommandLineIngester.ingest();

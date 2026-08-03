@@ -164,6 +164,9 @@ const xpcomFilesLocal = [
 	// Pharos. Loaded last so that everything these build on -- HTTP, prefs,
 	// OSKeyStore, the data layer -- is already present on the Zotero namespace.
 	'pharos/api',
+	// Right after the API: commandLineHandler asks it whether to open the
+	// sign-in window instead of the library, before any window exists.
+	'pharos/auth',
 	// Before the views: they read the accent when they paint.
 	'pharos/theme',
 	'pharos/translate',
