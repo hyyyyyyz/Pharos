@@ -26,6 +26,7 @@ desktop-first platform.
 [Evidence phase](docs/PHASE-EVIDENCE.md) ·
 [Parity phase](docs/PHASE-PARITY.md) ·
 [Parity phase 2](docs/PHASE-PARITY-2.md) ·
+[Parity phase 3](docs/PHASE-PARITY-3.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>

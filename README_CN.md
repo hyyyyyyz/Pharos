@@ -24,6 +24,7 @@
 [证据阶段记录](docs/PHASE-EVIDENCE.md) ·
 [界面复刻阶段记录](docs/PHASE-PARITY.md) ·
 [界面复刻第二轮](docs/PHASE-PARITY-2.md) ·
+[界面复刻第三轮](docs/PHASE-PARITY-3.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>

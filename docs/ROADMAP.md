@@ -72,9 +72,11 @@ In rough order. Each is a workstream, not a ticket.
    Zotero 8.0.5, replay the Pharos product layer, share the Zotero data directory
    only in release mode, add a Pharos sidecar, and pass the Zotero ↔ Pharos ↔
    Vibero copied-library round trip.
-2. **Finish the client as the daily-use product.** Close the remaining reader,
-   AI Chat, Daily Papers, discovery, project, data-directory and recovery gaps
-   before treating the web companion as an equal-priority surface.
+2. ~~**Finish the client as the daily-use product.**~~ **Done.** The reader, AI
+   chat, Daily Papers, discovery, projects and the data directory are at parity
+   with the web client; a final module-by-module audit found ten differences and
+   all ten are closed. Eleven deliberate divergences remain, each with its reason
+   recorded. See [`PHASE-PARITY-3.md`](PHASE-PARITY-3.md).
 3. **Sign and notarise desktop builds.** Needs an Apple Developer account; the
    build already skips notarisation cleanly when credentials are absent, and
    `app/config.sh` documents exactly which values to set. This is the only item
