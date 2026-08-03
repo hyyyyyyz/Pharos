@@ -889,20 +889,6 @@ var ZoteroPane = new function () {
 	};
 
 
-	/**
-	 * Offer the Pharos sign-in gate once the pane is up.
-	 *
-	 * Deferred off this task, not awaited: a modal openDialog spins a nested
-	 * event loop, so opening it inline would stall the rest of startup behind a
-	 * window someone may sit on for a minute.
-	 *
-	 * The gate never prevents the main window opening, and it is escapable. The
-	 * library, the reader and annotations are entirely local and work with no
-	 * account at all; a client that cannot open its own library because a server
-	 * is down would be worse than one that lets you in.
-	 */
-	
-	
 	function isFullScreen() {
 		return document.getElementById('zotero-pane-stack').getAttribute('fullscreenmode') == 'true';
 	}
