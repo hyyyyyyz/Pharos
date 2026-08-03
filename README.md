@@ -25,6 +25,7 @@ desktop-first platform.
 [Client phases](docs/PHASE-CLIENT.md) ·
 [Evidence phase](docs/PHASE-EVIDENCE.md) ·
 [Parity phase](docs/PHASE-PARITY.md) ·
+[Parity phase 2](docs/PHASE-PARITY-2.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>

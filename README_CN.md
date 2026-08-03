@@ -23,6 +23,7 @@
 [客户端阶段记录](docs/PHASE-CLIENT.md) ·
 [证据阶段记录](docs/PHASE-EVIDENCE.md) ·
 [界面复刻阶段记录](docs/PHASE-PARITY.md) ·
+[界面复刻第二轮](docs/PHASE-PARITY-2.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>
