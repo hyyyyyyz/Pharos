@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "ஒத்திசைவு">
 <!ENTITY zotero.preferences.sync.username "பயனர்பெயர்:">
 <!ENTITY zotero.preferences.sync.password "கடவுச்சொல்:">
+<!ENTITY zotero.preferences.sync.syncServer "தரவு ஒத்திசைவு">
+<!ENTITY zotero.preferences.sync.setUpSync "ஒத்திசைவை அமை">
+<!ENTITY zotero.preferences.sync.unlinkAccount "கணக்கைத் துண்டி…">
 <!ENTITY zotero.preferences.sync.createAccount "கணக்கை உருவாக்கு">
 <!ENTITY zotero.preferences.sync.lostPassword "கடவுச்சொல் இழந்ததா?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "தானாக ஒத்திசை">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "கோப்பு ஒத்திசைவு">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "முகவரி:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "இணைப்பு கோப்புகளை எனது நூலகத்தில் ஒத்திசை இதன்மூலம்">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "சோட்டெரோ சேமிப்பகத்தைப் பயன்படுத்தி குழு நூலகங்களில் இணைப்பு கோப்புகளை ஒத்திசை">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "கோப்புகளைப் பதிவிறக்கவும்">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "ஒத்திசைவு நேரத்தில்">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "தேவைக்கு ஏற்ப">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "சேவையகத்தைச் சரிபார்">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "சோட்டெரோ சேமிப்பகத்தைப் பயன்படுத்துவதன் மூலம், அதன் கட்டுப்பாட்டுக்கு நீங்கள் ஒப்புக்கொள்கிறீர்கள்">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "விதிமுறைகள் மற்றும் நிபந்தனைகள்">
 <!ENTITY zotero.preferences.sync.librariesToSync "ஒத்திசைக்க நூலகங்கள்">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "நூலகங்களைத் தேர்வுசெய்க…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "ஒத்திசைவு">

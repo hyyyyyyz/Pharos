@@ -169,7 +169,10 @@ describe("Zotero.Sync.Runner", function () {
 	// Tests
 	//
 	beforeEach(function* () {
-		yield resetData();
+		yield resetDB({
+			thisArg: this,
+			skipBundledFiles: true
+		});
 		
 		userLibraryID = Zotero.Libraries.userLibraryID;
 		
@@ -1088,7 +1091,7 @@ describe("Zotero.Sync.Runner", function () {
 			var panel = win.document.getElementById('zotero-sync-error-panel');
 			var buttons = panel.getElementsByTagName('button');
 			assert.lengthOf(buttons, 1);
-			assert.equal(buttons[0].label, Zotero.ftl.formatValueSync('account-log-in'));
+			assert.equal(buttons[0].label, Zotero.getString('sync.openSyncPreferences'));
 		});
 		
 		

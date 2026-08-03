@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "التزامن">
 <!ENTITY zotero.preferences.sync.username "اسم المستخدم:">
 <!ENTITY zotero.preferences.sync.password "كلمة المرور:">
+<!ENTITY zotero.preferences.sync.syncServer "مزامنة البيانات">
+<!ENTITY zotero.preferences.sync.setUpSync "إعداد المزامنة">
+<!ENTITY zotero.preferences.sync.unlinkAccount "إلغاء ارتباط الحساب">
 <!ENTITY zotero.preferences.sync.createAccount "تسجيل اشتراك جديد">
 <!ENTITY zotero.preferences.sync.lostPassword "نسيت كلمة المرور؟">
 <!ENTITY zotero.preferences.sync.syncAutomatically "التزامن التلقائي">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "تزامن الملفات">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "الرابط:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "قم بمزامنة الملفات المرفقة في مكتبتي باستخدام">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "قم بمزامنة الملفات المرفقة في مجموعة المكتبات باستخدام مساحة تخزين زوتيرو">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "تحميل الملفات">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "في وقت التزامن">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "عند الحاجة">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "تحقق من الخادم">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "باستخدامك مساحة تخزين زوتيرو، فإنك توافق على الالتزام بكافة">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "الشروط والأحكام">
 <!ENTITY zotero.preferences.sync.librariesToSync "المكتبات المراد تزامنها">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "اختر المكتبات...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "تزامن">

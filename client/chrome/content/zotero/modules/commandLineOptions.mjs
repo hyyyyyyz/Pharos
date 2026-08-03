@@ -19,8 +19,6 @@ export var TestOptions = {
 	bail: false,
 	startAt: false,
 	stopAt: false,
-	shard: false,
 	grep: false,
 	timeout: false,
-	retries: 0,
 };

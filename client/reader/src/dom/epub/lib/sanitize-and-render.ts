@@ -176,15 +176,12 @@ export class CSSRewriter {
 
 	private _document: Document;
 
-	private readonly _fixedLayout: boolean;
-
 	private _sheets = new Map<string, SheetMetadata>();
 
 	private _textCache = new Map<string, string>();
 
-	constructor(document: Document, options: { fixedLayout?: boolean } = {}) {
+	constructor(document: Document) {
 		this._document = document;
-		this._fixedLayout = options.fixedLayout || false;
 	}
 
 	/**
@@ -309,7 +306,7 @@ export class CSSRewriter {
 			}
 
 			// If this rule sets a font-size, rewrite it to be relative
-			if (style.fontSize && !this._fixedLayout) {
+			if (style.fontSize) {
 				style.fontSize = rewriteFontSize(style.fontSize);
 			}
 		}

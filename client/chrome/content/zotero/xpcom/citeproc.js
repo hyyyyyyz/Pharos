@@ -2993,19 +2993,7 @@ CSL.expandMacro = function (macro_key_token, target) {
         CSL.buildMacro.call(this, mytarget, macro_nodes);
         CSL.configureMacro.call(this, mytarget);
     }
-    if (this.build.extension) {
-        var func = (function(macro_name) {
-            return function (state, Item, item) {
-                var next = 0;
-                while (next < state.sort_macros[macro_name].length) {
-                    next = CSL.tokenExec.call(state, state.sort_macros[macro_name][next], Item, item);
-                }
-            };
-        }(mkey));
-        var text_node = new CSL.Token("text", CSL.SINGLETON);
-        text_node.execs.push(func);
-        target.push(text_node);
-    } else {
+    if (!this.build.extension) {
         var func = (function(macro_name) {
             return function (state, Item, item) {
                 var next = 0;
@@ -3043,16 +3031,7 @@ CSL.expandMacro = function (macro_key_token, target) {
 CSL.getMacroTarget = function (mkey) {
     var mytarget = false;
     if (this.build.extension) {
-        // Cache sort-mode macro expansions separately, just like non-sort macros.
-        // This avoids duplicating tokens when the same macro is referenced by
-        // multiple sort keys.
-        if (!this.sort_macros) {
-            this.sort_macros = {};
-        }
-        if (!this.sort_macros[mkey]) {
-            mytarget = [];
-            this.sort_macros[mkey] = mytarget;
-        }
+        mytarget = this[this.build.root + this.build.extension].tokens;
     } else if (!this.macros[mkey]) {
         mytarget = [];
         this.macros[mkey] = mytarget;
@@ -3072,7 +3051,9 @@ CSL.buildMacro = function (mytarget, macro_nodes) {
 };
 
 CSL.configureMacro = function (mytarget) {
-    this.configureTokenList(mytarget);
+    if (!this.build.extension) {
+        this.configureTokenList(mytarget);
+    }
 };
 
 
@@ -4079,11 +4060,8 @@ CSL.Engine.prototype.setStyleAttributes = function () {
     attributes = this.cslXml.attributes(this.cslXml.dataObj);
     for (attrname in attributes) {
         if (attributes.hasOwnProperty(attrname)) {
-            if (CSL.Attributes[attrname]) {
-                CSL.Attributes[attrname].call(dummy, this, attributes[attrname]);
-            } else {
-                CSL.debug("warning: undefined attribute \"" + attrname + "\" in style");
-            }
+            // attr = attributes[key];
+            CSL.Attributes[attrname].call(dummy, this, attributes[attrname]);
         }
     }
 };
@@ -6984,13 +6962,9 @@ CSL.Engine.prototype.previewCitationCluster = function (citation, citationsPre, 
 	if (citation.citationID) {
 		delete citation.citationID;
 	}
-    // Restore the output format even if the preview fails
-    var ret;
-    try {
-        ret = this.processCitationCluster(citation, citationsPre, citationsPost, CSL.PREVIEW);
-    } finally {
-        this.setOutputFormat(oldMode);
-    }
+    var ret = this.processCitationCluster(citation, citationsPre, citationsPost, CSL.PREVIEW);
+
+    this.setOutputFormat(oldMode);
     return ret[1];
 };
 
@@ -7706,55 +7680,53 @@ CSL.Engine.prototype.processCitationCluster = function (citation, citationsPre, 
             ret = this.process_CitationCluster.call(this, citation.sortedItems, citation);
         } catch (e) {
             CSL.error("Error running CSL processor for preview: "+e);
-        } finally {
-            // Restore state even if an error occurred above
-
-            //SNIP-START
-            if (this.debug) {
-                CSL.debug("****** end run processor *********");
-                CSL.debug("****** start state restore *********");
-            }
-            //SNIP-END
-            // Wind out anything related to new items added for the preview.
-            // This means (1) names, (2) disambig state for affected items,
-            // (3) keys registered in the ambigs pool arrays, and (4) registry
-            // items.
-            //
-
-            // restore sliced citations
-            this.registry.citationreg.citationByIndex = oldCitationList;
-            this.registry.citationreg.citationById = {};
-            for (var i = 0, ilen = oldCitationList.length; i < ilen; i += 1) {
-                this.registry.citationreg.citationById[oldCitationList[i].citationID] = oldCitationList[i];
-            }
-
-            //SNIP-START
-            if (this.debug) {
-                CSL.debug("****** start final update *********");
-            }
-            //SNIP-END
-            var oldItemIds = [];
-            for (var i = 0, ilen = oldItemList.length; i < ilen; i += 1) {
-                oldItemIds.push("" + oldItemList[i].id);
-            }
-            this.updateItems(oldItemIds, null, null, true);
-            //SNIP-START
-            if (this.debug) {
-                CSL.debug("****** end final update *********");
-            }
-            //SNIP-END
-            // Roll back disambig states
-            for (var key in oldAmbigs) {
-                if (oldAmbigs.hasOwnProperty(key)) {
-                    this.registry.registry[key].disambig = oldAmbigs[key];
-                }
-            }
-            //SNIP-START
-            if (this.debug) {
-                CSL.debug("****** end state restore *********");
-            }
-            //SNIP-END
         }
+            
+        //SNIP-START
+        if (this.debug) {
+            CSL.debug("****** end run processor *********");
+            CSL.debug("****** start state restore *********");
+        }
+        //SNIP-END
+        // Wind out anything related to new items added for the preview.
+        // This means (1) names, (2) disambig state for affected items,
+        // (3) keys registered in the ambigs pool arrays, and (4) registry
+        // items.
+        //
+
+        // restore sliced citations
+        this.registry.citationreg.citationByIndex = oldCitationList;
+        this.registry.citationreg.citationById = {};
+        for (var i = 0, ilen = oldCitationList.length; i < ilen; i += 1) {
+            this.registry.citationreg.citationById[oldCitationList[i].citationID] = oldCitationList[i];
+        }
+
+        //SNIP-START
+        if (this.debug) {
+            CSL.debug("****** start final update *********");
+        }
+        //SNIP-END
+        var oldItemIds = [];
+        for (var i = 0, ilen = oldItemList.length; i < ilen; i += 1) {
+            oldItemIds.push("" + oldItemList[i].id);
+        }
+        this.updateItems(oldItemIds, null, null, true);
+        //SNIP-START
+        if (this.debug) {
+            CSL.debug("****** end final update *********");
+        }
+        //SNIP-END
+        // Roll back disambig states
+        for (var key in oldAmbigs) {
+            if (oldAmbigs.hasOwnProperty(key)) {
+                this.registry.registry[key].disambig = oldAmbigs[key];
+            }
+        }
+        //SNIP-START
+        if (this.debug) {
+            CSL.debug("****** end state restore *********");
+        }
+        //SNIP-END
     } else {
         // Rerun cites that have moved across citations or had a change
         // in their number of subsequent references, so that disambiguate
@@ -21137,14 +21109,7 @@ CSL.Util.PageRangeMangler.getFunction = function (state, rangeType) {
                 if (begin > 100 && begin % 100 && parseInt((begin / 100), 10) === parseInt((end / 100), 10)) {
                     m[3] = "" + (end % 100);
                 } else if (begin >= 10000) {
-                    e = "" + end;
-                    for (var i = 3; i < e.length; i++) {
-                        var divisor = Math.pow(10, i);
-                        if (Math.floor(begin / divisor) === Math.floor(end / divisor)) {
-                            m[3] = "" + (end % divisor);
-                            break;
-                        }
-                    }
+                    m[3] = "" + (end % 1000);
                 }
             }
             if (m[2].slice(1) === m[0]) {

@@ -55,22 +55,6 @@ describe("Zotero.Item", function () {
 				Zotero.getString('general.andJoiner', ['\u2068B\u2069', '\u2068D\u2069'])
 			);
 		});
-		
-		// https://github.com/zotero/zotero/issues/5720
-		it("should return director as firstCreator for a videoRecording without a primary creator", async function () {
-			var item = createUnsavedDataObject('item', { itemType: 'videoRecording' });
-			item.setCreators([
-				{
-					firstName: "A",
-					lastName: "B",
-					creatorType: "director"
-				}
-			]);
-			assert.equal(item.getField('firstCreator'), "B");
-
-			await item.saveTx();
-			assert.equal(item.getField('firstCreator'), "B");
-		});
 
 		it("should strip bidi isolates from firstCreator when unformatted = true", async function () {
 			var item = createUnsavedDataObject('item');
@@ -291,27 +275,7 @@ describe("Zotero.Item", function () {
 			assert.strictEqual(item.getField('accessDate'), '');
 		})
 	})
-
-	describe("#setType", function () {
-		it("should allow changing between regular item types", function () {
-			var item = new Zotero.Item('book');
-			item.setType(Zotero.ItemTypes.getID('journalArticle'));
-			assert.equal(item.itemTypeID, Zotero.ItemTypes.getID('journalArticle'));
-		});
-
-		it("should throw when converting a regular item to an attachment", function () {
-			var item = new Zotero.Item('book');
-			assert.throws(
-				() => item.setType(Zotero.ItemTypes.getID('attachment')),
-				/Cannot change item type from 'book' to 'attachment'/
-			);
-			assert.throws(
-				() => item.setField('itemTypeID', Zotero.ItemTypes.getID('attachment')),
-				/Cannot change item type from 'book' to 'attachment'/
-			);
-		});
-	})
-
+	
 	describe("#dateAdded", function () {
 		it("should use current time if value was not given for a new item", async function () {
 			var item = new Zotero.Item('book');
@@ -1158,37 +1122,7 @@ describe("Zotero.Item", function () {
 			
 			assert.equal(attachment.attachmentFilename, filename);
 		});
-
-		it("should reject a filename containing a directory path", async function () {
-			var item = await createDataObject('item');
-
-			var attachment = new Zotero.Item("attachment");
-			attachment.attachmentLinkMode = Zotero.Attachments.LINK_MODE_IMPORTED_FILE;
-			attachment.parentID = item.id;
-			assert.throws(() => attachment.attachmentFilename = "D:/Foo/Bar/test.pdf", /directory path/);
-			assert.throws(() => attachment.attachmentFilename = "D:\\Foo\\Bar\\test.pdf", /directory path/);
-			assert.throws(() => attachment.attachmentFilename = "\\\\server\\share\\test.pdf", /directory path/);
-		});
-
-		it("should allow a filename containing a bare backslash", async function () {
-			var item = await createDataObject('item');
-
-			var attachment = new Zotero.Item("attachment");
-			attachment.attachmentLinkMode = Zotero.Attachments.LINK_MODE_IMPORTED_FILE;
-			attachment.parentID = item.id;
-			attachment.attachmentFilename = "foo\\bar.pdf";
-			assert.equal(attachment.attachmentFilename, "foo\\bar.pdf");
-		});
-
-		it("should return the basename for a stored file with a corrupt non-'storage:' path", function () {
-			var attachment = new Zotero.Item("attachment");
-			attachment.attachmentLinkMode = Zotero.Attachments.LINK_MODE_IMPORTED_FILE;
-			// Legacy corrupt data that bypassed the setter (an old relative descriptor with no
-			// 'storage:' prefix); the getter must not throw via PathUtils
-			attachment._attachmentPath = "../../Foo Bar/Documents/~STUFF/paper .pdf";
-			assert.equal(attachment.attachmentFilename, "paper .pdf");
-		});
-
+		
 		it("should get a filename for a base-dir-relative file", function () {
 			var dir = getTestDataDirectory().path;
 			Zotero.Prefs.set('saveRelativeAttachmentPath', true)
@@ -1558,43 +1492,6 @@ describe("Zotero.Item", function () {
 	});
 	
 	
-	describe("Last Read Aloud position", function () {
-		describe("#getAttachmentLastReadAloudPosition()", function () {
-			it("should get and set the Read Aloud position", async function () {
-				var attachment = await importFileAttachment('test.pdf');
-				assert.isNull(attachment.getAttachmentLastReadAloudPosition());
-				await attachment.setAttachmentLastReadAloudPosition({ pageIndex: 5 });
-				assert.deepEqual({ pageIndex: 5 }, attachment.getAttachmentLastReadAloudPosition());
-			});
-
-			it("should throw an error if called on a regular item", async function () {
-				var item = createUnsavedDataObject('item');
-				assert.throws(
-					() => item.getAttachmentLastReadAloudPosition(),
-					"getAttachmentLastReadAloudPosition() can only be called on file attachments"
-				);
-			});
-
-			it("should clear the position when set to null", async function () {
-				var attachment = await importFileAttachment('test.pdf');
-				await attachment.setAttachmentLastReadAloudPosition({ pageIndex: 3 });
-				assert.isNotNull(attachment.getAttachmentLastReadAloudPosition());
-				await attachment.setAttachmentLastReadAloudPosition(null);
-				assert.isNull(attachment.getAttachmentLastReadAloudPosition());
-			});
-		});
-
-		it("should be cleared when item is deleted", async function () {
-			var attachment = await importFileAttachment('test.pdf');
-			await attachment.setAttachmentLastReadAloudPosition({ pageIndex: 7 });
-			var id = attachment._getLastReadAloudPositionSettingKey();
-			assert.deepEqual({ pageIndex: 7 }, Zotero.SyncedSettings.get(Zotero.Libraries.userLibraryID, id));
-			await attachment.eraseTx();
-			assert.isNull(Zotero.SyncedSettings.get(Zotero.Libraries.userLibraryID, id));
-		});
-	});
-
-
 	describe("Annotations", function () {
 		var item;
 		var attachment;
@@ -2185,25 +2082,7 @@ describe("Zotero.Item", function () {
 			// "second" -> "third", old value is "second", and we don't notify about "extra" because it's not changed this time
 			assert.deepPropertyVal(extraData[ids[0]], 'changed', { title: 'second' });
 		});
-
-		it("should report the previous itemType in notifier extraData on consecutive type changes", async function () {
-			var item = await createDataObject('item', { itemType: 'book' });
-
-			var promise = waitForNotifierEvent('modify', 'item');
-			item.setType(Zotero.ItemTypes.getID('journalArticle'));
-			await item.saveTx();
-			var { ids, extraData } = await promise;
-			assert.propertyVal(extraData[ids[0]].changed, 'itemType', 'book');
-
-			promise = waitForNotifierEvent('modify', 'item');
-			item.setType(Zotero.ItemTypes.getID('case'));
-			await item.saveTx();
-			({ ids, extraData } = await promise);
-			// Without clearing the 'itemType' alias from _previousData after the prior save,
-			// this would report the stale 'book' instead of 'journalArticle' (#5964)
-			assert.propertyVal(extraData[ids[0]].changed, 'itemType', 'journalArticle');
-		});
-
+		
 		// 'deleted' and 'tags' use a different, newer mechanism for marking changes
 		it("should include changed 'deleted' value in notifier extraData", async function () {
 			var item = await createDataObject('item');
@@ -2263,20 +2142,6 @@ describe("Zotero.Item", function () {
 			var item = await createDataObject('item', { libraryID });
 			
 			assert.equal(Zotero.Users.getCurrentName(), username);
-		});
-		
-		it("should save a group attachment's attachmentLastRead to the database", async function () {
-			let group = await createGroup();
-			let libraryID = group.libraryID;
-			let item = await createDataObject('item', { libraryID });
-			let attachment = await importPDFAttachment(item);
-			attachment.attachmentLastRead = 1674668111;
-			await attachment.saveTx();
-
-			let dbVal = await Zotero.DB.valueQueryAsync(
-				"SELECT lastRead FROM itemAttachments WHERE itemID=?", attachment.id
-			);
-			assert.equal(dbVal, attachment.attachmentLastRead);
 		});
 	})
 	
@@ -2576,23 +2441,6 @@ describe("Zotero.Item", function () {
 					assert.notProperty(json, 'charset');
 					assert.notProperty(json, 'path');
 				});
-
-				it("should output lastRead for a user library item", async function () {
-					let attachment = await createDataObject('item', { itemType: 'attachment' });
-					attachment.attachmentLastRead = 123450000;
-					let json = attachment.toJSON();
-					assert.equal(json.lastRead, 123450000);
-				});
-
-				it("shouldn't output lastRead for a group item", async function () {
-					let group = await createGroup();
-					let attachment = await createDataObject('item', { itemType: 'attachment', libraryID: group.libraryID });
-					attachment.attachmentLastRead = 123450000;
-					assert.equal(attachment.attachmentLastRead, 123450000);
-					let json = attachment.toJSON();
-					assert.notProperty(json, 'lastRead');
-					await group.eraseTx();
-				});
 			});
 			
 			describe("Annotations", function () {
@@ -2840,21 +2688,6 @@ describe("Zotero.Item", function () {
 			assert.strictEqual(item.getField('accessDate'), '');
 		});
 		
-		it("should clear lastRead when absent from JSON", async function () {
-			let item = await createDataObject('item');
-			let attachment = await importPDFAttachment(item);
-			attachment.attachmentLastRead = 123450000;
-			await attachment.saveTx();
-			assert.equal(attachment.attachmentLastRead, 123450000);
-
-			// Simulate JSON from server without lastRead
-			let json = attachment.toJSON();
-			delete json.lastRead;
-
-			attachment.fromJSON(json);
-			assert.isNull(attachment.attachmentLastRead);
-		});
-
 		it("should remove missing creators and change existing", function () {
 			var item = new Zotero.Item('book');
 			item.setCreators(
@@ -3440,40 +3273,6 @@ describe("Zotero.Item", function () {
 			await attachment.saveTx();
 
 			assert.isUndefined((await item.toResponseJSONAsync()).links.attachment.attachmentSize);
-		});
-	});
-
-	describe("Group Item Users", function () {
-		let group;
-
-		before(async function () {
-			group = await createGroup();
-		});
-
-		it("should set createdByUserID for new group item", async function () {
-			let item = createUnsavedDataObject('item', { libraryID: group.libraryID });
-			await item.saveTx();
-			assert.equal(item.createdByUserID, Zotero.Users.getCurrentUserID());
-		});
-
-		it("should set lastModifiedByUserID when modifying group item", async function () {
-			let item = createUnsavedDataObject('item', { libraryID: group.libraryID });
-			await item.saveTx();
-
-			item.setField('title', 'Modified');
-			await item.saveTx();
-			assert.equal(item.lastModifiedByUserID, Zotero.Users.getCurrentUserID());
-		});
-
-		it("should not set lastModifiedByUserID with skipDateModifiedUpdate", async function () {
-			let item = createUnsavedDataObject('item', { libraryID: group.libraryID });
-			await item.saveTx();
-
-			item.addToCollection(
-				(await createDataObject('collection', { libraryID: group.libraryID })).id
-			);
-			await item.saveTx({ skipDateModifiedUpdate: true });
-			assert.isNull(item.lastModifiedByUserID);
 		});
 	});
 });

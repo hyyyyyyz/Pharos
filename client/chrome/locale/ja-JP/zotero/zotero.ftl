@@ -2,8 +2,8 @@ general-sentence-separator = { "" }
 general-key-control = Control
 general-key-shift = Shift
 general-key-alt = Alt
-general-key-option = オプション
-general-key-command = コマンド
+general-key-option = Option
+general-key-command = Command
 option-or-alt =
     { PLATFORM() ->
         [macos] { general-key-option }
@@ -24,57 +24,45 @@ delete-or-backspace =
         [macos] Delete
        *[other] Backspace
     }
--os-name =
-    { PLATFORM() ->
-        [macos] macOS
-        [windows] Windows
-       *[other] Linux
-    }
 general-print = 印刷
-general-remove = 削除
+general-remove = 取り除く
 general-add = 追加
 general-remind-me-later = 後で通知する
 general-dont-ask-again = 今後このメッセージを表示しない
 general-choose-file = ファイルを選択...
 general-open-settings = 設定を開く
-general-settings = 設定…
+general-settings = Settings…
 general-help = ヘルプ
 general-tag = タグ
-general-got-it = 了解
 general-done = 完了
-general-view-troubleshooting-instructions = トラブルシューティングを表示
-general-go-back = 戻る
-general-accept = 承諾
+general-view-troubleshooting-instructions = View Troubleshooting Instructions
+general-go-back = Go Back
+general-accept = Accept
 general-cancel = キャンセル
-cancel-button =
-    .label = { general-cancel }
 general-show-in-library = ライブラリの中に表示
-general-restartApp = 再起動 { -app-name }
+general-restartApp = Restart { -app-name }
 general-restartInTroubleshootingMode = トラブルシューティングモードで再起動する
 general-save = 保存
-general-clear = 消去
-clear-button =
-    .label = { general-clear }
+general-clear = クリアする
 general-update = 更新
 general-back = 戻る
 general-edit = 編集
-general-cut = 切り取り
+general-cut = カット
 general-copy = コピー
-general-paste = 貼り付け
+general-paste = ペースト
 general-find = 検索
-general-delete = 削除
-general-insert = 挿入
+general-delete = 削除する
+general-insert = 挿入する
 general-and = and
 general-et-al = et al.
-general-previous = 前へ
-general-next = 次へ
+general-previous = 先のひとつ
+general-next = 次のひとつ
 general-learn-more = 詳細情報の表示
-general-more-information = さらに詳しく
 general-warning = 警告
-general-type-to-continue = 続行するには、 “{ $text }” と入力してください。
-general-continue = 続行
+general-type-to-continue = Type “{ $text }” to continue.
+general-continue = 続ける
 general-red = 赤
-general-orange = 橙
+general-orange = オレンジ色
 general-yellow = 黄
 general-green = 緑
 general-teal = ティール
@@ -84,68 +72,67 @@ general-magenta = マゼンタ
 general-violet = バイオレット
 general-maroon = マルーン
 general-gray = 灰色
-general-black = 黒
+general-black = ブラック
 general-loading = 読み込み中…
-db-checking-integrity = Checking database integrity…
-db-repairing = Repairing database…
-citation-style-label = 引用スタイル :
-language-label = 言語 :
+citation-style-label = 引用スタイル:
+language-label = 言語:
 menu-custom-group-submenu =
-    .label = その他...
+    .label = More Options…
 menu-file-show-in-finder =
-    .label = ファインダーで表示
+    .label = Show in Finder
 menu-file-show-file =
-    .label = ファイルの場所を開く
+    .label = ファイルを表示する
 menu-file-show-files =
-    .label = ファイルの場所を開く
+    .label = Show Files
 menu-print =
     .label = { general-print }
 menu-density =
-    .label = 項目間の間隔
-add-attachment = 添付ファイルの追加
+    .label = Density
+add-attachment = 添付ファイルを追加する
 new-note = 新しいメモ
 menu-add-by-identifier =
-    .label = 識別子によって追加…
+    .label = Add by Identifier…
 menu-add-attachment =
     .label = { add-attachment }
 menu-add-standalone-file-attachment =
     .label = ファイルを追加…
 menu-add-standalone-linked-file-attachment =
-    .label = ファイルへのリンクを追加…
+    .label = Add Link to File…
 menu-add-child-file-attachment =
-    .label = ファイルを添付…
+    .label = Attach File…
 menu-add-child-linked-file-attachment =
-    .label = リンクをファイルに添付...
+    .label = リンクをファイルに添付する...
 menu-add-child-linked-url-attachment =
-    .label = Web リンクを添付…
+    .label = Attach Web Link…
 menu-new-note =
     .label = { new-note }
 menu-new-standalone-note =
-    .label = 新しい独立メモの作成
+    .label = 新しく独立メモを作成
 menu-new-item-note =
-    .label = 新しい項目のメモ
+    .label = New Item Note
 menu-restoreToLibrary =
-    .label = ライブラリへ復元
+    .label = ライブラリへ復帰させる
 menu-deletePermanently =
-    .label = 完全削除...
+    .label = 完全に削除する…
 menu-tools-plugins =
     .label = プラグイン
 menu-view-columns-move-left =
-    .label = 列を左に移動
+    .label = Move Column Left
 menu-view-columns-move-right =
-    .label = 列を右に移動
+    .label = Move Column Right
 menu-view-hide-context-annotation-rows =
-    .label = 一致しない注釈を隠す
+    .label = Hide Non-Matching Annotations
 menu-view-note-font-size =
     .label = メモのフォントサイズ
 menu-view-note-tab-font-size =
-    .label = メモのタブのフォントサイズ
+    .label = Note Tab Font Size
 menu-show-tabs-menu =
-    .label = タブメニューを表示
+    .label = Show Tabs Menu
 menu-edit-copy-annotation =
     .label =
         { $count ->
-           *[other] { $count } 個の注釈をコピー
+            [one] Copy Annotation
+           *[other] Copy { $count } Annotations
         }
 main-window-command =
     .label = ライブラリ
@@ -153,13 +140,13 @@ main-window-key =
     .key = L
 zotero-toolbar-tabs-menu =
     .tooltiptext = List all tabs
-filter-collections = コレクションのフィルタリング
+filter-collections = Filter Collections
 zotero-collections-search =
     .placeholder = { filter-collections }
 zotero-collections-search-btn =
     .tooltiptext = { filter-collections }
 zotero-tabs-menu-filter =
-    .placeholder = タブの検索
+    .placeholder = タブを検索
 zotero-tabs-menu-close-button =
     .title = タブを閉じる
 zotero-toolbar-tabs-scroll-forwards =
@@ -168,115 +155,14 @@ zotero-toolbar-tabs-scroll-backwards =
     .title = Scroll backwards
 toolbar-add-attachment =
     .tooltiptext = { add-attachment }
-recently-read = Recently Read
-collections-menu-show-recently-read =
-    .label = Show { recently-read }
-item-menu-remove-from-recently-read =
-    .label = Remove from { recently-read }…
-items-section-collections-selected =
-    { $count ->
-        [one] { $count } collection selected
-       *[other] { $count } collections selected
-    }
-items-section-searches-selected =
-    { $count ->
-        [one] { $count } saved search selected
-       *[other] { $count } saved searches selected
-    }
-items-section-sources-selected =
-    { $count ->
-        [one] { $count } source selected
-       *[other] { $count } sources selected
-    }
-items-section-library-collections =
-    { $count ->
-        [one] { $library } ({ $count } collection selected)
-       *[other] { $library } ({ $count } collections selected)
-    }
-items-section-library-searches =
-    { $count ->
-        [one] { $library } ({ $count } saved search selected)
-       *[other] { $library } ({ $count } saved searches selected)
-    }
-items-section-library-sources =
-    { $count ->
-        [one] { $library } ({ $count } source selected)
-       *[other] { $library } ({ $count } sources selected)
-    }
-items-section-library-recently-read = { $library } ({ recently-read })
-items-section-library = { $library }
-collections-menu-rename =
-    .label = Rename
-edit-saved-search = 検索式保存を編集する
-collections-menu-edit-search =
-    .label = Edit Search
-collections-menu-duplicate-search =
-    .label = Duplicate Search
+collections-menu-rename-collection =
+    .label = コレクション名を変更する
+collections-menu-edit-saved-search =
+    .label = 検索式保存を編集する
 collections-menu-move-collection =
     .label = Move To
 collections-menu-copy-collection =
     .label = Copy To
-collections-menu-export =
-    .label = エクスポート...
-collections-menu-generate-report =
-    .label = Generate Report…
-collections-menu-create-bibliography =
-    .label = Create Bibliography…
-collections-menu-unsubscribe =
-    .label = Unsubscribe…
-collections-menu-delete =
-    .label =
-        { $count ->
-            [one] Delete Collection…
-           *[other] Delete Collections…
-        }
-collections-menu-delete-with-items =
-    .label =
-        { $count ->
-            [one] Delete Collection and Items…
-           *[other] Delete Collections and Items…
-        }
-collections-menu-delete-search =
-    .label =
-        { $count ->
-            [one] Delete Search…
-           *[other] Delete Searches…
-        }
-collections-delete-title =
-    { $count ->
-        [one] Delete Collection
-       *[other] Delete Collections
-    }
-collections-delete-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection?
-       *[other] Are you sure you want to delete { $count } collections?
-    }
-collections-delete-keep-items =
-    { $count ->
-        [one] Items within this collection will not be deleted.
-       *[other] Items within these collections will not be deleted.
-    }
-collections-delete-with-items-title =
-    { $count ->
-        [one] Delete Collection and Items
-       *[other] Delete Collections and Items
-    }
-collections-delete-with-items-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection and move all items within it to the Trash?
-       *[other] Are you sure you want to delete { $count } collections and move all items within them to the Trash?
-    }
-collections-delete-search-title =
-    { $count ->
-        [one] Delete Search
-       *[other] Delete Searches
-    }
-collections-delete-search-message =
-    { $count ->
-        [one] Are you sure you want to delete this search?
-       *[other] Are you sure you want to delete { $count } searches?
-    }
 item-creator-moveDown =
     .label = 下へ移動
 item-creator-moveToTop =
@@ -317,7 +203,7 @@ item-menu-change-parent-item =
     .label = Change Parent Item…
 item-menu-relate-items =
     .label = Relate Items
-view-online = オンラインで表示
+view-online = オンラインで閲覧する
 item-menu-option-view-online =
     .label = { view-online }
 item-button-view-online =
@@ -339,28 +225,28 @@ import-online-intro-title = 案内
 import-source-file =
     .label = 単一ファイル (BibTeX, RIS, Zotero RDF, など.)
 import-source-folder =
-    .label = PDF やその他のファイルのフォルダー
+    .label = A folder of PDFs or other files
 import-source-online =
     .label = { $targetApp } online import
 import-options = オプション
 import-importing = インポート中...
 import-create-collection =
-    .label = インポートされたコレクションや項目を新しいコレクションに格納する
+    .label = インポートされたコレクションやアイテムを新しいコレクションに格納する
 import-recreate-structure =
     .label = Recreate folder structure as collections
 import-fileTypes-header = File Types to Import:
 import-fileTypes-pdf =
-    .label = PDF
+    .label = PDFs
 import-fileTypes-other =
     .placeholder = Other files by pattern, comma-separated (e.g., *.jpg,*.png)
-import-file-handling = ファイル処理
+import-file-handling = ファイルの取り扱い
 import-file-handling-store =
     .label = Copy files to the { -app-name } storage folder
 import-file-handling-link =
-    .label = Link to files in original location
+    .label = 原始の所在のファイルをリンクする
 import-fileHandling-description = Linked files cannot be synced by { -app-name }.
 import-online-new =
-    .label = 新しい項目のみをダウンロードします。以前にインポートした項目は更新しません。
+    .label = 新しいアイテムをダウンロードすることだけです；インポートしたアイテムを更新することをしないでください。
 import-mendeley-username = ユーザー名
 import-mendeley-password = パスワード
 general-error = エラー
@@ -386,21 +272,17 @@ import-online-form-intro = Please enter your credentials to log in to { $targetA
 import-online-wrong-credentials = Login to { $targetApp } failed. Please re-enter credentials and try again.
 import-online-blocked-by-plugin = The import cannot continue with { $plugin } installed. Please disable this plugin and try again.
 import-online-relink-only =
-    .label = Relink Mendeley Desktop citations
-import-online-relink-kb = { general-more-information }
+    .label = Mendeley Desktopの出典表記をもう一度リンクする
+import-online-relink-kb = さらに詳しく
 import-online-connection-error = { -app-name } could not connect to { $targetApp }. Please check your internet connection and try again.
-tab-title-multiple-collections = Multiple
 items-table-cell-notes =
     .aria-label =
         { $count ->
             [one] { $count } Note
            *[other] { $count } Notes
         }
-items-column-added-by = Added By
-items-column-modified-by = Modified By
-items-column-last-read = Last Read
 report-error =
-    .label = エラーを報告...
+    .label = エラーを報告する...
 rtfScan-wizard =
     .title = RTF スキャン
 rtfScan-introPage-description = { -app-name } can automatically extract and reformat citations and insert a bibliography into RTF files. It currently supports citations in variations of the following formats:
@@ -415,12 +297,12 @@ rtfScan-choose-output-file =
     .label = { general-choose-file }
     .aria-label = Choose Output File
 rtfScan-intro-page = 案内
-rtfScan-scan-page = 引用文献をスキャンしています
+rtfScan-scan-page = 出典表記をスキャンしています
 rtfScan-scanPage-description = { -app-name } is scanning your document for citations. Please be patient.
-rtfScan-citations-page = 引用された項目を検証する
+rtfScan-citations-page = 引用されたアイテムを検証する
 rtfScan-citations-page-description = Please review the list of recognized citations below to ensure that { -app-name } has selected the corresponding items correctly. Any unmapped or ambiguous citations must be resolved before proceeding to the next step.
 rtfScan-style-page = 文書の書式設定
-rtfScan-format-page = 引用文献の書式設定
+rtfScan-format-page = 出典表記の書式設定
 rtfScan-format-page-description = { -app-name } is processing and formatting your RTF file. Please be patient.
 rtfScan-complete-page = RTF スキャンが完了しました
 rtfScan-complete-page-description = あなたの文書はスキャンされ処理が完了しました。正しく整形されていることを確認してください。
@@ -429,8 +311,8 @@ rtfScan-action-find-match =
 rtfScan-action-accept-match =
     .title = Accept this match
 runJS-title = Run JavaScript
-runJS-editor-label = コード :
-runJS-run = 実行
+runJS-editor-label = Code:
+runJS-run = Run
 runJS-help = { general-help }
 runJS-completed = completed successfully
 runJS-result =
@@ -445,7 +327,7 @@ bibliography-style-label = { citation-style-label }
 bibliography-locale-label = { language-label }
 bibliography-displayAs-label = Display citations as:
 bibliography-advancedOptions-label = 高度なオプション
-bibliography-outputMode-label = 出力モード :
+bibliography-outputMode-label = 出力モード:
 bibliography-outputMode-citations =
     .label =
         { $type ->
@@ -454,8 +336,8 @@ bibliography-outputMode-citations =
            *[other] Citations
         }
 bibliography-outputMode-bibliography =
-    .label = 参考文献
-bibliography-outputMethod-label = 出力方法 :
+    .label = 参考文献目録
+bibliography-outputMethod-label = 出力方法:
 bibliography-outputMethod-saveAsRTF =
     .label = RTF として保存
 bibliography-outputMethod-saveAsHTML =
@@ -464,7 +346,7 @@ bibliography-outputMethod-copyToClipboard =
     .label = クリップボードにコピー
 bibliography-outputMethod-print =
     .label = 印刷
-bibliography-manageStyles-label = スタイルの管理...
+bibliography-manageStyles-label = スタイルを管理する...
 styleEditor-locatorType =
     .aria-label = Locator type
 styleEditor-locatorInput = Locator input
@@ -473,9 +355,9 @@ styleEditor-locale = { language-label }
 styleEditor-editor =
     .aria-label = Style editor
 styleEditor-preview =
-    .aria-label = プレビュー
+    .aria-label = Preview
 publications-intro-page = 私の出版物
-publications-intro = 「私の出版物」に追加した項目は、zotero.org のプロフィールページに表示されます。添付ファイルを含めることを選択した場合、それらは指定したライセンスの下で公開されます。あなた自身が作成した著作物のみを加えてください。また、配布を希望し、かつ配布する権利を持つファイルのみを含めてください。
+publications-intro = 「私の出版物」に追加したアイテムは、zotero.org のプロフィールページに表示されます。添付ファイルを含めることを選択した場合、それらは指定したライセンスの下で公開されます。あなた自身が作成した著作物のみを加えてください。また、配布を希望し、かつ配布する権利を持つファイルのみを含めてください。
 publications-include-checkbox-files =
     .label = ファイルを含める
 publications-include-checkbox-notes =
@@ -512,11 +394,11 @@ publications-choose-license-sharealike =
     .accesskey = S
 publications-choose-license-commercial-prompt = あなたの著作物の商用利用を許可しますか？
 publications-buttons-add-to-my-publications =
-    .label = 「私の出版物」へ追加
+    .label = 「私の出版物」に加える
 publications-buttons-next-sharing =
     .label = Next: Sharing
 publications-buttons-next-choose-license =
-    .label = ライセンスの選択
+    .label = ライセンスを選ぶ
 licenses-cc-0 = CC0 1.0 Universal Public Domain Dedication
 licenses-cc-by = Creative Commons Attribution 4.0 International License
 licenses-cc-by-nd = Creative Commons Attribution-NoDerivatives 4.0 International License
@@ -528,12 +410,12 @@ licenses-cc-more-info = Be sure you have read the Creative Commons <a data-l10n-
 licenses-cc0-more-info = Be sure you have read the Creative Commons <a data-l10n-name="license-considerations">CC0 FAQ</a> before applying CC0 to your work. Please note that dedicating your work to the public domain is irreversible, even if you later choose different terms or cease publishing the work.
 debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
 restart-in-troubleshooting-mode-menuitem =
-    .label = Restart in Troubleshooting Mode…
+    .label = トラブルシューティングモードで再起動する…
     .accesskey = T
 restart-in-troubleshooting-mode-dialog-title = { general-restartInTroubleshootingMode }
 restart-in-troubleshooting-mode-dialog-description = { -app-name } will restart with all plugins disabled. Some features may not function correctly while Troubleshooting Mode is enabled.
 menu-ui-density =
-    .label = 項目間の間隔
+    .label = Density
 menu-ui-density-comfortable =
     .label = Comfortable
 menu-ui-density-compact =
@@ -546,12 +428,12 @@ pane-notes = メモ
 pane-note-info = Note Info
 pane-libraries-collections = Libraries and Collections
 pane-tags = タグ
-pane-related = 関連項目
+pane-related = 関連アイテム
 pane-attachment-info = Attachment Info
-pane-attachment-preview = プレビュー
+pane-attachment-preview = Preview
 pane-attachment-annotations = 注釈
 pane-header-attachment-associated =
-    .label = 関連ファイル名を変更
+    .label = 関連ファイル名を変更する
 item-details-pane =
     .aria-label = { pane-item-details }
 section-info =
@@ -644,7 +526,7 @@ sidenav-reorder-reset =
 toggle-item-pane =
     .tooltiptext = Toggle Item Pane
 toggle-context-pane =
-    .tooltiptext = コンテキストパネルの切り替え
+    .tooltiptext = Toggle Context Pane
 pin-section =
     .label = Pin Section
 unpin-section =
@@ -671,16 +553,16 @@ toolbar-new-collection =
 new-collection-dialog =
     .title = 新規コレクション
     .buttonlabelaccept = Create Collection
-new-collection-name = 名前 :
+new-collection-name = 検索式名：
 new-collection-create-in = Create in:
 show-publications-menuitem =
     .label = Show My Publications
-attachment-info-title = タイトル
+attachment-info-title = スタイル名
 attachment-info-filename = ファイル名
 attachment-info-accessed = アクセス日時
 attachment-info-pages = ページ
 attachment-info-modified = 更新日時
-attachment-info-index = 索引済の項目
+attachment-info-index = 索引済のアイテム
 attachment-info-convert-note =
     .label =
         Migrate to { $type ->
@@ -691,7 +573,7 @@ attachment-info-convert-note =
     .tooltiptext = Adding notes to attachments is no longer supported, but you can edit this note by migrating it to a separate note.
 section-note-info =
     .label = { pane-note-info }
-note-info-title = タイトル
+note-info-title = スタイル名
 note-info-parent-item = Parent Item
 note-info-parent-item-button =
     { $hasParentItem ->
@@ -712,9 +594,16 @@ item-title-empty-note = 無題のメモ
 attachment-preview-placeholder = No attachment to preview
 attachment-rename-from-parent =
     .tooltiptext = Rename File to Match Parent Item
-account-log-in = ログイン
-account-not-logged-in-text = Log in to your Zotero account to sync your data.
-account-error-login-session-expired = Your login session has expired. Please try again.
+file-renaming-auto-rename-prompt-title = Renaming Settings Changed
+file-renaming-auto-rename-prompt-body = Would you like to rename existing files in your library to match the new settings?
+file-renaming-auto-rename-prompt-yes = Preview Changes…
+file-renaming-auto-rename-prompt-no = Keep Existing Filenames
+rename-files-preview =
+    .buttonlabelaccept = Rename Files
+rename-files-preview-loading = 読み込み中…
+rename-files-preview-intro = { -app-name } will rename the following files in your library to match their parent items:
+rename-files-preview-renaming = Renaming…
+rename-files-preview-no-files = All filenames already match parent items. No changes are required.
 toggle-preview =
     .label =
         { $type ->
@@ -726,33 +615,21 @@ annotation-image-not-available = [Image not available]
 quicksearch-mode =
     .aria-label = Quick Search mode
 quicksearch-input =
-    .aria-label = クイック検索
+    .aria-label = 簡易検索
     .placeholder = { $placeholder }
     .aria-description = { $placeholder }
-advanced-search = 高度な検索
-menuitem-advanced-search =
-    .label = { advanced-search }
-quicksearch-advanced-search-button =
-    .tooltiptext = { advanced-search }
-    .aria-label = { advanced-search }
-advanced-search-close =
-    .tooltiptext = Close Advanced Search
-advanced-search-expand =
-    .tooltiptext = Expand Advanced Search
-advanced-search-collapse =
-    .tooltiptext = Collapse Advanced Search
 item-pane-header-view-as =
     .label = View As
 item-pane-header-none =
     .label = なし
 item-pane-header-title =
-    .label = タイトル
+    .label = スタイル名
 item-pane-header-titleCreatorYear =
-    .label = タイトル、著者、年
+    .label = 題名、編著者名、年
 item-pane-header-bibEntry =
     .label = Bibliography Entry
 item-pane-header-more-options =
-    .label = その他
+    .label = More Options
 item-pane-message-items-selected =
     { $count ->
         [0] No items selected
@@ -798,66 +675,10 @@ architecture-warning-action = Download 64-bit { -app-name }
 architecture-x64-on-arm64-message = { -app-name } is running in emulated mode. A native version of { -app-name } will run more efficiently.
 architecture-x64-on-arm64-action = Download { -app-name } for ARM64
 first-run-guidance-authorMenu = { -app-name } lets you specify editors and translators too. You can turn an author into an editor or translator by selecting from this menu.
-first-run-guidance-readAloud = { -app-name } can now read your documents to you using natural-sounding voices.
 advanced-search-remove-btn =
-    .tooltiptext = Remove Condition
+    .tooltiptext = { general-remove }
 advanced-search-add-btn =
-    .tooltiptext = Add Condition
-advanced-search-group-btn =
-    .tooltiptext = Add Condition Group
-advanced-search-remove-group-btn =
-    .tooltiptext = Remove Group
-advanced-search-ungroup-btn =
-    .tooltiptext = Ungroup Conditions
-advanced-search-result-level-menu =
-    .aria-label = Result type
-advanced-search-result-level-prefix-root =
-    .value = 検索
-advanced-search-join-prefix-root =
-    .value = matching
-advanced-search-result-level-any =
-    .label = any items
-advanced-search-result-level-item =
-    .label = top-level items
-advanced-search-result-level-attachment =
-    .label = attachments
-advanced-search-result-level-note =
-    .label = notes
-advanced-search-result-level-annotation =
-    .label = 注釈
-advanced-search-binding-menu =
-    .aria-label = Match against the same item
-advanced-search-binding-separate =
-    .label = separately
-advanced-search-binding-same-attachment =
-    .label = in the same attachment
-advanced-search-binding-same-note =
-    .label = in the same note
-advanced-search-binding-same-annotation =
-    .label = in the same annotation
-advanced-search-of-the-following =
-    .value = of the following
-advanced-search-binding-hint-attachment =
-    .value = These conditions can match separate attachments.
-advanced-search-binding-hint-note =
-    .value = These conditions can match separate notes.
-advanced-search-binding-hint-annotation =
-    .value = These conditions can match separate annotations.
-advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
-advanced-search-group-warning-unreachable =
-    A condition here cannot be in the same { $entity ->
-        [attachment] attachment
-        [note] note
-       *[annotation] annotation
-    }. Match these separately or remove the incompatible condition.
-advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-bind-same-attachment =
-    .label = Match the same attachment
-advanced-search-bind-same-note =
-    .label = Match the same note
-advanced-search-bind-same-annotation =
-    .label = Match the same annotation
+    .tooltiptext = { general-add }
 advanced-search-conditions-menu =
     .aria-label = Search condition
     .label = { $label }
@@ -865,66 +686,17 @@ advanced-search-operators-menu =
     .aria-label = Operator
     .label = { $label }
 advanced-search-condition-input =
-    .aria-label = 値
+    .aria-label = Value
     .label = { $label }
-search-operator-isEmpty = is empty
-search-operator-isNotEmpty = is not empty
-search-conditions-tooltip-fields = フィールド :
-search-conditions-collection = コレクション
-search-conditions-savedSearch = 保存済み検索条件
-search-conditions-itemTypeID = 項目の種類
-search-conditions-tag = タグ
-search-conditions-numTags = # of Tags
-search-conditions-numNotes = # of Notes
-search-conditions-numAttachments = # of Attachments
-search-conditions-numAnnotations = # of Annotations
-search-conditions-note = メモ
-search-conditions-childNote = 子メモ
-search-conditions-creator = 著者
-search-conditions-thesisType = 学位論文の種類
-search-conditions-reportType = レポートの種類
-search-conditions-videoRecordingFormat = ビデオフォーマット
-search-conditions-audioFileType = 音声ファイル形式
-search-conditions-audioRecordingFormat = 音声記録形式
-search-conditions-letterType = 手紙の種類
-search-conditions-interviewMedium = インタビューの記録方法
-search-conditions-manuscriptType = 原稿の種類
-search-conditions-presentationType = プレゼンテーションの種類
-search-conditions-mapType = 地図の種類
-search-conditions-artworkMedium = 芸術品の素材・技法
-search-conditions-dateModified = 変更日
-search-conditions-fulltextContent = 添付ファイルの内容
-search-conditions-programmingLanguage = プログラミング言語
-search-conditions-fileTypeID = 添付ファイルの種類
-search-conditions-attachmentStorageType = Attachment Storage Type
-search-conditions-lastRead = Attachment Last Read
-search-conditions-annotationText = 注釈の文字
-search-conditions-annotationComment = 注釈のコメント
-search-conditions-annotationType = Annotation Type
-search-conditions-annotationColor = Annotation Color
-search-conditions-annotationAuthor = Annotation Author
-search-conditions-anyField = Any Field
-search-conditions-titleCreatorYear = タイトル、著者、年
-search-conditions-submenu-attachment = 添付ファイル
-search-conditions-submenu-annotation = 注釈
-search-conditions-short-fulltextContent = Content
-search-conditions-short-fileTypeID = ファイルの種類
-search-conditions-short-attachmentStorageType = Storage Type
-search-conditions-short-lastRead = Last Read
-search-conditions-short-annotationText = Text
-search-conditions-short-annotationComment = Comment
-search-conditions-short-annotationType = 種類
-search-conditions-short-annotationColor = Color
-search-conditions-short-annotationAuthor = 著者
 find-pdf-files-added =
     { $count ->
         [one] { $count } file added
        *[other] { $count } files added
     }
 select-items-window =
-    .title = 項目を選択
+    .title = アイテムを選択
 select-items-dialog =
-    .buttonlabelaccept = 選択
+    .buttonlabelaccept = Select
 select-items-convertToStandalone =
     .label = Convert to Standalone
 select-items-convertToStandaloneAttachment =
@@ -939,7 +711,7 @@ select-items-convertToStandaloneNote =
             [one] Convert to Standalone Note
            *[other] Convert to Standalone Notes
         }
-file-type-webpage = ウェブページ
+file-type-webpage = Webpage
 file-type-image = 画像
 file-type-pdf = PDF
 file-type-audio = オーディオ
@@ -947,9 +719,6 @@ file-type-video = ビデオ
 file-type-presentation = プレゼンテーション
 file-type-document = 文書
 file-type-ebook = Ebook
-attachment-storage-type-storedFile = Stored File
-attachment-storage-type-linkedFile = Linked File
-attachment-storage-type-webLink = Web Link
 post-upgrade-message = You’ve been upgraded to <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! Learn about <a data-l10n-name="new-features-link">what’s new</a>.
 post-upgrade-remind-me-later =
     .label = { general-remind-me-later }
@@ -958,23 +727,18 @@ post-upgrade-done =
 text-action-paste-and-search =
     .label = Paste and Search
 mac-word-plugin-install-message = Zotero needs access to Word data to install the Word plugin.
-mac-word-plugin-install-folder-message = { -app-name } needs access to Word’s startup folder to install the Word plugin.
 mac-word-plugin-install-action-button =
     .label = Install Word plugin
 mac-word-plugin-install-remind-later-button =
     .label = { general-remind-me-later }
 mac-word-plugin-install-dont-ask-again-button =
     .label = { general-dont-ask-again }
-mac-word-plugin-install-folder-dialog-title = Install the plugin in the Word startup folder
-mac-word-plugin-install-folder-dialog-button = インストール
-mac-word-plugin-install-wrong-folder-selected = The suggested folder must be selected. Please try again without choosing a different folder.
 file-renaming-banner-message = { -app-name } now automatically keeps attachment filenames in sync as you make changes to items.
 file-renaming-banner-documentation-link = { general-learn-more }
 file-renaming-banner-settings-link = { general-settings }
 connector-version-warning = The { -app-name } Connector must be updated to work with this version of { -app-name }.
 userjs-pref-warning = Some { -app-name } settings have been overridden using an unsupported method. { -app-name } will revert them and restart.
 migrate-extra-fields-progress-message = Migrating new fields from Extra field
-search-normalization-progress-message = Indexing items for search
 long-tag-fixer-window-title =
     .title = Split Tags
 long-tag-fixer-button-dont-split =
@@ -988,145 +752,3 @@ normalize-attachment-titles-text =
     In older versions of { -app-name }, as well as when using certain plugins, attachment titles could be changed unnecessarily to match the filenames.
     
     Would you like to update the selected attachments to use simpler titles? Only primary attachments with titles that match the filename will be changed.
-banner-close-button =
-    .aria-label = Dismiss notification
-plugins-blocked-plugin =
-    .message = This plugin has been disabled by { -app-name }.
-data-dir-unsupported-storage = This can happen if the { -app-name } data directory is in a cloud storage folder (OneDrive, Dropbox, etc.) or on a network share.
-login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
-os-keystore-save-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
-        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
-    }
-os-keystore-migrate-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
-        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
-    }
-search-button =
-    .label = 検索実行
-save-search-new-button =
-    .label = Save Search…
-save-search-edit-button =
-    .label = 保存
-save-search-name-title = 検索条件を保存
-save-search-name-message = Enter a name for the saved search:
-saved-search-close-confirmation-title = Editing Saved Search
-saved-search-close-confirmation-body = Do you want to save changes you made to this saved search?
-item-pane-batch-editing-prompt =
-    .aria-label = Batch editing
-item-pane-batch-editing-enable =
-    .label = Edit Multiple Items…
-item-pane-batch-editing-multiple-values-placeholder = Multiple
-item-pane-batch-editing-clear-values = Clear all values
-item-pane-batch-editing-header =
-    { $count ->
-        [one] Editing { $count } item
-       *[other] Editing { $count } items
-    }
-item-pane-batch-editing-done =
-    .label = { general-done }
-undo-action-edit-metadata =
-    { $count ->
-        [one] Edit Metadata
-       *[other] Edit Metadata for { $count } Items
-    }
-undo-action-edit-field =
-    { $count ->
-        [one] Edit of “{ $field }”
-       *[other] Edit of “{ $field }” for { $count } Items
-    }
-undo-action-normalize-attachment-titles = Normalize Attachment Title
-undo-action-trash =
-    { $count ->
-        [one] Trash Item
-       *[other] Trash { $count } Items
-    }
-undo-action-restore-items =
-    { $count ->
-        [one] Restore Item
-       *[other] Restore { $count } Items
-    }
-undo-action-trash-collection =
-    { $count ->
-        [one] Trash Collection
-       *[other] Trash { $count } Collections
-    }
-undo-action-trash-search =
-    { $count ->
-        [one] Trash Saved Search
-       *[other] Trash { $count } Saved Searches
-    }
-undo-action-restore-collection =
-    { $count ->
-        [one] Restore Collection
-       *[other] Restore { $count } Collections
-    }
-undo-action-restore-objects =
-    { $count ->
-        [one] Restore Object
-       *[other] Restore { $count } Objects
-    }
-undo-action-add-to-collection =
-    { $count ->
-        [one] Add to Collection
-       *[other] Add { $count } Items to Collection
-    }
-undo-action-remove-from-collection =
-    { $count ->
-        [one] Remove from Collection
-       *[other] Remove { $count } Items from Collection
-    }
-undo-action-move-to-collection =
-    { $count ->
-        [one] Move to Collection
-       *[other] Move { $count } Items to Collection
-    }
-undo-action-rename-collection = Rename Collection
-undo-action-move-collection = Move Collection
-undo-action-add-tag =
-    { $count ->
-        [one] Add Tag
-       *[other] Add Tag to { $count } Items
-    }
-undo-action-change-tag = Change Tag
-undo-action-split-tag = Split Tag
-undo-action-remove-tag =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove Tag from { $count } Items
-    }
-undo-action-remove-tags-from-item =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove { $count } Tags
-    }
-undo-action-remove-all-tags = Remove All Tags
-undo-action-edit-note = メモを編集
-undo-action-add-creator = Add Creator
-undo-action-remove-creator = Remove Creator
-undo-action-edit-creator = Edit Creator
-undo-action-reorder-creator = Reorder Creator
-undo-action-change-type = 項目の種類を変更
-undo-action-change-parent-item =
-    { $count ->
-        [one] Change Parent Item
-       *[other] Change Parent for { $count } Items
-    }
-undo-action-convert-to-standalone =
-    { $count ->
-        [one] Convert to Standalone
-       *[other] Convert { $count } Items to Standalone
-    }
-undo-action-add-related = Add Related
-undo-action-remove-related = Remove Related
-undo-action-merge-items =
-    { $count ->
-        [one] Merge Item
-       *[other] Merge { $count } Items
-    }
-menu-edit-undo-action = Undo { $action }
-menu-edit-redo-action = Redo { $action }

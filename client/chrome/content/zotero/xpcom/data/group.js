@@ -244,9 +244,6 @@ Zotero.Group.prototype.toResponseJSON = function (options = {}) {
 		let uri = Zotero.URI.getGroupURI(this);
 		return {
 			id: this.id,
-			// Group metadata isn't locally writable, so group responses always report the
-			// synced group version -- unlike group.clientVersion, which is inherited from
-			// Zotero.Library and tracks the group library's contents
 			version: this.version,
 			links: {
 				self: {
@@ -290,13 +287,11 @@ Zotero.Group.prototype.fromJSON = function (json, userID) {
 	
 	var editable = false;
 	var filesEditable = false;
-	var isAdmin = false;
 	if (userID) {
-		({ editable, filesEditable, isAdmin } = Zotero.Groups.getPermissionsFromJSON(json, userID));
+		({ editable, filesEditable } = Zotero.Groups.getPermissionsFromJSON(json, userID));
 	}
 	this.editable = editable;
 	this.filesEditable = filesEditable;
-	this.isAdmin = isAdmin;
 }
 
 Zotero.Group.prototype._prepFieldChange = function (field) {

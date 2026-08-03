@@ -40,12 +40,6 @@ const ARRAYBUFFER_MAX_LENGTH = Services.appinfo.is64Bit
 	? Math.pow(2, 33)
 	: Math.pow(2, 32) - 1;
 
-const READ_ALOUD_ENABLED_VOICES_PATH = PathUtils.join(Zotero.Profile.dir, 'readAloudEnabledVoices.json');
-const READ_ALOUD_VOICE_DEFAULTS_PATH = PathUtils.join(Zotero.Profile.dir, 'readAloudVoiceDefaults.json');
-
-// Whether the Read Aloud audio cache has been pruned of stale versions this session
-let readAloudCachePruned = false;
-
 class ReaderInstance {
 	constructor(options) {
 		this.stateFileName = '.zotero-reader-state';
@@ -61,12 +55,8 @@ class ReaderInstance {
 			this._resolveInitPromise = resolve;
 			this._rejectInitPromise = reject;
 		});
-		this._isUninitialized = false;
-		this._isTabClosed = false;
-		this._customEventHandler = null;
 		this._pendingWriteStateTimeout = null;
 		this._pendingWriteStateFunction = null;
-		this._readAloudGuidancePanel = null;
 
 		this._type = this._item.attachmentReaderType;
 		if (!this._type) {
@@ -141,10 +131,7 @@ class ReaderInstance {
 				let item = Zotero.Items.getByLibraryAndKey(libraryID, key);
 				if (item && item.isEditable()) {
 					item.annotationColor = color;
-					await item.saveTx({
-						skipDateModifiedUpdate: true,
-						notifierQueue
-					});
+					await item.saveTx({ skipDateModifiedUpdate: true, notifierQueue });
 				}
 			}
 		}
@@ -185,10 +172,7 @@ class ReaderInstance {
 
 		await this._waitForReader();
 
-		if (this._customEventHandler) {
-			this._iframeWindow.removeEventListener('customEvent', this._customEventHandler);
-		}
-		this._customEventHandler = (event) => {
+		this._iframeWindow.addEventListener('customEvent', (event) => {
 			let data = event.detail.wrappedJSObject;
 			let append = data.append;
 			data.append = (...args) => {
@@ -196,8 +180,7 @@ class ReaderInstance {
 			};
 			data.reader = this;
 			Zotero.Reader._dispatchEvent(data);
-		};
-		this._iframeWindow.addEventListener('customEvent', this._customEventHandler);
+		});
 
 		this._blockingObserver = new BlockingObserver({
 			shouldBlock(uri) {
@@ -214,21 +197,19 @@ class ReaderInstance {
 		}
 
 		// Prepare Fluent data
-		// Reverse app locales so primary overrides fallbacks
-		let locales = Services.locale.appLocalesAsBCP47.reverse();
-		let ftlURLs = locales.flatMap(locale => [
-			`resource://app/localization/${locale}/branding/brand.ftl`,
-			`resource://app/localization/${locale}/zotero.ftl`,
-			`resource://app/localization/${locale}/reader.ftl`,
-		]);
 		let ftl = [];
-		for (let ftlURL of ftlURLs) {
-			try {
-				ftl.push(Zotero.File.getContentsFromURL(ftlURL));
-			}
-			catch {
-				// Ignore
-			}
+		try {
+			ftl.push(Zotero.File.getContentsFromURL(`chrome://zotero/locale/zotero.ftl`));
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+
+		try {
+			ftl.push(Zotero.File.getContentsFromURL(`chrome://zotero/locale/reader.ftl`));
+		}
+		catch (e) {
+			Zotero.logError(e);
 		}
 
 		this._internalReader = this._iframeWindow.wrappedJSObject.createReader(Components.utils.cloneInto({
@@ -260,16 +241,9 @@ class ReaderInstance {
 			autoDisableTextTool: Zotero.Prefs.get('reader.autoDisableTool.text'),
 			autoDisableImageTool: Zotero.Prefs.get('reader.autoDisableTool.image'),
 			sidebarView: Zotero.Prefs.get('reader.lastSidebarTab'),
-			enableReadAloud: true,
-			readAloudVoices: this._getReadAloudVoices(),
-			readAloudEnabledVoices: await this._getReadAloudEnabledVoices(),
-			readAloudRemoteInterface: this._getReadAloudRemoteInterface(this._iframeWindow),
-			readAloudHighlightGranularity: Zotero.Prefs.get('reader.readAloud.highlightGranularity'),
-			getSDTPack: this._createGetSDTPack(this._iframeWindow),
-			loggedIn: Zotero.Sync.Runner.enabled,
 			onOpenContextMenu: () => {
 				// Functions can only be passed over wrappedJSObject (we call back onClick for context menu items)
-				return this._openContextMenu(this._iframeWindow.wrappedJSObject.contextMenuParams);
+				this._openContextMenu(this._iframeWindow.wrappedJSObject.contextMenuParams);
 			},
 			onAddToNote: (annotations) => {
 				this._addToNote(annotations);
@@ -622,34 +596,12 @@ class ReaderInstance {
 			},
 			onSetDarkTheme: (themeName) => {
 				Zotero.Prefs.set('reader.darkTheme', themeName || false);
-			},
-			onSetReadAloudVoice: this._setReadAloudVoice.bind(this),
-			onSetReadAloudEnabledVoices: this._setReadAloudEnabledVoices.bind(this),
-			onSetReadAloudStatus: this._setReadAloudStatus.bind(this),
-			onPurchaseReadAloudCredits: () => {
-				Zotero.launchURL(ZOTERO_CONFIG.READ_ALOUD_URL);
-			},
-			onLogIn: () => {
-				// This causes a segfault without the timeout...
-				setTimeout(() => Zotero.Utilities.Internal.openPreferences('zotero-prefpane-account', { action: 'logIn' }));
-			},
-			onOpenReadAloudFirstRunPopup: ({ lang }) => {
-				// As above
-				setTimeout(() => this._openReadAloudFirstRunDialog({ lang, ftl }));
-			},
-			onOpenReadAloudVoicesPopup: ({ lang, tier }) => {
-				// As above
-				setTimeout(() => this._openReadAloudVoicesDialog({ lang, tier, ftl }));
-			},
+			}
 		}, this._iframeWindow, { cloneFunctions: true }));
 
 		this._resolveInitPromise();
 		// Set title once again, because `ReaderWindow` isn't loaded the first time
 		this.updateTitle();
-
-		if (Zotero.isBetaBuild || Zotero.isDevBuild || Zotero.isSourceBuild) {
-			this._showReadAloudGuidance();
-		}
 
 		this._prefObserverIDs = [
 			Zotero.Prefs.registerObserver('fontSize', this._handleFontSizeChange),
@@ -662,8 +614,6 @@ class ReaderInstance {
 			Zotero.Prefs.registerObserver('reader.autoDisableTool.note', this._handleAutoDisableToolPrefChange),
 			Zotero.Prefs.registerObserver('reader.autoDisableTool.text', this._handleAutoDisableToolPrefChange),
 			Zotero.Prefs.registerObserver('reader.autoDisableTool.image', this._handleAutoDisableToolPrefChange),
-			Zotero.Prefs.registerObserver('reader.readAloudVoices', this._handleReadAloudVoicesPrefChange),
-			Zotero.Prefs.registerObserver('reader.readAloud.highlightGranularity', this._handleReadAloudHighlightGranularityChange),
 		];
 
 		return true;
@@ -688,42 +638,22 @@ class ReaderInstance {
 	}
 
 	uninit() {
-		if (this._isUninitialized) {
-			return;
-		}
-		this._isUninitialized = true;
-		if (this._customEventHandler && this._iframeWindow) {
-			try {
-				this._iframeWindow.removeEventListener('customEvent', this._customEventHandler);
-			}
-			catch {}
-			this._customEventHandler = null;
-		}
-		if (this._iframe) {
-			this._iframe.removeEventListener('contextmenu', this._handleReaderTextboxContextMenuOpen);
-		}
-		this._hideReadAloudGuidance();
 		if (this._prefObserverIDs) {
 			this._prefObserverIDs.forEach(id => Zotero.Prefs.unregisterObserver(id));
 		}
 		this._flushState();
-		if (this._item?.id && !this._isTransient()) {
-			Zotero.Notifier.trigger('close', 'file', this._item.id);
-		}
 		if (this._blockingObserver && this._iframe) {
 			this._blockingObserver.unregister(this._iframe);
 		}
 	}
 
 	get itemID() {
-		return this._item?.id;
+		return this._item.id;
 	}
 
 	async updateTitle() {
 		this._title = await this._item.getTabTitle();
-		if (this._isTabClosed) return;
 		this._setTitleValue(this._title);
-		this._internalReader?.setTitle(this._title);
 	}
 
 	async setAnnotations(items) {
@@ -1004,35 +934,17 @@ class ReaderInstance {
 	}
 
 	async _setState(state) {
-		if (this._isTransient()) {
-			return;
-		}
 		let item = Zotero.Items.get(this._item.id);
 		if (item) {
-			let lastPageIndex;
 			if (this._type === 'pdf') {
-				lastPageIndex = state.pageIndex;
+				item.setAttachmentLastPageIndex(state.pageIndex);
 			}
 			else if (this._type === 'epub') {
-				lastPageIndex = state.cfi;
+				item.setAttachmentLastPageIndex(state.cfi);
 			}
 			else if (this._type === 'snapshot') {
-				lastPageIndex = state.scrollYPercent;
+				item.setAttachmentLastPageIndex(state.scrollYPercent);
 			}
-			else {
-				throw new Error('Unknown reader type: ' + this._type);
-			}
-			let pageChanged = item.getAttachmentLastPageIndex() != lastPageIndex;
-			item.setAttachmentLastPageIndex(lastPageIndex);
-
-			if ('lastReadAloudPosition' in state) {
-				let newPos = state.lastReadAloudPosition ?? null;
-				let currentPos = item.getAttachmentLastReadAloudPosition();
-				if (JSON.stringify(newPos) !== JSON.stringify(currentPos)) {
-					item.setAttachmentLastReadAloudPosition(newPos);
-				}
-			}
-
 			let file = Zotero.Attachments.getStorageDirectory(item);
 			if (!(await OS.File.exists(file.path))) {
 				await Zotero.Attachments.createDirectoryForItem(item);
@@ -1060,10 +972,6 @@ class ReaderInstance {
 				await IOUtils.writeJSON(path, state);
 			};
 			this._pendingWriteStateTimeout = setTimeout(this._pendingWriteStateFunction, 5000);
-
-			if (pageChanged) {
-				Zotero.Notifier.trigger('pageChange', 'file', item.id);
-			}
 		}
 	}
 	
@@ -1074,26 +982,26 @@ class ReaderInstance {
 	}
 
 	async _getState() {
-		let stateFromFile;
+		let state;
 		let item = Zotero.Items.get(this._item.id);
 		let directory = Zotero.Attachments.getStorageDirectory(item);
 		let file = directory.clone();
 		file.append(this.stateFileName);
 		try {
 			if (await OS.File.exists(file.path)) {
-				stateFromFile = JSON.parse(await Zotero.File.getContentsAsync(file.path));
+				state = JSON.parse(await Zotero.File.getContentsAsync(file.path));
 			}
 		}
 		catch (e) {
 			Zotero.logError(e);
 		}
 		// Try to fall back to the older .zotero-pdf-state file
-		if (!stateFromFile && this._type === 'pdf') {
+		if (!state && this._type === 'pdf') {
 			let file = directory.clone();
 			file.append('.zotero-pdf-state');
 			try {
 				if (await OS.File.exists(file.path)) {
-					stateFromFile = JSON.parse(await Zotero.File.getContentsAsync(file.path));
+					state = JSON.parse(await Zotero.File.getContentsAsync(file.path));
 				}
 			}
 			catch (e) {
@@ -1101,86 +1009,41 @@ class ReaderInstance {
 			}
 		}
 
-		let lastReadAloudPosition = item.getAttachmentLastReadAloudPosition();
-		let state = null;
-
 		if (this._type === 'pdf') {
 			let pageIndex = item.getAttachmentLastPageIndex();
-			if (stateFromFile) {
-				if (Number.isInteger(pageIndex) && stateFromFile.pageIndex !== pageIndex) {
-					stateFromFile.pageIndex = pageIndex;
-					delete stateFromFile.top;
-					delete stateFromFile.left;
+			if (state) {
+				if (Number.isInteger(pageIndex) && state.pageIndex !== pageIndex) {
+					state.pageIndex = pageIndex;
+					delete state.top;
+					delete state.left;
 				}
-				state = stateFromFile;
+				return state;
 			}
 			else if (Number.isInteger(pageIndex)) {
-				state = { pageIndex };
+				return { pageIndex };
 			}
 		}
 		else if (this._type === 'epub') {
 			let cfi = item.getAttachmentLastPageIndex();
-			if (stateFromFile) {
-				stateFromFile.cfi = cfi;
-				state = stateFromFile;
+			if (state) {
+				state.cfi = cfi;
+				return state;
 			}
 			else {
-				state = { cfi };
+				return { cfi };
 			}
 		}
 		else if (this._type === 'snapshot') {
 			let scrollYPercent = item.getAttachmentLastPageIndex();
-			if (stateFromFile) {
-				stateFromFile.scrollYPercent = scrollYPercent;
-				state = stateFromFile;
+			if (state) {
+				state.scrollYPercent = scrollYPercent;
+				return state;
 			}
 			else {
-				state = { scrollYPercent };
+				return { scrollYPercent };
 			}
 		}
-
-		if (state) {
-			state.lastReadAloudPosition = lastReadAloudPosition;
-		}
-		return state;
-	}
-
-	// Returns the function passed to the reader as options.getSDTPack, which
-	// resolves with the SDT pack for the displayed attachment, generating it
-	// if necessary. The reader decides when to pull (currently at init, so
-	// the pack is ready when a feature needs it), and a reader build without
-	// SDT support never triggers extraction. The pack bytes are passed by
-	// value, so a held pack can't be affected by a later regeneration and
-	// always matches the document the reader is displaying.
-	_createGetSDTPack(targetWindow) {
-		if (!Zotero.SDT || !this.itemID || this._isTransient()) {
-			return null;
-		}
-		// Wrap the return value in a child window Promise to avoid
-		// permissions errors (as in _getReadAloudRemoteInterface()).
-		// getPack() never rejects
-		return (options = {}) => new targetWindow.Promise(async (resolve) => {
-			let contentOptions = Cu.waiveXrays(options);
-			let onProgress = typeof contentOptions.onProgress === 'function'
-				? progress => {
-					if (!Components.utils.isDeadWrapper(targetWindow)) {
-						contentOptions.onProgress(progress);
-					}
-				}
-				: null;
-			let result = await Zotero.SDT.getPack(this.itemID, {
-				isPriority: true,
-				onProgress,
-			});
-			if (Components.utils.isDeadWrapper(targetWindow)) {
-				return;
-			}
-			resolve(Cu.cloneInto(result, targetWindow));
-		});
-	}
-
-	_isTransient() {
-		return false;
+		return null;
 	}
 
 	_isReadOnly() {
@@ -1219,23 +1082,6 @@ class ReaderInstance {
 		this._internalReader.setAutoDisableNoteTool(Zotero.Prefs.get('reader.autoDisableTool.note'));
 		this._internalReader.setAutoDisableTextTool(Zotero.Prefs.get('reader.autoDisableTool.text'));
 		this._internalReader.setAutoDisableImageTool(Zotero.Prefs.get('reader.autoDisableTool.image'));
-	};
-	
-	_handleReadAloudVoicesPrefChange = () => {
-		this._internalReader.setReadAloudVoices(Cu.cloneInto(this._getReadAloudVoices(), this._iframeWindow));
-	};
-
-	_handleReadAloudHighlightGranularityChange = () => {
-		this._internalReader.setReadAloudHighlightGranularity(
-			Zotero.Prefs.get('reader.readAloud.highlightGranularity')
-		);
-	};
-
-	_handleReadAloudEnabledVoicesChange = async (voices) => {
-		if (!voices) {
-			voices = await this._getReadAloudEnabledVoices();
-		}
-		this._internalReader.setReadAloudEnabledVoices(Cu.cloneInto(voices, this._iframeWindow));
 	};
 
 	_dataURLtoBlob(dataurl) {
@@ -1321,12 +1167,10 @@ class ReaderInstance {
 	}
 
 	async _openContextMenu({ x, y, itemGroups }) {
-		let { resolve, promise } = Zotero.Promise.defer();
 		let popup = this._window.document.createXULElement('menupopup');
 		this._popupset.appendChild(popup);
 		popup.addEventListener('popuphidden', function () {
 			popup.remove();
-			resolve();
 		});
 		let appendItems = (parentNode, itemGroups) => {
 			for (let itemGroup of itemGroups) {
@@ -1365,7 +1209,6 @@ class ReaderInstance {
 		let rect = this._iframe.getBoundingClientRect();
 		rect = this._window.windowUtils.toScreenRectInCSSUnits(rect.x + x, rect.y + y, 0, 0);
 		setTimeout(() => popup.openPopupAtScreen(rect.x, rect.y, true));
-		return promise;
 	}
 
 	_handleReaderTextboxContextMenuOpen = (event) => {
@@ -1535,27 +1378,6 @@ class ReaderInstance {
 		}
 	}
 
-	_wrapConsole() {
-		let win = this._iframeWindow;
-		let console = win.console;
-		let wrapper = Cu.createObjectIn(win);
-		for (let method of ['log', 'info', 'warn', 'error', 'debug', 'trace']) {
-			let level = method === 'error' ? 1 : method === 'warn' ? 2 : 5;
-			Cu.exportFunction((...args) => {
-				try {
-					let message = args.map(a => typeof a === 'string' ? a : Zotero.Utilities.varDump(a))
-						.join(' ');
-					Zotero.debug(`${this.constructor.name} "${this._title}": ${message}`, level);
-				}
-				catch (e) {
-					Zotero.logError(e);
-				}
-				console[method](...args);
-			}, wrapper, { defineAs: method });
-		}
-		Object.defineProperty(win.wrappedJSObject, 'console', { value: wrapper });
-	}
-
 	async _waitForReader() {
 		if (this._isReaderInitialized) {
 			return;
@@ -1596,320 +1418,6 @@ class ReaderInstance {
 			return null;
 		}
 	}
-
-	async _getReadAloudEnabledVoices() {
-		try {
-			return await IOUtils.readJSON(READ_ALOUD_ENABLED_VOICES_PATH);
-		}
-		catch {
-			return {};
-		}
-	}
-
-	async _setReadAloudEnabledVoices(enabledVoicesByLang) {
-		let existing = await this._getReadAloudEnabledVoices();
-		for (let [lang, enabledByTier] of Object.entries(enabledVoicesByLang)) {
-			let existingEnabledByTier = existing[lang] || {};
-			existing[lang] = { ...existingEnabledByTier, ...enabledByTier };
-		}
-		await IOUtils.writeJSON(READ_ALOUD_ENABLED_VOICES_PATH, existing);
-		for (let reader of Zotero.Reader._readers) {
-			reader._handleReadAloudEnabledVoicesChange(existing);
-		}
-	}
-
-	async _getReadAloudVoiceDefaults() {
-		try {
-			return await IOUtils.readJSON(READ_ALOUD_VOICE_DEFAULTS_PATH);
-		}
-		catch {
-			return {};
-		}
-	}
-
-	async _setReadAloudVoiceDefaults(defaults) {
-		await IOUtils.writeJSON(READ_ALOUD_VOICE_DEFAULTS_PATH, defaults);
-	}
-
-	async _processReadAloudVoiceDefaults(voices) {
-		let previousDefaults = await this._getReadAloudVoiceDefaults();
-		let newDefaults = {};
-		for (let voice of voices) {
-			newDefaults[voice.id] = voice.default ?? false;
-		}
-
-		// On first fetch, just cache and return
-		if (!Object.keys(previousDefaults).length) {
-			await this._setReadAloudVoiceDefaults(newDefaults);
-			return;
-		}
-
-		let readAloudEnabledVoices = await this._getReadAloudEnabledVoices();
-		let readAloudVoices = this._getReadAloudVoices();
-		let modified = false;
-
-		for (let voice of voices) {
-			let wasDefault = previousDefaults[voice.id];
-			let isDefault = newDefaults[voice.id];
-			if (wasDefault === undefined || wasDefault === isDefault) continue;
-
-			for (let [lang, langConfig] of Object.entries(readAloudEnabledVoices)) {
-				let enabledIDs = langConfig?.[voice.tier];
-				if (!Array.isArray(enabledIDs)) continue;
-
-				if (!wasDefault && isDefault) {
-					// false -> true: auto-enable
-					if (!enabledIDs.includes(voice.id)) {
-						enabledIDs.push(voice.id);
-						modified = true;
-					}
-				}
-				else if (wasDefault && !isDefault) {
-					// true -> false: auto-disable, unless it's the user's selected voice
-					let voiceConfig = readAloudVoices[lang];
-					if (voiceConfig?.tierVoices?.[voice.tier] === voice.id) continue;
-					let index = enabledIDs.indexOf(voice.id);
-					if (index !== -1) {
-						enabledIDs.splice(index, 1);
-						modified = true;
-					}
-				}
-			}
-		}
-
-		await this._setReadAloudVoiceDefaults(newDefaults);
-		if (modified) {
-			await IOUtils.writeJSON(READ_ALOUD_ENABLED_VOICES_PATH, readAloudEnabledVoices);
-		}
-	}
-
-	_getReadAloudVoices() {
-		try {
-			return JSON.parse(Zotero.Prefs.get('reader.readAloudVoices'));
-		}
-		catch {
-			return {};
-		}
-	}
-
-	_setReadAloudVoice({ lang, region, voice, speed, tier }) {
-		let existing = this._getReadAloudVoices()[lang] || {};
-		let tierVoices = { ...existing.tierVoices };
-		if (tier) {
-			// Push to the end of the object
-			delete tierVoices[tier];
-			tierVoices[tier] = voice;
-		}
-		Zotero.Prefs.set('reader.readAloudVoices', JSON.stringify({
-			...this._getReadAloudVoices(),
-			[lang]: { region, voice, speed, tierVoices },
-		}));
-	}
-	
-	_setReadAloudStatus(_status) {
-		// Do nothing in the base class -- instance types override this
-	}
-
-	_getReadAloudRemoteInterface(targetWindow) {
-		if (!this._window) return null;
-		// Wrap return values in child window Promises to avoid permissions errors
-		let audioCache = this._window.caches.open('read-aloud');
-		return {
-			getVoices: () => {
-				return new targetWindow.Promise(async (resolve) => {
-					let apiKey = await Zotero.Sync.Data.Local.getAPIKey();
-					let client = Zotero.Sync.Runner.getAPIClient({ apiKey });
-					let result = await client.getReadAloudVoices();
-					resolve(Cu.cloneInto(result, targetWindow));
-					// Prune cache entries with outdated versions once per session,
-					// after the voices (and their current cache versions) are known
-					if (!readAloudCachePruned && result.voices) {
-						this._pruneReadAloudCache(audioCache, result.voices);
-					}
-				});
-			},
-
-			getAudio: (segment, voice) => {
-				return new targetWindow.Promise(async (resolve) => {
-					let cacheURL = this._getReadAloudCacheURL(segment, voice);
-					let cache;
-					try {
-						cache = await audioCache;
-						let cached = await cache.match(cacheURL);
-						if (cached) {
-							// Word-level timestamps are cached in a response header
-							// alongside the audio (see below)
-							let timestamps;
-							let timestampsHeader = cached.headers.get('X-Zotero-Timestamps');
-							if (timestampsHeader) {
-								try {
-									timestamps = JSON.parse(timestampsHeader);
-								}
-								catch (e) {
-									Zotero.logError(e);
-								}
-							}
-							resolve(Cu.cloneInto({ audio: await cached.blob(), timestamps }, targetWindow));
-							return;
-						}
-					}
-					catch (e) {
-						Zotero.logError(e);
-					}
-					let apiKey = segment === 'sample' ? null : await Zotero.Sync.Data.Local.getAPIKey();
-					let client = Zotero.Sync.Runner.getAPIClient({ apiKey });
-					let result = await client.getReadAloudAudio(segment, voice.id);
-					// Skip caching when the server forbids it (e.g., error responses
-					// returned with Cache-Control: no-store)
-					if (result.audio && cache && !result.noStore) {
-						try {
-							// Put word-level timestamps in a header so they
-							// get cached with the audio response
-							let headers = {};
-							if (result.timestamps) {
-								headers['X-Zotero-Timestamps'] = JSON.stringify(result.timestamps);
-							}
-							await cache.put(cacheURL, new Response(result.audio, { headers }));
-						}
-						catch (e) {
-							Zotero.logError(e);
-						}
-					}
-					resolve(Cu.cloneInto(result, targetWindow));
-				});
-			},
-
-			getCreditsRemaining: () => {
-				return new targetWindow.Promise(async (resolve) => {
-					let apiKey = await Zotero.Sync.Data.Local.getAPIKey();
-					let client = Zotero.Sync.Runner.getAPIClient({ apiKey });
-					resolve(Cu.cloneInto(await client.getReadAloudCreditsRemaining(), targetWindow));
-				});
-			},
-
-			resetCredits: () => {
-				return new targetWindow.Promise(async (resolve) => {
-					let apiKey = await Zotero.Sync.Data.Local.getAPIKey();
-					let client = Zotero.Sync.Runner.getAPIClient({ apiKey });
-					resolve(Cu.cloneInto(await client.resetReadAloudCredits(), targetWindow));
-				});
-			},
-		};
-	}
-
-	// Build the local cache key for a Read Aloud audio segment. The voice's
-	// cacheVersion is included so that a server-side version bump changes the
-	// key, causing old entries to miss and the correct audio to be re-fetched.
-	_getReadAloudCacheURL(segment, voice) {
-		let params = { voice: voice.id, text: segment.text, cacheVersion: voice.cacheVersion, timestamps: 1 };
-		return 'https://read-aloud.zotero.invalid/audio?' + new URLSearchParams(params);
-	}
-
-	// Delete cached audio whose cacheVersion is no longer offered by the server,
-	// reclaiming space that key mismatches alone would leave behind. Runs once
-	// per session.
-	async _pruneReadAloudCache(audioCache, voices) {
-		readAloudCachePruned = true;
-		try {
-			let validVersions = new Set();
-			for (let configs of Object.values(voices)) {
-				if (!Array.isArray(configs)) continue;
-				for (let config of configs) {
-					validVersions.add(String(config.cacheVersion));
-				}
-			}
-			if (!validVersions.size) {
-				return;
-			}
-			let cache = await audioCache;
-			for (let request of await cache.keys()) {
-				let params = new URL(request.url).searchParams;
-				// Drop entries stored in the pre-timestamp format, plus those
-				// whose cacheVersion is no longer offered by the server
-				if (params.get('timestamps') !== '1' || !validVersions.has(params.get('cacheVersion'))) {
-					await cache.delete(request);
-				}
-			}
-		}
-		catch (e) {
-			Zotero.logError(e);
-		}
-	}
-
-	async _showReadAloudGuidance() {
-		await this._internalReader._primaryView.initializedPromise;
-
-		// Anchor to the toolbar button in the iframe
-		let readAloudButton = this._iframeWindow.document.getElementById('read-aloud');
-		if (!readAloudButton) return;
-
-		let guidancePanel = this._window.document.createXULElement('guidance-panel');
-		guidancePanel.setAttribute('about', 'readAloud');
-		guidancePanel.setAttribute('position', 'after_end');
-		guidancePanel.setAttribute('noautohide', 'true');
-		this._popupset.append(guidancePanel);
-		this._readAloudGuidancePanel = guidancePanel;
-		await guidancePanel.show({ forEl: readAloudButton });
-	}
-
-	_hideReadAloudGuidance() {
-		if (this._readAloudGuidancePanel) {
-			this._readAloudGuidancePanel.hide();
-			this._readAloudGuidancePanel = null;
-		}
-	}
-
-	async _openReadAloudFirstRunDialog({ lang, ftl }) {
-		this._hideReadAloudGuidance();
-		let io = {
-			dataIn: {
-				lang,
-				readAloudEnabledVoices: await this._getReadAloudEnabledVoices(),
-				ftl,
-				getReadAloudRemoteInterface: win => this._getReadAloudRemoteInterface(win),
-			},
-			dataOut: null,
-			openVoicesDialog: ({ tier }) => {
-				setTimeout(async () => {
-					await this._openReadAloudVoicesDialog({ lang, tier, ftl });
-					io.updateEnabledVoices?.(await this._getReadAloudEnabledVoices());
-				});
-			},
-		};
-		this._window.openDialog(
-			'chrome://zotero/content/readAloudFirstRunDialog.xhtml',
-			'',
-			'chrome,modal,centerscreen,resizable=no',
-			io,
-		);
-		if (io.dataOut) {
-			let { lang, region, voice, speed, tier } = io.dataOut;
-			this._setReadAloudVoice({ lang, region, voice, speed, tier });
-			this._internalReader.toggleReadAloudPopup(true);
-		}
-	}
-
-	async _openReadAloudVoicesDialog({ lang, tier, ftl }) {
-		let io = {
-			dataIn: {
-				lang,
-				tier,
-				readAloudEnabledVoices: await this._getReadAloudEnabledVoices(),
-				ftl,
-				getReadAloudRemoteInterface: win => this._getReadAloudRemoteInterface(win),
-			},
-			dataOut: null,
-		};
-		this._window.openDialog(
-			'chrome://zotero/content/readAloudVoicesDialog.xhtml',
-			'',
-			'chrome,modal,centerscreen,resizable=no',
-			io,
-		);
-		if (io.dataOut) {
-			await this._setReadAloudEnabledVoices(io.dataOut);
-		}
-	}
 }
 
 class ReaderTab extends ReaderInstance {
@@ -1920,8 +1428,6 @@ class ReaderTab extends ReaderInstance {
 		this._contextPaneOpen = options.contextPaneOpen;
 		this._bottomPlaceholderHeight = options.bottomPlaceholderHeight;
 		this._showContextPaneToggle = true;
-		this._readAloudPlaying = false;
-		this._pointerDownWindow = null;
 		this._window = Services.wm.getMostRecentWindow('navigator:browser');
 		let existingTabID = options.tabID;
 		let select = !options.background;
@@ -1929,12 +1435,6 @@ class ReaderTab extends ReaderInstance {
 		// Otherwise, create a new tab
 		if (existingTabID) {
 			this.tabID = existingTabID;
-			let { tab } = this._window.Zotero_Tabs._getTab(existingTabID);
-			let onClose = tab.onClose;
-			tab.onClose = () => {
-				onClose?.call(tab);
-				this._handleTabClose();
-			};
 			this._tabContainer = this._window.document.getElementById(existingTabID);
 		}
 		else {
@@ -1946,7 +1446,6 @@ class ReaderTab extends ReaderInstance {
 				data: {
 					itemID: this._item.id
 				},
-				onClose: this._handleTabClose,
 				select,
 				preventJumpback: options.preventJumpback
 			});
@@ -1962,10 +1461,6 @@ class ReaderTab extends ReaderInstance {
 		this._iframe.setAttribute('src', 'resource://zotero/reader/reader.html');
 		this._tabContainer.appendChild(this._iframe);
 		this._iframe.docShell.windowDraggingAllowed = true;
-		// Derive the initial docShell activity here, because tabs opened in
-		// the background, unlike deselected tabs, don't go through a tab
-		// 'select' notification
-		this._updateDocShellActivity();
 		
 		this._popupset = this._window.document.createXULElement('popupset');
 		this._tabContainer.appendChild(this._popupset);
@@ -2016,24 +1511,6 @@ class ReaderTab extends ReaderInstance {
 			}
 		});
 	}
-
-	_handleTabClose = () => {
-		this._isTabClosed = true;
-		if (this._blockingObserver) {
-			this._blockingObserver.dispose();
-			this._blockingObserver = null;
-		}
-	};
-
-	uninit() {
-		if (this._window) {
-			this._window.removeEventListener('DOMContentLoaded', this._handleLoad);
-			this._window.removeEventListener('pointerdown', this._handlePointerDown);
-			this._window.removeEventListener('pointerup', this._handlePointerUp);
-		}
-		this._pointerDownWindow = null;
-		super.uninit();
-	}
 	
 	close() {
 		this._window.removeEventListener('DOMContentLoaded', this._handleLoad);
@@ -2049,7 +1526,6 @@ class ReaderTab extends ReaderInstance {
 			this._window.removeEventListener('DOMContentLoaded', this._handleLoad);
 			this._iframeWindow = this._iframe.contentWindow;
 			this._iframeWindow.addEventListener('error', event => Zotero.logError(event.error));
-			this._wrapConsole();
 			this._iframe.addEventListener('contextmenu', this._handleReaderTextboxContextMenuOpen);
 		}
 	};
@@ -2117,47 +1593,6 @@ class ReaderTab extends ReaderInstance {
 		}
 	}
 
-	// Keep the docShell active only while the tab has to stay responsive:
-	// when it's selected or playing Read Aloud. An inactive docShell throttles
-	// rAF and timers, and lets the reader see document.visibilityState
-	// 'hidden' and release rendered pages
-	_updateDocShellActivity() {
-		this._iframe.docShellIsActive = this._window.Zotero_Tabs.selectedID == this.tabID
-			|| this._readAloudPlaying;
-	}
-
-	_setReadAloudStatus(status) {
-		this._readAloudPlaying = status.active && !status.paused;
-		// Wake up the docShell even if this tab is in the background,
-		// so event-loop tasks run immediately. Without this, playing
-		// sometimes doesn't take effect immediately.
-		this._updateDocShellActivity();
-		if (status.active) {
-			this._hideReadAloudGuidance();
-		}
-		this._window.Zotero_Tabs.setAudioStatus(this.tabID, status);
-		if (this._readAloudPlaying) {
-			// If this tab was unpaused, pause all others
-			for (let reader of Zotero.Reader._readers) {
-				if (reader === this) continue;
-				try {
-					reader.toggleReadAloudPaused(true);
-				}
-				catch (e) {
-					// Failed to pause the other reader.
-					// This seems to be caused by the _internalReader being a
-					// dead object. Not clear why, but we can log and continue;
-					// if the other reader is dead, it's not playing audio.
-					Zotero.logError(e);
-				}
-			}
-		}
-	}
-	
-	toggleReadAloudPaused(paused = undefined) {
-		this._internalReader.toggleReadAloudPaused(paused);
-	}
-
 	_updateLayout() {
 		let { sidebarState } = this._window.Zotero_Tabs.updateSidebarLayout();
 		this.toggleSidebar(sidebarState.open);
@@ -2198,8 +1633,7 @@ class ReaderWindow extends ReaderInstance {
 			if (this._iframe.contentWindow && this._iframe.contentWindow.document === event.target) {
 				this._iframeWindow = this._window.document.getElementById('reader').contentWindow;
 				this._iframeWindow.addEventListener('error', event => Zotero.logError(event.error));
-				this._wrapConsole();
-					this._iframe.addEventListener('contextmenu', this._handleReaderTextboxContextMenuOpen);
+				this._iframe.addEventListener('contextmenu', this._handleReaderTextboxContextMenuOpen);
 			}
 
 			this._switchReaderSubtype(this._type);
@@ -2454,7 +1888,6 @@ class ReaderPreview extends ReaderInstance {
 		this._iframe = options.iframe;
 		this._iframeWindow = this._iframe.contentWindow;
 		this._iframeWindow.addEventListener('error', event => Zotero.logError(event.error));
-		this._wrapConsole();
 	}
 
 	async _open({ state, location, secondViewState }) {
@@ -2545,10 +1978,6 @@ class ReaderPreview extends ReaderInstance {
 		}
 	}
 
-	_isTransient() {
-		return true;
-	}
-
 	_isReadOnly() {
 		return true;
 	}
@@ -2569,6 +1998,8 @@ class ReaderPreview extends ReaderInstance {
 		}
 		return super._getState();
 	}
+
+	async _setState() {}
 
 	updateTitle() {}
 
@@ -2644,7 +2075,7 @@ class Reader {
 		this._sidebarOpen = false;
 		this._bottomPlaceholderHeight = 0;
 		this._readers = [];
-		this._notifierID = Zotero.Notifier.registerObserver(this, ['item', 'setting', 'tab', 'api-key'], 'reader');
+		this._notifierID = Zotero.Notifier.registerObserver(this, ['item', 'setting', 'tab'], 'reader');
 		this._registeredListeners = [];
 		this.onChangeSidebarWidth = null;
 		this.onToggleSidebar = null;
@@ -2744,7 +2175,7 @@ class Reader {
 	 * @returns {void}
 	 */
 	unregisterEventListener(type, handler) {
-		this._registeredListeners = this._registeredListeners.filter(x => !(x.type === type && x.handler === handler));
+		this._registeredListeners = this._registeredListeners.filter(x => x.type === type && x.handler === handler);
 	}
 
 	_unregisterEventListenerByPluginID(pluginID) {
@@ -2787,12 +2218,13 @@ class Reader {
 			else if (event === 'select') {
 				for (let reader of this._readers) {
 					if (reader instanceof ReaderTab) {
-						reader._updateDocShellActivity();
+						reader._iframe.docShellIsActive = false;
 					}
 				}
 
 				let reader = Zotero.Reader.getByTabID(ids[0]);
 				if (reader) {
+					reader._iframe.docShellIsActive = true;
 					this.triggerAnnotationsImportCheck(reader.itemID);
 				}
 			}
@@ -2852,11 +2284,6 @@ class Reader {
 				});
 			}
 		}
-		else if (type === 'api-key') {
-			for (let reader of this._readers) {
-				reader._internalReader.setLoggedIn(Zotero.Sync.Runner.enabled);
-			}
-		}
 	}
 	
 	getByTabID(tabID) {
@@ -2897,9 +2324,7 @@ class Reader {
 		let reader;
 		// If duplicating is not allowed, and no reader instance is loaded for itemID,
 		// try to find an unloaded tab and select it. Zotero.Reader.open will then be called again
-		if (!allowDuplicate && !this._readers.find(
-			r => r.itemID === itemID && (openInWindow || !r._isTabClosed)
-		)) {
+		if (!allowDuplicate && !this._readers.find(r => r.itemID === itemID)) {
 			if (win) {
 				let existingTabID = win.Zotero_Tabs.getTabIDByItemID(itemID);
 				if (existingTabID) {
@@ -2913,7 +2338,7 @@ class Reader {
 			reader = this._readers.find(r => r.itemID === itemID && (r instanceof ReaderWindow));
 		}
 		else if (!allowDuplicate) {
-			reader = this._readers.find(r => r.itemID === itemID && !r._isTabClosed);
+			reader = this._readers.find(r => r.itemID === itemID);
 		}
 
 		if (reader) {

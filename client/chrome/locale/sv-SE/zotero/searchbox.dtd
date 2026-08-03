@@ -1,5 +1,7 @@
 <!ENTITY zotero.search.name "Namn:">
 
+<!ENTITY zotero.search.searchInLibrary "Sök i bibliotek:">
+
 <!ENTITY zotero.search.joinMode.prefix "Hitta">
 <!ENTITY zotero.search.joinMode.any "vilken som helst">
 <!ENTITY zotero.search.joinMode.all "alla">
@@ -17,3 +19,7 @@
 <!ENTITY zotero.search.date.units.days "dagar">
 <!ENTITY zotero.search.date.units.months "månader">
 <!ENTITY zotero.search.date.units.years "år">
+
+<!ENTITY zotero.search.search "Sök">
+<!ENTITY zotero.search.clear "Rensa">
+<!ENTITY zotero.search.saveSearch "Spara sökning">

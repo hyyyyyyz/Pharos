@@ -35,7 +35,7 @@
 <!ENTITY zotero.preferences.groups.whenCopyingInclude "Al copiar elementos entre bibliotecas, incluir:">
 <!ENTITY zotero.preferences.groups.childNotes "Notas subordinadas">
 <!ENTITY zotero.preferences.groups.childFiles "Instantáneas subordinadas y archivos importados">
-<!ENTITY zotero.preferences.groups.annotations "Anotaciones">
+<!ENTITY zotero.preferences.groups.annotations "anotaciones">
 <!ENTITY zotero.preferences.groups.childLinks "Enlaces subordinados">
 <!ENTITY zotero.preferences.groups.tags "Etiquetas">
 
@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sincronizar">
 <!ENTITY zotero.preferences.sync.username "Nombre de usuario:">
 <!ENTITY zotero.preferences.sync.password "Contraseña:">
+<!ENTITY zotero.preferences.sync.syncServer "Sincronizando datos">
+<!ENTITY zotero.preferences.sync.setUpSync "Configurar sincronización">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Desvincular cuenta...">
 <!ENTITY zotero.preferences.sync.createAccount "Crear cuenta">
 <!ENTITY zotero.preferences.sync.lostPassword "¿Contraseña perdida?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Sincronizar automáticamente">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Sincronización de archivos">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Sincronizar los archivos adjuntos en Mi biblioteca usando">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Sincronizar archivos adjuntos en bibliotecas de grupo usando el almacenamiento de Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Descargar archivos">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "en el momento de sincronizar">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "según sea necesario">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verificar servidor">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Al utilizar el almacenamiento de Zotero, acepta estar obligado por sus">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "términos y condiciones">
 <!ENTITY zotero.preferences.sync.librariesToSync "Bibliotecas a sincronizar">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Escoger bibliotecas...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Sincronizar">
@@ -161,7 +166,7 @@
 
 <!ENTITY zotero.preferences.advanced.advancedConfiguration "Configuración avanzada">
 
-<!ENTITY zotero.preferences.prefpane.locate "Buscar">
+<!ENTITY zotero.preferences.prefpane.locate "Localizar">
 <!ENTITY zotero.preferences.locate.locateEngineManager "Gestor de motores de búsqueda de artículos">
 <!ENTITY zotero.preferences.locate.description "Descripción">
 <!ENTITY zotero.preferences.locate.name "Nombre">

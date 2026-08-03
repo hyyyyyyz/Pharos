@@ -25,10 +25,6 @@
 
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
 	let { countWords } = ChromeUtils.importESModule("resource://zotero/allfaz.mjs").default;
 
 	class NoteBox extends ItemPaneSectionElementBase {

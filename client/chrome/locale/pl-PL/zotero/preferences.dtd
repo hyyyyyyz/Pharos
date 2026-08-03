@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Synchronizacja">
 <!ENTITY zotero.preferences.sync.username "Użytkownik:">
 <!ENTITY zotero.preferences.sync.password "Hasło:">
+<!ENTITY zotero.preferences.sync.syncServer "Synchronizacja danych">
+<!ENTITY zotero.preferences.sync.setUpSync "Ustaw synchronizację">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Odłącz konto...">
 <!ENTITY zotero.preferences.sync.createAccount "Utwórz konto">
 <!ENTITY zotero.preferences.sync.lostPassword "Zapomniane hasło?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Synchronizacja automatyczna">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Synchronizacja plików">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Synchronizuj załączniki w Mojej bibliotece za pomocą">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synchronizuj załączniki w bibliotekach grupowych za pomocą usługi przechowywania Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Pobierz pliki">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "podczas synchronizacji">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "w razie potrzeby">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Zweryfikuj serwer">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Używając usługi przechowywania w Zotero, zgadzasz się na jej">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "warunki i postanowienia">
 <!ENTITY zotero.preferences.sync.librariesToSync "Biblioteki do synchronizacji">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Wybierz biblioteki...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synchronizacja">

@@ -28,8 +28,7 @@ describe("Connector HTTP Integration Server", function () {
 					`${serverURL}/execCommand`,
 					{
 						headers: {
-							"Content-Type": "application/json",
-							"X-Zotero-Connector-API-Version": "2"
+							"Content-Type": "application/json"
 						},
 						body: JSON.stringify({
 							command: "addEditCitation",
@@ -61,8 +60,7 @@ describe("Connector HTTP Integration Server", function () {
 					`${serverURL}/respond`,
 					{
 						headers: {
-							"Content-Type": "application/json",
-							"X-Zotero-Connector-API-Version": "2"
+							"Content-Type": "application/json"
 						},
 						body: JSON.stringify(postBody),
 					},

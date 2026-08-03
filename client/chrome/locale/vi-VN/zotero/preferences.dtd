@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Đồng bộ">
 <!ENTITY zotero.preferences.sync.username "Tên người dùng:">
 <!ENTITY zotero.preferences.sync.password "Mật khẩu:">
+<!ENTITY zotero.preferences.sync.syncServer "Đồng bộ dữ liệu">
+<!ENTITY zotero.preferences.sync.setUpSync "Thiết lập đồng bộ">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Ngắt liên kết với tài khoản...">
 <!ENTITY zotero.preferences.sync.createAccount "Tạo tài khoản">
 <!ENTITY zotero.preferences.sync.lostPassword "Quên mật khẩu?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Tự động đồng bộ">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Đồng bộ tập tin">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Đồng bộ các tập tin đính kèm trong Thư viện của tôi bằng">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Đồng bộ các tập tin đính kèm trong thư viện nhóm bằng vùng lưu trữ của Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Tải các tập tin xuống">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "vào lúc đồng bộ">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "khi cần thiết">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Kiểm tra máy chủ">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Bằng cách dùng vùng lưu trữ của Zotero, bạn chấp nhận ràng buộc bởi">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "các điều khoản và điều kiện">
 <!ENTITY zotero.preferences.sync.librariesToSync "Đồng bộ các thư viện">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Chọn các thư viện">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Đồng bộ">

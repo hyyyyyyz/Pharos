@@ -73,7 +73,9 @@ Zotero.SyncedSettings = (function () {
 		loadAll: async function (libraryID) {
 			Zotero.debug("Loading synced settings for library " + libraryID);
 			
-			_cache[libraryID] = {};
+			if (!_cache[libraryID]) {
+				_cache[libraryID] = {};
+			}
 			
 			var invalid = [];
 			
@@ -297,10 +299,6 @@ Zotero.SyncedSettings = (function () {
 			
 			var currentValue = this.get(libraryID, setting);
 			var hasCurrentValue = currentValue !== null;
-			
-			if (!hasCurrentValue) {
-				return false;
-			}
 			
 			var id = libraryID + '/' + setting;
 			

@@ -31,7 +31,6 @@
 			<html:div class="head">
 				<image class="icon"/>
 				<html:div class="title"/>
-				<html:div class="action"/>
 			</html:div>
 			<html:div class="body"/>
 			<html:div class="tags"/>
@@ -40,16 +39,13 @@
 		_annotation = null;
 
 		static get observedAttributes() {
-			return ['annotation-id', 'action'];
+			return ['annotation-id'];
 		}
 
 		attributeChangedCallback(name, oldValue, newValue) {
 			switch (name) {
 				case 'annotation-id':
 					this._annotation = Zotero.Items.get(newValue);
-					break;
-				case 'action':
-					this.action = newValue;
 					break;
 			}
 			this.render();
@@ -64,21 +60,6 @@
 			this.setAttribute('annotation-id', annotation.id);
 		}
 
-		get action() {
-			return this._action;
-		}
-
-		set action(val) {
-			if (!val) {
-				this._action = null;
-				return;
-			}
-			if (val !== "plus") {
-				throw new Error("Invalid button value: " + val);
-			}
-			this._action = val;
-		}
-
 		init() {
 			this._head = this.querySelector('.head');
 			this._title = this.querySelector('.title');
@@ -88,7 +69,7 @@
 		}
 
 		render() {
-			if (!this.initialized || !this._annotation) return;
+			if (!this.initialized) return;
 
 			this._title.textContent = Zotero.getString('pdfReader.page') + ' '
 				+ (this._annotation.annotationPageLabel || '-');
@@ -98,14 +79,6 @@
 				type = 'area';
 			}
 			this.querySelector('.icon').src = 'chrome://zotero/skin/16/universal/annotate-' + type + '.svg';
-			this.querySelector('.action').replaceChildren();
-			if (this.action) {
-				let icon = document.createXULElement('toolbarbutton');
-				icon.classList.add('zotero-clicky');
-				icon.classList.add('zotero-clicky-' + this.action);
-				icon.setAttribute('action', this.action);
-				this.querySelector('.action').append(icon);
-			}
 			this._body.replaceChildren();
 			
 			if (['image', 'ink'].includes(this._annotation.annotationType)) {
@@ -153,7 +126,7 @@
 			this.style.setProperty('--annotation-color', this._annotation.annotationColor);
 			// A11y - make focusable + add screen reader's labels
 			this.setAttribute("tabindex", 0);
-			let annotationTypeStr = Zotero.getString(`reader-${this.annotation.annotationType}-annotation`);
+			let annotationTypeStr = Zotero.getString(`pdfReader.${this.annotation.annotationType}Annotation`);
 			let a11yLabel = this._annotation.annotationText ? `${Zotero.getString('pdfReader.annotationText')}: ${this._annotation.annotationText}.` : annotationTypeStr;
 			let ariaComment = this._annotation.annotationComment ? `${Zotero.getString('pdfReader.annotationComment')}: ${this._annotation.annotationComment}.` : '';
 			let ariaTags = tags.length ? `${Zotero.getString('itemFields.tags')}: ${tags.map(tag => tag.tag).join(', ')}.` : '';

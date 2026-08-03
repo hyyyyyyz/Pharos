@@ -4,12 +4,11 @@
 		"jsx": "react",
 		"allowJs": true,
 		"strict": true,
-		"target": "ES2023",
+		"target": "ES2022",
 		"moduleResolution": "bundler",
 		"module": "esnext",
 		"allowSyntheticDefaultImports": true,
-		"noImplicitOverride": true,
-		"skipLibCheck": true
+		"noImplicitOverride": true
 	},
 	"include": [
 		"./src",

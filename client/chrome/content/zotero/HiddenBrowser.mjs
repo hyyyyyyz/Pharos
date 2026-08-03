@@ -37,10 +37,6 @@ ChromeUtils.defineESModuleGetters(globalThis, {
 
 const progressListeners = new Set();
 
-// From nsSandboxFlags.h
-const SANDBOXED_ORIGIN = 0x10;
-const SANDBOXED_SCRIPTS = 0x80;
-
 /**
  * Functions for creating and destroying hidden browser objects
  **/
@@ -52,13 +48,10 @@ export class HiddenBrowser {
 	 * @param {Boolean} [options.blockRemoteResources] Block all remote (non-file:) resources
 	 * @param {Boolean} [options.useHiddenFrame=true] Use a hidden frame to create the browser.
 	 * 		Must be set to false if intending to call print().
-	 * @param {Number} [options.userContextId] - From Zotero.HTTP.newCookieContext() for cookie isolation
-	 * @param {String} [options.customUserAgent] - Override User-Agent for all requests
-	 *     from this browser's browsing context
+	 * @param {Zotero.CookieSandbox} [options.cookieSandbox]
 	 */
 	constructor(options = {}) {
 		this._destroyed = false;
-		this._allowJavaScript = options.allowJavaScript !== false;
 		this._createdPromise = (async () => {
 			let doc;
 			if (options.useHiddenFrame !== false) {
@@ -66,6 +59,7 @@ export class HiddenBrowser {
 				this._frame = frame;
 
 				var windowlessBrowser = await frame.get();
+				windowlessBrowser.browsingContext.allowJavascript = options.allowJavaScript !== false;
 				windowlessBrowser.docShell.allowImages = false;
 				if (options.docShell) {
 					Object.assign(windowlessBrowser.docShell, options.docShell);
@@ -86,12 +80,13 @@ export class HiddenBrowser {
 			browser.setAttribute("remote", "true");
 			browser.setAttribute('maychangeremoteness', 'true');
 			browser.setAttribute("disableglobalhistory", "true");
-			if (options.userContextId) {
-				browser.setAttribute("usercontextid", String(options.userContextId));
-			}
 			browser.style.display = "none";
 			doc.documentElement.appendChild(browser);
-
+			
+			if (options.cookieSandbox) {
+				options.cookieSandbox.attachToBrowser(browser);
+			}
+			
 			if (options.blockRemoteResources) {
 				this._blockingObserver = new BlockingObserver({
 					shouldBlock(uri) {
@@ -101,17 +96,6 @@ export class HiddenBrowser {
 				this._blockingObserver.register(browser);
 			}
 			
-			if (options.customUserAgent) {
-				browser.browsingContext.customUserAgent = options.customUserAgent;
-			}
-
-			if (!this._allowJavaScript) {
-				// A system-principal document (e.g., a blob: URL created by chrome code) can run
-				// scripts even when scripting is otherwise disabled, so sandbox it with a null
-				// principal and no scripts.
-				browser.browsingContext.sandboxFlags |= SANDBOXED_ORIGIN | SANDBOXED_SCRIPTS;
-			}
-
 			this._browser = browser;
 		})();
 
@@ -266,22 +250,12 @@ export class HiddenBrowser {
 	
 	/**
 	 * @param {String[]} props - 'characterSet', 'title', 'bodyText', 'documentHTML', 'cookie', 'channelInfo'
-	 * @param {Object} [options]
-	 * @param {Number} [options.timeout=30000] - Time to wait for each property in milliseconds.
-	 *     The queries wait for the document to be ready, so a page that never finishes loading
-	 *     would otherwise hang the query forever.
 	 */
-	async getPageData(props, { timeout = 30000 } = {}) {
+	async getPageData(props) {
 		var actor = this.browsingContext.currentWindowGlobal.getActor("PageData");
 		var data = {};
 		for (let prop of props) {
-			let timeoutPromise = new Promise((_, reject) => {
-				setTimeout(
-					() => reject(new Error(`Timed out getting '${prop}' from hidden browser`)),
-					timeout
-				);
-			});
-			data[prop] = await Promise.race([actor.sendQuery(prop), timeoutPromise]);
+			data[prop] = await actor.sendQuery(prop);
 		}
 		return data;
 	}

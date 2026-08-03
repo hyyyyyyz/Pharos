@@ -3,7 +3,6 @@ import { p2v, v2p } from './lib/coordinates';
 import {
 	getLineSelectionRanges,
 	getModifiedSelectionRanges,
-	getNodeOffset,
 	getRectRotationOnText,
 	getReversedSelectionRanges,
 	getSelectionRanges,
@@ -11,95 +10,82 @@ import {
 	getSortIndex,
 	getTextFromSelectionRanges,
 	getWordSelectionRanges,
-	setTextLayerSelection
+	setTextLayerSelection,
+	getNodeOffset
 } from './selection';
 import {
-	adjustRectHeightByRatio,
 	applyInverseTransform,
-	applyTransform,
-	calculateScale,
-	distanceBetweenRects,
-	fitRectIntoRect,
-	getAxialAlignedBoundingBox,
-	getBoundingBox,
-	getClosestObject,
-	getOutlinePath,
+	applyTransform, adjustRectHeightByRatio,
 	getPageIndexesFromAnnotations,
 	getPositionBoundingRect,
-	getRectsAreaSize,
-	getRotationDegrees,
+	intersectAnnotationWithPoint,
+	quickIntersectRect,
+	transform,
+	getBoundingBox,
+	inverseTransform,
+	scaleShape,
 	getRotationTransform,
 	getScaleTransform,
+	calculateScale,
+	getAxialAlignedBoundingBox,
+	distanceBetweenRects,
 	getTransformFromRects,
-	intersectAnnotationWithPoint,
-	inverseTransform,
+	getRotationDegrees,
 	normalizeDegrees,
-	quickIntersectRect,
-	scaleShape,
-	transform
+	getRectsAreaSize,
+	getClosestObject,
+	getOutlinePath,
 } from './lib/utilities';
 import {
 	debounceUntilScrollFinishes,
-	getAffectedAnnotations,
 	getCodeCombination,
 	getKeyCombination,
-	getModeBasedOnColors,
-	isFirefox,
-	isLinux,
+	getAffectedAnnotations,
 	isMac,
-	isSafari,
+	isLinux,
 	isWin,
-	placeA11yVirtualCursor,
-	throttle
+	isFirefox,
+	isSafari,
+	throttle,
+	getModeBasedOnColors,
+	placeA11yVirtualCursor
 } from '../common/lib/utilities';
 import { debounce } from '../common/lib/debounce';
 import { AutoScroll } from './lib/auto-scroll';
 import { PDFThumbnails } from './pdf-thumbnails';
 import {
-	A11Y_VIRT_CURSOR_DEBOUNCE_LENGTH,
 	MIN_IMAGE_ANNOTATION_SIZE,
 	MIN_TEXT_ANNOTATION_WIDTH,
 	PDF_NOTE_DIMENSIONS,
-	PDF_READING_MODE_CROP_DISPLAY_SCALE
+	A11Y_VIRT_CURSOR_DEBOUNCE_LENGTH
 } from '../common/defines';
-import { ReadAloudJumpButton } from '../common/read-aloud/jump-button';
 import PDFRenderer from './pdf-renderer';
 import { drawAnnotationsOnCanvas } from './lib/render';
 import PopupDelayer from '../common/lib/popup-delayer';
 import { adjustTextAnnotationPosition } from './lib/text-annotation';
-import { applyTransformationMatrixToInkPosition, eraseInk, smoothPath } from './lib/path';
+import {
+	applyTransformationMatrixToInkPosition,
+	eraseInk,
+	smoothPath
+} from './lib/path';
 import { History } from '../common/lib/history';
 import { FindState, PDFFindController } from './pdf-find-controller';
-import { getPageBlockSpan } from '../../structured-document-text/src/pages';
-import { getBlockNodeByRef } from '../common/sdt/position-mapper';
-
-// How many recently used off-screen pages to keep rendered, in addition to the
-// visible pages and their immediate neighbors. pdf.js's own buffer keeps 10
-// rendered pages (~50 MB each on a Retina display at fit-width), sized for
-// 2012-era 1x displays; re-rendering a trimmed page takes ~30-70 ms, the same
-// cost as scrolling to any unbuffered page
-const PAGE_BUFFER_KEEP_RECENT = 2;
-const CSS_UNITS = 96 / 72;
 
 class PDFView {
 	constructor(options) {
 		this._options = options;
 		this._primary = options.primary;
-		this._mobile = options.mobile;
 		this._readOnly = options.readOnly;
 		this._preview = options.preview;
 		this._container = options.container;
 		this._password = options.password;
-		this._passwordUpdateCallback = null;
 		this._tools = options.tools;
 		this._outline = options.outline;
 		this._lightTheme = options.lightTheme;
 		this._darkTheme = options.darkTheme;
 		this._preferedColorTheme = options.colorScheme;
 		this._onRequestPassword = options.onRequestPassword;
-		this._onInitThumbnails = options.onInitThumbnails;
 		this._onSetThumbnails = options.onSetThumbnails;
-		this._onRenderThumbnail = options.onRenderThumbnail;
 		this._onSetOutline = options.onSetOutline;
 		this._onSetPageLabels = options.onSetPageLabels;
 		this._onChangeViewState = options.onChangeViewState;
@@ -119,7 +105,6 @@ class PDFView {
 		this._onKeyUp = options.onKeyUp;
 		this._onKeyDown = options.onKeyDown;
 		this._onFocusAnnotation = options.onFocusAnnotation;
-		this._onBackdropTap = options.onBackdropTap;
 
 		this._onTabOut = options.onTabOut;
 
@@ -135,8 +120,6 @@ class PDFView {
 
 		this._pages = [];
 		this._pdfPages = {};
-		this._processedPageOverlays = {};
-		this._processedPageIsolatedCharIndexes = {};
 
 		this._focusedObject = null;
 		this._lastFocusedObject = null;
@@ -146,9 +129,6 @@ class PDFView {
 		this._findState = options.findState;
 
 		this._scrolling = false;
-		this._dragging = false;
-		this._readAloudPositionLocked = true;
-		this._readAloudScrolling = false;
 
 
 		// Create a MediaQueryList object
@@ -173,14 +153,8 @@ class PDFView {
 		this._overlayPopupDelayer = new PopupDelayer({ open: !!this._overlayPopup });
 
 		this._selectionRanges = [];
-		this._highlightedPosition = null;
-		this._readAloudHighlightedPosition = null;
-		this._readAloudSentenceHighlightedPosition = null;
-		this._pointerDownTap = null;
 
 		this._iframe = document.createElement('iframe');
-		this._iframe.style.width = '100%';
-		this._iframe.style.height = '100%';
 		this._iframe.addEventListener('load', () => this._iframe.classList.add('loaded'));
 		this._iframe.src = 'pdf/web/viewer.html';
 
@@ -202,7 +176,7 @@ class PDFView {
 			this._iframeWindow.PDFViewerApplicationOptions.set('textLayerMode', this._preview ? 0 : 1);
 			this._iframeWindow.PDFViewerApplicationOptions.set('sidebarViewOnLoad', 0);
 			this._iframeWindow.PDFViewerApplicationOptions.set('ignoreDestinationZoom', true);
-			this._iframeWindow.PDFViewerApplicationOptions.set('annotationMode', 1);
+			this._iframeWindow.PDFViewerApplicationOptions.set('renderInteractiveForms', false);
 			this._iframeWindow.PDFViewerApplicationOptions.set('printResolution', 300);
 			this._iframeWindow.PDFViewerApplicationOptions.set('enableScripting', false);
 			this._iframeWindow.PDFViewerApplicationOptions.set('disablePreferences', true);
@@ -220,10 +194,6 @@ class PDFView {
 			this._updateColorScheme();
 			// This is necessary to make sure this is called after webviewerloaded
 			setTimeout(() => {
-				let handlePasswordRequest = (updateCallback) => {
-					this._passwordUpdateCallback = updateCallback;
-					this._onRequestPassword();
-				};
 				// Delete existing local history data
 				// TODO: This can be removed in future
 				try {
@@ -238,7 +208,6 @@ class PDFView {
 				}
 				setOptions();
 				this._iframeWindow.onDestroyPage = this._handlePageDestroy.bind(this);
-				this._iframeWindow.PDFViewerApplication.onPassword = handlePasswordRequest;
 				if (this._preview) {
 					// Necessary for view stats update
 					this._iframeWindow.PDFViewerApplication.eventBus.on('pagerendered', this._handlePageRendered.bind(this));
@@ -253,9 +222,6 @@ class PDFView {
 				else {
 					this._iframeWindow.PDFViewerApplication.open({ url: options.data.url, password: this._password });
 				}
-				if (this._iframeWindow.PDFViewerApplication.pdfLoadingTask) {
-					this._iframeWindow.PDFViewerApplication.pdfLoadingTask.onPassword = handlePasswordRequest;
-				}
 				window.PDFViewerApplication = this._iframeWindow.PDFViewerApplication;
 				window.if = this._iframeWindow;
 
@@ -265,10 +231,6 @@ class PDFView {
 					this._scrollTimeout = setTimeout(() => {
 						this._scrolling = false;
 					}, 100);
-
-					if (this._readAloudState?.active && !this._readAloudScrolling) {
-						this._onManualNavigation();
-					}
 
 
 					let x = event.target.scrollLeft;
@@ -311,17 +273,6 @@ class PDFView {
 		this._options.container.append(this._iframe);
 	}
 
-	enterPassword(password) {
-		this._password = password;
-		if (this._passwordUpdateCallback) {
-			let updateCallback = this._passwordUpdateCallback;
-			this._passwordUpdateCallback = null;
-			updateCallback(password);
-			return true;
-		}
-		return false;
-	}
-
 	async _init() {
 		// this._iframeWindow.document.body.draggable = true;
 
@@ -336,7 +287,6 @@ class PDFView {
 		this._iframeWindow.addEventListener('touchend', this._handleTouchEnd.bind(this), { passive: false });
 		this._iframeWindow.addEventListener('pointermove', this._handlePointerMove.bind(this), { passive: true });
 		this._iframeWindow.addEventListener('pointerup', this._handlePointerUp.bind(this));
-		this._iframeWindow.addEventListener('pointercancel', this._handlePointerCancel.bind(this));
 		this._iframeWindow.addEventListener('dragstart', this._handleDragStart.bind(this), { capture: true });
 		this._iframeWindow.addEventListener('dragend', this._handleDragEnd.bind(this));
 		this._iframeWindow.addEventListener('dragover', this._handlePointerMove.bind(this), { passive: true });
@@ -345,25 +295,19 @@ class PDFView {
 		this._iframeWindow.addEventListener('copy', this._handleCopy.bind(this), true);
 		this._iframeWindow.addEventListener('input', this._handleInput.bind(this));
 
-		this._iframeWindow.document.body.addEventListener('pointerleave', this._handlePointerLeave.bind(this));
-
 		this._dragCanvas = this._iframeWindow.document.createElement('canvas');
 		this._dragCanvas.style.position = 'absolute';
 		this._dragCanvas.style.left = '-100%';
 		this._iframeWindow.document.body.append(this._dragCanvas);
 
-		this._readAloudJumpButton = new ReadAloudJumpButton(this._iframeWindow.document, {
-			container: this._iframeWindow.document.getElementById('viewerContainer'),
-			title: this._options.getLocalizedString?.('reader-read-aloud'),
-			onClick: () => this._handleReadAloudJumpButtonClick(),
-		});
-		this._readAloudJumpButtonParagraph = null;
-		this._readAloudJumpButtonMatch = null;
-		this._readAloudParagraphIndex = [];
 
 		this._autoScroll = new AutoScroll({
 			container: this._iframeWindow.document.getElementById('viewerContainer')
 		});
+
+		this._iframeWindow.PDFViewerApplication.onPassword = () => {
+			this._onRequestPassword();
+		};
 
 		await this._iframeWindow.PDFViewerApplication.initializedPromise;
 		this._iframeWindow.PDFViewerApplication.eventBus.on('documentinit', this._handleDocumentInit.bind(this));
@@ -464,10 +408,6 @@ class PDFView {
 
 		this._resolveInitializedPromise();
 
-		if (this._mobile && this._primary) {
-			this._initNativeOutline();
-		}
-
 		await this._initProcessedData();
 		this._findController.setDocument(this._iframeWindow.PDFViewerApplication.pdfDocument);
 	}
@@ -533,14 +473,10 @@ class PDFView {
 		this._pdfThumbnails = new PDFThumbnails({
 			pdfView: this,
 			window: this._iframeWindow,
-			onInit: (thumbnails) => {
-				(this._onInitThumbnails || this._onSetThumbnails)(thumbnails);
-			},
 			onUpdate: (thumbnails) => {
 				// TODO: When rendering thumbnails it's also a good chance to getPageData with extracted pageLabel
 				this._onSetThumbnails(thumbnails);
-			},
-			onRender: this._onRenderThumbnail && ((thumbnail) => this._onRenderThumbnail(thumbnail))
+			}
 		});
 	}
 
@@ -593,55 +529,17 @@ class PDFView {
 		this._updateViewStats();
 		let { pages } = await this._iframeWindow.PDFViewerApplication.pdfDocument.getProcessedData();
 		for (let key in pages) {
-			this._processedPageOverlays[key] = pages[key].overlays;
-			let isolatedCharIndexes = [];
-			for (let index = 0; index < pages[key].chars?.length; index++) {
-				if (pages[key].chars[index].isolated) {
-					isolatedCharIndexes.push(index);
-				}
-			}
-			if (isolatedCharIndexes.length) {
-				this._processedPageIsolatedCharIndexes[key] = isolatedCharIndexes;
-			}
-			else {
-				delete this._processedPageIsolatedCharIndexes[key];
-			}
-			if (this._pdfPages[key]) {
-				this._pdfPages[key] = this._mergeProcessedPageData(key, this._pdfPages[key]);
-			}
+			this._pdfPages[key] = pages[key];
 		}
 		this._render();
 		this._updateViewStats();
-	}
-
-	_mergeProcessedPageData(pageIndex, pageData) {
-		if (!pageData) {
-			return pageData;
-		}
-		let overlays = this._processedPageOverlays[pageIndex];
-		let isolatedCharIndexes = this._processedPageIsolatedCharIndexes[pageIndex];
-		if (!overlays && !isolatedCharIndexes) {
-			return pageData;
-		}
-		pageData = overlays ? { ...pageData, overlays } : { ...pageData };
-		if (isolatedCharIndexes && pageData.chars) {
-			let next = 0;
-			pageData.chars = pageData.chars.map((char, index) => {
-				if (index !== isolatedCharIndexes[next]) {
-					return char;
-				}
-				next++;
-				return { ...char, isolated: true };
-			});
-		}
-		return pageData;
 	}
 
 	async _ensureBasicPageData(pageIndex) {
 		if (!this._pdfPages[pageIndex]) {
 			let pageData = await this._iframeWindow.PDFViewerApplication.pdfDocument.getPageData({ pageIndex });
 			if (!this._pdfPages[pageIndex]) {
-				this._pdfPages[pageIndex] = this._mergeProcessedPageData(pageIndex, pageData);
+				this._pdfPages[pageIndex] = pageData;
 			}
 		}
 	}
@@ -655,15 +553,6 @@ class PDFView {
 	}
 
 	async _handlePageRendered(event) {
-		if (this._suspended) {
-			// Suspended before the viewer had anything to release — release the
-			// just-rendered pages and block the queue now
-			this._applySuspended();
-		}
-		else {
-			// The buffer just grew — trim it back to the pages worth keeping
-			this._trimPageBuffer(PAGE_BUFFER_KEEP_RECENT);
-		}
 		let pageIndex = event.pageNumber - 1;
 		let originalPage = event.source;
 		let page = this._pages.find(x => x.pageIndex === pageIndex);
@@ -699,7 +588,7 @@ class PDFView {
 			if (!this._pdfPages[pageIndex]) {
 				let pageData = await this._iframeWindow.PDFViewerApplication.pdfDocument.getPageData({ pageIndex });
 				if (!this._pdfPages[pageIndex]) {
-					this._pdfPages[pageIndex] = this._mergeProcessedPageData(pageIndex, pageData);
+					this._pdfPages[pageIndex] = pageData;
 					this._render();
 				}
 			}
@@ -710,200 +599,6 @@ class PDFView {
 		let pageIndex = originalPage.id - 1;
 		this._pages = this._pages.filter(x => x.originalPage !== originalPage);
 		delete this._pdfPages[pageIndex];
-	}
-
-	/**
-	 * Get sortIndex and pageLabel for a given position.
-	 * Used by the SDT overlay to produce source-format annotation metadata.
-	 */
-	getAnnotationMeta(position) {
-		let pageIndex = position.pageIndex ?? 0;
-		return {
-			sortIndex: getSortIndex(this._pdfPages, position),
-			pageLabel: this._getPageLabel(pageIndex, true),
-		};
-	}
-
-	getSDTLocation(sdtData) {
-		let blockIndex = this.getVisibleBlockIndex(sdtData);
-		return blockIndex === null ? null : { href: '#sdt-' + blockIndex };
-	}
-
-	// Build a per-view crop provider. All crop geometry is registered
-	// synchronously before SDTView starts rendering, so crops on the same PDF
-	// page can share one lazy render promise.
-	createSDTBlockCropProvider(sdtData) {
-		let batches = new Map();
-		return blockRef => this._getSDTBlockCropGeometry(sdtData, blockRef).map((crop) => {
-			let batch = batches.get(crop.pageIndex);
-			if (!batch) {
-				batch = { rects: [], promise: null };
-				batches.set(crop.pageIndex, batch);
-			}
-			let index = batch.rects.push(crop.rect) - 1;
-			return {
-				displayWidth: crop.displayWidth,
-				displayHeight: crop.displayHeight,
-				render: () => {
-					batch.promise ??= this._pdfRenderer.renderRegionCrops(
-						crop.pageIndex,
-						batch.rects.slice()
-					);
-					return batch.promise.then(images => images[index]);
-				},
-			};
-		});
-	}
-
-	// Describe an SDT block's page crops without loading PDF pages.
-	_getSDTBlockCropGeometry(sdtData, blockRef) {
-		let block = getBlockNodeByRef(sdtData.content, blockRef);
-		let byPage = new Map();
-		for (let rect of block?.anchor?.pageRects ?? []) {
-			if (!Array.isArray(rect) || rect.length !== 5 || !rect.every(Number.isFinite)) {
-				return [];
-			}
-			let [pageIndex, x1, y1, x2, y2] = rect;
-			let region = byPage.get(pageIndex);
-			if (region) {
-				region[0] = Math.min(region[0], x1);
-				region[1] = Math.min(region[1], y1);
-				region[2] = Math.max(region[2], x2);
-				region[3] = Math.max(region[3], y2);
-			}
-			else {
-				byPage.set(pageIndex, [x1, y1, x2, y2]);
-			}
-		}
-
-		let crops = [];
-		for (let [pageIndex, sourceRect] of [...byPage].sort((a, b) => a[0] - b[0])) {
-			let page = sdtData.catalog.pages[pageIndex];
-			let viewRect = page?.viewRect;
-			if (!Array.isArray(viewRect)
-					|| viewRect.length !== 4
-					|| !viewRect.every(Number.isFinite)) {
-				return [];
-			}
-			let rect = fitRectIntoRect(sourceRect, viewRect);
-			let width = rect[2] - rect[0];
-			let height = rect[3] - rect[1];
-			let rotation = page.rotation ?? 0;
-			let userUnit = page.userUnit ?? 1;
-			if (!(width > 0) || !(height > 0)
-					|| ![0, 90, 180, 270].includes(rotation)
-					|| !Number.isFinite(userUnit) || !(userUnit > 0)) {
-				return [];
-			}
-			if (rotation === 90 || rotation === 270) {
-				[width, height] = [height, width];
-			}
-			let displayScale = CSS_UNITS * PDF_READING_MODE_CROP_DISPLAY_SCALE * userUnit;
-			crops.push({
-				pageIndex,
-				rect,
-				displayWidth: width * displayScale,
-				displayHeight: height * displayScale,
-			});
-		}
-		return crops;
-	}
-
-	// Top-level SDT block index for the first non-excluded block whose
-	// rect overlaps the current viewport, or null.
-	getVisibleBlockIndex(sdtData) {
-		let pdfViewer = this._iframeWindow?.PDFViewerApplication?.pdfViewer;
-		let viewerContainer = this._iframeWindow?.document?.getElementById('viewerContainer');
-		if (!pdfViewer || !viewerContainer || !sdtData?.content) {
-			return null;
-		}
-		let visibleRect = [
-			viewerContainer.scrollLeft,
-			viewerContainer.scrollTop,
-			viewerContainer.scrollLeft + viewerContainer.clientWidth,
-			viewerContainer.scrollTop + viewerContainer.clientHeight,
-		];
-
-		// Cover the page(s) visible in the viewport. Fall back to the current
-		// page when _getVisiblePages reports nothing (e.g., before first paint).
-		let visiblePages = pdfViewer._getVisiblePages().views;
-		let pageIndices = visiblePages.map(v => v.id - 1).sort((a, b) => a - b);
-		if (!pageIndices.length) {
-			let cur = pdfViewer.currentPageNumber - 1;
-			if (cur >= 0) pageIndices = [cur];
-			else return null;
-		}
-
-		for (let pageIdx of pageIndices) {
-			let span = getPageBlockSpan(sdtData, pageIdx);
-			if (!span) continue;
-			for (let i = span.startIndex; i < span.endIndexExclusive; i++) {
-				let block = sdtData.content[i];
-				if (!block || block.flowClass === 'excluded') continue;
-				if (this._blockIntersectsRect(block, visibleRect)) {
-					return i;
-				}
-			}
-		}
-		return null;
-	}
-
-	// Does any of `block`'s anchor rects, projected into viewer-container
-	// coords, overlap `viewRect` (also in viewer-container coords)? If the
-	// block has no spatial info, treat it as a match so blocks without anchor
-	// data can still anchor a starting point.
-	_blockIntersectsRect(block, viewRect) {
-		let pageRects = block.anchor?.pageRects;
-		if (!pageRects?.length) return true;
-		for (let pr of pageRects) {
-			let rect;
-			try {
-				rect = this.getPositionBoundingViewRect({
-					pageIndex: pr[0],
-					rects: [[pr[1], pr[2], pr[3], pr[4]]],
-				});
-			}
-			catch {
-				continue;
-			}
-
-			if (quickIntersectRect(rect, viewRect)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	// Current text selection as a PDFPosition, or null. Mirrors the position
-	// shape used by highlight annotations: the rects from the first selected
-	// page, plus nextPageRects when the selection spans onto the next page.
-	getSelectionPosition() {
-		if (!this._selectionRanges?.length || this._selectionRanges[0].collapsed) return null;
-		let ranges = this._selectionRanges
-			.slice()
-			.sort((a, b) => a.pageIndex - b.pageIndex)
-			.slice(0, 2);
-		let position = { ...ranges[0].position };
-		if (ranges.length === 2) {
-			position.nextPageRects = ranges[1].position.rects;
-		}
-		return position;
-	}
-
-	clearSelection() {
-		this._setSelectionRanges();
-		this._iframeWindow.getSelection()?.removeAllRanges();
-	}
-
-	navigateToSDTBlock(sdtData, blockIndex) {
-		let pagesCount = sdtData?.catalog?.pages?.length ?? 0;
-		for (let pageIdx = 0; pageIdx < pagesCount; pageIdx++) {
-			let span = getPageBlockSpan(sdtData, pageIdx);
-			if (span && blockIndex >= span.startIndex && blockIndex < span.endIndexExclusive) {
-				this.navigate({ pageIndex: pageIdx }, { skipHistory: true, behavior: 'instant' });
-				return;
-			}
-		}
 	}
 
 	_getPageLabel(pageIndex, usePrevAnnotation) {
@@ -938,13 +633,12 @@ class PDFView {
 		this._render();
 	}
 
-	_getVisibleObjects(objects) {
+	_focusNext(side) {
 		let visiblePages = this._iframeWindow.PDFViewerApplication.pdfViewer._getVisiblePages();
 		let visibleObjects = [];
 
 		let scrollY = this._iframeWindow.PDFViewerApplication.pdfViewer.scroll.lastY;
 		let scrollX = this._iframeWindow.PDFViewerApplication.pdfViewer.scroll.lastX;
-
 		for (let view of visiblePages.views) {
 			let visibleRect = [
 				scrollX,
@@ -955,15 +649,27 @@ class PDFView {
 
 			let pageIndex = view.id - 1;
 
-			for (let object of objects) {
-				let pos = object.object.position;
-				// Match objects that belong to this page (including spillover to next page)
-				if (!(pos.pageIndex === pageIndex
-					|| (pos.nextPageRects && pos.pageIndex + 1 === pageIndex))) {
-					continue;
-				}
+			let overlays = [];
+			let pdfPage = this._pdfPages[pageIndex];
+			if (pdfPage) {
+				overlays = pdfPage.overlays.filter(x => x.type !== 'reference');
+			}
 
-				let p = p2v(pos, view.view.viewport, pageIndex);
+			let objects = [];
+
+			for (let annotation of this._annotations) {
+				if (annotation.position.pageIndex === pageIndex
+					|| annotation.position.nextPageRects && annotation.position.pageIndex + 1 === pageIndex) {
+					objects.push({ type: 'annotation', object: annotation });
+				}
+			}
+
+			for (let overlay of overlays) {
+				objects.push({ type: 'overlay', object: overlay });
+			}
+
+			for (let object of objects) {
+				let p = p2v(object.object.position, view.view.viewport, pageIndex);
 				let br = getPositionBoundingRect(p, pageIndex);
 				let absoluteRect = [
 					view.x + br[0],
@@ -972,43 +678,14 @@ class PDFView {
 					view.y + br[3],
 				];
 
+				object.rect = absoluteRect;
+				object.pageIndex = pageIndex;
+
 				if (quickIntersectRect(absoluteRect, visibleRect)) {
-					object.pageIndex = pageIndex;
-					object.rect = absoluteRect;
 					visibleObjects.push(object);
 				}
 			}
 		}
-
-		return visibleObjects;
-	}
-
-	_focusNext(side) {
-		let visiblePages = this._iframeWindow.PDFViewerApplication.pdfViewer._getVisiblePages();
-
-		let scrollY = this._iframeWindow.PDFViewerApplication.pdfViewer.scroll.lastY;
-		let scrollX = this._iframeWindow.PDFViewerApplication.pdfViewer.scroll.lastX;
-
-		// Collect all candidate objects (annotations + overlays) with their positions
-		let objects = [];
-		for (let view of visiblePages.views) {
-			let pageIndex = view.id - 1;
-			let pdfPage = this._pdfPages[pageIndex];
-			let overlays = [];
-			if (pdfPage) {
-				overlays = pdfPage.overlays.filter(x => x.type !== 'reference');
-			}
-
-			for (let annotation of this._annotations) {
-				objects.push({ type: 'annotation', object: annotation, position: annotation.position });
-			}
-			for (let overlay of overlays) {
-				objects.push({ type: 'overlay', object: overlay, position: overlay.position });
-			}
-		}
-
-		// Extract objects visible in the viewport
-		let visibleObjects = this._getVisibleObjects(objects);
 
 		let nextObject;
 
@@ -1061,97 +738,6 @@ class PDFView {
 		this._overlayPopupDelayer.destroy();
 	}
 
-	// Log once and disable a memory feature if the pdf.js fork stops exposing
-	// a method it depends on, instead of silently leaking or throwing on every use
-	_checkViewerAPI(object, methods, feature) {
-		if (methods.every(x => typeof object?.[x] === 'function')) {
-			return true;
-		}
-		if (!this._missingViewerAPIWarned) {
-			this._missingViewerAPIWarned = true;
-			console.error(`pdf.js viewer API required for ${feature} is missing`);
-		}
-		return false;
-	}
-
-	// Release rendered pages and block rendering while the view is in a hidden
-	// (background) tab, and restore them when the tab is shown again.
-	// Destroying page views releases their canvases and extracted page data,
-	// and pdfDocument.cleanup() releases worker-side fonts and images. The
-	// reader instance, worker, parsed document and all UI state stay alive, so
-	// resuming only needs to re-render the visible pages (~60 ms)
-	setSuspended(suspended) {
-		suspended = !!suspended;
-		if (this._suspended === suspended) {
-			return;
-		}
-		this._suspended = suspended;
-		this._applySuspended();
-	}
-
-	// Applied separately from setSuspended, because a view suspended before the
-	// viewer has initialized (e.g. a background tab whose document is still
-	// loading when the suspension timeout fires) has to be re-suspended when
-	// its pages start rendering
-	_applySuspended() {
-		let app = this._iframeWindow?.PDFViewerApplication;
-		let queue = app?.pdfRenderingQueue;
-		if (!app?.pdfViewer || !this._checkViewerAPI(queue, ['renderHighestPriority'], 'tab suspension')) {
-			return;
-		}
-		if (this._suspended) {
-			// Shadow the queue's only rendering entry point, so that destroyed
-			// pages aren't immediately re-rendered while the tab is hidden (e.g.
-			// on a window resize). Restored by deleting the own property below
-			queue.renderHighestPriority = () => {};
-			for (let pageView of app.pdfViewer._pages) {
-				pageView.destroy();
-			}
-			// Rejects if a render is still in flight; the pages are destroyed, so
-			// the cleanup will happen on the next idle timeout instead
-			app.pdfDocument?.cleanup().catch(() => {});
-		}
-		else {
-			delete queue.renderHighestPriority;
-			app.pdfViewer.update();
-		}
-	}
-
-	// Destroy rendered pages that are outside the visible range, keeping the
-	// visible pages, their immediate neighbors (which the rendering queue would
-	// immediately re-render anyway — its pre-render lookahead is one page), and
-	// the `keep` most recently used pages beyond that. pdf.js's own buffer only
-	// evicts beyond 10 pages and its size isn't reachable from outside
-	_trimPageBuffer(keep) {
-		let pdfViewer = this._iframeWindow?.PDFViewerApplication?.pdfViewer;
-		if (!pdfViewer
-			|| !this._checkViewerAPI(pdfViewer, ['getCachedPageViews', '_getVisiblePages'], 'page buffer trimming')) {
-			return;
-		}
-		let visiblePages = pdfViewer._getVisiblePages();
-		if (!visiblePages.ids.size) {
-			return;
-		}
-		let keepIds = new Set();
-		for (let id of visiblePages.ids) {
-			keepIds.add(id - 1).add(id).add(id + 1);
-		}
-		// Cached views iterate oldest first
-		let trimmable = [...pdfViewer.getCachedPageViews()].filter(x => !keepIds.has(x.id));
-		for (let pageView of trimmable.slice(0, Math.max(0, trimmable.length - keep))) {
-			pageView.destroy();
-		}
-	}
-
-	// Release as much memory as possible without a visible effect and without
-	// blocking rendering: keep only the on-screen pages and drop worker-side
-	// decoded resources. Safe to call on the currently selected tab (e.g. on a
-	// memory-pressure notification) — trimmed pages re-render when scrolled to
-	trimMemory() {
-		this._trimPageBuffer(0);
-		this._iframeWindow?.PDFViewerApplication?.pdfDocument?.cleanup().catch(() => {});
-	}
-
 	focus() {
 		this._iframe.focus();
 		// this._iframeWindow.focus();
@@ -1175,25 +761,6 @@ class PDFView {
 
 		let scrollTop = element.scrollTop;
 		let scrollLeft = element.scrollLeft;
-
-		if (options.ifNeeded) {
-			let margin = options.visibilityMargin || 0;
-			let visibleRect = [
-				scrollLeft - margin,
-				scrollTop - margin,
-				scrollLeft + clientWidth + margin,
-				scrollTop + clientHeight + margin
-			];
-			let intersects = !(
-				rect[0] > visibleRect[2]
-				|| rect[2] < visibleRect[0]
-				|| rect[1] > visibleRect[3]
-				|| rect[3] < visibleRect[1]
-			);
-			if (intersects) {
-				return;
-			}
-		}
 
 		let x = rect[0];
 		let y = rect[1];
@@ -1252,7 +819,7 @@ class PDFView {
 
 		// Build scroll options, only include axes that are defined
 		let scrollOptions = {
-			behavior: options.behavior || (close ? 'smooth' : 'instant')
+			behavior: close ? 'smooth' : 'instant'
 		};
 		if (typeof left === 'number') scrollOptions.left = left;
 		if (typeof top === 'number') scrollOptions.top = top;
@@ -1275,10 +842,6 @@ class PDFView {
 		}
 	}
 
-	renderThumbnails(pageIndexes) {
-		this._pdfThumbnails?.render(pageIndexes);
-	}
-
 	setReadOnly(readOnly) {
 		this._readOnly = readOnly;
 	}
@@ -1295,7 +858,6 @@ class PDFView {
 			this._iframeWindow.document.getElementById('viewerContainer').style.touchAction = tool.type !== 'pointer' ? 'none' : 'auto';
 		}
 		this._tool = tool;
-		this.updateCursor();
 	}
 
 	setAnnotations(annotations) {
@@ -1355,172 +917,6 @@ class PDFView {
 	setOverlayPopup(popup) {
 		this._overlayPopup = popup;
 		this._overlayPopupDelayer.setOpen(!!popup);
-	}
-
-	async setReadAloudState(state) {
-		let previousState = this._readAloudState;
-		this._readAloudState = state;
-
-		if (state.segments !== previousState?.segments) {
-			this._buildReadAloudParagraphIndex(state.segments);
-		}
-
-		if (state.active && !previousState?.active) {
-			this._readAloudPositionLocked = true;
-		}
-
-		let activePosition = state.activeSegment?.sourcePosition;
-
-		if (state.active && previousState?.paused && !state.paused
-			&& activePosition
-			&& this._isPositionInViewBounds(activePosition)) {
-			this._readAloudPositionLocked = true;
-		}
-
-		if (!state.popupOpen) {
-			this._readAloudHighlightedPosition = null;
-			this._readAloudSentenceHighlightedPosition = null;
-			clearTimeout(this._readAloudSentenceTimeout);
-			this._hideReadAloudJumpButton();
-			this._render();
-			return;
-		}
-
-		if (activePosition?.pageIndex !== undefined) {
-			// The primary highlight tracks the user's chosen granularity; it falls
-			// back to a coarser level when finer-grained data isn't available
-			// (e.g., paragraph-granularity segments have no sentence/word data).
-			this._readAloudHighlightedPosition = this._resolveReadAloudPrimaryPosition(state, activePosition);
-
-			// After a skip whose granularity differs from the primary highlight,
-			// briefly flash the unit at the skip granularity so it's clear what
-			// the skip moved by. Only retrigger when the active segment changes
-			// so word-level updates don't keep resetting the timeout.
-			let segmentChanged = state.activeSegment !== previousState?.activeSegment;
-			if (segmentChanged) {
-				clearTimeout(this._readAloudSentenceTimeout);
-				let highlightSelector = this._resolveReadAloudSkipHighlightPosition(state, activePosition);
-				if (highlightSelector) {
-					this._readAloudSentenceHighlightedPosition = highlightSelector;
-					this._readAloudSentenceTimeout = setTimeout(() => {
-						this._readAloudSentenceHighlightedPosition = null;
-						this._render();
-					}, 2000);
-				}
-				else {
-					this._readAloudSentenceHighlightedPosition = null;
-				}
-			}
-			this._render();
-
-			// If the Read Aloud annotation popup isn't open and position is locked, navigate to the current segment
-			if (!state.annotationPopup && this._readAloudPositionLocked) {
-				setTimeout(() => {
-					this._readAloudScrolling = true;
-					this.navigateToPosition(activePosition, {
-						ifNeeded: true,
-						visibilityMargin: -this._iframeWindow.innerHeight / 4,
-						block: 'center',
-						behavior: 'smooth'
-					});
-
-					let viewerContainer = this._iframeWindow.document.getElementById('viewerContainer');
-					if (viewerContainer) {
-						debounceUntilScrollFinishes(viewerContainer).then(() => {
-							this._readAloudScrolling = false;
-						});
-					}
-					else {
-						this._readAloudScrolling = false;
-					}
-				});
-			}
-		}
-	}
-
-	get hasReadAloudTarget() {
-		return this._selectionRanges.length && !this._selectionRanges[0].collapsed;
-	}
-
-	lockPositionToReadAloud() {
-		this._readAloudPositionLocked = true;
-	}
-
-	/**
-	 * Resolve the primary Read Aloud highlight position for the user's chosen
-	 * granularity, falling back coarser when finer-grained data isn't available
-	 */
-	_resolveReadAloudPrimaryPosition(state, activePosition) {
-		switch (this._effectiveReadAloudPrimaryGranularity(state)) {
-			case 'word': {
-				let wordPosition = state.activeWordSourcePosition;
-				return wordPosition?.pageIndex !== undefined ? wordPosition : null;
-			}
-			case 'sentence':
-				return activePosition;
-			case 'paragraph':
-			default: {
-				let paragraphPosition = state.activeSegment?.paragraphSourcePosition;
-				return paragraphPosition?.pageIndex !== undefined ? paragraphPosition : activePosition;
-			}
-		}
-	}
-
-	/**
-	 * Resolve the brief flash highlight position that should appear after a
-	 * skip whose granularity isn't already shown by the primary highlight.
-	 * Returns null when the skip granularity matches the primary or there's
-	 * no recent skip to acknowledge.
-	 */
-	_resolveReadAloudSkipHighlightPosition(state, activePosition) {
-		if (!state.lastSkipGranularity) {
-			return null;
-		}
-		if (state.lastSkipGranularity === this._effectiveReadAloudPrimaryGranularity(state)) {
-			return null;
-		}
-		if (state.lastSkipGranularity === 'sentence') {
-			return activePosition;
-		}
-		if (state.lastSkipGranularity === 'paragraph') {
-			let paragraphPosition = state.activeSegment?.paragraphSourcePosition;
-			return paragraphPosition ?? null;
-		}
-		return null;
-	}
-
-	_effectiveReadAloudPrimaryGranularity(state) {
-		if (state.highlightGranularity === 'word' && state.segmentGranularity === 'sentence') {
-			return 'word';
-		}
-		if (state.highlightGranularity === 'sentence' && state.segmentGranularity === 'sentence') {
-			return 'sentence';
-		}
-		return 'paragraph';
-	}
-
-	isPositionNearView(position) {
-		if (typeof position?.pageIndex !== 'number') return true;
-		let currentPageNumber = this._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;
-		if (!currentPageNumber) return true;
-		return Math.abs(position.pageIndex - (currentPageNumber - 1)) <= 5;
-	}
-
-	_isPositionInViewBounds(position) {
-		let viewerContainer = this._iframeWindow?.document.getElementById('viewerContainer');
-		if (!viewerContainer) {
-			return false;
-		}
-
-		let rect = this.getPositionBoundingViewRect(position);
-		let visibleRect = [
-			viewerContainer.scrollLeft,
-			viewerContainer.scrollTop,
-			viewerContainer.scrollLeft + viewerContainer.clientWidth,
-			viewerContainer.scrollTop + viewerContainer.clientHeight
-		];
-
-		return quickIntersectRect(rect, visibleRect);
 	}
 
 	setFindState(state) {
@@ -1592,12 +988,7 @@ class PDFView {
 	a11yWillPlaceVirtCursorOnSearchResult = debounce(async () => {
 		if (!this._findState.result?.annotation) return;
 		let { position } = this._findState.result.annotation;
-		await this._ensureBasicPageData(position.pageIndex);
-		if (position.nextPageRects) {
-			await this._ensureBasicPageData(position.pageIndex + 1);
-		}
 		let range = getSelectionRangesByPosition(this._pdfPages, position);
-		if (!range.length) return;
 		let page = this._iframeWindow.PDFViewerApplication.pdfViewer.getPageView(position.pageIndex);
 		// The page may have been unloaded, in which case we need to wait for it to be rendered
 		let waitCounter = 0;
@@ -1612,7 +1003,7 @@ class PDFView {
 		// pick node corresponding to the range that actually contains the query
 		let node = endNode.textContent.includes(this._findState.query) ? endNode : startNode;
 		this._a11yVirtualCursorTarget = node.parentNode;
-	}, A11Y_VIRT_CURSOR_DEBOUNCE_LENGTH);
+	  }, A11Y_VIRT_CURSOR_DEBOUNCE_LENGTH);
 
 	// Record the current page that the virtual cursor enter when focus enters the content.
 	// Debounce to not run this on every view stats update.
@@ -1728,180 +1119,8 @@ class PDFView {
 		}, 2000);
 	}
 
-	_onManualNavigation() {
-		if (this._readAloudState?.active) {
-			this._readAloudPositionLocked = false;
-		}
-	}
-
-	/**
-	 * Pre-compute paragraph column regions from segments.
-	 * Each entry is { segment, pageIndex, rect } where rect is the bounding
-	 * rect of the paragraph's rects in one column on one page.
-	 */
-	_buildReadAloudParagraphIndex(segments) {
-		this._readAloudParagraphIndex = [];
-		if (!segments) return;
-
-		let i = 0;
-		while (i < segments.length) {
-			let paragraphStart = i;
-			let paragraphEnd = i;
-			for (let j = i + 1; j < segments.length; j++) {
-				if (segments[j].anchor === 'paragraphStart') break;
-				paragraphEnd = j;
-			}
-			i = paragraphEnd + 1;
-
-			let paragraph = segments[paragraphStart];
-
-			// Group rects by page
-			let pageGroups = new Map();
-			for (let j = paragraphStart; j <= paragraphEnd; j++) {
-				let segPos = segments[j].sourcePosition;
-				if (!segPos?.rects || segPos.pageIndex === undefined) continue;
-				let key = segPos.pageIndex;
-				if (!pageGroups.has(key)) pageGroups.set(key, []);
-				pageGroups.get(key).push(...segPos.rects);
-			}
-
-			for (let [pageIndex, rects] of pageGroups) {
-				// Cluster rects into columns by x-overlap
-				let columns = [];
-				for (let rect of rects) {
-					let placed = false;
-					for (let col of columns) {
-						if (rect[0] < col.maxX && rect[2] > col.minX) {
-							col.rects.push(rect);
-							col.minX = Math.min(col.minX, rect[0]);
-							col.maxX = Math.max(col.maxX, rect[2]);
-							placed = true;
-							break;
-						}
-					}
-					if (!placed) {
-						columns.push({ rects: [rect], minX: rect[0], maxX: rect[2] });
-					}
-				}
-
-				for (let col of columns) {
-					let boundingRect = getPositionBoundingRect({ rects: col.rects });
-					this._readAloudParagraphIndex.push({
-						segment: paragraph,
-						pageIndex,
-						rect: boundingRect,
-					});
-				}
-			}
-		}
-
-		// Collapse consecutive entries that share a visual line into one hit
-		// target.
-		// A heading like "1. Introduction" becomes two sentence-level segments
-		// ("1." and "Introduction"), and the x-clustering above then splits
-		// them into two index entries with a gap between them.
-		// We restrict the merge to single-line-tall segments to avoid
-		// collapsing the per-column entries that a multi-line paragraph
-		// produces when it spans two columns of a single page.
-		const SINGLE_LINE_MAX_HEIGHT = 40;
-		for (let i = this._readAloudParagraphIndex.length - 1; i > 0; i--) {
-			let curr = this._readAloudParagraphIndex[i];
-			let prev = this._readAloudParagraphIndex[i - 1];
-			if (curr.pageIndex !== prev.pageIndex) continue;
-
-			let currHeight = curr.rect[3] - curr.rect[1];
-			let prevHeight = prev.rect[3] - prev.rect[1];
-			if (currHeight > SINGLE_LINE_MAX_HEIGHT
-					|| prevHeight > SINGLE_LINE_MAX_HEIGHT) continue;
-
-			let yOverlap = Math.min(curr.rect[3], prev.rect[3])
-				- Math.max(curr.rect[1], prev.rect[1]);
-			if (yOverlap < Math.max(currHeight, prevHeight) * 0.5) continue;
-
-			prev.rect = [
-				Math.min(prev.rect[0], curr.rect[0]),
-				Math.min(prev.rect[1], curr.rect[1]),
-				Math.max(prev.rect[2], curr.rect[2]),
-				Math.max(prev.rect[3], curr.rect[3]),
-			];
-			this._readAloudParagraphIndex.splice(i, 1);
-		}
-	}
-
-	_updateReadAloudJumpButton(position, event) {
-		if (!this._readAloudState?.popupOpen) {
-			return;
-		}
-
-		if (event && this._readAloudJumpButton.iconContainsPoint(event.clientX, event.clientY)) {
-			return;
-		}
-
-		if (!position) {
-			return;
-		}
-
-		let match = null;
-		for (let entry of this._readAloudParagraphIndex) {
-			if (entry.pageIndex !== position.pageIndex) continue;
-			if (intersectAnnotationWithPoint({ pageIndex: entry.pageIndex, rects: [entry.rect] }, position)) {
-				match = entry;
-				break;
-			}
-		}
-
-		if (!match) {
-			return;
-		}
-		if (match === this._readAloudJumpButtonMatch) {
-			return;
-		}
-		this._readAloudJumpButtonMatch = match;
-		this._readAloudJumpButtonParagraph = match.segment;
-
-		let clientRect = this.getClientRect(match.rect, match.pageIndex);
-		let container = this._iframeWindow.document.getElementById('viewerContainer');
-		let containerRect = container.getBoundingClientRect();
-
-		let width = clientRect[0] - containerRect.left;
-		let height = clientRect[3] - clientRect[1];
-		this._readAloudJumpButton.show({
-			marginWidth: `${width}px`,
-			top: `${clientRect[1] - containerRect.top + container.scrollTop}px`,
-			height: `${Math.max(height, 20)}px`,
-		});
-	}
-
-	_hideReadAloudJumpButton() {
-		this._readAloudJumpButton.hide();
-		this._readAloudJumpButtonParagraph = null;
-		this._readAloudJumpButtonMatch = null;
-	}
-
-	_handleReadAloudJumpButtonClick() {
-		if (!this._readAloudJumpButtonParagraph || !this._readAloudState) return;
-
-		let paragraph = this._readAloudJumpButtonParagraph;
-
-		// Match the immediate spotlight to the user's highlight granularity,
-		// so we don't show a wrong-granularity flash before the manager overrides
-		// with a new highlight.
-		let granularity = this._effectiveReadAloudPrimaryGranularity(this._readAloudState);
-		this._readAloudHighlightedPosition = granularity === 'paragraph'
-			? (paragraph.paragraphSourcePosition || paragraph.sourcePosition)
-			: paragraph.sourcePosition;
-		this._render();
-
-		this._options.onSetReadAloudState({
-			targetPosition: paragraph.position,
-		});
-	}
-
 	async navigate(location, options = {}) {
 		options.block ||= 'center';
-		if (!options.skipHistory) {
-			this._onManualNavigation();
-		}
 		this._lastNavigationTime = Date.now();
 		if (location.annotationID && this._annotations.find(x => x.id === location.annotationID)) {
 			let annotation = this._annotations.find(x => x.id === location.annotationID);
@@ -1945,32 +1164,26 @@ class PDFView {
 	}
 
 	navigateBack() {
-		this._onManualNavigation();
 		this._history.navigateBack();
 	}
 
 	navigateForward() {
-		this._onManualNavigation();
 		this._history.navigateForward();
 	}
 
 	navigateToNextPage() {
-		this._onManualNavigation();
 		this._iframeWindow.PDFViewerApplication.pdfViewer.nextPage();
 	}
 
 	navigateToPreviousPage() {
-		this._onManualNavigation();
 		this._iframeWindow.PDFViewerApplication.pdfViewer.previousPage();
 	}
 
 	navigateToFirstPage() {
-		this._onManualNavigation();
 		this._iframeWindow.PDFViewerApplication.eventBus.dispatch('firstpage');
 	}
 
 	navigateToLastPage() {
-		this._onManualNavigation();
 		this._iframeWindow.PDFViewerApplication.eventBus.dispatch('lastpage');
 	}
 
@@ -2588,10 +1801,8 @@ class PDFView {
 	}
 
 	updateCursor(action) {
-		let cursor = this._tool.type === 'hand'
-			? (this.pointerDownPosition ? 'grabbing' : 'grab')
-			: 'default';
-		if (action && this._tool.type !== 'hand') {
+		let cursor = 'default';
+		if (action) {
 			if (action.type === 'overlay') {
 				cursor = 'pointer';
 			}
@@ -2688,13 +1899,6 @@ class PDFView {
 			return;
 		}
 		this._pointerDownTriggered = true;
-		this._pointerDownTap = {
-			x: event.clientX,
-			y: event.clientY,
-			button: event.button,
-			inViewerContainer: !!event.target.closest('#viewerContainer'),
-			hadSelection: !this._isSelectionCollapsed() || !!this._selectedAnnotationIDs.length
-		};
 		this._highlightedPosition = null;
 
 		// Clear textLayer selection
@@ -2743,7 +1947,6 @@ class PDFView {
 
 		this.action = action;
 		this.pointerDownPosition = position;
-		this.updateCursor(action);
 		// Select text, and/or object, otherwise unselect
 
 		if (selectAnnotations && !(selectAnnotations.length === 0 && this._selectedAnnotationIDs.length === 0)) {
@@ -2984,7 +2187,6 @@ class PDFView {
 			else {
 				this.updateCursor();
 			}
-			this._updateReadAloudJumpButton(position, event);
 			this._render();
 			return;
 		}
@@ -3273,48 +2475,6 @@ class PDFView {
 		this._render();
 	}, () => ['ink', 'eraser'].includes(this._tool.type) ? 0 : 50);
 
-	_shouldHandleBackdropTap(event, position) {
-		let pointerDownTap = this._pointerDownTap;
-		if (!this._onBackdropTap
-				|| event.isPrimary === false
-				|| !pointerDownTap
-				|| pointerDownTap.button !== 0
-				|| !pointerDownTap.inViewerContainer
-				|| !event.target.closest('#viewerContainer')
-				|| pointerDownTap.hadSelection
-				|| this._scrolling) {
-			return false;
-		}
-
-		let movement = Math.abs(event.clientX - pointerDownTap.x)
-			+ Math.abs(event.clientY - pointerDownTap.y);
-		if (movement > 5) {
-			return false;
-		}
-
-		if (!this.pointerDownPosition) {
-			return !position;
-		}
-
-		if (!position || !this.action || this.action.triggered) {
-			return false;
-		}
-
-		let overlay = this._getSelectableOverlay(position);
-		let pointerDownOverlay = this._getSelectableOverlay(this.pointerDownPosition);
-		if (overlay || pointerDownOverlay) {
-			return false;
-		}
-
-		let selectableAnnotations = this.getSelectableAnnotations(position);
-		if (selectableAnnotations?.length) {
-			return false;
-		}
-
-		return this.action.type === 'none'
-			|| (this.action.type === 'selectText' && this._isSelectionCollapsed());
-	}
-
 	_getAnnotationFromSelectionRanges(selectionRanges, type, color) {
 		if (selectionRanges[0].collapsed) {
 			return null;
@@ -3342,7 +2502,6 @@ class PDFView {
 	_handlePointerUp(event) {
 		this._pointerDownTriggered = false;
 		if (!this.action && event.target.classList?.contains('textAnnotation')) {
-			this._pointerDownTap = null;
 			return;
 		}
 
@@ -3352,7 +2511,6 @@ class PDFView {
 		});
 
 		let position = this.pointerEventToPosition(event);
-		let handleBackdropTap = this._shouldHandleBackdropTap(event, position);
 
 		if (this.pointerDownPosition) {
 			// let position = this.pointerEventToAltPosition(event, this.pointerDownPosition.pageIndex);
@@ -3523,10 +2681,6 @@ class PDFView {
 			this.action = null;
 			this.pointerDownPosition = null;
 		}
-		if (handleBackdropTap) {
-			this._onBackdropTap(event);
-		}
-		this._pointerDownTap = null;
 		// Update cursor after finishing the current action
 		if (position) {
 			let { action } = this.getActionAtPosition(position, event);
@@ -3539,25 +2693,10 @@ class PDFView {
 		this._updateViewStats();
 	}
 
-	_handlePointerCancel() {
-		// Chrome cancels the pointer stream when a native drag operation
-		// starts, but the drag events keep driving the current action
-		if (this._dragging) {
-			return;
-		}
-		this.action = null;
-		this.pointerDownPosition = null;
-		this._pointerDownTriggered = false;
-		this._pointerDownTap = null;
-		this._render();
-	}
-
 	cancel() {
 		this.setSelection();
 		this._hover = null;
 		this.action = null;
-		this.pointerDownPosition = null;
-		this._pointerDownTap = null;
 		this.updateCursor();
 		this._render();
 	}
@@ -3631,7 +2770,6 @@ class PDFView {
 			// Clear pointer down because the pointer up event won't be received in this iframe
 			// when opening a native context menu
 			this._pointerDownTriggered = false;
-			this._pointerDownTap = null;
 			let br = this._iframe.getBoundingClientRect();
 			let selectableAnnotation;
 			if (position) {
@@ -3647,15 +2785,6 @@ class PDFView {
 				if (position) {
 					overlay = this._getSelectableOverlay(position);
 				}
-
-				let textPosition;
-				if (position) {
-					let selectionRanges = getWordSelectionRanges(this._pdfPages, position, position);
-					if (selectionRanges.length && !selectionRanges[0].collapsed) {
-						textPosition = selectionRanges[0].position;
-					}
-				}
-
 				// If this is a keyboard contextmenu event, its position won't take our
 				// text selection into account since we don't use browser selection APIs.
 				// Position the menu manually.
@@ -3665,17 +2794,11 @@ class PDFView {
 					this._onOpenViewContextMenu({
 						x: br.x + selectionBoundingRect[0],
 						y: br.y + selectionBoundingRect[3] + EXTRA_VERTICAL_PADDING,
-						overlay,
-						position: textPosition
+						overlay
 					});
 				}
 				else {
-					this._onOpenViewContextMenu({
-						x: br.x + event.clientX,
-						y: br.y + event.clientY,
-						overlay,
-						position: textPosition
-					});
+					this._onOpenViewContextMenu({ x: br.x + event.clientX, y: br.y + event.clientY, overlay });
 				}
 			}
 			else if (!selectedAnnotations.includes(selectableAnnotation) && !this._textAnnotationFocused()) {
@@ -3730,7 +2853,7 @@ class PDFView {
 		else if (key === 'r') {
 			event.stopPropagation();
 		}
-		else if (['n', 'j', 'p', 'k', 'h', 's'].includes(key)) {
+		else if (['n', 'j', 'p', 'k'].includes(key)) {
 			event.stopPropagation();
 		}
 		// This is necessary when a page is zoomed in and left/right arrow keys can't change page
@@ -3777,21 +2900,12 @@ class PDFView {
 			let { id, type, position } = annotation;
 			const STEP = 5; // pt
 			const PADDING = 5;
-			let pageData = this._pdfPages[position.pageIndex];
-			let consumeSelectedAnnotationKey = () => {
-				event.stopPropagation();
-				event.preventDefault();
-			};
+			let viewBox = this._pdfPages[position.pageIndex].viewBox;
 
 			if (
 				['note', 'text', 'image', 'ink'].includes(type)
 				&& ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)
 			) {
-				if (!pageData) {
-					consumeSelectedAnnotationKey();
-					return;
-				}
-				let { viewBox } = pageData;
 				let rect;
 				if (annotation.type === 'ink') {
 					rect = getPositionBoundingRect(position);
@@ -3831,15 +2945,12 @@ class PDFView {
 					this._render();
 					this._onSetAnnotationPopup();
 				}
-				consumeSelectedAnnotationKey();
+				event.stopPropagation();
+				event.preventDefault();
 			}
 			else if (['highlight', 'underline'].includes(type)
 				&& ['Shift-ArrowLeft', 'Shift-ArrowRight', 'Shift-ArrowUp', 'Shift-ArrowDown'].includes(key)) {
 				let selectionRanges = getSelectionRangesByPosition(this._pdfPages, annotation.position);
-				if (!selectionRanges.length) {
-					consumeSelectedAnnotationKey();
-					return;
-				}
 				if (key === 'Shift-ArrowLeft') {
 					selectionRanges = getModifiedSelectionRanges(this._pdfPages, selectionRanges, 'left');
 				}
@@ -3861,7 +2972,8 @@ class PDFView {
 					this._onSetAnnotationPopup();
 					this._scrollSelectionHeadIntoView(selectionRanges);
 				}
-				consumeSelectedAnnotationKey();
+				event.stopPropagation();
+				event.preventDefault();
 			}
 			else if (['highlight', 'underline'].includes(type)
 				&& (
@@ -3869,10 +2981,6 @@ class PDFView {
 					|| (isWin() || isLinux()) && ['Alt-Shift-ArrowLeft', 'Alt-Shift-ArrowRight', 'Alt-Shift-ArrowUp', 'Alt-Shift-ArrowDown'].includes(key)
 				)) {
 				let selectionRanges = getSelectionRangesByPosition(this._pdfPages, annotation.position);
-				if (!selectionRanges.length) {
-					consumeSelectedAnnotationKey();
-					return;
-				}
 				selectionRanges = getReversedSelectionRanges(selectionRanges);
 				if (
 					isMac() && key === 'Cmd-Shift-ArrowLeft'
@@ -3906,7 +3014,8 @@ class PDFView {
 					this._onSetAnnotationPopup();
 					this._scrollSelectionHeadIntoView(selectionRanges);
 				}
-				consumeSelectedAnnotationKey();
+				event.stopPropagation();
+				event.preventDefault();
 			}
 			else if (
 				['text', 'image', 'ink'].includes(type)
@@ -3950,11 +3059,6 @@ class PDFView {
 					}
 				}
 				else if (type === 'image') {
-					if (!pageData) {
-						consumeSelectedAnnotationKey();
-						return;
-					}
-					let { viewBox } = pageData;
 					let rect = position.rects[0].slice();
 
 					let [, y, x] = rect;
@@ -4059,7 +3163,8 @@ class PDFView {
 					this._render();
 					this._onSetAnnotationPopup();
 				}
-				consumeSelectedAnnotationKey();
+				event.stopPropagation();
+				event.preventDefault();
 			}
 		}
 		else if (
@@ -4193,7 +3298,6 @@ class PDFView {
 				event.preventDefault();
 				this.action = null;
 				this.pointerDownPosition = null;
-				this._pointerDownTap = null;
 				this._setSelectionRanges();
 				this._render();
 				return;
@@ -4335,7 +3439,6 @@ class PDFView {
 			event.preventDefault();
 			return;
 		}
-		this._dragging = true;
 		if (!this.action.multiple) {
 			let annotation = this.action.annotation;
 			let canvas = this._dragCanvas;
@@ -4386,14 +3489,12 @@ class PDFView {
 	}
 
 	_handleDragEnd(event) {
-		this._dragging = false;
 		if (event.dataTransfer.dropEffect === 'none') {
 			this.action = null;
 		}
 		this.action = null;
 		this.pointerDownPosition = null;
 		this._pointerDownTriggered = false;
-		this._pointerDownTap = null;
 		this._render();
 	}
 
@@ -4446,11 +3547,6 @@ class PDFView {
 		}
 	}
 
-	_handlePointerLeave() {
-		this._readAloudJumpButton.hide();
-		this._readAloudJumpButtonParagraph = null;
-	}
-
 	getDragMultiIcon() {
 		let canvas = this._dragCanvas;
 
@@ -4470,8 +3566,7 @@ class PDFView {
 	}
 
 	pointerEventToPosition(event) {
-		let targets = this._iframeWindow.document.elementsFromPoint(event.clientX, event.clientY);
-		let target = targets.find(t => t.closest('.page'));
+		let target = this._iframeWindow.document.elementFromPoint(event.clientX, event.clientY);
 		if (!target) {
 			return null;
 		}
@@ -4542,46 +3637,6 @@ class PDFView {
 		}
 	}
 
-	async _initNativeOutline() {
-		let outline = await this._iframeWindow.PDFViewerApplication.pdfDocument.getOutline();
-		outline = await this._transformNativeOutline(outline || []);
-		this._onSetOutline(outline);
-	}
-
-	async _transformNativeOutline(items) {
-		let outline = [];
-		for (let item of items) {
-			let newItem = {
-				title: item.title,
-				items: await this._transformNativeOutline(item.items || []),
-			};
-			if (item.dest) {
-				try {
-					let position = await this._getPositionFromDestination(item.dest);
-					if (position) {
-						newItem.location = {
-							position: {
-								pageIndex: position.pageIndex,
-								rects: [[position.x, position.y, position.x, position.y]]
-							}
-						};
-					}
-				}
-				catch (e) {
-					console.log(e);
-				}
-			}
-			else if (item.unsafeUrl) {
-				newItem.url = item.unsafeUrl;
-			}
-			outline.push(newItem);
-		}
-		if (outline.length === 1 && outline[0].items.length > 1) {
-			outline = outline[0].items;
-		}
-		return outline;
-	}
-
 	setOutline(outline) {
 		this._outline = outline;
 	}
@@ -4606,27 +3661,17 @@ class PDFView {
 		}
 
 		const ref = destArray[0];
-		let pageIndex;
-		if (ref && typeof ref === 'object') {
-			pageIndex = await pdfDocument.getPageIndex(ref);
+		const pageNumber = await pdfDocument.getPageIndex(ref) + 1;
+
+		const pageView = this._iframeWindow.PDFViewerApplication.pdfViewer.getPageView(pageNumber - 1);
+		if (!pageView) {
+			throw new Error(`"${pageNumber}" is not a valid pageNumber.`);
 		}
-		else if (Number.isInteger(ref)) {
-			pageIndex = ref;
-			if (pageIndex < 0 || pageIndex > pdfDocument.numPages - 1) {
-				throw new Error(`"${pageIndex}" is not a valid page index.`);
-			}
-		}
-		else {
-			throw new Error(`Invalid destination: "${dest}"`);
-		}
-		const pageNumber = pageIndex + 1;
 
 		let x = 0, y = 0;
-		const { rotate, view } = await pdfDocument.getPage(pageNumber);
-		const width = view[2] - view[0];
-		const height = view[3] - view[1];
-		const changeOrientation = rotate % 180 !== 0;
-		const pageHeight = changeOrientation ? width : height;
+		const changeOrientation = pageView.rotation % 180 !== 0;
+		const PixelsPerInch = { PDF_TO_CSS_UNITS: 96 / 72 }; // Assuming default values here
+		const pageHeight = (changeOrientation ? pageView.width : pageView.height) / pageView.scale / PixelsPerInch.PDF_TO_CSS_UNITS;
 
 		switch (destArray[1].name) {
 			case "XYZ":
@@ -4635,7 +3680,6 @@ class PDFView {
 				break;
 			case "Fit":
 			case "FitB":
-				y = pageHeight;
 				break;
 			case "FitH":
 			case "FitBH":
@@ -4644,22 +3688,15 @@ class PDFView {
 			case "FitV":
 			case "FitBV":
 				x = destArray[2] !== null ? destArray[2] : 0;
-				y = pageHeight;
 				break;
 			case "FitR":
-				x = destArray[2] !== null ? destArray[2] : 0;
-				y = destArray[5] !== null ? destArray[5] : pageHeight;
+				x = destArray[2];
+				y = destArray[5];
 				break;
 			default:
 				console.error(`"${destArray[1].name}" is not a valid destination type.`);
 				return;
 		}
-
-		x = Math.max(view[0], x);
-		x = Math.min(view[2], x);
-
-		y = Math.max(view[1], y);
-		y = Math.min(view[3], y);
 
 		return {
 			pageIndex: pageNumber - 1,

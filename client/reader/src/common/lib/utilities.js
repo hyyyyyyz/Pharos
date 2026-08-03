@@ -374,11 +374,8 @@ export function sortTags(tags) {
  * @returns {ColorScheme}
  */
 export function getCurrentColorScheme(colorScheme) {
-	if (colorScheme) {
-		return colorScheme;
-	}
 	let darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-	return darkModeMediaQuery.matches ? 'dark' : 'light';
+	return (darkModeMediaQuery.matches || colorScheme === 'dark') ? 'dark' : 'light';
 }
 
 /**

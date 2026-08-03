@@ -1,11 +1,13 @@
 {
 	"translatorID": "032ae9b7-ab90-9205-a479-baf81f49184a",
+	"translatorType": 2,
 	"label": "TEI",
 	"creator": "Stefan Majewski",
 	"target": "xml",
 	"minVersion": "4.0.27",
-	"maxVersion": "",
+	"maxVersion": null,
 	"priority": 25,
+	"inRepository": true,
 	"configOptions": {
 		"dataMode": "xml/dom",
 		"getCollections": "true"
@@ -17,9 +19,7 @@
 		"Full TEI Document": false,
 		"Export Collections": false
 	},
-	"inRepository": true,
-	"translatorType": 2,
-	"lastUpdated": "2026-05-20 17:56:18"
+	"lastUpdated": "2022-09-30 10:56:50"
 }
 
 // ********************************************************************
@@ -282,7 +282,7 @@ function generateItem(item, teiDoc) {
 			idno = teiDoc.createElementNS(ns.tei, "idno");
 			idno.setAttribute("type", "DOI");
 			idno.appendChild(teiDoc.createTextNode(item.DOI));
-			monogr.appendChild(idno);
+			analytic.appendChild(idno);
 		}
 	}
 
@@ -646,8 +646,3 @@ function doExport() {
 	var serializer = new XMLSerializer();
 	Zotero.write(serializer.serializeToString(outputElement));
 }
-
-/** BEGIN TEST CASES **/
-var testCases = [
-]
-/** END TEST CASES **/

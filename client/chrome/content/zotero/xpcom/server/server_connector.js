@@ -35,15 +35,8 @@ Zotero.Server.Connector = {
 		
 		if (zp && zp.collectionsView) {
 			if (allowReadOnly || zp.collectionsView.editable && allowFilesReadOnly || zp.collectionsView.filesEditable) {
-				// The Connector saves to a single target, so derive both the library and the
-				// collection from the focused row. A multiple-collection selection in the pane
-				// isn't expressible here yet, and the other selected rows could otherwise
-				// contribute a collection from a different library than the focused row.
-				let treeRow = zp.collectionsView.selectedTreeRow;
-				library = treeRow?.ref?.libraryID !== undefined
-					? Zotero.Libraries.get(treeRow.ref.libraryID)
-					: null;
-				collection = treeRow && treeRow.isCollection() ? treeRow.ref : null;
+				library = Zotero.Libraries.get(zp.getSelectedLibraryID());
+				collection = zp.getSelectedCollection();
 				editable = zp.collectionsView.editable;
 			}
 			// If not editable, switch to My Library if it exists and is editable
@@ -277,14 +270,23 @@ Zotero.Server.Connector.Detect.prototype = {
 	
 	async getTranslators(requestData) {
 		var data = requestData.data;
-
+		var cookieSandbox = data.uri
+			? new Zotero.CookieSandbox(
+				null,
+				data.uri,
+				data.cookie || "",
+				requestData.headers["User-Agent"]
+			)
+			: null;
+		
 		var parser = new DOMParser();
 		var doc = parser.parseFromString(`<html>${data.html}</html>`, 'text/html');
 		doc = Zotero.HTTP.wrapDocument(doc, data.uri);
-
+		
 		let translate = this._translate = new Zotero.Translate.Web();
 		translate.setDocument(doc);
-
+		cookieSandbox && translate.setCookieSandbox(cookieSandbox);
+		
 		return await translate.getTranslators();
 	},
 }
@@ -1113,7 +1115,6 @@ Zotero.Server.Connector.Ping.prototype = {
 					supportsAttachmentUpload: true,
 					supportsTagsAutocomplete: true,
 					googleDocsAddNoteEnabled: true,
-					googleDocsAddAnnotationEnabled: true,
 					canUserAddNote: true,
 					googleDocsCitationExplorerEnabled: false,
 					translatorsHash,
@@ -1131,3 +1132,103 @@ Zotero.Server.Connector.Ping.prototype = {
 	},
 	
 }
+
+/**
+ * Make an HTTP request from the client. Accepts {@link Zotero.HTTP.request} options and returns a minimal response
+ * object with the same form as the one returned from {@link Zotero.Utilities.Translate#request}.
+ *
+ * Accepts:
+ *		method - The request method ('GET', 'POST', etc.)
+ *		url - The URL to make the request to. Must be an absolute HTTP(S) URL.
+ *		options - See Zotero.HTTP.request() documentation. Differences:
+ *			- responseType is always set to 'text'
+ *			- successCodes is always set to false (non-2xx status codes will not trigger an error)
+ * Returns:
+ *		Response code is always 200. Body contains:
+ *			status - The response status code, as a number
+ *			headers - An object mapping header names to values
+ *			body - The response body, as a string
+ */
+Zotero.Server.Connector.Request = function () {};
+
+/**
+ * The list of allowed hosts. Intentionally hardcoded.
+ */
+Zotero.Server.Connector.Request.allowedHosts = ['www.worldcat.org'];
+
+/**
+ * For testing: allow disabling validation so we can make requests to the server.
+ */
+Zotero.Server.Connector.Request.enableValidation = false;
+
+Zotero.Server.Endpoints["/connector/request"] = Zotero.Server.Connector.Request;
+Zotero.Server.Connector.Request.prototype = {
+	supportedMethods: ["POST"],
+	supportedDataTypes: ["application/json"],
+
+	init: async function (req) {
+		let { method, url, options } = req.data;
+		
+		if (typeof method !== 'string' || typeof url !== 'string') {
+			return [400, 'text/plain', 'method and url are required and must be strings'];
+		}
+		
+		let uri;
+		try {
+			uri = Services.io.newURI(url);
+		}
+		catch (e) {
+			return [400, 'text/plain', 'Invalid URL'];
+		}
+		
+		if (uri.scheme != 'http' && uri.scheme != 'https') {
+			return [400, 'text/plain', 'Unsupported scheme'];
+		}
+
+		if (Zotero.Server.Connector.Request.enableValidation) {
+			if (!Zotero.Server.Connector.Request.allowedHosts.includes(uri.host)) {
+				return [
+					400,
+					'text/plain',
+					'Unsupported URL'
+				];
+			}
+			Zotero.debug(`${JSON.stringify(req.headers)}`, 1);
+			if (!req.headers['User-Agent'] || !req.headers['User-Agent'].startsWith('Mozilla/')) {
+				return [400, 'text/plain', 'Unsupported User-Agent'];
+			}
+		}
+		
+		options = options || {};
+		options.responseType = 'text';
+		options.successCodes = false;
+		
+		let xhr;
+		try {
+			xhr = await Zotero.HTTP.request(req.data.method, req.data.url, options);
+		}
+		catch (e) {
+			if (e instanceof Zotero.HTTP.BrowserOfflineException) {
+				return [503, 'text/plain', 'Client is offline'];
+			}
+			else {
+				throw e;
+			}
+		}
+
+		let status = xhr.status;
+		let headers = {};
+		xhr.getAllResponseHeaders()
+			.trim()
+			.split(/[\r\n]+/)
+			.map(line => line.split(': '))
+			.forEach(parts => headers[parts.shift()] = parts.join(': '));
+		let body = xhr.response;
+
+		return [200, 'application/json', JSON.stringify({
+			status,
+			headers,
+			body
+		})];
+	}
+};

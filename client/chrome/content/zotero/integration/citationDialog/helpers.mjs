@@ -29,7 +29,6 @@ import { Zotero } from "chrome://zotero/content/zotero.mjs";
 export class CitationDialogHelpers {
 	constructor({ doc }) {
 		this.doc = doc;
-		this.smoothResizingPromise = Zotero.Promise.resolve();
 	}
 
 	// shortcut to create a node with specified class and attributes
@@ -40,28 +39,6 @@ export class CitationDialogHelpers {
 		}
 		node.className = className;
 		return node;
-	}
-
-	buildItemTitle(item) {
-		let titleWrapper = this.createNode("div", {}, "title");
-		let titleNode = this.createNode("span", {}, "title-text");
-		titleWrapper.appendChild(titleNode);
-		let title = "";
-		if (!item.isAnnotation()) {
-			title = item.getDisplayTitle();
-		}
-		else if (item.annotationText) {
-			title = Zotero.Utilities.unescapeHTML(item.annotationText.trim().slice(0, 500));
-			titleWrapper.classList.add("annotation-quote");
-			// Add quotation marks around the quoted text
-			titleNode.setAttribute("q-mark-open", Zotero.getString("punctuation.openingQMark"));
-			titleWrapper.setAttribute("q-mark-close", Zotero.getString("punctuation.closingQMark"));
-		}
-		else {
-			title = Zotero.getString(`reader-${item.annotationType}-annotation`);
-		}
-		Zotero.Utilities.Internal.renderItemTitle(title, titleNode);
-		return titleWrapper;
 	}
 
 	// build and return a node with the description (e.g. creator/published/date/etc) of an item
@@ -99,20 +76,6 @@ export class CitationDialogHelpers {
 			}
 			descriptionWrapper.appendChild(dateLabel);
 			addPeriodIfNeeded(descriptionWrapper);
-			return descriptionWrapper;
-		}
-
-		if (item.isAnnotation()) {
-			let comment = Zotero.Utilities.unescapeHTML((item.annotationComment || "").trim());
-			comment = comment.slice(0, 500);
-			let parts = comment.split('\n').map(x => x.trim()).filter(x => x.length);
-			if (parts[0]) {
-				let commentSpan = wrapTextInSpan(parts[0]);
-				descriptionWrapper.appendChild(commentSpan);
-			}
-			else {
-				descriptionWrapper.innerText = " ";
-			}
 			return descriptionWrapper;
 		}
 
@@ -344,33 +307,12 @@ export class CitationDialogHelpers {
 	}
 
 	buildBubbleString(bubbleItem) {
-		let item = bubbleItem.item;
-		let annotationContent = "";
-		// Construct annotation string if relevant
-		if (item.isAnnotation()) {
-			let text = item.annotationText || "";
-			let comment = item.annotationComment || "";
-			if (text) {
-				let annotationText = text.substr(0, 32) + (text.length > 32 ? "…" : "");
-				annotationContent = Zotero.getString("punctuation.openingQMark") + annotationText + Zotero.getString("punctuation.closingQMark");
-			}
-			else if (comment) {
-				let annotationComment = comment.substr(0, 32) + (comment.length > 32 ? "…" : "");
-				annotationContent = annotationComment;
-			}
-			else {
-				annotationContent = Zotero.getString(`reader-${item.annotationType}-annotation`);
-			}
-			while (item.parentItem) {
-				item = item.parentItem;
-			}
-		}
 		// Creator
 		var title;
-		var str = item.getField("firstCreator");
+		var str = bubbleItem.item.getField("firstCreator");
 		
 		// Title, if no creator (getDisplayTitle in order to get case, e-mail, statute which don't have a title field)
-		title = item.getDisplayTitle();
+		title = bubbleItem.item.getDisplayTitle();
 		title = title.substr(0, 32) + (title.length > 32 ? "…" : "");
 		if (!str && title) {
 			str = Zotero.getString("punctuation.openingQMark") + title + Zotero.getString("punctuation.closingQMark");
@@ -380,14 +322,9 @@ export class CitationDialogHelpers {
 		}
 		
 		// Date
-		var date = item.getField("date", true, true);
+		var date = bubbleItem.item.getField("date", true, true);
 		if (date && (date = date.substr(0, 4)) !== "0000") {
 			str += ", " + parseInt(date);
-		}
-
-		// If original item is an annotation, return the bubble string with the annotation info
-		if (bubbleItem.item.isAnnotation()) {
-			return str + " " + annotationContent;
 		}
 		
 		// Locator
@@ -435,75 +372,5 @@ export class CitationDialogHelpers {
 		if (!segmentedControlOption) return;
 		segmentedControlOption.classList.add("active");
 		segmentedControlOption.setAttribute("aria-checked", "true");
-	}
-
-	fetchStoredWindowParams() {
-		try {
-			return JSON.parse(Zotero.Prefs.get("integration.citationDialog.windowParams") || "{}");
-		}
-		catch (e) {
-			return {};
-		}
-	}
-
-	smoothResize(targetWidth, targetHeight, { duration = 300, onComplete } = {}) {
-		let win = this.doc.defaultView;
-		let resolve;
-		this.smoothResizingPromise = new Promise(r => resolve = r);
-		let chromeWidth = win.outerWidth - win.innerWidth;
-		let chromeHeight = win.outerHeight - win.innerHeight;
-
-		// On Linux, animated resizing is too jumpy, so just resize in one step
-		if (Zotero.isLinux) {
-			win.resizeTo(targetWidth, targetHeight);
-			resolve();
-			if (onComplete) {
-				onComplete();
-			}
-			return;
-		}
-
-		let startWidth = win.innerWidth;
-		let startHeight = win.innerHeight;
-		let startX = win.screenX;
-		let startTime = null;
-
-		win.document.documentElement.setAttribute("resizing", "true");
-
-		function step(timestamp) {
-			if (!startTime) startTime = timestamp;
-			let progress = Math.min((timestamp - startTime) / duration, 1);
-			let ease = 1 - Math.pow(1 - progress, 3);
-
-			let w = Math.round(startWidth + (targetWidth - startWidth) * ease);
-			let h = Math.round(startHeight + (targetHeight - startHeight) * ease);
-
-			// Move window left by half the width change so it resizes from both sides equally
-			let currentWidthDelta = (w + chromeWidth) - (startWidth + chromeWidth);
-			let x = Math.round(startX - currentWidthDelta / 2);
-
-			win.moveTo(x, win.screenY);
-			win.resizeTo(w + chromeWidth, h + chromeHeight);
-
-			if (progress < 1) {
-				win.requestAnimationFrame(step);
-			}
-			else {
-				win.document.documentElement.removeAttribute("resizing");
-				resolve();
-				if (onComplete) {
-					onComplete();
-				}
-			}
-		}
-		win.requestAnimationFrame(step);
-	}
-
-	delayNextSmoothResize(delay = 100) {
-		let resolve;
-		this.smoothResizingPromise = new Promise(r => resolve = r);
-		setTimeout(() => {
-			resolve();
-		}, delay);
 	}
 }

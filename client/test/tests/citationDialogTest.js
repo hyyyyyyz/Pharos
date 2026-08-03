@@ -13,20 +13,16 @@ describe("Citation Dialog", function () {
 		getItems() {
 			return [];
 		},
-		preview: () => {},
 		allCitedDataLoadedPromise: Promise.resolve(),
 	};
-	let dialog, win, doc, IOManager, CitationDataManager, SearchHandler;
+	let dialog, win, IOManager, CitationDataManager, SearchHandler;
 
 	before(async function () {
-		// Zotero.Cite.getLocatorString() requires styles to be initialized
-		await Zotero.Styles.init();
 		// one of helper functions of searchHandler uses zotero pane
 		win = await loadZoteroPane();
 		let dialogPromise = waitForWindow("chrome://zotero/content/integration/citationDialog.xhtml");
 		Services.ww.openWindow(null, "chrome://zotero/content/integration/citationDialog.xhtml", "", "", io);
 		dialog = await dialogPromise;
-		doc = dialog.document;
 		IOManager = dialog.IOManager;
 		CitationDataManager = dialog.CitationDataManager;
 		SearchHandler = dialog.SearchHandler;
@@ -39,11 +35,7 @@ describe("Citation Dialog", function () {
 	beforeEach(async function () {
 		// Many operations (e.g. IOManager.addItemsToCitation) are disabled
 		// when search runs. Search can be triggered by a variety of events
-		// (notably the window "focus" listener, which kicks off a search after
-		// a 100ms delay). Before each test, wait out that delay, then wait for
-		// any searches — including ones that only just started during the
-		// delay — to finish running.
-		await Zotero.Promise.delay(150);
+		// so before each test, we make sure that search has finished running
 		while (SearchHandler.searching) {
 			await Zotero.Promise.delay(10);
 		}
@@ -225,12 +217,11 @@ describe("Citation Dialog", function () {
 	
 			// open popup
 			let firstBubble = CitationDataManager.items[0];
-			let popup = dialog.document.getElementById("itemDetails");
-			let popupOpenPromise = popup.state == "open"
-				? Promise.resolve()
-				: waitForDOMEvent(popup, "popupshown");
 			IOManager._openItemDetailsPopup(firstBubble.dialogReferenceID);
-			await popupOpenPromise;
+			let popup = dialog.document.getElementById("itemDetails");
+			
+			// give the popup time to open
+			await Zotero.Promise.delay(50);
 			assert.equal(popup.state, "open");
 	
 			// set locator/suffix/prefix values
@@ -376,8 +367,11 @@ describe("Citation Dialog", function () {
 			let itemTwo = await createDataObject('item');
 			await IOManager.addItemsToCitation([itemOne, itemTwo]);
 
-			// A multi-item add does not record just-added bubbles
-			assert.notOk(IOManager._justAddedBubbles);
+			// Both items should be counted as just-added
+			assert.sameMembers(CitationDataManager.items.map(i => i.dialogReferenceID), IOManager._justAddedBubbles.map(b => b.dialogReferenceID));
+
+			// Clear just-added bubbles, as if the user did it themselves
+			IOManager._clearJustAddedBubbles();
 
 			// Type a locator and press Enter
 			let currentInput = dialog.document.getElementById("bubble-input").getCurrentInput();
@@ -440,43 +434,23 @@ describe("Citation Dialog", function () {
 		});
 
 		it("should switch dialog mode", async function () {
-			await IOManager.toggleDialogMode("list");
+			IOManager.toggleDialogMode("list");
 			assert.isFalse(dialog.document.getElementById("list-layout").hidden);
 			assert.isTrue(dialog.document.getElementById("library-layout").hidden);
-			await IOManager.toggleDialogMode("library");
+			IOManager.toggleDialogMode("library");
 			assert.isFalse(dialog.document.getElementById("library-layout").hidden);
 			assert.isTrue(dialog.document.getElementById("list-layout").hidden);
-		});
-
-		it("should show the citation preview only when the citation has items", async function () {
-			let prefWas = Zotero.Prefs.get("integration.citationPreviewShown");
-			Zotero.Prefs.set("integration.citationPreviewShown", true);
-			try {
-				IOManager.updateBubbleInput();
-				assert.isTrue(dialog.document.getElementById("citation-preview").hidden);
-				assert.isTrue(dialog.document.getElementById("display-preview-button").hidden);
-
-				let item = await createDataObject('item');
-				await IOManager.addItemsToCitation([item]);
-				assert.isFalse(dialog.document.getElementById("citation-preview").hidden);
-				assert.isFalse(dialog.document.getElementById("display-preview-button").hidden);
-			}
-			finally {
-				Zotero.Prefs.set("integration.citationPreviewShown", prefWas);
-			}
 		});
 
 		it("should highlight bubbles whose items are selected", async function () {
 			let itemOne = await createDataObject('item');
 			let itemTwo = await createDataObject('item');
 
-			await IOManager.toggleDialogMode("library");
+			IOManager.toggleDialogMode("library");
 			await IOManager.addItemsToCitation([itemOne, itemTwo]);
 
 			// Select row of the first bubble
-			var promise = dialog.libraryLayout.itemsView.waitForSelect();
-			dialog.libraryLayout.itemsView.selectItem(itemOne.id);
-			await promise;
+			await dialog.libraryLayout.itemsView.selectItem(itemOne.id);
 			// Check that the bubble is highlighted
 			let bubbleOne = dialog.document.querySelector(`.bubble[dialogReferenceID="${CitationDataManager.items[0].dialogReferenceID}"]`);
 			assert.isTrue(bubbleOne.classList.contains("has-item-selected"));
@@ -487,7 +461,7 @@ describe("Citation Dialog", function () {
 
 		it("should highlight rows of items in the citation", async function () {
 			let itemOne = await createDataObject('item');
-			await IOManager.toggleDialogMode("library");
+			IOManager.toggleDialogMode("library");
 
 			// Add the item to citation
 			await IOManager.addItemsToCitation([itemOne]);
@@ -495,116 +469,9 @@ describe("Citation Dialog", function () {
 			await dialog.libraryLayout.itemsView.selectItem(itemOne.id);
 			// Make sure the row node is highlighted
 			let rowIndex = dialog.libraryLayout.itemsView.getRowIndexByID(itemOne.id);
-			let rowID = `${dialog.libraryLayout.itemsView.id}-row-${rowIndex}`;
+			let rowID = "item-tree-citationDialog-row-" + rowIndex;
 			let rowNode = dialog.document.getElementById(rowID);
 			assert.isTrue(rowNode.classList.contains("highlighted"));
-		});
-
-		it("should add all selected items when clicking + on a selected row", async function () {
-			let collection = await createDataObject('collection');
-			let itemOne = await createDataObject('item', { collections: [collection.id] });
-			let itemTwo = await createDataObject('item', { collections: [collection.id] });
-
-			await IOManager.toggleDialogMode("library");
-			let cv = dialog.libraryLayout.collectionsView;
-			let itemsView = dialog.libraryLayout.itemsView;
-			await cv.selectByID("C" + collection.id);
-			await itemsView.waitForLoad();
-
-			await itemsView.selectItems([itemOne.id, itemTwo.id]);
-			IOManager.focusItemTree();
-			dialog.libraryLayout._handleItemsViewIconClick(itemsView.getRowIndexByID(itemOne.id));
-			// the add is done once focus returns to the input
-			while (!dialog.document.activeElement.closest("bubble-input")) {
-				await Zotero.Promise.delay(10);
-			}
-
-			assert.sameMembers(CitationDataManager.items.map(item => item.id), [itemOne.id, itemTwo.id]);
-
-			// a number typed after a multi-item add is not applied as a page locator
-			let input = dialog.document.querySelector("bubble-input").refocusInput();
-			input.value = "123";
-			IOManager._handleInputEnter(input);
-			assert.isTrue(CitationDataManager.items.every(item => !item.locator));
-			input.value = "";
-
-			await cv.selectByID("L" + Zotero.Libraries.userLibraryID);
-			await itemsView.waitForLoad();
-		});
-
-		it("should add only the clicked item when clicking + on an unselected row", async function () {
-			let collection = await createDataObject('collection');
-			let itemOne = await createDataObject('item', { collections: [collection.id] });
-			let itemTwo = await createDataObject('item', { collections: [collection.id] });
-
-			await IOManager.toggleDialogMode("library");
-			let cv = dialog.libraryLayout.collectionsView;
-			let itemsView = dialog.libraryLayout.itemsView;
-			await cv.selectByID("C" + collection.id);
-			await itemsView.waitForLoad();
-
-			await itemsView.selectItem(itemTwo.id);
-			IOManager.focusItemTree();
-			dialog.libraryLayout._handleItemsViewIconClick(itemsView.getRowIndexByID(itemOne.id));
-			// the add is done once focus returns to the input
-			while (!dialog.document.activeElement.closest("bubble-input")) {
-				await Zotero.Promise.delay(10);
-			}
-
-			assert.sameMembers(CitationDataManager.items.map(item => item.id), [itemOne.id]);
-
-			await cv.selectByID("L" + Zotero.Libraries.userLibraryID);
-			await itemsView.waitForLoad();
-		});
-
-		it("should focus the input after adding an item with Enter in the items list", async function () {
-			let collection = await createDataObject('collection');
-			let item = await createDataObject('item', { collections: [collection.id] });
-
-			await IOManager.toggleDialogMode("library");
-			let cv = dialog.libraryLayout.collectionsView;
-			let itemsView = dialog.libraryLayout.itemsView;
-			await cv.selectByID("C" + collection.id);
-			await itemsView.waitForLoad();
-
-			await itemsView.selectItem(item.id);
-			IOManager.focusItemTree();
-			let treeElem = dialog.document.querySelector("#zotero-items-tree [tabindex]");
-			treeElem.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-			// the post-add handling returns focus to the input
-			while (!dialog.document.activeElement.closest("bubble-input")) {
-				await Zotero.Promise.delay(10);
-			}
-
-			await cv.selectByID("L" + Zotero.Libraries.userLibraryID);
-			await itemsView.waitForLoad();
-		});
-
-		it("should show the union of items from multiple selected collections", async function () {
-			let collectionOne = await createDataObject('collection');
-			let collectionTwo = await createDataObject('collection');
-			let itemOne = await createDataObject('item', { collections: [collectionOne.id] });
-			let itemTwo = await createDataObject('item', { collections: [collectionTwo.id] });
-
-			await IOManager.toggleDialogMode("library");
-			let cv = dialog.libraryLayout.collectionsView;
-			let itemsView = dialog.libraryLayout.itemsView;
-
-			// Select both collections
-			await cv.selectByID("C" + collectionOne.id);
-			cv.selection.toggleSelect(cv.getRowIndexByID("C" + collectionTwo.id));
-			await dialog.libraryLayout._onCollectionSelection();
-			await itemsView.waitForLoad();
-
-			assert.isNumber(itemsView.getRowIndexByID(itemOne.id),
-				"Item from first selected collection should be shown");
-			assert.isNumber(itemsView.getRowIndexByID(itemTwo.id),
-				"Item from second selected collection should be shown");
-
-			// Restore the default single-row selection so later tests that rely on the
-			// library root being selected aren't affected by the leftover multi-selection
-			await cv.selectByID("L" + Zotero.Libraries.userLibraryID);
-			await itemsView.waitForLoad();
 		});
 	});
 
@@ -634,25 +501,20 @@ describe("Citation Dialog", function () {
 		});
 
 		it("should perform search in list mode", async function () {
-			await IOManager.toggleDialogMode("list");
+			IOManager.toggleDialogMode("list");
 
 			// Wait for search triggered after switching dialog modes to finish
 			while (SearchHandler.searching) {
 				await Zotero.Promise.delay(10);
 			}
-			// Re-set cached items right before search to guard against
-			// the window focus handler clearing them
-			SearchHandler.selectedItems = [selectedOne, selectedTwo, selectedAndOpenOne];
-			SearchHandler.openItems = [openOne, openTwo, selectedAndOpenOne, citedAndOpenOne];
-			SearchHandler.citedItems = [citedOne, citedAndOpenOne];
 			// Search for "one"
 			await dialog.currentLayout.search("one", { skipDebounce: true });
-			// Selected items should have "one_selected" but not "one_selected_open", since it is open
+			// Selected items should have both "one_selected" and "one_selected_open"
 			let selectedIDs = SearchHandler.results.selected.map(item => item.id);
-			assert.sameMembers(selectedIDs, [selectedOne.id]);
-			// Open items should have "one_open", "one_selected_open", and "one_open_cited"
+			assert.sameMembers(selectedIDs, [selectedOne.id, selectedAndOpenOne.id]);
+			// Open items should have "one_open" and "one_open_cited" but not "one_selected_open", since it is selected
 			let openIDs = SearchHandler.results.open.map(item => item.id);
-			assert.sameMembers(openIDs, [openOne.id, selectedAndOpenOne.id, citedAndOpenOne.id]);
+			assert.sameMembers(openIDs, [openOne.id, citedAndOpenOne.id]);
 			// Cited items should have "one_cited"
 			let citedIDs = SearchHandler.results.cited.map(item => item.id);
 			assert.sameMembers(citedIDs, [citedOne.id]);
@@ -670,25 +532,20 @@ describe("Citation Dialog", function () {
 		});
 
 		it("should perform search in library mode", async function () {
-			await IOManager.toggleDialogMode("library");
+			IOManager.toggleDialogMode("library");
 
 			// Wait for search triggered after switching dialog modes to finish
 			while (SearchHandler.searching) {
 				await Zotero.Promise.delay(10);
 			}
-			// Re-set cached items right before search to guard against
-			// the window focus handler clearing them
-			SearchHandler.selectedItems = [selectedOne, selectedTwo, selectedAndOpenOne];
-			SearchHandler.openItems = [openOne, openTwo, selectedAndOpenOne, citedAndOpenOne];
-			SearchHandler.citedItems = [citedOne, citedAndOpenOne];
 			// Search for "one"
 			await dialog.currentLayout.search("one", { skipDebounce: true });
-			// Selected items should have "one_selected" but not "one_selected_open", since it is open
+			// Selected items should have both "one_selected" and "one_selected_open"
 			let selectedIDs = SearchHandler.results.selected.map(item => item.id);
-			assert.sameMembers(selectedIDs, [selectedOne.id]);
-			// Open items should have "one_open", "one_selected_open", and "one_open_cited"
+			assert.sameMembers(selectedIDs, [selectedOne.id, selectedAndOpenOne.id]);
+			// Open items should have "one_open" and "one_open_cited" but not "one_selected_open", since it is selected
 			let openIDs = SearchHandler.results.open.map(item => item.id);
-			assert.sameMembers(openIDs, [openOne.id, selectedAndOpenOne.id, citedAndOpenOne.id]);
+			assert.sameMembers(openIDs, [openOne.id, citedAndOpenOne.id]);
 			// Cited items should have "one_cited"
 			let citedIDs = SearchHandler.results.cited.map(item => item.id);
 			assert.sameMembers(citedIDs, [citedOne.id]);
@@ -700,63 +557,6 @@ describe("Citation Dialog", function () {
 				let node = dialog.document.querySelector(`.item[id="${itemID}"]`);
 				assert.isOk(node);
 			}
-		});
-
-		it("should sort libraries in list mode by cited count, with user library first and others alphabetical on tie", async function () {
-			let gammaGroup = await createGroup({ name: "gamma_group" });
-			let betaGroup = await createGroup({ name: "beta_group" });
-			let alphaGroup = await createGroup({ name: "alpha_group" });
-
-			// One search-matching item per library
-			let userItem = await createDataObject('item', { title: "libsort_user" });
-			let gammaItem = await createDataObject('item', { title: "libsort_gamma", libraryID: gammaGroup.libraryID });
-			let betaItem = await createDataObject('item', { title: "libsort_beta", libraryID: betaGroup.libraryID });
-			let alphaItem = await createDataObject('item', { title: "libsort_alpha", libraryID: alphaGroup.libraryID });
-			// Cited item with a title that doesn't match the search query, so it
-			// isn't removed from results.found by deduplication. Goes in gamma_group
-			// so that group has a higher cited count than the rest.
-			let citedItem = await createDataObject('item', { title: "cited_item", libraryID: gammaGroup.libraryID });
-
-			io.getItems = async () => [citedItem];
-			io.isAllCitedDataLoaded = true;
-
-			await IOManager.toggleDialogMode("list");
-			while (SearchHandler.searching) {
-				await Zotero.Promise.delay(10);
-			}
-
-			SearchHandler.selectedItems = [];
-			SearchHandler.openItems = [];
-			// Reset so refreshCitedItems re-fetches via io.getItems and
-			// populates citedItemCountsByLibrary
-			SearchHandler.citedItems = null;
-			SearchHandler.citedItemCountsByLibrary = {};
-			await SearchHandler.refreshCitedItems();
-
-			await dialog.currentLayout.search("libsort", { skipDebounce: true });
-
-			let libraryGroupKeys = SearchHandler.getOrderedSearchResultGroups()
-				.filter(g => g.isLibrary)
-				.map(g => g.key);
-
-			// Expected order:
-			//   1. gamma_group  -- only library with a cited item (cited count wins)
-			//   2. user library -- userLibraryID wins ties over other libraries
-			//   3. alpha_group -- alphabetical fallback among remaining libraries
-			//   4. beta_group
-			assert.deepEqual(libraryGroupKeys, [
-				gammaGroup.libraryID,
-				userItem.libraryID,
-				alphaGroup.libraryID,
-				betaGroup.libraryID
-			]);
-
-			// Reset cited state so subsequent tests aren't affected
-			SearchHandler.citedItems = [];
-			SearchHandler.citedItemCountsByLibrary = {};
-
-			io.getItems = () => [];
-			delete io.isAllCitedDataLoaded;
 		});
 	});
 
@@ -786,7 +586,6 @@ describe("Citation Dialog", function () {
 				getItems() {
 					return new Zotero.Promise(() => {});
 				},
-				preview: () => {},
 				allCitedDataLoadedPromise: new Zotero.Promise(() => {}),
 			};
 
@@ -814,7 +613,7 @@ describe("Citation Dialog", function () {
 			note.setNote("result");
 			await note.saveTx();
 
-			await IOManager.toggleDialogMode("list");
+			IOManager.toggleDialogMode("list");
 
 			// Wait for search triggered after switching dialog modes to finish
 			while (SearchHandler.searching) {
@@ -872,253 +671,6 @@ describe("Citation Dialog", function () {
 			// Item node must be rendered
 			let itemNode = dialog.document.querySelector(`.item[id="${item.id}"]`);
 			assert.isOk(itemNode);
-		});
-
-		it("should not display empty note child rows", async function () {
-			await dialog.setDialogType("add-note");
-			while (SearchHandler.searching) {
-				await Zotero.Promise.delay(10);
-			}
-			await IOManager.toggleDialogMode("library");
-			while (SearchHandler.searching) {
-				await Zotero.Promise.delay(10);
-			}
-
-			let parentItem = await createDataObject('item', { title: "parent_with_notes" });
-			let noteWithContent = await createDataObject('item', {
-				itemType: 'note',
-				parentID: parentItem.id
-			});
-			noteWithContent.setNote('<p>Some note content</p>');
-			await noteWithContent.saveTx();
-
-			let emptyNote = await createDataObject('item', {
-				itemType: 'note',
-				parentID: parentItem.id
-			});
-			await emptyNote.saveTx();
-
-			// Refresh itemTree
-			await dialog.libraryLayout.search("", { skipDebounce: true });
-
-			// The empty note should not be among the itemTree rows
-			let emptyNoteRowIndex = dialog.libraryLayout.itemsView.getRowIndexByID(emptyNote.id);
-			assert.isFalse(emptyNoteRowIndex);
-
-			// The note with content should be present
-			let noteRowIndex = dialog.libraryLayout.itemsView.getRowIndexByID(noteWithContent.id);
-			assert.isOk(noteRowIndex !== false);
-
-			await parentItem.eraseTx();
-		});
-
-		it("should include notes open in tabs in open items", async function () {
-			await dialog.setDialogType("add-note");
-			while (SearchHandler.searching) {
-				await Zotero.Promise.delay(10);
-			}
-
-			// Open the note in a tab in the main window
-			let win = Zotero.getMainWindow();
-			await Zotero.Notes.open(note.id, undefined, { openInBackground: true });
-			let tabID = win.Zotero_Tabs.getTabIDByItemID(note.id);
-
-			// Re-fetch open items
-			SearchHandler.setSearchValue("");
-			SearchHandler.clearNonLibraryItemsCache();
-			await SearchHandler.refreshSelectedAndOpenItems();
-			win.Zotero_Tabs.close(tabID);
-
-			assert.includeMembers(SearchHandler.results.open, [note]);
-		});
-	});
-
-
-	describe("Add annotations dialog", function () {
-		let parentItem, attachment, highlightAnnotation, underlineAnnotation;
-
-		before(async function () {
-			// Create items and annotations
-			parentItem = await createDataObject('item', { title: "parent_item_with_annotations" });
-			parentItem.setCreators([
-				{
-					firstName: "First_One",
-					lastName: "Last_One",
-					creatorType: "author"
-				}
-			]);
-			await parentItem.saveTx();
-			attachment = await importFileAttachment('test.pdf', { parentID: parentItem.id });
-
-			highlightAnnotation = await createAnnotation('highlight', attachment);
-			highlightAnnotation.annotationText = 'highlighted text';
-			highlightAnnotation.annotationComment = 'highlight comment';
-			await highlightAnnotation.saveTx();
-
-			underlineAnnotation = await createAnnotation('underline', attachment);
-			underlineAnnotation.annotationText = 'underlined text';
-			underlineAnnotation.annotationComment = 'underline';
-			await underlineAnnotation.saveTx();
-		});
-
-		beforeEach(async function () {
-			await dialog.setDialogType("annotations");
-
-			dialog.CitationDataManager.items = [];
-			dialog.IOManager.updateBubbleInput();
-			// Reset search
-			await dialog.currentLayout.search("", { skipDebounce: true });
-			
-			// Wait for any ongoing search to complete
-			while (SearchHandler.searching) {
-				await Zotero.Promise.delay(10);
-			}
-			dialog.IOManager._lastClickTime = null;
-		});
-
-		after(function () {
-			dialog.close();
-			win.close();
-		});
-
-		it("should bubbleize selected annotations", async function () {
-			// Pretend that highlight annotation is selected
-			SearchHandler.results.selectedAnnotations = [highlightAnnotation];
-			await dialog.currentLayout.refreshItemsList();
-
-			// Click on selected annotation
-			dialog.document.querySelector(`.item[id="${highlightAnnotation.id}"]`).click();
-			await Zotero.Promise.delay();
-			// Expect that it becomes a bubble
-			let bubbles = dialog.document.querySelector("bubble-input").getAllBubbles();
-			assert.equal(bubbles.length, 1);
-			assert.equal(bubbles[0].textContent, `Last_One “highlighted text”`);
-		});
-
-		it("should select itemTree row on click of selected non-annotation item", async function () {
-			// Pretend that highlight annotation is selected
-			SearchHandler.results.selectedItems = [parentItem];
-			await dialog.currentLayout.refreshItemsList();
-
-			// Due to some kind of race condition with itemTree loading in tests,
-			// sometimes _itemTreeLoadingDeferred won't be resolved.
-			// This ensures collectionTree.selectItems doesn't get stuck.
-			dialog.libraryLayout.itemsView._itemTreeLoadingDeferred.resolve();
-			// Click on selected item
-			dialog.document.querySelector(`.item[id="${parentItem.id}"]`).click();
-			await Zotero.Promise.delay();
-			// Expect that itemTree row is selected and itemTree is focused
-			assert.equal(dialog.libraryLayout.itemsView.getSelectedItems(true)[0], parentItem.id);
-			assert.equal(dialog.document.activeElement.id, "item-tree-citationDialog-default");
-		});
-
-		it("should display selected items and selected annotations in separate decks", async function () {
-			SearchHandler.results.selectedAnnotations = [highlightAnnotation];
-			SearchHandler.results.selectedItems = [parentItem];
-
-			await dialog.currentLayout.refreshItemsList();
-
-			let selectedAnnotationsDeck = dialog.document.getElementById("library-selectedAnnotations-items");
-			let selectedItemsDeck = dialog.document.getElementById("library-selectedItems-items");
-			assert.equal(selectedAnnotationsDeck.querySelectorAll(".item").length, 1);
-			assert.equal(selectedAnnotationsDeck.querySelector(".item").id, highlightAnnotation.id);
-			assert.equal(selectedItemsDeck.querySelectorAll(".item").length, 1);
-			assert.equal(selectedItemsDeck.querySelector(".item").id, parentItem.id);
-		});
-
-		it("should only include selected/open items that have annotations", async function () {
-			// 2 top-level items, one attachment per each item, no annotations
-			let itemNoAnnotations1 = await createDataObject('item', { title: "item_no_annotations_1" });
-			let itemNoAnnotations2 = await createDataObject('item', { title: "item_no_annotations_2" });
-			
-			await importFileAttachment('test.pdf', { parentID: itemNoAnnotations1.id });
-			await importFileAttachment('test.pdf', { parentID: itemNoAnnotations2.id });
-
-			// 2 more top-level items, one attachment per each item, one annotation per attachment
-			let itemWithAnnotations1 = await createDataObject('item', { title: "item_with_annotations_1" });
-			let itemWithAnnotations2 = await createDataObject('item', { title: "item_with_annotations_2" });
-
-			let attachmentWithAnnotations1 = await importFileAttachment('test.pdf', { parentID: itemWithAnnotations1.id });
-			let attachmentWithAnnotations2 = await importFileAttachment('test.pdf', { parentID: itemWithAnnotations2.id });
-
-			await createAnnotation('highlight', attachmentWithAnnotations1);
-			await createAnnotation('highlight', attachmentWithAnnotations2);
-
-			// Pretend that these are selected/opened items
-			let selectedStub = sinon.stub(SearchHandler, "_getSelectedLibraryItems");
-			let selectedWithAnnotations = SearchHandler.keepItemsWithAnnotations([itemNoAnnotations1, itemWithAnnotations1]);
-			selectedStub.returns(selectedWithAnnotations);
-			let openStub = sinon.stub(SearchHandler, "_getOpenTabItems");
-			let openWithAnnotations = SearchHandler.keepItemsWithAnnotations([itemNoAnnotations2, itemWithAnnotations2]);
-			openStub.resolves(openWithAnnotations);
-
-			// Clear the cache so that selected/open items are re-freshed
-			// using the stubs below
-			SearchHandler.selectedItems = null;
-			SearchHandler.openItems = null;
-			
-			// Refresh all items
-			await SearchHandler.refreshSelectedAndOpenItems();
-
-			// Restore all stubs
-			selectedStub.restore();
-			openStub.restore();
-
-			// Only 2 items with annotations should be included in the results
-			assert.sameMembers(SearchHandler.results.selected, [itemWithAnnotations1]);
-			assert.sameMembers(SearchHandler.results.open, [itemWithAnnotations2]);
-		});
-
-		it("should display all selected annotations in side pane", async function () {
-			// Actual annotations are selected
-			await dialog.currentLayout.itemsView.selectItems([highlightAnnotation.id, underlineAnnotation.id]);
-			let annotationPreviews = dialog.document.querySelectorAll("#annotations-list annotation-row");
-			assert.equal(annotationPreviews.length, 2);
-			let annotationRowIDs = [annotationPreviews[0]._annotation.id, annotationPreviews[1]._annotation.id];
-			assert.sameMembers(annotationRowIDs, [highlightAnnotation.id, underlineAnnotation.id]);
-
-			// A top-level item is selected
-			await dialog.currentLayout.itemsView.selectItems([parentItem.id]);
-			annotationPreviews = dialog.document.querySelectorAll("#annotations-list annotation-row");
-			assert.equal(annotationPreviews.length, 2);
-			annotationRowIDs = [annotationPreviews[0]._annotation.id, annotationPreviews[1]._annotation.id];
-			assert.sameMembers(annotationRowIDs, [highlightAnnotation.id, underlineAnnotation.id]);
-		});
-
-		it("should display preview popup on bubble click", async function () {
-			await dialog.IOManager.addItemsToCitation([highlightAnnotation]);
-			let bubble = dialog.document.querySelector("bubble-input .bubble");
-			let popup = dialog.document.getElementById("itemDetails");
-
-			let popupOpenPromise = popup.state == "open"
-				? Promise.resolve()
-				: waitForDOMEvent(popup, "popupshown");
-			bubble.click();
-			await popupOpenPromise;
-			assert.equal(popup.state, "open");
-
-			// make sure the annotation-row preview is visible in the popup
-			let annotationPreview = popup.querySelector("annotation-row");
-			assert.isOk(annotationPreview);
-			assert.notOk(annotationPreview.closest("[hidden]"));
-		});
-
-		it("should not display note child rows", async function () {
-			let note = await createDataObject('item', {
-				itemType: 'note',
-				parentID: parentItem.id
-			});
-			note.setNote('<p>Test note content</p>');
-			await note.saveTx();
-
-			// Refresh itemTree
-			await dialog.libraryLayout.search("", { skipDebounce: true });
-
-			// Check that the note is not among the itemTree rows
-			let noteRowIndex = dialog.libraryLayout.itemsView.getRowIndexByID(note.id);
-			assert.isFalse(noteRowIndex);
-
-			await note.eraseTx();
 		});
 	});
 

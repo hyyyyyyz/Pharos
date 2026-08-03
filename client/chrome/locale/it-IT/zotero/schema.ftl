@@ -13,4 +13,4 @@ creatorTypes-host = Conduttore
 creatorTypes-narrator = Narratore
 creatorTypes-originalCreator = Autore originale
 creatorTypes-organizer = Organizzatore
-creatorTypes-seriesCreator = Responsabile della serie
+creatorTypes-seriesCreator = Autore della serie

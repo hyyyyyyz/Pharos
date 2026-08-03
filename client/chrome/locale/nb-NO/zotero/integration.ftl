@@ -22,8 +22,6 @@ integration-editBibliography-wrapper =
 integration-citationDialog = Henvisningsdialogboks
 integration-citationDialog-section-open = Åpne dokumenter ({ $count })
 integration-citationDialog-section-selected = Valgte elementer ({ $count }/{ $total })
-integration-citationDialog-section-selectedAnnotations = Valgte kommentarer
-integration-citationDialog-section-selectedItems = Valgte elementer
 integration-citationDialog-section-cited =
     { $count ->
         [0] Henviste elementer
@@ -32,13 +30,11 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = Suffiks
 integration-citationDialog-details-prefix = Prefiks
 integration-citationDialog-details-suppressAuthor = Utelat forfatter
-integration-citationDialog-details-locator-info = Tips: Du kan også skrive inn sidetall og andre referanser direkte i hovedfeltet. <a data-l10n-name="docs-link">Lær mer</a>
-integration-citationDialog-details-includeComments = Inkluderer merknader
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
 integration-citationDialog-details-showInLibrary = { general-show-in-library }
-integration-citationDialog-settings-title = Innstillinger for henvisninger
+integration-citationDialog-settings-title = Innstillinger for henvisnger
 integration-citationDialog-lib-message-citation =
     { $search ->
         [true] Ingen valgte, åpne eller henviste elementer samsvarer med det aktuelle søket
@@ -49,16 +45,7 @@ integration-citationDialog-lib-message-add-note =
         [true] Ingen valgte notater samsvarer med det aktuelle søket
        *[other] ingen notater er valgt
     }
-integration-citationDialog-lib-message-annotations =
-    { $search ->
-        [true] Ingen elementer med merknader samsvarer med det aktuelle søket
-       *[other] Ingen valgte eller åpne elementer med merknader
-    }
 integration-citationDialog-settings-keepSorted = Behold sortering av kildene
-integration-citationDialog-preview-empty = Forhåndsvisning
-integration-citationDialog-preview-error = Forhåndsvisning ikke tilgjengelig
-integration-citationDialog-btn-displayPreview =
-    .title = Vis forhåndsvisning av henvisning
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = Bibliotek
@@ -67,8 +54,6 @@ integration-citationDialog-btn-type-citation =
     .title = Legg til/endre henvisning
 integration-citationDialog-btn-type-add-note =
     .title = Legg til notat
-integration-citationDialog-btn-type-annotations =
-    .title = Legg til kommentarer
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -81,18 +66,11 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = Trykk på Tab for å velge elementer som skal legges til i denne henvisningen. Trykk på Escape for å forkaste endringene og lukke dialogboksen.
-integration-citationDialog-just-added-input-placeholder = Skriv «10-15» for å henvise til sider, eller søk etter elementer
-integration-citationDialog-just-added-input-citation =
-    .placeholder = { $placeholder }
-    .title = { $title }
-    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = Søk etter notat for å legge det inn i dokumentet
-integration-citationDialog-single-input-annotations =
-    .placeholder = Søk etter kommentarer som skal settes inn i dokumentet
 integration-citationDialog-aria-item-list =
     .aria-description = Bruk opp-/nedpilen for å endre valg av element. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -109,9 +87,6 @@ integration-citationDialog-collapse-section =
     .title = Skjul seksjon
 integration-citationDialog-bubble-empty = (ingen tittel)
 integration-citationDialog-add-to-citation = Legg til henvisning
-integration-citationDialog-annotations-filter =
-    .placeholder = Filtrer kommentarer
-integration-citationDialog-annotations-empty = Velg et element, et vedlegg eller en kommentar for å se detaljene for kommentaren
 integration-prefs-displayAs-label = Vis henvisninger som:
 integration-prefs-footnotes =
     .label = Fotnoter
@@ -141,6 +116,8 @@ integration-warning-documentPreferences-changes-will-be-lost = Du har gjort endr
 integration-warning-discard-changes = Forkast endringer
 integration-warning-command-is-running = En kommando for tekstbehandlingsintegrasjon kjører allerede.
 first-run-guidance-citationDialog =
-    Klikk på boblen eller bruk tastene ← og ↓ for å se henvisningsdetaljene og tilpasse innstillinger som sidetall, prefiks og suffiks.
+    Skriv inn en tittel, forfatter og/eller år for å søke etter en referanse.
     
-    Du kan også legge til et sidetall eller en annen referanse ved å inkludere det i søkeordene dine (f.eks. «historie { $locator }») eller ved å skrive det etter boblen og trykke på { return-or-enter }.
+    Når du har gjort ditt valg, klikker du på boblen eller velger den via tastaturet og trykker ↓/Mellomromstasten for å vise siteringsalternativer som sidetall, prefiks og suffiks.
+    
+    Du kan også legge til et sidetall eller en annen stedsreferanse ved å inkludere det i søkeordene dine (f.eks. «historikk { $locator }») eller ved å skrive det inn etter boblen og trykke på { return-or-enter }.

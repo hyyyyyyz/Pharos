@@ -39,7 +39,8 @@
 // --------------------------------------------------
 
 @import "preferences/general";
-@import "preferences/account";
+@import "preferences/file_renaming";
+@import "preferences/sync";
 @import "preferences/sync_reset";
 @import "preferences/export";
 @import "preferences/cite";
@@ -47,8 +48,6 @@
 @import "preferences/pharos";
 @import "preferences/pharosDaily";
 @import "preferences/pharosAppearance";
-
-@import "elements/fileRenamingSettings";
 
 @include macOS-normalize-controls;
 
@@ -291,6 +290,13 @@ menulist[disabled="true"] {
 	font-size: .85em;
 }
 
+/* Links within messages */
+description label[class=zotero-text-link],
+label[class=zotero-text-link],
+label[is=zotero-text-link] {
+	margin: 0;
+}
+
 .form-grid {
 	display: grid;
 	grid-template-columns: max-content 1fr;
@@ -376,11 +382,5 @@ button {
 	
 	radio, checkbox {
 		margin-block: 4px;
-	}
-}
-
-@media (-moz-platform: linux) {
-	menulist {
-		@include focus-ring;
 	}
 }

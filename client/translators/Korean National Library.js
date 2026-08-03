@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-04-01 18:00:00"
+	"lastUpdated": "2022-12-28 02:37:11"
 }
 
 /*
@@ -80,10 +80,11 @@ function getType(type) {
 function fixKoreanCreators(creators) {
 	for (let i = 0; i < creators.length; i++) {
 		var len = creators[i].lastName.length;
-		var korean = new RegExp("^[\\p{Script=Hangul}\\p{Script=Han}]{" + len + "}$", 'u');
+		var regex = "[\\p{hangul}\\{han}]{" + len + "}";
+		var korean = new ZU.XRegExp(regex);
 		if (creators[i].firstName) continue; // likely a Western name
 		else if (len > 3) continue; // likely Japanese name
-		else if (korean.test(creators[i].lastName)) {
+		else if (ZU.XRegExp.test(creators[i].lastName, korean)) {
 			// name is almost certainly Korean. First character is lastName
 			creators[i].firstName = creators[i].lastName.replace(/^./, "");
 			creators[i].lastName = creators[i].lastName.replace(/^(.).*/, "$1");

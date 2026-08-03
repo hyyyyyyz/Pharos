@@ -31,7 +31,6 @@ Zotero.Creators = new function () {
 	var _cache = {};
 	
 	this.init = async function () {
-		_cache = {};
 		var repaired = false;
 		var sql = "SELECT * FROM creators";
 		var rows = await Zotero.DB.queryAsync(sql);
@@ -109,19 +108,10 @@ Zotero.Creators = new function () {
 		);
 		if (!id && create) {
 			id = Zotero.ID.get('creators');
-			let sql = "INSERT INTO creators "
-				+ "(creatorID, firstName, lastName, fieldMode, firstNameNormalized, lastNameNormalized) "
-				+ "VALUES (?, ?, ?, ?, ?, ?)";
+			let sql = "INSERT INTO creators (creatorID, firstName, lastName, fieldMode) "
+				+ "VALUES (?, ?, ?, ?)";
 			await Zotero.DB.queryAsync(
-				sql,
-				[
-					id,
-					data.firstName,
-					data.lastName,
-					data.fieldMode,
-					Zotero.Utilities.Internal.normalizeForSearchStorage(data.firstName),
-					Zotero.Utilities.Internal.normalizeForSearchStorage(data.lastName)
-				]
+				sql, [id, data.firstName, data.lastName, data.fieldMode]
 			);
 			_cache[id] = data;
 		}

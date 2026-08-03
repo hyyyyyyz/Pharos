@@ -115,7 +115,7 @@ Zotero.Sync.Storage.Engine.prototype.start = async function () {
 							let wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
 									   .getService(Components.interfaces.nsIWindowMediator);
 							let lastWin = wm.getMostRecentWindow("navigator:browser");
-							lastWin.ZoteroPane.openPreferences('zotero-prefpane-account');
+							lastWin.ZoteroPane.openPreferences('zotero-prefpane-sync');
 						}
 					}
 				);
@@ -145,17 +145,6 @@ Zotero.Sync.Storage.Engine.prototype.start = async function () {
 	if (!filesEditable) {
 		Zotero.debug("No file editing access -- skipping file modification check for "
 			+ this.library.name);
-	}
-	// If the file change watcher is active, files that actually changed on disk were already
-	// checked and marked in the database when the sync runner took the watcher snapshot at the
-	// start of file syncing, so the scan can be skipped entirely unless this library needs a
-	// full scan (not yet scanned, watcher fallback, daily refresh, or manual sync)
-	else if (Zotero.Sync.Storage.FileChangeWatcher.available) {
-		if (Zotero.Sync.Storage.FileChangeWatcher.needsFullScan(libraryID, this.background)) {
-			this.local.lastFullFileCheck[libraryID] = new Date().getTime();
-			await this.local.checkForUpdatedFiles(libraryID);
-			Zotero.Sync.Storage.FileChangeWatcher.recordFullScan(libraryID);
-		}
 	}
 	// If this is a background sync, it's not the first sync of the session, the library has had
 	// at least one full check this session, and it's been less than maxCheckAge since the last

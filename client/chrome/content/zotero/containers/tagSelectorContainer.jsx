@@ -61,9 +61,6 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 		this.searchBoxRef = React.createRef();
 		
 		this.displayAllTags = Zotero.Prefs.get('tagSelector.displayAllTags');
-		// Library IDs of the selected collection tree rows, in collections-list order.
-		// Usually one, but a cross-library selection scopes the tag selector to several.
-		this.libraryIDs = [];
 		// Not stored in state to avoid an unnecessary refresh. Instead, when a tag is selected, we
 		// trigger the selection handler, which updates the visible items, which triggers
 		// onItemViewChanged(), which triggers a refresh with the new tags.
@@ -104,13 +101,10 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 	componentDidUpdate(_prevProps, _prevState) {
 		Zotero.debug("Tag selector updated");
 		
-		// If we changed the set of collections, scroll to top
-		if (this.collectionTreeRows) {
-			let treeViewIDs = this.collectionTreeRows.map(row => row.id).sort();
-			if (!Zotero.Utilities.arrayEquals(treeViewIDs, this.prevTreeViewIDs)) {
-				this.tagListRef.current.scrollToTop();
-				this.prevTreeViewIDs = treeViewIDs;
-			}
+		// If we changed collections, scroll to top
+		if (this.collectionTreeRow && this.collectionTreeRow.id != this.prevTreeViewID) {
+			this.tagListRef.current.scrollToTop();
+			this.prevTreeViewID = this.collectionTreeRow.id;
 		}
 	}
 
@@ -120,107 +114,24 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 		return null;
 	}
 	
-	/**
-	 * Safely fetch tags from the selected collection tree rows, returning [] on search error.
-	 * CollectionTreeRow.getTags() calls getSearchResults() under the hood, which throws
-	 * Zotero.CollectionTreeRow.SearchError if the underlying search query fails (e.g., a
-	 * saved search with invalid conditions). The tag selector should degrade gracefully in
-	 * that case — showing no tags — rather than throwing upwards and breaking the UI.
-	 * Real bugs (TypeError, etc.) are re-thrown so they surface in tests and logs.
-	 */
-	async _safeGetTags(...args) {
-		try {
-			let rows = this.collectionTreeRows || [];
-			// A single row uses its own cached temp table directly; multiple rows are
-			// combined into one temp table and query to avoid a per-row query
-			let tags = rows.length == 1
-				? await rows[0].getTags(...args)
-				: await Zotero.CollectionTreeRow.getTagsAcrossRows(rows, ...args);
-			// Multiple rows (collections, or collections across libraries) can return
-			// the same tag, so dedupe by name
-			return this._dedupeTags(tags);
-		}
-		catch (e) {
-			if (e instanceof Zotero.CollectionTreeRow.SearchError) {
-				Zotero.logError(e);
-				return [];
-			}
-			throw e;
-		}
-	}
-
-	/**
-	 * Whether more than one library is currently in scope (cross-library selection)
-	 */
-	get multiLibrary() {
-		return this.libraryIDs.length > 1;
-	}
-
-	_dedupeTags(tags) {
-		let seen = new Set();
-		let result = [];
-		for (let tag of tags) {
-			if (!seen.has(tag.tag)) {
-				seen.add(tag.tag);
-				result.push(tag);
-			}
-		}
-		return result;
-	}
-
-	/**
-	 * Get all tags across the selected libraries (for "Display All Tags"), deduped by name
-	 *
-	 * @param {Number[]} [tagIDs] - Limit to the given tag IDs
-	 */
-	async _getAllTagsInLibraries(tagIDs) {
-		let results = await Promise.all(
-			this.libraryIDs.map(libraryID => Zotero.Tags.getAllWithin({ libraryID, tagIDs }))
-		);
-		return this._dedupeTags(results.flat());
-	}
-
-	_getSelectedLibraryIDs(collectionTreeRows, fallbackLibraryID) {
-		let ids = [];
-		for (let row of collectionTreeRows || []) {
-			let id = row.ref && row.ref.libraryID;
-			if (id !== undefined && id !== null && !ids.includes(id)) {
-				ids.push(id);
-			}
-		}
-		if (!ids.length && fallbackLibraryID) {
-			ids.push(fallbackLibraryID);
-		}
-		return ids;
-	}
-
-	/**
-	 * Colored tags are a per-library synced setting, so a unified cross-library list
-	 * can't coherently show them (the same color can mean different tags in different
-	 * libraries). Only show colored tags when a single library is in scope. The items
-	 * list still shows each item's own library's swatches via Item.getItemsListTags().
-	 */
-	_getScopeColors() {
-		if (this.libraryIDs.length !== 1) {
-			return new Map();
-		}
-		return Zotero.Tags.getColors(this.libraryIDs[0]);
-	}
-
 	// Update trigger #1 (triggered by ZoteroPane)
-	async onItemViewChanged({ collectionTreeRows, libraryID }) {
+	async onItemViewChanged({ collectionTreeRow, libraryID }) {
 		Zotero.debug('Updating tag selector from current view');
-
-		var prevLibraryIDs = this.libraryIDs;
-		this.collectionTreeRows = collectionTreeRows;
-		this.libraryIDs = this._getSelectedLibraryIDs(collectionTreeRows, libraryID);
-		this.libraryID = this.libraryIDs[0];
-
+		
+		var prevLibraryID = this.libraryID;
+		this.collectionTreeRow = collectionTreeRow;
+		this.libraryID = libraryID;
+		
 		var newState = {
 			loaded: true
 		};
-		if (!Zotero.Utilities.arrayEquals(prevLibraryIDs, this.libraryIDs)) {
-			newState.tagColors = this._getScopeColors();
+		if (prevLibraryID != libraryID) {
+			if (libraryID) {
+				newState.tagColors = Zotero.Tags.getColors(libraryID);
+			}
+			else {
+				newState.tagColors = new Map();
+			}
 		}
 		var { tags, scope } = await this.getTagsAndScope();
 		newState.tags = tags;
@@ -234,14 +145,14 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 			if (ids.some(val => val.split('/')[1] == 'tagColors')) {
 				Zotero.debug("Updating tag selector after tag color change");
 				this.setState({
-					tagColors: this._getScopeColors()
+					tagColors: Zotero.Tags.getColors(this.libraryID)
 				});
 			}
 			return;
 		}
 		
 		// Ignore anything other than deletes in duplicates view
-		if (this.collectionTreeRows?.[0]?.isDuplicates()) {
+		if (this.collectionTreeRow && this.collectionTreeRow.isDuplicates()) {
 			switch (event) {
 				case 'delete':
 				case 'trash':
@@ -281,9 +192,11 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 			}
 			// Check tags for each tag type to see if they're in view/scope
 			for (let [type, tagIDs] of tagsByType) {
-				changedTagsInScope.push(...await this._safeGetTags([type], tagIDs));
+				changedTagsInScope.push(...await this.collectionTreeRow.getTags([type], tagIDs));
 				if (this.displayAllTags) {
-					changedTagsInView.push(...await this._getAllTagsInLibraries(tagIDs));
+					changedTagsInView.push(
+						...await Zotero.Tags.getAllWithin({ libraryID: this.libraryID, tagIDs })
+					);
 				}
 			}
 			if (!this.displayAllTags) {
@@ -402,11 +315,11 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 	}
 	
 	async getTagsAndScope() {
-		var tags = await this._safeGetTags();
+		var tags = await this.collectionTreeRow.getTags();
 		// The scope is all visible tags, not all tags in the library
 		var scope = new Set(tags.map(t => t.tag));
 		if (this.displayAllTags) {
-			tags = await this._getAllTagsInLibraries();
+			tags = await Zotero.Tags.getAll(this.libraryID);
 		}
 		
 		// If tags haven't changed, return previous array without sorting again
@@ -584,10 +497,10 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 		});
 		tags = coloredTags.concat(tags);
 		
-		// Filter (case- and accent-insensitive, matching search conditions)
+		// Filter
 		if (this.state.searchString) {
-			let normalizedStr = Zotero.Utilities.Internal.normalizeForSearch(this.state.searchString);
-			tags = tags.filter(tag => Zotero.Utilities.Internal.normalizeForSearch(tag.tag).includes(normalizedStr));
+			let lcStr = this.state.searchString.toLowerCase();
+			tags = tags.filter(tag => tag.tag.toLowerCase().includes(lcStr));
 		}
 		
 		// Prepare tag objects for list component
@@ -649,14 +562,6 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 		// Disable menu options in read-only mode
 		for (let i = 0; i < tagContextMenu.childNodes.length; i++) {
 			tagContextMenu.childNodes[i].disabled = this.state.viewOnly;
-		}
-		// In a cross-library selection, disable per-library actions that would only
-		// affect one of the selected libraries. Deleting still works -- it removes the
-		// tag from all selected libraries (see openDeletePrompt())
-		if (this.multiLibrary) {
-			for (let id of ['assign-color-tag', 'rename-tag', 'split-tag']) {
-				document.getElementById(id).disabled = true;
-			}
 		}
 		ev.preventDefault();
 		
@@ -739,11 +644,7 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 				ids = ids.split(',');
 				var items = Zotero.Items.get(ids);
 				var value = elem.textContent;
-
-				Zotero.UndoHistory.stageAction(
-					remove ? 'undo-action-remove-tag' : 'undo-action-add-tag',
-					{ count: items.length }
-				);
+				
 				for (let i=0; i<items.length; i++) {
 					let item = items[i];
 					if (remove) {
@@ -819,7 +720,6 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 		if (dataOut.result.op === 'split') {
 			const itemIDs = await Zotero.Tags.getTagItems(this.libraryID, oldTagID);
 			await Zotero.DB.executeTransaction(async () => {
-				Zotero.UndoHistory.stageAction('undo-action-split-tag');
 				for (const itemID of itemIDs) {
 					const item = await Zotero.Items.getAsync(itemID);
 					const tagType = item.getTagType(oldTagName);
@@ -883,16 +783,12 @@ Zotero.TagSelector = class TagSelectorContainer extends React.PureComponent {
 			
 		var tagID = Zotero.Tags.getID(this.contextTag.name);
 
-		// Delete from every selected library. removeFromLibrary() only clears the color
-		// for tags that have items in the library, so also clear any remaining color-only
-		// setting (e.g. a tag that's a real tag in one library but only colored in another)
-		for (let libraryID of this.libraryIDs) {
-			if (tagID) {
-				await Zotero.Tags.removeFromLibrary(libraryID, tagID);
-			}
-			if (Zotero.Tags.getColors(libraryID).has(this.contextTag.name)) {
-				await Zotero.Tags.setColor(libraryID, this.contextTag.name, false);
-			}
+		if (tagID) {
+			await Zotero.Tags.removeFromLibrary(this.libraryID, tagID);
+		}
+		// If only a tag color setting, remove that
+		else {
+			await Zotero.Tags.setColor(this.libraryID, this.contextTag.name, false);
 		}
 	}
 

@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sync">
 <!ENTITY zotero.preferences.sync.username "Uživatelské jméno:">
 <!ENTITY zotero.preferences.sync.password "Heslo:">
+<!ENTITY zotero.preferences.sync.syncServer "Synchronizace dat">
+<!ENTITY zotero.preferences.sync.setUpSync "Nastavení synchronizace">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Odpojit účet...">
 <!ENTITY zotero.preferences.sync.createAccount "Vytvořit účet">
 <!ENTITY zotero.preferences.sync.lostPassword "Ztracené heslo?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Synchronizovat automaticky">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Synchronizace souborů">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "K synchronizaci příloh v Mojí knihovně použít">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synchronizovat přílohy ve skupinových knihovnách pomocí úložiště Zotera">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Stáhnout soubory">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "při synchronizaci">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "když je potřeba">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Ověřit Server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Použitím úložiště Zotera souhlasíte s">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "podmínkami a ujednáními">
 <!ENTITY zotero.preferences.sync.librariesToSync "Knihovny k synchronizeci">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Vybrat knihovny...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synchronizace">

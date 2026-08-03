@@ -36,7 +36,6 @@ Zotero.Searches = function () {
 		libraryID: "O.libraryID",
 		key: "O.key",
 		version: "O.version",
-		clientVersion: "O.clientVersion",
 		synced: "O.synced",
 		deleted: "DS.savedSearchID IS NOT NULL AS deleted",
 	}
@@ -103,7 +102,7 @@ Zotero.Searches = function () {
 		return data1.condition === data2.condition
 			&& data1.operator === data2.operator
 			&& data1.value === data2.value;
-	};
+	},
 	
 	
 	this.getNextName = async function (libraryID, name) {
@@ -123,7 +122,7 @@ Zotero.Searches = function () {
 	
 	
 	this._loadConditions = async function (libraryID, ids, idSQL) {
-		var sql = "SELECT savedSearchID, searchConditionID, condition, operator, value "
+		var sql = "SELECT savedSearchID, searchConditionID, condition, operator, value, required "
 			+ "FROM savedSearches LEFT JOIN savedSearchConditions USING (savedSearchID) "
 			+ "WHERE libraryID=?" + idSQL
 			+ "ORDER BY savedSearchID, searchConditionID";
@@ -142,33 +141,24 @@ Zotero.Searches = function () {
 				search._maxSearchConditionID = rows[rows.length - 1].searchConditionID;
 			}
 			
-			// Track whether we migrate a `childNote` (below) so we can seed an item result level afterward
-			let migratedChildNote = false;
 			// Reindex conditions, in case they're not contiguous in the DB
 			for (let i = 0; i < rows.length; i++) {
 				let condition = rows[i];
-
+				
 				// Parse "condition[/mode]"
 				let [conditionName, mode] = Zotero.SearchConditions.parseCondition(condition.condition);
-
+				
 				// Not sure how this can happen, but prevent an error if it does
 				if (condition.value === null) {
 					condition.value = '';
 				}
-
-				// Convert the obsolete childNote condition to note (see above) before validating,
-				// since it's no longer a registered condition
-				if (conditionName == 'childNote') {
-					conditionName = 'note';
-					migratedChildNote = true;
-				}
-
+				
 				let cond = Zotero.SearchConditions.get(conditionName);
 				if (!cond || cond.noLoad) {
 					Zotero.debug("Invalid saved search condition '" + conditionName + "' -- skipping", 2);
 					continue;
 				}
-
+				
 				// Convert itemTypeID to itemType
 				//
 				// TEMP: This can be removed at some point
@@ -183,29 +173,15 @@ Zotero.Searches = function () {
 						condition.value = objKey;
 					}
 				}
-
+				
 				search._conditions[i] = {
 					id: i,
 					condition: conditionName,
 					mode: mode,
 					operator: condition.operator,
-					value: condition.value
+					value: condition.value,
+					required: !!condition.required
 				};
-			}
-			// `childNote` returned the parent of a matching child note, so seed an item result
-			// level to roll the migrated `note` up to it
-			if (migratedChildNote) {
-				let id = rows.length;
-				search._conditions[id] = {
-					id,
-					condition: 'resultLevel',
-					// No mode -- parseCondition() uses false, and toJSON() only omits the
-					// "/mode" suffix for an exact false
-					mode: false,
-					operator: 'item',
-					value: ''
-				};
-				search._maxSearchConditionID = Math.max(search._maxSearchConditionID, id);
 			}
 			search._loaded.conditions = true;
 			search._clearChanged('conditions');
@@ -234,7 +210,8 @@ Zotero.Searches = function () {
 						searchConditionID,
 						condition: row.getResultByIndex(2),
 						operator: row.getResultByIndex(3),
-						value: row.getResultByIndex(4)
+						value: row.getResultByIndex(4),
+						required: row.getResultByIndex(5)
 					});
 				}.bind(this)
 			}

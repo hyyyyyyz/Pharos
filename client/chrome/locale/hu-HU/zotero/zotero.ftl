@@ -24,12 +24,6 @@ delete-or-backspace =
         [macos] Delete
        *[other] Backspace
     }
--os-name =
-    { PLATFORM() ->
-        [macos] macOS
-        [windows] Windows
-       *[other] Linux
-    }
 general-print = Nyomtatás
 general-remove = Eltávolítás
 general-add = Hozzáadás
@@ -40,21 +34,16 @@ general-open-settings = Beállítások megnyitása
 general-settings = Beállítások…
 general-help = Súgó
 general-tag = Címke
-general-got-it = Got It
 general-done = Rendben
 general-view-troubleshooting-instructions = View Troubleshooting Instructions
 general-go-back = Vissza
 general-accept = Beszúrás
 general-cancel = Mégsem
-cancel-button =
-    .label = { general-cancel }
 general-show-in-library = Megjelenítés a könyvtárban
 general-restartApp = { -app-name } Újraindítása
 general-restartInTroubleshootingMode = Újraindítás hibakereső módban
 general-save = Mentés
 general-clear = Törlés
-clear-button =
-    .label = { general-clear }
 general-update = Frissítés
 general-back = Vissza
 general-edit = Szerkesztés
@@ -69,7 +58,6 @@ general-et-al = és mtsai.
 general-previous = Előző
 general-next = Következő
 general-learn-more = Bővebben
-general-more-information = További információ
 general-warning = Figyelmeztetés
 general-type-to-continue = Type “{ $text }” to continue.
 general-continue = Folytatás
@@ -86,8 +74,6 @@ general-maroon = Vörösesbarna
 general-gray = Szürke
 general-black = Fekete
 general-loading = Betöltés…
-db-checking-integrity = Checking database integrity…
-db-repairing = Repairing database…
 citation-style-label = Hivatkozási stílus:
 language-label = Nyelv:
 menu-custom-group-submenu =
@@ -139,7 +125,7 @@ menu-view-hide-context-annotation-rows =
 menu-view-note-font-size =
     .label = Jegyzet betűmérete
 menu-view-note-tab-font-size =
-    .label = Jegyzet fül betűmérete
+    .label = Note Tab Font Size
 menu-show-tabs-menu =
     .label = Show Tabs Menu
 menu-edit-copy-annotation =
@@ -169,115 +155,14 @@ zotero-toolbar-tabs-scroll-backwards =
     .title = Scroll backwards
 toolbar-add-attachment =
     .tooltiptext = { add-attachment }
-recently-read = Recently Read
-collections-menu-show-recently-read =
-    .label = Show { recently-read }
-item-menu-remove-from-recently-read =
-    .label = Remove from { recently-read }…
-items-section-collections-selected =
-    { $count ->
-        [one] { $count } collection selected
-       *[other] { $count } collections selected
-    }
-items-section-searches-selected =
-    { $count ->
-        [one] { $count } saved search selected
-       *[other] { $count } saved searches selected
-    }
-items-section-sources-selected =
-    { $count ->
-        [one] { $count } source selected
-       *[other] { $count } sources selected
-    }
-items-section-library-collections =
-    { $count ->
-        [one] { $library } ({ $count } collection selected)
-       *[other] { $library } ({ $count } collections selected)
-    }
-items-section-library-searches =
-    { $count ->
-        [one] { $library } ({ $count } saved search selected)
-       *[other] { $library } ({ $count } saved searches selected)
-    }
-items-section-library-sources =
-    { $count ->
-        [one] { $library } ({ $count } source selected)
-       *[other] { $library } ({ $count } sources selected)
-    }
-items-section-library-recently-read = { $library } ({ recently-read })
-items-section-library = { $library }
-collections-menu-rename =
-    .label = Rename
-edit-saved-search = Mentett keresés szerkesztése
-collections-menu-edit-search =
-    .label = Edit Search
-collections-menu-duplicate-search =
-    .label = Duplicate Search
+collections-menu-rename-collection =
+    .label = Gyűjtemény átnevezése
+collections-menu-edit-saved-search =
+    .label = Mentett keresés szerkesztése
 collections-menu-move-collection =
     .label = Move To
 collections-menu-copy-collection =
     .label = Másolás a(z)
-collections-menu-export =
-    .label = Exportálás...
-collections-menu-generate-report =
-    .label = Generate Report…
-collections-menu-create-bibliography =
-    .label = Create Bibliography…
-collections-menu-unsubscribe =
-    .label = Unsubscribe…
-collections-menu-delete =
-    .label =
-        { $count ->
-            [one] Delete Collection…
-           *[other] Delete Collections…
-        }
-collections-menu-delete-with-items =
-    .label =
-        { $count ->
-            [one] Delete Collection and Items…
-           *[other] Delete Collections and Items…
-        }
-collections-menu-delete-search =
-    .label =
-        { $count ->
-            [one] Delete Search…
-           *[other] Delete Searches…
-        }
-collections-delete-title =
-    { $count ->
-        [one] Delete Collection
-       *[other] Delete Collections
-    }
-collections-delete-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection?
-       *[other] Are you sure you want to delete { $count } collections?
-    }
-collections-delete-keep-items =
-    { $count ->
-        [one] Items within this collection will not be deleted.
-       *[other] Items within these collections will not be deleted.
-    }
-collections-delete-with-items-title =
-    { $count ->
-        [one] Delete Collection and Items
-       *[other] Delete Collections and Items
-    }
-collections-delete-with-items-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection and move all items within it to the Trash?
-       *[other] Are you sure you want to delete { $count } collections and move all items within them to the Trash?
-    }
-collections-delete-search-title =
-    { $count ->
-        [one] Delete Search
-       *[other] Delete Searches
-    }
-collections-delete-search-message =
-    { $count ->
-        [one] Are you sure you want to delete this search?
-       *[other] Are you sure you want to delete { $count } searches?
-    }
 item-creator-moveDown =
     .label = Mozgatás lefelé
 item-creator-moveToTop =
@@ -315,7 +200,7 @@ item-menu-add-linked-file =
 item-menu-add-url =
     .label = Web Link
 item-menu-change-parent-item =
-    .label = Áthelyezés másik elemhez…
+    .label = Change Parent Item…
 item-menu-relate-items =
     .label = Relate Items
 view-online = Online megtekintés
@@ -388,18 +273,14 @@ import-online-wrong-credentials = A { $targetApp } bejelentkezés sikertelen. K�
 import-online-blocked-by-plugin = Az importálás nem folytatható a telepített { $plugin } esetén. Kérjük, tiltsa le ezt a plugint, és próbálja meg újra.
 import-online-relink-only =
     .label = Relink Mendeley Desktop citations
-import-online-relink-kb = { general-more-information }
+import-online-relink-kb = További információ
 import-online-connection-error = { -app-name } nem tudott csatlakozni { $targetApp }. Kérjük, ellenőrizze az internetkapcsolatot, és próbálja meg újra.
-tab-title-multiple-collections = Multiple
 items-table-cell-notes =
     .aria-label =
         { $count ->
             [one] { $count } Jegyzet
            *[other] { $count } Jegyzetek
         }
-items-column-added-by = Added By
-items-column-modified-by = Modified By
-items-column-last-read = Last Read
 report-error =
     .label = Hiba bejelentése...
 rtfScan-wizard =
@@ -519,12 +400,24 @@ publications-buttons-next-sharing =
 publications-buttons-next-choose-license =
     .label = Válasszon egy licencet
 licenses-cc-0 = CC0 1.0 Universal Public Domain Dedication
-licenses-cc-by = Creative Commons Nevezd meg! 4.0 Nemzetközi Licence
-licenses-cc-by-nd = Creative Commons Nevezd meg!-Ne változtasd! 4.0 Nemzetközi Licence
-licenses-cc-by-sa = Creative Commons Nevezd meg!-Így add tovább! 4.0 Nemzetközi Licence
-licenses-cc-by-nc = Creative Commons Nevezd meg!-Ne add el! 4.0 Nemzetközi Licence
-licenses-cc-by-nc-nd = Creative Commons Nevezd meg!-Ne add el!-Ne változtasd! 4.0 Nemzetközi Licence
-licenses-cc-by-nc-sa = Creative Commons Nevezd meg!-Ne add el!-Így add tovább! 4.0 Nemzetközi Licence
+licenses-cc-by =
+    Creative Commons Attribution 4.0 International License
+    (Nevezd meg! 4.0 Nemzetközi Licence)
+licenses-cc-by-nd =
+    Creative Commons Attribution-NoDerivatives 4.0 International License
+    (Nevezd meg!-Ne változtasd! 4.0 Nemzetközi Licence)
+licenses-cc-by-sa =
+    Creative Commons Attribution-ShareAlike 4.0 International License
+    (Nevezd meg!-Így add tovább! 4.0 Nemzetközi Licence)
+licenses-cc-by-nc =
+    Creative Commons Attribution-NonCommercial 4.0 International License
+    (Nevezd meg!-Ne add el! 4.0 Nemzetközi Licence)
+licenses-cc-by-nc-nd =
+    Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License
+    (Nevezd meg!-Ne add el!-Ne változtasd! 4.0 Nemzetközi Licence)
+licenses-cc-by-nc-sa =
+    Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
+    (Nevezd meg!-Ne add el!-Így add tovább! 4.0 Nemzetközi Licence)
 licenses-cc-more-info = Be sure you have read the Creative Commons <a data-l10n-name="license-considerations">Considerations for licensors</a> before placing your work under a CC license. Note that the license you apply cannot be revoked, even if you later choose different terms or cease publishing the work.
 licenses-cc0-more-info = Be sure you have read the Creative Commons <a data-l10n-name="license-considerations">CC0 FAQ</a> before applying CC0 to your work. Please note that dedicating your work to the public domain is irreversible, even if you later choose different terms or cease publishing the work.
 debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
@@ -713,9 +606,16 @@ item-title-empty-note = Cím nélküli jegyzet
 attachment-preview-placeholder = Nincs melléklet az előnézethez
 attachment-rename-from-parent =
     .tooltiptext = Rename File to Match Parent Item
-account-log-in = Log In
-account-not-logged-in-text = Log in to your Zotero account to sync your data.
-account-error-login-session-expired = Your login session has expired. Please try again.
+file-renaming-auto-rename-prompt-title = Renaming Settings Changed
+file-renaming-auto-rename-prompt-body = Would you like to rename existing files in your library to match the new settings?
+file-renaming-auto-rename-prompt-yes = Preview Changes…
+file-renaming-auto-rename-prompt-no = Keep Existing Filenames
+rename-files-preview =
+    .buttonlabelaccept = Rename Files
+rename-files-preview-loading = Betöltés…
+rename-files-preview-intro = { -app-name } will rename the following files in your library to match their parent items:
+rename-files-preview-renaming = Renaming…
+rename-files-preview-no-files = All filenames already match parent items. No changes are required.
 toggle-preview =
     .label =
         { $type ->
@@ -730,18 +630,6 @@ quicksearch-input =
     .aria-label = Gyorskeresés
     .placeholder = { $placeholder }
     .aria-description = { $placeholder }
-advanced-search = Haladó keresés
-menuitem-advanced-search =
-    .label = { advanced-search }
-quicksearch-advanced-search-button =
-    .tooltiptext = { advanced-search }
-    .aria-label = { advanced-search }
-advanced-search-close =
-    .tooltiptext = Close Advanced Search
-advanced-search-expand =
-    .tooltiptext = Expand Advanced Search
-advanced-search-collapse =
-    .tooltiptext = Collapse Advanced Search
 item-pane-header-view-as =
     .label = Megtekintés
 item-pane-header-none =
@@ -799,66 +687,10 @@ architecture-warning-action = 64 bites változat letöltése { -app-name }
 architecture-x64-on-arm64-message = { -app-name } is running in emulated mode. A native version of { -app-name } will run more efficiently.
 architecture-x64-on-arm64-action = { -app-name } letöltése ARM64-re
 first-run-guidance-authorMenu = { -app-name } lehetővé teszi szerkesztők és fordítók megadását is. Ebből a menüből kiválasztva a szerzőt szerkesztővé vagy fordítóvá alakíthatja.
-first-run-guidance-readAloud = { -app-name } can now read your documents to you using natural-sounding voices.
 advanced-search-remove-btn =
-    .tooltiptext = Remove Condition
+    .tooltiptext = { general-remove }
 advanced-search-add-btn =
-    .tooltiptext = Add Condition
-advanced-search-group-btn =
-    .tooltiptext = Add Condition Group
-advanced-search-remove-group-btn =
-    .tooltiptext = Remove Group
-advanced-search-ungroup-btn =
-    .tooltiptext = Ungroup Conditions
-advanced-search-result-level-menu =
-    .aria-label = Result type
-advanced-search-result-level-prefix-root =
-    .value = Keresés
-advanced-search-join-prefix-root =
-    .value = matching
-advanced-search-result-level-any =
-    .label = any items
-advanced-search-result-level-item =
-    .label = top-level items
-advanced-search-result-level-attachment =
-    .label = attachments
-advanced-search-result-level-note =
-    .label = notes
-advanced-search-result-level-annotation =
-    .label = jegyzetek
-advanced-search-binding-menu =
-    .aria-label = Match against the same item
-advanced-search-binding-separate =
-    .label = separately
-advanced-search-binding-same-attachment =
-    .label = in the same attachment
-advanced-search-binding-same-note =
-    .label = in the same note
-advanced-search-binding-same-annotation =
-    .label = in the same annotation
-advanced-search-of-the-following =
-    .value = of the following
-advanced-search-binding-hint-attachment =
-    .value = These conditions can match separate attachments.
-advanced-search-binding-hint-note =
-    .value = These conditions can match separate notes.
-advanced-search-binding-hint-annotation =
-    .value = These conditions can match separate annotations.
-advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
-advanced-search-group-warning-unreachable =
-    A condition here cannot be in the same { $entity ->
-        [attachment] attachment
-        [note] note
-       *[annotation] annotation
-    }. Match these separately or remove the incompatible condition.
-advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-bind-same-attachment =
-    .label = Match the same attachment
-advanced-search-bind-same-note =
-    .label = Match the same note
-advanced-search-bind-same-annotation =
-    .label = Match the same annotation
+    .tooltiptext = { general-add }
 advanced-search-conditions-menu =
     .aria-label = Keresési feltételek
     .label = { $label }
@@ -868,55 +700,6 @@ advanced-search-operators-menu =
 advanced-search-condition-input =
     .aria-label = Érték
     .label = { $label }
-search-operator-isEmpty = is empty
-search-operator-isNotEmpty = is not empty
-search-conditions-tooltip-fields = Mezők:
-search-conditions-collection = Gyűjtemény
-search-conditions-savedSearch = Mentett keresés
-search-conditions-itemTypeID = Forrás típusa
-search-conditions-tag = Címke
-search-conditions-numTags = # of Tags
-search-conditions-numNotes = # of Notes
-search-conditions-numAttachments = # of Attachments
-search-conditions-numAnnotations = # of Annotations
-search-conditions-note = Jegyzet
-search-conditions-childNote = Ez alá tartozó jegyzet
-search-conditions-creator = Szerző
-search-conditions-thesisType = Szakdolgozat típusa
-search-conditions-reportType = Jelentés típusa
-search-conditions-videoRecordingFormat = Video felvételi formátum
-search-conditions-audioFileType = Audió fájl típusa
-search-conditions-audioRecordingFormat = Hang felvételi formátum
-search-conditions-letterType = Levél típusa
-search-conditions-interviewMedium = Interjú médiuma
-search-conditions-manuscriptType = Kézirat típusa
-search-conditions-presentationType = Jelentés típusa
-search-conditions-mapType = Térkép típusa
-search-conditions-artworkMedium = Műalkotás médiuma
-search-conditions-dateModified = Módosítás dátuma
-search-conditions-fulltextContent = Csatolmány tartalma
-search-conditions-programmingLanguage = Programozási nyelv
-search-conditions-fileTypeID = Csatolt fájl típusa
-search-conditions-attachmentStorageType = Attachment Storage Type
-search-conditions-lastRead = Attachment Last Read
-search-conditions-annotationText = Megjegyzés szövege
-search-conditions-annotationComment = Megjegyzés Jegyzet
-search-conditions-annotationType = Annotation Type
-search-conditions-annotationColor = Annotation Color
-search-conditions-annotationAuthor = Annotation Author
-search-conditions-anyField = Bármelyik mező
-search-conditions-titleCreatorYear = Cím, Szerző, Év
-search-conditions-submenu-attachment = Csatolmány
-search-conditions-submenu-annotation = Megjegyzés
-search-conditions-short-fulltextContent = Content
-search-conditions-short-fileTypeID = Fájl típusa
-search-conditions-short-attachmentStorageType = Storage Type
-search-conditions-short-lastRead = Last Read
-search-conditions-short-annotationText = Text
-search-conditions-short-annotationComment = Comment
-search-conditions-short-annotationType = Típus
-search-conditions-short-annotationColor = Color
-search-conditions-short-annotationAuthor = Szerző
 find-pdf-files-added =
     { $count ->
         [one] { $count } file added
@@ -948,9 +731,6 @@ file-type-video = Videó
 file-type-presentation = Előadás
 file-type-document = Dokumentum
 file-type-ebook = Ebook
-attachment-storage-type-storedFile = Stored File
-attachment-storage-type-linkedFile = Linked File
-attachment-storage-type-webLink = Web Link
 post-upgrade-message = Frissítve lett a <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span> verzióra! Ismerje meg az <a data-l10n-name="new-features-link">újdonságokat</a>.
 post-upgrade-remind-me-later =
     .label = { general-remind-me-later }
@@ -959,23 +739,18 @@ post-upgrade-done =
 text-action-paste-and-search =
     .label = Beillesztés és keresés
 mac-word-plugin-install-message = A Zotero a Word bővítmény telepítéséhez hozzáférést igényel a Word-fájlokhoz.
-mac-word-plugin-install-folder-message = { -app-name } needs access to Word’s startup folder to install the Word plugin.
 mac-word-plugin-install-action-button =
     .label = Word plugin telepítése
 mac-word-plugin-install-remind-later-button =
     .label = { general-remind-me-later }
 mac-word-plugin-install-dont-ask-again-button =
     .label = { general-dont-ask-again }
-mac-word-plugin-install-folder-dialog-title = Install the plugin in the Word startup folder
-mac-word-plugin-install-folder-dialog-button = Telepítés
-mac-word-plugin-install-wrong-folder-selected = The suggested folder must be selected. Please try again without choosing a different folder.
 file-renaming-banner-message = A { -app-name } mostantól automatikusan szinkronizálja a mellékletek fájlneveit, amikor módosításokat hajt végre az elemekben.
 file-renaming-banner-documentation-link = { general-learn-more }
 file-renaming-banner-settings-link = { general-settings }
 connector-version-warning = The { -app-name } Connector must be updated to work with this version of { -app-name }.
 userjs-pref-warning = Some { -app-name } settings have been overridden using an unsupported method. { -app-name } will revert them and restart.
 migrate-extra-fields-progress-message = Migrating new fields from Extra field
-search-normalization-progress-message = Indexing items for search
 long-tag-fixer-window-title =
     .title = Split Tags
 long-tag-fixer-button-dont-split =
@@ -989,145 +764,3 @@ normalize-attachment-titles-text =
     In older versions of { -app-name }, as well as when using certain plugins, attachment titles could be changed unnecessarily to match the filenames.
     
     Would you like to update the selected attachments to use simpler titles? Only primary attachments with titles that match the filename will be changed.
-banner-close-button =
-    .aria-label = Dismiss notification
-plugins-blocked-plugin =
-    .message = This plugin has been disabled by { -app-name }.
-data-dir-unsupported-storage = This can happen if the { -app-name } data directory is in a cloud storage folder (OneDrive, Dropbox, etc.) or on a network share.
-login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
-os-keystore-save-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
-        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
-    }
-os-keystore-migrate-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
-        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
-    }
-search-button =
-    .label = Keresés
-save-search-new-button =
-    .label = Save Search…
-save-search-edit-button =
-    .label = Mentés
-save-search-name-title = Keresés mentése
-save-search-name-message = Enter a name for the saved search:
-saved-search-close-confirmation-title = Editing Saved Search
-saved-search-close-confirmation-body = Do you want to save changes you made to this saved search?
-item-pane-batch-editing-prompt =
-    .aria-label = Batch editing
-item-pane-batch-editing-enable =
-    .label = Edit Multiple Items…
-item-pane-batch-editing-multiple-values-placeholder = Multiple
-item-pane-batch-editing-clear-values = Clear all values
-item-pane-batch-editing-header =
-    { $count ->
-        [one] Editing { $count } item
-       *[other] Editing { $count } items
-    }
-item-pane-batch-editing-done =
-    .label = { general-done }
-undo-action-edit-metadata =
-    { $count ->
-        [one] Edit Metadata
-       *[other] Edit Metadata for { $count } Items
-    }
-undo-action-edit-field =
-    { $count ->
-        [one] Edit of “{ $field }”
-       *[other] Edit of “{ $field }” for { $count } Items
-    }
-undo-action-normalize-attachment-titles = Normalize Attachment Title
-undo-action-trash =
-    { $count ->
-        [one] Trash Item
-       *[other] Trash { $count } Items
-    }
-undo-action-restore-items =
-    { $count ->
-        [one] Restore Item
-       *[other] Restore { $count } Items
-    }
-undo-action-trash-collection =
-    { $count ->
-        [one] Trash Collection
-       *[other] Trash { $count } Collections
-    }
-undo-action-trash-search =
-    { $count ->
-        [one] Trash Saved Search
-       *[other] Trash { $count } Saved Searches
-    }
-undo-action-restore-collection =
-    { $count ->
-        [one] Restore Collection
-       *[other] Restore { $count } Collections
-    }
-undo-action-restore-objects =
-    { $count ->
-        [one] Restore Object
-       *[other] Restore { $count } Objects
-    }
-undo-action-add-to-collection =
-    { $count ->
-        [one] Add to Collection
-       *[other] Add { $count } Items to Collection
-    }
-undo-action-remove-from-collection =
-    { $count ->
-        [one] Remove from Collection
-       *[other] Remove { $count } Items from Collection
-    }
-undo-action-move-to-collection =
-    { $count ->
-        [one] Move to Collection
-       *[other] Move { $count } Items to Collection
-    }
-undo-action-rename-collection = Gyűjtemény átnevezése
-undo-action-move-collection = Move Collection
-undo-action-add-tag =
-    { $count ->
-        [one] Add Tag
-       *[other] Add Tag to { $count } Items
-    }
-undo-action-change-tag = Change Tag
-undo-action-split-tag = Split Tag
-undo-action-remove-tag =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove Tag from { $count } Items
-    }
-undo-action-remove-tags-from-item =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove { $count } Tags
-    }
-undo-action-remove-all-tags = Remove All Tags
-undo-action-edit-note = Jegyzet szerkesztése
-undo-action-add-creator = Add Creator
-undo-action-remove-creator = Remove Creator
-undo-action-edit-creator = Edit Creator
-undo-action-reorder-creator = Reorder Creator
-undo-action-change-type = Elem típusának módosítása
-undo-action-change-parent-item =
-    { $count ->
-        [one] Change Parent Item
-       *[other] Change Parent for { $count } Items
-    }
-undo-action-convert-to-standalone =
-    { $count ->
-        [one] Convert to Standalone
-       *[other] Convert { $count } Items to Standalone
-    }
-undo-action-add-related = Add Related
-undo-action-remove-related = Remove Related
-undo-action-merge-items =
-    { $count ->
-        [one] Merge Item
-       *[other] Merge { $count } Items
-    }
-menu-edit-undo-action = Undo { $action }
-menu-edit-redo-action = Redo { $action }

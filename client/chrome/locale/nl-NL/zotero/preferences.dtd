@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Synchroniseren">
 <!ENTITY zotero.preferences.sync.username "Gebruikersnaam:">
 <!ENTITY zotero.preferences.sync.password "Wachtwoord:">
+<!ENTITY zotero.preferences.sync.syncServer "Data-synchronisatie">
+<!ENTITY zotero.preferences.sync.setUpSync "Synchronisatie instellen">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Account ontkoppelen…">
 <!ENTITY zotero.preferences.sync.createAccount "Account aanmaken">
 <!ENTITY zotero.preferences.sync.lostPassword "Wachtwoord vergeten?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Automatisch synchroniseren">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Bestandssynchronisatie">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Synchroniseer bestanden in Mijn Bibliotheek met">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synchroniseer bestanden in groepsbibliotheken met Zotero-opslag">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Gedownloade bestanden">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "op het synchronisatietijdstip">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "wanneer nodig">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Server verifiëren">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Door het gebruiken van Zotero-opslag gaat u akkoord met de bijbehorende">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "voorwaarden">
 <!ENTITY zotero.preferences.sync.librariesToSync "Bibliotheken synchroniseren">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Kies bibliotheken:">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synchroniseer">

@@ -4,7 +4,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
-const { getSignatures, writeSignatures, onSuccess, onError, getModuleDigest, npmExecOptions } = require('./utils');
+const { getSignatures, writeSignatures, onSuccess, onError, getModuleDigest, getModulePin, npmExecOptions } = require('./utils');
 const { buildsURL } = require('./config');
 
 async function getZoteroNoteEditor(signatures) {
@@ -16,7 +16,7 @@ async function getZoteroNoteEditor(signatures) {
 	// `git rev-parse HEAD` is unavailable. A content digest of the module's own
 	// sources serves the same purpose -- see getModuleDigest for why it must
 	// cover src/ and not just the manifests.
-	const hash = getModuleDigest(modulePath);
+	const hash = getModulePin('note-editor', modulePath);
 
 	if (!('note-editor' in signatures) || signatures['note-editor'].hash !== hash) {
 		const targetDir = path.join(__dirname, '..', 'build', 'resource', 'note-editor');

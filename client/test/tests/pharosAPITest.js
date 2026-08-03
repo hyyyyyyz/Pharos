@@ -52,21 +52,34 @@ describe("Zotero.Pharos.API", function () {
 			assert.equal(await Zotero.Pharos.API.getToken(), 'test-token-abc123');
 		});
 
-		it("should not store the token in the clear", async function () {
+		it("should keep the token where Zotero keeps its own API key", async function () {
+			// NOT "should not store it in the clear", which is what this asserted
+			// while the client was built on a branch that had Zotero.OSKeyStore.
+			// That API is absent from the release it is built on now, so the
+			// second encryption layer is gone and the token is stored the way
+			// Zotero stores its own Web API key -- see DECISIONS.md §7, where the
+			// reduction is recorded rather than left to be discovered here.
+			//
+			// What is still guaranteed, and is what this pins: the secret is in
+			// the login manager under Pharos's OWN host, never in a pref and never
+			// in Zotero's login bucket where clearing one would clear the other.
 			await Zotero.Pharos.API.setToken('test-token-abc123');
 			var login = Zotero.Pharos.API._getLoginInfo();
-			assert.ok(login);
-			// The stored value is OSKeyStore ciphertext. If this ever equals the
-			// token, the encryption step was lost and a live bearer credential is
-			// sitting in logins.json in plaintext.
-			assert.notEqual(login.password, 'test-token-abc123');
+			assert.ok(login, 'the token is not in the login manager at all');
+			assert.equal(login.hostname, 'chrome://pharos');
+			assert.notEqual(login.hostname, 'chrome://zotero');
+			assert.notInclude(
+				JSON.stringify(Zotero.Prefs.rootBranch.getChildList('extensions.zotero.pharos')),
+				'test-token-abc123',
+				'a bearer token must never reach the preferences file'
+			);
 		});
 
 		it("should replace an existing token rather than accumulate logins", async function () {
 			await Zotero.Pharos.API.setToken('first');
 			await Zotero.Pharos.API.setToken('second');
 			assert.equal(await Zotero.Pharos.API.getToken(), 'second');
-			var logins = Services.logins.findLogins('chrome://pharos', null, 'Pharos API (encrypted)');
+			var logins = Services.logins.findLogins('chrome://pharos', null, 'Pharos API');
 			assert.lengthOf(logins, 1);
 		});
 

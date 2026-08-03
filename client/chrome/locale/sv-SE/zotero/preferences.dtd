@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Synkronisera">
 <!ENTITY zotero.preferences.sync.username "Användarnamn:">
 <!ENTITY zotero.preferences.sync.password "Lösenord:">
+<!ENTITY zotero.preferences.sync.syncServer "Datasynkronisering">
+<!ENTITY zotero.preferences.sync.setUpSync "Ställ in synkronisering">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Koppla från konto...">
 <!ENTITY zotero.preferences.sync.createAccount "Skapa konto">
 <!ENTITY zotero.preferences.sync.lostPassword "Glömt lösenord?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Synkronisera automatiskt">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Filsynkronisering">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Synkronisera bifogade filer i mitt bibliotek med:">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synkronisera bifogade filer i gruppens bibliotek med Zotero Storage">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Ladda ner filer">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "vid synkronisering">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "efter behov">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verifiera Server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Genom att använda Zotero Storage godtar du tjänstens">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "avtalsvillkor">
 <!ENTITY zotero.preferences.sync.librariesToSync "Bibliotek att synkronisera">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Välj bibliotek...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synkronisera">

@@ -52,9 +52,6 @@ Zotero.Sync.APIClient.prototype = {
 	
 	getKeyInfo: async function (options={}) {
 		var uri = this.baseURL + "keys/current";
-		if (options.includeEmails) {
-			uri += "?includeEmails=1";
-		}
 		let opts = {};
 		Object.assign(opts, options);
 		opts.successCodes = [200, 403, 404];
@@ -333,29 +330,6 @@ Zotero.Sync.APIClient.prototype = {
 	},
 	
 	
-	deleteSettings: async function (libraryType, libraryTypeID, libraryVersion, keys) {
-		let params = {
-			target: 'settings',
-			libraryType: libraryType,
-			libraryTypeID: libraryTypeID
-		};
-		let baseURI = this.buildRequestURI(params);
-		let sep = baseURI.includes('?') ? '&' : '?';
-		let xmlhttp = await this.makeRequest("DELETE",
-			baseURI + sep + 'settingKey=' + keys.map(encodeURIComponent).join(','),
-			{
-				headers: {
-					"If-Unmodified-Since-Version": libraryVersion
-				},
-				successCodes: [204, 412],
-				timeout: this.UPLOAD_TIMEOUT,
-			}
-		);
-		this._check412(xmlhttp);
-		return this._getLastModifiedVersion(xmlhttp);
-	},
-
-
 	uploadSettings: async function (libraryType, libraryTypeID, libraryVersion, settings) {
 		var method = "POST";
 		var objectType = "setting";
@@ -380,13 +354,10 @@ Zotero.Sync.APIClient.prototype = {
 				"If-Unmodified-Since-Version": libraryVersion
 			},
 			body: json,
-			successCodes: [200, 204, 412]
+			successCodes: [204, 412]
 		});
 		this._check412(xmlhttp);
-		return {
-			libraryVersion: this._getLastModifiedVersion(xmlhttp),
-			results: xmlhttp.status == 200 ? this._parseJSON(xmlhttp.responseText) : null
-		};
+		return this._getLastModifiedVersion(xmlhttp);
 	},
 	
 	
@@ -572,214 +543,12 @@ Zotero.Sync.APIClient.prototype = {
 	},
 
 
-	createLoginSession: async function (userID) {
-		let body = userID ? JSON.stringify({ userID }) : undefined;
-		let headers = {};
-		if (body) {
-			headers["Content-Type"] = "application/json";
-		}
-		let uri = this.baseURL + "keys/sessions";
-		let response = await this.makeRequest("POST", uri, {
-			body, headers, successCodes: [201], noAPIKey: true
-		});
-		return this._parseJSON(response.responseText);
-	},
-
-
-	checkLoginSession: async function (token) {
-		let uri = this.baseURL + "keys/sessions/" + encodeURIComponent(token);
-		let response = await this.makeRequest("GET", uri, {
-			successCodes: [200, 404, 410], noAPIKey: true
-		});
-		if (response.status == 404) {
-			throw new Error("Login session not found");
-		}
-		if (response.status == 410) {
-			let e = new Error("Login session expired");
-			e.expired = true;
-			throw e;
-		}
-		return this._parseJSON(response.responseText);
-	},
-
-
-	cancelLoginSession: async function (token) {
-		let uri = this.baseURL + "keys/sessions/" + encodeURIComponent(token);
-		await this.makeRequest("DELETE", uri, {
-			successCodes: [204, 404, 409], noAPIKey: true
-		});
-	},
-
-
 	// Deletes current API key
 	deleteAPIKey: async function () {
 		await this.makeRequest("DELETE", this.baseURL + "keys/current");
 	},
-
-
-	async getReadAloudVoices() {
-		let url = this.baseURL + "tts/voices";
-		let params = new URLSearchParams();
-		params.set("lang", Services.locale.appLocaleAsBCP47);
-		params.set("version", "1");
-		let uri = url + "?" + params;
-		let noAPIKey = !this.apiKey;
-		try {
-			let xmlhttp = await this.makeRequest("GET", uri, {
-				responseType: "json",
-				noAPIKey,
-				errorDelayMax: 8000,
-			});
-
-			let standardCreditsRemaining = noAPIKey ? null : parseInt(xmlhttp.getResponseHeader('Zotero-TTS-Standard-Credits-Remaining'));
-			if (isNaN(standardCreditsRemaining)) {
-				standardCreditsRemaining = null;
-			}
-			let premiumCreditsRemaining = noAPIKey ? null : parseInt(xmlhttp.getResponseHeader('Zotero-TTS-Premium-Credits-Remaining'));
-			if (isNaN(premiumCreditsRemaining)) {
-				premiumCreditsRemaining = null;
-			}
-
-			let devMode = xmlhttp.getResponseHeader('Zotero-TTS-Dev') === '1';
-
-			return {
-				voices: xmlhttp.response ?? {},
-				standardCreditsRemaining,
-				premiumCreditsRemaining,
-				devMode,
-			};
-		}
-		catch (e) {
-			Zotero.logError(e);
-
-			let error;
-			if (e instanceof Zotero.HTTP.BrowserOfflineException) {
-				error = 'network';
-			}
-			else {
-				error = 'unknown';
-			}
-			return {
-				error,
-				standardCreditsRemaining: null,
-				premiumCreditsRemaining: null,
-			};
-		}
-	},
-
-
-	async getReadAloudAudio(segment, voiceID) {
-		let method;
-		let url;
-		let options = {
-			// Could be audio bytes or a JSON { audioURL, timestamps } object
-			// Inspect the Content-Type before parsing
-			responseType: "arraybuffer",
-			errorDelayMax: 8000,
-		};
-		if (segment === 'sample') {
-			method = "GET";
-			let params = new URLSearchParams();
-			params.set('voice', voiceID);
-			params.set('timestamps', '1');
-			url = this.baseURL + "tts/sample?" + params;
-			options.noAPIKey = true;
-		}
-		else {
-			method = "POST";
-			url = this.baseURL + "tts/speak";
-			options.headers = {
-				"Content-Type": "application/json",
-			};
-			options.body = JSON.stringify({
-				voice: voiceID,
-				text: segment.text,
-				timestamps: 1,
-			});
-		}
-		try {
-			let xmlhttp = await this.makeRequest(method, url, options);
-			let contentType = xmlhttp.getResponseHeader('Content-Type') || '';
-			let cacheControl = xmlhttp.getResponseHeader('Cache-Control') || '';
-			let noStore = /(?:^|,)\s*no-store\s*(?:,|$)/i.test(cacheControl);
-			if (contentType.includes('application/json')) {
-				let json = JSON.parse(new TextDecoder().decode(xmlhttp.response));
-				let audioResponse = await Zotero.HTTP.request('GET', json.audioURL, {
-					responseType: "blob",
-					errorDelayMax: 8000,
-				});
-				return { audio: audioResponse.response, timestamps: json.timestamps, noStore };
-			}
-			return { audio: new Blob([xmlhttp.response], { type: contentType }), noStore };
-		}
-		catch (e) {
-			Zotero.logError(e);
-
-			let error;
-			if (e instanceof Zotero.HTTP.UnexpectedStatusException && e.status === 402) {
-				let body = null;
-				try {
-					body = new TextDecoder().decode(e.xmlhttp.response);
-				}
-				catch {
-					// Ignore
-				}
-				error = body === 'daily_limit_exceeded' ? 'daily-limit-exceeded' : 'quota-exceeded';
-			}
-			else if (e instanceof Zotero.HTTP.BrowserOfflineException) {
-				error = 'network';
-			}
-			else {
-				error = 'unknown';
-			}
-			return {
-				audio: null,
-				error,
-			};
-		}
-	},
-
-
-	async getReadAloudCreditsRemaining() {
-		let uri = this.baseURL + "tts/credits";
-		try {
-			let xmlhttp = await this.makeRequest("GET", uri, {
-				responseType: "json",
-				errorDelayMax: 8000,
-			});
-			return {
-				standardCreditsRemaining: xmlhttp.response.standardCreditsRemaining ?? null,
-				premiumCreditsRemaining: xmlhttp.response.premiumCreditsRemaining ?? null,
-			};
-		}
-		catch (e) {
-			Zotero.debug('Failed to fetch credits');
-			Zotero.logError(e);
-			return { standardCreditsRemaining: null, premiumCreditsRemaining: null };
-		}
-	},
-
-
-	async resetReadAloudCredits() {
-		let uri = this.baseURL + "tts/reset";
-		try {
-			let xmlhttp = await this.makeRequest("POST", uri, {
-				responseType: "json",
-				errorDelayMax: 8000,
-			});
-			return {
-				standardCreditsRemaining: xmlhttp.response.standardCreditsRemaining ?? null,
-				premiumCreditsRemaining: xmlhttp.response.premiumCreditsRemaining ?? null,
-			};
-		}
-		catch (e) {
-			Zotero.debug('Failed to reset credits');
-			Zotero.logError(e);
-			return { standardCreditsRemaining: null, premiumCreditsRemaining: null };
-		}
-	},
-
-
+	
+	
 	buildRequestURI: function (params) {
 		var uri = this.baseURL;
 		
@@ -884,19 +653,15 @@ Zotero.Sync.APIClient.prototype = {
 		let opts = {}
 		Object.assign(opts, options);
 		opts.headers = this.getHeaders(options.headers);
-		opts.noCache = !options.cache;
+		opts.noCache = true;
 		opts.foreground = !options.background;
-		opts.anon = true;
 		opts.responseType = options.responseType || 'text';
 		if (options.body && options.body.length >= this.MIN_GZIP_SIZE
 				&& Zotero.Prefs.get('sync.server.compressData')) {
 			opts.compressBody = true;
 		}
 		opts.cancellerReceiver = this.cancellerReceiver;
-		// Handle 429 and Retry-After ourselves so we can pause the entire batch
-		// of concurrent sync requests, not just retry the one that failed
-		opts.noRetryOnThrottle = true;
-
+		
 		var tries = 0;
 		while (true) {
 			var result = await this.caller.start(async function () {
@@ -909,8 +674,7 @@ Zotero.Sync.APIClient.prototype = {
 				catch (e) {
 					tries++;
 					if (e instanceof Zotero.HTTP.UnexpectedStatusException) {
-						if (this._check429(e.xmlhttp)
-								|| (e.xmlhttp.status == 503 && this._checkRetry(e.xmlhttp))) {
+						if (this._check429(e.xmlhttp)) {
 							// Return false to keep retrying request
 							return false;
 						}

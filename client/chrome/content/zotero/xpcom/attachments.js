@@ -25,11 +25,6 @@
 
 Zotero.Attachments = new function () {
 	const { HiddenBrowser } = ChromeUtils.importESModule("chrome://zotero/content/HiddenBrowser.mjs");
-	let lazy = {};
-	ChromeUtils.defineESModuleGetters(lazy, {
-		generateHTMLFromTemplate: "chrome://zotero/content/modules/templates.mjs",
-		isTemplateValid: "chrome://zotero/content/modules/templates.mjs",
-	});
 	
 	// Keep in sync with Zotero.Schema.integrityCheck() and this.linkModeToName()
 	this.LINK_MODE_IMPORTED_FILE = 0;
@@ -44,6 +39,8 @@ Zotero.Attachments = new function () {
 	
 	var _findFileQueue = [];
 	var _findFileQueuePromise = null;
+	var _findFileCookieSandboxes = new Map();
+	
 	var self = this;
 	
 	
@@ -351,7 +348,7 @@ Zotero.Attachments = new function () {
 						await OS.File.move(file.path, newPath);
 					}
 					else {
-						await Zotero.File.copyFile(file.path, newPath);
+						await OS.File.copy(file.path, newPath);
 					}
 				}
 				// Copy entire parent directory (for HTML snapshots)
@@ -522,6 +519,7 @@ Zotero.Attachments = new function () {
 	 * @param {Boolean} [options.renameIfAllowedType=false]
 	 * @param {String} [options.contentType]
 	 * @param {String} [options.referrer]
+	 * @param {CookieSandbox} [options.cookieSandbox]
 	 * @param {Object} [options.saveOptions] - Options to pass to Zotero.Item::save()
 	 * @return {Promise<Zotero.Item>} - A promise for the created attachment item
 	 */
@@ -535,6 +533,7 @@ Zotero.Attachments = new function () {
 		var renameIfAllowedType = options.renameIfAllowedType;
 		var contentType = options.contentType;
 		var referrer = options.referrer;
+		var cookieSandbox = options.cookieSandbox;
 		var saveOptions = options.saveOptions;
 		
 		Zotero.debug('Importing attachment from URL ' + url);
@@ -558,6 +557,7 @@ Zotero.Attachments = new function () {
 			try {
 				browser = new HiddenBrowser({
 					docShell: { allowImages: true },
+					cookieSandbox,
 				});
 				await browser.load(url, { requireSuccessfulStatus: true });
 				return await Zotero.Attachments.importFromDocument({
@@ -606,6 +606,7 @@ Zotero.Attachments = new function () {
 					url,
 					tmpFile,
 					{
+						cookieSandbox,
 						referrer,
 						enforceFileType: Zotero.Attachments.FIND_AVAILABLE_FILE_TYPES.includes(contentType),
 						shouldDisplayCaptcha: true
@@ -654,7 +655,7 @@ Zotero.Attachments = new function () {
 			return process(contentType, Zotero.MIME.hasNativeHandler(contentType));
 		}
 		
-		var args = await Zotero.MIME.getMIMETypeFromURL(url);
+		var args = await Zotero.MIME.getMIMETypeFromURL(url, cookieSandbox);
 		return process(...args);
 	};
 	
@@ -1167,6 +1168,7 @@ Zotero.Attachments = new function () {
 	 * @param {String} url
 	 * @param {String} path
 	 * @param {Object} [options]
+	 * @param {Object} [options.cookieSandbox]
 	 * @param {String} [options.referrer]
 	 * @param {Boolean} [options.enforceFileType] - Delete file if not one of SUPPORTED_FILE_TYPES
 	 * @param {Boolean} [options.shouldDisplayCaptcha]
@@ -1184,6 +1186,7 @@ Zotero.Attachments = new function () {
 				path,
 				{
 					headers,
+					cookieSandbox: options.cookieSandbox
 				}
 			);
 			// Check that the downloaded file is the expected type
@@ -1205,8 +1208,8 @@ Zotero.Attachments = new function () {
 					&& (e instanceof this.InvalidPDFException
 						// Thrown by HTTP.download()
 						|| (e instanceof Zotero.HTTP.UnexpectedStatusException && e.status == 403))) {
-				if (Zotero.BrowserRequest.getEntryForURL(url)) {
-					return Zotero.BrowserRequest.downloadPDF(url, path, options);
+				if (Zotero.BrowserDownload.shouldAttemptDownloadViaBrowser(url)) {
+					return Zotero.BrowserDownload.downloadPDF(url, path, options);
 				}
 			}
 			throw e;
@@ -1246,7 +1249,7 @@ Zotero.Attachments = new function () {
 	this.canFindFileForItem = function (item) {
 		return item.isRegularItem()
 			&& !item.isFeedItem
-			&& (!!item.getField('DOI') || !!item.getField('url') || !!item.getExtraField('DOI') || !!item.getField('PMCID'))
+			&& (!!item.getField('DOI') || !!item.getField('url') || !!item.getExtraField('DOI'))
 			&& this.FIND_AVAILABLE_FILE_TYPES.every(type => item.numFileAttachmentsWithContentType(type) == 0);
 	};
 
@@ -1281,11 +1284,6 @@ Zotero.Attachments = new function () {
 		var resolvers = [];
 		var doi = item.getField('DOI') || item.getExtraField('DOI');
 		doi = Zotero.Utilities.cleanDOI(doi);
-		var pmcid = item.getField('PMCID');
-		if (pmcid) {
-			let matches = pmcid.match(/\bPMC\d+\b/i);
-			pmcid = matches && matches[0].toUpperCase();
-		}
 		
 		if (useDOI && doi) {
 			doi = Zotero.Utilities.cleanDOI(doi);
@@ -1323,16 +1321,7 @@ Zotero.Attachments = new function () {
 				});
 			});
 		}
-
-		// The open-access lookup often supplies a PMC URL of its own, in which
-		// case this one is skipped as an already-tried redirect target
-		if (useOA && pmcid) {
-			resolvers.push({
-				pageURL: `https://pmc.ncbi.nlm.nih.gov/articles/${pmcid}/`,
-				accessMethod: 'oa'
-			});
-		}
-
+		
 		if (useCustom && doi) {
 			let customResolvers;
 			try {
@@ -2065,6 +2054,8 @@ Zotero.Attachments = new function () {
 				continue;
 			}
 
+			let cookieSandbox = _getFindFileCookieSandboxForSite(url || pageURL);
+			
 			if (urlResolver.referrer) {
 				options.referrer = urlResolver.referrer;
 			}
@@ -2081,7 +2072,7 @@ Zotero.Attachments = new function () {
 				while (tries-- > 0) {
 					try {
 						await beforeRequest(url);
-						await this.downloadFile(url, path, options);
+						await this.downloadFile(url, path, { ...options, cookieSandbox });
 						afterRequest(url);
 						return { url, props: urlResolver };
 					}
@@ -2137,6 +2128,7 @@ Zotero.Attachments = new function () {
 										followRedirects: false,
 										// Use our own error handling
 										errorDelayMax: 0,
+										cookieSandbox,
 									}
 								);
 							}
@@ -2241,7 +2233,7 @@ Zotero.Attachments = new function () {
 					}
 					// Otherwise translate the Document we parsed above
 					else if (doc) {
-						({ title, mimeType, url } = await Zotero.Utilities.Internal.getFileFromDocument(doc));
+						({ title, mimeType, url } = await Zotero.Utilities.Internal.getFileFromDocument(doc, { cookieSandbox }));
 					}
 				}
 				catch (e) {
@@ -2260,7 +2252,7 @@ Zotero.Attachments = new function () {
 				addTriedURL(url);
 				
 				// Use the page we loaded as the referrer
-				let downloadOptions = Object.assign({}, options, { referrer: responseURL });
+				let downloadOptions = Object.assign({}, options, { referrer: responseURL, cookieSandbox });
 				// Backoff loop
 				let tries = 3;
 				while (tries-- >= 0) {
@@ -2285,6 +2277,45 @@ Zotero.Attachments = new function () {
 
 
 	/**
+	 * Get an ephemeral CookieSandbox based on the URL's site (scheme + eTLD+1).
+	 * Sandboxes expire after 24 hours of inactivity.
+	 * @param {nsIURI | string} url
+	 * @returns {Zotero.CookieSandbox}
+	 */
+	function _getFindFileCookieSandboxForSite(url) {
+		let lastUsedCutoff = Date.now() - 24 * 60 * 60 * 1000;
+		for (let [site, { lastUsed }] of _findFileCookieSandboxes) {
+			if (lastUsed >= lastUsedCutoff) {
+				// The map is kept in order of expiration, so if we've gotten to a non-expired entry,
+				// we're done
+				break;
+			}
+			_findFileCookieSandboxes.delete(site);
+		}
+		
+		if (typeof url === 'string') {
+			url = Services.io.newURI(url);
+		}
+		let site;
+		try {
+			site = Services.eTLD.getSite(url);
+		}
+		catch {
+			// eTLD service can't handle URLs without TLDs (e.g., localhost),
+			// so fall back to the host
+			site = url.hostPort;
+		}
+		
+		let cookieSandbox = _findFileCookieSandboxes.get(site)?.cookieSandbox
+			?? new Zotero.CookieSandbox();
+		// Delete and re-add to keep entries in order of expiration
+		_findFileCookieSandboxes.delete(site);
+		_findFileCookieSandboxes.set(site, { cookieSandbox, lastUsed: Date.now() });
+		return cookieSandbox;
+	}
+	
+	
+	/**
 	 * @deprecated Use Zotero.Utilities.cleanURL instead
 	 */
 	this.cleanAttachmentURI = function (uri, tryHttp) {
@@ -2293,45 +2324,15 @@ Zotero.Attachments = new function () {
 	}
 	
 	
-	// Shared so validation, rendering and the settings dialog all judge the same string
-	this.normalizeRenameTemplate = function (formatString) {
-		return formatString.replace(/\r?\n|\r/g, "").trim();
-	};
-
-	/**
-	 * Resolve a library's rename template from synced settings, validating it and falling back to
-	 * the default so an invalid (e.g. synced) template never reaches the engine. Callers that rename
-	 * many items should resolve once and pass the result as `formatString` to getFileBaseNameFromItem().
-	 *
-	 * @param {Number} libraryID
-	 * @returns {String} A valid rename template
-	 */
-	this.getAttachmentRenameTemplate = function (libraryID) {
-		const { DEFAULT_ATTACHMENT_RENAME_TEMPLATE } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
-		let formatString = Zotero.SyncedSettings.get(libraryID, 'attachmentRenameTemplate') ?? DEFAULT_ATTACHMENT_RENAME_TEMPLATE;
-		let normalized = typeof formatString === 'string' ? this.normalizeRenameTemplate(formatString) : '';
-		if (!normalized) {
-			formatString = DEFAULT_ATTACHMENT_RENAME_TEMPLATE;
-		}
-		else if (!lazy.isTemplateValid(normalized)) {
-			Zotero.warn(`Attachment rename template "${formatString}" is invalid; falling back to the default template`);
-			formatString = DEFAULT_ATTACHMENT_RENAME_TEMPLATE;
-		}
-		return formatString;
-	};
-
 	/*
 	 * Returns a formatted string to use as the basename of an attachment
 	 * based on the metadata of the specified item and a format string
 	 *
-	 * Without a formatString, the 'attachmentRenameTemplate' synced setting
-	 * for the item's library is used, falling back to the default template
+	 * (Optional) |formatString| specifies the format string -- otherwise
+	 * the 'attachmentRenameTemplate' synced setting for the user's library is used
 	 *
 	 * @param {Zotero.Item} item
-	 * @param {Object} [options]
-	 * @param {String} [options.formatString] - Format string, assumed valid; if omitted, the library's rename template is resolved and validated
-	 * @param {String} [options.attachmentTitle] - Value for the {{ attachmentTitle }} placeholder
-	 * @returns {String}
+	 * @param {String} formatString
 	 */
 	this.getFileBaseNameFromItem = function (item, options = {}) {
 		if (!(item instanceof Zotero.Item)) {
@@ -2346,14 +2347,16 @@ Zotero.Attachments = new function () {
 		}
 
 		let { formatString = null, attachmentTitle = '' } = options;
+
 		if (!formatString) {
-			formatString = this.getAttachmentRenameTemplate(item.libraryID);
+			const { DEFAULT_ATTACHMENT_RENAME_TEMPLATE } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
+			formatString = Zotero.SyncedSettings.get(item.libraryID, 'attachmentRenameTemplate') ?? DEFAULT_ATTACHMENT_RENAME_TEMPLATE;
 		}
 
 		let chunks = [];
 		let protectedLiterals = new Set();
 
-		formatString = this.normalizeRenameTemplate(formatString);
+		formatString = formatString.replace(/\r?\n|\r/g, "").trim();
 
 		const getSlicedCreatorsOfType = (creatorType, slice) => {
 			let creatorTypeIDs;
@@ -2583,7 +2586,7 @@ Zotero.Attachments = new function () {
 		// Final name is generated twice. In the first pass we collect all affixed values and determine protected literals.
 		// This is done in order to remove repeated suffixes, except if these appear in the value or the format string itself.
 		// See "should suppress suffixes where they would create a repeat character" test for edge cases.
-		let formatted = lazy.generateHTMLFromTemplate(formatString, vars);
+		let formatted = Zotero.Utilities.Internal.generateHTMLFromTemplate(formatString, vars);
 		
 		let replacePairs = new Map();
 		for (let chunk of chunks) {
@@ -2606,7 +2609,7 @@ Zotero.Attachments = new function () {
 			);
 		}
 
-		formatted = lazy.generateHTMLFromTemplate(formatString, vars);
+		formatted = Zotero.Utilities.Internal.generateHTMLFromTemplate(formatString, vars);
 		if (replacePairs.size > 0) {
 			formatted = formatted.replace(
 				new RegExp(`(${Array.from(replacePairs.keys()).map(replace => `(?<!\\\\)${replace}(?!//)`).join('|')})`, 'g'),

@@ -13,7 +13,7 @@ import IconAutoWidth from '../../../res/icons/20/auto-width.svg';
 import IconChevronUp from '../../../res/icons/20/chevron-up.svg';
 import IconChevronDown from '../../../res/icons/20/chevron-down.svg';
 import IconFormatText from '../../../res/icons/20/format-text.svg';
-import IconReadingMode from '../../../res/icons/20/reading-mode.svg';
+import IconFormatTextReadingMode from '../../../res/icons/20/format-text-reading-mode.svg';
 import IconHighlight from '../../../res/icons/20/annotate-highlight.svg';
 import IconUnderline from '../../../res/icons/20/annotate-underline.svg';
 import IconNote from '../../../res/icons/20/annotate-note.svg';
@@ -22,10 +22,8 @@ import IconImage from '../../../res/icons/20/annotate-area.svg';
 import IconInk from '../../../res/icons/20/annotate-ink.svg';
 import IconEraser from '../../../res/icons/20/annotate-eraser.svg';
 import IconFind from '../../../res/icons/20/magnifier.svg';
-import IconReadAloud from '../../../res/icons/20/read-aloud.svg';
 import IconChevronDown8 from '../../../res/icons/8/chevron-8.svg';
 import IconGoBack from '../../../res/icons/20/go-back.svg';
-import ProgressRing from './common/progress-ring';
 
 function Toolbar(props) {
 	const pageInputRef = useRef();
@@ -109,38 +107,13 @@ function Toolbar(props) {
 					disabled={!props.enableZoomReset}
 					onClick={props.onZoomReset}
 				><IconAutoWidth/></button>
-				{['pdf', 'snapshot'].includes(props.type) && (
-					<button
-						id="readingMode"
-						className={cx('toolbar-button', { active: props.readingModeEnabled })}
-						title={l10n.getString('reader-reading-mode')}
-						tabIndex={-1}
-						disabled={props.readingModeLoading}
-						onClick={() => props.onChangeReadingModeEnabled(!props.readingModeEnabled)}
-					>
-						{props.readingModeLoading
-							// SDT generation progress -- an empty ring until
-							// the host starts reporting
-							? <ProgressRing progress={props.sdtProgress}/>
-							: <IconReadingMode/>}
-					</button>
-				)}
-				{props.showReadAloudToggle && (
-					<button
-						id="read-aloud"
-						className={cx('toolbar-button', { active: props.readAloudState.popupOpen })}
-						title={l10n.getString('reader-read-aloud')}
-						tabIndex={-1}
-						onClick={() => props.onToggleReadAloud()}
-					>
-						{props.readAloudState.popupOpen && !props.readAloudState.lang
-							// Can't show the popup because the view hasn't given us
-							// data yet. Show SDT generation progress -- an empty
-							// ring until the host starts reporting.
-							? <ProgressRing progress={props.sdtProgress}/>
-							: <IconReadAloud/>}
-					</button>
-				)}
+				<button
+					id="appearance"
+					className={cx('toolbar-button', { active: props.appearancePopup })}
+					title={l10n.getString('reader-appearance')}
+					tabIndex={-1}
+					onClick={() => props.onToggleAppearancePopup()}
+				>{props.readingModeEnabled ? <IconFormatTextReadingMode/> : <IconFormatText/>}</button>
 				<div className="divider"/>
 				<button
 					id="navigateBack"
@@ -222,7 +195,7 @@ function Toolbar(props) {
 						onClick={() => handleToolClick('note')}
 					><IconNote/></button>
 				</Localized>
-				{props.type === 'pdf' && !props.readingModeEnabled && (
+				{props.type === 'pdf' && (
 					<Localized id="reader-toolbar-text" attrs={{ title: true, 'aria-description': true }}>
 						<button
 							tabIndex={-1}
@@ -232,7 +205,7 @@ function Toolbar(props) {
 						><IconText/></button>
 					</Localized>
 				)}
-				{props.type === 'pdf' && !props.readingModeEnabled && (
+				{props.type === 'pdf' && (
 					<Localized id="reader-toolbar-area" attrs={{ title: true, 'aria-description': true }}>
 						<button
 							tabIndex={-1}
@@ -242,7 +215,7 @@ function Toolbar(props) {
 						><IconImage/></button>
 					</Localized>
 				)}
-				{props.type === 'pdf' && !props.readingModeEnabled && (
+				{props.type === 'pdf' && (
 					<Localized id="reader-toolbar-draw" attrs={{ title: true, 'aria-description': true }}>
 						<button
 							tabIndex={-1}
@@ -270,13 +243,6 @@ function Toolbar(props) {
 			</div>
 			<div className="end">
 				<CustomSections type="Toolbar"/>
-				<button
-					id="appearance"
-					className={cx('toolbar-button', { active: props.appearancePopup })}
-					title={l10n.getString('reader-appearance')}
-					tabIndex={-1}
-					onClick={() => props.onToggleAppearancePopup()}
-				><IconFormatText/></button>
 				<button
 					className={cx('toolbar-button find', { active: props.findPopupOpen })}
 					title={l10n.getString('reader-find-in-document')}

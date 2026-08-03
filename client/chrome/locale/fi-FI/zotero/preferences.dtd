@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Synkronointi">
 <!ENTITY zotero.preferences.sync.username "Käyttäjätunnus:">
 <!ENTITY zotero.preferences.sync.password "Salasana:">
+<!ENTITY zotero.preferences.sync.syncServer "Tietojen synkronointi">
+<!ENTITY zotero.preferences.sync.setUpSync "Määritä synkronointi">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Poista linkitys käyttäjätiliin...">
 <!ENTITY zotero.preferences.sync.createAccount "Luo käyttäjätili">
 <!ENTITY zotero.preferences.sync.lostPassword "Unohditko salasanan?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Synkronoi automaattisesti">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Tiedostojen synkronointi">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "Osoite:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Synkronoi liitetiedostot Omaan Kirjastoon käyttäen protokollaa">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synkronoi ryhmäkirjastojen liitetiedostot käyttäen Zoteron tallennustilaa">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Lataa tiedostot">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "synkronoinnin yhteydessä">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "tarvittaessa">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Todenna palvelin">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Käyttämällä Zoteron tallennustilaa sitoudut samalla siihen liittyviin">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "käyttöehtoihin">
 <!ENTITY zotero.preferences.sync.librariesToSync "Synkronoitavat kirjastot">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Valitse kirjastot...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synkronoi">

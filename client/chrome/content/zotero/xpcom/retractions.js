@@ -51,7 +51,7 @@ Zotero.Retractions = {
 		// Load mappings of keys (DOI hashes and PMIDs) to items and vice versa and register for
 		// item changes so they can be kept up to date in notify().
 		await this._cacheKeyMappings();
-		Zotero.Notifier.registerObserver(this, ['item', 'group', 'sync'], 'retractions', 20);
+		Zotero.Notifier.registerObserver(this, ['item', 'group'], 'retractions', 20);
 		
 		// Load in the cached prefix list that we check new items against
 		try {
@@ -106,7 +106,6 @@ Zotero.Retractions = {
 		this._cacheDOIPrefixLength = null;
 		this._cachePMIDPrefixLength = null;
 		this._cachePrefixList = new Set();
-		this._suppressAlerts = false;
 	},
 	
 	/**
@@ -379,20 +378,6 @@ Zotero.Retractions = {
 			return;
 		}
 		
-		if (type == 'sync') {
-			// If there's no stored user yet, this is the first sync on this computer.
-			// Suppress the retraction banner until the sync completes -- we don't want
-			// to alert on items that were already in the library before we started
-			// checking.
-			if (action == 'start' && !Zotero.Users.getCurrentUserID()) {
-				this._suppressAlerts = true;
-			}
-			else if (action == 'finish') {
-				this._suppressAlerts = false;
-			}
-			return;
-		}
-
 		// Clean up cache on group deletion
 		if (type == 'group') {
 			if (action == 'delete') {
@@ -449,14 +434,8 @@ Zotero.Retractions = {
 			}
 		}
 		else if (action == 'delete') {
-			let removedItemIDs = [];
 			for (let id of ids) {
-				if (await this._removeEntry(id, extraData[id].libraryID)) {
-					removedItemIDs.push(id);
-				}
-			}
-			if (removedItemIDs.length) {
-				await Zotero.Notifier.trigger('refresh', 'item', removedItemIDs);
+				await this._removeEntry(id, extraData[id].libraryID);
 			}
 		}
 	},
@@ -473,16 +452,10 @@ Zotero.Retractions = {
 		
 		// If no possible matches, clear retraction flag on any items that changed
 		if (!this._queuedPrefixStrings.size) {
-			let removedItemIDs = [];
 			for (let item of this._queuedItems) {
-				if (await this._removeEntry(item.id, item.libraryID)) {
-					removedItemIDs.push(item.id);
-				}
+				await this._removeEntry(item.id, item.libraryID);
 			}
 			this._queuedItems.clear();
-			if (removedItemIDs.length) {
-				await Zotero.Notifier.trigger('refresh', 'item', removedItemIDs);
-			}
 			return;
 		}
 		
@@ -507,16 +480,10 @@ Zotero.Retractions = {
 		}
 		
 		// Remove retraction status for items that were checked but didn't match
-		let removedItemIDs = [];
 		for (let item of items) {
 			if (!addedItems.includes(item.id)) {
-				if (await this._removeEntry(item.id, item.libraryID)) {
-					removedItemIDs.push(item.id);
-				}
+				await this._removeEntry(item.id, item.libraryID);
 			}
-		}
-		if (removedItemIDs.length) {
-			await Zotero.Notifier.trigger('refresh', 'item', removedItemIDs);
 		}
 	},
 	
@@ -660,31 +627,25 @@ Zotero.Retractions = {
 		}
 		
 		// Remove existing retracted items that no longer match
-		var removedItemIDs = [];
+		var removed = 0;
 		if (removeExisting) {
 			for (let itemID of this._retractedItems.keys()) {
 				if (!allItemIDs.has(itemID)) {
 					let item = await Zotero.Items.getAsync(itemID);
-					if (await this._removeEntry(itemID, item.libraryID)) {
-						removedItemIDs.push(itemID);
-					}
+					await this._removeEntry(itemID, item.libraryID);
+					removed++;
 				}
 			}
 		}
 		
 		var msg = `Found ${addedItemIDs.size} retracted `
 			+ Zotero.Utilities.pluralize(addedItemIDs.size, 'item');
-		if (removedItemIDs.length) {
-			msg += " and removed " + removedItemIDs.length;
+		if (removed) {
+			msg += " and removed " + removed;
 		}
 		Zotero.debug(msg);
 		addedItemIDs = [...addedItemIDs];
-		// Refresh the items whose retraction state changed
-		let changedItemIDs = [...addedItemIDs, ...removedItemIDs];
-		if (changedItemIDs.length) {
-			await Zotero.Notifier.trigger('refresh', 'item', changedItemIDs);
-		}
-		if (addedItemIDs.length && !this._suppressAlerts) {
+		if (addedItemIDs.length) {
 			this._showAlert(addedItemIDs); // async
 		}
 		return addedItemIDs;
@@ -917,9 +878,7 @@ Zotero.Retractions = {
 		var libraryID = item.libraryID;
 		// Check whether the retraction is already hidden by the user
 		var flag = this._retractedItems.get(itemID);
-		// An item already known to be retracted needs no refresh
-		var isNew = flag === undefined;
-		if (isNew) {
+		if (flag === undefined) {
 			this._retractedItems.set(itemID, this.FLAG_NORMAL);
 		}
 		if (!item.deleted && flag !== this.FLAG_HIDDEN) {
@@ -930,14 +889,14 @@ Zotero.Retractions = {
 			await this._updateLibraryRetractions(libraryID);
 		}
 		
-		return isNew;
+		await Zotero.Notifier.trigger('refresh', 'item', [itemID]);
 	},
 	
 	_removeEntry: async function (itemID, libraryID) {
 		this._deleteItemKeyMappings(itemID);
 		
 		if (!this._retractedItems.has(itemID)) {
-			return false;
+			return;
 		}
 		
 		await Zotero.DB.queryAsync("DELETE FROM retractedItems WHERE itemID=?", itemID);
@@ -945,7 +904,7 @@ Zotero.Retractions = {
 		this._retractedItemsByLibrary[libraryID].delete(itemID);
 		await this._updateLibraryRetractions(libraryID);
 		
-		return true;
+		await Zotero.Notifier.trigger('refresh', 'item', [itemID]);
 	},
 	
 	_removeAllEntries: async function () {

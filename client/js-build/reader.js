@@ -4,7 +4,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
-const { getSignatures, writeSignatures, onSuccess, onError, getModuleDigest, npmExecOptions } = require('./utils');
+const { getSignatures, writeSignatures, onSuccess, onError, getModuleDigest, getModulePin, npmExecOptions } = require('./utils');
 const { buildsURL } = require('./config');
 
 async function getReader(signatures) {
@@ -16,7 +16,7 @@ async function getReader(signatures) {
 	// `git rev-parse HEAD` is unavailable. A content digest of the module's own
 	// sources serves the same purpose -- see getModuleDigest for why it must
 	// cover src/ and not just the manifests.
-	const hash = getModuleDigest(modulePath);
+	const hash = getModulePin('reader', modulePath);
 	
 	if (!('reader' in signatures) || signatures['reader'].hash !== hash) {
 		const targetDir = path.join(__dirname, '..', 'build', 'resource', 'reader');
@@ -39,18 +39,9 @@ async function getReader(signatures) {
 			await fs.remove(path.join(targetDir, 'zotero'));
 		}
 		catch (e) {
-			if (!e.message?.includes('The requested URL returned error: 403')) {
-				console.error(e);
-			}
-			await exec('npm ci', npmExecOptions(modulePath));
-			await exec('npm run build:zotero', npmExecOptions(modulePath));
-			// `await` matters: fs-extra's pathExists returns a promise, and a
-			// promise is always truthy, so without it this guard never fired --
-			// which is how a failed reader build got as far as leaving
-			// build/resource/reader empty and the app shipping with no reader.
-			if (!await fs.pathExists(path.join(modulePath, 'build', 'zotero', 'pdf', 'build', 'pdf.mjs'))) {
-				throw new Error('pdf.js build failed to produce output');
-			}
+			console.error(e);
+			await exec('npm ci', { cwd: modulePath });
+			await exec('npm run build', { cwd: modulePath });
 			await fs.copy(path.join(modulePath, 'build', 'zotero'), targetDir);
 		}
 		signatures['reader'] = { hash };

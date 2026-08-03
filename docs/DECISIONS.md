@@ -120,10 +120,33 @@ cleanly and says so; setting `DEVELOPER_ID` and `NOTARIZATION_*` in
 
 ## 7. Tokens live in the OS credential store, keys never reach the browser
 
-The desktop client stores its bearer token in the login manager, encrypted
-through OSKeyStore, under its own login host rather than sharing Zotero's. Model
-API keys are encrypted server-side with `PHAROS_CREDENTIAL_SECRET` and are never
-returned to browser JavaScript.
+The desktop client stores its bearer token in the login manager, under its own
+login host rather than sharing Zotero's. Model API keys are encrypted server-side
+with `PHAROS_CREDENTIAL_SECRET` and are never returned to browser JavaScript.
+
+**Amended, and it is a reduction — stated plainly rather than buried.** This
+originally said "encrypted through OSKeyStore", a second layer tying the secret
+to the operating system's own keychain. `Zotero.OSKeyStore` does not exist in the
+Zotero release this client is now built on; it arrived in a later development
+branch. Calling it threw at sign-in — the one moment a user cannot work around —
+so the code now detects it and stores the token plainly when it is absent.
+
+What that costs is real. The login manager encrypts `logins.json` with a key held
+in the profile, so without a master password a local attacker with the profile
+directory can recover the token; the OSKeyStore layer would have required the
+keychain as well.
+
+What it buys is that the token is stored exactly the way Zotero stores its own
+Web API key (`xpcom/sync/syncLocal.js`), which is the same credential class for
+the same library. Matching the host application's own practice is a defensible
+floor, and the alternative — refusing to build on the release Zotero actually
+ships — costs the shared library this client exists to have.
+
+The capability check stays rather than being deleted: if the baseline later moves
+to a branch that has OSKeyStore, the stronger path resumes with no code change.
+The realm was renamed from `Pharos API (encrypted)` to `Pharos API` in the same
+change, because a realm that names a property the value no longer has is worse
+than one that says nothing.
 
 **Why the separate login host:** two unrelated credentials in one bucket means
 clearing one clears the other.

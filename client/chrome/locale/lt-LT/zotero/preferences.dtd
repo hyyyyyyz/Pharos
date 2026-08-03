@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sinchronizavimas">
 <!ENTITY zotero.preferences.sync.username "Naudotojo vardas:">
 <!ENTITY zotero.preferences.sync.password "Slaptažodis:">
+<!ENTITY zotero.preferences.sync.syncServer "Duomenų sinchronizavimas">
+<!ENTITY zotero.preferences.sync.setUpSync "Konfigūruoti sinchronizavimą">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Nebesieti su paskyra...">
 <!ENTITY zotero.preferences.sync.createAccount "Sukurti paskyrą">
 <!ENTITY zotero.preferences.sync.lostPassword "Pamiršote slaptažodį?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Sinchronizuoti automatiškai">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Rinkmenų sinchronizavimas">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Prie savosios bibliotekos įrašų prisegtas rinkmenas sinchronizuoti per">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Prie grupės bibliotekos įrašų prisegtas rinkmenas sinchronizuoti per Zotero saugyklą">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Rinkmenas parsiųsti">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "sinchronizuojant">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "pagal poreikį">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Tikrinti serverį">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Naudodamiesi Zotero saugykla Jūs savaime sutinkate su jos">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "naudojimosi taisyklėmis ir sąlygomis">
 <!ENTITY zotero.preferences.sync.librariesToSync "Sinchronizuotinos bibliotekos">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Pasirinkti bibliotekas...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Sinchronizuoti">

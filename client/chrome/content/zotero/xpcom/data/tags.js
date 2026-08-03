@@ -40,21 +40,16 @@ Zotero.Tags = new function () {
 	
 	
 	this.init = async function () {
-		_tagsByID.clear();
-		_idsByTag.clear();
 		await Zotero.DB.queryAsync(
 			"SELECT tagID, name FROM tags",
 			false,
 			{
 				onRow: function (row) {
 					var tagID = row.getResultByIndex(0);
-					// Normalize the name to match getID() and Items._loadTags(), which clean
-					// tags on lookup and load -- otherwise a tag stored in a non-normalized
-					// form (e.g., non-NFC or with surrounding whitespace) can never be matched
-					var name = this.cleanData({ tag: row.getResultByIndex(1) }).tag;
+					var name = row.getResultByIndex(1);
 					_tagsByID.set(tagID, name);
 					_idsByTag.set(name, tagID);
-				}.bind(this)
+				}
 			}
 		);
 		_initialized = true;
@@ -119,9 +114,8 @@ Zotero.Tags = new function () {
 		var id = this.getID(data.tag);
 		if (!id) {
 			id = Zotero.ID.get('tags');
-			let sql = "INSERT INTO tags (tagID, name, nameNormalized) VALUES (?, ?, ?)";
-			let nameNormalized = Zotero.Utilities.Internal.normalizeForSearchStorage(data.tag);
-			await Zotero.DB.queryAsync(sql, [id, data.tag, nameNormalized]);
+			let sql = "INSERT INTO tags (tagID, name) VALUES (?, ?)";
+			await Zotero.DB.queryAsync(sql, [id, data.tag]);
 			_tagsByID.set(id, data.tag);
 			_idsByTag.set(data.tag, id);
 		}
@@ -439,19 +433,15 @@ Zotero.Tags = new function () {
 					
 					await this.purge(chunk);
 					
-					// Update internal timestamps and versions on all items that had these tags
-					var clientVersion;
-					if (itemIDs.length) {
-						clientVersion = await Zotero.Libraries.get(libraryID).incrementClientVersion();
-					}
+					// Update internal timestamps on all items that had these tags
 					await Zotero.Utilities.Internal.forEachChunkAsync(
 						Zotero.Utilities.arrayUnique(itemIDs),
-						Zotero.DB.MAX_BOUND_PARAMETERS - 2,
+						Zotero.DB.MAX_BOUND_PARAMETERS - 1,
 						async function (chunk) {
-							var sql = 'UPDATE items SET synced=0, clientDateModified=?, clientVersion=? '
+							var sql = 'UPDATE items SET synced=0, clientDateModified=? '
 								+ 'WHERE itemID IN (' + Array(chunk.length).fill('?').join(',') + ')';
 							await Zotero.DB.queryAsync(
-								sql, [Zotero.DB.transactionDateTime, clientVersion].concat(chunk), { noCache: true }
+								sql, [Zotero.DB.transactionDateTime].concat(chunk), { noCache: true }
 							);
 							
 							await Zotero.Items.reload(itemIDs, ['primaryData', 'tags'], true);
@@ -805,10 +795,6 @@ Zotero.Tags = new function () {
 		return Zotero.DB.executeTransaction(async function () {
 			// If all items already have the tag, remove it from all items
 			if (tagID && items.every(x => x.hasTag(tagName))) {
-				Zotero.UndoHistory.stageAction(
-					'undo-action-remove-tag',
-					{ count: items.length }
-				);
 				for (let item of items) {
 					if (item.removeTag(tagName)) {
 						await item.save();
@@ -818,10 +804,6 @@ Zotero.Tags = new function () {
 			}
 			// Otherwise add to all items
 			else {
-				Zotero.UndoHistory.stageAction(
-					'undo-action-add-tag',
-					{ count: items.length }
-				);
 				for (let item of items) {
 					if (item.addTag(tagName)) {
 						await item.save();
@@ -838,10 +820,6 @@ Zotero.Tags = new function () {
 	 */
 	this.removeColoredTagsFromItems = async function (items) {
 		return Zotero.DB.executeTransaction(async function () {
-			Zotero.UndoHistory.stageAction(
-				'undo-action-remove-tag',
-				{ count: items.length }
-			);
 			for (let item of items) {
 				let colors = this.getColors(item.libraryID);
 				let tags = item.getTags();
@@ -864,10 +842,8 @@ Zotero.Tags = new function () {
 	
 	// Return the first sequence of emojis from a string
 	this.extractEmojiForItemsList = function (str) {
-		// Either match RGI_Emoji (which includes country flags), a pictographic symbol (see
-		// Zotero.Utilities.Internal.containsEmoji()), or any character followed by the Variation
-		// Selector-16
-		let re = /(?:(?:\p{RGI_Emoji}|[[\p{Extended_Pictographic}[\p{So}&&[☀-➿\u{1F000}-\u{1FAFF}]]]--[©®™\u{1F1E6}-\u{1F1FF}]])(?!\uFE0F)|.\uFE0F)+/gv;
+		// Either match RGI_Emoji (which includes country flags) or any character followed by the Variation Selector-16
+		let re = /(?:(?:\p{RGI_Emoji}|\p{Extended_Pictographic})(?!\uFE0F)|.\uFE0F)+/gv;
 		return str.match(re)?.[0] || null;
 	};
 

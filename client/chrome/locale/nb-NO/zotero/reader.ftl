@@ -4,7 +4,7 @@ reader-search-annotations = Søk kommentarer
 reader-search-outline = Søk disposisjon
 reader-no-annotations = Lag en kommentar for å se den i sidestolpen
 reader-no-extracted-text = Ingen tekst hentet ut
-reader-add-comment = Legg til merknad
+reader-add-comment = Legg til kommentar
 reader-annotation-comment = Merknad til kommentar
 reader-annotation-text = Kommentartekst
 reader-manage-tags = Behandle emneord for denne kommentaren
@@ -18,9 +18,7 @@ reader-add-note = Legg til notat
 reader-add-text = Legg til tekst
 reader-select-area = Velg område
 reader-highlight-annotation = Uthevingskommentar
-reader-highlight-annotation-short = Uthev
 reader-underline-annotation = Understrekingskommentar
-reader-underline-annotation-short = Understreket
 reader-note-annotation = Notatkommentar
 reader-text-annotation = Tekstkommentar
 reader-image-annotation = Bildekommentar
@@ -86,7 +84,7 @@ reader-toggle-sidebar = Slå av/på sidepanel
 reader-find-in-document = Finn i dokument
 reader-toggle-context-pane = Slå av/på kontekstruten
 reader-highlight-all = Uthev alle
-reader-match-case = Bruk store og små bokstaver
+reader-match-case = Sorter etter
 reader-whole-words = Hele ord
 reader-appearance = Utseende
 reader-epub-appearance-line-height = Linjeavstand
@@ -144,7 +142,7 @@ reader-a11y-resize-annotation = Hvis du vil endre størrelsen på kommentaren, h
 reader-a11y-annotation-popup-appeared = Bruk Tab for å navigere i popup-vinduet for kommentarer.
 reader-a11y-annotation-created = { $type } opprettet.
 reader-a11y-annotation-selected = { $type } valgt.
--reader-a11y-textual-annotation-instruction = For å kommentere tekst via tastaturet, bruk først «{ reader-find-in-document }» for å finne frasen, og trykk deretter { general-key-control }-{ option-or-alt }-{ $number } for å gjøre søkeresultatet om til en kommentar.
+-reader-a11y-textual-annotation-instruction = For å kommentere tekst via tastaturet, bruk først “{ reader-find-in-document }” for å finne frasen, og trykk deretter { general-key-control }-{ option-or-alt }-{ $number } for å gjøre søkeresultatet om til en kommentar.
 -reader-a11y-annotation-instruction = For å legge til denne kommentaren i dokumentet, fokuserer du på dokumentet og trykker { general-key-control }-{ option-or-alt }-{ $number }.
 reader-toolbar-highlight =
     .aria-description = { -reader-a11y-textual-annotation-instruction(number: 1) }
@@ -183,7 +181,7 @@ reader-import-from-epub-no-annotations-current-file =
     
     { -app-name } kan importere e-bok kommentarer som er opprettet i Calibre og KOReader.
 reader-import-from-epub-no-annotations-other-file =
-    «{ $filename }» ser ikke ut til å inneholde noen Calibre- eller KOReader-kommentarer.
+    “{ $filename }” ser ikke ut til å inneholde noen Calibre- eller KOReader-kommentarer.
     
     Hvis denne e-boken har kommentarer opprettet i KOReader, kan du prøve å velge en "metadata.epub.lua"-fil direkte.
 reader-import-from-epub-select-other = Velg annen fil…
@@ -193,72 +191,3 @@ reader-selected-pages =
        *[other] { $count } sider valgt
     }
 reader-page-options = Side valg
-reader-read-aloud = Les høyt
-reader-read-aloud-from-here = Les høyt fra her
-reader-read-aloud-options = Valg
-reader-read-aloud-skip-back = Hopp tilbake
-reader-read-aloud-skip-back-sentence = Gå tilbake en setning
-reader-read-aloud-skip-ahead = Hopp framover
-reader-read-aloud-skip-ahead-sentence = Gå videre til neste setning
-reader-read-aloud-add-annotation = Legg til kommentar til setning ({ $key1 }/{ $key2 })
-reader-read-aloud-play = Spill
-reader-read-aloud-pause = Sett på pause
-reader-read-aloud-speed = Lesehastighet
-reader-read-aloud-voice = Stemme
-reader-read-aloud-voice-tier = Stemmemodus
-reader-read-aloud-voice-tier-local = Lokal
-reader-read-aloud-voice-tier-standard = Standard
-reader-read-aloud-voice-tier-premium = Premium
-reader-read-aloud-more-voices = Flere stemmer…
-reader-read-aloud-language = Språk
-reader-read-aloud-remaining-time = Gjenværende lesetid
-reader-read-aloud-log-in-link = <log-in>Logg inn</log-in> for å få tilgang til { -app-name } stemmer
-reader-read-aloud-log-in-button = Logg inn
-reader-read-aloud-done-button = { general-done }
-reader-read-aloud-add-more-time = Legg til mer tid
-reader-read-aloud-quota-exceeded-message =
-    <add-more-time>{ reader-read-aloud-add-more-time }</add-more-time> eller fortsett å lese med { $tier ->
-        [standard] Standard Voices
-       *[lokal] Local Voices
-    }.
-reader-read-aloud-error = { general-error }
-reader-read-aloud-error-unknown = En ukjent feil har oppstått.
-reader-read-aloud-error-network = Kan ikke koble til høytlesingstjenesten. Sjekk internettforbindelsen din.
-reader-read-aloud-error-daily-limit-exceeded = Du har overskredet den daglige grensen din for stemmer i { -app-name }.
-reader-read-aloud-retry = Prøv på nytt
-reader-read-aloud-first-run-title = Velg den foretrukne høytlesningsstemmen din:
-reader-read-aloud-first-run-voice-tier-local-bullet-os-provided = Stemmer levert av operativsystemet ditt
-reader-read-aloud-first-run-voice-tier-local-bullet-offline = Tilgjengelig uten internettforbindelse
-reader-read-aloud-first-run-voice-tier-local-bullet-no-account = Tilgjengelig uten en { -app-name }-konto
-reader-read-aloud-first-run-voice-tier-local-bullet-free = Gratis å bruke
-reader-read-aloud-first-run-voice-tier-standard-bullet-natural-sounding = Stemmer som høres naturlige ut
-reader-read-aloud-first-run-voice-tier-standard-bullet-online-only = Kun tilgjengelig med internettforbindelse
-reader-read-aloud-first-run-voice-tier-standard-bullet-account-required = Krever en { -app-name }-konto
-reader-read-aloud-first-run-voice-tier-standard-bullet-limited-languages = Begrenset språkvalg
-reader-read-aloud-first-run-voice-tier-standard-bullet-no-multilingual = Ingen flerspråklig støtte
-reader-read-aloud-first-run-voice-tier-standard-bullet-internal-processing = Kildeteksten forlater ikke { -app-name }-serverne
-reader-read-aloud-first-run-voice-tier-standard-bullet-unlimited-with-subscription = Ubegrenset bruk med et { -subscription-name }-abonnement
-reader-read-aloud-first-run-voice-tier-premium-bullet-highest-quality = Stemmer av høyeste kvalitet
-reader-read-aloud-first-run-voice-tier-premium-bullet-online-only = Kun tilgjengelig med internettforbindelse
-reader-read-aloud-first-run-voice-tier-premium-bullet-account-required = Krever en { -app-name }-konto
-reader-read-aloud-first-run-voice-tier-premium-bullet-broad-languages = Bredt språkvalg
-reader-read-aloud-first-run-voice-tier-premium-bullet-multilingual = Flerspråklig støtte
-reader-read-aloud-first-run-voice-tier-premium-bullet-external-processing = Kildeteksten behandles av eksterne tekst-til-tale-leverandører
-reader-read-aloud-first-run-voice-tier-premium-bullet-subscription-minutes = { -subscription-name }-abonnementene inkluderer månedlige minutter med premium stemme
-reader-read-aloud-first-run-voice-tier-premium-bullet-beta-credits = Be om kreditt for ekstra minutter under betatestingen
-reader-read-aloud-sample-text = Jeg er den lokale stemmen { $name }
-reader-read-aloud-voices-none-available = Ingen stemmer tilgjengelig
-reader-read-aloud-first-run-no-voices-for-language = { $tier } stemmer støtter ikke { $language }.
-reader-read-aloud-region = Område
-reader-read-aloud-region-auto = Automatisk
-reader-read-aloud-annotation-popup-move = Flytt kommentar per setning
-reader-read-aloud-annotation-popup-extend = Utvid kommentar per setning
-reader-read-aloud-annotation-popup-delete = Slett
-reader-read-aloud-annotation-popup-done = Ferdig
-reader-read-aloud-annotation-popup-change-color = Endre farge
-reader-read-aloud-annotation-popup-highlight = Uthev
-reader-read-aloud-annotation-popup-underline = Understreket
-reader-tab-audio-play =
-    .title = { reader-read-aloud-play }
-reader-tab-audio-pause =
-    .title = { reader-read-aloud-pause }

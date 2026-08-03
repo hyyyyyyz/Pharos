@@ -9,14 +9,14 @@ const SANITIZER_REPLACE_TAGS_RE = new RegExp(
 	'g');
 
 export function parseKOReaderPosition(position: string): KOReaderPosition {
-	const KOREADER_POSITION_RE = /^\/body\/DocFragment(?:\[(\d+)])?\/(.+)\.(\d+)$/;
+	const KOREADER_POSITION_RE = /^\/body\/DocFragment\[(\d+)]\/(.+)\.(\d+)$/;
 
 	let matches = position.match(KOREADER_POSITION_RE);
 	if (!matches) {
 		throw new Error('Unable to parse KOReader position: ' + position);
 	}
 
-	let fragmentIndex = matches[1] ? parseInt(matches[1]) : 1;
+	let fragmentIndex = parseInt(matches[1]);
 	let xpath = matches[2].replace(
 		SANITIZER_REPLACE_TAGS_RE,
 		(_, prefix, tag) => prefix + 'replaced-' + tag);
@@ -80,17 +80,6 @@ export function parseAnnotationsFromKOReaderMetadata(metadata: BufferSource): KO
 		)?.value ?? null;
 	}
 
-	// x-user-defined keeps each source byte in the low 8 bits of the string;
-	// recover them and decode as UTF-8
-	function decodeStringLiteral(value: string): string {
-		let bytes = new Uint8Array(value.length);
-		for (let i = 0; i < value.length; i++) {
-			// Uint8Array assignment truncates to the low byte
-			bytes[i] = value.charCodeAt(i);
-		}
-		return new TextDecoder('utf-8').decode(bytes);
-	}
-
 	let ast = parseLua(new TextDecoder('x-user-defined').decode(metadata), {
 		comments: false,
 		scope: false,
@@ -136,15 +125,13 @@ export function parseAnnotationsFromKOReaderMetadata(metadata: BufferSource): KO
 				continue fieldLoop;
 			}
 		}
-		let noteValue = (annotationFields.note as StringLiteral | null)?.value;
-		let colorValue = (annotationFields.color as StringLiteral | null)?.value;
 		annotations.push({
-			note: noteValue !== undefined ? decodeStringLiteral(noteValue) : undefined,
-			pos0: parseKOReaderPosition(decodeStringLiteral((annotationFields.pos0 as StringLiteral).value)),
-			pos1: parseKOReaderPosition(decodeStringLiteral((annotationFields.pos1 as StringLiteral).value)),
-			text: decodeStringLiteral((annotationFields.text as StringLiteral).value),
-			datetime: decodeStringLiteral((annotationFields.datetime as StringLiteral).value),
-			color: colorValue !== undefined ? decodeStringLiteral(colorValue) : undefined,
+			note: (annotationFields.note as StringLiteral | null)?.value,
+			pos0: parseKOReaderPosition((annotationFields.pos0 as StringLiteral).value),
+			pos1: parseKOReaderPosition((annotationFields.pos1 as StringLiteral).value),
+			text: (annotationFields.text as StringLiteral).value,
+			datetime: (annotationFields.datetime as StringLiteral).value,
+			color: (annotationFields.color as StringLiteral | null)?.value,
 		});
 	}
 	return annotations;

@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Συγχρονισμός">
 <!ENTITY zotero.preferences.sync.username "Όνομα χρήστη:">
 <!ENTITY zotero.preferences.sync.password "Κωδικός:">
+<!ENTITY zotero.preferences.sync.syncServer "Συγχρονισμός Δεδομένων">
+<!ENTITY zotero.preferences.sync.setUpSync "Ρύθμιση Συγχρονισμού">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Αποσύνδεση Λογαριασμού...">
 <!ENTITY zotero.preferences.sync.createAccount "Δημιουργία λογαριασμού">
 <!ENTITY zotero.preferences.sync.lostPassword "Χάσατε τον κωδικό;">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Αυτόματος συγχρονισμός">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Συγχρονισμός αρχείου">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Συγχρονισμός προσαρτημένων αρχείων στην Βιβλιοθήκη μου, χρησιμοποιώντας">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Συγχρονισμός προσαρτημένων αρχείων των ομαδικών βιβλιοθηκών χρησιμοποιώντας την αποθήκευση Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Λήψη αρχείων">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "την ώρα συγχρονισμού">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "εφόσον χρειάζεται">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Επαλήθευση Διακομιστή">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Χρησιμοποιώντας την αποθήκευση Zotero συμφωνείτε ότι δεσμεύεστε από τους">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "όρους και τις προϋποθέσεις της">
 <!ENTITY zotero.preferences.sync.librariesToSync "Βιβλιοθήκες προς Συγχρονισμό">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Επιλογή Βιβλιοθηκών...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Συγχρονισμός">

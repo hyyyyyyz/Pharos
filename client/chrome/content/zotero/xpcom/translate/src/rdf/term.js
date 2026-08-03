@@ -11,7 +11,7 @@
 
 (function() {
 
-if (typeof module === 'object' && module.exports) {
+if (typeof process === 'object' && process + '' === '[object process]'){
   this.$rdf = require('./init');
 }
 
@@ -515,7 +515,7 @@ Term.Formula.prototype.whether = function (s, p, o, w) {
   return this.statementsMatching(s, p, o, w, false).length;
 }
 
-if (typeof module === 'object' && module.exports) {
+if (typeof process === 'object' && process + '' === '[object process]'){
   module.exports = Term;
 }
 else {

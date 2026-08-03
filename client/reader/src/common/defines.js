@@ -20,23 +20,14 @@ export const DARKEN_INK_AND_TEXT_COLOR = 5; // percent
 //export let SELECTION_COLOR = navigator.platform.includes('Mac') ? '#71ADFD' : 'Highlight';
 // TEMP: Use Mac color everywhere, since Highlight is too dark on Windows without opacity
 export let SELECTION_COLOR = '#71ADFD';
-export const READ_ALOUD_BASE_COLOR = '#4072e5';
-export const READ_ALOUD_ACTIVE_SEGMENT_COLOR = READ_ALOUD_BASE_COLOR + '73';
-export const READ_ALOUD_ACTIVE_SENTENCE_COLOR = READ_ALOUD_BASE_COLOR + '4d';
 
 export const PDF_NOTE_DIMENSIONS = 22; // pt
 export const MIN_IMAGE_ANNOTATION_SIZE = 10; // pt
 export const MIN_TEXT_ANNOTATION_WIDTH = 10; // pt
-export const PDF_READING_MODE_CROP_DISPLAY_SCALE = 1.25;
 
 export const DEBOUNCE_STATE_CHANGE = 300; // ms
 export const DEBOUNCE_STATS_CHANGE = 100; // ms
 export const DEBOUNCE_FIND_POPUP_INPUT = 500; // ms
-
-// How long the reader has to stay hidden before all its rendered pages are
-// released. Long enough to keep switching between tabs instant, while resuming
-// after that only costs a ~60 ms re-render of the visible pages
-export const SUSPEND_WHEN_HIDDEN_AFTER = 60000; // ms
 
 export const FIND_RESULT_COLOR_ALL_LIGHT = 'rgba(180,0,170,0.3)';
 export const FIND_RESULT_COLOR_CURRENT_LIGHT = 'rgba(0,100,0,0.3)';
@@ -62,5 +53,3 @@ export const DEFAULT_THEMES = [
 ];
 
 export const A11Y_VIRT_CURSOR_DEBOUNCE_LENGTH = 500; // ms
-
-export const READ_ALOUD_SEGMENT_MAX_LENGTH = 5000; // UTF-8 bytes

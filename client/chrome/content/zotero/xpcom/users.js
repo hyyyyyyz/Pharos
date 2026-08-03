@@ -27,7 +27,6 @@ Zotero.Users = new function () {
 	var _userID;
 	var _libraryID;
 	var _username;
-	var _emails;
 	var _localUserKey;
 	var _users = {};
 	
@@ -44,19 +43,12 @@ Zotero.Users = new function () {
 			_userID = settings.userID;
 			_libraryID = settings.libraryID;
 			_username = settings.username;
-			try {
-				_emails = settings.emails ? JSON.parse(settings.emails) : [];
-			}
-			catch (e) {
-				_emails = [];
-			}
 		}
 		// Clear old values when reinitializing for tests
 		else {
 			_userID = undefined;
 			_libraryID = undefined;
 			_username = undefined;
-			_emails = undefined;
 		}
 		
 		if (settings.localUserKey) {
@@ -69,8 +61,7 @@ Zotero.Users = new function () {
 			
 			_localUserKey = key;
 		}
-
-		_users = {};
+		
 		rows = await Zotero.DB.queryAsync("SELECT userID, name FROM users");
 		for (let row of rows) {
 			_users[row.userID] = row.name;
@@ -99,18 +90,6 @@ Zotero.Users = new function () {
 	};
 	
 	
-	this.getCurrentEmails = function () {
-		return _emails || [];
-	};
-	this.setCurrentEmails = async function (val) {
-		if (!Array.isArray(val)) throw new Error('emails must be an array');
-
-		let sql = "REPLACE INTO settings VALUES ('account', 'emails', ?)";
-		await Zotero.DB.queryAsync(sql, JSON.stringify(val));
-		_emails = val;
-	};
-
-
 	this.getCurrentName = function () {
 		var userID = this.getCurrentUserID();
 		return userID ? this.getName(userID) : '';

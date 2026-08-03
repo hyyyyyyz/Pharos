@@ -40,11 +40,8 @@
 					previousfocus="zotero-items-tree" />
 				
 				<duplicates-merge-pane id="zotero-duplicates-merge-pane" />
+
 				<annotation-items-pane id="zotero-annotations-pane" />
-				<groupbox id="batch-edit-prompt" pack="center" align="center" data-l10n-id="item-pane-batch-editing-prompt">
-					<description id="batch-edit-prompt-message" />
-					<button id="batch-edit-prompt-enable" data-l10n-id="item-pane-batch-editing-enable" />
-				</groupbox>
 			</deck>
 			<item-pane-sidenav id="zotero-view-item-sidenav" no-context-notes="true" class="zotero-view-item-sidenav"/>
 		`);
@@ -55,8 +52,6 @@
 			this._duplicatesPane = this.querySelector("#zotero-duplicates-merge-pane");
 			this._messagePane = this.querySelector("#zotero-item-message");
 			this._annotationsPane = this.querySelector("#zotero-annotations-pane");
-			this._batchEditEnableBtn = this.querySelector("#batch-edit-prompt button");
-			this._batchEditPromptMessage = this.querySelector("#batch-edit-prompt-message");
 			this._sidenav = this.querySelector("#zotero-view-item-sidenav");
 			this._deck = this.querySelector("#zotero-item-pane-content");
 
@@ -64,14 +59,6 @@
 
 			this._notifierID = Zotero.Notifier.registerObserver(this, ['item']);
 
-			this._batchEditEnableBtn.addEventListener("command", () => {
-				this._isBatchEditEnabled = true;
-				this._setBatchEditCollapsible(true);
-				this.render();
-				this.updateItemPaneButtons();
-			});
-			
-			this._isBatchEditEnabled = false;
 			this._translationTarget = null;
 		}
 
@@ -87,12 +74,12 @@
 			this._data = data;
 		}
 
-		get collectionTreeRows() {
-			return this._collectionTreeRows;
+		get collectionTreeRow() {
+			return this._collectionTreeRow;
 		}
 
-		set collectionTreeRows(val) {
-			this._collectionTreeRows = val;
+		set collectionTreeRow(val) {
+			this._collectionTreeRow = val;
 		}
 
 		get itemsView() {
@@ -113,12 +100,12 @@
 		}
 
 		get mode() {
-			return ["message", "item", "note", "duplicates", "annotations", "batch-edit-prompt"][this._deck.selectedIndex];
+			return ["message", "item", "note", "duplicates"][this._deck.selectedIndex];
 		}
 
 		/**
 		 * Set mode of item pane
-		 * @param {"message" | "item" | "note" | "duplicates" | "annotations" | "batch-edit-prompt"} type view type
+		 * @param {"message" | "item" | "note" | "duplicates"} type view type
 		 */
 		set mode(type) {
 			this.setAttribute("view-type", type);
@@ -139,26 +126,10 @@
 			if (this.data.length > 0 && this.data.every(item => item.isAnnotation())) {
 				return renderStatus = this.renderAnnotations(this.data);
 			}
-			
-			// reset the batch editing flag
-			let IDs = this.data.map(item => item.id);
-			if (!(IDs.length === this._prevIDs?.length && IDs.every((id, i) => id === this._prevIDs?.[i]))) {
-				if (this._isBatchEditEnabled) {
-					this._setBatchEditCollapsible(false);
-				}
-				this._isBatchEditEnabled = false;
-				this._prevIDs = IDs;
-			}
-			
-			// Multiple items selected (not duplicates)
-			if (!this.collectionTreeRows[0].isDuplicates() && this.data.length > 1 && this.data.every(item => item.isRegularItem() && !item.isFeedItem)) {
-				// Hide the batch editing UI until the user opts-in
-				renderStatus = this._isBatchEditEnabled ? this.renderItemPane(this.data) : this.renderBatchEditorPrompt();
-			}
 			// Single item selected
-			else if (this.data.length === 1) {
+			if (this.data.length == 1) {
 				let item = this.data[0];
-
+				
 				// If a collection or search is selected, it must be in the trash.
 				if (item instanceof Zotero.Collection || item instanceof Zotero.Search) {
 					renderStatus = this.renderMessage();
@@ -170,7 +141,7 @@
 					renderStatus = this.renderItemPane(item);
 				}
 			}
-			// No items selected or multiple, but includes some irregular items
+			// Zero or multiple items selected
 			else {
 				renderStatus = this.renderMessage();
 			}
@@ -179,7 +150,7 @@
 
 		notify(action, type) {
 			if (type == 'item' && action == 'modify') {
-				if (this.collectionTreeRows?.[0]?.isFeedsOrFeed()) {
+				if (this.collectionTreeRow && this.collectionTreeRow.isFeedsOrFeed()) {
 					this.updateReadLabel();
 				}
 			}
@@ -204,12 +175,9 @@
 			return true;
 		}
 
-		async renderItemPane(items) {
+		async renderItemPane(item) {
 			let previousMode = this.mode;
 			this.mode = "item";
-			if (!Array.isArray(items)) {
-				items = [items];
-			}
 
 			// Fix https://forums.zotero.org/discussion/115450/zotero-7-beta-wrong-vertical-position-in-the-item-pane-after-switching-from-a-note
 			if (previousMode === "note") {
@@ -218,21 +186,20 @@
 					requestIdleCallback(resolve, { timeout: 50 });
 				});
 			}
-
+			
 			this._itemDetails.editable = this.editable;
 			this._itemDetails.tabID = "zotero-pane";
 			this._itemDetails.tabType = "library";
-			this._itemDetails.item = items[0];
-			this._itemDetails.extraItems = items.slice(1);
-			this._itemDetails.collectionTreeRows = this.collectionTreeRows;
+			this._itemDetails.item = item;
+			this._itemDetails.collectionTreeRow = this.collectionTreeRow;
 
 			this._itemDetails.render();
 
 			if (this.getAttribute("collapsed") == "true") {
 				return true;
 			}
-
-			if (items[0].isFeedItem) {
+			
+			if (item.isFeedItem) {
 				let lastTranslationTarget = Zotero.Prefs.get('feeds.lastTranslationTarget');
 				if (lastTranslationTarget) {
 					let id = parseInt(lastTranslationTarget.substr(1));
@@ -251,7 +218,7 @@
 				// if (!item.isTranslated) {
 				// 	item.translate();
 				// }
-				ZoteroPane.startItemReadTimeout(items[0].id);
+				ZoteroPane.startItemReadTimeout(item.id);
 			}
 			return true;
 		}
@@ -262,7 +229,7 @@
 			let count = this.data.length;
 			
 			// Display duplicates merge interface in item pane
-			if (this.collectionTreeRows[0].isDuplicates()) {
+			if (this.collectionTreeRow.isDuplicates()) {
 				if (!this.editable) {
 					if (count) {
 						msg = Zotero.getString('pane.item.duplicates.writeAccessRequired');
@@ -277,7 +244,7 @@
 					
 					// On a Select All of more than a few items, display a row
 					// count instead of the usual item type mismatch error
-					let displayNumItemsOnTypeError = count > 5 && count == this.itemsView.objectRowCount;
+					let displayNumItemsOnTypeError = count > 5 && count == this.itemsView.rowCount;
 					
 					// Initialize the merge pane with the selected items
 					this._duplicatesPane.setItems(this.data, displayNumItemsOnTypeError);
@@ -292,7 +259,7 @@
 				if (count) {
 					let key;
 					// In the trash, we have to check the object type
-					if (this.collectionTreeRows[0].isTrash()) {
+					if (this.collectionTreeRow.isTrash()) {
 						if (this.data.every(x => x instanceof Zotero.Collection)) {
 							key = 'item-pane-message-collections-selected';
 						}
@@ -312,8 +279,8 @@
 					msg = { l10nId: key, l10nArgs: { count } };
 				}
 				else {
-					let count = this.itemsView.objectRowCount;
-					if (this.collectionTreeRows[0].isTrash()
+					let count = this.itemsView.rowCount;
+					if (this.collectionTreeRow.isTrash()
 							&& this.itemsView._rows?.some(
 								x => x.ref instanceof Zotero.Collection || x.ref instanceof Zotero.Search
 							)) {
@@ -328,16 +295,6 @@
 				// Return false for itemTreeTest#shouldn't select a modified item
 				return false;
 			}
-			return true;
-		}
-
-		renderBatchEditorPrompt() {
-			this.mode = 'batch-edit-prompt';
-			document.l10n.setAttributes(
-				this._batchEditPromptMessage,
-				'item-pane-message-items-selected',
-				{ count: this.data.length }
-			);
 			return true;
 		}
 
@@ -358,7 +315,7 @@
 			}
 			
 			// My Publications buttons
-			var isPublications = this.collectionTreeRows[0].isPublications();
+			var isPublications = this.collectionTreeRow.isPublications();
 			// Show in My Publications view if selected items are all notes or non-linked-file attachments
 			var showMyPublicationsButtons = isPublications
 				&& this.data.every((item) => {
@@ -374,13 +331,13 @@
 
 			// Trash button
 			let nonDeletedItemsSelected = this.data.some(item => !item.deleted);
-			if (this.collectionTreeRows[0].isTrash() && !nonDeletedItemsSelected) {
+			if (this.collectionTreeRow.isTrash() && !nonDeletedItemsSelected) {
 				container.renderCustomHead(this.renderTrashHead.bind(this));
 				return;
 			}
 			
 			// Feed buttons
-			if (this.collectionTreeRows[0].isFeedsOrFeed()) {
+			if (this.collectionTreeRow.isFeedsOrFeed()) {
 				container.renderCustomHead(this.renderFeedHead.bind(this));
 				this.updateReadLabel();
 				return;
@@ -391,11 +348,6 @@
 				return;
 			}
 
-			if (this._isBatchEditEnabled && this.data.length > 1) {
-				container.renderCustomHead(this.renderBatchEditHead.bind(this));
-				return;
-			}
-			
 			container.renderCustomHead();
 		}
 
@@ -461,7 +413,7 @@
 		renderAnnotationsHead(data) {
 			let { doc, append } = data;
 			let button = doc.createXULElement("button");
-			button.disabled = !this.collectionTreeRows.every(o => o.editable);
+			button.disabled = !this.collectionTreeRow.editable;
 			button.id = 'zotero-item-pane-note-from-annotations';
 			if (Zotero.Items.getTopLevel(this.data).length == 1) {
 				button.label = Zotero.getString('pane.items.menu.addNoteFromAnnotations');
@@ -472,28 +424,6 @@
 				button.addEventListener("command", () => ZoteroPane.createStandaloneNoteFromAnnotationsFromSelected());
 			}
 			append(button);
-		}
-
-		renderBatchEditHead(data) {
-			let { doc, append } = data;
-			let description = doc.createXULElement("description");
-			document.l10n.setAttributes(
-				description,
-				'item-pane-batch-editing-header',
-				{ count: this.data.length }
-			);
-			let icon = doc.createElement("span");
-			icon.className = "batch-edit-head-icon";
-			let doneButton = doc.createXULElement("button");
-			doneButton.setAttribute("default", "true");
-			document.l10n.setAttributes(doneButton, 'item-pane-batch-editing-done');
-			doneButton.addEventListener("command", () => {
-				this._setBatchEditCollapsible(false);
-				this._isBatchEditEnabled = false;
-				this.render();
-				this.updateItemPaneButtons();
-			});
-			append(icon, description, doneButton);
 		}
 
 		updateReadLabel() {
@@ -605,25 +535,6 @@
 			this.setTranslateButton();
 		}
 
-		_setBatchEditCollapsible(enabled) {
-			let section = this._itemDetails.querySelector('collapsible-section[data-pane="info"]');
-			if (!section) return;
-			if (enabled) {
-				// Force open without saving to prefs, so the previous state is preserved
-				section._skipSaveOpenState = true;
-				section.open = true;
-				section._skipSaveOpenState = false;
-				section.collapsible = false;
-				section.showContextMenu = false;
-			}
-			else {
-				section.collapsible = true;
-				section.showContextMenu = true;
-				// Restore the pref-saved open state
-				section._restoreOpenState();
-			}
-		}
-
 		getCurrentPane(mode = undefined) {
 			if (!mode) {
 				// Guess a mode from the current data
@@ -632,7 +543,7 @@
 					mode = "annotations";
 				}
 				// No/multiple objects are selected OR selected object is a trashed collection/search
-				else if (!this.data.length || (this.data.length > 1 && !this._isBatchEditEnabled)
+				else if (!this.data.length || this.data.length > 1
 					|| this.data[0] instanceof Zotero.Collection || this.data[0] instanceof Zotero.Search) {
 					mode = "message";
 				}
@@ -725,28 +636,18 @@
 					if (this.previousElementSibling.localName === "splitter") {
 						this.previousElementSibling.setAttribute("state", "open");
 					}
-					this._sidenav.container = this._duplicatesPane;
 					break;
 				}
 				case "annotations": {
 					this._deck.selectedIndex = 4;
 					break;
 				}
-				case "batch-edit-prompt": {
-					this._deck.selectedIndex = 5;
-					break;
-				}
 			}
 			let isViewingItem = type == "item";
-			let isViewingDuplicates = type == "duplicates";
 			if (previousViewType != "item" && isViewingItem) {
 				this._itemDetails.forceUpdateSideNav();
 			}
-			// Switch sidenav back to item-details when leaving duplicates mode
-			if (!isViewingDuplicates && this._sidenav.container !== this._itemDetails) {
-				this._sidenav.container = this._itemDetails;
-			}
-			this._sidenav.toggleDefaultStatus(!isViewingItem && !isViewingDuplicates);
+			this._itemDetails.sidenav.toggleDefaultStatus(!isViewingItem);
 		}
 	}
 	customElements.define("item-pane", ItemPane);

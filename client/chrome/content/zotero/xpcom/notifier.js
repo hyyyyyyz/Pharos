@@ -116,10 +116,9 @@ Zotero.Notifier = new function () {
 	* Possible values:
 	*
 	* 	event: 'add', 'modify', 'delete', 'move' ('c', for changing parent),
-	*		'remove' (ci, it), 'refresh', 'redraw', 'trash', 'unreadCountUpdated', 'index',
-	 *		'pageChange' (file)
+	*		'remove' (ci, it), 'refresh', 'redraw', 'trash', 'unreadCountUpdated', 'index'
 	* 	type - 'collection', 'search', 'item', 'collection-item', 'item-tag', 'tag',
-	*		'group', 'relation', 'feed', 'feedItem', 'file'
+	*		'group', 'relation', 'feed', 'feedItem'
 	* 	ids - single id or array of ids
 	*
 	* Notes:

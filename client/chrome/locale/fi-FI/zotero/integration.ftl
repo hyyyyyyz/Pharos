@@ -22,8 +22,6 @@ integration-editBibliography-wrapper =
 integration-citationDialog = Viittausikkuna
 integration-citationDialog-section-open = Avoimia asiakirjoja: ({ $count })
 integration-citationDialog-section-selected = Valittuja nimikkeitä ({ $count }/{ $total })
-integration-citationDialog-section-selectedAnnotations = Valitut huomautukset
-integration-citationDialog-section-selectedItems = Valitut nimikkeet
 integration-citationDialog-section-cited =
     { $count ->
         [0] Viitatut nimikkeet
@@ -32,8 +30,6 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = Jälkiliite
 integration-citationDialog-details-prefix = Etuliite
 integration-citationDialog-details-suppressAuthor = Piilota tekijä
-integration-citationDialog-details-locator-info = Tip: You can also type page numbers and other locators directly into the main field. <a data-l10n-name="docs-link">Learn more</a>
-integration-citationDialog-details-includeComments = Sisällytä kommentit
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -49,16 +45,7 @@ integration-citationDialog-lib-message-add-note =
         [true] Yksikään valituista muistiinpanoista ei täsmää tämänhetkiseen hakuun
        *[other] Ei muistiinpanoja valittuna
     }
-integration-citationDialog-lib-message-annotations =
-    { $search ->
-        [true] Yhtään huomautuksia sisältäviä nimikkeitä ei täsmää hakuehtoon
-       *[other] Ei valittuja eikä avoimia nimikkeitä joissa on huomautuksia
-    }
 integration-citationDialog-settings-keepSorted = Pidä lähteet lajiteltuna
-integration-citationDialog-preview-empty = Esikatselu
-integration-citationDialog-preview-error = Preview unavailable
-integration-citationDialog-btn-displayPreview =
-    .title = Display citation preview
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = Kirjasto
@@ -67,8 +54,6 @@ integration-citationDialog-btn-type-citation =
     .title = Lisää/muokkaa viitettä
 integration-citationDialog-btn-type-add-note =
     .title = Lisää muistiinpano
-integration-citationDialog-btn-type-annotations =
-    .title = Lisää huomautuksia
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -81,18 +66,11 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = Paina sarkainnäppäintä valitaksesi nimikkeitä tähän viittaukseen lisättävaäksi. Paina Esc hylätäksesi muutokset ja sulkeaksesi valintaikkunan.
-integration-citationDialog-just-added-input-placeholder = Type “10-15” to cite pages, or search for items
-integration-citationDialog-just-added-input-citation =
-    .placeholder = { $placeholder }
-    .title = { $title }
-    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = Etsi muistiinpanoa lisättäväksi tähän asiakirjaan
-integration-citationDialog-single-input-annotations =
-    .placeholder = Valitse huomautukset jotka lisätään asiakirjaan
 integration-citationDialog-aria-item-list =
     .aria-description = Muuta nimikkeen valintaa ylä- ja alanuolinäppäimellä. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -109,9 +87,6 @@ integration-citationDialog-collapse-section =
     .title = Kutista osa
 integration-citationDialog-bubble-empty = (ei otsikkoa)
 integration-citationDialog-add-to-citation = Lisää viittaukseen
-integration-citationDialog-annotations-filter =
-    .placeholder = Suodata huomautuksia
-integration-citationDialog-annotations-empty = Valitse nimike, liite tai huomautus nähdäksesi huomautuksen lisätiedot
 integration-prefs-displayAs-label = Näytä sitaatit muodossa:
 integration-prefs-footnotes =
     .label = Alaviitteet
@@ -141,6 +116,8 @@ integration-warning-documentPreferences-changes-will-be-lost = Asiakirjan ominai
 integration-warning-discard-changes = Hylkää muutokset
 integration-warning-command-is-running = Tekstinkäsittelyohjelman integrointikomento on jo käynnissä.
 first-run-guidance-citationDialog =
-    Click the bubble or use the ← and ↓ keys to view the citation details and customize options such as page number, prefix, and suffix.
+    Type a title, author, and/or year to search for a reference.
+    
+    After you’ve made your selection, click the bubble or select it via the keyboard and press ↓/Space to show citation options such as page number, prefix, and suffix.
     
     You can also add a page number or other locator by including it with your search terms (e.g., “history { $locator }”) or by typing it after the bubble and pressing { return-or-enter }.

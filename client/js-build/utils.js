@@ -245,6 +245,35 @@ function getModuleDigest(modulePath, dirs = ['src'], files = ['package.json', 'p
  *
  * @param {String} modulePath  absolute path to the module, used as npm's cwd
  */
+/**
+ * The upstream commit a bundled submodule is pinned to.
+ *
+ * Upstream reads this with `git rev-parse HEAD` inside the module. That does not
+ * work here for two separate reasons: this tree is a detached copy with no git
+ * metadata of its own, and inside the monorepo the command resolves to the
+ * PARENT repository's HEAD -- a hash that changes on every unrelated commit and
+ * has never named a published artefact.
+ *
+ * So the pins are recorded in js-build/submodule-pins.json instead. When a pin
+ * is present the build downloads the artefact Zotero itself published for that
+ * commit; when it is absent -- a module edited locally, say -- it falls back to
+ * a content digest, which will always miss the cache and build from source.
+ * That is the correct behaviour for a modified module: its sources are no longer
+ * what any published artefact was built from.
+ */
+function getModulePin(moduleName, modulePath) {
+	try {
+		const pins = require(path.join(ROOT, 'js-build', 'submodule-pins.json'));
+		if (pins[moduleName]) {
+			return pins[moduleName];
+		}
+	}
+	catch (e) {
+		// No pin file is not an error -- fall through to the digest.
+	}
+	return getModuleDigest(modulePath);
+}
+
 function npmExecOptions(modulePath) {
 	return {
 		cwd: modulePath,
@@ -265,6 +294,7 @@ module.exports = {
 	formatDirsForMatcher,
 	getFileSignature,
 	getModuleDigest,
+	getModulePin,
 	getPathRelativeTo,
 	getSignatures,
 	isWindows,

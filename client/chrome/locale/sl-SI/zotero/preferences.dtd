@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Uskladi">
 <!ENTITY zotero.preferences.sync.username "Uporabniško ime:">
 <!ENTITY zotero.preferences.sync.password "Geslo:">
+<!ENTITY zotero.preferences.sync.syncServer "Usklajevanje podatkov">
+<!ENTITY zotero.preferences.sync.setUpSync "Nastavi usklajevanje">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Odveži račun ...">
 <!ENTITY zotero.preferences.sync.createAccount "Ustvari račun">
 <!ENTITY zotero.preferences.sync.lostPassword "Ste pozabili geslo?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Uskladi samodejno">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Usklajevanje datotek">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Uskladi datoteke priponk v Moji knjižnici s/z">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Uskladi datoteke priponk v skupinskih knjižnicah s shrambo Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Datoteke prenesi">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "ob usklajevanju">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "po potrebi">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Preveri strežnik">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Če uporabljate shrambo Zotero, se strinjate z njenimi">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "pravili, omejitvami in pogoji">
 <!ENTITY zotero.preferences.sync.librariesToSync "Knjižnice za usklajevanje">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Izberi knjižnice ...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Uskladi">

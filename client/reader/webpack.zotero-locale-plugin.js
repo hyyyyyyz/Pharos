@@ -5,146 +5,41 @@ let path = require('path');
 const OUTPUT_PATH = path.resolve(__dirname, './locales');
 const SIGNATURE_PATH = path.join(OUTPUT_PATH, '.signature');
 
-// Shared preparation state across all compiler instances in a single webpack process
-let localePrep = {
-	key: null,
-	promise: null
-};
+// Static flag to ensure the plugin executes only once
+let pluginActivated = false;
 
 class ZoteroLocalePlugin {
 	constructor(options) {
+		this.files = options.files;
 		this.locales = options.locales;
 		this.commitHash = options.commitHash;
-		// Normalize files to { src, dest } where src is repo-relative with a {locale} placeholder
-		// Plain strings like 'reader.ftl' expand to 'chrome/locale/{locale}/zotero/reader.ftl'
-		this.files = options.files.map((file) => {
-			if (typeof file === 'string') {
-				return { src: `chrome/locale/{locale}/zotero/${file}`, dest: file };
-			}
-			return file;
-		});
 	}
 
-	getRemoteURL() {
-		return `https://raw.githubusercontent.com/zotero/zotero/${this.commitHash}`;
-	}
-
-	getPrepKey() {
-		return JSON.stringify({
-			commitHash: this.commitHash,
-			locales: this.locales,
-			files: this.files
-		});
-	}
-
-	async ensureLocaleFilesReady() {
-		let key = this.getPrepKey();
-
-		if (localePrep.key !== key) {
-			localePrep = { key, promise: null };
-		}
-
-		if (!localePrep.promise) {
-			localePrep.promise = (async () => {
-				console.log('ZoteroLocalePlugin is running...');
-				await this.processFiles();
-			})().catch((err) => {
-				localePrep.promise = null;
-				throw err;
-			});
-		}
-
-		await localePrep.promise;
+	getRepoURL() {
+		return `https://raw.githubusercontent.com/zotero/zotero/${this.commitHash}/chrome/locale`;
 	}
 
 	async downloadFile(url, outputPath) {
 		return new Promise((resolve, reject) => {
-			let settled = false;
 			let file = fs.createWriteStream(outputPath);
-			let fail = (error) => {
-				if (settled) {
-					return;
+			https.get(url, (response) => {
+				if (response.statusCode === 200) {
+					response.pipe(file);
+					file.on('finish', () => {
+						file.close(resolve);
+					});
 				}
-				settled = true;
-				file.destroy();
-				fs.unlink(outputPath, () => reject(error));
-			};
-
-			let request = https.get(url, (response) => {
-				if (response.statusCode !== 200) {
-					response.resume();
-					fail(new Error(`Failed to download file (${response.statusCode}): ${url}`));
-					return;
+				else {
+					reject(new Error(`Failed to download file (${response.statusCode}): ${url}`));
 				}
-
-				response.pipe(file);
-			});
-
-			request.on('error', (err) => {
-				fail(new Error(`Failed to download file from ${url}: ${err.message}`));
-			});
-
-			file.on('finish', () => {
-				file.close((err) => {
-					if (settled) {
-						return;
-					}
-					if (err) {
-						fail(new Error(`Failed to finalize downloaded file ${outputPath}: ${err.message}`));
-						return;
-					}
-					settled = true;
-					resolve();
-				});
-			});
-
-			file.on('error', (err) => {
-				fail(new Error(`Failed to write downloaded file ${outputPath}: ${err.message}`));
+			}).on('error', (err) => {
+				fs.unlink(outputPath, () => reject(err));
 			});
 		});
 	}
 
-	getRepoRoot() {
-		let parentDir = path.resolve(__dirname, '..');
-		if (fs.existsSync(path.join(parentDir, 'chrome', 'locale'))) {
-			return parentDir;
-		}
-		return null;
-	}
-
-	async copyLocalFiles(repoRoot) {
-		// Remove and recreate the output directory
-		if (fs.existsSync(OUTPUT_PATH)) {
-			fs.rmSync(OUTPUT_PATH, { recursive: true, force: true });
-		}
-		fs.mkdirSync(OUTPUT_PATH, { recursive: true });
-
-		for (let locale of this.locales) {
-			let localeDir = path.join(OUTPUT_PATH, locale);
-			fs.mkdirSync(localeDir, { recursive: true });
-
-			for (let { src, dest } of this.files) {
-				let srcPath = path.join(repoRoot, src.replace('{locale}', locale));
-				let destPath = path.join(localeDir, dest);
-
-				if (!fs.existsSync(srcPath)) {
-					throw new Error(`Missing locale source file: ${srcPath}`);
-				}
-				fs.copyFileSync(srcPath, destPath);
-			}
-		}
-	}
-
 	// Downloads locale files if the commit hash has changed.
 	async processFiles() {
-		// If inside zotero-client, copy from the local tree
-		let repoRoot = this.getRepoRoot();
-		if (repoRoot) {
-			console.log(`Copying locale files from ${repoRoot}`);
-			await this.copyLocalFiles(repoRoot);
-			return;
-		}
-
 		// Load the previous commit hash from the plain text .signature file
 		let lastCommitHash = null;
 		try {
@@ -174,18 +69,25 @@ class ZoteroLocalePlugin {
 				return;
 			}
 
-			let remoteBase = this.getRemoteURL();
+			let repoUrl = this.getRepoURL();
 
 			for (let locale of this.locales) {
-				let localeDir = path.join(OUTPUT_PATH, locale);
-				fs.mkdirSync(localeDir, { recursive: true });
+				for (let file of this.files) {
+					let url = `${repoUrl}/${locale}/zotero/${file}`;
+					let localeDir = path.join(OUTPUT_PATH, locale);
+					let outputFile = path.join(localeDir, file);
 
-				for (let { src, dest } of this.files) {
-					let url = `${remoteBase}/${src.replace('{locale}', locale)}`;
-					let outputFile = path.join(localeDir, dest);
+					// Ensure the directory exists
+					fs.mkdirSync(localeDir, { recursive: true });
 
-					console.log(`Downloading ${url} -> ${outputFile}`);
-					await this.downloadFile(url, outputFile);
+					// Download the file
+					try {
+						console.log(`Downloading ${url} -> ${outputFile}`);
+						await this.downloadFile(url, outputFile);
+					}
+					catch (error) {
+						console.error(`Failed to download ${url}:`, error.message);
+					}
 				}
 			}
 
@@ -204,12 +106,17 @@ class ZoteroLocalePlugin {
 	}
 
 	apply(compiler) {
+		// Prevent plugin from running multiple times
+		if (pluginActivated) {
+			return;
+		}
+		// Mark plugin as activated
+		pluginActivated = true;
 		// Hook into Webpack's lifecycle
-		let run = async () => {
-			await this.ensureLocaleFilesReady();
-		};
-		compiler.hooks.beforeRun.tapPromise('ZoteroLocalePlugin', run);
-		compiler.hooks.watchRun.tapPromise('ZoteroLocalePlugin', run);
+		compiler.hooks.beforeRun.tapPromise('ZoteroLocalePlugin', async () => {
+			console.log('ZoteroLocalePlugin is running...');
+			await this.processFiles();
+		});
 	}
 }
 

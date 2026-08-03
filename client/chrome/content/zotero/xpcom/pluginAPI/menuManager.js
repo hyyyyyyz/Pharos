@@ -81,7 +81,7 @@
 	 * @type {object}
 	 * @property {string} menuType - The type of the menu item
 	 * @property {string} [l10nID] - The l10n ID for the menu item
-	 * @property {string} [l10nArgs] - Arguments for the l10n ID. Support for object type is deprecated.
+	 * @property {object} [l10nArgs] - Arguments for the l10n ID
 	 * @property {string} [icon] - The icon for the menu item
 	 * - For menu icons, it is recommended to use an SVG icon with a size of 16x16.
 	 * Use `fill="context-fill"` in the SVG to use the default icon color
@@ -126,17 +126,7 @@
 				optional: true,
 			},
 			l10nArgs: {
-				// TODO: remove support for object type in the future.
-				checkHook: (value) => {
-					if (typeof value === "undefined" || typeof value === "string") {
-						return true;
-					}
-					if (typeof value === "object") {
-						this._log("Option 'l10nArgs' should be a string. The support for object type is deprecated.", "warn");
-						return true;
-					}
-					return "Option 'l10nArgs' should be a string.";
-				},
+				type: "object",
 				optional: true,
 			},
 			icon: {
@@ -238,8 +228,6 @@
 				}
 			}
 
-			let mainKey = this._getOptionMainKey(option);
-
 			// Validate nested menus recursively
 			for (let i = 0; i < option.menus.length; i++) {
 				let result = this._validateMenuData(option.menus[i], `menus[${i}]`);
@@ -247,8 +235,6 @@
 					return false;
 				}
 				option.menus[i] = result.obj;
-				// Record mainKey so DOM elements can be found by it during unregister
-				option.menus[i]._mainKey = mainKey;
 			}
 			return option;
 		}
@@ -303,7 +289,7 @@
 
 		async _unregisterByPluginID(pluginID) {
 			let removedKeys = await super._unregisterByPluginID(pluginID);
-			if (!removedKeys || removedKeys.length === 0) {
+			if (!removedKeys) {
 				return [];
 			}
 			// Remove all custom menu items from the main window and reader window
@@ -314,9 +300,9 @@
 			}
 			windows.push(...Zotero.getMainWindows());
 			for (let window of windows) {
+				// Remove all custom menu items that match the removed keys
 				// The query selector is like ".CUSTOM_MENU_CLASS:is(.key1, .key2, .key3)"
-				let selector = removedKeys.map(k => `.${CSS.escape(k)}`).join(", ");
-				window.document.querySelectorAll(`.${CUSTOM_MENU_CLASS}:is(${selector})`)
+				window.document.querySelectorAll(`.${CUSTOM_MENU_CLASS}:is(.${removedKeys.join(", .")})`)
 					.forEach(elem => elem.remove());
 			}
 			return removedKeys;
@@ -446,7 +432,7 @@
 						break;
 					}
 				}
-				menuElem.classList.add(CUSTOM_MENU_CLASS, menuData._key, menuData._mainKey);
+				menuElem.classList.add(CUSTOM_MENU_CLASS, menuData._key);
 
 				// Init label and icon for non-separator menu items
 				if (menuData.menuType !== "separator") {
@@ -454,15 +440,7 @@
 						menuElem.dataset.l10nId = menuData.l10nID;
 					}
 					if (menuData.l10nArgs) {
-						let l10nArgs;
-						// TODO: remove support for object type in the future
-						if (typeof menuData.l10nArgs === "string") {
-							l10nArgs = menuData.l10nArgs;
-						}
-						else {
-							l10nArgs = JSON.stringify(menuData.l10nArgs);
-						}
-						menuElem.dataset.l10nArgs = l10nArgs;
+						menuElem.dataset.l10nArgs = JSON.stringify(menuData.l10nArgs);
 					}
 					if (menuData.icon || menuData.darkIcon) {
 						if (menuData.menuType === "menuitem") {
@@ -474,12 +452,6 @@
 						menuElem.style.setProperty("--custom-menu-icon-light", `url(${menuData.icon})`);
 						// Use the dark icon if available, otherwise use the light icon
 						menuElem.style.setProperty("--custom-menu-icon-dark", `url(${menuData.darkIcon || menuData.icon})`);
-					}
-					else {
-						// Make url invalid to avoid inheriting icons from parent menus
-						menuElem.style.setProperty("--custom-menu-icon-light", "initial");
-						menuElem.style.setProperty("--custom-menu-icon-dark", "initial");
-						menuElem.classList.remove("menuitem-iconic", "menu-iconic");
 					}
 				}
 			}
@@ -632,16 +604,8 @@
 					_menuElem.style.setProperty("--custom-menu-icon-dark", `url(${darkIcon || icon})`);
 				},
 			};
-			// ZoteroPane's menu contexts define a collectionTreeRow property that
-			// throws when read, so copy descriptors rather than values, which would
-			// evaluate it every time a menu is built
 			let wrappedGetContext = () => {
-				let context = {};
-				Object.defineProperties(context, Object.getOwnPropertyDescriptors(defaultContext));
-				if (getContext) {
-					Object.defineProperties(context, Object.getOwnPropertyDescriptors(getContext()));
-				}
-				return context;
+				return Object.assign({}, defaultContext, getContext ? getContext() : {});
 			};
 
 			// Add hooks

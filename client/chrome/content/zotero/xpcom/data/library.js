@@ -38,9 +38,6 @@ Zotero.Library = function (params = {}) {
 	this._hasSearches = null;
 	this._storageDownloadNeeded = false;
 	
-	this._lastReadItemInSession = null;
-	this._lastClientVersionIncrementTransactionID = null;
-	
 	Zotero.Utilities.Internal.assignProps(
 		this,
 		params,
@@ -49,7 +46,6 @@ Zotero.Library = function (params = {}) {
 			'editable',
 			'filesEditable',
 			'libraryVersion',
-			'clientVersion',
 			'storageVersion',
 			'lastSync',
 			'archived'
@@ -73,7 +69,7 @@ Zotero.Library = function (params = {}) {
 // DB columns
 Zotero.defineProperty(Zotero.Library, '_dbColumns', {
 	value: Object.freeze([
-		'type', 'editable', 'filesEditable', 'version', 'clientVersion', 'storageVersion', 'lastSync', 'archived', 'isAdmin'
+		'type', 'editable', 'filesEditable', 'version', 'storageVersion', 'lastSync', 'archived'
 	])
 });
 
@@ -128,11 +124,6 @@ Zotero.defineProperty(Zotero.Library.prototype, 'id', {
 Zotero.defineProperty(Zotero.Library.prototype, 'libraryType', {
 	get: function () { return this._get('_libraryType'); },
 	set: function (v) { return this._set('_libraryType', v); }
-});
-
-Zotero.defineProperty(Zotero.Library.prototype, 'lastReadItemInSession', {
-	get() { return this._lastReadItemInSession; },
-	set(val) { this._lastReadItemInSession = val; }
 });
 
 /**
@@ -211,7 +202,7 @@ Zotero.defineProperty(Zotero.Library.prototype, 'allowsLinkedFiles', {
 
 // Create other accessors
 (function () {
-	let accessors = ['editable', 'filesEditable', 'clientVersion', 'storageVersion', 'archived', 'isAdmin'];
+	let accessors = ['editable', 'filesEditable', 'storageVersion', 'archived'];
 	for (let i=0; i<accessors.length; i++) {
 		let prop = Zotero.Library._colToProp(accessors[i]);
 		Zotero.defineProperty(Zotero.Library.prototype, accessors[i], {
@@ -291,27 +282,7 @@ Zotero.Library.prototype._set = function (prop, val) {
 			if (val < -1) throw new Error(prop + ' must not be less than -1');
 			
 			// Ensure that it is never decreasing, unless it is being set to -1
-			if (val != -1 && val < this._libraryVersion) {
-				// Caught in syncEngine to trigger a full sync (e.g., after a server-side
-				// account deletion/recreation has reset the remote library version)
-				let e = new Error(prop + ' cannot decrease');
-				e.name = 'ZoteroLibraryVersionDecreaseError';
-				throw e;
-			}
-			
-			break;
-		
-		case '_libraryClientVersion':
-			var newVal = Number.parseInt(val, 10);
-			if (newVal != val) {
-				throw new Error(`${prop} must be an integer (${typeof val} '${val}' given)`);
-			}
-			val = newVal;
-			
-			if (val < 0) throw new Error(prop + ' must not be less than 0');
-			
-			// Ensure that it is never decreasing
-			if (val < this._libraryClientVersion) throw new Error(prop + ' cannot decrease');
+			if (val != -1 && val < this._libraryVersion) throw new Error(prop + ' cannot decrease');
 			
 			break;
 		
@@ -323,11 +294,7 @@ Zotero.Library.prototype._set = function (prop, val) {
 			// Ensure that it is never decreasing, unless it is being set to -1
 			// by Reset File Sync History
 			if (val != -1 && val < this._libraryStorageVersion) {
-				// Caught in syncEngine to trigger a full sync (e.g., after a server-side
-				// account deletion/recreation has reset the remote library version)
-				let e = new Error(prop + ' cannot decrease');
-				e.name = 'ZoteroLibraryVersionDecreaseError';
-				throw e;
+				throw new Error(prop + ' cannot decrease');
 			}
 			val = newVal;
 			break;
@@ -376,12 +343,10 @@ Zotero.Library.prototype._loadDataFromRow = function (row) {
 	this._libraryEditable = !!row._libraryEditable;
 	this._libraryFilesEditable = !!row._libraryFilesEditable;
 	this._libraryVersion = row._libraryVersion;
-	this._libraryClientVersion = row._libraryClientVersion;
 	this._libraryStorageVersion = row._libraryStorageVersion;
 	this._libraryLastSync =  row._libraryLastSync !== 0 ? new Date(row._libraryLastSync * 1000) : false;
 	this._libraryArchived = !!row._libraryArchived;
-	this._libraryIsAdmin = !!row._libraryIsAdmin;
-
+	
 	this._hasCollections = !!row.hasCollections;
 	this._hasSearches = !!row.hasSearches;
 	
@@ -700,13 +665,6 @@ Zotero.Library.prototype._eraseData = async function (env) {
 	await Zotero.DB.queryAsync("DELETE FROM libraries WHERE libraryID=?", this.libraryID);
 	// TODO: Emit event so this doesn't have to be here
 	await Zotero.Fulltext.clearLibraryVersion(this.libraryID);
-
-	// Discard undo/redo history that references this library
-	if (Zotero.UndoHistory) {
-		Zotero.DB.addCurrentCallback('commit', function () {
-			Zotero.UndoHistory.clearForLibrary(this.libraryID);
-		}.bind(this));
-	}
 };
 
 Zotero.Library.prototype._finalizeErase = async function (env) {
@@ -771,12 +729,11 @@ Zotero.Library.prototype.hasItems = async function () {
 	if (!this.id) {
 		throw new Error("Library is not saved yet");
 	}
-	let sql = 'SELECT 1 FROM items WHERE libraryID=?';
+	let sql = 'SELECT COUNT(*)>0 FROM items WHERE libraryID=?';
 	// Don't count old <=4.0 Quick Start Guide items
 	if (this.libraryID == Zotero.Libraries.userLibraryID) {
-		sql += " AND key NOT IN ('ABCD2345', 'ABCD3456')";
+		sql += "AND key NOT IN ('ABCD2345', 'ABCD3456')";
 	}
-	sql += " LIMIT 1";
 	return !!((await Zotero.DB.valueQueryAsync(sql, this.libraryID)));
 };
 
@@ -786,18 +743,3 @@ Zotero.Library.prototype.hasItem = function (item) {
 	}
 	return item.libraryID == this.libraryID;
 }
-
-Zotero.Library.prototype.incrementClientVersion = async function () {
-	let transactionID = Zotero.DB.requireTransaction();
-	if (transactionID === this._lastClientVersionIncrementTransactionID) {
-		return this._libraryClientVersion;
-	}
-
-	let clientVersion = await Zotero.DB.valueQueryAsync(
-		"UPDATE libraries SET clientVersion = clientVersion + 1 WHERE libraryID=? RETURNING clientVersion",
-		[this.libraryID]
-	);
-	this._libraryClientVersion = clientVersion;
-	this._lastClientVersionIncrementTransactionID = transactionID;
-	return clientVersion;
-};

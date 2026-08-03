@@ -38,7 +38,6 @@ Zotero.Collections = function () {
 		libraryID: "O.libraryID",
 		key: "O.key",
 		version: "O.version",
-		clientVersion: "O.clientVersion",
 		synced: "O.synced",
 		
 		deleted: "DC.collectionID IS NOT NULL AS deleted",

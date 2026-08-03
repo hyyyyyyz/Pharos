@@ -1,50 +1,30 @@
 import { createRoot } from 'react-dom/client';
 import React, { createContext } from 'react';
-import pako from 'pako';
 import ReaderUI from './components/reader-ui';
 import PDFView from '../pdf/pdf-view';
 import EPUBView from '../dom/epub/epub-view';
 import SnapshotView from '../dom/snapshot/snapshot-view';
-import SDTView from '../dom/sdt/sdt-view';
 import AnnotationManager from './annotation-manager';
 import {
 	createAnnotationContextMenu,
 	createColorContextMenu,
-	createReadAloudAnnotationContextMenu,
 	createSelectorContextMenu,
 	createThemeContextMenu,
 	createThumbnailContextMenu,
 	createViewContextMenu
 } from './context-menu';
 import { initPDFPrintService } from '../pdf/pdf-print-service';
-import { ANNOTATION_COLORS, DEBOUNCE_STATE_CHANGE, DEBOUNCE_STATS_CHANGE, DEFAULT_THEMES, SUSPEND_WHEN_HIDDEN_AFTER } from './defines';
+import { ANNOTATION_COLORS, DEBOUNCE_STATE_CHANGE, DEBOUNCE_STATS_CHANGE, DEFAULT_THEMES } from './defines';
 import { FocusManager } from './focus-manager';
 import { KeyboardManager } from './keyboard-manager';
 import {
-	basicDeepEqual,
 	getCurrentColorScheme,
-	getImageDataURL,
-	isMac,
+	getImageDataURL, isMac,
 	setMultiDragPreview,
 } from './lib/utilities';
 import { debounce } from './lib/debounce';
 import { flushSync } from 'react-dom';
 import { addFTL, getLocalizedString } from '../fluent';
-import { getVoicePreferencesURL } from './lib/read-aloud-links';
-import { resolveLanguage } from './read-aloud/lang';
-import { ReadAloudManager } from './read-aloud/manager';
-import {
-	buildSDTReadAloudSegments,
-	findSegmentIndexForSDTPosition,
-	getSDTLang,
-} from './read-aloud/sdt-segments';
-import { createPositionMapper } from './sdt/create-position-mapper';
-import { isSDTPosition } from './types';
-import {
-	openStructuredDocumentTextPack,
-	SDT_PACK_VERSION,
-	SDT_SCHEMA_VERSION,
-} from '../../structured-document-text/src/read.js';
 
 // Compute style values for usage in views (CSS variables aren't sufficient for that)
 // Font family is necessary for text annotations
@@ -53,16 +33,6 @@ window.computedColorFocusBorder = window.getComputedStyle(document.body).getProp
 window.computedWidthFocusBorder = window.getComputedStyle(document.body).getPropertyValue('--width-focus-border');
 
 export const ReaderContext = createContext({});
-
-// View stats that the base view keeps providing while the SDT (Reading Mode)
-// overlay is active
-const BASE_VIEW_STATS_KEYS = new Set([
-	'pageIndex',
-	'pageLabel',
-	'pagesCount',
-	'usePhysicalPageNumbers',
-	'percentage',
-]);
 
 class Reader {
 	constructor(options) {
@@ -74,12 +44,6 @@ class Reader {
 		this._data = options.data;
 		this._password = options.password;
 		this._preview = options.preview;
-
-		this._getSDTPack = typeof options.getSDTPack === 'function' ? options.getSDTPack : null;
-		this._sdtReaderPromise = null;
-		this._sdtPromise = null;
-		this._sdt = null;
-		this._readAloudSegments = null;
 
 		this._readerContext = { type: this._type, platform: this._platform };
 
@@ -109,24 +73,17 @@ class Reader {
 		// Only used on Zotero client, sets text/plain and text/html values from Note Markdown and Note HTML translators
 		this._onSetDataTransferAnnotations = options.onSetDataTransferAnnotations;
 		this._onSetZoom = options.onSetZoom;
-		this._onSetReadAloudVoice = options.onSetReadAloudVoice;
-		this._onSetReadAloudStatus = options.onSetReadAloudStatus;
-		this._onPurchaseReadAloudCredits = options.onPurchaseReadAloudCredits;
-		this._onLogIn = options.onLogIn;
-		this._onOpenReadAloudFirstRunPopup = options.onOpenReadAloudFirstRunPopup;
 
-		for (let ftl of options.ftl) {
-			addFTL(ftl);
+		if (Array.isArray(options.ftl)) {
+			for (let ftl of options.ftl) {
+				addFTL(ftl);
+			}
 		}
 
 		this._readerRef = React.createRef();
 		this._primaryView = null;
 		this._secondaryView = null;
-		this._primarySDTView = null;
-		this._secondarySDTView = null;
 		this._lastViewPrimary = true;
-		this._suspended = false;
-		this._suspendTimeout = null;
 
 		this.initializedPromise = new Promise(resolve => this._resolveInitializedPromise = resolve);
 
@@ -136,8 +93,6 @@ class Reader {
 
 		this._enableAnnotationDeletionFromComment = false;
 		this._annotationSelectionTriggeredFromView = false;
-		this._lastReadAloudPaused = true;
-		this._lastReadAloudActiveSegment = null;
 
 		// Stores the default or current values for each annotation type
 		this._tools = {
@@ -186,25 +141,6 @@ class Reader {
 			? DEFAULT_THEMES.find(x => x.id === 'dark')
 			: themes.get(options.darkTheme) || null;
 
-		// Initialize speech synthesis (for Chrome, which only returns voices
-		// the second time this is called)
-		window.speechSynthesis.getVoices();
-
-		this._enableReadAloud = options.enableReadAloud || false;
-		this._readAloudRemoteInterface = options.readAloudRemoteInterface || null;
-
-		this._readAloudManager = new ReadAloudManager({
-			remoteInterface: this._readAloudRemoteInterface,
-			onStateChange: () => this._onReadAloudEngineStateChanged(),
-			onRequestSegments: () => this._requestReadAloudSegments(),
-			onComputeRepositionIndex: (position) => {
-				let segments = this._readAloudManager.segments;
-				if (!segments) return null;
-				return this._findReadAloudStartIndex(segments, position);
-			},
-			onSetVoice: data => this._setReadAloudVoice(data),
-		});
-
 		this._state = {
 			splitType: null,
 			splitSize: '50%',
@@ -221,8 +157,6 @@ class Reader {
 			},
 			readOnly: options.readOnly !== undefined ? options.readOnly : false,
 			authorName: typeof options.authorName === 'string' ? options.authorName : '',
-			title: options.title || '',
-			loggedIn: options.loggedIn ?? false,
 			fontSize: options.fontSize || 1,
 			fontFamily: options.fontFamily,
 			hyphenate: options.hyphenate,
@@ -254,21 +188,6 @@ class Reader {
 			appearancePopup: null,
 			themePopup: null,
 			contextMenu: null,
-			readAloudState: {
-				popupOpen: false,
-				annotationPopup: null,
-				segmentAnnotations: new Map(),
-				savedPosition: options.primaryViewState?.lastReadAloudPosition ?? null,
-				highlightGranularity: ['paragraph', 'sentence', 'word'].includes(options.readAloudHighlightGranularity)
-					? options.readAloudHighlightGranularity
-					: 'sentence',
-			},
-			readAloudVoices: new Map(Object.entries(options.readAloudVoices || {})),
-			readAloudFirstRunPopup: false,
-			sdtProgress: null,
-			primaryReadingModeEnabled: false,
-			secondaryReadingModeEnabled: false,
-			readingModeLoading: false,
 			primaryViewState: options.primaryViewState,
 			primaryViewStats: {},
 			primaryViewAnnotationPopup: null,
@@ -309,10 +228,6 @@ class Reader {
 			delete state.splitSize;
 			this._state.secondaryViewState = state;
 		}
-
-		// Start pulling (and generating, if needed) the SDT pack right away,
-		// so it's ready by the time a feature awaits getSDTReader()
-		this.getSDTReader();
 
 		this._focusManager = new FocusManager({
 			reader: this,
@@ -387,15 +302,6 @@ class Reader {
 						onChangePageIndex={(pageIndex, options) => this._lastView.navigate({ pageIndex }, options)}
 						onChangeTool={this.setTool.bind(this)}
 						onToggleAppearancePopup={this.toggleAppearancePopup.bind(this)}
-						enableReadAloud={this._enableReadAloud}
-						readAloudManager={this._readAloudManager}
-						readAloudRemoteInterface={this._readAloudRemoteInterface}
-						onSetReadAloudVoice={this._setReadAloudVoice.bind(this)}
-						onOpenVoicePreferences={this.openVoicePreferences.bind(this)}
-						onPurchaseReadAloudCredits={this._onPurchaseReadAloudCredits}
-						onToggleReadAloud={this.toggleReadAloudPopup.bind(this)}
-						onAddReadAloudAnnotation={this.addAnnotationFromReadAloudSegment.bind(this)}
-						onLockReadAloudPosition={this._lockPositionToReadAloud.bind(this)}
 						onToggleFind={this.toggleFindPopup.bind(this)}
 						onChangeFilter={this.setFilter.bind(this)}
 						onChangeSidebarView={(view) => {
@@ -506,11 +412,6 @@ class Reader {
 							}
 							this._updateState({ themePopup: null, customThemes, lightTheme, darkTheme });
 						}}
-						onLogIn={this._onLogIn}
-						onMoveReadAloudAnnotation={this.moveReadAloudAnnotation.bind(this)}
-						onDismissReadAloudAnnotationPopup={this.dismissReadAloudAnnotationPopup.bind(this)}
-						onDeleteReadAloudAnnotation={this.deleteReadAloudAnnotation.bind(this)}
-						onOpenReadAloudAnnotationContextMenu={params => this._onOpenContextMenu(createReadAloudAnnotationContextMenu(this, params))}
 					/>
 				</ReaderContext.Provider>
 			);
@@ -531,33 +432,6 @@ class Reader {
 				}
 			});
 		}
-
-		// Release memory while the reader isn't visible (a hidden tab, a
-		// backgrounded app, a minimized window). The embedder is responsible for
-		// keeping document visibility correct (e.g. Zotero deactivates the
-		// docShells of hidden tabs), and read-aloud is automatically exempt,
-		// because tabs playing audio are kept visible.
-		// The document can already be hidden on startup (a tab opened in the
-		// background), which fires no visibilitychange event
-		document.addEventListener('visibilitychange', () => this._handleVisibilityChange());
-		if (document.hidden) {
-			this._handleVisibilityChange();
-		}
-	}
-
-	_handleVisibilityChange() {
-		clearTimeout(this._suspendTimeout);
-		this._suspendTimeout = null;
-		if (document.hidden) {
-			// Trim right away — the visible pages stay rendered, so switching
-			// back to the tab remains instant — and release everything if the
-			// reader stays hidden
-			this.trimMemory();
-			this._suspendTimeout = setTimeout(() => this.setSuspended(true), SUSPEND_WHEN_HIDDEN_AFTER);
-		}
-		else {
-			this.setSuspended(false);
-		}
 	}
 
 	_ensureType() {
@@ -567,34 +441,7 @@ class Reader {
 	}
 
 	get _lastView() {
-		return this._lastViewPrimary ? this._activePrimaryView : this._activeSecondaryView;
-	}
-
-	/**
-	 * The view that currently handles user interaction for a split: the SDT
-	 * (Reading Mode) overlay when one is active, the base view otherwise.
-	 */
-	_getActiveView(primary) {
-		if (primary) {
-			return this._primarySDTView || this._primaryView;
-		}
-		return this._secondarySDTView || this._secondaryView;
-	}
-
-	get _activePrimaryView() {
-		return this._getActiveView(true);
-	}
-
-	get _activeSecondaryView() {
-		return this._getActiveView(false);
-	}
-
-	/**
-	 * All instantiated views, including base views hidden behind SDT overlays.
-	 */
-	get _views() {
-		return [this._primaryView, this._secondaryView, this._primarySDTView, this._secondarySDTView]
-			.filter(Boolean);
+		return this._lastViewPrimary ? this._primaryView : this._secondaryView;
 	}
 
 	_updateState(state, init) {
@@ -605,48 +452,41 @@ class Reader {
 
 		if (this._state.annotations !== previousState.annotations) {
 			let annotations = this._state.annotations.filter(x => !x._hidden);
-			for (let view of this._views) {
-				view.setAnnotations(annotations);
-			}
+			this._primaryView?.setAnnotations(annotations);
+			this._secondaryView?.setAnnotations(annotations);
 		}
 
 		if (this._state.selectedAnnotationIDs !== previousState.selectedAnnotationIDs) {
-			for (let view of this._views) {
-				view.setSelectedAnnotationIDs(this._state.selectedAnnotationIDs);
-			}
+			this._primaryView?.setSelectedAnnotationIDs(this._state.selectedAnnotationIDs);
+			this._secondaryView?.setSelectedAnnotationIDs(this._state.selectedAnnotationIDs);
 		}
 
 		if (this._state.tool !== previousState.tool) {
-			for (let view of this._views) {
-				view.setTool(this._state.tool);
-			}
+			this._primaryView?.setTool(this._state.tool);
+			this._secondaryView?.setTool(this._state.tool);
 		}
 
 		if (this._state.showAnnotations !== previousState.showAnnotations) {
-			for (let view of this._views) {
-				view.setShowAnnotations(this._state.showAnnotations);
-			}
+			this._primaryView?.setShowAnnotations(this._state.showAnnotations);
+			this._secondaryView?.setShowAnnotations(this._state.showAnnotations);
 		}
 
 		if (this._state.outline !== previousState.outline) {
-			for (let view of this._views) {
-				view.setOutline(this._state.outline);
-			}
+			this._primaryView?.setOutline(this._state.outline);
+			this._secondaryView?.setOutline(this._state.outline);
 		}
 
 		if (init || this._state.lightTheme !== previousState.lightTheme) {
 			if (!init) {
-				for (let view of this._views) {
-					view.setLightTheme(this._state.lightTheme);
-				}
+				this._primaryView?.setLightTheme(this._state.lightTheme);
+				this._secondaryView?.setLightTheme(this._state.lightTheme);
 			}
 		}
 
 		if (init || this._state.darkTheme !== previousState.darkTheme) {
 			if (!init) {
-				for (let view of this._views) {
-					view.setDarkTheme(this._state.darkTheme);
-				}
+				this._primaryView?.setDarkTheme(this._state.darkTheme);
+				this._secondaryView?.setDarkTheme(this._state.darkTheme);
 			}
 		}
 
@@ -658,92 +498,71 @@ class Reader {
 				delete document.documentElement.dataset.colorScheme;
 			}
 			if (!init) {
-				for (let view of this._views) {
-					view.setColorScheme(this._state.colorScheme);
-				}
-			}
-		}
-
-		if (this._state.readAloudState !== previousState.readAloudState) {
-			// Push composed view state (from manager + UI state) to views
-			this._pushReadAloudToViews();
-
-			// If the first-run popup should be shown and we have an external handler,
-			// call it instead of rendering the inline popup
-			if (this._onOpenReadAloudFirstRunPopup
-					&& this._state.readAloudFirstRunPopup
-					&& this._state.readAloudState.popupOpen
-					&& this._state.readAloudState.lang) {
-				this._onOpenReadAloudFirstRunPopup({
-					lang: this._state.readAloudState.lang,
-				});
-				this.toggleReadAloudPopup(false);
+				this._primaryView?.setColorScheme(this._state.colorScheme);
+				this._secondaryView?.setColorScheme(this._state.colorScheme);
 			}
 		}
 
 		if (this._state.readOnly !== previousState.readOnly) {
 			this._annotationManager.setReadOnly(this._state.readOnly);
-			for (let view of this._views) {
-				view.setReadOnly?.(this._state.readOnly);
-			}
+			this._primaryView?.setReadOnly?.(this._state.readOnly);
+			this._secondaryView?.setReadOnly?.(this._state.readOnly);
 		}
 
 		if (this._state.pageLabels !== previousState.pageLabels) {
-			for (let view of this._views) {
-				view.setPageLabels?.(this._state.pageLabels);
-			}
+			this._primaryView?.setPageLabels(this._state.pageLabels);
+			this._secondaryView?.setPageLabels(this._state.pageLabels);
 		}
 
 		if (this._state.primaryViewAnnotationPopup !== previousState.primaryViewAnnotationPopup) {
-			this._activePrimaryView?.setAnnotationPopup(this._state.primaryViewAnnotationPopup);
+			this._primaryView?.setAnnotationPopup(this._state.primaryViewAnnotationPopup);
 		}
 		if (this._state.secondaryViewAnnotationPopup !== previousState.secondaryViewAnnotationPopup) {
-			this._activeSecondaryView?.setAnnotationPopup(this._state.secondaryViewAnnotationPopup);
+			this._secondaryView?.setAnnotationPopup(this._state.secondaryViewAnnotationPopup);
 		}
 
 		if (this._state.primaryViewSelectionPopup !== previousState.primaryViewSelectionPopup) {
-			this._activePrimaryView?.setSelectionPopup(this._state.primaryViewSelectionPopup);
+			this._primaryView?.setSelectionPopup(this._state.primaryViewSelectionPopup);
 		}
 		if (this._state.secondaryViewSelectionPopup !== previousState.secondaryViewSelectionPopup) {
-			this._activeSecondaryView?.setSelectionPopup(this._state.secondaryViewSelectionPopup);
+			this._secondaryView?.setSelectionPopup(this._state.secondaryViewSelectionPopup);
 		}
 
 		if (this._state.primaryViewOverlayPopup !== previousState.primaryViewOverlayPopup) {
-			this._activePrimaryView?.setOverlayPopup(this._state.primaryViewOverlayPopup);
+			this._primaryView?.setOverlayPopup(this._state.primaryViewOverlayPopup);
 		}
 		if (this._state.secondaryViewOverlayPopup !== previousState.secondaryViewOverlayPopup) {
-			this._activeSecondaryView?.setOverlayPopup(this._state.secondaryViewOverlayPopup);
+			this._secondaryView?.setOverlayPopup(this._state.secondaryViewOverlayPopup);
 		}
 
 		if (this._state.primaryViewFindState !== previousState.primaryViewFindState) {
-			this._activePrimaryView?.setFindState(this._state.primaryViewFindState);
+			this._primaryView?.setFindState(this._state.primaryViewFindState);
 		}
 		if (this._state.secondaryViewFindState !== previousState.secondaryViewFindState) {
-			this._activeSecondaryView?.setFindState(this._state.secondaryViewFindState);
+			this._secondaryView?.setFindState(this._state.secondaryViewFindState);
 		}
 
-		if (this._state.fontFamily !== previousState.fontFamily) {
-			for (let view of this._views) {
-				view.setFontFamily?.(this._state.fontFamily);
+		if (this._type === 'epub' || this._type === 'snapshot') {
+			if (this._state.fontFamily !== previousState.fontFamily) {
+				this._primaryView?.setFontFamily(this._state.fontFamily);
+				this._secondaryView?.setFontFamily(this._state.fontFamily);
 			}
-		}
 
-		if (this._state.hyphenate !== previousState.hyphenate) {
-			for (let view of this._views) {
-				view.setHyphenate?.(this._state.hyphenate);
+			if (this._state.hyphenate !== previousState.hyphenate) {
+				this._primaryView?.setHyphenate(this._state.hyphenate);
+				this._secondaryView?.setHyphenate(this._state.hyphenate);
 			}
 		}
 
 		if (init || this._state.sidebarView !== previousState.sidebarView) {
-			for (let view of this._views) {
-				view.setSidebarView?.(this._state.sidebarView);
-			}
+			this._primaryView?.setSidebarView?.(this._state.sidebarView);
+			this._secondaryView?.setSidebarView?.(this._state.sidebarView);
 		}
 
 		if (init || this._state.sidebarOpen !== previousState.sidebarOpen) {
 			document.body.classList.toggle('sidebar-open', this._state.sidebarOpen);
-			this._activePrimaryView?.setSidebarOpen(this._state.sidebarOpen);
-			this._activeSecondaryView?.setSidebarOpen(this._state.sidebarOpen);
+			this._primaryView?.setSidebarOpen(this._state.sidebarOpen);
+			this._secondaryView?.setSidebarOpen(this._state.sidebarOpen);
 		}
 
 		if (init || this._state.splitType !== previousState.splitType) {
@@ -761,18 +580,6 @@ class Reader {
 			}
 			// Unsplit
 			else if ((previousState.splitType || init) && !this._state.splitType) {
-				if (this._secondarySDTView) {
-					this._secondarySDTView.destroy();
-					this._secondarySDTView = null;
-					this._updateState({ secondaryReadingModeEnabled: false });
-					if (!this._primarySDTView) {
-						this._annotationManager.setFilter({ enabledTypes: null });
-						if (this._baseViewOutline !== undefined) {
-							this._updateState({ outline: this._baseViewOutline });
-							this._baseViewOutline = undefined;
-						}
-					}
-				}
 				this._secondaryView?.destroy();
 				this._secondaryView = null;
 				this._secondaryViewContainer.replaceChildren();
@@ -941,9 +748,6 @@ class Reader {
 			window.focus();
 			document.activeElement.blur();
 		});
-		return new Promise((resolve) => {
-			this._contextMenuCloseResolve = resolve;
-		});
 	}
 
 	closeContextMenu() {
@@ -951,28 +755,19 @@ class Reader {
 		this._focusManager.restoreFocus();
 		this._onBringReaderToFront?.(false);
 		document.querySelectorAll('.context-menu-open').forEach(x => x.classList.remove('context-menu-open'));
-		this._contextMenuCloseResolve?.();
-		this._contextMenuCloseResolve = null;
-	}
-
-	/**
-	 * @returns {Object | null}
-	 */
-	getSelectionPosition() {
-		return this._state[this._lastViewPrimary ? 'primaryViewSelectionPopup' : 'secondaryViewSelectionPopup']
-			?.annotation?.position ?? null;
 	}
 
 	_handleAppearanceChange(params) {
-		for (let view of this._views) {
-			view.setAppearance?.(params);
-		}
+		this._ensureType('epub', 'snapshot');
+		this._primaryView?.setAppearance(params);
+		this._secondaryView?.setAppearance(params);
 	}
 
-	async _handleReadingModeEnabledChange(enabled) {
+	_handleReadingModeEnabledChange(enabled) {
+		this._ensureType('snapshot');
 		try {
-			// The toggle controls whichever split the user last interacted with
-			await this._setReadingMode(this._lastViewPrimary || !this._secondaryView, enabled);
+			this._primaryView?.setReadingModeEnabled(enabled);
+			this._secondaryView?.setReadingModeEnabled(enabled);
 		}
 		catch (e) {
 			console.error(e);
@@ -981,81 +776,6 @@ class Reader {
 				this.setErrorMessage(null);
 			}, 5000);
 		}
-	}
-
-	// Serialize Reading Mode transitions so rapid toggles don't race (two
-	// concurrent calls could otherwise both pass the !this[sdtViewKey] check
-	// and create two overlay views)
-	_setReadingMode(primary, enabled) {
-		let apply = async () => {
-			let sdtViewKey = primary ? '_primarySDTView' : '_secondarySDTView';
-			let enabledStateKey = primary ? 'primaryReadingModeEnabled' : 'secondaryReadingModeEnabled';
-			let baseView = primary ? this._primaryView : this._secondaryView;
-
-			if (enabled && !this[sdtViewKey]) {
-				this._updateState({ readingModeLoading: true });
-				let sdt;
-				try {
-					sdt = await this._loadSDT();
-				}
-				finally {
-					this._updateState({ readingModeLoading: false });
-				}
-				if (!sdt) {
-					throw new Error('SDT unavailable');
-				}
-				let location = baseView?.getSDTLocation?.(sdt.structure) ?? null;
-
-				if (baseView?._iframe) {
-					baseView._iframe.style.visibility = 'hidden';
-					baseView._iframe.style.position = 'absolute';
-				}
-				// The overlay replaces the outline with the SDT one -- keep
-				// the base view's to restore once Reading Mode is off everywhere
-				if (this._baseViewOutline === undefined) {
-					this._baseViewOutline = this._state.outline;
-				}
-				this[sdtViewKey] = this._createView(primary, location, { sdt: true });
-				this._updateState({ [enabledStateKey]: true });
-
-				// Only text annotation tools work on the SDT overlay
-				let enabledTypes = ['highlight', 'underline', 'note'];
-				this._annotationManager.setFilter({ enabledTypes });
-				if (!enabledTypes.concat('pointer').includes(this._state.tool.type)) {
-					this.setTool({ type: 'pointer' });
-				}
-			}
-			else if (!enabled && this[sdtViewKey]) {
-				this[sdtViewKey]._iframe?.remove();
-				this[sdtViewKey].destroy();
-				this[sdtViewKey] = null;
-
-				if (baseView?._iframe) {
-					baseView._iframe.style.visibility = '';
-					baseView._iframe.style.position = '';
-				}
-				this._updateState({ [enabledStateKey]: false });
-				if (!this._primarySDTView && !this._secondarySDTView) {
-					this._annotationManager.setFilter({ enabledTypes: null });
-					if (this._baseViewOutline !== undefined) {
-						this._updateState({ outline: this._baseViewOutline });
-						this._baseViewOutline = undefined;
-					}
-				}
-			}
-		};
-
-		let next = Promise.resolve(this._readingModeQueue).then(apply);
-		this._readingModeQueue = next.catch(() => {});
-		return next;
-	}
-
-	/**
-	 * Compute sortIndex and pageLabel for a source-format position.
-	 * Used by the SDT overlay, which creates annotations in source format.
-	 */
-	_getSourceAnnotationMeta(position) {
-		return this._primaryView?.getAnnotationMeta?.(position) ?? null;
 	}
 
 	_handleFindStateChange(primary, params) {
@@ -1094,14 +814,14 @@ class Reader {
 		if (primary === undefined) {
 			primary = this._lastViewPrimary;
 		}
-		this._getActiveView(primary)?.findNext();
+		(primary ? this._primaryView : this._secondaryView).findNext();
 	}
 
 	findPrevious(primary) {
 		if (primary === undefined) {
 			primary = this._lastViewPrimary;
 		}
-		this._getActiveView(primary)?.findPrevious();
+		(primary ? this._primaryView : this._secondaryView).findPrevious();
 	}
 
 	toggleAppearancePopup(open) {
@@ -1113,718 +833,6 @@ class Reader {
 		if (!open) {
 			this._lastView.focus();
 		}
-	}
-
-	/**
-	 * Update UI-only Read Aloud state (popupOpen, annotationPopup, etc.)
-	 * and push the composed view state to views.
-	 */
-	_updateReadAloudUIState(state) {
-		// Ignore late changes due to event handlers after popup has closed
-		if (!this._state.readAloudState.popupOpen && !state.popupOpen) {
-			return;
-		}
-		this._updateState({ readAloudState: { ...this._state.readAloudState, ...state } });
-	}
-
-	/**
-	 * Called when the manager's engine state changes.
-	 * Pushes composed view state to views, updates savedPosition,
-	 * reports status to Zotero, and triggers a React re-render.
-	 */
-	_onReadAloudEngineStateChanged() {
-		let manager = this._readAloudManager;
-
-		// Auto-activate once a voice is resolved and the popup is open
-		// (but not during first-run, where the user picks a tier first)
-		if (this._state.readAloudState.popupOpen
-				&& !this._state.readAloudFirstRunPopup
-				&& manager.selectedVoiceID
-				&& !manager.active) {
-			manager.activate();
-			return;
-		}
-
-		// If the view has a selection target and we're unpausing, restart from
-		// the selection
-		if (!manager.paused && this._lastReadAloudPaused
-				&& this._activePrimaryView?.hasReadAloudTarget) {
-			manager.clearSegments();
-			this._requestReadAloudSegments();
-		}
-		this._lastReadAloudPaused = manager.paused;
-
-		// Update savedPosition when the active segment changes
-		let activeSegment = manager.activeSegment;
-		if (activeSegment && activeSegment !== this._lastReadAloudActiveSegment
-				&& activeSegment.sourcePosition) {
-			this._state.readAloudState.savedPosition = activeSegment.sourcePosition;
-		}
-		this._lastReadAloudActiveSegment = activeSegment;
-
-		// Report active/paused status to Zotero
-		let status = { active: manager.active, paused: manager.paused };
-		if (!basicDeepEqual(status, this._lastReadAloudStatus)) {
-			this._lastReadAloudStatus = status;
-			this._onSetReadAloudStatus?.(status);
-		}
-
-		// Trigger React re-render so the popup reads fresh manager state.
-		// Spread creates a new reference without changing content.
-		this._updateState({
-			readAloudState: { ...this._state.readAloudState },
-		});
-	}
-
-	/**
-	 * Compose a ReadAloudStateSnapshot from manager + UI state, and push to views.
-	 */
-	_pushReadAloudToViews() {
-		let stateSnapshot = this._composeReadAloudStateSnapshot();
-		for (let view of this._views) {
-			view.setReadAloudState(stateSnapshot);
-		}
-	}
-
-	_composeReadAloudStateSnapshot() {
-		let manager = this._readAloudManager;
-		return {
-			popupOpen: this._state.readAloudState.popupOpen,
-			active: manager.active,
-			paused: manager.paused,
-			segmentGranularity: manager.segmentGranularity,
-			highlightGranularity: this._state.readAloudState.highlightGranularity,
-			segments: manager.segments,
-			activeSegment: manager.activeSegment,
-			activeWordSourcePosition: this._computeActiveWordSourcePosition(manager),
-			lastSkipGranularity: manager.lastSkipGranularity,
-			annotationPopup: this._state.readAloudState.annotationPopup,
-			lang: manager.lang || this._state.readAloudState.lang,
-		};
-	}
-
-	_computeActiveWordSourcePosition(manager) {
-		let segment = manager.activeSegment;
-		let timestamp = manager.activeTimestamp;
-		if (!segment || !timestamp || !this._readAloudSegments || !this._sdt) {
-			return null;
-		}
-		let spans = this._readAloudSegments.getWordTextSpans(segment, timestamp.charStart, timestamp.charEnd);
-		return this._sdt.mapper.textNodeSpansToSourcePosition(spans);
-	}
-
-	setReadAloudHighlightGranularity(granularity) {
-		if (!['paragraph', 'sentence', 'word'].includes(granularity)
-				|| this._state.readAloudState.highlightGranularity === granularity) {
-			return;
-		}
-		this._updateState({
-			readAloudState: { ...this._state.readAloudState, highlightGranularity: granularity },
-		});
-		if (granularity === 'word') {
-			this._readAloudManager.syncActiveWordToPlayback();
-		}
-	}
-
-	/**
-	 * Get a reader for the document's SDT pack. Caches after success.
-	 * @returns {Promise<StructuredDocumentTextPackReader | null>}
-	 */
-	async getSDTReader() {
-		if (!this._getSDTPack) {
-			return null;
-		}
-		if (!this._sdtReaderPromise) {
-			this._sdtReaderPromise = (async () => {
-				let reportedProgress = false;
-				let result;
-				try {
-					result = await this._getSDTPack({
-						onProgress: (progress) => {
-							reportedProgress = true;
-							this._updateState({ sdtProgress: progress });
-						},
-					});
-				}
-				finally {
-					if (reportedProgress) {
-						this._updateState({ sdtProgress: null });
-					}
-				}
-				if (!result?.ok) {
-					// Could be a transient failure
-					// Clear the promise so another call to getSDTReader() retries
-					console.warn('SDT pack unavailable:', result?.reason);
-					this._sdtReaderPromise = null;
-					return null;
-				}
-				if (result.packVersion !== SDT_PACK_VERSION
-						|| result.schemaMajorVersion !== Number(SDT_SCHEMA_VERSION.split('.')[0])) {
-					console.warn('Unsupported SDT pack version', result.packVersion, result.schemaMajorVersion);
-					this._sdtReaderPromise = null;
-					return null;
-				}
-				let bytes = new Uint8Array(result.bytes);
-				let source = {
-					byteLength: bytes.byteLength,
-					read: async (offset, length) => bytes.buffer.slice(
-						bytes.byteOffset + offset,
-						bytes.byteOffset + offset + length
-					),
-				};
-				return openStructuredDocumentTextPack(source, {
-					inflate: b => pako.inflateRaw(b),
-				});
-			})().catch((e) => {
-				// Don't cache transport errors, so the next invocation retries
-				this._sdtReaderPromise = null;
-				console.warn('Failed to load SDT pack', e);
-				return null;
-			});
-		}
-		return this._sdtReaderPromise;
-	}
-
-	// Materialize the full SDT structure and build the position mapper.
-	// Used by Read Aloud and Reading Mode; resolves to null when SDT is
-	// unavailable
-	async _loadSDT() {
-		if (this._sdt) {
-			return this._sdt;
-		}
-		if (!this._sdtPromise) {
-			this._sdtPromise = (async () => {
-				let reader = await this.getSDTReader();
-				if (!reader) {
-					return null;
-				}
-				let structure = await reader.materialize();
-				this._sdt = {
-					structure,
-					mapper: createPositionMapper(structure),
-				};
-				return this._sdt;
-			})().catch((e) => {
-				this._sdtPromise = null;
-				console.warn('Failed to load SDT', e);
-				return null;
-			});
-		}
-		return this._sdtPromise;
-	}
-
-	async _requestReadAloudSegments() {
-		let manager = this._readAloudManager;
-		let granularity = manager.segmentGranularity;
-		if (!granularity) {
-			return;
-		}
-
-		let sdt = await this._loadSDT();
-		if (!sdt || !manager.active || manager.segmentGranularity !== granularity) {
-			return;
-		}
-
-		if (!manager.lang) {
-			manager.setLanguage(getSDTLang(sdt.structure));
-		}
-		this._readAloudSegments = buildSDTReadAloudSegments(sdt.structure, granularity, manager.lang);
-		let segments = this._readAloudSegments.segments;
-		if (!segments.length) {
-			manager.clearSegments();
-			return;
-		}
-		this._materializeSourcePositions(segments);
-
-		let position = this._captureReadAloudStart();
-		let backwardStopIndex = position
-			? this._findReadAloudStartIndex(segments, position)
-			: this._findFirstVisibleSegmentIndex(segments);
-		manager.setSegments(segments, backwardStopIndex, null);
-	}
-
-	// Selection > explicit target > persisted savedPosition. Selection and
-	// target are consumed as side effects. savedPosition only applies if
-	// the user hasn't scrolled too far away.
-	_captureReadAloudStart() {
-		let view = this._lastView;
-		let selectionPosition = view?.getSelectionPosition?.();
-		if (selectionPosition) {
-			view.clearSelection?.();
-			return selectionPosition;
-		}
-		let target = this._readAloudManager.consumeTargetPosition();
-		if (target) {
-			return target;
-		}
-		let saved = this._state.readAloudState.savedPosition;
-		if (saved && this._activePrimaryView?.isPositionNearView?.(saved)) {
-			return saved;
-		}
-		return null;
-	}
-
-	// Materialize sourcePosition and paragraphSourcePosition on each segment,
-	// so views only have to display them
-	_materializeSourcePositions(segments) {
-		let mapper = this._sdt.mapper;
-		let readAloudSegments = this._readAloudSegments;
-		if (!readAloudSegments) {
-			return;
-		}
-		let paragraphStartIndex = 0;
-		for (let i = 0; i < segments.length; i++) {
-			let segment = segments[i];
-			segment.sourcePosition = mapper.textNodeSpansToSourcePosition(
-				readAloudSegments.getSegmentTextSpans(segment)
-			);
-			if (segment.anchor === 'paragraphStart') {
-				paragraphStartIndex = i;
-			}
-			if (i + 1 >= segments.length || segments[i + 1].anchor === 'paragraphStart') {
-				let paragraphSourcePosition = mapper.textNodeSpansToSourcePosition(
-					readAloudSegments.getParagraphTextSpans(segments[paragraphStartIndex])
-				);
-				for (let j = paragraphStartIndex; j <= i; j++) {
-					segments[j].paragraphSourcePosition = paragraphSourcePosition;
-				}
-			}
-		}
-	}
-
-	_findReadAloudStartIndex(segments, targetPosition) {
-		let sdtPosition;
-		if (isSDTPosition(targetPosition)) {
-			sdtPosition = targetPosition;
-		}
-		else {
-			sdtPosition = this._sdt?.mapper.sourceToSDTPosition(targetPosition);
-		}
-		if (!sdtPosition) {
-			return null;
-		}
-		return findSegmentIndexForSDTPosition(segments, sdtPosition);
-	}
-
-	// Find the first segment within the top-level block the user is looking at
-	_findFirstVisibleSegmentIndex(segments) {
-		let view = this._activePrimaryView;
-		let blockIndex = view?.getVisibleBlockIndex?.(this._sdt.structure);
-		if (Number.isInteger(blockIndex)) {
-			let index = findSegmentIndexForSDTPosition(segments, { start: [blockIndex], end: [blockIndex] });
-			if (index !== null) {
-				return index;
-			}
-		}
-		return 0;
-	}
-
-	/**
-	 * Create an annotation spanning the given Read Aloud segments, in the
-	 * source document's coordinate system.
-	 */
-	_addAnnotationFromReadAloudSegments(segments, init) {
-		if (!segments.length || !this._sdt || !this._readAloudSegments) {
-			return null;
-		}
-		let sourcePosition = this._sdt.mapper.textNodeSpansToSourcePosition(
-			this._readAloudSegments.getSegmentsTextSpans(segments)
-		);
-		if (!sourcePosition) {
-			return null;
-		}
-		let meta = this._getSourceAnnotationMeta(sourcePosition);
-		if (!meta) {
-			return null;
-		}
-		return this._annotationManager.addAnnotation({
-			...init,
-			position: sourcePosition,
-			text: segments.map(s => s.text).join(' '),
-			sortIndex: meta.sortIndex,
-			pageLabel: meta.pageLabel,
-		});
-	}
-
-	_syncPersistedVoicesToManager() {
-		let manager = this._readAloudManager;
-		let lang = manager.lang;
-		if (!lang) return;
-		let resolvedLang = resolveLanguage(lang, [...this._state.readAloudVoices.keys()]);
-		let persisted = resolvedLang ? this._state.readAloudVoices.get(resolvedLang) : {};
-		manager.applyPersistedVoices(persisted || {});
-		if (persisted?.speed) {
-			manager.setSpeed(persisted.speed);
-		}
-	}
-
-	_resetReadAloudSegmentState() {
-		this._state.readAloudState.segmentAnnotations = new Map();
-	}
-
-	_lockPositionToReadAloud() {
-		this._lastView?.lockPositionToReadAloud();
-	}
-
-	openVoicePreferences() {
-		let url = getVoicePreferencesURL();
-		if (url) {
-			this._onOpenLink(url);
-		}
-	}
-
-	toggleReadAloudPopup(popupOpen) {
-		if (!this._enableReadAloud) {
-			return;
-		}
-		if (popupOpen === undefined) {
-			popupOpen = !this._state.readAloudState.popupOpen;
-		}
-		if (popupOpen) {
-			this._updateState({
-				readAloudFirstRunPopup: !this._state.readAloudVoices.size,
-			});
-			this._updateReadAloudUIState({
-				popupOpen: true,
-			});
-			this._prepareReadAloud();
-		}
-		else {
-			this._readAloudManager.deactivate();
-			this._resetReadAloudSegmentState();
-			this._updateState({
-				readAloudFirstRunPopup: false,
-			});
-			this._updateReadAloudUIState({
-				popupOpen: false,
-				annotationPopup: null,
-			});
-		}
-	}
-
-	toggleReadAloudPaused(paused = undefined) {
-		if (!this._enableReadAloud) {
-			return;
-		}
-		if (!this._readAloudManager.active) {
-			return;
-		}
-		if (paused === undefined) {
-			paused = !this._readAloudManager.paused;
-		}
-		if (!paused) {
-			this._lockPositionToReadAloud();
-		}
-		if (paused) {
-			this._readAloudManager.pause();
-		}
-		else {
-			this._readAloudManager.play();
-		}
-	}
-
-	startReadAloudAtPosition(position = null) {
-		if (!this._enableReadAloud) {
-			return;
-		}
-		position ||= this.getSelectionPosition();
-		// If already active with segments, jump
-		if (this._readAloudManager.active && this._readAloudManager.segments) {
-			this._lockPositionToReadAloud();
-			if (position) {
-				this._readAloudManager.jumpTo(position);
-			}
-			else {
-				this._readAloudManager.play();
-			}
-		}
-		else {
-			// Not yet active: Open popup and start with target position.
-			// Store targetPosition on the manager so it's included when
-			// the view state is composed for initial segment computation.
-			this._readAloudManager.setTargetPosition(position);
-			if (this._state.readAloudState.savedPosition && !position) {
-				this._readAloudManager.setTargetPosition(this._state.readAloudState.savedPosition);
-			}
-			this._resetReadAloudSegmentState();
-			this._updateReadAloudUIState({ popupOpen: true });
-			this._prepareReadAloud();
-		}
-	}
-
-	// Load voices and, once the SDT is ready, set the document language from
-	// its metadata/content so voice resolution can proceed
-	_prepareReadAloud() {
-		this._readAloudManager.loadVoices(this._state.loggedIn);
-		this._syncPersistedVoicesToManager();
-		this._loadSDT().then((sdt) => {
-			if (sdt && !this._readAloudManager.lang) {
-				let lang = getSDTLang(sdt.structure);
-				this._readAloudManager.setLanguage(lang);
-				this._updateReadAloudUIState({ lang });
-				this._syncPersistedVoicesToManager();
-			}
-		});
-	}
-
-	_setReadAloudVoice({ lang, region, voice, speed, tier }) {
-		this._onSetReadAloudVoice({ lang, region, voice, speed, tier });
-		let existing = this._state.readAloudVoices.get(lang) || {};
-		let tierVoices = { ...existing.tierVoices };
-		if (tier) {
-			// Push to the end of the object
-			delete tierVoices[tier];
-			tierVoices[tier] = voice;
-		}
-		this._updateState({
-			readAloudFirstRunPopup: false,
-			readAloudVoices: new Map([
-				...this._state.readAloudVoices,
-				[lang, { region, voice, speed, tierVoices }],
-			]),
-			readAloudState: {
-				...this._state.readAloudState,
-				lang,
-			},
-		});
-		// If the manager isn't active yet (first-run popup flow), sync
-		// persisted voices so it can resolve, then activate.
-		// When already active, the manager already has the right voice --
-		// don't re-sync (which would nuke and recreate the controller).
-		if (!this._readAloudManager.active) {
-			this._readAloudManager.setLanguage(lang);
-			this._syncPersistedVoicesToManager();
-			if (this._readAloudManager.selectedVoiceID) {
-				this._readAloudManager.activate();
-			}
-		}
-	}
-
-	setReadAloudVoices(readAloudVoices) {
-		this._updateState({ readAloudVoices: new Map(Object.entries(readAloudVoices)) });
-	}
-
-	addAnnotationFromReadAloudSegment(segment, type) {
-		let { annotationPopup: popup, segmentAnnotations } = this._state.readAloudState;
-		let segments = this._readAloudManager.segments;
-		// If the annotation popup is already open, just change the type if specified
-		if (popup) {
-			if (type) {
-				this.setReadAloudAnnotationType(type);
-			}
-			return;
-		}
-
-		let segmentIndex = segments ? segments.indexOf(segment) : -1;
-		// Check if this segment already has an annotation
-		let existingAnnotationID = segmentAnnotations.get(segmentIndex);
-		let existingAnnotation = existingAnnotationID && this._annotationManager._getAnnotationByID(existingAnnotationID);
-
-		if (existingAnnotation) {
-			// Find the segment range for this annotation
-			let startSegmentIndex = segmentIndex;
-			let endSegmentIndex = segmentIndex;
-			for (let [idx, annID] of segmentAnnotations) {
-				if (annID === existingAnnotationID) {
-					startSegmentIndex = Math.min(startSegmentIndex, idx);
-					endSegmentIndex = Math.max(endSegmentIndex, idx);
-				}
-			}
-			this._updateReadAloudUIState({
-				annotationPopup: {
-					annotation: existingAnnotation,
-					baseSegmentIndex: segmentIndex,
-					startSegmentIndex,
-					endSegmentIndex,
-					segments,
-				}
-			});
-			this._lastView.navigate({ annotationID: existingAnnotation.id });
-			return;
-		}
-
-		// If an old annotation was deleted, clean up stale mappings
-		if (existingAnnotationID) {
-			for (let [idx, annID] of segmentAnnotations) {
-				if (annID === existingAnnotationID) {
-					segmentAnnotations.delete(idx);
-				}
-			}
-		}
-
-		let annotation = this._addAnnotationFromReadAloudSegments(
-			[segment],
-			{
-				type: type || this._tools[this._state.textSelectionAnnotationMode].type,
-				color: ['highlight', 'underline'].includes(this._state.tool.type)
-					? this._state.tool.color
-					: ANNOTATION_COLORS[0][1],
-			},
-		);
-		if (annotation && segments && segmentIndex >= 0) {
-			segmentAnnotations.set(segmentIndex, annotation.id);
-			this._updateReadAloudUIState({
-				annotationPopup: {
-					annotation,
-					baseSegmentIndex: segmentIndex,
-					startSegmentIndex: segmentIndex,
-					endSegmentIndex: segmentIndex,
-					segments,
-				}
-			});
-			this._lastView.navigate({ annotationID: annotation.id });
-		}
-	}
-
-	_updateReadAloudAnnotation(newBaseIndex, newStartIndex, newEndIndex) {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		let { annotation, startSegmentIndex, endSegmentIndex, segments } = popup;
-		let { segmentAnnotations } = this._state.readAloudState;
-		// Get updated annotation data
-		annotation = this._annotationManager._getAnnotationByID(annotation.id);
-		if (!annotation) {
-			return;
-		}
-
-		// Clean up segment mappings in the old range
-		for (let i = startSegmentIndex; i <= endSegmentIndex; i++) {
-			segmentAnnotations.delete(i);
-		}
-		// Delete the old annotation
-		this._annotationManager.deleteAnnotations([annotation.id]);
-		// And create a new one across the new range
-		let segmentsInRange = segments.slice(newStartIndex, newEndIndex + 1);
-		let newAnnotation = this._addAnnotationFromReadAloudSegments(
-			segmentsInRange,
-			{
-				type: annotation.type,
-				color: annotation.color,
-				comment: annotation.comment,
-			},
-		);
-		if (newAnnotation) {
-			// Add segment mappings across the new range
-			for (let i = newStartIndex; i <= newEndIndex; i++) {
-				segmentAnnotations.set(i, newAnnotation.id);
-			}
-			this._updateReadAloudUIState({
-				annotationPopup: {
-					annotation: newAnnotation,
-					baseSegmentIndex: newBaseIndex,
-					startSegmentIndex: newStartIndex,
-					endSegmentIndex: newEndIndex,
-					segments,
-				}
-			});
-			this._lastView.navigate({ annotationID: newAnnotation.id }, { block: 'center', ifNeeded: false });
-		}
-	}
-
-	moveReadAloudAnnotation(direction, accelerate) {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		let { baseSegmentIndex, segments } = popup;
-		let delta = accelerate ? 5 : 1;
-		let newIndex = direction === 'prev' ? baseSegmentIndex - delta : baseSegmentIndex + delta;
-		newIndex = Math.max(0, Math.min(newIndex, segments.length - 1));
-		this._updateReadAloudAnnotation(newIndex, newIndex, newIndex);
-	}
-
-	extendReadAloudAnnotation(direction) {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		let { baseSegmentIndex, startSegmentIndex, endSegmentIndex, segments } = popup;
-
-		let newStartIndex = startSegmentIndex;
-		let newEndIndex = endSegmentIndex;
-
-		if (direction === 'prev') {
-			// Alt+Left: shrink backward if extended forward, else extend backward
-			if (endSegmentIndex > baseSegmentIndex) {
-				newEndIndex = endSegmentIndex - 1;
-			}
-			else if (startSegmentIndex > 0) {
-				newStartIndex = startSegmentIndex - 1;
-			}
-			else {
-				return;
-			}
-		}
-		else {
-			// Alt+Right: shrink forward if extended backward, else extend forward
-			// eslint-disable-next-line no-lonely-if
-			if (startSegmentIndex < baseSegmentIndex) {
-				newStartIndex = startSegmentIndex + 1;
-			}
-			else if (endSegmentIndex < segments.length - 1) {
-				newEndIndex = endSegmentIndex + 1;
-			}
-			else {
-				return;
-			}
-		}
-
-		this._updateReadAloudAnnotation(baseSegmentIndex, newStartIndex, newEndIndex);
-	}
-
-	dismissReadAloudAnnotationPopup() {
-		this._updateReadAloudUIState({ annotationPopup: null });
-	}
-
-	deleteReadAloudAnnotation() {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		let { startSegmentIndex, endSegmentIndex } = popup;
-		let { segmentAnnotations } = this._state.readAloudState;
-		// Clear segment mappings
-		for (let i = startSegmentIndex; i <= endSegmentIndex; i++) {
-			segmentAnnotations.delete(i);
-		}
-		this._annotationManager.deleteAnnotations([popup.annotation.id]);
-		this._updateReadAloudUIState({ annotationPopup: null });
-	}
-
-	setReadAloudAnnotationColor(color) {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		this._annotationManager.updateAnnotations([{
-			id: popup.annotation.id,
-			color,
-		}]);
-		this._updateReadAloudUIState({
-			annotationPopup: {
-				...popup,
-				annotation: this._annotationManager._getAnnotationByID(popup.annotation.id),
-			}
-		});
-	}
-
-	setReadAloudAnnotationType(type) {
-		let popup = this._state.readAloudState.annotationPopup;
-		if (!popup) {
-			return;
-		}
-		this._annotationManager.updateAnnotations([{
-			id: popup.annotation.id,
-			type,
-		}]);
-		this._updateReadAloudUIState({
-			annotationPopup: {
-				...popup,
-				annotation: this._annotationManager._getAnnotationByID(popup.annotation.id),
-			}
-		});
 	}
 
 	toggleFindPopup({ primary, open } = {}) {
@@ -1863,7 +871,7 @@ class Reader {
 		return getLocalizedString(name, args);
 	}
 
-	_createView(primary, location, { sdt = false } = {}) {
+	_createView(primary, location) {
 		let view;
 
 		let container = primary ? this._primaryViewContainer : this._secondaryViewContainer;
@@ -1886,37 +894,11 @@ class Reader {
 				let { splitType, splitSize } = this._state;
 				state = { ...state, splitType, splitSize };
 			}
-			// Include lastReadAloudPosition in the view state so Zotero can
-			// persist it as a synced setting. If the user has scrolled too far
-			// from the saved position, clear the synced setting.
-			if (primary) {
-				let { savedPosition } = this._state.readAloudState;
-				let lastReadAloudPosition = savedPosition ?? null;
-				if (lastReadAloudPosition
-						&& !this._activePrimaryView?.isPositionNearView?.(lastReadAloudPosition)) {
-					lastReadAloudPosition = null;
-				}
-				state = { ...state, lastReadAloudPosition };
-			}
 			this._onChangeViewState(state, primary);
 		}, DEBOUNCE_STATE_CHANGE);
 
-		let onChangeViewStats = debounce((stats) => {
-			let stateKey = primary ? 'primaryViewStats' : 'secondaryViewStats';
-			// While the SDT overlay is active, page numbers and progress keep
-			// coming from the base view (which the overlay scroll-syncs), and
-			// everything else from the overlay
-			let sdtViewActive = !!(primary ? this._primarySDTView : this._secondarySDTView);
-			if (sdtViewActive) {
-				let merged = { ...this._state[stateKey] };
-				for (let key in stats) {
-					if (BASE_VIEW_STATS_KEYS.has(key) === !sdt) {
-						merged[key] = stats[key];
-					}
-				}
-				stats = merged;
-			}
-			this._updateState({ [stateKey]: stats });
+		let onChangeViewStats = debounce((state) => {
+			this._updateState({ [primary ? 'primaryViewStats' : 'secondaryViewStats']: state });
 		}, DEBOUNCE_STATS_CHANGE);
 
 		let onAddAnnotation = (annotation, select) => {
@@ -1990,25 +972,6 @@ class Reader {
 			this.a11yAnnounceSearchMessage(params.result);
 		};
 
-		let onSetReadAloudState = (params) => {
-			if (typeof params.lang === 'string' && params.lang.includes('-')) {
-				console.warn(`View tried to set Read Aloud lang to tag containing region: ${params.lang}. Return only the bare language.`);
-				params.lang = params.lang.replace(/-.*$/, '');
-			}
-			// Route view outputs to the appropriate owner:
-
-			// targetPosition: manager (imperative jump)
-			if (params.targetPosition && this._readAloudManager.active && this._readAloudManager.segments) {
-				this._readAloudManager.jumpTo(params.targetPosition);
-			}
-			// lang: manager and readAloudState (for rendering gate)
-			if (params.lang && !this._readAloudManager.lang) {
-				this._readAloudManager.setLanguage(params.lang);
-				this._updateReadAloudUIState({ lang: params.lang });
-				this._syncPersistedVoicesToManager();
-			}
-		};
-
 		let onSelectAnnotations = (ids, triggeringEvent) => {
 			this.setSelectedAnnotations(ids, true, triggeringEvent);
 		};
@@ -2051,6 +1014,10 @@ class Reader {
 			this.setA11yMessage(annotationContent);
 		};
 
+		let onSetHiddenAnnotations = (ids) => {
+			this._annotationManager.setFilter({ hiddenIDs: ids });
+		};
+
 		let data;
 		if (this._type === 'pdf') {
 			data = this._data;
@@ -2079,7 +1046,6 @@ class Reader {
 			lightTheme: this._state.lightTheme,
 			darkTheme: this._state.darkTheme,
 			colorScheme: this._state.colorScheme,
-			readAloudState: this._composeReadAloudStateSnapshot(),
 			findState: this._state[primary ? 'primaryViewFindState' : 'secondaryViewFindState'],
 			viewState: this._state[primary ? 'primaryViewState' : 'secondaryViewState'],
 			location,
@@ -2096,43 +1062,17 @@ class Reader {
 			onSetAnnotationPopup,
 			onSetOverlayPopup,
 			onSetFindState,
-			onSetReadAloudState,
 			onSetOutline,
 			onSelectAnnotations,
 			onTabOut,
 			onKeyDown,
 			onKeyUp,
 			onFocusAnnotation,
+			onSetHiddenAnnotations,
 			getLocalizedString
 		};
 
-		if (sdt) {
-			let getBlockCrops;
-			if (this._type === 'pdf') {
-				let baseView = primary ? this._primaryView : this._secondaryView;
-				getBlockCrops = baseView?.createSDTBlockCropProvider?.(this._sdt.structure);
-			}
-			view = new SDTView({
-				...common,
-				viewState: {},
-				data: {
-					structure: this._sdt.structure,
-					mapper: this._sdt.mapper,
-					getSourceAnnotationMeta: position => this._getSourceAnnotationMeta(position),
-					syncBaseView: (blockIndex) => {
-						let baseView = primary ? this._primaryView : this._secondaryView;
-						baseView?.navigateToSDTBlock?.(this._sdt.structure, blockIndex);
-					},
-					getImageForBlock: (blockRef) => {
-						let baseView = primary ? this._primaryView : this._secondaryView;
-						return baseView?.getSDTBlockImage?.(this._sdt.structure, blockRef)
-							?? Promise.resolve(null);
-					},
-					getBlockCrops,
-				},
-			});
-		}
-		else if (this._type === 'pdf') {
+		if (this._type === 'pdf') {
 			view = new PDFView({
 				...common,
 				password: this._password,
@@ -2170,13 +1110,6 @@ class Reader {
 
 		if (primary) {
 			view.initializedPromise.then(() => view.focus());
-		}
-
-		// The reader can already be suspended when a view is created (e.g. a
-		// large document that finishes loading in a hidden tab only after the
-		// suspension timeout)
-		if (this._suspended) {
-			view.setSuspended?.(true);
 		}
 
 		return view;
@@ -2597,18 +1530,10 @@ class Reader {
 		this._updateState({ toolbarPlaceholderWidth: width });
 	}
 
-	setTitle(title) {
-		this._updateState({ title });
-	}
-
-	setLoggedIn(loggedIn) {
-		this._updateState({ loggedIn });
-	}
-
 	focusView(primary = true) {
 		primary = primary || !this._secondaryView;
 		this._lastViewPrimary = primary;
-		let view = this._getActiveView(primary);
+		let view = primary ? this._primaryView : this._secondaryView;
 		view.focus();
 		this._updateState({ primary });
 		if (primary) {
@@ -2639,23 +1564,6 @@ class Reader {
 		this._updateState({ freeze: false });
 	}
 
-	// Release rendered pages while the reader is hidden, and restore them when
-	// it's shown again. Currently only has an effect for the PDF view
-	setSuspended(suspended) {
-		this._suspended = suspended;
-		for (let view of this._views) {
-			view.setSuspended?.(suspended);
-		}
-	}
-
-	// Release as much memory as possible without a visible effect (e.g. on a
-	// memory-pressure notification). Safe to call on a visible reader
-	trimMemory() {
-		for (let view of this._views) {
-			view.trimMemory?.();
-		}
-	}
-
 	print() {
 		if (this._type === 'pdf') {
 			if (this._state.annotations.length) {
@@ -2682,21 +1590,6 @@ class Reader {
 
 	reload(data) {
 		this._data = data;
-		this._sdtReaderPromise = null;
-		this._sdtPromise = null;
-		this._sdt = null;
-		this._readAloudSegments = null;
-		if (this._primarySDTView || this._secondarySDTView) {
-			this._primarySDTView?.destroy();
-			this._primarySDTView = null;
-			this._secondarySDTView?.destroy();
-			this._secondarySDTView = null;
-			this._annotationManager.setFilter({ enabledTypes: null });
-			this._updateState({
-				primaryReadingModeEnabled: false,
-				secondaryReadingModeEnabled: false,
-			});
-		}
 		this._primaryViewContainer.replaceChildren();
 		this._primaryView = this._createView(true);
 		if (this._state.splitType) {

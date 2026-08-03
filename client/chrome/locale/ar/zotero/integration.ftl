@@ -22,8 +22,6 @@ integration-editBibliography-wrapper =
 integration-citationDialog = مربع حوار الاقتباس
 integration-citationDialog-section-open = فتح المستندات ({ $count })
 integration-citationDialog-section-selected = العناصر المحددة ({ $count }/{ $total })
-integration-citationDialog-section-selectedAnnotations = Selected Annotations
-integration-citationDialog-section-selectedItems = العناصر المختارة
 integration-citationDialog-section-cited =
     { $count ->
         [0] Cited Items
@@ -32,8 +30,6 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = ملحق
 integration-citationDialog-details-prefix = بداية
 integration-citationDialog-details-suppressAuthor = حذف المؤلف
-integration-citationDialog-details-locator-info = Tip: You can also type page numbers and other locators directly into the main field. <a data-l10n-name="docs-link">Learn more</a>
-integration-citationDialog-details-includeComments = Include Comments
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -49,16 +45,7 @@ integration-citationDialog-lib-message-add-note =
         [true] No selected notes match the current search
        *[other] No notes are selected
     }
-integration-citationDialog-lib-message-annotations =
-    { $search ->
-        [true] No items with annotations match the current search
-       *[other] No selected or open items with annotations
-    }
 integration-citationDialog-settings-keepSorted = الحفاظ على ترتيب المصادر
-integration-citationDialog-preview-empty = معاينة
-integration-citationDialog-preview-error = Preview unavailable
-integration-citationDialog-btn-displayPreview =
-    .title = Display citation preview
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = مكتبة
@@ -67,8 +54,6 @@ integration-citationDialog-btn-type-citation =
     .title = اضافة/تحرير استشهاد مرجعي
 integration-citationDialog-btn-type-add-note =
     .title = اضافة ملاحظة
-integration-citationDialog-btn-type-annotations =
-    .title = Add Annotations
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -81,18 +66,11 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = اضغط على Tab لتحديد العناصر المراد إضافتها إلى هذا الاستشهاد. اضغط على Escape لإلغاء التغييرات وإغلاق مربع الحوار.
-integration-citationDialog-just-added-input-placeholder = Type “10-15” to cite pages, or search for items
-integration-citationDialog-just-added-input-citation =
-    .placeholder = { $placeholder }
-    .title = { $title }
-    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = البحث عن ملاحظة لإدراجها في المستند
-integration-citationDialog-single-input-annotations =
-    .placeholder = Search for annotations to insert into the document
 integration-citationDialog-aria-item-list =
     .aria-description = استخدم السهم لأعلى/لأسفل لتغيير اختيار العنصر. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -109,9 +87,6 @@ integration-citationDialog-collapse-section =
     .title = طي القسم
 integration-citationDialog-bubble-empty = (بدون عنوان)
 integration-citationDialog-add-to-citation = أضف إلى الاستشهاد
-integration-citationDialog-annotations-filter =
-    .placeholder = Filter annotations
-integration-citationDialog-annotations-empty = Select an item, attachment, or annotation to view annotation details
 integration-prefs-displayAs-label = عرض الاستشهادات المرجعية كـ:
 integration-prefs-footnotes =
     .label = حواشي سفلية
@@ -141,6 +116,8 @@ integration-warning-documentPreferences-changes-will-be-lost = لقد أجريت
 integration-warning-discard-changes = تجاهل التغييرات
 integration-warning-command-is-running = يتم الآن تشغيل أمر دمج معالج النصوص.
 first-run-guidance-citationDialog =
-    Click the bubble or use the ← and ↓ keys to view the citation details and customize options such as page number, prefix, and suffix.
+    Type a title, author, and/or year to search for a reference.
+    
+    After you’ve made your selection, click the bubble or select it via the keyboard and press ↓/Space to show citation options such as page number, prefix, and suffix.
     
     You can also add a page number or other locator by including it with your search terms (e.g., “history { $locator }”) or by typing it after the bubble and pressing { return-or-enter }.

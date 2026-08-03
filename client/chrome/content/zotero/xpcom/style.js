@@ -533,30 +533,8 @@ Zotero.Styles = new function () {
 	};
 	
 	/**
-	 * Resolve a locale to one with an available CSL locale, using the primary
-	 * dialect of the language or the closest available locale (e.g.,
-	 * 'sr-Cyrl-RS' for 'sr-RS') if the exact locale isn't available
-	 *
-	 * @param {String} locale
-	 * @return {String} The resolved locale, or the passed locale if it can't
-	 *     be resolved
-	 */
-	this.resolveLocale = function (locale) {
-		if (!_initialized || !locale) {
-			return locale;
-		}
-		if (locale in Zotero.Styles.locales) {
-			return locale;
-		}
-		return Zotero.Styles.primaryDialects[locale]
-			|| Zotero.Utilities.Internal.resolveLocale(
-				locale, Object.keys(Zotero.Styles.locales), { silent: true })
-			|| locale;
-	};
-
-	/**
 	 * Populate menulist with locales
-	 *
+	 * 
 	 * @param {xul:menulist} menulist
 	 */
 	this.populateLocaleList = function (menulist) {
@@ -568,7 +546,8 @@ Zotero.Styles = new function () {
 		menulist.selectedItem = null;
 		menulist.removeAllItems();
 		
-		let fallbackLocale = Zotero.Styles.resolveLocale(Zotero.locale);
+		let fallbackLocale = Zotero.Styles.primaryDialects[Zotero.locale]
+			|| Zotero.locale;
 		
 		let menuLocales = Zotero.Utilities.deepCopy(Zotero.Styles.locales);
 		let menuLocalesKeys = Object.keys(menuLocales).sort();
@@ -635,11 +614,11 @@ Zotero.Styles = new function () {
 			return menulist.value;
 		}
 		
-		menulist.disabled = !!style.effectiveLocale;
+		menulist.disabled = !!style.locale;
 		if (menulist.labelElement) menulist.labelElement.disabled = false;
 		
-		let selectLocale = style.effectiveLocale || prefLocale || Zotero.locale;
-		selectLocale = Zotero.Styles.resolveLocale(selectLocale);
+		let selectLocale = style.locale || prefLocale || Zotero.locale;
+		selectLocale = Zotero.Styles.primaryDialects[selectLocale] || selectLocale;
 		
 		// Make sure the locale we want to select is in the menulist
 		if (availableLocales.indexOf(selectLocale) == -1) {
@@ -736,23 +715,6 @@ Zotero.Style = function (style, path) {
 }
 
 /**
- * The style's own default-locale, falling back to the parent's for dependent
- * styles that don't specify their own. citeproc-js parses the parent's XML and
- * will honor the parent's default-locale over any user-selected locale unless
- * forced, so this reflects the locale that will actually be used.
- */
-Object.defineProperty(Zotero.Style.prototype, 'effectiveLocale', {
-	get: function () {
-		if (this.locale) return this.locale;
-		if (this.source) {
-			let parent = Zotero.Styles.get(this.source);
-			if (parent) return parent.locale;
-		}
-		return null;
-	}
-});
-
-/**
  * Get a citeproc-js CSL.Engine instance
  * @param {String} locale Locale code
  * @param {String} [format] Output format one of [rtf, html, text]
@@ -779,17 +741,15 @@ Zotero.Style.prototype.getCiteProc = function (locale, format, options = {}) {
 	let useCiteprocRs = Zotero.Prefs.get('cite.useCiteprocRs');
 	
 	// We can cache the Engine instance if we aren't using citeproc-rs
-	// and this is an installed style. The output format is excluded from
-	// the cache key because setOutputFormat() can switch it cheaply.
+	// and this is an installed style
 	let cacheKey = cache && !useCiteprocRs && this.path
-		? JSON.stringify({ locale, automaticJournalAbbreviations })
+		? JSON.stringify({ locale, format, automaticJournalAbbreviations })
 		: null;
 	if (cacheKey && this._cachedEngines.has(cacheKey)) {
 		let engine = this._cachedEngines.get(cacheKey);
 		// rebuildProcessorState() won't cause disambiguation issues here
 		// because we're passing an empty citation list. See comment in
 		// integration.js.
-		engine.setOutputFormat(format);
 		engine.rebuildProcessorState([], format, []);
 		return engine;
 	}

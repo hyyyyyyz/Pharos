@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "同步">
 <!ENTITY zotero.preferences.sync.username "使用者名稱：">
 <!ENTITY zotero.preferences.sync.password "密碼：">
+<!ENTITY zotero.preferences.sync.syncServer "資料同步">
+<!ENTITY zotero.preferences.sync.setUpSync "設定同步">
+<!ENTITY zotero.preferences.sync.unlinkAccount "登出帳號……">
 <!ENTITY zotero.preferences.sync.createAccount "建立帳號">
 <!ENTITY zotero.preferences.sync.lostPassword "忘記密碼？">
 <!ENTITY zotero.preferences.sync.syncAutomatically "自動同步">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "檔案同步">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "同步我的文獻庫中的附加檔">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "用 Zotero 的儲存空間同步群組文獻庫中的附加檔">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "下載檔案">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "於同步時">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "依所需">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "驗證伺服器">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "使用 Zotero 的儲存空間時，您同意遵守它的">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "條款與條件">
 <!ENTITY zotero.preferences.sync.librariesToSync "要同步的文獻庫">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "選擇文獻庫……">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "同步">

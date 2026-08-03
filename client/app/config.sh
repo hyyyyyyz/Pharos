@@ -1,17 +1,17 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Version of Gecko to build with
-GECKO_VERSION_MAC="140.12.0esr"
-GECKO_VERSION_LINUX="140.12.0esr"
-GECKO_VERSION_WIN="140.12.0esr"
+GECKO_VERSION_MAC="140.7.0esr"
+GECKO_VERSION_LINUX="140.7.0esr"
+GECKO_VERSION_WIN="140.7.0esr"
 RUST_VERSION=1.86.0
 
 # URL prefix for custom builds of Firefox components
 custom_components_url="https://download.zotero.org/dev/firefox-components/"
 custom_components_hash_mac=""
-custom_components_hash_win_x64="de075a96b3fba226382d9625ff0ad755b1baa41fff1c3307cc4c9d0d98720c87"
-custom_components_hash_win_arm64="105d20e38a03eed6e86e4eba54ae5907f904c4688ed6832950842152bc22153a"
-custom_components_hash_win32="69ec0b87ae48143b6985fa2ba33d8ceff851bd9a92587fa609a38e817d895bbe"
+custom_components_hash_win_x64="8405765d48481431a0361704723c870b2c1c2b9e18d77794841927f4aa3bf04c"
+custom_components_hash_win_arm64="c96e591b86b0f98d85b29bc7e2202d4ea1371a4321ffe76960f7ae7643bf7ff4"
+custom_components_hash_win32="0e2a14ae6e8db4ed56db810e651aaf4f80b7a2e1da0b18b2d8ecddab84174d0a"
 
 APP_NAME="Pharos"
 APP_ID="pharos\@pharos.selab.top"
@@ -54,7 +54,8 @@ S3_CI_ZIP_PATH="ci/client"
 S3_DIST_PATH="client"
 
 DEPLOY_HOST="deploy.zotero"
-DEPLOY_PATH="www/www-production/public/download/client"
+DEPLOY_PATH="www/www-production/public/download/client/manifests"
+DEPLOY_CMD="ssh $DEPLOY_HOST update-site-files"
 
 BUILD_PLATFORMS=""
 NUM_INCREMENTALS=6

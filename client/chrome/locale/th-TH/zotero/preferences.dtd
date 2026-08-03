@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "ประสานข้อมูล">
 <!ENTITY zotero.preferences.sync.username "ชื่อผู้ใช้: ">
 <!ENTITY zotero.preferences.sync.password "รหัสผ่าน: ">
+<!ENTITY zotero.preferences.sync.syncServer "Data Syncing">
+<!ENTITY zotero.preferences.sync.setUpSync "Set Up Syncing">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Unlink Account…">
 <!ENTITY zotero.preferences.sync.createAccount "สร้างบัญชีผู้ใช้">
 <!ENTITY zotero.preferences.sync.lostPassword "รหัสผ่านหาย?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "ประสานข้อมูลโดยอัตโนมัติ">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "ประสานข้อมูลในแฟ้ม">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "ประสานข้อมูลในแฟ้มแนบในไลบรารีโดยใช้ ">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "ประสานข้อมูลในแฟ้มแนบในกลุ่มไลบรารีโดยใช้ที่เก็บของ Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "ดาวน์โหลดแฟ้ม">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "ที่ช่วงการประสานข้อมูล">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "ตามที่ต้องการ">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verify Server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "คุณยอมรับเงื่อนไขการใช้ที่เก็บของ Zotero">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "เงื่อนไขและข้อกำหนด">
 <!ENTITY zotero.preferences.sync.librariesToSync "Libraries to Sync">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Choose Libraries…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "ประสานข้อมูล">

@@ -1,17 +1,10 @@
-// Themed icons -- separate SVGs per color in dark/, light/, white/
-$themed-icons: (
+$icons: (
 	collection, duplicates, feed, feed-error, feed-library, feed-updating, groups, library,
 	library-group, publications, trash-full, trash, unfiled, retracted, search,
 );
 
-// Universal icons -- single SVG with context-fill, colored via CSS
-// Map of icon name to fill color variable
-$universal-icons: (
-	recent: --tag-purple,
-);
-
-@mixin -themed-icon-rules {
-	@each $icon in $themed-icons {
+@mixin -icon-collection-type-rules {
+	@each $icon in $icons {
 		.icon-css.icon-#{$icon} {
 			@include focus-states using ($color) {
 				@include svgicon($icon, $color, "16", "collection-tree");
@@ -20,37 +13,15 @@ $universal-icons: (
 	}
 }
 
-@mixin -universal-icon-rules {
-	@each $icon, $fill in $universal-icons {
-		.icon-css.icon-#{$icon} {
-			@include svgicon($icon, "universal", "16", "collection-tree");
-			@include focus-states using ($color) {
-				@if $color == "white" {
-					fill: white;
-				}
-				@else {
-					fill: var(#{$fill});
-				}
-			}
-		}
-	}
-}
-
+// Universal icon rules
 @include focus-states using ($color) {
-	@include -themed-icon-rules;
+	@include -icon-collection-type-rules;
 }
 
+// Selection and focus aware icon rules
 .focus-states-target {
 	.row {
-		@include -themed-icon-rules;
-	}
-}
-
-@include -universal-icon-rules;
-
-.focus-states-target {
-	.row {
-		@include -universal-icon-rules;
+		@include -icon-collection-type-rules;
 	}
 }
 
@@ -89,7 +60,7 @@ $universal-icons: (
 				height: 16px;
 			}
 	
-			@each $icon in $themed-icons {
+			@each $icon in $icons {
 				.icon-css.icon-#{$icon} {
 					@include focus-states(
 						".row.selected",
@@ -97,20 +68,6 @@ $universal-icons: (
 					) using ($color) {
 						@include svgicon($icon, $color, "16", "collection-tree");
 					}
-				}
-			}
-			
-			&.selected {
-				border-radius: 0;
-
-				&.first-selected {
-					border-top-left-radius: 5px;
-					border-top-right-radius: 5px;
-				}
-
-				&.last-selected {
-					border-bottom-left-radius: 5px;
-					border-bottom-right-radius: 5px;
 				}
 			}
 		}
@@ -131,7 +88,7 @@ $universal-icons: (
 	
 	// Highlight takes priority over selection
 	.row.highlighted.selected {
-		background: var(--highlight-color, var(--accent-highlight));
+		background: #FFFF99;
 	}
 
 	.cell.primary {

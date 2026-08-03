@@ -81,6 +81,7 @@
 <!ENTITY zotero.toolbar.removeItem.label "Удалить запись...">
 <!ENTITY zotero.toolbar.newGroup "Новая группа…">
 <!ENTITY zotero.toolbar.newSubcollection.label "Новая вложенная коллекция…">
+<!ENTITY zotero.toolbar.newSavedSearch.label "Новый отбор…">
 <!ENTITY zotero.toolbar.emptyTrash.label "Очистить корзину">
 <!ENTITY zotero.toolbar.tagSelector.label "Показать/спрятать панель выбора тегов">
 <!ENTITY zotero.toolbar.actions.label "Действия">
@@ -91,6 +92,7 @@
 <!ENTITY zotero.toolbar.preferences.label "Настройки…">
 <!ENTITY zotero.toolbar.supportAndDocumentation "Поддержка и документация">
 <!ENTITY zotero.toolbar.about.label "О Zotero">
+<!ENTITY zotero.toolbar.advancedSearch "Расширенный поиск">
 <!ENTITY zotero.toolbar.openURL.label "Найти">
 <!ENTITY zotero.toolbar.openURL.tooltip "Найти в библиотеке на этом компьютере">
 
@@ -193,7 +195,7 @@
 <!ENTITY zotero.citation.suppressAuthor.label "Не выводить автора">
 <!ENTITY zotero.citation.prefix.label "Префикс:">
 <!ENTITY zotero.citation.suffix.label "Суффикс:">
-<!ENTITY zotero.citation.editorWarning.label "Предупреждение: Если вы измените цитату в редакторе, она перестанет отражать изменения в вашей базе данных или стиле цитирования.">
+<!ENTITY zotero.citation.editorWarning.label "Предупреждение: Если вы измените цитирование в редакторе, оно перестанет отражать изменения в вашей базе данных или стиля цитирования.">
 
 <!ENTITY zotero.richText.italic.label "Курсив">
 <!ENTITY zotero.richText.bold.label "Полужирный">
@@ -213,13 +215,13 @@
 
 <!ENTITY zotero.integration.prefs.formatUsing.label "Сохранить цитаты как:">
 <!ENTITY zotero.integration.prefs.bookmarks.label "Закладки">
-<!ENTITY zotero.integration.prefs.bookmarks.caption "Закладки могут использоваться совместно Word и LibreOffice, но при случайном изменении могут вызвать ошибки и не могут быть вставлены в концевые сноски.">
+<!ENTITY zotero.integration.prefs.bookmarks.caption "Механизм закладок будет работать и в Word, и в LibreOffice, но может вызывать внезапные ошибки, также он не позволяет использовать ссылки в сносках.">
 
-<!ENTITY zotero.integration.prefs.automaticCitationUpdates.label "Авто-обновлять Цитаты">
-<!ENTITY zotero.integration.prefs.automaticCitationUpdates.tooltip "Цитаты, ожидающие обновления, будут выделены в документе">
-<!ENTITY zotero.integration.prefs.automaticCitationUpdates.description "Отключите обновление библиографии, это ускорит вставку цитат в большие документы. Нажимайте «Обновить», чтобы обновить цитаты вручную.">
+<!ENTITY zotero.integration.prefs.automaticCitationUpdates.label "Автоматически обновлять ссылки и библиографии">
+<!ENTITY zotero.integration.prefs.automaticCitationUpdates.tooltip "Ссылки, ожидающие обновления, будут выделены в документе">
+<!ENTITY zotero.integration.prefs.automaticCitationUpdates.description "Отключение обновления библиографии может ускорить вставку цитирования в большие документы. Нажимайте «Обновить», чтобы обновить цитирование вручную.">
 
-<!ENTITY zotero.integration.prefs.automaticJournalAbbeviations.label "Исп-ть MEDLINE аббревиатуры">
+<!ENTITY zotero.integration.prefs.automaticJournalAbbeviations.label "Использовать сокращённые названия журналов MEDLINE">
 <!ENTITY zotero.integration.prefs.automaticJournalAbbeviations.caption "Поле «Сокращ. журнала» будет проигнорировано.">
 
 <!ENTITY zotero.integration.prefs.exportDocument "Переключиться на другой текстовый редактор…">
@@ -227,7 +229,7 @@
 <!ENTITY zotero.integration.showEditor.label "Показать редактор">
 <!ENTITY zotero.integration.classicView.label "Классический вид">
 
-<!ENTITY zotero.integration.references.label "Отсылки в Библиографии">
+<!ENTITY zotero.integration.references.label "Ссылки в библиографии">
 
 <!ENTITY zotero.sync.stop "Прекратить синхронизацию">
 <!ENTITY zotero.sync.error "Ошибка синхронизации">
@@ -249,10 +251,10 @@
 <!ENTITY zotero.merge.of "для">
 <!ENTITY zotero.merge.deleted "Удалено">
 
-<!ENTITY zotero.proxy.recognized.title "Прокси распознан">
+<!ENTITY zotero.proxy.recognized.title "Прокси определён">
 <!ENTITY zotero.proxy.recognized.warning "Добавляйте только прокси, предоставляемые вашей библиотекой, учебным заведением или корпоративным сайтом.">
 <!ENTITY zotero.proxy.recognized.warning.secondary "Использование других прокси позволит злонамеренным сайтам маскироваться под сайты, которым вы доверяете.">
-<!ENTITY zotero.proxy.recognized.disable.label "Не перенаправлять автоматически запросы через ранее распознанные прокси">
+<!ENTITY zotero.proxy.recognized.disable.label "Не перенаправлять автоматически запросы через ранее определённые прокси">
 <!ENTITY zotero.proxy.recognized.ignore.label "Игнорировать">
 
 <!ENTITY zotero.feedSettings.title "Настройки новостных лент">
@@ -261,9 +263,9 @@
 <!ENTITY zotero.feedSettings.title.label "Заголовок:">
 <!ENTITY zotero.feedSettings.refresh.label1 "Обновлять новостную ленту каждые">
 <!ENTITY zotero.feedSettings.refresh.label2 "час(-а)">
-<!ENTITY zotero.feedSettings.cleanupUnreadAfter.label1 "Удалять непрочтённые записи ленты старше">
+<!ENTITY zotero.feedSettings.cleanupUnreadAfter.label1 "Удалять непрочтённые записи в новостной ленте старше">
 <!ENTITY zotero.feedSettings.cleanupUnreadAfter.label2 "дня(-ей)">
-<!ENTITY zotero.feedSettings.cleanupReadAfter.label1 "Удалять прочтённые записи ленты старше">
+<!ENTITY zotero.feedSettings.cleanupReadAfter.label1 "Удалять прочтённые записи в новостной ленте старше">
 <!ENTITY zotero.feedSettings.cleanupReadAfter.label2 "дня(-ей)">
 
 <!ENTITY zotero.rtfScan.title "Сканирование RTF">
@@ -305,11 +307,11 @@
 <!ENTITY zotero.pdfReader.lastPage "Последняя страница">
 <!ENTITY zotero.pdfReader.back "Назад">
 <!ENTITY zotero.pdfReader.forward "Вперёд">
-<!ENTITY zotero.pdfReader.handTool "Инструмент-рука">
-<!ENTITY zotero.pdfReader.verticalScrolling "Вертикальная прокрутка">
-<!ENTITY zotero.pdfReader.horizontalScrolling "Горизонтальная прокрутка">
-<!ENTITY zotero.pdfReader.wrappedScrolling "Завернутая прокрутка">
-<!ENTITY zotero.pdfReader.noSpreads "Нет Разворота">
+<!ENTITY zotero.pdfReader.handTool "Курсор-«рука»">
+<!ENTITY zotero.pdfReader.verticalScrolling "Страницы по вертикали">
+<!ENTITY zotero.pdfReader.horizontalScrolling "Страницы по горизонтали">
+<!ENTITY zotero.pdfReader.wrappedScrolling "Страницы парами">
+<!ENTITY zotero.pdfReader.noSpreads "Не показывать развороты">
 <!ENTITY zotero.pdfReader.oddSpreads "Развороты с нечётных номеров">
 <!ENTITY zotero.pdfReader.evenSpreads "Развороты с чётных номеров">
 <!ENTITY zotero.pdfReader.scrolled "С прокруткой">

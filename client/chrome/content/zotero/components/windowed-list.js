@@ -205,11 +205,8 @@ module.exports = class {
 	 * @param {Integer} index
 	 * @param {Boolean} forceScrollToTop  If true, the row will be scrolled to the top of the scrollbox
 	 * even if it is below the current scroll window.
-	 * @param {Integer} topOffset  Amount of space reserved at the top of the scrollbox (e.g. for a
-	 * sticky section header that overlays the rows). When scrolling a row into view from above, the
-	 * row is positioned below this offset rather than flush with the top edge.
 	 */
-	scrollToRow(index, forceScrollToTop = false, topOffset = 0) {
+	scrollToRow(index, forceScrollToTop = false) {
 		const { scrollOffset } = this;
 		const itemCount = this._getItemCount();
 		const height = this.getWindowHeight();
@@ -217,18 +214,11 @@ module.exports = class {
 		index = Math.max(0, Math.min(index, itemCount - 1));
 		let startPosition = this._getItemPosition(index);
 		let endPosition = this._getItemPosition(index + 1);
-		// If forceScrollToTop is set, always scroll to the start position even if the row is
-		// already visible. This is used when restoring scroll position, where we need an exact
-		// first-visible-row rather than just ensuring the row is within view.
-		if (forceScrollToTop) {
+		if (startPosition < scrollOffset) {
 			this.scrollTo(startPosition);
-			return;
-		}
-		if (startPosition - topOffset < scrollOffset) {
-			this.scrollTo(startPosition - topOffset);
 		}
 		else if (endPosition > scrollOffset + height) {
-			this.scrollTo(endPosition - height - 1);
+			this.scrollTo(forceScrollToTop ? startPosition : endPosition - height - 1);
 		}
 	}
 	

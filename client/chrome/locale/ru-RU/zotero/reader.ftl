@@ -1,7 +1,7 @@
 reader-annotations = Аннотации
 reader-show-annotations = Показать аннотации
 reader-search-annotations = Искать аннотации
-reader-search-outline = Искать набросок
+reader-search-outline = Искать в сети
 reader-no-annotations = Создайте аннотацию чтобы увидеть её в боковой панели
 reader-no-extracted-text = Нет извлечённого текста
 reader-add-comment = Добавить комментарий
@@ -18,15 +18,13 @@ reader-add-note = Добавить заметку
 reader-add-text = Добавить текст
 reader-select-area = Выбрать область
 reader-highlight-annotation = Выделение
-reader-highlight-annotation-short = Цветовыделение
-reader-underline-annotation = Подчеркнуть аннотацию
-reader-underline-annotation-short = Подчёркивание
+reader-underline-annotation = Подчёркивание
 reader-note-annotation = Заметка
 reader-text-annotation = Текстовая аннотация
 reader-image-annotation = Аннотация изображением
-reader-ink-annotation = Ink аннотация
+reader-ink-annotation = Ink Annotation
 reader-search-result-index = Результат поиска
-reader-search-result-total = Всего результатов поиска
+reader-search-result-total = Всего резульатов поиска
 reader-draw = Рисовать
 reader-eraser = Ластик
 reader-pick-color = Выбрать цвет
@@ -34,7 +32,7 @@ reader-add-to-note = Добавить в заметку
 reader-zoom-in = Увеличить
 reader-zoom-out = Уменьшить
 reader-zoom-reset = Масштаб 100%
-reader-zoom-auto = АвтоМасштабировать
+reader-zoom-auto = Масштабировать автоматически
 reader-zoom-page-width = По ширине страницы
 reader-zoom-page-height = По высоте страницы
 reader-split-vertically = Разделить вертикально
@@ -70,8 +68,8 @@ reader-edit-annotation-text = Редактировать текст аннота
 reader-copy-image = Скопировать изображение
 reader-save-image-as = Сохранить изображение как…
 reader-page-number-popup-header = Изменить номер страницы для:
-reader-this-annotation = Эта аннотация
-reader-selected-annotations = Выбранные аннотации
+reader-this-annotation = Эта заметка
+reader-selected-annotations = Выбранные заметки
 reader-this-page = Эта страница
 reader-this-page-and-later-pages = Эта и следующие страницы
 reader-all-pages = Все страницы
@@ -83,59 +81,59 @@ reader-phrase-not-found = Фраза не найдена
 reader-find = Найти
 reader-close = Закрыть
 reader-show-thumbnails = Показать превью
-reader-show-outline = Показать набросок
-reader-find-previous = Найти предыдущее вхождение фразы
-reader-find-next = Найти следующее вхождение фразы
+reader-show-outline = Show Outline
+reader-find-previous = Найти предыдущее появление фразы
+reader-find-next = Найти следующее появление фразы
 reader-toggle-sidebar = Переключить боковую панель
 reader-find-in-document = Найти в документе
 reader-toggle-context-pane = Переключить контекстную панель
 reader-highlight-all = Выделить всё
-reader-match-case = Учитывать регистр
-reader-whole-words = Слова целиком
+reader-match-case = Match case
+reader-whole-words = Whole words
 reader-appearance = Внешний вид
-reader-epub-appearance-line-height = Высота строки
+reader-epub-appearance-line-height = Межстрочный интервал
 reader-epub-appearance-word-spacing = Межсловный интервал
 reader-epub-appearance-letter-spacing = Межбуквенный интервал
 reader-epub-appearance-page-width = Ширина страницы
 reader-epub-appearance-use-original-font = Использовать шрифт оригинала
-reader-epub-appearance-line-height-revert = Исп-ть умолчальную высоту строки
-reader-epub-appearance-word-spacing-revert = Исп-ть умолчальный межсловный интервал
-reader-epub-appearance-letter-spacing-revert = Исп-ть умолчальный межбуквенный интервал
-reader-epub-appearance-page-width-revert = Исп-ть умолчальную ширину страницы
-reader-convert-to-highlight = Преобразовать в Цветовыделение
-reader-convert-to-underline = Преобразовать в Подчёркивание
+reader-epub-appearance-line-height-revert = Использовать межстрочный интервал по умолчанию
+reader-epub-appearance-word-spacing-revert = Использовать межсловный интервал по умолчанию
+reader-epub-appearance-letter-spacing-revert = Использовать межбуквенный интервал по умолчанию
+reader-epub-appearance-page-width-revert = Использовать ширину страницы по умолчанию
+reader-convert-to-highlight = Преобразовать в выделение
+reader-convert-to-underline = Преобразовать в подчёркивание
 reader-size = Размер
 reader-merge = Объединить
 reader-copy-link = Копировать ссылку
 reader-theme-original = Оригинал
-reader-theme-snow = Снег
+reader-theme-snow = Снежная
 reader-theme-sepia = Сепия
-reader-theme-dark = Тёмная
-reader-theme-black = Чёрная
+reader-theme-dark = Темная
+reader-theme-black = Черный
 reader-add-theme = Добавить тему оформления
 reader-theme-invert-images = Инвертировать изображения
 reader-scroll-mode = Прокрутка
-reader-spread-mode = Развороты
-reader-flow-mode = Макет страницы
+reader-spread-mode = Spreads
+reader-flow-mode = Расположение страниц
 reader-columns = Колонки
 reader-split-view = Раздельный просмотр
-reader-themes = Темы
+reader-themes = Оформление
 reader-vertical = Вертикально
 reader-horizontal = Горизонтально
-reader-wrapped = Завернутый
+reader-wrapped = Wrapped
 reader-none = Нет
 reader-odd = Нечётные
 reader-even = Чётные
 reader-paginated = Постранично
 reader-scrolled = С прокруткой
-reader-single = Одиночная
-reader-double = Двойная
+reader-single = Single
+reader-double = Double
 reader-theme-name = Название темы:
 reader-background = Фон:
-reader-foreground = Передний план:
+reader-foreground = Foreground:
 reader-reading-mode = Режим чтения
 reader-reading-mode-not-supported = Режим чтения не поддерживается в этом документе.
-reader-clear-selection = Очистить выбор
+reader-clear-selection = Отменить выбор
 reader-epub-encrypted = Этот файл зашифрован и не может быть открыт
 reader-move-annotation-start-key =
     { PLATFORM() ->
@@ -143,13 +141,13 @@ reader-move-annotation-start-key =
        *[other] { general-key-alt }
     }
 reader-a11y-move-annotation = Используйте клавиши стрелок, чтобы двигать аннотации.
-reader-a11y-edit-text-annotation = Чтобы переместить конец текстовой аннотации, удерживайте { general-key-shift } и используйте клавиши со стрелками влево/вправо. Чтобы переместить начало аннотации, удерживайте { general-key-shift }-{ reader-move-annotation-start-key } и используйте клавиши со стрелками.
-reader-a11y-resize-annotation = Чтобы изменить размер аннотации, удерживайте { general-key-shift } и используйте клавиши со стрелками.
-reader-a11y-annotation-popup-appeared = Используйте Tab для навигации по всплывающему окну аннотации.
-reader-a11y-annotation-created = { $type } создан.
-reader-a11y-annotation-selected = { $type } выбран.
--reader-a11y-textual-annotation-instruction = Чтобы аннотировать текст с помощью клавиатуры, сначала используйте "{ reader-find-in-document }", чтобы найти фразу, а затем нажмите { general-key-control }-{ option-or-alt }-{ $number }, чтобы превратить результат поиска в аннотацию.
--reader-a11y-annotation-instruction = Чтобы добавить эту аннотацию в документ, выделите документ и нажмите { general-key-control }-{ option-or-alt }-{ $number }.
+reader-a11y-edit-text-annotation = To move the end of the text annotation, hold { general-key-shift } and use the left/right arrow keys. To move the start of the annotation, hold { general-key-shift }-{ reader-move-annotation-start-key } and use the arrow keys.
+reader-a11y-resize-annotation = To resize the annotation, hold { general-key-shift } and use the arrow keys.
+reader-a11y-annotation-popup-appeared = Use Tab to navigate the annotation popup.
+reader-a11y-annotation-created = { $type } created.
+reader-a11y-annotation-selected = { $type } selected.
+-reader-a11y-textual-annotation-instruction = To annotate text via the keyboard, first use “{ reader-find-in-document }” to locate the phrase, and then press { general-key-control }-{ option-or-alt }-{ $number } to turn the search result into an annotation.
+-reader-a11y-annotation-instruction = To add this annotation into the document, focus the document and press { general-key-control }-{ option-or-alt }-{ $number }.
 reader-toolbar-highlight =
     .aria-description = { -reader-a11y-textual-annotation-instruction(number: 1) }
     .title = { reader-highlight-text }
@@ -166,105 +164,36 @@ reader-toolbar-area =
     .aria-description = { -reader-a11y-annotation-instruction(number: 5) }
     .title = { reader-select-area }
 reader-toolbar-draw =
-    .aria-description = Этот тип аннотации невозможно создать с помощью клавиатуры.
+    .aria-description = This annotation type cannot be created via the keyboard.
     .title = { reader-draw }
 reader-find-in-document-input =
     .title = Найти
     .placeholder = { reader-find-in-document }
-    .aria-description = Чтобы превратить результат поиска в аннотацию цветовыделения, нажмите { general-key-control }-{ option-or-alt }-1. Чтобы превратить результат поиска в подчёркнутую аннотацию, нажмите { general-key-control }-{ option-or-alt }-2.
+    .aria-description = To turn a search result into a highlight annotation, press { general-key-control }-{ option-or-alt }-1. To turn a search result into an underline annotation, press { general-key-control }-{ option-or-alt }-2.
 reader-import-from-epub =
-    .label = Импортировать аннотации к электронной книге…
-reader-import-from-epub-prompt-title = Импортировать аннотации к электронной книге
+    .label = Import Ebook Annotations…
+reader-import-from-epub-prompt-title = Import Ebook Annotations
 reader-import-from-epub-prompt-text =
-    { -app-name } найден { $count ->
+    { -app-name } found { $count ->
         [one] { $count } { $tool } annotation
        *[other] { $count } { $tool } annotations
-    }, последний редактированный { $lastModifiedRelative }.
+    }, last edited { $lastModifiedRelative }.
     
-    Любые { -app-name } аннотации предварительно импортированные из этой эл.книги будут обновлены.
+    Any { -app-name } annotations that were previously imported from this ebook will be updated.
 reader-import-from-epub-no-annotations-current-file =
-    Эта электронная книга не содержит никаких импортируемых аннотаций.
+    This ebook does not appear to contain any importable annotations.
     
-    { -app-name } может импортировать аннотации электронных книг, созданные в Calibre и KOReader.
+    { -app-name } can import ebook annotations created in Calibre and KOReader.
 reader-import-from-epub-no-annotations-other-file =
-    “{ $filename }”, похоже, не содержит аннотаций Calibre или KOReader.
+    “{ $filename }” does not appear to contain any Calibre or KOReader annotations.
     
-    Если эта электронная книга была снабжена аннотациями с помощью KOReader, попробуйте напрямую выбрать файл “metadata.epub.lua”.
-reader-import-from-epub-select-other = Выбрать другой файл…
+    If this ebook has been annotated with KOReader, try selecting a “metadata.epub.lua” file directly.
+reader-import-from-epub-select-other = Select Other File…
 reader-selected-pages =
     { $count ->
         [one] Выбрана { $count } страница
         [few] Выбрано { $count } страницы
         [many] Выбрано { $count } страниц
-       *[other] { $count } страниц выбрано
+       *[other] Выбрано { $count } страницы
     }
-reader-page-options = Параметры страницы
-reader-read-aloud = Читать вслух
-reader-read-aloud-from-here = Читать вслух отсюда
-reader-read-aloud-options = Настройки
-reader-read-aloud-skip-back = Перейти назад
-reader-read-aloud-skip-back-sentence = Перейти назад по предложениям
-reader-read-aloud-skip-ahead = Перейти вперёд
-reader-read-aloud-skip-ahead-sentence = Перейти вперёд по предложениям
-reader-read-aloud-add-annotation = Аннотировать предложение ({ $key1 }/{ $key2 })
-reader-read-aloud-play = Играть
-reader-read-aloud-pause = Пауза
-reader-read-aloud-speed = Скорость чтения
-reader-read-aloud-voice = Голос
-reader-read-aloud-voice-tier = Режим голоса
-reader-read-aloud-voice-tier-local = Локальный
-reader-read-aloud-voice-tier-standard = Стандартный
-reader-read-aloud-voice-tier-premium = Премиум
-reader-read-aloud-more-voices = Больше голосов...
-reader-read-aloud-language = Язык
-reader-read-aloud-remaining-time = Оставшееся время чтения
-reader-read-aloud-log-in-link = <log-in>Войдите</log-in> в систему, чтобы получить доступ к голосам { -app-name }.
-reader-read-aloud-log-in-button = Войти
-reader-read-aloud-done-button = { general-done }
-reader-read-aloud-add-more-time = Добавить больше времени
-reader-read-aloud-quota-exceeded-message =
-    <add-more-time>{ reader-read-aloud-add-more-time }</add-more-time> или продолжите чтение с { $tier ->
-        [standard] Стандартных голосов
-       *[local] Локальных голосов
-    }.
-reader-read-aloud-error = { general-error }
-reader-read-aloud-error-unknown = Произошла неизвестная ошибка.
-reader-read-aloud-error-network = Не удаётся подключиться к сервису Read Aloud. Пожалуйста, проверьте своё интернет-соединение.
-reader-read-aloud-error-daily-limit-exceeded = Вы превысили свой дневной лимит для голосов { -app-name }.
-reader-read-aloud-retry = Пробовать снова
-reader-read-aloud-first-run-title = Выберите предпочитаемый голос для чтения вслух:
-reader-read-aloud-first-run-voice-tier-local-bullet-os-provided = Голоса, предоставляемые вашей операционной системой
-reader-read-aloud-first-run-voice-tier-local-bullet-offline = Доступно без подключения к интернету
-reader-read-aloud-first-run-voice-tier-local-bullet-no-account = Доступно без аккаунта { -app-name }
-reader-read-aloud-first-run-voice-tier-local-bullet-free = Бесплатный вариант использования
-reader-read-aloud-first-run-voice-tier-standard-bullet-natural-sounding = Голоса с естественным звучанием
-reader-read-aloud-first-run-voice-tier-standard-bullet-online-only = Доступно только с интернетом
-reader-read-aloud-first-run-voice-tier-standard-bullet-account-required = Требуется учетная запись { -app-name }
-reader-read-aloud-first-run-voice-tier-standard-bullet-limited-languages = Ограниченный языковой выбор
-reader-read-aloud-first-run-voice-tier-standard-bullet-no-multilingual = Отсутствие многоязычной поддержки
-reader-read-aloud-first-run-voice-tier-standard-bullet-internal-processing = Исходный текст не покидает { -app-name } серверов
-reader-read-aloud-first-run-voice-tier-standard-bullet-unlimited-with-subscription = Неограниченное использование с подпиской { -subscription-name }
-reader-read-aloud-first-run-voice-tier-premium-bullet-highest-quality = Голоса высочайшего качества
-reader-read-aloud-first-run-voice-tier-premium-bullet-online-only = Доступно только с интернетом
-reader-read-aloud-first-run-voice-tier-premium-bullet-account-required = Требуется учётная запись { -app-name }
-reader-read-aloud-first-run-voice-tier-premium-bullet-broad-languages = Широкий языковой выбор
-reader-read-aloud-first-run-voice-tier-premium-bullet-multilingual = Многоязычная поддержка
-reader-read-aloud-first-run-voice-tier-premium-bullet-external-processing = Исходный текст обрабатывается внешними провайдерами преобразования текста в речь
-reader-read-aloud-first-run-voice-tier-premium-bullet-subscription-minutes = { -subscription-name } планы включают ежемесячные минуты Premium Voice
-reader-read-aloud-first-run-voice-tier-premium-bullet-beta-credits = Запросите кредиты на дополнительные минуты во время беты
-reader-read-aloud-sample-text = Я — местный голос { $name }
-reader-read-aloud-voices-none-available = Голосов нет.
-reader-read-aloud-first-run-no-voices-for-language = { $tier } Голоса не поддерживают { $language }.
-reader-read-aloud-region = Регион
-reader-read-aloud-region-auto = Выбирать автоматически
-reader-read-aloud-annotation-popup-move = Переместить аннотацию по предложению
-reader-read-aloud-annotation-popup-extend = Расширить аннотацию по предложению
-reader-read-aloud-annotation-popup-delete = Удалить
-reader-read-aloud-annotation-popup-done = Завершено
-reader-read-aloud-annotation-popup-change-color = Сменить цвет
-reader-read-aloud-annotation-popup-highlight = Цветовыделение
-reader-read-aloud-annotation-popup-underline = Подчёркнутый
-reader-tab-audio-play =
-    .title = { reader-read-aloud-play }
-reader-tab-audio-pause =
-    .title = { reader-read-aloud-pause }
+reader-page-options = Page Options

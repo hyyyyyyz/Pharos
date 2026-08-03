@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Synkroniser">
 <!ENTITY zotero.preferences.sync.username "Brugernavn:">
 <!ENTITY zotero.preferences.sync.password "Adgangskode:">
+<!ENTITY zotero.preferences.sync.syncServer "Datasynkronisering">
+<!ENTITY zotero.preferences.sync.setUpSync "Indstil synkronisering">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Afkobl konto...">
 <!ENTITY zotero.preferences.sync.createAccount "Opret konto">
 <!ENTITY zotero.preferences.sync.lostPassword "Mistet adgangskode?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Synkroniser automatisk">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Fil-synkronisering">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Synkroniser Vedhæftninger i Mit Bibliotek ved hjælp af">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Synkroniser Vedhæftninger i gruppe-biblioteker ved hjælp af Zoteros online-lager">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Hent filer">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "under synkronisering">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "efter behov">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Bekræft server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Når du anvender Zoteros online-lager, er du forpligtet på dets">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "betingelser">
 <!ENTITY zotero.preferences.sync.librariesToSync "Biblioteker der skal synkroniseres">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Vælg biblioteker...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Synkronisér">

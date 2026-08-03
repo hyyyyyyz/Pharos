@@ -235,13 +235,8 @@ for version in "$FROM" "$TO"; do
 		set -e
 	done
 	
-	# Delete cached archives older than 14 days
-	find "$CACHE_DIR" -maxdepth 1 -type f -ctime +14 -delete
-	# Delete cached diffs and compressed files not created or used in 60 days
-	# (cache hits touch the entries)
-	if [ -d "$CACHE_DIR/update-packaging" ]; then
-		find "$CACHE_DIR/update-packaging" -type f -ctime +60 -delete
-	fi
+	# Delete cached files older than 14 days
+	find "$CACHE_DIR" -ctime +14 -delete
 	
 	# Unpack Zotero.app
 	if [ $BUILD_MAC == 1 ]; then
@@ -262,14 +257,9 @@ for version in "$FROM" "$TO"; do
 	# Unpack Windows zips
 	if [ $BUILD_WIN == 1 ]; then
 		if [[ -f "$WIN32_ARCHIVE" ]] && [[ -f "$WIN_X64_ARCHIVE" ]] && [[ -f "$WIN_ARM64_ARCHIVE" ]]; then
-			# Unpack architectures in parallel
-			UNPACK_PIDS=""
 			for build in "$WIN32_ARCHIVE" "$WIN_X64_ARCHIVE" "$WIN_ARM64_ARCHIVE"; do
-				(unzip -q "$build" && rm "$build") &
-				UNPACK_PIDS="$UNPACK_PIDS $!"
-			done
-			for pid in $UNPACK_PIDS; do
-				wait $pid
+				unzip -q "$build"
+				rm "$build"
 			done
 			INCREMENTALS_FOUND=1
 		else
@@ -294,14 +284,9 @@ for version in "$FROM" "$TO"; do
 		done
 		
 		if [ "$MISSING" -eq 0 ]; then
-			# Unpack architectures in parallel
-			UNPACK_PIDS=""
 			for build in "${LINUX_BUILDS_TO_UNPACK[@]}"; do
-				(tar -xf "$build" && rm "$build") &
-				UNPACK_PIDS="$UNPACK_PIDS $!"
-			done
-			for pid in $UNPACK_PIDS; do
-				wait $pid
+				tar -xf "$build"
+				rm "$build"
 			done
 			INCREMENTALS_FOUND=1
 		else
@@ -315,11 +300,6 @@ done
 # Set variables for mar command in make_(incremental|full)_update.sh
 export MOZ_PRODUCT_VERSION="$TO"
 export MAR_CHANNEL_ID="$CHANNEL"
-
-# Reuse diffs and compressed files across incremental builds, since FROM
-# versions often share files with each other and with the TO version. Entries
-# that haven't been used recently are cleaned up above.
-export UPDATE_CACHE_DIR="$ROOT_DIR/cache/update-packaging"
 
 CHANGES_MADE=0
 for build in "mac" "win32" "win-x64" "win-arm64" "linux-i686" "linux-x86_64" "linux-arm64"; do

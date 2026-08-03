@@ -19,8 +19,6 @@
 			border: 0;
 			visibility: hidden; // Prevent iframe flashing while loading
 
-			@include handle-mask-resizing;
-
 			&.loaded {
 				visibility: visible;
 			}

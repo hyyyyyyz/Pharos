@@ -144,12 +144,9 @@
 				val = '';
 			}
 			
-			val = Zotero.Styles.resolveLocale(val);
 			this._value = val;
 			const styleData = this._style ? Zotero.Styles.get(this._style) : null;
-			this.localeListEl.value = Zotero.Styles.resolveLocale(
-				styleData && styleData.effectiveLocale || this._value
-			);
+			this.localeListEl.value = styleData && styleData.locale || this._value;
 		}
 
 		get style() {
@@ -159,10 +156,8 @@
 		set style(style) {
 			this._style = style;
 			const styleData = style ? Zotero.Styles.get(style) : null;
-			this.localeListEl.disabled = !style || !!styleData.effectiveLocale;
-			this.localeListEl.value = Zotero.Styles.resolveLocale(
-				styleData && styleData.effectiveLocale || this._value || this.fallbackLocale
-			);
+			this.localeListEl.disabled = !style || !!styleData.locale;
+			this.localeListEl.value = styleData && styleData.locale || this._value || this.fallbackLocale;
 		}
 
 		connectedCallback() {
@@ -176,7 +171,7 @@
 			this._value = this.getAttribute('value');
 
 			await Zotero.Styles.init();
-			this.fallbackLocale = Zotero.Styles.resolveLocale(Zotero.locale);
+			this.fallbackLocale = Zotero.Styles?.primaryDialects[Zotero.locale] || Zotero.locale;
 
 			const menuLocales = Zotero.Utilities.deepCopy(Zotero.Styles.locales);
 			const menuLocalesKeys = Object.keys(menuLocales).sort();

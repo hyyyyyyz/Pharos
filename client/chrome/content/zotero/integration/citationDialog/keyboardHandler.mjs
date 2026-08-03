@@ -49,8 +49,8 @@ export class CitationDialogKeyboardHandler {
 	// lower-level components
 	captureKeydown(event) {
 		let cmdOrCtrl = Zotero.isMac ? event.metaKey : event.ctrlKey;
-		// Cmd/Ctrl-Enter will always accept the dialog regardless of the target
-		if (event.key == "Enter" && cmdOrCtrl) {
+		// Cmd/Ctrl-Enter will always accept the dialog regardless of the target (unless within a panel)
+		if (event.key == "Enter" && cmdOrCtrl && !event.target.closest("panel")) {
 			this.doc.dispatchEvent(new CustomEvent("dialog-accepted"));
 			event.stopPropagation();
 			event.preventDefault();
@@ -139,13 +139,13 @@ export class CitationDialogKeyboardHandler {
 				this._navigateGroup({ group, current: null, forward: true, shouldSelect: true, shouldFocus: true, multiSelect: false });
 			}
 			else if (this._id("zotero-items-tree").querySelector(".row")) {
-				this._focusItemTree({ selectIfEmpty: true });
+				this._id("zotero-items-tree").querySelector("[tabindex]").focus();
 			}
 			handled = true;
 		}
 		// arrow down from suggested items in library mode will focus items table
 		else if (!this._id("library-layout").hidden && event.key == "ArrowDown" && event.target.closest(".itemsContainer") && noModifiers && this._id("zotero-items-tree").querySelector(".row")) {
-			this._focusItemTree({ selectIfEmpty: true });
+			this._id("zotero-items-tree").querySelector("[tabindex]").focus();
 		}
 		// arrow up/down from bubble-input in list mode will move selection in the items list
 		else if (!this._id("list-layout").hidden && (event.key == "ArrowDown" || event.key == "ArrowUp") && this._id("bubble-input").contains(event.target) && onlyShiftModifierPossible) {
@@ -247,7 +247,7 @@ export class CitationDialogKeyboardHandler {
 			nodeToFocus.focus();
 		}
 		else {
-			nodeToFocus.querySelector("[tabindex]:not([hidden])")?.focus();
+			nodeToFocus.querySelector("[tabindex]")?.focus();
 		}
 		return nodeToFocus;
 	}
@@ -310,15 +310,6 @@ export class CitationDialogKeyboardHandler {
 			return this.doc.activeElement == this.doc.querySelector(".item");
 		}
 		return false;
-	}
-
-	_focusItemTree({ selectIfEmpty = false } = {}) {
-		this.doc.dispatchEvent(new CustomEvent("focus-item-tree", {
-			bubbles: true,
-			detail: {
-				selectIfEmpty
-			}
-		}));
 	}
 
 	_selectItems(startNode, endNode) {

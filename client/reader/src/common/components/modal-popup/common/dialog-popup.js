@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import cx from 'classnames';
 
-function DialogPopup({ className, children, onClose, onSubmit }) {
+function DialogPopup({ className, children, onClose }) {
 	let overlayRef = useRef();
 
 	useLayoutEffect(() => {
@@ -9,40 +9,18 @@ function DialogPopup({ className, children, onClose, onSubmit }) {
 		if (node) {
 			node.focus();
 		}
-		else {
-			overlayRef.current.focus();
-		}
 	}, []);
 
 	function handlePointerDown(event) {
 		if (event.target === overlayRef.current) {
-			onClose?.();
-		}
-	}
-
-	function handleKeyDown(event) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			if (onSubmit) {
-				onSubmit(event);
-				return;
+			if (onClose) {
+				onClose();
 			}
-			onClose?.();
-		}
-		else if (event.key === 'Escape') {
-			event.preventDefault();
-			onClose?.();
 		}
 	}
 
 	return (
-		<div
-			ref={overlayRef}
-			className="overlay dialog-popup-overlay"
-			onPointerDown={handlePointerDown}
-			onKeyDown={handleKeyDown}
-			tabIndex={-1}
-		>
+		<div ref={overlayRef} className="overlay dialog-popup-overlay" onPointerDown={handlePointerDown}>
 			<div className={cx('modal-popup', className)}>
 				{children}
 			</div>

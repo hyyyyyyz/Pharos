@@ -1,5 +1,5 @@
 duplicates-merge-pane {
-	&, #zotero-duplicates-merge-version-select, #zotero-duplicates-merge-controls {
+	&, #zotero-duplicates-merge-version-select, #zotero-duplicates-merge-info-box-container {
 		&:not([hidden]) {
 			display: flex;
 			flex-direction: column;
@@ -10,11 +10,7 @@ duplicates-merge-pane {
 
 	padding-top: 9px;
 
-	#zotero-duplicates-merge-controls {
-		flex: 0 0 auto;
-	}
-
-	> #zotero-duplicates-merge-controls > groupbox {
+	> groupbox {
 		// Override default margin/padding that breaks our styles here
 		margin: 0;
 		padding: 0;
@@ -26,16 +22,17 @@ duplicates-merge-pane {
 		}
 	}
 
-	#zotero-duplicates-merge-view-item {
+	#zotero-duplicates-merge-info-box-container {
 		flex: 1;
-		min-height: 0;
 		padding-inline: 8px;
 		overflow-y: scroll;
-		display: flex;
-		flex-direction: column;
 
-		> [data-pane]:first-child {
+		#zotero-duplicates-merge-info-box {
 			border-top: var(--material-border-quinary);
+		}
+
+		collapsible-section > .head {
+			display: none;
 		}
 	}
 

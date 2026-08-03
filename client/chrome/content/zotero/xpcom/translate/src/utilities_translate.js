@@ -290,65 +290,35 @@ Zotero.Utilities.Translate.prototype.processDocuments = async function (urls, pr
 * Send an asynchronous HTTP request, returning a promise.
 *
 * @param {string} url URL to request
-* @param {string} [options.method='GET'] The method of the request ("GET", "POST", etc.)
-* @param {object} [options.headers] HTTP headers to send with the request
-* @param {number[] | false} [options.successCodes] If false, all responses will be considered successful.
- * 		Otherwise, an array of successful status codes. Defaults to 2xx.
+* @param {string} [options.method=GET] The method of the request ("GET", "POST", etc.)
+* @param {object} [options.requestHeaders] HTTP headers to send with the request
 * @param {string} [options.body] The request's body
 * @param {string} [options.responseCharset] The charset the response should be interpreted as
 * @param {string} [options.responseType] 'text', 'json', or 'document'.
 * 	If 'json', the response's body will be parsed with JSON.parse before being returned.
 * 	If 'document', the response's body will be parsed as an HTML document (like deprecated processDocuments).
 * @return {Promise<object>} A promise resolved with an object containing status,
-* 	responseURL, headers, and body attributes if the request succeeds.
-* 	If the browser is offline or the response contains a non-successful status code,
+* 	headers, and body attributes if the request succeeds.
+* 	If the browser is offline or the response contains a non-2XX status code,
 * 	the promise will be rejected with a Zotero.HTTP.UnexpectedStatusException.
 */
 Zotero.Utilities.Translate.prototype.request = async function (url, options = {}) {
 	url = this._translate.resolveURL(url);
-	
-	let parsedURL = new URL(url);
-	if (!['http:', 'https:'].includes(parsedURL.protocol)) {
-		throw new Error(`Translator cannot make ${parsedURL.protocol} request`);
-	}
 
 	let method = options.method || 'GET';
 
 	let internalOptions = {
 		headers: Object.assign({}, this._translate.requestHeaders, options.headers),
-		successCodes: options.successCodes,
 		body: options.body,
 		responseCharset: options.responseCharset,
 		responseType: options.responseType,
 		cookieSandbox: this._translate.cookieSandbox
 	};
 
-	// If the request fails or a non-successful status is returned, Zotero.HTTP.request rejects its promise.
+	// If the request fails or a non-2XX status is returned, Zotero.HTTP.request rejects its promise.
 	// We let the Zotero.HTTP.UnexpectedStatusException bubble up to the caller.
-	let xhr;
-	try {
-		xhr = await Zotero.HTTP.request(method, url, internalOptions);
-		// ...Except when the URL is registered in Zotero.BrowserRequest and the
-		// response looks like a bot challenge, in which case we try to clear
-		// the challenge in a browser and retry.
-		if (this._shouldClearChallengeInBrowser(url, xhr.status, xhr)) {
-			await this._tryClearChallengeInBrowser(url);
-			xhr = await Zotero.HTTP.request(method, url, internalOptions);
-		}
-	}
-	catch (e) {
-		// As above
-		if (e instanceof Zotero.HTTP.UnexpectedStatusException
-				&& this._shouldClearChallengeInBrowser(url, e.status, e.xmlhttp)) {
-			await this._tryClearChallengeInBrowser(url);
-			xhr = await Zotero.HTTP.request(method, url, internalOptions);
-		}
-		else {
-			throw e;
-		}
-	}
+	let xhr = await Zotero.HTTP.request(method, url, internalOptions);
 	let status = xhr.status;
-	let responseURL = xhr.responseURL;
 	let headers = {};
 	xhr.getAllResponseHeaders()
 		.trim()
@@ -363,7 +333,6 @@ Zotero.Utilities.Translate.prototype.request = async function (url, options = {}
 
 	return {
 		status,
-		responseURL,
 		headers,
 		body
 	};
@@ -394,70 +363,6 @@ Zotero.Utilities.Translate.prototype.requestJSON = async function (url, options 
  */
 Zotero.Utilities.Translate.prototype.requestDocument = async function (url, options = {}) {
 	return (await this.request(url, { ...options, responseType: 'document' })).body;
-};
-
-/**
- * Decide whether a response is a bot challenge that we can clear in a browser.
- * Zotero.BrowserRequest maintains the list of patterns. We only try to clear
- * a challenge once per origin per Zotero.Translate instance.
- */
-Zotero.Utilities.Translate.prototype._shouldClearChallengeInBrowser = function (url, status, xhr) {
-	// If we aren't running in the client, there's nothing we can do
-	if (!Zotero.BrowserRequest) return false;
-	
-	let entry = Zotero.BrowserRequest.getEntryForURL(url);
-	if (!entry) return false;
-
-	let tried = this._translate._browserRequestTried ||= new Set();
-	let originKey = entry.match;
-	if (tried.has(originKey)) {
-		return false;
-	}
-
-	if (entry.detectBlock) {
-		let body = '';
-		try {
-			body = xhr?.responseText || '';
-		}
-		catch {
-			let response = xhr?.response;
-			if (response && typeof response !== 'string') {
-				try {
-					body = JSON.stringify(response);
-				}
-				catch {
-					// Ignore
-				}
-			}
-		}
-		return entry.detectBlock(status, body);
-	}
-	return status >= 400;
-};
-
-/**
- * Clear a bot-detection challenge for the given URL, escalating to a visible
- * viewer if the site shows a visible captcha. Cookies acquired are put
- * into the Zotero.Translate instance's cookie context, if it has one.
- */
-Zotero.Utilities.Translate.prototype._tryClearChallengeInBrowser = async function (url) {
-	if (!Zotero.BrowserRequest) return;
-	
-	let entry = Zotero.BrowserRequest.getEntryForURL(url);
-	if (!entry) return;
-
-	let tried = this._translate._browserRequestTried ||= new Set();
-	tried.add(entry.match);
-
-	let challengeURL = entry.getChallengeURL ? entry.getChallengeURL(url) : url;
-	let userContextId = this._translate.cookieSandbox ?? undefined;
-
-	Zotero.debug(`Zotero.Utilities.Translate.request(): Clearing challenge at ${challengeURL} before retrying ${url}`);
-	await Zotero.BrowserRequest.clearChallenge(challengeURL, {
-		userContextId,
-		entry,
-		allowViewer: true
-	});
 };
 
 /**
@@ -577,6 +482,6 @@ for(var j in Zotero.Utilities.Translate.prototype) {
 	}
 }
 
-if (typeof module === 'object' && module.exports) {
+if (typeof process === 'object' && process + '' === '[object process]'){
 	module.exports = Zotero.Utilities.Translate;
 }

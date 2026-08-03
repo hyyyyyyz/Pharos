@@ -483,10 +483,6 @@ class EditorCore {
 		this.view.focus();
 	}
 
-	openFindbar() {
-		this.pluginState.search.openFindbar();
-	}
-
 	getData(onlyChanged) {
 		if (onlyChanged && !this.docChanged) {
 			return null;

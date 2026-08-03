@@ -47,7 +47,7 @@ class PageMapping {
 		return mapping;
 	}
 
-	static readonly VERSION = 14;
+	static readonly VERSION = 13;
 
 	private readonly _tree = new BTree<PersistentRange, string>(
 		undefined,
@@ -290,9 +290,7 @@ const MATCHERS: Matcher[] = [
 
 	{
 		selector: '[*|type="pagebreak"]',
-		extract: el => el.getAttribute('title')
-			?? el.getAttribute('aria-label')
-			?? undefined
+		extract: el => el.getAttribute('title') ?? undefined
 	}
 ];
 

@@ -23,14 +23,8 @@
     ***** END LICENSE BLOCK *****
 */
 
-(function () {
 var { InlineSpellChecker } = ChromeUtils.importESModule("resource://gre/modules/InlineSpellChecker.sys.mjs");
 var { FilePicker } = ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs');
-
-let lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
-	generateHTMLFromTemplate: "chrome://zotero/content/modules/templates.mjs",
-});
 
 // Note: TinyMCE is automatically doing some meaningless corrections to
 // note-editor produced HTML. Which might result to more
@@ -53,7 +47,6 @@ const DOWNLOADED_IMAGE_TYPE = [
 class EditorInstance {
 	constructor() {
 		this.instanceID = Zotero.Utilities.randomString();
-		this._undoRedoController = null;
 	}
 
 	get itemID() {
@@ -243,7 +236,6 @@ class EditorInstance {
 	}
 
 	async uninit() {
-		this._unregisterUndoRedoController();
 		this._prefObserverIDs.forEach(id => Zotero.Prefs.unregisterObserver(id));
 		if (this._citationDialogWindow) {
 			this._citationDialogWindow.close();
@@ -254,69 +246,6 @@ class EditorInstance {
 		await Zotero.Notes.unregisterEditorInstance(this);
 		if (!this._item.isAttachment() && !this._filesReadOnly) {
 			await Zotero.Notes.deleteUnusedEmbeddedImages(this._item);
-		}
-	}
-
-	_registerUndoRedoController() {
-		if (this._undoRedoController) {
-			return;
-		}
-
-		try {
-			let editorWindow = this._iframeWindow.wrappedJSObject;
-			let commands = new Map([
-				['cmd_undo', { can: 'canUndo', run: 'doUndo' }],
-				['cmd_redo', { can: 'canRedo', run: 'doRedo' }],
-			]);
-			let invoke = (command, operation) => {
-				let method = commands.get(command)?.[operation];
-				if (!method) {
-					return false;
-				}
-				try {
-					return typeof editorWindow[method] == 'function'
-						? editorWindow[method]()
-						: false;
-				}
-				catch (e) {
-					if (!Components.utils.isDeadWrapper(editorWindow)) {
-						Zotero.logError(e);
-					}
-					return false;
-				}
-			};
-			let controller = {
-				supportsCommand: command => commands.has(command),
-				isCommandEnabled: command => !!invoke(command, 'can'),
-				doCommand: command => invoke(command, 'run'),
-				onEvent() {},
-			};
-
-			this._iframeWindow.controllers.insertControllerAt(0, controller);
-			this._undoRedoController = controller;
-		}
-		catch (e) {
-			if (!Components.utils.isDeadWrapper(this._iframeWindow)) {
-				Zotero.logError(e);
-			}
-		}
-	}
-
-	_unregisterUndoRedoController() {
-		if (!this._undoRedoController) {
-			return;
-		}
-
-		try {
-			this._iframeWindow.controllers.removeController(this._undoRedoController);
-		}
-		catch (e) {
-			if (!Components.utils.isDeadWrapper(this._iframeWindow)) {
-				Zotero.logError(e);
-			}
-		}
-		finally {
-			this._undoRedoController = null;
 		}
 	}
 
@@ -632,7 +561,6 @@ class EditorInstance {
 		try {
 			switch (message.action) {
 				case 'initialized': {
-					this._registerUndoRedoController();
 					this._resolveInitPromise();
 					return;
 				}
@@ -1299,6 +1227,14 @@ class EditorInstance {
 			},
 			
 			/**
+			 * Execute a callback with a preview of the given citation
+			 * @return {Promise} A promise resolved with the previewed citation string
+			 */
+			preview: async function () {
+				// Zotero.debug('CI: preview');
+			},
+
+			/**
 			 * Sort the citationItems within citation (depends on this.citation.properties.unsorted)
 			 * @return {Promise} A promise resolved with the previewed citation string
 			 */
@@ -1512,13 +1448,9 @@ class EditorInstance {
 	 * @param {Object} options
 	 * @param {Integer} options.parentID - Creates standalone note if not provided
 	 * @param {Integer} options.collectionID - Only valid if parentID not provided
-	 * @param {Boolean} options.noSave - If true, note item is not saved and ink/image annotations are
-	 *									embedded as "data:image/..." strings instead of via imageAttachmentKey.
-	 * @param {Boolean} options.noComments - If true, annotation comments are skipped
-	 * @param {Boolean} options.noHeader - If true, header is not added to the note
 	 * @returns {Promise<Zotero.Item>}
 	 */
-	static async createNoteFromAnnotations(annotations, { parentID, collectionID, noSave, noComments, noHeader } = {}) {
+	static async createNoteFromAnnotations(annotations, { parentID, collectionID } = {}) {
 		if (!annotations.length) {
 			throw new Error("No annotations provided");
 		}
@@ -1531,52 +1463,41 @@ class EditorInstance {
 				}
 				catch (e) {
 					Zotero.debug(e);
+					throw e;
 				}
 				break;
 			}
 		}
 
 		let note = new Zotero.Item('note');
-		if (!noSave) {
-			note.libraryID = annotations[0].libraryID;
-			if (parentID) {
-				note.parentID = parentID;
-			}
-			else if (collectionID) {
-				note.addToCollection(collectionID);
-			}
-			await note.saveTx();
+		note.libraryID = annotations[0].libraryID;
+		if (parentID) {
+			note.parentID = parentID;
 		}
+		else if (collectionID) {
+			note.addToCollection(collectionID);
+		}
+		await note.saveTx();
 		let editorInstance = new EditorInstance();
 		editorInstance._item = note;
 		let jsonAnnotations = [];
 		for (let annotation of annotations) {
 			let attachmentItem = Zotero.Items.get(annotation.parentID);
 			let jsonAnnotation = await Zotero.Annotations.toJSON(annotation);
-			if (noComments) {
-				jsonAnnotation.comment = null;
-			}
 			jsonAnnotation.attachmentItemID = attachmentItem.id;
 			jsonAnnotation.id = annotation.key;
 			jsonAnnotations.push(jsonAnnotation);
 		}
 
-		let html = '';
-		if (!noHeader) {
-			let vars = {
-				title: Zotero.getString('reader-annotations'),
-				date: new Date().toLocaleString()
-			};
-			html = lazy.generateHTMLFromTemplate(Zotero.Prefs.get('annotations.noteTemplates.title'), vars);
-			// New line is needed for note title parser
-			html += '\n';
-		}
+		let vars = {
+			title: Zotero.getString('reader-annotations'),
+			date: new Date().toLocaleString()
+		};
+		let html = Zotero.Utilities.Internal.generateHTMLFromTemplate(Zotero.Prefs.get('annotations.noteTemplates.title'), vars);
+		// New line is needed for note title parser
+		html += '\n';
 
-		// If there is no real note item saved, do not import images as annotations.
-		// Instead, serializeAnnotations below will embed images as "data:image/..." strings
-		if (!noSave) {
-			await editorInstance.importImages(jsonAnnotations);
-		}
+		await editorInstance.importImages(jsonAnnotations);
 
 		let multipleParentParent = false;
 		let lastParentParentID;
@@ -1638,9 +1559,7 @@ class EditorInstance {
 		}
 		html = `<div data-citation-items="${citationItems}" data-schema-version="${schemaVersion}">${html}</div>`;
 		note.setNote(html);
-		if (!noSave) {
-			await note.saveTx();
-		}
+		await note.saveTx();
 		return note;
 	}
 }
@@ -1664,8 +1583,8 @@ class EditorInstanceUtilities {
 
 			if (!annotation.text
 				&& !annotation.comment
-				&& !annotation.image
-				&& annotation.type !== 'image') {
+				&& !annotation.imageAttachmentKey
+				|| annotation.type === 'ink') {
 				continue;
 			}
 
@@ -1717,31 +1636,12 @@ class EditorInstanceUtilities {
 			}
 
 			// Image
-			if (annotation.imageAttachmentKey || annotation.image) {
-				// Find the bounding rectangle of the annotation
-				let rect;
-				if (annotation.type == "ink") {
-					let x = annotation.position.paths[0][0];
-					let y = annotation.position.paths[0][1];
-					rect = [x, y, x, y];
-					for (let path of annotation.position.paths) {
-						for (let i = 0; i < path.length - 1; i += 2) {
-							let x = path[i];
-							let y = path[i + 1];
-							rect[0] = Math.min(rect[0], x);
-							rect[1] = Math.min(rect[1], y);
-							rect[2] = Math.max(rect[2], x);
-							rect[3] = Math.max(rect[3], y);
-						}
-					}
-				}
-				else if (annotation.type == "image") {
-					rect = annotation.position.rects[0];
-				}
-				else {
-					throw new Error("Unexpected annotation type for image embedding: " + annotation.type);
-				}
+			if (annotation.imageAttachmentKey) {
+				// // let imageAttachmentKey = await this._importImage(annotation.image);
+				// delete annotation.image;
+
 				// Normalize image dimensions to 1.25 of the print size
+				let rect = annotation.position.rects[0];
 				let rectWidth = rect[2] - rect[0];
 				let rectHeight = rect[3] - rect[1];
 				// Constants from pdf.js
@@ -1749,16 +1649,7 @@ class EditorInstanceUtilities {
 				const PDFJS_DEFAULT_SCALE = 1.25;
 				let width = Math.round(rectWidth * CSS_UNITS * PDFJS_DEFAULT_SCALE);
 				let height = Math.round(rectHeight * width / rectWidth);
-				// if imageAttachmentKey is provided, use it in the HTML, otherwise use data:image/... string as src
-				if (annotation.imageAttachmentKey) {
-					imageHTML = `<img data-attachment-key="${annotation.imageAttachmentKey}" width="${width}" height="${height}" data-annotation="${encodeURIComponent(JSON.stringify(storedAnnotation))}"/>`;
-				}
-				else {
-					imageHTML = `<img class="${annotation.type}" src="${annotation.image}" width="${width}" height="${height}" data-annotation="${encodeURIComponent(JSON.stringify(storedAnnotation))}"/>`;
-				}
-			}
-			else if (annotation.type === 'image') {
-				imageHTML = Zotero.getString('annotation-image-not-available');
+				imageHTML = `<img data-attachment-key="${annotation.imageAttachmentKey}" width="${width}" height="${height}" data-annotation="${encodeURIComponent(JSON.stringify(storedAnnotation))}"/>`;
 			}
 
 			// Text
@@ -1780,7 +1671,7 @@ class EditorInstanceUtilities {
 			else if (['note', 'text'].includes(annotation.type)) {
 				template = Zotero.Prefs.get('annotations.noteTemplates.note');
 			}
-			else {
+			else if (annotation.type === 'image') {
 				template = '<p>{{image}}<br/>{{citation}} {{comment}}</p>';
 			}
 
@@ -1802,7 +1693,7 @@ class EditorInstanceUtilities {
 				tags: (attrs) => (annotation.tags && annotation.tags.map(tag => tag.name) || []).join(attrs.join || ' ')
 			};
 
-			let templateHTML = lazy.generateHTMLFromTemplate(template, vars);
+			let templateHTML = Zotero.Utilities.Internal.generateHTMLFromTemplate(template, vars);
 			// Remove some spaces at the end of paragraph
 			templateHTML = templateHTML.replace(/([\s]*)(<\/p)/g, '$2');
 			// Remove multiple spaces
@@ -1962,4 +1853,3 @@ class EditorInstanceUtilities {
 
 Zotero.EditorInstance = EditorInstance;
 Zotero.EditorInstanceUtilities = new EditorInstanceUtilities();
-})();

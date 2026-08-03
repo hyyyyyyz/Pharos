@@ -58,15 +58,7 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 		throw new Error("Invalid JSON passed to autocomplete");
 	}
 	var [fieldName, , subField] = searchParams.fieldName.split("-");
-
-	// Library scope: accept a single libraryID (e.g. the item pane and tags box) or an
-	// array of libraryIDs (advanced search across a multi-library selection). An empty
-	// array means no library filter (suggest values from all libraries).
-	var libraryIDs = searchParams.libraryIDs
-		|| (searchParams.libraryID ? [searchParams.libraryID] : []);
-	// Bare '?' placeholder list, e.g. "?, ?, ?", for sites that push params sequentially
-	var libraryPlaceholders = libraryIDs.map(() => '?').join(', ');
-
+	
 	var resultsCallback;
 	
 	switch (fieldName) {
@@ -76,14 +68,11 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 		case 'tag':
 			var sql = "SELECT DISTINCT name AS val, NULL AS id FROM tags WHERE name LIKE ? ESCAPE '\\'";
 			var sqlParams = [Zotero.DB.escapeSQLExpression(searchString) + '%'];
-			// Suggest only tags on items that aren't in the trash, optionally scoped by library
-			sql += " AND tagID IN (SELECT tagID FROM itemTags JOIN items USING (itemID) "
-				+ "WHERE itemID NOT IN (SELECT itemID FROM deletedItems)";
-			if (libraryIDs.length) {
-				sql += ` AND libraryID IN (${libraryPlaceholders})`;
-				sqlParams.push(...libraryIDs);
+			if (searchParams.libraryID) {
+				sql += " AND tagID IN (SELECT tagID FROM itemTags JOIN items USING (itemID) "
+					+ "WHERE libraryID=?)";
+				sqlParams.push(searchParams.libraryID);
 			}
-			sql += ")";
 			if (searchParams.itemID) {
 				sql += " AND name NOT IN (SELECT name FROM tags WHERE tagID IN ("
 					+ "SELECT tagID FROM itemTags WHERE itemID = ?))";
@@ -104,10 +93,10 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 				var sql = "SELECT DISTINCT CASE fieldMode WHEN 1 THEN lastName "
 					+ "WHEN 0 THEN firstName || ' ' || lastName END AS val, NULL AS id "
 					+ "FROM creators ";
-				if (fieldName != 'creator' || libraryIDs.length) {
+				if (fieldName != 'creator' || searchParams.libraryID) {
 					sql += "JOIN itemCreators USING (creatorID) ";
 				}
-				if (libraryIDs.length) {
+				if (searchParams.libraryID) {
 					sql += "JOIN items USING (itemID) ";
 				}
 				sql += "WHERE CASE fieldMode "
@@ -119,9 +108,9 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 					sql += "AND creatorTypeID=? ";
 					sqlParams.push(Zotero.CreatorTypes.getID(fieldName));
 				}
-				if (libraryIDs.length) {
-					sql += ` AND libraryID IN (${libraryPlaceholders}) `;
-					sqlParams.push(...libraryIDs);
+				if (searchParams.libraryID) {
+					sql += ` AND libraryID=? `;
+					sqlParams.push(searchParams.libraryID);
 				}
 				sql += "ORDER BY val";
 			}
@@ -148,7 +137,7 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 				}
 				
 				var fromSQL = " FROM creators "
-				if (libraryIDs.length) {
+				if (searchParams.libraryID) {
 					fromSQL += "JOIN itemCreators USING (creatorID) JOIN items USING (itemID) ";
 				}
 				fromSQL += "WHERE " + subField + " LIKE ?1 AND fieldMode=?2";
@@ -166,11 +155,11 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 					}
 					fromSQL += ")";
 				}
-				if (libraryIDs.length) {
-					fromSQL += ` AND libraryID IN (${libraryIDs.map((_, i) => '?' + (sqlParams.length + 1 + i)).join(', ')})`;
-					sqlParams.push(...libraryIDs);
+				if (searchParams.libraryID) {
+					fromSQL += ` AND libraryID=?${sqlParams.length + 1}`;
+					sqlParams.push(searchParams.libraryID);
 				}
-
+				
 				sql += fromSQL;
 				
 				// If double-field mode, include matches for just this field
@@ -190,9 +179,9 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 			var sql = "SELECT DISTINCT DATE(" + fieldName + ", 'localtime') AS val, NULL AS id "
 				+ "FROM items WHERE " + fieldName + " LIKE ? ";
 			var sqlParams = [searchString + '%'];
-			if (libraryIDs.length) {
-				sql += `AND libraryID IN (${libraryPlaceholders}) `;
-				sqlParams.push(...libraryIDs);
+			if (searchParams.libraryID) {
+				sql += "AND libraryID=? ";
+				sqlParams.push(searchParams.libraryID);
 			}
 			sql += "ORDER BY " + fieldName;
 			
@@ -202,14 +191,14 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 			var fieldID = Zotero.ItemFields.getID('accessDate');
 			
 			var sql = "SELECT DISTINCT DATE(value, 'localtime') AS val, NULL AS id FROM itemData ";
-			if (libraryIDs.length) {
+			if (searchParams.libraryID) {
 				sql += "JOIN items USING (itemID) ";
 			}
 			sql += "WHERE fieldID=? AND value LIKE ? ";
 			var sqlParams = [fieldID, searchString + '%'];
-			if (libraryIDs.length) {
-				sql += `AND libraryID IN (${libraryPlaceholders}) `;
-				sqlParams.push(...libraryIDs);
+			if (searchParams.libraryID) {
+				sql += "AND libraryID=? ";
+				sqlParams.push(searchParams.libraryID);
 			}
 			sql += "ORDER BY value";
 			
@@ -229,7 +218,7 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 			var valueField = fieldName == 'date' ? 'SUBSTR(value, 12, 100)' : 'value';
 			
 			var sql = "SELECT DISTINCT " + valueField + " AS val, NULL AS id FROM itemData ";
-			if (libraryIDs.length) {
+			if (searchParams.libraryID) {
 				sql += "JOIN items USING (itemID) ";
 			}
 			sql += "JOIN itemDataValues USING (valueID) "
@@ -241,10 +230,10 @@ ZoteroAutoComplete.prototype.startSearch = async function (searchString, searchP
 					+ "NATURAL JOIN itemDataValues WHERE fieldID=?1 AND itemID=?3) ";
 				sqlParams.push(searchParams.itemID);
 			}
-			// Limit to specific libraries
-			if (libraryIDs.length) {
-				sql += `AND libraryID IN (${libraryIDs.map((_, i) => '?' + (sqlParams.length + 1 + i)).join(', ')}) `;
-				sqlParams.push(...libraryIDs);
+			// Limit to specific library
+			if (searchParams.libraryID) {
+				sql += `AND libraryID=?${sqlParams.length + 1} `;
+				sqlParams.push(searchParams.libraryID);
 			}
 			sql += "ORDER BY value";
 	}

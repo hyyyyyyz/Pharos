@@ -26,11 +26,6 @@
 "use strict";
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
-
 	class TagsBox extends ItemPaneSectionElementBase {
 		content = MozXULElement.parseXULToFragment(`
 				<collapsible-section data-l10n-id="section-tags" data-pane="tags" extra-buttons="add">
@@ -246,7 +241,6 @@
 						this.remove(tagName);
 						try {
 							item.removeTag(tagName);
-							this._pendingRemovalCount++;
 							// Save item after a debounce to avoid triggering multiple
 							// save operations. If there are many tags in the library,
 							// db transaction may not keep up with UI changes, and cause
@@ -380,16 +374,11 @@
 			}
 			let delimiters = [',', ';'];
 			let interceptRegex = new RegExp(`[\\p{L}\\p{N}]+\\s*(${delimiters.join('|')})\\s*[\\p{L}\\p{N}]+`, 'iu');
-			// Combine existing field value with pasted text at cursor position
-			let existing = textbox.ref?.value || '';
-			let selStart = textbox.ref?.selectionStart ?? existing.length;
-			let selEnd = textbox.ref?.selectionEnd ?? existing.length;
-			let combined = existing.slice(0, selStart) + str + existing.slice(selEnd);
-			let match = combined.match(interceptRegex);
+			let match = str.match(interceptRegex);
 			if (match) {
 				event.preventDefault();
-				textbox.value = combined.trim();
-				this.openTagSplitterWindow(combined, match[1], textbox);
+				textbox.value = str.trim();
+				this.openTagSplitterWindow(str, match[1], textbox);
 			}
 		};
 
@@ -467,7 +456,7 @@
 						this.add(value);
 						try {
 							this.item.replaceTag(oldValue, value);
-							await this.item.saveTx({ undoAction: 'undo-action-change-tag' });
+							await this.item.saveTx();
 						}
 						catch (e) {
 							this._forceRenderAll();
@@ -484,10 +473,7 @@
 							nextRowElem?.focus();
 						}
 						this.item.removeTag(oldValue);
-						await this.item.saveTx({
-							undoAction: 'undo-action-remove-tag',
-							undoActionArgs: { count: 1 }
-						});
+						await this.item.saveTx();
 					}
 					catch (e) {
 						this._forceRenderAll();
@@ -507,10 +493,7 @@
 				}
 
 				tags.forEach(tag => this.item.addTag(tag));
-				await this.item.saveTx({
-					undoAction: 'undo-action-add-tag',
-					undoActionArgs: { count: 1 }
-				});
+				await this.item.saveTx();
 			}
 			// Single tag at end
 			else {
@@ -525,10 +508,7 @@
 				this.add(value);
 				this.item.addTag(value);
 				try {
-					await this.item.saveTx({
-						undoAction: 'undo-action-add-tag',
-						undoActionArgs: { count: 1 }
-					});
+					await this.item.saveTx();
 				}
 				catch (e) {
 					this._forceRenderAll();
@@ -612,9 +592,7 @@
 		removeAll = () => {
 			if (Services.prompt.confirm(null, "", Zotero.getString('pane.item.tags.removeAll'))) {
 				this.item.setTags([]);
-				this.item.saveTx({
-					undoAction: 'undo-action-remove-all-tags'
-				});
+				this.item.saveTx();
 			}
 		};
 
@@ -664,15 +642,8 @@
 			}
 		}
 
-		_pendingRemovalCount = 0;
-
 		_saveItemDebounced = Zotero.Utilities.debounce(async (item) => {
-			let count = this._pendingRemovalCount;
-			this._pendingRemovalCount = 0;
-			await item.saveTx({
-				undoAction: 'undo-action-remove-tags-from-item',
-				undoActionArgs: { count }
-			});
+			await item.saveTx();
 		});
 
 		_id(id) {

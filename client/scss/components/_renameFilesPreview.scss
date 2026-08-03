@@ -1,54 +1,47 @@
-#rename-files-preview-content {
-	padding: 14px 24px 24px;
-	flex: 1;
+#rename-files-preview {
+    min-width: 800px;
+    min-height: 500px;
 
-	.virtualized-table-container {
-		flex: 1 1 auto;
-		display: flex;
-		overflow: hidden;
-		border: var(--material-panedivider);
+    dialog {
+        background-color: var(--color-sidepane);
+        padding: 14px 24px;
+    }
 
-		.virtualized-table-wrapper {
-			width: 100%;
-		}
+    .virtualized-table-container {
+        flex: 1 1 auto;
+        display: flex;
+        overflow: hidden;
+        border: var(--material-panedivider);
 
-		.virtualized-table-loading {
-			width: 100%;
-			display: flex;
-			align-items: center;
-			justify-content: center;
+        .virtualized-table-wrapper {
+            width: 100%;
+        }
 
-			&[hidden] {
-				display: none;
-			}
-		}
+        .virtualized-table-loading {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-		.virtualized-table {
-			overflow: hidden;
+        .virtualized-table {
+            overflow: hidden;
 
-			.row {
-				&.new:not(.selected) {
-					color: var(--fill-primary);
-				}
+            .row {
+                &.new:not(.selected) {
+                    color: var(--fill-primary);
+                }
 
-				&.old:not(.selected) {
-					color: var(--fill-secondary);
-				}
-			}
-		}
-	}
+                &.old:not(.selected) {
+                    color: var(--fill-secondary);
+                }
+            }
+        }
+    }
 
-	#preview-intro {
-		margin-block: 0 0.5em;
-	}
-
-	progress.hidden {
-		display: none;
-	}
-
-	#preview-buttons {
-		justify-content: flex-end;
-		gap: 0.5em;
-		margin-top: 0.5em;
-	}
+    progress {
+        &.hidden {
+            display: none;
+        }
+    }
 }

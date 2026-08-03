@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sincronizare">
 <!ENTITY zotero.preferences.sync.username "Nume de utilizator:">
 <!ENTITY zotero.preferences.sync.password "Parolă:">
+<!ENTITY zotero.preferences.sync.syncServer "Sincronizare date">
+<!ENTITY zotero.preferences.sync.setUpSync "Configurare sincronizare">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Dezleagă cont...">
 <!ENTITY zotero.preferences.sync.createAccount "Creează cont">
 <!ENTITY zotero.preferences.sync.lostPassword "Ai uitat parola?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Sincronizare automată">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Sincronizare fișier">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Sincronizare fișiere anexate în Biblioteca mea folosind">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Sincronizare fișiere anexate într-un grup de biblioteci folosind depozitul Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Descarcă fișiere">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "în timpul sincronizării">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "când e nevoie">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verifică server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Dacă folosești depozitul Zotero, ești de acord să fii conectat la">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "termeni și condiții">
 <!ENTITY zotero.preferences.sync.librariesToSync "Biblioteci de sincronizat">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Alege biblioteci...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Sincronizare">

@@ -2,15 +2,7 @@
 	overflow-x: visible;
 }
 
-&.fixed-layout > .sections {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 40px;
-	padding-block: 40px;
-}
-
-&:not(.fixed-layout) > .sections {
+> .sections {
 	margin-inline: 40px;
 
 	> .section-container {
@@ -44,7 +36,7 @@
 	}
 }
 
-&:not(.fixed-layout) replaced-body {
+replaced-body {
 	section {
 		margin-block-end: 100px;
 	}

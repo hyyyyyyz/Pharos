@@ -5,9 +5,6 @@ import {
 	INK_ANNOTATION_WIDTH_STEPS,
 	TEXT_ANNOTATION_FONT_SIZE_STEPS
 } from './defines';
-import IconEraser from '../../res/icons/16/annotate-eraser.svg';
-import IconHighlight from '../../res/icons/16/annotate-highlight.svg';
-import IconUnderline from '../../res/icons/16/annotate-underline.svg';
 
 function appendCustomItemGroups(name, reader, params) {
 	let itemGroups = [];
@@ -57,7 +54,7 @@ export function createColorContextMenu(reader, params) {
 			],
 			[
 				['ink', 'eraser'].includes(reader._state.tool.type) && {
-					icon: IconEraser,
+					eraser: true,
 					label: reader._getString('reader-eraser'),
 					disabled: reader._state.readOnly,
 					checked: reader._state.tool.type === 'eraser',
@@ -85,52 +82,6 @@ export function createColorContextMenu(reader, params) {
 				}
 			],
 			...appendCustomItemGroups('createColorContextMenu', reader, params)
-		])
-	};
-}
-
-export function createReadAloudAnnotationContextMenu(reader, params) {
-	let popup = reader._state.readAloudState.annotationPopup;
-	if (!popup) {
-		return null;
-	}
-	let { annotation } = popup;
-	return {
-		internal: true,
-		x: params.x,
-		y: params.y,
-		itemGroups: createItemGroup([
-			[
-				{
-					icon: IconHighlight,
-					label: reader._getString('reader-highlight-annotation-short'),
-					checked: annotation.type === 'highlight',
-					onCommand: () => {
-						reader.setReadAloudAnnotationType('highlight');
-						reader.setTextSelectionAnnotationMode('highlight');
-					}
-				},
-				{
-					icon: IconUnderline,
-					label: reader._getString('reader-underline-annotation-short'),
-					checked: annotation.type === 'underline',
-					onCommand: () => {
-						reader.setReadAloudAnnotationType('underline');
-						reader.setTextSelectionAnnotationMode('underline');
-					}
-				}
-			],
-			ANNOTATION_COLORS.map(([label, color]) => ({
-				label: reader._getString(label),
-				checked: color === annotation.color,
-				color: color,
-				onCommand: () => {
-					reader.setReadAloudAnnotationColor(color);
-					if (['highlight', 'underline'].includes(reader.toolType)) {
-						reader.setTool({ color });
-					}
-				}
-			}))
 		])
 	};
 }
@@ -193,13 +144,6 @@ export function createViewContextMenu(reader, params) {
 						let blob = await canvas.convertToBlob({ type: 'image/png' });
 						reader._onSaveImageAs(blob);
 					},
-				}
-			],
-			[
-				{
-					label: reader._getString('reader-read-aloud-from-here'),
-					disabled: !params.position || !reader._enableReadAloud,
-					onCommand: () => reader.startReadAloudAtPosition(params.position)
 				}
 			],
 			[

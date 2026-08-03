@@ -36,100 +36,6 @@ ChromeUtils.defineESModuleGetters(globalThis, {
 Zotero.Utilities.Internal = {
 	SNAPSHOT_SAVE_TIMEOUT: 30000,
 
-	// Characters that NFKD leaves in a non-ASCII form: letters with no decomposition (letter
-	// ligatures and others) and the fraction slash NFKD introduces (½ -> "1⁄2"). Converted via an
-	// explicit map applied after NFKD/lowercasing, so that e.g. a search for "soren" matches
-	// "Søren" and "1/2" matches "½". Typographic ligatures (ﬁ, ﬂ, ...), superscripts, full-width
-	// forms, etc. don't need an entry -- NFKD already reduces those to ASCII.
-	_searchNormalizeMap: {
-		'ø': 'o',
-		'œ': 'oe',
-		'æ': 'ae',
-		'ł': 'l',
-		'đ': 'd',
-		'ð': 'd',
-		'þ': 'th',
-		'ß': 'ss',
-		'ı': 'i',
-		'⁄': '/'
-	},
-
-	// The rich-text formatting tags Zotero supports in item fields (see the rich-text bibliography
-	// support page). Stripped when normalizing so search matches the field's plain text: a phrase
-	// isn't broken across a formatted word (e.g., an italicized species name) and the tag markup
-	// itself isn't matchable. Only this whitelist is stripped, so literal angle brackets in a value
-	// stay searchable.
-	_searchFormattingTagRE: /<\/?(?:i|b|sub|sup)>|<span (?:style="font-variant:small-caps;"|class="nocase")>|<\/span>/g,
-
-
-	/**
-	 * Normalize a string to a case- and accent-insensitive form for searching
-	 *
-	 * Strips Zotero's supported field formatting tags (see _searchFormattingTagRE), then uses
-	 * Unicode NFKD compatibility decomposition (ICU-backed) to split combining marks off their base
-	 * letters and reduce presentation variants (typographic ligatures, superscripts, full-width
-	 * forms, etc.) to plain ASCII, strips the marks, converts a few non-decomposing letters via
-	 * _searchNormalizeMap, and folds typographic quotes and dashes to their ASCII forms. This is the
-	 * form stored in the normalized search columns and applied to search terms, so that e.g.
-	 * "seance" matches "séance", "x2" matches "x²", and "children's" matches a curly apostrophe.
-	 *
-	 * If you change this function or _searchNormalizeMap, add a userdata migration step that
-	 * re-normalizes existing rows whose raw value contains the affected characters (scan with
-	 * GLOB/LIKE).
-	 *
-	 * @param {String} str
-	 * @return {String}
-	 */
-	normalizeForSearch: function (str) {
-		if (!str) {
-			return str;
-		}
-		let map = Zotero.Utilities.Internal._searchNormalizeMap;
-		// Strip supported formatting tags so they don't break phrase matches or match themselves
-		if (str.includes('<')) {
-			str = str.replace(Zotero.Utilities.Internal._searchFormattingTagRE, '');
-		}
-		return str.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-			.replace(/[\u00f8\u0153\u00e6\u0142\u0111\u00f0\u00fe\u00df\u0131\u2044]/g, c => map[c])
-			// Fold typographic quotes and dashes to their ASCII forms, which NFKD leaves alone, so
-			// curly quotes and en/em dashes in stored text (from a word processor or translator)
-			// match the straight quotes and hyphens typed in a search. Dashes all fold to a single
-			// hyphen, since that's what a search is typed with.
-			.replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'")
-			.replace(/[\u201c\u201d\u201e\u201f\u2033]/g, '"')
-			.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
-			// Recompose (NFC) so kana and Hangul that NFKD split apart -- が into か + dakuten,
-			// 한 into jamo -- are put back together. Otherwise their decomposed forms would
-			// substring-match shorter ones under LIKE/instr (か matching が, 하 matching 한). Latin
-			// folding is unaffected: its diacritics were already stripped above, so nothing is
-			// left to recompose.
-			.normalize('NFC');
-	},
-
-
-	/**
-	 * Compute the value to store in a normalized search column for a given source value
-	 *
-	 * Returns the normalized form only when normalizing changes more than the case of ASCII letters,
-	 * which is all SQLite's default LIKE folds; otherwise returns null, so the bulk of plain-ASCII
-	 * values cost nothing and queries fall back to the raw column via COALESCE. A value with folded
-	 * diacritics, folded forms, or non-ASCII case (Greek, Cyrillic, ...) that LIKE wouldn't fold is
-	 * stored, so a normalized search term still matches it.
-	 *
-	 * @param {String} value
-	 * @return {String|null}
-	 */
-	normalizeForSearchStorage: function (value) {
-		if (typeof value != 'string' || !value) {
-			return null;
-		}
-		let normalized = Zotero.Utilities.Internal.normalizeForSearch(value);
-		// Lowercasing only the ASCII letters, so the comparison treats a case difference as
-		// significant unless LIKE would fold it
-		let asciiLowercased = value.replace(/[A-Z]/g, c => c.toLowerCase());
-		return normalized === asciiLowercased ? null : normalized;
-	},
-
 	/**
 	 * Run a function on chunks of a given size of an array's elements.
 	 *
@@ -482,13 +388,13 @@ Zotero.Utilities.Internal = {
 	},
 	
 	containsEmoji: function (str) {
-		let re = /\p{RGI_Emoji}|[[\p{Extended_Pictographic}[\p{So}&&[☀-➿\u{1F000}-\u{1FAFF}]]]--[©®™\u{1F1E6}-\u{1F1FF}]]/gv;
+		let re = /\p{RGI_Emoji}|\p{Extended_Pictographic}/gv;
 		return !!str.match(re);
 	},
 
 	includesEmoji: function (str) {
 		// Remove emoji, Zero Width Joiner, and Variation Selector-16 and compare lengths
-		const re = /(?:(?:\p{RGI_Emoji}|[[\p{Extended_Pictographic}[\p{So}&&[☀-➿\u{1F000}-\u{1FAFF}]]]--[©®™\u{1F1E6}-\u{1F1FF}]])(?!\uFE0F)|.\uFE0F)+/gv;
+		const re = /(?:(?:\p{RGI_Emoji}|\p{Extended_Pictographic})(?!\uFE0F)|.\uFE0F)+/gv;
 		return str.replace(re, '').length !== str.length;
 	},
 	
@@ -550,8 +456,9 @@ Zotero.Utilities.Internal = {
 	 * @param {nsIURI} uri URL
 	 * @param {nsIFile|string path} target file
 	 * @param {Object} [headers]
+	 * @param {Zotero.CookieSandbox} [cookieSandbox]
 	 */
-	saveURI: function (wbp, uri, target, headers) {
+	saveURI: function (wbp, uri, target, headers, cookieSandbox) {
 		Zotero.warn("Zotero.Utilities.Internal.saveURI() is deprecated -- use Zotero.HTTP.download()");
 		
 		// Handle gzip encoding
@@ -569,6 +476,11 @@ Zotero.Utilities.Internal = {
 		
 		if (headers) {
 			headers = Object.keys(headers).map(x => x + ": " + headers[x]).join("\r\n") + "\r\n";
+		}
+		
+		// Untested
+		if (cookieSandbox) {
+			cookieSandbox.attachToInterfaceRequestor(wbp.progressListener);
 		}
 		
 		// TODO: Check/fix cookie stuff
@@ -926,6 +838,12 @@ Zotero.Utilities.Internal = {
 	},
 	
 	blobToText: async function (blob, charset = null) {
+		if (!charset) {
+			var matches = blob.type && blob.type.match(/charset=([a-z0-9\-_+])/i);
+			if (matches) {
+				charset = matches[1];
+			}
+		}
 		return new Promise(function (resolve) {
 			let fr = new FileReader();
 			fr.addEventListener("loadend", function () {
@@ -1425,11 +1343,13 @@ Zotero.Utilities.Internal = {
 	 * Run translation on a Document to try to find a PDF URL
 	 *
 	 * @param {Document} doc
+	 * @param {Zotero.CookieSandbox} cookieSandbox
 	 * @return {{ title: string, url: string } | false} - PDF attachment title and URL, or false if none found
 	 */
-	getFileFromDocument: async function (doc) {
+	getFileFromDocument: async function (doc, { cookieSandbox } = {}) {
 		let translate = new Zotero.Translate.Web();
 		translate.setDocument(doc);
+		translate.setCookieSandbox(cookieSandbox);
 		var translators = await translate.getTranslators();
 		// TEMP: Until there's a generic webpage translator
 		if (!translators.length) {
@@ -1557,18 +1477,7 @@ Zotero.Utilities.Internal = {
 	},
 	
 	
-	/**
-	 * Resolve `locale` to the best-fit entry in `locales`.
-	 *
-	 * @param {String} locale
-	 * @param {String[]} locales
-	 * @param {Object} [options]
-	 * @param {Boolean} [options.silent=false] - Suppress the not-found logError
-	 *     and return null instead of throwing when no match exists.
-	 * @return {String|null}
-	 */
-	resolveLocale: function (locale, locales, options = {}) {
-		let { silent = false } = options;
+	resolveLocale: function (locale, locales) {
 		// If the locale exists as-is, use it
 		if (locales.includes(locale)) {
 			return locale;
@@ -1586,10 +1495,9 @@ Zotero.Utilities.Internal = {
 		// If none, use en-US
 		if (!possibleLocales.length) {
 			if (!locales.includes('en-US')) {
-				if (silent) return null;
 				throw new Error("Locales not available");
 			}
-			if (!silent) Zotero.logError(`Locale ${locale} not found`);
+			Zotero.logError(`Locale ${locale} not found`);
 			return 'en-US';
 		}
 		
@@ -1817,10 +1725,7 @@ Zotero.Utilities.Internal = {
 			let win = enumerator.getNext();
 			win.focus();
 			if (paneID) {
-				win.Zotero_Preferences.navigateToPane(paneID, {
-					scrollTo: options.scrollTo,
-					action: options.action,
-				});
+				win.Zotero_Preferences.navigateToPane(paneID, { scrollTo: options.scrollTo });
 			}
 			return win;
 		}
@@ -1828,7 +1733,6 @@ Zotero.Utilities.Internal = {
 		let io = {
 			pane: paneID,
 			scrollTo: options.scrollTo,
-			action: options.action,
 		};
 		let args = [
 			'chrome://zotero/content/preferences/preferences.xhtml',
@@ -2117,7 +2021,7 @@ Zotero.Utilities.Internal = {
 	 */
 	makeClassEventDispatcher: function (cls) {
 		cls.prototype._events = null;
-		cls.prototype.runListeners = async function (event, ...args) {
+		cls.prototype.runListeners = async function (event) {
 			// Zotero.debug(`Running ${event} listeners on ${cls.toString()}`);
 			if (!this._events) this._events = {};
 			if (!this._events[event]) {
@@ -2130,7 +2034,7 @@ Zotero.Utilities.Internal = {
 			// at the time of runListeners() call to prevent triggering listeners that are added right
 			// runListeners() invocation
 			for (let [listener, once] of Array.from(this._events[event].listeners.entries())) {
-				await Promise.resolve(listener.call(this, ...args));
+				await Promise.resolve(listener.call(this));
 				if (once) {
 					this._events[event].listeners.delete(listener);
 				}
@@ -2195,12 +2099,224 @@ Zotero.Utilities.Internal = {
 
 	
 	/**
-	 * @deprecated Use generateHTMLFromTemplate() from modules/templates.mjs
+	 * Splits a string by outer-most brackets (`{{` and '}}' by default, configurable).
+	 *
+	 * @param {string} input - The input string to split.
+	 * @returns {string[]} An array of strings split by outer-most brackets.
+	 */
+	splitByOuterBrackets: function (input, left = '{{', right = '}}') {
+		const result = [];
+		let startIndex = 0;
+		let depth = 0;
+
+		for (let i = 0; i < input.length; i++) {
+			if (input.slice(i, i + 2) === left) {
+				if (depth === 0) {
+					result.push(input.slice(startIndex, i));
+					startIndex = i;
+				}
+				depth++;
+			}
+			else if (input.slice(i, i + 2) === right) {
+				depth--;
+				if (depth === 0) {
+					result.push(input.slice(startIndex, i + 2));
+					startIndex = i + 2;
+				}
+			}
+		}
+
+		if (startIndex < input.length) {
+			result.push(input.slice(startIndex));
+		}
+
+		return result;
+	},
+
+	/**
+	 * A basic templating engine
+	 *
+	 * - 'if' statement does case-insensitive string comparison
+	 * -  functions can be called from if statements but must be wrapped in {{}} if arguments are passed (e.g. {{myFunction arg1="foo" arg2="bar"}})
+	 *
+	 * Vars example:
+	 *  {
+	 * 	  color: '#ff6666',
+	 * 	  highlight: '<span class="highlight">This is a highlight</span>,
+	 *    comment: 'This is a comment',
+	 *    citation: '<span class="citation">(Author, 1900)</citation>',
+	 *    image: '<img src="…"/>',
+	 *    tags: (attrs) => ['tag1', 'tag2'].map(tag => tag.name).join(attrs.join || ' ')
+	 *  }
+	 *
+	 * Template example:
+	 *  {{if color == '#ff6666'}}
+	 *    <h2>{{highlight}}</h2>
+	 *  {{elseif color == '#2ea8e5'}}
+	 *    {{if comment}}<p>{{comment}}:</p>{{endif}}<blockquote>{{highlight}}</blockquote><p>{{citation}}</p>
+	 *  {{else}}
+	 *    <p>{{highlight}} {{citation}} {{comment}} {{if tags}} #{{tags join=' #'}}{{endif}}</p>
+	 *  {{endif}}
+	 *
+	 * @param {String} template
+	 * @param {Object} vars
+	 * @returns {String} HTML
 	 */
 	generateHTMLFromTemplate: function (template, vars) {
-		Zotero.debug("Zotero.Utilities.Internal.generateHTMLFromTemplate() is deprecated -- use modules/templates.mjs");
-		let { generateHTMLFromTemplate } = ChromeUtils.importESModule("chrome://zotero/content/modules/templates.mjs");
-		return generateHTMLFromTemplate(template, vars);
+		const hyphenToCamel = varName => varName.replace(/-(.)/g, (_, g1) => g1.toUpperCase());
+
+		const getAttributes = (part) => {
+			let attrsRegexp = new RegExp(/(([\w-]*) *=+ *(['"])((\\\3|[^\3])*?)\3)/g);
+			let attrs = {};
+			let match;
+			while ((match = attrsRegexp.exec(part))) {
+				if (match[1]) { // if first alternative (i.e. argument with value wrapped in " or ') matched, even if value is empty
+					attrs[hyphenToCamel(match[2])] = match[4];
+				}
+			}
+			return attrs;
+		};
+
+		
+		const evaluateIdentifier = (ident, args = {}) => {
+			ident = hyphenToCamel(ident);
+
+			if (!(ident in vars)) {
+				return '';
+			}
+
+			const identValue = typeof vars[ident] === 'function' ? vars[ident](args) : vars[ident];
+
+			if (Array.isArray(identValue)) {
+				return identValue.length ? identValue.join(',') : '';
+			}
+
+			if (typeof identValue !== 'string') {
+				throw new Error(`Identifier "${ident}" does not evaluate to a string`);
+			}
+			
+			return identValue;
+		};
+		
+		// evaluates extracted (i.e. without brackets) statement (e.g. `sum a="1" b="2"`) into a string value
+		const evaluateStatement = (statement) => {
+			statement = statement.trim();
+			const operator = statement.split(' ', 1)[0].trim();
+			const args = statement.slice(operator.length).trim();
+
+			return evaluateIdentifier(operator, getAttributes(args));
+		};
+
+		// splits raw (i.e. bracketed) statement (e.g. `{{ sum a="1" b="2" }}) into operator and arguments (e.g. ['sum', 'a="1" b="2"'])
+		const splitStatement = (statement) => {
+			statement = statement.slice(2, -2).trim();
+			const operator = statement.split(' ', 1)[0].trim();
+			const args = statement.slice(operator.length).trim();
+			return [operator, args];
+		};
+
+		// We allow unquoted numbers in conditions, e.g. `a == 1` or `a == 1.0`  but not `a == 1.0.0` or `a == 1st edition`
+		const asNumber = (string) => {
+			if (typeof string === 'number') {
+				return string;
+			}
+			const number = parseFloat(string);
+			if (!Number.isNaN(number) && string?.trim().match(/^[+-]?\d+(\.\d+)?$/)) {
+				return number;
+			}
+			return null;
+		};
+
+		// evaluates a condition (e.g. `a == "b"`) into a boolean value
+		const evaluateCondition = (condition) => {
+			const comparators = ['==', '!=', "<=", ">=", '<', '>'];
+			condition = condition.trim();
+			
+			// Regular expression breakdown for condition matching:
+			// - `match[1]`: Left operand if it's a statement enclosed in `{{...}}`.
+			// - `match[3]`: Left operand if it's a string literal, extracted without quotes.
+			// - `match[4]`: Left operand if it's a standalone identifier (e.g., a variable) or a number
+			// - `match[6]`: Right operand if it's a statement enclosed in `{{...}}`.
+			// - `match[8]`: Right operand if it's a string literal, extracted without quotes.
+			// - `match[9]`: Right operand if it's a standalone identifier or a number.
+			// - `match[2]` and `match[7]`: Captured quotes around string literals, used to ensure matching pairs.
+			// - `match[5]`: The comparator (e.g., `==`, `!=`, `<`, `>`, etc.), extracted from `comparators.join('|')`.
+			const match = condition.match(new RegExp(String.raw`(?:{{(.*?)}}|(?:(['"])(.*?)\2)|([^ ]+)) *(${comparators.join('|')}) *(?:{{(.*?)}}|(?:(['"])(.*?)\7)|([^ ]+))`));
+			
+			if (!match) {
+				// condition is a statement or identifier without a comparator
+				if (condition.startsWith('{{')) {
+					const [operator, args] = splitStatement(condition);
+					return !!evaluateIdentifier(operator, getAttributes(args));
+				}
+				return !!evaluateIdentifier(condition);
+			}
+
+			const left = match[1] ? evaluateStatement(match[1]) : match[3] ?? asNumber(match[4]) ?? evaluateIdentifier(match[4]) ?? '';
+			const comparator = match[5];
+			const right = match[6] ? evaluateStatement(match[6]) : match[8] ?? asNumber(match[9]) ?? evaluateIdentifier(match[9]) ?? '';
+
+			switch (comparator) {
+				default:
+				case '==':
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() == right.toLowerCase() : asNumber(left) == asNumber(right);
+				case '!=':
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() != right.toLowerCase() : asNumber(left) != asNumber(right);
+				case ">=":
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() >= right.toLowerCase() : asNumber(left) >= asNumber(right);
+				case "<=":
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() <= right.toLowerCase() : asNumber(left) <= asNumber(right);
+				case '>':
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() > right.toLowerCase() : asNumber(left) > asNumber(right);
+				case '<':
+					return (asNumber(left) === null || asNumber(right === null)) ? left.toLowerCase() < right.toLowerCase() : asNumber(left) < asNumber(right);
+			}
+		};
+
+		let html = '';
+		const levels = [{ condition: true }];
+		const parts = this.splitByOuterBrackets(template);
+
+		for (let i = 0; i < parts.length; i++) {
+			let part = parts[i];
+			let level = levels[levels.length - 1];
+
+			if (part.startsWith('{{')) {
+				const [operator, args] = splitStatement(part);
+			
+				if (operator === 'if') {
+					level = { condition: false, executed: false, parentCondition: levels[levels.length - 1].condition };
+					levels.push(level);
+				}
+				if (['if', 'elseif'].includes(operator)) {
+					if (!level.executed) {
+						level.condition = level.parentCondition && evaluateCondition(args);
+						level.executed = level.condition;
+					}
+					else {
+						level.condition = false;
+					}
+					continue;
+				}
+				else if (operator === 'else') {
+					level.condition = level.parentCondition && !level.executed;
+					level.executed = level.condition;
+					continue;
+				}
+				else if (operator === 'endif') {
+					levels.pop();
+					continue;
+				}
+				if (level.condition) {
+					const attrs = getAttributes(part);
+					html += evaluateIdentifier(operator, attrs);
+				}
+			}
+			else if (level.condition) {
+				html += part;
+			}
+		}
+		return html;
 	},
 
 	/**

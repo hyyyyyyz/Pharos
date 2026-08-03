@@ -28,10 +28,6 @@
 
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
 	let { canRenameFileFromParent, renameFileFromParent } = ChromeUtils.importESModule("chrome://zotero/content/renameFiles.mjs");
 	class AttachmentBox extends ItemPaneSectionElementBase {
 		content = MozXULElement.parseXULToFragment(`
@@ -324,17 +320,12 @@
 		}
 
 		notify(event, _type, ids, _extraData) {
-			if (event == 'modify' && ids.includes(this.item?.parentItem?.id)) {
-				// Ensure the "Rename from Parent" button is visible after the parent item changes (#5542, #5816)
-				if (this.hidden) {
-					this._resetRenderedFlags();
-				}
-				else {
-					this.updateInfo();
-				}
+			if (ids.includes(this.item?.parentItem?.id)) {
+				// Ensure the "Rename from Parent" button is visible after the parent item changes (#5542)
+				this._resetRenderedFlags();
 			}
 			if (event != 'modify' || !this.item?.id || !ids.includes(this.item.id)) return;
-
+			
 			Promise.all([
 				this.updateInfo(),
 				this.updatePreview()
@@ -765,13 +756,7 @@
 
 		_handleTitleBlur = () => {
 			this.item.setField('title', this._id('title').value);
-			this.item.saveTx({
-				undoAction: 'undo-action-edit-field',
-				undoActionArgs: {
-					field: Zotero.ItemFields.getLocalizedString('title'),
-					count: 1
-				}
-			});
+			this.item.saveTx();
 		};
 
 		_handleFileNameFocus = () => {

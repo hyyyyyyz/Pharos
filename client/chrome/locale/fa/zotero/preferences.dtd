@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "همزمان‌‌سازی">
 <!ENTITY zotero.preferences.sync.username "نام کاربری:">
 <!ENTITY zotero.preferences.sync.password "گذرواژه:">
+<!ENTITY zotero.preferences.sync.syncServer "Data Syncing">
+<!ENTITY zotero.preferences.sync.setUpSync "Set Up Syncing">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Unlink Account…">
 <!ENTITY zotero.preferences.sync.createAccount "ساخت حساب کاربری">
 <!ENTITY zotero.preferences.sync.lostPassword "گذرواژه را فراموش کرده‌اید؟">
 <!ENTITY zotero.preferences.sync.syncAutomatically "همزمان‌‌سازی خودکار">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "همزمان‌‌سازی پرونده‌ها">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "آدرس:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "همزمان‌‌سازی پرونده‌های پیوست در کتابخانه با استفاده از ">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "همزمان‌‌سازی پرونده‌های پیوست در کتابخانه‌های گروهی با استفاده از سامانه ذخیره زوترو (Zotero storage)">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "بارگیری پرونده‌ها">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "در زمان همگام‌سازی">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "در صورت نیاز">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verify Server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "با استفاده از سامانه ذخیره زوترو (Zotero storage) می‌پذیرید که تابع">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "شرایط و قوانین آن باشید ">
 <!ENTITY zotero.preferences.sync.librariesToSync "Libraries to Sync">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "انتخاب کتابخانه‌ها...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "همگام‌سازی">

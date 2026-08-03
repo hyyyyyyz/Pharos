@@ -28,13 +28,12 @@
 Services.scriptloader.loadSubScript("chrome://zotero/content/include.js", this);
 Services.scriptloader.loadSubScript("chrome://global/content/customElements.js", this);
 Services.scriptloader.loadSubScript("chrome://zotero/content/elements/base.js", this);
+Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemPaneSection.js', this);
 Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemTreeMenuBar.js', this);
 
 {
 	// https://searchfox.org/mozilla-central/rev/8e885f04a0a4ff6d64ea59741c10d9b8e45d9ff8/toolkit/content/customElements.js#826-832
 	for (let [tag, script] of [
-		['advanced-search-deck', 'chrome://zotero/content/elements/advancedSearchDeck.js'],
-		['advanced-search-pane', 'chrome://zotero/content/elements/advancedSearchPane.js'],
 		['attachment-box', 'chrome://zotero/content/elements/attachmentBox.js'],
 		['attachment-preview', 'chrome://zotero/content/elements/attachmentPreview.js'],
 		['attachment-preview-box', 'chrome://zotero/content/elements/attachmentPreviewBox.js'],
@@ -63,7 +62,6 @@ Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemTreeMe
 		['zoterosearchcondition', 'chrome://zotero/content/elements/zoteroSearch.js'],
 		['zoterosearchtextbox', 'chrome://zotero/content/elements/zoteroSearch.js'],
 		['zoterosearchagefield', 'chrome://zotero/content/elements/zoteroSearch.js'],
-		['item-pane-custom-section', 'chrome://zotero/content/elements/itemPaneCustomSection.js'],
 		['item-pane-header', 'chrome://zotero/content/elements/itemPaneHeader.js'],
 		['editable-text', 'chrome://zotero/content/elements/editableText.js'],
 		['item-pane-sidenav', 'chrome://zotero/content/elements/itemPaneSidenav.js'],
@@ -83,7 +81,6 @@ Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemTreeMe
 		['libraries-collections-box', 'chrome://zotero/content/elements/librariesCollectionsBox.js'],
 		['autocomplete-textarea', 'chrome://zotero/content/elements/autocompleteTextArea.js'],
 		['bubble-input', 'chrome://zotero/content/elements/bubbleInput.js'],
-		['file-renaming-settings', 'chrome://zotero/content/elements/fileRenamingSettings.js']
 	]) {
 		customElements.setElementCreationCallback(tag, () => {
 			Services.scriptloader.loadSubScript(script, window);
@@ -339,89 +336,6 @@ Services.scriptloader.loadSubScript('chrome://zotero/content/elements/itemTreeMe
 	// The menulist CE is defined lazily. Create one now to get menulist defined, so we can patch it
 	if (!customElements.get("menulist")) {
 		delete document.createXULElement("menulist");
-	}
-
-
-	// Space on menulist should open the popup
-	// Space on menulist option will select it, same as Enter
-	document.addEventListener("keydown", async (event) => {
-		let target = event.originalTarget;
-		if (target.tagName !== "menulist") return;
-		if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-		if (event.key !== " ") return;
-
-		if (target.open) {
-			// Simulate blinking of the selected menuitem on macOS (same as on Return keypress)
-			if (Zotero.isMac) {
-				let interval = 70;
-				target.activeChild.removeAttribute("_moz-menuactive");
-				await Zotero.Promise.delay(interval);
-				target.activeChild.setAttribute("_moz-menuactive", true);
-				await Zotero.Promise.delay(interval);
-				target.activeChild.removeAttribute("_moz-menuactive");
-				await Zotero.Promise.delay(interval);
-				target.activeChild.doCommand();
-				target.addEventListener("popuphiding", () => {
-					target.selectedItem.setAttribute("selected", true);
-				}, { once: true });
-				target.open = false;
-			}
-			// No blinking happens on Linux or Windows
-			else {
-				target.activeChild.doCommand();
-				// Timeout to avoid empty context menu behind an alert or dialog if one
-				// appears on 'command' event on Windows (https://github.com/zotero/zotero/issues/5633)
-				setTimeout(() => {
-					target.open = false;
-				});
-			}
-		}
-		else {
-			target.open = true;
-		}
-		event.stopPropagation();
-		event.preventDefault();
-	}, true);
-
-	if (Zotero.isWin) {
-		// ArrowUp/ArrowDown should change the active menuitem without triggering the command event.
-		// Otherwise navigating menulist options via keyboard triggers alerts meant to fire after
-		// a confirmed selection (e.g. language change alert in preferences). Only relevant to Windows.
-		document.addEventListener("keydown", (event) => {
-			let target = event.originalTarget;
-			if (target.tagName !== "menulist") return;
-			if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-			if (!(["ArrowUp", "ArrowDown"].includes(event.key) && target.open)) return;
-			
-			// Locate the deepest open menu
-			let currentMenu = target;
-			while (currentMenu.activeChild?.tagName === "menu" && currentMenu.activeChild.open) {
-				currentMenu = currentMenu.activeChild;
-			}
-
-			// Determine which menu item should be marked as selected
-			let nextItem;
-			// If the menu has no active child, arrowDown will select the first item
-			if (!currentMenu.activeChild) {
-				if (event.key !== "ArrowDown") return;
-				nextItem = currentMenu.querySelector("menuitem,menu");
-			}
-			// If there is an active child, arrowUp/Down will move to the previous/next item
-			else {
-				let node = currentMenu.activeChild;
-				do {
-					node = event.key === "ArrowUp" ? node.previousElementSibling : node.nextElementSibling;
-				} while (node && !["menu", "menuitem"].includes(node.tagName));
-				nextItem = node;
-			}
-
-			// Set the item as active to highlight it
-			if (nextItem) {
-				currentMenu.activeChild = nextItem;
-			}
-			// Prevent the default event handling which fires the 'command' event
-			event.stopImmediatePropagation();
-		}, true);
 	}
 
 	// inject custom CSS into FF built-in custom elements

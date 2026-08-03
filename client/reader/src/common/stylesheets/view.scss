@@ -1,29 +1,3 @@
-@import 'abstracts/mixins';
-
 html, body {
-	margin: 0;
-	padding: 0;
-	height: 100%;
-	touch-action: none;
-	pointer-events: none;
 	overscroll-behavior: none;
-}
-
-#view {
-	position: absolute;
-	inset:
-		var(--safe-area-inset-top, 0px)
-		var(--safe-area-inset-right, 0px)
-		var(--safe-area-inset-bottom, 0px)
-		var(--safe-area-inset-left, 0px);
-	overflow: hidden;
-
-	> iframe {
-		border: 0;
-		// Not setting width/height: 100% here prevents the iframe from
-		// resizing automatically when the container resizes (e.g., during
-		// toolbar show/hide), letting us debounce the resize instead.
-		pointer-events: auto;
-		@include handle-mask-resizing;
-	}
 }

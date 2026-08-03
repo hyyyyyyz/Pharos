@@ -111,8 +111,3 @@ export function isVertical(node: Node): boolean {
 	}
 	return getComputedStyle(el).writingMode.startsWith('vertical-');
 }
-
-export function getLang(node: Node): string {
-	return closestElement(node)?.closest('[lang]')
-		?.getAttribute('lang') || 'en';
-}

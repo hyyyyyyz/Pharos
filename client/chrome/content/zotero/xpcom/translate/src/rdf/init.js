@@ -37,11 +37,7 @@ var $rdf = {
 	log: Zotero.debug
 };
 
-if (typeof globalThis !== 'undefined') {
-	globalThis.$rdf = $rdf;
-}
-
-if (typeof module === 'object' && module.exports) {
+if (typeof process === 'object' && process + '' === '[object process]'){
 	module.exports = $rdf;
 	$rdf.Util = require('./uri');
 	$rdf = Object.assign($rdf, require('./term'));

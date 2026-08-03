@@ -24,12 +24,6 @@ delete-or-backspace =
         [macos] Delete
        *[other] Backspace
     }
--os-name =
-    { PLATFORM() ->
-        [macos] macOS
-        [windows] Windows
-       *[other] Linux
-    }
 general-print = Skriv ut
 general-remove = Fjern
 general-add = Legg til
@@ -40,21 +34,16 @@ general-open-settings = Åpne innstillinger
 general-settings = Innstillinger…
 general-help = Hjelp
 general-tag = Emneord
-general-got-it = Forstått
 general-done = Ferdig
 general-view-troubleshooting-instructions = Se instruksjoner for feilsøking
 general-go-back = Gå tilbake
 general-accept = Aksepter
 general-cancel = Avbryt
-cancel-button =
-    .label = { general-cancel }
 general-show-in-library = Vis i bibliotek
 general-restartApp = Start { -app-name } på nytt
 general-restartInTroubleshootingMode = Start på nytt i feilsøkingsmodus
 general-save = Lagre
 general-clear = Fjern
-clear-button =
-    .label = { general-clear }
 general-update = Oppdater
 general-back = Tilbake
 general-edit = Rediger
@@ -69,9 +58,8 @@ general-et-al = et al.
 general-previous = Forrige
 general-next = Neste
 general-learn-more = Lær mer
-general-more-information = Mer informasjon
 general-warning = Advarsel
-general-type-to-continue = Skriv «{ $text }» for å fortsette.
+general-type-to-continue = Skriv “{ $text }” for å fortsette.
 general-continue = Fortsett
 general-red = Rød
 general-orange = Oransje
@@ -86,8 +74,6 @@ general-maroon = Rødbrun
 general-gray = Grå
 general-black = Svart
 general-loading = Laster inn...
-db-checking-integrity = Checking database integrity…
-db-repairing = Repairing database…
 citation-style-label = Henvisningsstil:
 language-label = Språk:
 menu-custom-group-submenu =
@@ -135,7 +121,7 @@ menu-view-columns-move-left =
 menu-view-columns-move-right =
     .label = Flytt kolonne til høyre
 menu-view-hide-context-annotation-rows =
-    .label = Skjul kommentarer uten treff
+    .label = Hide Non-Matching Annotations
 menu-view-note-font-size =
     .label = Skriftstørrelse for notat
 menu-view-note-tab-font-size =
@@ -169,115 +155,14 @@ zotero-toolbar-tabs-scroll-backwards =
     .title = Rull bakover
 toolbar-add-attachment =
     .tooltiptext = { add-attachment }
-recently-read = Nettopp lest
-collections-menu-show-recently-read =
-    .label = Vis { recently-read }
-item-menu-remove-from-recently-read =
-    .label = Fjern fra { recently-read }…
-items-section-collections-selected =
-    { $count ->
-        [one] { $count } samling valgt
-       *[other] { $count } samlinger valgt
-    }
-items-section-searches-selected =
-    { $count ->
-        [one] { $count } valgt lagret søk
-       *[other] { $count } valgte lagrede søk
-    }
-items-section-sources-selected =
-    { $count ->
-        [one] { $count } kilde valgt
-       *[other] { $count } kilder valgt
-    }
-items-section-library-collections =
-    { $count ->
-        [one] { $library } ({ $count } valgt samling)
-       *[other] { $library } ({ $count } valgte samlinger)
-    }
-items-section-library-searches =
-    { $count ->
-        [one] { $library } ({ $count } valgt lagret søk
-       *[other] { $library } ({ $count } valgte lagrede søk)
-    }
-items-section-library-sources =
-    { $count ->
-        [one] { $library } ({ $count } kilde valgt)
-       *[other] { $library } ({ $count } kilder valgt)
-    }
-items-section-library-recently-read = { $library } ({ recently-read })
-items-section-library = { $library }
-collections-menu-rename =
-    .label = Endre navn
-edit-saved-search = Rediger lagret søk
-collections-menu-edit-search =
-    .label = Rediger søk
-collections-menu-duplicate-search =
-    .label = Dupliser søk
+collections-menu-rename-collection =
+    .label = Endre navn på samlingen
+collections-menu-edit-saved-search =
+    .label = Rediger lagret søk
 collections-menu-move-collection =
     .label = Flytt til
 collections-menu-copy-collection =
     .label = Kopier til
-collections-menu-export =
-    .label = Eksporter...
-collections-menu-generate-report =
-    .label = Opprett rapport…
-collections-menu-create-bibliography =
-    .label = Opprett bibliografi…
-collections-menu-unsubscribe =
-    .label = Avslutt abonnement…
-collections-menu-delete =
-    .label =
-        { $count ->
-            [one] Slett samling…
-           *[other] Slett samlinger…
-        }
-collections-menu-delete-with-items =
-    .label =
-        { $count ->
-            [one] Slett samling og elementer…
-           *[other] Slett samlinger og elementer…
-        }
-collections-menu-delete-search =
-    .label =
-        { $count ->
-            [one] Slett søk…
-           *[other] Slett søk…
-        }
-collections-delete-title =
-    { $count ->
-        [one] Slett samling
-       *[other] Slett samlinger
-    }
-collections-delete-message =
-    { $count ->
-        [one] Er du sikker på at du vil slette denne samlingen?
-       *[other] Er du sikker på at du vil slette { $count } samlinger?
-    }
-collections-delete-keep-items =
-    { $count ->
-        [one] Elementer i denne samlingen vil ikke bli slettet.
-       *[other] Elementer i disse samlingene vil ikke bli slettet.
-    }
-collections-delete-with-items-title =
-    { $count ->
-        [one] Slett samling og elementer
-       *[other] Slett samlinger og elementer
-    }
-collections-delete-with-items-message =
-    { $count ->
-        [one] Er du sikker på at du vli slette denne samlingen og flytte alle elementene i den til søppelkorgen?
-       *[other] Er du sikker på at du vil slette { $count } samlinger og flytte alle elementer i de til søppelkorgen?
-    }
-collections-delete-search-title =
-    { $count ->
-        [one] Slett søk
-       *[other] Slett søk
-    }
-collections-delete-search-message =
-    { $count ->
-        [one] Er du sikker på at du vil slette dette søket?
-       *[other] Er du sikker på at du vil slette { $count } søk?
-    }
 item-creator-moveDown =
     .label = Flytt ned
 item-creator-moveToTop =
@@ -385,21 +270,17 @@ import-online-intro = I neste trinn blir du bedt om å logge inn på { $targetAp
 import-online-intro2 = { -app-name } vil aldri se eller lagre passordet ditt { $targetApp }.
 import-online-form-intro = Vennligst skriv inn påloggingsinformasjonen din for å logge på { $targetAppOnline }. Dette er nødvendig for å importere { $targetApp }-biblioteket ditt til { -app-name }.
 import-online-wrong-credentials = Innlogging til { $targetApp } mislyktes. Vennligst skriv inn påloggingsinformasjonen på nytt og prøv igjen.
-import-online-blocked-by-plugin = Importen kan ikke fortsette med { $plugin } installert. Deaktiver dette programtillegget og prøv på nytt.
+import-online-blocked-by-plugin = Importen kan ikke fortsette med { $plugin } installert. Deaktiver denne program-tillegget og prøv på nytt.
 import-online-relink-only =
     .label = Koble sammen igjen Mendeley Desktop henvisninger
-import-online-relink-kb = { general-more-information }
+import-online-relink-kb = Mer informasjon
 import-online-connection-error = { -app-name } kunne ikke koble til { $targetApp }. Kontroller Internett-tilkoblingen din og prøv igjen.
-tab-title-multiple-collections = Flere
 items-table-cell-notes =
     .aria-label =
         { $count ->
             [one] { $count } Notat
            *[other] { $count } Notater
         }
-items-column-added-by = Lagt til av
-items-column-modified-by = Endret av
-items-column-last-read = Sist lest
 report-error =
     .label = Rapporter feil…
 rtfScan-wizard =
@@ -573,7 +454,7 @@ section-attachments-annotations =
             [one] { $count } kommentar
            *[other] { $count } kommentarer
         }
-section-attachments-move-to-trash-message = Er du sikker på at du vil flytte «{ $title }» til søppelkorgen?
+section-attachments-move-to-trash-message = Er du sikker på at du vil flytte “{ $title }” til søppelkorgen?
 section-notes =
     .label =
         { $count ->
@@ -713,9 +594,16 @@ item-title-empty-note = Notat uten tittel
 attachment-preview-placeholder = Intet vedlegg å forhåndsvise
 attachment-rename-from-parent =
     .tooltiptext = Endre navn på fil for å samsvare med overordnet element
-account-log-in = Logg inn
-account-not-logged-in-text = Logg inn på Zotero-kontoen din for å synkronisere dataene dine.
-account-error-login-session-expired = Påloggingsøkten din har utløpt. Prøv på nytt.
+file-renaming-auto-rename-prompt-title = Innstillinger for å endre navn er endret
+file-renaming-auto-rename-prompt-body = Ønsker du å endre navn på eksisterende filer i ditt bibliotek for å samsvare med de nye innstliingene?
+file-renaming-auto-rename-prompt-yes = Forhåndsvis endringer…
+file-renaming-auto-rename-prompt-no = Behold ekisterende filnavn
+rename-files-preview =
+    .buttonlabelaccept = Endre navn på filene
+rename-files-preview-loading = Laster inn...
+rename-files-preview-intro = { -app-name } vil endre navn på de følgende filene i ditt bibliotek for å samsvare med overordnede elementer:
+rename-files-preview-renaming = Endrer navn…
+rename-files-preview-no-files = Alle filnavn samsvarer allerede med overordnede elementer. Ingen endringer er nødvendige.
 toggle-preview =
     .label =
         { $type ->
@@ -730,18 +618,6 @@ quicksearch-input =
     .aria-label = Hurtigsøk
     .placeholder = { $placeholder }
     .aria-description = { $placeholder }
-advanced-search = Avansert søk
-menuitem-advanced-search =
-    .label = { advanced-search }
-quicksearch-advanced-search-button =
-    .tooltiptext = { advanced-search }
-    .aria-label = { advanced-search }
-advanced-search-close =
-    .tooltiptext = Lukk avansert søk
-advanced-search-expand =
-    .tooltiptext = Utvid avansert søk
-advanced-search-collapse =
-    .tooltiptext = Skjul avansert søk
 item-pane-header-view-as =
     .label = Vis som
 item-pane-header-none =
@@ -799,66 +675,10 @@ architecture-warning-action = Last ned 64-bit { -app-name }
 architecture-x64-on-arm64-message = { -app-name } kjører i emulert modus. En plattformavhengig versjon av { -app-name } vil kjøre mer effektivt.
 architecture-x64-on-arm64-action = Last ned { -app-name } for ARM64
 first-run-guidance-authorMenu = { -app-name } kan du også angi redaktører og oversettere. Du kan gjøre en forfatter om til en redaktør eller oversetter ved å velge fra denne menyen.
-first-run-guidance-readAloud = { -app-name } kan nå lese dokumentene dine for deg ved hjelp av naturlige stemmer.
 advanced-search-remove-btn =
-    .tooltiptext = Fjern betingelse
+    .tooltiptext = { general-remove }
 advanced-search-add-btn =
-    .tooltiptext = Legg til betingelse
-advanced-search-group-btn =
-    .tooltiptext = Legg til gruppebetingelse
-advanced-search-remove-group-btn =
-    .tooltiptext = Fjern gruppe
-advanced-search-ungroup-btn =
-    .tooltiptext = Opphev gruppering av betingelser
-advanced-search-result-level-menu =
-    .aria-label = Resultattype
-advanced-search-result-level-prefix-root =
-    .value = Finn
-advanced-search-join-prefix-root =
-    .value = finner
-advanced-search-result-level-any =
-    .label = et hvilket som helst element
-advanced-search-result-level-item =
-    .label = Overordnede elementer
-advanced-search-result-level-attachment =
-    .label = vedlegg
-advanced-search-result-level-note =
-    .label = notater
-advanced-search-result-level-annotation =
-    .label = kommentarer
-advanced-search-binding-menu =
-    .aria-label = Finn mot samme element
-advanced-search-binding-separate =
-    .label = separat
-advanced-search-binding-same-attachment =
-    .label = i samme vedlegg
-advanced-search-binding-same-note =
-    .label = i samme notat
-advanced-search-binding-same-annotation =
-    .label = i samme kommentar
-advanced-search-of-the-following =
-    .value = av følgende
-advanced-search-binding-hint-attachment =
-    .value = Disse betingelsene kan samsvare med separate vedlegg.
-advanced-search-binding-hint-note =
-    .value = Disse betingelsene kan samsvare med separate notater.
-advanced-search-binding-hint-annotation =
-    .value = Disse betingelsene kan samsvare med separate kommentarer.
-advanced-search-level-warning-mixed = Disse betingelsene kan ikke alle samsvare med samme element, så dette søket vil aldri gi noen resultater. Prøv å søke på «{ $matchAny }» blant dem, eller sett resultattypen til «{ $topLevelItems }».
-advanced-search-level-warning-unreachable = Dette søket inneholder et søkevilkår som ikke kan brukes på den valgte resultattypen. Angi resultattypen til «{ $topLevelItems }», eller fjern det uforenlige søkevilkåret.
-advanced-search-group-warning-unreachable =
-    En betingelse her kan ikke forekomme i samme { $entity ->
-        [attachment] vedlegg
-        [note] notat
-       *[annotation] kommentar
-    }. Sammenlign disse separat, eller fjern den uforenlige betingelsen.
-advanced-search-group-warning-mixed = Disse betingelsene kan ikke alle samsvare med samme element, så denne gruppen vil aldri gi treff. Prøv å søke etter «{ $matchAny }» blant dem, eller sett resultattypen til «{ $topLevelItems }».
-advanced-search-bind-same-attachment =
-    .label = Finn det samme vedlegget
-advanced-search-bind-same-note =
-    .label = Finn det samme notatet
-advanced-search-bind-same-annotation =
-    .label = Finn den samme kommentaren
+    .tooltiptext = { general-add }
 advanced-search-conditions-menu =
     .aria-label = Søketilstand
     .label = { $label }
@@ -868,55 +688,6 @@ advanced-search-operators-menu =
 advanced-search-condition-input =
     .aria-label = Verdi
     .label = { $label }
-search-operator-isEmpty = is empty
-search-operator-isNotEmpty = is not empty
-search-conditions-tooltip-fields = Felter:
-search-conditions-collection = Samling
-search-conditions-savedSearch = Lagret søk
-search-conditions-itemTypeID = Elementtype
-search-conditions-tag = Emneord
-search-conditions-numTags = # of Tags
-search-conditions-numNotes = # of Notes
-search-conditions-numAttachments = # of Attachments
-search-conditions-numAnnotations = # of Annotations
-search-conditions-note = Notat
-search-conditions-childNote = Underordnet notat
-search-conditions-creator = Opphaver
-search-conditions-thesisType = Avhandlingstype
-search-conditions-reportType = Rapporttype
-search-conditions-videoRecordingFormat = Video-opptak format
-search-conditions-audioFileType = Lydfil-type
-search-conditions-audioRecordingFormat = Lyd-opptak format
-search-conditions-letterType = Brevtype
-search-conditions-interviewMedium = Intervjumedium
-search-conditions-manuscriptType = Manuskripttype
-search-conditions-presentationType = Presentasjonstype
-search-conditions-mapType = Karttype
-search-conditions-artworkMedium = Kunstmedium
-search-conditions-dateModified = Dato endret
-search-conditions-fulltextContent = Vedleggsinnhold
-search-conditions-programmingLanguage = Programmeringsspråk
-search-conditions-fileTypeID = Vedleggets filtype
-search-conditions-attachmentStorageType = Attachment Storage Type
-search-conditions-lastRead = Vedlegg sist lest
-search-conditions-annotationText = Kommentartekst
-search-conditions-annotationComment = Merknad til kommentar
-search-conditions-annotationType = Type kommentar
-search-conditions-annotationColor = Farge kommentar
-search-conditions-annotationAuthor = Forfatter kommentar
-search-conditions-anyField = Hvilket som helst felt
-search-conditions-titleCreatorYear = Tittel, opphaver, år
-search-conditions-submenu-attachment = Vedlegg
-search-conditions-submenu-annotation = Kommentar
-search-conditions-short-fulltextContent = Innhold
-search-conditions-short-fileTypeID = Filtype
-search-conditions-short-attachmentStorageType = Storage Type
-search-conditions-short-lastRead = Sist lest
-search-conditions-short-annotationText = Tekst
-search-conditions-short-annotationComment = Merknad
-search-conditions-short-annotationType = Type
-search-conditions-short-annotationColor = Farge
-search-conditions-short-annotationAuthor = Forfatter
 find-pdf-files-added =
     { $count ->
         [one] { $count } fil lagt til
@@ -948,9 +719,6 @@ file-type-video = Video
 file-type-presentation = Presentasjon
 file-type-document = Dokument
 file-type-ebook = E-bok
-attachment-storage-type-storedFile = Stored File
-attachment-storage-type-linkedFile = Linked File
-attachment-storage-type-webLink = Web Link
 post-upgrade-message = Du har blitt oppgradert til <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! Lær om <a data-l10n-name="new-features-link">hva som er nytt </a>
 post-upgrade-remind-me-later =
     .label = { general-remind-me-later }
@@ -959,23 +727,18 @@ post-upgrade-done =
 text-action-paste-and-search =
     .label = Lim inn og søk
 mac-word-plugin-install-message = Zotero trenger tilgang til Word-data for å installere Word-programtillegget.
-mac-word-plugin-install-folder-message = { -app-name }  trenger tilgang til oppstartmappen til Word for å installere Word-programtillegget.
 mac-word-plugin-install-action-button =
     .label = Installer Word-programtillegget
 mac-word-plugin-install-remind-later-button =
     .label = { general-remind-me-later }
 mac-word-plugin-install-dont-ask-again-button =
     .label = { general-dont-ask-again }
-mac-word-plugin-install-folder-dialog-title = Installer programtillegget i oppstartmappen til Word
-mac-word-plugin-install-folder-dialog-button = Installer
-mac-word-plugin-install-wrong-folder-selected = Den foreslåtte mappen må velges. Prøv på nytt uten å velge en annen mappe.
 file-renaming-banner-message = { -app-name } synkroniserer nå automatisk filnavnene på vedlegg når du gjør endringer i elementene.
 file-renaming-banner-documentation-link = { general-learn-more }
 file-renaming-banner-settings-link = { general-settings }
 connector-version-warning = { -app-name } Tilknytter må oppdateres for å fungere med denne versjonen av { -app-name }.
 userjs-pref-warning = Noen { -app-name }-innstillinger er blitt overskrevet ved hjelp av en metode som ikke støttes. { -app-name } vil tilbakestille dem og starte på nytt.
 migrate-extra-fields-progress-message = Migrerer nye felt fra Ekstra-feltet
-search-normalization-progress-message = Indexing items for search
 long-tag-fixer-window-title =
     .title = Del opp emneord
 long-tag-fixer-button-dont-split =
@@ -986,148 +749,6 @@ normalize-attachment-titles-title = Normaliser vedleggstitler
 normalize-attachment-titles-text =
     { -app-name } endrer automatisk navn på filer på disken ved hjelp av metadata fra overordnet element, men bruker separate, enklere titler som «Fulltekst-PDF», «Preprint-PDF» eller «PDF» for primære vedlegg for å holde elementlisten ryddigere og unngå duplisering av informasjon.
     
-    I eldre versjoner av { -app-name }, samt ved bruk av visse programtillegg, kunne vedleggstitler endres unødvendig for å samsvare med filnavnene.
+    I eldre versjoner av { -app-name }, samt ved bruk av visse plugins, kunne vedleggstitler endres unødvendig for å samsvare med filnavnene.
     
     Ønsker du å oppdatere de valgte vedleggene for å bruke enklere titler? Bare primære vedlegg med titler som samsvarer med filnavnet vil bli endret.
-banner-close-button =
-    .aria-label = Avvis varsel
-plugins-blocked-plugin =
-    .message = Dette programtillegget har blitt deaktivert av { -app-name }.
-data-dir-unsupported-storage = Dette kan skje hvis datamappen til { -app-name } ligger i en mappe i skylagring (OneDrive, Dropbox osv.) eller på en nettverksressurs.
-login-manager-reset = { -app-name } klarte ikke å lese de lagrede påloggingsopplysningene dine, så de er blitt tilbakestilt. Vennligst logg inn på nytt i { preferences-pane-account }-panelet i innstillingene for { -app-name }.
-os-keystore-save-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } fikk ikke tilgang til { -os-name }-nøkkelringen for å lagre påloggingsopplysningene dine på en sikker måte. Sørg for at nøkkelringen er tilgjengelig, og prøv på nytt.
-        [windows] { -app-name } klarte ikke å lagre påloggingsopplysningene dine på en sikker måte. Prøv på nytt eller start { -app-name } på nytt.
-       *[other] { -app-name } fikk ikke tilgang til { -os-name }-nøkkelringen din for å lagre påloggingsopplysningene dine på en sikker måte. Sørg for at en nøkkelringstjeneste kjører, og prøv på nytt.
-    }
-os-keystore-migrate-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } fikk ikke tilgang til { -os-name }-nøkkelringen for å kryptere dine lagrede påloggingsopplysninger. Påloggingsopplysningene dine forblir lagret ukryptert på disken. Sørg for at nøkkelringen din er tilgjengelig, og start { -app-name } på nytt.
-        [windows] { -app-name } klarte ikke å kryptere dine lagrede påloggingsopplysninger. Påloggingsopplysningene dine forblir lagret ukryptert på disken. Start { -app-name } på nytt og prøv igjen.
-       *[other] { -app-name } fikk ikke tilgang til { -os-name }-nøkkelringen for å kryptere de lagrede påloggingsopplysningene dine. Påloggingsopplysningene dine forblir lagret ukryptert på disken. Sørg for at en nøkkelringstjeneste kjører, og start { -app-name } på nytt.
-    }
-search-button =
-    .label = Søk
-save-search-new-button =
-    .label = Lagre søk…
-save-search-edit-button =
-    .label = Lagre
-save-search-name-title = Lagre søk
-save-search-name-message = Angi et navn for lagret søk:
-saved-search-close-confirmation-title = Rediger lagret søk
-saved-search-close-confirmation-body = Ønsker du å lagre endringer gjort for dette lagrede søket?
-item-pane-batch-editing-prompt =
-    .aria-label = Gruppevis redigering
-item-pane-batch-editing-enable =
-    .label = Rediger flere elementer…
-item-pane-batch-editing-multiple-values-placeholder = Flere
-item-pane-batch-editing-clear-values = Fjern alle verdier
-item-pane-batch-editing-header =
-    { $count ->
-        [one] Redigerer { $count } element
-       *[other] Redigerer { $count } elementer
-    }
-item-pane-batch-editing-done =
-    .label = { general-done }
-undo-action-edit-metadata =
-    { $count ->
-        [one] Rediger metadata
-       *[other] Rediger metadata for { $count } elementer
-    }
-undo-action-edit-field =
-    { $count ->
-        [one] Redigering av «{ $field }»
-       *[other] Redigering av «{ $field }» for { $count } elementer
-    }
-undo-action-normalize-attachment-titles = Normaliser vedleggstittel
-undo-action-trash =
-    { $count ->
-        [one] Legg element i søppelkorg
-       *[other] Legg { $count } elementer i søppelkorg
-    }
-undo-action-restore-items =
-    { $count ->
-        [one] Gjenopprett element
-       *[other] Gjenopprett { $count } elementer
-    }
-undo-action-trash-collection =
-    { $count ->
-        [one] Legg samling i søppelkorgen
-       *[other] Legg{ $count } samlinger i søppelkorgen
-    }
-undo-action-trash-search =
-    { $count ->
-        [one] Legg lagret søk i søppelkorgen
-       *[other] Legg { $count } lagrede søk i søppelkorgen
-    }
-undo-action-restore-collection =
-    { $count ->
-        [one] Gjenopprett samling
-       *[other] Gjenopprett { $count } samlinger
-    }
-undo-action-restore-objects =
-    { $count ->
-        [one] Gjenopprett objekt
-       *[other] Gjenopprett { $count } objekter
-    }
-undo-action-add-to-collection =
-    { $count ->
-        [one] Legg til samling
-       *[other] Legg til { $count } elementer til samling
-    }
-undo-action-remove-from-collection =
-    { $count ->
-        [one] Fjern fra samling
-       *[other] Fjern { $count } elementer fra samling
-    }
-undo-action-move-to-collection =
-    { $count ->
-        [one] Flytt til samling
-       *[other] Flytt { $count } elementer til samling
-    }
-undo-action-rename-collection = Endre navn på samlingen
-undo-action-move-collection = Flytt samling
-undo-action-add-tag =
-    { $count ->
-        [one] Legg til emneord
-       *[other] Legg til emneord til { $count } elementer
-    }
-undo-action-change-tag = Endre emneord
-undo-action-split-tag = Del opp emneord
-undo-action-remove-tag =
-    { $count ->
-        [one] Fjern emneord
-       *[other] Fjern emneord fra { $count } elementer
-    }
-undo-action-remove-tags-from-item =
-    { $count ->
-        [one] Fjern emneord
-       *[other] Fjern { $count } emneord
-    }
-undo-action-remove-all-tags = Fjern alle emneord
-undo-action-edit-note = Rediger notat
-undo-action-add-creator = Legg til opphaver
-undo-action-remove-creator = Fjern opphaver
-undo-action-edit-creator = Rediger opphaver
-undo-action-reorder-creator = Bytt rekkefølge på opphaver
-undo-action-change-type = Endre elementtype
-undo-action-change-parent-item =
-    { $count ->
-        [one] Endre overordnet element
-       *[other] Endre overordnet element for { $count } elementer
-    }
-undo-action-convert-to-standalone =
-    { $count ->
-        [one] Konverter til enkeltstående element
-       *[other] Konverter { $count } elementer til enkeltstående elementer
-    }
-undo-action-add-related = Legg til relatert
-undo-action-remove-related = Fjern relatert
-undo-action-merge-items =
-    { $count ->
-        [one] Slå sammen element
-       *[other] Slå sammen { $count } elementer
-    }
-menu-edit-undo-action = Angre { $action }
-menu-edit-redo-action = Gjør om { $action }

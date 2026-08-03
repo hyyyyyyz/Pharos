@@ -24,12 +24,6 @@ delete-or-backspace =
         [macos] Delete
        *[other] Backspace
     }
--os-name =
-    { PLATFORM() ->
-        [macos] macOS
-        [windows] Windows
-       *[other] Linux
-    }
 general-print = Распечатать
 general-remove = Удалить
 general-add = Добавить
@@ -40,21 +34,16 @@ general-open-settings = Открыть настройки
 general-settings = Настройки…
 general-help = Справка
 general-tag = Тег
-general-got-it = Получено
 general-done = Завершено
 general-view-troubleshooting-instructions = Показать инструкции по отладке
 general-go-back = Вернуться
 general-accept = Принять
 general-cancel = Отменить
-cancel-button =
-    .label = { general-cancel }
 general-show-in-library = Показать в библиотеке
 general-restartApp = Перезапустить { -app-name }
 general-restartInTroubleshootingMode = Перезапустить в режиме отладки
 general-save = Сохранить:
 general-clear = Очистить
-clear-button =
-    .label = { general-clear }
 general-update = Обновить
 general-back = Назад
 general-edit = Редактировать
@@ -69,7 +58,6 @@ general-et-al = и др.
 general-previous = Предыдущий
 general-next = Следующий
 general-learn-more = Узнать больше
-general-more-information = Дополнительные сведения
 general-warning = Внимание
 general-type-to-continue = Введите “{ $text }”, чтобы продолжить.
 general-continue = Продолжить
@@ -82,12 +70,10 @@ general-blue = Синий
 general-purple = Пурпурный
 general-magenta = Фуксин
 general-violet = Фиолетовый
-general-maroon = Тёмно-бордовый
+general-maroon = Темно-бордовый
 general-gray = Серый
-general-black = Чёрный
+general-black = Черный
 general-loading = Загрузка...
-db-checking-integrity = Checking database integrity…
-db-repairing = Repairing database…
 citation-style-label = Стиль цитирования:
 language-label = Язык:
 menu-custom-group-submenu =
@@ -139,7 +125,7 @@ menu-view-hide-context-annotation-rows =
 menu-view-note-font-size =
     .label = Размер шрифта заметок
 menu-view-note-tab-font-size =
-    .label = Размер шрифта вкладки Заметка
+    .label = Note Tab Font Size
 menu-show-tabs-menu =
     .label = Показать меню вкладок
 menu-edit-copy-annotation =
@@ -171,117 +157,14 @@ zotero-toolbar-tabs-scroll-backwards =
     .title = Прокрутить назад
 toolbar-add-attachment =
     .tooltiptext = { add-attachment }
-recently-read = Недавно прочитано
-collections-menu-show-recently-read =
-    .label = Показать { recently-read }
-item-menu-remove-from-recently-read =
-    .label = Удалить из { recently-read }…
-items-section-collections-selected =
-    { $count ->
-        [one] { $count } коллекция выбрана
-        [few] { $count } коллекции выбрано
-        [many] { $count } коллекций выбрано
-       *[other] { $count } коллекций выбрано
-    }
-items-section-searches-selected =
-    { $count ->
-        [one] { $count } saved search selected
-       *[other] { $count } saved searches selected
-    }
-items-section-sources-selected =
-    { $count ->
-        [one] { $count } source selected
-       *[other] { $count } sources selected
-    }
-items-section-library-collections =
-    { $count ->
-        [one] { $library } ({ $count } collection selected)
-       *[other] { $library } ({ $count } collections selected)
-    }
-items-section-library-searches =
-    { $count ->
-        [one] { $library } ({ $count } saved search selected)
-       *[other] { $library } ({ $count } saved searches selected)
-    }
-items-section-library-sources =
-    { $count ->
-        [one] { $library } ({ $count } source selected)
-       *[other] { $library } ({ $count } sources selected)
-    }
-items-section-library-recently-read = { $library } ({ recently-read })
-items-section-library = { $library }
-collections-menu-rename =
-    .label = Rename
-edit-saved-search = Редактировать сохранённый поиск
-collections-menu-edit-search =
-    .label = Edit Search
-collections-menu-duplicate-search =
-    .label = Duplicate Search
+collections-menu-rename-collection =
+    .label = Переименовать коллекцию
+collections-menu-edit-saved-search =
+    .label = Редактировать сохраненный поиск
 collections-menu-move-collection =
     .label = Переместить в
 collections-menu-copy-collection =
     .label = Копировать в
-collections-menu-export =
-    .label = Экспорт…
-collections-menu-generate-report =
-    .label = Generate Report…
-collections-menu-create-bibliography =
-    .label = Create Bibliography…
-collections-menu-unsubscribe =
-    .label = Unsubscribe…
-collections-menu-delete =
-    .label =
-        { $count ->
-            [one] Delete Collection…
-           *[other] Delete Collections…
-        }
-collections-menu-delete-with-items =
-    .label =
-        { $count ->
-            [one] Delete Collection and Items…
-           *[other] Delete Collections and Items…
-        }
-collections-menu-delete-search =
-    .label =
-        { $count ->
-            [one] Delete Search…
-           *[other] Delete Searches…
-        }
-collections-delete-title =
-    { $count ->
-        [one] Delete Collection
-       *[other] Delete Collections
-    }
-collections-delete-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection?
-       *[other] Are you sure you want to delete { $count } collections?
-    }
-collections-delete-keep-items =
-    { $count ->
-        [one] Items within this collection will not be deleted.
-       *[other] Items within these collections will not be deleted.
-    }
-collections-delete-with-items-title =
-    { $count ->
-        [one] Delete Collection and Items
-       *[other] Delete Collections and Items
-    }
-collections-delete-with-items-message =
-    { $count ->
-        [one] Are you sure you want to delete this collection and move all items within it to the Trash?
-       *[other] Are you sure you want to delete { $count } collections and move all items within them to the Trash?
-    }
-collections-delete-search-title =
-    { $count ->
-        [one] Delete Search
-       *[other] Delete Searches
-    }
-collections-delete-search-message =
-    { $count ->
-        [one] Are you sure you want to delete this search?
-       *[other] Are you sure you want to delete { $count } searches?
-    }
 item-creator-moveDown =
     .label = Переместить вниз
 item-creator-moveToTop =
@@ -290,7 +173,7 @@ item-creator-moveUp =
     .label = Переместить вверх
 item-menu-viewAttachment =
     .label =
-        Открыть { $numAttachments ->
+        Open { $numAttachments ->
             [one]
                 { $attachmentType ->
                     [pdf] PDF
@@ -321,7 +204,7 @@ item-menu-add-url =
 item-menu-change-parent-item =
     .label = Изменить родительскую запись…
 item-menu-relate-items =
-    .label = Связать элементы
+    .label = Relate Items
 view-online = Просмотреть онлайн
 item-menu-option-view-online =
     .label = { view-online }
@@ -334,9 +217,9 @@ itembox-button-merge =
     .aria-label = Выберите версию поля { $field }
 create-parent-intro = Введите DOI, ISBN, PMID, arXiv ID, или ADS Bibcode для идентификации этого файла:
 reader-use-dark-mode-for-content =
-    .label = Использовать Тёмную тему для содержимого
+    .label = Использовать темную тему для содержимого
 update-updates-found-intro-minor = Обновление для { -app-name } доступно:
-update-updates-found-desc = Рекомендуется применить обновление как можно скорее.
+update-updates-found-desc = Рекомендуется применение обновления как можно скорее.
 import-window =
     .title = Импорт
 import-where-from = Откуда вы хотите импортировать?
@@ -352,25 +235,25 @@ import-importing = Идёт импортирование…
 import-create-collection =
     .label = Поместить импортированные коллекции и записи в новую коллекцию
 import-recreate-structure =
-    .label = Воссоздать структуру папок коллекциями
+    .label = Повторить структуру папок как коллекций
 import-fileTypes-header = Типы файлов для импорта:
 import-fileTypes-pdf =
     .label = PDF-файлы
 import-fileTypes-other =
-    .placeholder = Остальные файлы по шаблону, через запятую (напр. *.jpg,*.png)
+    .placeholder = Other files by pattern, comma-separated (e.g., *.jpg,*.png)
 import-file-handling = Обработка файлов
 import-file-handling-store =
     .label = Скопировать файлы в папку { -app-name }
 import-file-handling-link =
-    .label = Ссылка на файлы в исходном расположении
-import-fileHandling-description = Связанные файлы не могут быть синхронизированы с помощью { -app-name }.
+    .label = Link to files in original location
+import-fileHandling-description = Linked files cannot be synced by { -app-name }.
 import-online-new =
     .label = Загрузить только новые записи; не обновлять ранее импортированные записи
 import-mendeley-username = Имя пользователя
 import-mendeley-password = Пароль
 general-error = Ошибка
-file-interface-import-error = Произошла ошибка во время импорта выбранного файла. Убедитесь что файл валиден и попробуйте ещё раз.
-file-interface-import-complete = Импорт завершён
+file-interface-import-error = Произошла ошибка во время импортирования выбранного файла. Пожалуйста, убедитесь что файл валиден и попробуйте ещё раз.
+file-interface-import-complete = Импорт завершен
 file-interface-items-were-imported =
     { $numItems ->
         [0] Файлы не были импортированы
@@ -379,38 +262,34 @@ file-interface-items-were-imported =
     }
 file-interface-items-were-relinked =
     { $numRelinked ->
-        [0] Ни один элемент не был повторно связан
-        [one] Один элемент был повторно связан
-       *[other] { $numRelinked } элементов были повторно связаны
+        [0] No items were relinked
+        [one] One item was relinked
+       *[other] { $numRelinked } items were relinked
     }
-import-mendeley-encrypted = Выбранную базу данных Mendeley невозможно прочитать, вероятно она зашифрована. См. раздел <a data-l10n-name="mendeley-import-kb">Как импортировать библиотеку Mendeley в Zotero?</a> для подробностей.
-file-interface-import-error-translator = Произошла ошибка при импорте выбранного файла с помощью “{ $translator }”. Убедитесь, что файл валиден, и повторите попытку.
-import-online-intro = На следующем шаге вам будет предложено войти в { $targetAppOnline } и предоставить доступ { -app-name }. Это необходимо для импорта вашей библиотеки { $targetApp } в { -app-name }.
-import-online-intro2 = { -app-name } никогда не увидит и не сохранит ваш { $targetApp } пароль.
-import-online-form-intro = Пожалуйста, введите свои учётные данные для входа в { $targetAppOnline }. Это необходимо для импорта вашей библиотеки { $targetApp } в { -app-name }.
-import-online-wrong-credentials = Не удалось войти в { $targetApp }. Пожалуйста, введите учётные данные ещё раз и повторите попытку.
-import-online-blocked-by-plugin = Импорт не может быть продолжен, если установлен { $plugin }. Пожалуйста, отключите этот плагин и повторите попытку.
+import-mendeley-encrypted = The selected Mendeley database cannot be read, likely because it is encrypted. See <a data-l10n-name="mendeley-import-kb">How do I import a Mendeley library into Zotero?</a> for more information.
+file-interface-import-error-translator = An error occurred importing the selected file with “{ $translator }”. Please ensure that the file is valid and try again.
+import-online-intro = In the next step you will be asked to log in to { $targetAppOnline } and grant { -app-name } access. This is necessary to import your { $targetApp } library into { -app-name }.
+import-online-intro2 = { -app-name } will never see or store your { $targetApp } password.
+import-online-form-intro = Please enter your credentials to log in to { $targetAppOnline }. This is necessary to import your { $targetApp } library into { -app-name }.
+import-online-wrong-credentials = Login to { $targetApp } failed. Please re-enter credentials and try again.
+import-online-blocked-by-plugin = The import cannot continue with { $plugin } installed. Please disable this plugin and try again.
 import-online-relink-only =
     .label = Заменить ссылки на цитирования из Mendeley Desktop
-import-online-relink-kb = { general-more-information }
+import-online-relink-kb = Дополнительные сведения
 import-online-connection-error = { -app-name } не смог подсоединиться к { $targetApp }. Пожалуйста, проверьте своё подключение к интернету и попробуйте снова.
-tab-title-multiple-collections = Multiple
 items-table-cell-notes =
     .aria-label =
         { $count ->
             [one] { $count } заметка
             [few] { $count } заметки
             [many] { $count } заметок
-           *[other] { $count } заметок
+           *[other] { $count } заметки
         }
-items-column-added-by = Добавлено
-items-column-modified-by = Изменено
-items-column-last-read = Последнее прочитанное
 report-error =
     .label = Сообщить об ошибке…
 rtfScan-wizard =
     .title = Поиск ссылок в RTF-документе
-rtfScan-introPage-description = { -app-name } может автоизвлекать и переформатировать цитаты, а также вставлять библиографию в файлы RTF. Сейчас поддерживаются цитаты в следующих форматах:
+rtfScan-introPage-description = { -app-name } can automatically extract and reformat citations and insert a bibliography into RTF files. It currently supports citations in variations of the following formats:
 rtfScan-introPage-description2 = Чтобы начать, выберите ниже входной файл RTF и выходной файл:
 rtfScan-input-file = Входной файл:
 rtfScan-output-file = Выходной файл:
@@ -425,16 +304,16 @@ rtfScan-intro-page = Введение
 rtfScan-scan-page = Сканирование на наличие цитат
 rtfScan-scanPage-description = { -app-name } сканирует цитирования в документе. Пожалуйста подождите.
 rtfScan-citations-page = Проверить цитированные записи
-rtfScan-citations-page-description = Просмотрите список распознанных цитат ниже, чтобы убедиться, что { -app-name } правильно выбрал соответствующие элементы. Любые несопоставленные или двусмысленные цитаты должны быть устранены, до перехода к следующему шагу.
+rtfScan-citations-page-description = Please review the list of recognized citations below to ensure that { -app-name } has selected the corresponding items correctly. Any unmapped or ambiguous citations must be resolved before proceeding to the next step.
 rtfScan-style-page = Форматирование документа
 rtfScan-format-page = Форматирование цитат
-rtfScan-format-page-description = { -app-name } обрабатывает и форматирует ваш RTF-файл. Пожалуйста, будьте терпеливы.
+rtfScan-format-page-description = { -app-name } is processing and formatting your RTF file. Please be patient.
 rtfScan-complete-page = Сканирование RTF завершено
 rtfScan-complete-page-description = Ваш документ был сканирован и обработан. Пожалуйста, проверьте корректность форматирования.
 rtfScan-action-find-match =
-    .title = Выберите подходящий элемент
+    .title = Select matching item
 rtfScan-action-accept-match =
-    .title = Принять это совпадение
+    .title = Accept this match
 runJS-title = Запустить JavaScript
 runJS-editor-label = Code:
 runJS-run = Запустить
@@ -445,12 +324,12 @@ runJS-result =
         [async] Return value:
        *[other] Result:
     }
-runJS-run-async = Запустить как async функцию
+runJS-run-async = Run as async function
 bibliography-window =
-    .title = { -app-name } - Создать Цитату/Библиографию
+    .title = { -app-name } - Create Citation/Bibliography
 bibliography-style-label = { citation-style-label }
 bibliography-locale-label = { language-label }
-bibliography-displayAs-label = Отображать цитаты как:
+bibliography-displayAs-label = Display citations as:
 bibliography-advancedOptions-label = Расширенные настройки
 bibliography-outputMode-label = Режим вывода:
 bibliography-outputMode-citations =
@@ -473,16 +352,16 @@ bibliography-outputMethod-print =
     .label = Распечатать
 bibliography-manageStyles-label = Управление стилями…
 styleEditor-locatorType =
-    .aria-label = Тип локатора
-styleEditor-locatorInput = Вход локатора
+    .aria-label = Locator type
+styleEditor-locatorInput = Locator input
 styleEditor-citationStyle = { citation-style-label }
 styleEditor-locale = { language-label }
 styleEditor-editor =
-    .aria-label = Редактор стилей
+    .aria-label = Style editor
 styleEditor-preview =
     .aria-label = Предпросмотр
 publications-intro-page = Мои публикации
-publications-intro = Записи, добавленные в раздел Мои публикации, будут показаны на странице вашего профиля в zotero.org. Если вы присоединили файлы, они будут доступны публично под указанной вами лицензией. Добавляйте только ваши собственные работы и размещайте только те файлы, для которых у вас есть разрешение на распространение.
+publications-intro = Записи, добавленные в раздел «Мои публикации», будут показаны на странице вашего профиля в zotero.org. Если вы присоединили файлы, они также станут доступны публично под указанной вами лицензией. Добавляйте только ваши собственные работы и размещайте только те файлы, для которых у вас есть разрешение на распространение.
 publications-include-checkbox-files =
     .label = Включая файлы
 publications-include-checkbox-notes =
@@ -531,30 +410,30 @@ licenses-cc-by-sa = международная лицензия Creative Commons
 licenses-cc-by-nc = международная лицензия Creative Commons Attribution-NonCommercial 4.0
 licenses-cc-by-nc-nd = международная лицензия Creative Commons Attribution-NonCommercial-NoDerivatives 4.0
 licenses-cc-by-nc-sa = международная лицензия Creative Commons Attribution-NonCommercial-ShareAlike 4.0
-licenses-cc-more-info = До размещения своей работы под лицензией Creative Commons, обязательно ознакомьтесь с рекомендациями <a data-l10n-name="license-considerations">Creative Commons для лицензиаров</a>. Применяемую вами лицензию нельзя будет отозвать, даже если вы позже выберете другие условия или прекратите публикацию произведения.
-licenses-cc0-more-info = Прежде чем применять Creative Commons в своей работе, обязательно прочтите <a data-l10n-name="license-considerations">FAQ по Creative Commons</a> CC0. Обратите внимание, что передача вашей работы в общественное достояние является необратимой, даже если позже вы выберете другие условия или прекратите публикацию работы.
+licenses-cc-more-info = Be sure you have read the Creative Commons <a data-l10n-name="license-considerations">Considerations for licensors</a> before placing your work under a CC license. Note that the license you apply cannot be revoked, even if you later choose different terms or cease publishing the work.
+licenses-cc0-more-info = Be sure you have read the Creative Commons <a data-l10n-name="license-considerations">CC0 FAQ</a> before applying CC0 to your work. Please note that dedicating your work to the public domain is irreversible, even if you later choose different terms or cease publishing the work.
 debug-output-logging-restart-in-troubleshooting-mode-checkbox = { general-restartInTroubleshootingMode }
 restart-in-troubleshooting-mode-menuitem =
     .label = Перезапустить в режиме отладки…
     .accesskey = T
 restart-in-troubleshooting-mode-dialog-title = { general-restartInTroubleshootingMode }
-restart-in-troubleshooting-mode-dialog-description = { -app-name } перезагрузится со всеми отключенными плагинами. Некоторые функции могут работать некорректно, если включен Режим устранения неполадок.
+restart-in-troubleshooting-mode-dialog-description = { -app-name } will restart with all plugins disabled. Some features may not function correctly while Troubleshooting Mode is enabled.
 menu-ui-density =
     .label = Плотность интерфейса
 menu-ui-density-comfortable =
     .label = Комфортная
 menu-ui-density-compact =
     .label = Компактная
-pane-item-details = Детали элемента
+pane-item-details = Item Details
 pane-info = Информация
 pane-abstract = Аннотация
 pane-attachments = Вложения
 pane-notes = Заметки
-pane-note-info = Информация Заметки
+pane-note-info = Note Info
 pane-libraries-collections = Библиотеки и коллекции
 pane-tags = Теги
 pane-related = Связанные
-pane-attachment-info = Информация Вложения
+pane-attachment-info = Attachment Info
 pane-attachment-preview = Предпросмотр
 pane-attachment-annotations = Аннотации
 pane-header-attachment-associated =
@@ -568,42 +447,42 @@ section-abstract =
 section-attachments =
     .label =
         { $count ->
-            [one] { $count } Вложение
-            [few] { $count } Вложения
-            [many] { $count } Вложений
-           *[other] { $count } Вложений
+            [one] { $count } вложение
+            [few] { $count } вложения
+            [many] { $count } вложений
+           *[other] { $count } вложения
         }
 section-attachment-preview =
     .label = { pane-attachment-preview }
 section-attachments-annotations =
     .label =
         { $count ->
-            [one] { $count } Аннотация
-            [few] { $count } Аннотации
-            [many] { $count } Аннотаций
-           *[other] { $count } Аннотаций
+            [one] { $count } аннотация
+            [few] { $count } аннотации
+            [many] { $count } аннотаций
+           *[other] { $count } аннотации
         }
 section-attachments-move-to-trash-message = Вы уверены, что хотите переместить “{ $title }” в корзину?
 section-notes =
     .label =
         { $count ->
-            [one] { $count } Заметка
-            [few] { $count } Заметки
-            [many] { $count } Заметок
-           *[other] { $count } Заметок
+            [one] { $count } заметка
+            [few] { $count } заметки
+            [many] { $count } заметок
+           *[other] { $count } заметки
         }
 section-libraries-collections =
     .label = { pane-libraries-collections }
 section-tags =
     .label =
         { $count ->
-            [one] { $count } Тег
-            [few] { $count } Тега
-            [many] { $count } Тегов
-           *[other] { $count } Тегов
+            [one] { $count } тег
+            [few] { $count } тега
+            [many] { $count } тегов
+           *[other] { $count } тега
         }
 section-related =
-    .label = { $count } Относящихся
+    .label = { $count } Related
 section-attachment-info =
     .label = { pane-attachment-info }
 section-button-remove =
@@ -611,17 +490,17 @@ section-button-remove =
 section-button-add =
     .tooltiptext = { general-add }
 section-button-expand =
-    .dynamic-tooltiptext = Развернуть секцию
-    .label = Развернуть { $section } секцию
+    .dynamic-tooltiptext = Expand section
+    .label = Expand { $section } section
 section-button-collapse =
-    .dynamic-tooltiptext = Свернуть секцию
-    .label = Свернуть { $section } секцию
+    .dynamic-tooltiptext = Collapse section
+    .label = Collapse { $section } section
 annotations-count =
     { $count ->
         [one] { $count } аннотация
         [few] { $count } аннотации
         [many] { $count } аннотаций
-       *[other] { $count } аннотаций
+       *[other] { $count } аннотации
     }
 section-button-annotations =
     .title = { annotations-count }
@@ -700,10 +579,12 @@ attachment-info-modified = Изменено
 attachment-info-index = Проиндексировано
 attachment-info-convert-note =
     .label =
-        Мигрировать { $type ->
-           *[standalone] Отдельный
-        } Заметка
-    .tooltiptext = Добавление примечаний к вложениям больше не поддерживается, но вы можете редактировать эту заметку, перенеся её в отдельную заметку.
+        Migrate to { $type ->
+            [standalone] Standalone
+            [child] Item
+           *[unknown] New
+        } Note
+    .tooltiptext = Adding notes to attachments is no longer supported, but you can edit this note by migrating it to a separate note.
 section-note-info =
     .label = { pane-note-info }
 note-info-title = Название
@@ -716,7 +597,7 @@ note-info-parent-item-button =
     .title =
         { $hasParentItem ->
             [true] Показать родительскую запись в библиотеке
-           *[false] Показать запись заметки в библиотеке
+           *[false] Показать заметку записи в библиотеке
         }
 note-info-date-created = Создана
 note-info-date-modified = Изменена
@@ -727,16 +608,23 @@ item-title-empty-note = Заметка без названия
 attachment-preview-placeholder = Нет вложений для предпросмотра
 attachment-rename-from-parent =
     .tooltiptext = Переименовать файл в соответствии с родительской записью
-account-log-in = Войти
-account-not-logged-in-text = Войдите в свой аккаунт Zotero для синхронизации данных.
-account-error-login-session-expired = Время вашей сессии входа закончилось. Пожалуйста, попробуйте ещё раз.
+file-renaming-auto-rename-prompt-title = Настройки переимнования изменены
+file-renaming-auto-rename-prompt-body = Хотите переименовать существующие файлы в вашей библиотеке в соответствии с новыми настройками?
+file-renaming-auto-rename-prompt-yes = Предпросмотр изменений…
+file-renaming-auto-rename-prompt-no = Сохранить существующие имена файлов
+rename-files-preview =
+    .buttonlabelaccept = Переименовать файлы
+rename-files-preview-loading = Загрузка...
+rename-files-preview-intro = { -app-name } will rename the following files in your library to match their parent items:
+rename-files-preview-renaming = Renaming…
+rename-files-preview-no-files = All filenames already match parent items. No changes are required.
 toggle-preview =
     .label =
         { $type ->
             [open] Hide
             [collapsed] Show
            *[unknown] Toggle
-        } Предпросмотр Вложения
+        } Attachment Preview
 annotation-image-not-available = [Image not available]
 quicksearch-mode =
     .aria-label = Режим быстрого поиска
@@ -744,18 +632,6 @@ quicksearch-input =
     .aria-label = Быстрый поиск
     .placeholder = { $placeholder }
     .aria-description = { $placeholder }
-advanced-search = Расширенный поиск
-menuitem-advanced-search =
-    .label = { advanced-search }
-quicksearch-advanced-search-button =
-    .tooltiptext = { advanced-search }
-    .aria-label = { advanced-search }
-advanced-search-close =
-    .tooltiptext = Close Advanced Search
-advanced-search-expand =
-    .tooltiptext = Expand Advanced Search
-advanced-search-collapse =
-    .tooltiptext = Collapse Advanced Search
 item-pane-header-view-as =
     .label = Показать как
 item-pane-header-none =
@@ -797,7 +673,7 @@ item-pane-message-objects-selected =
     }
 item-pane-message-unselected =
     { $count ->
-        [0] Нет записей в этом представлении нет записей
+        [0] В этом представлении нет записей
         [one] { $count } запись в этом представлении
         [few] { $count } записей в этом представлении
         [many] { $count } записей в этом представлении
@@ -805,7 +681,7 @@ item-pane-message-unselected =
     }
 item-pane-message-objects-unselected =
     { $count ->
-        [0] Нет объектов в этом представлении
+        [0] В этом представлении нет объектов
         [one] { $count } объект в этом представлении
         [few] { $count } объекта в этом представлении
         [many] { $count } объектов в этом представлении
@@ -819,130 +695,25 @@ item-pane-duplicates-merge-items =
             [many] Объединить { $count } записей
            *[other] Объединить { $count } записей
         }
-locate-library-lookup-no-resolver = Вы должны выбрать резолвер из { $pane } панели { -app-name } настроек.
-architecture-win32-warning-message = Переключитесь на 64-bit { -app-name } для лучшей производительности. Данные не будут затронуты.
-architecture-warning-action = Скачать 64-bit { -app-name }
-architecture-x64-on-arm64-message = { -app-name } работает в режиме эмуляции. Нативная версия { -app-name } будет работать эффективнее.
-architecture-x64-on-arm64-action = Скачать { -app-name } для ARM64
-first-run-guidance-authorMenu = { -app-name } позволяет также указать редакторов и переводчиков. Вы можете превратить автора в редактора или переводчика, выбрав это меню.
-first-run-guidance-readAloud = { -app-name } теперь может читать ваши документы с естественным звучанием голоса.
+locate-library-lookup-no-resolver = You must choose a resolver from the { $pane } pane of the { -app-name } settings.
+architecture-win32-warning-message = Switch to 64-bit { -app-name } for the best performance. Your data won’t be affected.
+architecture-warning-action = Download 64-bit { -app-name }
+architecture-x64-on-arm64-message = { -app-name } is running in emulated mode. A native version of { -app-name } will run more efficiently.
+architecture-x64-on-arm64-action = Download { -app-name } for ARM64
+first-run-guidance-authorMenu = { -app-name } lets you specify editors and translators too. You can turn an author into an editor or translator by selecting from this menu.
 advanced-search-remove-btn =
-    .tooltiptext = Remove Condition
+    .tooltiptext = { general-remove }
 advanced-search-add-btn =
-    .tooltiptext = Add Condition
-advanced-search-group-btn =
-    .tooltiptext = Add Condition Group
-advanced-search-remove-group-btn =
-    .tooltiptext = Remove Group
-advanced-search-ungroup-btn =
-    .tooltiptext = Ungroup Conditions
-advanced-search-result-level-menu =
-    .aria-label = Result type
-advanced-search-result-level-prefix-root =
-    .value = Найти
-advanced-search-join-prefix-root =
-    .value = matching
-advanced-search-result-level-any =
-    .label = any items
-advanced-search-result-level-item =
-    .label = top-level items
-advanced-search-result-level-attachment =
-    .label = attachments
-advanced-search-result-level-note =
-    .label = notes
-advanced-search-result-level-annotation =
-    .label = аннотации
-advanced-search-binding-menu =
-    .aria-label = Match against the same item
-advanced-search-binding-separate =
-    .label = separately
-advanced-search-binding-same-attachment =
-    .label = in the same attachment
-advanced-search-binding-same-note =
-    .label = in the same note
-advanced-search-binding-same-annotation =
-    .label = in the same annotation
-advanced-search-of-the-following =
-    .value = of the following
-advanced-search-binding-hint-attachment =
-    .value = These conditions can match separate attachments.
-advanced-search-binding-hint-note =
-    .value = These conditions can match separate notes.
-advanced-search-binding-hint-annotation =
-    .value = These conditions can match separate annotations.
-advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
-advanced-search-group-warning-unreachable =
-    A condition here cannot be in the same { $entity ->
-        [attachment] attachment
-        [note] note
-       *[annotation] annotation
-    }. Match these separately or remove the incompatible condition.
-advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
-advanced-search-bind-same-attachment =
-    .label = Match the same attachment
-advanced-search-bind-same-note =
-    .label = Match the same note
-advanced-search-bind-same-annotation =
-    .label = Match the same annotation
+    .tooltiptext = { general-add }
 advanced-search-conditions-menu =
-    .aria-label = Условия поиска
+    .aria-label = Search condition
     .label = { $label }
 advanced-search-operators-menu =
-    .aria-label = Оператор
+    .aria-label = Operator
     .label = { $label }
 advanced-search-condition-input =
-    .aria-label = Значение
+    .aria-label = Value
     .label = { $label }
-search-operator-isEmpty = is empty
-search-operator-isNotEmpty = is not empty
-search-conditions-tooltip-fields = Поля:
-search-conditions-collection = Коллекция
-search-conditions-savedSearch = Сохранённый поиск
-search-conditions-itemTypeID = Тип записи
-search-conditions-tag = Тег
-search-conditions-numTags = # of Tags
-search-conditions-numNotes = # of Notes
-search-conditions-numAttachments = # of Attachments
-search-conditions-numAnnotations = # of Annotations
-search-conditions-note = Заметка
-search-conditions-childNote = Дочерняя заметка
-search-conditions-creator = Автор
-search-conditions-thesisType = Тип диссертации
-search-conditions-reportType = Тип отчёта
-search-conditions-videoRecordingFormat = Формат видеозаписи
-search-conditions-audioFileType = Тип аудио файла
-search-conditions-audioRecordingFormat = Формат аудиозаписи
-search-conditions-letterType = Тип письма
-search-conditions-interviewMedium = Носитель интервью
-search-conditions-manuscriptType = Тип рукописи
-search-conditions-presentationType = Тип презентации
-search-conditions-mapType = Тип карты
-search-conditions-artworkMedium = Художественный носитель
-search-conditions-dateModified = Дата изменения
-search-conditions-fulltextContent = Содержание Вложения
-search-conditions-programmingLanguage = Язык программирования
-search-conditions-fileTypeID = Тип Вложения
-search-conditions-attachmentStorageType = Attachment Storage Type
-search-conditions-lastRead = Вложение Последнее прочитанное
-search-conditions-annotationText = Текст аннотации
-search-conditions-annotationComment = Комментарий к аннотации
-search-conditions-annotationType = Annotation Type
-search-conditions-annotationColor = Annotation Color
-search-conditions-annotationAuthor = Annotation Author
-search-conditions-anyField = Любое поле
-search-conditions-titleCreatorYear = Название, Автор, Год
-search-conditions-submenu-attachment = Вложение
-search-conditions-submenu-annotation = Аннотация
-search-conditions-short-fulltextContent = Content
-search-conditions-short-fileTypeID = Тип файла
-search-conditions-short-attachmentStorageType = Storage Type
-search-conditions-short-lastRead = Последнее прочитанное
-search-conditions-short-annotationText = Text
-search-conditions-short-annotationComment = Comment
-search-conditions-short-annotationType = Тип
-search-conditions-short-annotationColor = Color
-search-conditions-short-annotationAuthor = Автор
 find-pdf-files-added =
     { $count ->
         [one] Добавлен { $count } файл
@@ -953,26 +724,26 @@ find-pdf-files-added =
 select-items-window =
     .title = Выбрать записи
 select-items-dialog =
-    .buttonlabelaccept = Выбрать
+    .buttonlabelaccept = Select
 select-items-convertToStandalone =
-    .label = Конвертировать в Отдельное
+    .label = Convert to Standalone
 select-items-convertToStandaloneAttachment =
     .label =
         { $count ->
-            [one] Преобразовать в Отдельное Вложение
+            [one] Преобразовать в отдельное вложение
             [few] Преобразовать в отдельные вложения
-            [many] Преобразовать в Отдельные Вложения
-           *[other] Преобразовать в Отдельные Вложения
+            [many] Преобразовать в отдельные вложения
+           *[other] Преобразовать в отдельные вложения
         }
 select-items-convertToStandaloneNote =
     .label =
         { $count ->
-            [one] Преобразовать в Отдельную Заметку
-            [few] Преобразовать в Отдельные Заметки
-            [many] Преобразовать в Отдельные Заметки
-           *[other] Преобразовать в Отдельные Заметки
+            [one] Преобразовать в отдельную заметку
+            [few] Преобразовать в отдельные заметки
+            [many] Преобразовать в отдельные заметки
+           *[other] Преобразовать в отдельные заметки
         }
-file-type-webpage = Веб-страница
+file-type-webpage = Webpage
 file-type-image = Изображение
 file-type-pdf = PDF
 file-type-audio = Аудио
@@ -980,34 +751,26 @@ file-type-video = Видео
 file-type-presentation = Презентация
 file-type-document = Документ
 file-type-ebook = Электронная книга
-attachment-storage-type-storedFile = Stored File
-attachment-storage-type-linkedFile = Linked File
-attachment-storage-type-webLink = Web Link
-post-upgrade-message = Вы проапгрейдились до <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! Узнайте <a data-l10n-name="new-features-link">что нового</a>.
+post-upgrade-message = You’ve been upgraded to <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! Learn about <a data-l10n-name="new-features-link">what’s new</a>.
 post-upgrade-remind-me-later =
     .label = { general-remind-me-later }
 post-upgrade-done =
     .label = { general-done }
 text-action-paste-and-search =
-    .label = Вставить и Искать
+    .label = Paste and Search
 mac-word-plugin-install-message = Zotero необходим доступ к данным Word для установки плагина для Word.
-mac-word-plugin-install-folder-message = { -app-name } needs access to Word’s startup folder to install the Word plugin.
 mac-word-plugin-install-action-button =
     .label = Установить плагин для Word
 mac-word-plugin-install-remind-later-button =
     .label = { general-remind-me-later }
 mac-word-plugin-install-dont-ask-again-button =
     .label = { general-dont-ask-again }
-mac-word-plugin-install-folder-dialog-title = Install the plugin in the Word startup folder
-mac-word-plugin-install-folder-dialog-button = Установить
-mac-word-plugin-install-wrong-folder-selected = The suggested folder must be selected. Please try again without choosing a different folder.
-file-renaming-banner-message = { -app-name } теперь автосинхронизирует имена файлов вложений при внесении изменений в элементы.
+file-renaming-banner-message = { -app-name } now automatically keeps attachment filenames in sync as you make changes to items.
 file-renaming-banner-documentation-link = { general-learn-more }
 file-renaming-banner-settings-link = { general-settings }
-connector-version-warning = { -app-name } коннектор должен быть обновлён для работы с этой версией { -app-name }.
-userjs-pref-warning = Некоторые настройки { -app-name } были переопределены с помощью неподдерживаемого метода. { -app-name } отменяет их и перезапускает.
+connector-version-warning = The { -app-name } Connector должен быть обновлён для работы с этой версией { -app-name }.
+userjs-pref-warning = Some { -app-name } settings have been overridden using an unsupported method. { -app-name } will revert them and restart.
 migrate-extra-fields-progress-message = Перенос новых полей из Extra field
-search-normalization-progress-message = Indexing items for search
 long-tag-fixer-window-title =
     .title = Разделить теги
 long-tag-fixer-button-dont-split =
@@ -1021,145 +784,3 @@ normalize-attachment-titles-text =
     В более старых версиях { -app-name }, а также при использовании определённых плагинов, названия вложений могут быть изменены без необходимости в соответствии с именами файлов.
     
     Хотите сделать названия выбранных вложений более простыми? Только первичные вложения с названиями, которые совпадают с именами файлов, будут изменены.
-banner-close-button =
-    .aria-label = Скрыть уведомление
-plugins-blocked-plugin =
-    .message = Этот плагин был отключён { -app-name }.
-data-dir-unsupported-storage = Это может произойти, если каталог данных { -app-name } находится в папке облачного хранилища (OneDrive, Dropbox и т. д.) или в общей сетевой папке.
-login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
-os-keystore-save-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
-        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
-    }
-os-keystore-migrate-failed =
-    { PLATFORM() ->
-        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
-        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
-       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
-    }
-search-button =
-    .label = Поиск
-save-search-new-button =
-    .label = Save Search…
-save-search-edit-button =
-    .label = Сохранить:
-save-search-name-title = Сохранить поиск
-save-search-name-message = Enter a name for the saved search:
-saved-search-close-confirmation-title = Editing Saved Search
-saved-search-close-confirmation-body = Do you want to save changes you made to this saved search?
-item-pane-batch-editing-prompt =
-    .aria-label = Batch editing
-item-pane-batch-editing-enable =
-    .label = Edit Multiple Items…
-item-pane-batch-editing-multiple-values-placeholder = Multiple
-item-pane-batch-editing-clear-values = Clear all values
-item-pane-batch-editing-header =
-    { $count ->
-        [one] Editing { $count } item
-       *[other] Editing { $count } items
-    }
-item-pane-batch-editing-done =
-    .label = { general-done }
-undo-action-edit-metadata =
-    { $count ->
-        [one] Edit Metadata
-       *[other] Edit Metadata for { $count } Items
-    }
-undo-action-edit-field =
-    { $count ->
-        [one] Edit of “{ $field }”
-       *[other] Edit of “{ $field }” for { $count } Items
-    }
-undo-action-normalize-attachment-titles = Normalize Attachment Title
-undo-action-trash =
-    { $count ->
-        [one] Trash Item
-       *[other] Trash { $count } Items
-    }
-undo-action-restore-items =
-    { $count ->
-        [one] Restore Item
-       *[other] Restore { $count } Items
-    }
-undo-action-trash-collection =
-    { $count ->
-        [one] Trash Collection
-       *[other] Trash { $count } Collections
-    }
-undo-action-trash-search =
-    { $count ->
-        [one] Trash Saved Search
-       *[other] Trash { $count } Saved Searches
-    }
-undo-action-restore-collection =
-    { $count ->
-        [one] Restore Collection
-       *[other] Restore { $count } Collections
-    }
-undo-action-restore-objects =
-    { $count ->
-        [one] Restore Object
-       *[other] Restore { $count } Objects
-    }
-undo-action-add-to-collection =
-    { $count ->
-        [one] Add to Collection
-       *[other] Add { $count } Items to Collection
-    }
-undo-action-remove-from-collection =
-    { $count ->
-        [one] Remove from Collection
-       *[other] Remove { $count } Items from Collection
-    }
-undo-action-move-to-collection =
-    { $count ->
-        [one] Move to Collection
-       *[other] Move { $count } Items to Collection
-    }
-undo-action-rename-collection = Переименовать коллекцию
-undo-action-move-collection = Move Collection
-undo-action-add-tag =
-    { $count ->
-        [one] Add Tag
-       *[other] Add Tag to { $count } Items
-    }
-undo-action-change-tag = Change Tag
-undo-action-split-tag = Split Tag
-undo-action-remove-tag =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove Tag from { $count } Items
-    }
-undo-action-remove-tags-from-item =
-    { $count ->
-        [one] Remove Tag
-       *[other] Remove { $count } Tags
-    }
-undo-action-remove-all-tags = Remove All Tags
-undo-action-edit-note = Редактировать заметку
-undo-action-add-creator = Add Creator
-undo-action-remove-creator = Remove Creator
-undo-action-edit-creator = Edit Creator
-undo-action-reorder-creator = Reorder Creator
-undo-action-change-type = Изменить тип записи
-undo-action-change-parent-item =
-    { $count ->
-        [one] Change Parent Item
-       *[other] Change Parent for { $count } Items
-    }
-undo-action-convert-to-standalone =
-    { $count ->
-        [one] Convert to Standalone
-       *[other] Convert { $count } Items to Standalone
-    }
-undo-action-add-related = Add Related
-undo-action-remove-related = Remove Related
-undo-action-merge-items =
-    { $count ->
-        [one] Merge Item
-       *[other] Merge { $count } Items
-    }
-menu-edit-undo-action = Undo { $action }
-menu-edit-redo-action = Redo { $action }

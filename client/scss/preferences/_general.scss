@@ -22,6 +22,11 @@
 	min-width: 12em;
 }
 
+@media (-moz-platform: macos) {
+	#zotero-prefpane-file-renaming-file-types-box {
+		gap: 8px;
+	}
+}
 
 @media (-moz-platform: windows) {
 	button, menulist, radio, checkbox, input {
@@ -37,4 +42,3 @@
 		visibility: hidden;
 	}
 }
-

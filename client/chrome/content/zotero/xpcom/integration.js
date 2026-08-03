@@ -775,29 +775,6 @@ Zotero.Integration.Interface.prototype.addNote = async function () {
 };
 
 /**
- * Insert annotations combined into one note into the current document.
- * @return {Promise}
- */
-Zotero.Integration.Interface.prototype.addAnnotation = async function () {
-	await this._session.init(false, false);
-
-	if ((!await this._doc.canInsertField(this._session.data.prefs.fieldType))) {
-		throw new Zotero.Exception.Alert("integration.error.cannotInsertHere", [],
-			"integration.error.title");
-	}
-
-	let citations = await this._session.cite(null, false, true);
-	if (this._session.data.prefs.delayCitationUpdates) {
-		return Promise.all(citations.map((citation) => {
-			return this._session.writeDelayedCitation(citation.field, citation);
-		}));
-	}
-	else {
-		return this._session.updateDocument(FORCE_CITATIONS_FALSE, false, false);
-	}
-};
-
-/**
  * Adds a bibliography to the current document.
  * @return {Promise}
  */
@@ -1506,31 +1483,17 @@ Zotero.Integration.Session.prototype._updateDocument = async function (forceCita
  * display the citation dialog and perform any field/text inserts after
  * the dialog edits are accepted
  */
-Zotero.Integration.Session.prototype.cite = async function (field, addNote=false, addAnnotations = false) {
+Zotero.Integration.Session.prototype.cite = async function (field, addNote=false) {
 	var newField;
 	var citation;
 	
 	if (field) {
 		field = await Zotero.Integration.Field.loadExisting(field);
 
-		if (field.type === INTEGRATION_TYPE_ITEM) {
-			citation = new Zotero.Integration.Citation(field, await field.unserialize(), await field.getNoteIndex());
+		if (field.type != INTEGRATION_TYPE_ITEM) {
+			throw new Zotero.Exception.Alert("integration.error.notInCitation");
 		}
-		else if (field.type === INTEGRATION_TYPE_BIBLIOGRAPHY) {
-			let commandName = this._app.processorName == 'Google Docs'
-				? '“Add/edit bibliography”'
-				: 'Add/Edit Bibliography';
-			throw new Zotero.Exception.Alert("integration.error.inBibliography", [commandName]);
-		}
-		else {
-			// Treat any non-item and non-bibliograph field as a TEMP placeholder, that is likely
-			// there because previous integration command stopped prematurely (e.g. by closing Zotero).
-			// This could also be something else, but since the integration plugin on the word processor
-			// side decided to return what it thought to be a Zotero field, we should treat it as such.
-			newField = true;
-			field = new Zotero.Integration.CitationField(field._field);
-			citation = new Zotero.Integration.Citation(field);
-		}
+		citation = new Zotero.Integration.Citation(field, await field.unserialize(), await field.getNoteIndex());
 	} else {
 		newField = true;
 		field = new Zotero.Integration.CitationField(await this.addField(true));
@@ -1564,7 +1527,7 @@ Zotero.Integration.Session.prototype.cite = async function (field, addNote=false
 			this.updateFromDocument(FORCE_CITATIONS_FALSE).then(() => this.citationsByItemID);
 	}
 
-	var previewFn = async function (citation, format) {
+	var previewFn = async function (citation) {
 		let idx = await fieldIndexPromise;
 		await citationsByItemIDPromise;
 
@@ -1580,7 +1543,7 @@ Zotero.Integration.Session.prototype.cite = async function (field, addNote=false
 		let citationsPost = citations.slice(sliceIdx);
 		let citationID = citation.citationID;
 		try {
-			var result = this.style.previewCitationCluster(citation, citationsPre, citationsPost, format || "rtf");
+			var result = this.style.previewCitationCluster(citation, citationsPre, citationsPost, "rtf");
 		} catch(e) {
 			throw e;
 		} finally {
@@ -1596,7 +1559,6 @@ Zotero.Integration.Session.prototype.cite = async function (field, addNote=false
 		fieldIndexPromise, citationsByItemIDPromise, previewFn
 	);
 	io.isCitingNotes = addNote;
-	io.isAddingAnnotations = addAnnotations;
 	Zotero.debug(`Editing citation:`);
 	Zotero.debug(JSON.stringify(citation.toJSON()));
 
@@ -1678,19 +1640,6 @@ Zotero.Integration.Session.prototype.cite = async function (field, addNote=false
 Zotero.Integration.Session.prototype._insertCitingResult = async function (fieldIndex, field, citation) {
 	await citation.loadItemData();
 	
-	let allItems = citation.citationItems.map(item => Zotero.Cite.getItem(item.id));
-	// Handle adding selected annotations as a mock note
-	if (allItems.some(item => item.isAnnotation())) {
-		if (!allItems.every(item => item.isAnnotation())) {
-			throw new Error("Citing result with annotations must not include other item types");
-		}
-		let includeComments = Zotero.Prefs.get("integration.annotationDialogIncludeComments");
-		// Note is created with embedded data to be inserted but nothing is saved to DB
-		let mockNote = await Zotero.EditorInstance.createNoteFromAnnotations(
-			allItems, { noSave: true, noHeader: true, noComments: !includeComments }
-		);
-		return this._insertNoteIntoDocument(fieldIndex, field, mockNote);
-	}
 	let firstItem = Zotero.Cite.getItem(citation.citationItems[0].id);
 	if (firstItem && firstItem.isNote()) {
 		return this._insertNoteIntoDocument(fieldIndex, field, firstItem);
@@ -1811,11 +1760,10 @@ Zotero.Integration.CitationEditInterface = function (items, sortable, fieldIndex
 Zotero.Integration.CitationEditInterface.prototype = {
 	/**
 	 * Execute a callback with a preview of the given citation
-	 * @param {String} [format] Override the default output format (e.g. "html" for use in citation dialog)
 	 * @return {Promise} A promise resolved with the previewed citation string
 	 */
-	preview: function (format) {
-		return this.previewFn(this.citation, format);
+	preview: function () {
+		return this.previewFn(this.citation);
 	},
 	
 	/**

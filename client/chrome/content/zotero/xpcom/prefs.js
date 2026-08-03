@@ -46,7 +46,7 @@ Zotero.Prefs = new function () {
 
 		// Process pref version updates
 		var fromVersion = this.get('prefVersion');
-		var toVersion = 22;
+		var toVersion = 20;
 		if (!fromVersion) {
 			this.set('prefVersion', toVersion);
 		}
@@ -215,25 +215,6 @@ Zotero.Prefs = new function () {
 					case 20:
 						// QuickFormat dialog no longer exists -- replaced with `.citationDialog`
 						this.clear("firstRunGuidanceShown.quickFormat");
-						break;
-					
-					case 21:
-						this.set('firstRunGuidanceShown.readAloud', false);
-						break;
-
-					// downloadPDFViaBrowser.* -> browserRequest.*;
-					// module was generalized to handle more than PDF downloads
-					case 22:
-						if (this.prefHasUserValue('downloadPDFViaBrowser.onLoadTimeout')) {
-							this.set('browserRequest.onLoadTimeout',
-								this.get('downloadPDFViaBrowser.onLoadTimeout'));
-							this.clear('downloadPDFViaBrowser.onLoadTimeout');
-						}
-						if (this.prefHasUserValue('downloadPDFViaBrowser.downloadTimeout')) {
-							this.set('browserRequest.timeout',
-								this.get('downloadPDFViaBrowser.downloadTimeout'));
-							this.clear('downloadPDFViaBrowser.downloadTimeout');
-						}
 						break;
 				}
 			}
@@ -519,9 +500,8 @@ Zotero.Prefs = new function () {
 		const prefKeys = {
 			duplicates: 'duplicateLibraries',
 			unfiled: 'unfiledLibraries',
-			recentlyRead: 'recentlyReadLibraries',
 			retracted: 'retractedLibraries',
-			publications: 'publications'
+			publications: 'publications',
 		};
 		let prefKey = prefKeys[type];
 		if (!prefKey) {
@@ -554,7 +534,6 @@ Zotero.Prefs = new function () {
 		const prefKeys = {
 			duplicates: 'duplicateLibraries',
 			unfiled: 'unfiledLibraries',
-			recentlyRead: 'recentlyReadLibraries',
 			retracted: 'retractedLibraries',
 			publications: 'publications'
 		};

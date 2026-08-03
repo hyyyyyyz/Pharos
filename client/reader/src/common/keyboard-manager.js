@@ -36,9 +36,6 @@ export class KeyboardManager {
 		// Primary modifier
 		let pm = isMac() ? 'Cmd' : 'Ctrl';
 
-		let arrowPrev = 'Arrow' + (window.rtl ? 'Right' : 'Left');
-		let arrowNext = 'Arrow' + (window.rtl ? 'Left' : 'Right');
-
 		this.shift = event.shiftKey;
 		this.mod = ctrl || cmd;
 
@@ -50,57 +47,6 @@ export class KeyboardManager {
 		let code = getCodeCombination(event);
 
 		let sidebarAnnotationFocused = document.activeElement.classList.contains('annotation');
-		let readAloudActive = this._reader._readAloudManager.active;
-
-		if (this._reader._state.readAloudState.annotationPopup) {
-			if (['Escape', 'Enter'].includes(key)) {
-				event.preventDefault();
-				this._reader.dismissReadAloudAnnotationPopup();
-				return;
-			}
-			if (['Delete', 'Backspace'].includes(key)) {
-				event.preventDefault();
-				this._reader.deleteReadAloudAnnotation();
-				return;
-			}
-			if (key === `${pm}-${arrowPrev}`) {
-				event.preventDefault();
-				event.stopPropagation();
-				this._reader.extendReadAloudAnnotation('prev');
-				return;
-			}
-			if (key === `${pm}-${arrowNext}`) {
-				event.preventDefault();
-				event.stopPropagation();
-				this._reader.extendReadAloudAnnotation('next');
-				return;
-			}
-			if (key === arrowPrev || key === `Shift-${arrowPrev}`) {
-				event.preventDefault();
-				event.stopPropagation();
-				this._reader.moveReadAloudAnnotation('prev', event.shiftKey);
-				return;
-			}
-			if (key === arrowNext || key === `Shift-${arrowNext}`) {
-				event.preventDefault();
-				event.stopPropagation();
-				this._reader.moveReadAloudAnnotation('next', event.shiftKey);
-				return;
-			}
-			if (/^\d$/.test(key)) {
-				let idx = parseInt(key) - 1;
-				if (ANNOTATION_COLORS[idx]) {
-					event.preventDefault();
-					this._reader.setReadAloudAnnotationColor(ANNOTATION_COLORS[idx][1]);
-					return;
-				}
-			}
-			if (key === 'h' || key === 'u') {
-				event.preventDefault();
-				this._reader.setReadAloudAnnotationType(key === 'h' ? 'highlight' : 'underline');
-				return;
-			}
-		}
 
 		if (!isTextBox(event.target)) {
 			if (
@@ -108,7 +54,7 @@ export class KeyboardManager {
 				(isMac() && ['Cmd-BracketLeft', 'Cmd-ArrowLeft'].includes(code))
 				// Windows / Linux
 				|| (isLinux() && code === 'Ctrl-BracketLeft')
-				|| ((isLinux() || isWin()) && code === 'Alt-ArrowLeft' && !readAloudActive)
+				|| ((isLinux() || isWin()) && code === 'Alt-ArrowLeft')
 				// Dedicated mouse / keyboard button
 				|| code === 'BrowserBack'
 			) {
@@ -121,7 +67,7 @@ export class KeyboardManager {
 				(isMac() && ['Cmd-BracketRight', 'Cmd-ArrowRight'].includes(code))
 				// Windows / Linux
 				|| (isLinux() && code === 'Ctrl-BracketRight')
-				|| ((isLinux() || isWin()) && code === 'Alt-ArrowRight' && !readAloudActive)
+				|| ((isLinux() || isWin()) && code === 'Alt-ArrowRight')
 				// Dedicated mouse / keyboard button
 				|| code === 'BrowserForward'
 			) {
@@ -264,7 +210,7 @@ export class KeyboardManager {
 			event.stopPropagation();
 			this._reader.findNext();
 		}
-		else if (key === `${pm}-Alt-g`) {
+		else if (key === `${pm}Alt-g`) {
 			event.preventDefault();
 			let pageNumberInput = document.getElementById('pageNumber');
 			pageNumberInput.focus();
@@ -350,7 +296,7 @@ export class KeyboardManager {
 			}
 		}
 
-		if (!isTextBox(event.target) && !this._reader._state.contextMenu) {
+		if (!isTextBox(event.target)) {
 			if (code === 'Alt-Digit1') {
 				this._reader.toggleTool('highlight');
 			}
@@ -391,64 +337,6 @@ export class KeyboardManager {
 					this._reader.setTool({ color: ANNOTATION_COLORS[idx][1] });
 				}
 			}
-			else if (this._reader._type === 'pdf' && key === 'h' && !this._reader._readAloudManager.active) {
-				this._reader.toggleHandTool();
-			}
-			else if (this._reader._type === 'pdf' && key === 's') {
-				this._reader.setTool({ type: 'pointer' });
-			}
-			else if (key === 'r' || key === 'l') {
-				event.preventDefault();
-				event.stopPropagation();
-				if (this._reader._readAloudManager.active && !this._reader.getSelectionPosition()) {
-					this._reader.toggleReadAloudPopup(false);
-				}
-				else {
-					this._reader.startReadAloudAtPosition();
-				}
-			}
-			else if (readAloudActive && !event.target.matches('button, select')) {
-				if (key === 'Space') {
-					event.preventDefault();
-					event.stopPropagation();
-					this._reader.toggleReadAloudPaused();
-				}
-				else if (key === `Alt-${arrowPrev}` || key === `Alt-Shift-${arrowPrev}`) {
-					event.preventDefault();
-					event.stopPropagation();
-					this._reader._readAloudManager.skipBack('paragraph', event.shiftKey);
-					this._reader._lockPositionToReadAloud();
-				}
-				else if (key === `Alt-${arrowNext}` || key === `Alt-Shift-${arrowNext}`) {
-					event.preventDefault();
-					event.stopPropagation();
-					this._reader._readAloudManager.skipAhead('paragraph', event.shiftKey);
-					this._reader._lockPositionToReadAloud();
-				}
-				else if (key === arrowPrev || key === `Shift-${arrowPrev}`) {
-					event.preventDefault();
-					event.stopPropagation();
-					this._reader._readAloudManager.skipBack('sentence', event.shiftKey);
-					this._reader._lockPositionToReadAloud();
-				}
-				else if (key === arrowNext || key === `Shift-${arrowNext}`) {
-					event.preventDefault();
-					event.stopPropagation();
-					this._reader._readAloudManager.skipAhead('sentence', event.shiftKey);
-					this._reader._lockPositionToReadAloud();
-				}
-				else if (key === 'h' || key === 'u') {
-					event.preventDefault();
-					event.stopPropagation();
-					let segment = this._reader._readAloudManager.getSegmentToAnnotate();
-					if (segment) {
-						this._reader.addAnnotationFromReadAloudSegment(
-							segment,
-							key === 'h' ? 'highlight' : 'underline'
-						);
-					}
-				}
-			}
 		}
 	}
 
@@ -478,3 +366,4 @@ export class KeyboardManager {
 		this._handleKeyUp(event, true);
 	}
 }
+

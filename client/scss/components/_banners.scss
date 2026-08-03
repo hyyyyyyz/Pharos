@@ -30,22 +30,12 @@
 		padding-inline: 0.5em;
 	}
 	
-	.close-btn {
-		border-radius: 4px;
-		display: flex;
-		
-		&:hover {
-			background-color: var(--color-background30);
-		}
-		
-		.icon {
-			width: 20px;
-			height: 20px;
-			@include svgicon("x-8", "universal", "16");
-			color: inherit;
-			padding-block: 4px;
-			box-sizing: border-box;
-		}
+	label[is="text-link"].close-link {
+		text-decoration: none;
+		cursor: pointer;
+		font-size: 22px;
+		line-height: 26px;
+		margin-inline-end: -0.5em;
 	}
 	
 	.message {

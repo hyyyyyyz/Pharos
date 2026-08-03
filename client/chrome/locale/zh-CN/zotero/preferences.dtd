@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "同步">
 <!ENTITY zotero.preferences.sync.username "用户名:">
 <!ENTITY zotero.preferences.sync.password "密码:">
+<!ENTITY zotero.preferences.sync.syncServer "数据同步">
+<!ENTITY zotero.preferences.sync.setUpSync "启用同步">
+<!ENTITY zotero.preferences.sync.unlinkAccount "退出账户…">
 <!ENTITY zotero.preferences.sync.createAccount "创建账户">
 <!ENTITY zotero.preferences.sync.lostPassword "忘记密码?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "自动同步">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "文件同步">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "网址:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "“我的文库”附件同步方式：">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "使用 Zotero 云存储同步群组文献库中的附件">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "下载文件">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "在同步时">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "在需要时">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "验证服务器">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "使用 Zotero 云存储即代表您接受其">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "条款和条件">
 <!ENTITY zotero.preferences.sync.librariesToSync "要同步的文献库">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "选择文献库…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "同步">

@@ -4879,7 +4879,6 @@
 			"atmosferostojkost-": "atmosferostojk.",
 			"atmosfær-": "atmos.",
 			"atmosphaer-": "Atmos.",
-			"atmospher-": "atmos.",
 			"atmosphér-": "atmos.",
 			"atmung": "Atm.",
 			"atom": "At.",
@@ -40856,10 +40855,7 @@
 			"del": "",
 			"di": "",
 			"do": "",
-			"fur": "",
-			"für": "",
-			"über": "",
-			"à": ""
+			"fur": ""
 		}
 	}
 }

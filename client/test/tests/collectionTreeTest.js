@@ -319,7 +319,7 @@ describe("Zotero.CollectionTree", function () {
 			var id = await collection.saveTx();
 			
 			// New collection should be selected
-			var selected = cv.getSelectedCollections(true)[0];
+			var selected = cv.getSelectedCollection(true);
 			assert.equal(selected, id);
 		});
 		
@@ -332,7 +332,7 @@ describe("Zotero.CollectionTree", function () {
 			});
 			
 			// Library should still be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], userLibraryID);
+			assert.equal(cv.getSelectedLibraryID(), userLibraryID);
 		});
 		
 		it("shouldn't select a new collection if skipSelect is passed", async function () {
@@ -344,7 +344,7 @@ describe("Zotero.CollectionTree", function () {
 			});
 			
 			// Library should still be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], userLibraryID);
+			assert.equal(cv.getSelectedLibraryID(), userLibraryID);
 		});
 		
 		it("shouldn't select a modified collection", async function () {
@@ -359,7 +359,7 @@ describe("Zotero.CollectionTree", function () {
 			await collection.saveTx();
 			
 			// Modified collection should not be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], userLibraryID);
+			assert.equal(cv.getSelectedLibraryID(), userLibraryID);
 		});
 		
 		it("should maintain selection on a selected modified collection", async function () {
@@ -368,14 +368,14 @@ describe("Zotero.CollectionTree", function () {
 			collection.name = "Reselect on modify";
 			var id = await collection.saveTx();
 			
-			var selected = cv.getSelectedCollections(true)[0];
+			var selected = cv.getSelectedCollection(true);
 			assert.equal(selected, id);
 			
 			collection.name = "Reselect on modify 2";
 			await collection.saveTx();
 			
 			// Modified collection should still be selected
-			selected = cv.getSelectedCollections(true)[0];
+			selected = cv.getSelectedCollection(true);
 			assert.equal(selected, id);
 		});
 		
@@ -392,7 +392,7 @@ describe("Zotero.CollectionTree", function () {
 					o2.deleted = true;
 					await o2.saveTx();
 					
-					assert.equal(zp.getCollectionTreeRows()[0].ref.id, o3.id);
+					assert.equal(zp.getCollectionTreeRow().ref.id, o3.id);
 				});
 				
 				it(`should maintain selection on ${objectType} when row above is moved to trash`, async function () {
@@ -402,12 +402,12 @@ describe("Zotero.CollectionTree", function () {
 					var o3 = await createDataObject(objectType, { name: ran + "CCC" });
 					
 					await cv.selectByID(o3.treeViewID);
-					assert.equal(zp.getCollectionTreeRows()[0].ref.id, o3.id);
+					assert.equal(zp.getCollectionTreeRow().ref.id, o3.id);
 					
 					o1.deleted = true;
 					await o1.saveTx();
 					
-					assert.equal(zp.getCollectionTreeRows()[0].ref.id, o3.id);
+					assert.equal(zp.getCollectionTreeRow().ref.id, o3.id);
 				});
 				
 				it(`should maintain selection on trash when ${objectType} is restored`, async function () {
@@ -418,7 +418,7 @@ describe("Zotero.CollectionTree", function () {
 					o.deleted = false;
 					await o.saveTx();
 					
-					assert.isTrue(zp.getCollectionTreeRows()[0].isTrash());
+					assert.isTrue(zp.getCollectionTreeRow().isTrash());
 					
 					// Row should have been added back
 					assert.isAbove(cv.getRowIndexByID(o.treeViewID), 0);
@@ -437,7 +437,7 @@ describe("Zotero.CollectionTree", function () {
 				
 				await o2.eraseTx();
 				
-				assert.equal(zp.getCollectionTreeRows()[0].ref.id, o3.id);
+				assert.equal(zp.getCollectionTreeRow().ref.id, o3.id);
 			});
 		}
 		
@@ -449,14 +449,14 @@ describe("Zotero.CollectionTree", function () {
 			await cv.selectLibrary(group.libraryID);
 			await waitForItemsLoad(win);
 			
-			assert.isFalse(zp.getCollectionTreeRows()[0].editable);
+			assert.isFalse(zp.getCollectionTreeRow().editable);
 			var cmd = win.document.getElementById('cmd_zotero_newStandaloneNote');
 			assert.isTrue(cmd.getAttribute('disabled') == 'true');
 			
 			group.editable = true;
 			await group.saveTx();
 			
-			assert.isTrue(zp.getCollectionTreeRows()[0].editable);
+			assert.isTrue(zp.getCollectionTreeRow().editable);
 			assert.isFalse(cmd.getAttribute('disabled') == 'true');
 		});
 		
@@ -586,7 +586,7 @@ describe("Zotero.CollectionTree", function () {
 		it("shouldn't select a new group", async function () {
 			var group = await createGroup();
 			// Library should still be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], userLibraryID);
+			assert.equal(cv.getSelectedLibraryID(), userLibraryID);
 		})
 		
 		it("should remove a group and all children", async function () {
@@ -604,8 +604,8 @@ describe("Zotero.CollectionTree", function () {
 			await createDataObject('collection', { libraryID: group.libraryID });
 			await select(win, c2);
 			
-			// Group, collections, Recently Read, Duplicates, Unfiled, and trash
-			assert.equal(cv._rows.length, originalRowCount + 10);
+			// Group, collections, Duplicates, Unfiled, and trash
+			assert.equal(cv._rows.length, originalRowCount + 9);
 			
 			// Select group
 			await cv.selectLibrary(group.libraryID);
@@ -627,7 +627,7 @@ describe("Zotero.CollectionTree", function () {
 		it("should select a new feed", async function () {
 			var feed = await createFeed();
 			// Feed should be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], feed.id);
+			assert.equal(cv.getSelectedLibraryID(), feed.id);
 		});
 		
 		it("shouldn't select a new feed with skipSelect: true", async function () {
@@ -637,7 +637,7 @@ describe("Zotero.CollectionTree", function () {
 				}
 			});
 			// Library should still be selected
-			assert.equal(cv.getSelectedLibraryIDs()[0], userLibraryID);
+			assert.equal(cv.getSelectedLibraryID(), userLibraryID);
 		});
 		
 		it("should remove deleted feed", async function () {
@@ -673,6 +673,7 @@ describe("Zotero.CollectionTree", function () {
 		it("should switch to library root if item isn't in collection", async function () {
 			var item = await createDataObject('item');
 			var collection = await createDataObject('collection');
+			Zotero.debug(zp.itemsView._rows);
 			await cv.selectItem(item.id);
 			await waitForItemsLoad(win);
 			assert.equal(cv.selection.focused, 0);
@@ -695,7 +696,7 @@ describe("Zotero.CollectionTree", function () {
 			var item = await createDataObject('item', { deleted: true });
 			await cv.selectItems([item.id]);
 			await waitForItemsLoad(win);
-			assert.isTrue(zp.getCollectionTreeRows()[0].isTrash());
+			assert.isTrue(zp.getCollectionTreeRow().isTrash());
 			assert.sameMembers(zp.itemsView.getSelectedItems(true), [item.id]);
 		});
 		
@@ -704,185 +705,11 @@ describe("Zotero.CollectionTree", function () {
 			var note = await createDataObject('item', { itemType: 'note', parentItemID: item.id });
 			await cv.selectItems([note.id]);
 			await waitForItemsLoad(win);
-			assert.isTrue(zp.getCollectionTreeRows()[0].isTrash());
+			assert.isTrue(zp.getCollectionTreeRow().isTrash());
 			assert.sameMembers(zp.itemsView.getSelectedItems(true), [note.id]);
 		});
 	});
 	
-	describe("#handleActivate()", function () {
-		it("shouldn't start editing when multiple collections are selected", async function () {
-			let c1 = await createDataObject('collection');
-			let c2 = await createDataObject('collection');
-			await cv.selectByID("C" + c1.id);
-			cv.selection.toggleSelect(cv.getRowIndexByID("C" + c2.id));
-			assert.equal(cv.selection.count, 2);
-
-			cv.handleActivate(new Event('keydown'), [cv.selection.focused]);
-
-			assert.notOk(cv._editing);
-		});
-	});
-
-	describe("selection", function () {
-		// Toggle a row the way a Cmd-click/Space does (through the table's selection handler)
-		function toggleRow(index) {
-			cv.tree._onSelection(index, false, true);
-		}
-
-		it("should return each selected library once, in tree order", async function () {
-			let group = await createGroup();
-			let collection1 = await createDataObject('collection');
-			let collection2 = await createDataObject('collection');
-			let groupCollection = await createDataObject(
-				'collection', { libraryID: group.libraryID }
-			);
-
-			await cv.expandLibrary(group.libraryID);
-			await cv.selectByID("C" + collection1.id);
-			// Toggle in reverse tree order, to show the result isn't in click order
-			toggleRow(cv.getRowIndexByID("C" + groupCollection.id));
-			toggleRow(cv.getRowIndexByID("C" + collection2.id));
-
-			assert.sameOrderedMembers(
-				cv.getSelectedLibraryIDs(),
-				[Zotero.Libraries.userLibraryID, group.libraryID]
-			);
-
-			await selectLibrary(win);
-			await group.eraseTx();
-		});
-
-		it("should keep a selection when the last selected row is toggled off", async function () {
-			let c = await createDataObject('collection');
-			await cv.selectByID("C" + c.id);
-			let row = cv.getRowIndexByID("C" + c.id);
-			assert.equal(cv.selection.count, 1);
-
-			// Toggling off the only selected row would empty the selection
-			toggleRow(row);
-
-			assert.equal(cv.selection.count, 1);
-			assert.isTrue(cv.selection.isSelected(row));
-		});
-
-		it("should allow toggling off a row when others remain selected", async function () {
-			let c1 = await createDataObject('collection');
-			let c2 = await createDataObject('collection');
-			await cv.selectByID("C" + c1.id);
-			let r2 = cv.getRowIndexByID("C" + c2.id);
-			toggleRow(r2);
-			assert.equal(cv.selection.count, 2);
-
-			// Toggling one off leaves the other
-			toggleRow(r2);
-			assert.equal(cv.selection.count, 1);
-			assert.isTrue(cv.selection.isSelected(cv.getRowIndexByID("C" + c1.id)));
-		});
-
-		it("should mark the focused-but-unselected row for the focus ring", async function () {
-			let c1 = await createDataObject('collection');
-			let c2 = await createDataObject('collection');
-			await cv.selectByID("C" + c1.id);
-			let r2 = cv.getRowIndexByID("C" + c2.id);
-
-			// Move focus to c2 without selecting it (macOS Cmd-arrow style)
-			cv.tree._onSelection(r2, false, false, true);
-			assert.equal(cv.selection.focused, r2);
-			assert.isFalse(cv.selection.isSelected(r2));
-
-			// The focused (unselected) row gets the 'focused' class that drives the
-			// dotted focus ring (rendering is async, so wait for it)
-			await waitForCallback(() => {
-				let n = win.document.getElementById(`${cv.id}-row-${r2}`);
-				return n && n.classList.contains('focused');
-			}, 50, 20);
-			let node = win.document.getElementById(`${cv.id}-row-${r2}`);
-			assert.isTrue(node.classList.contains('focused'));
-			assert.isFalse(node.classList.contains('selected'));
-		});
-
-		it("should not leave a stale multi-selection after filtering", async function () {
-			let cA = await createDataObject('collection', { name: 'filterAAA' });
-			let cB = await createDataObject('collection', { name: 'filterBBB' });
-			let cC = await createDataObject('collection', { name: 'filterCCC' });
-
-			// Select all three, focusing the one that will still match the filter
-			await cv.selectByID("C" + cB.id);
-			toggleRow(cv.getRowIndexByID("C" + cC.id));
-			toggleRow(cv.getRowIndexByID("C" + cA.id));
-			assert.equal(cv.selection.count, 3);
-
-			await cv.setFilter("filterAAA");
-
-			// Only the still-matching focused row is selected -- no stale indices
-			assert.deepEqual(cv.getSelectedRows().map(r => r.id), ["C" + cA.id]);
-
-			await cv.setFilter("");
-		});
-	});
-
-	describe("#_handleSelectAll()", function () {
-		beforeEach(async function () {
-			await clearFeeds();
-		});
-		after(async function () {
-			await clearFeeds();
-		});
-
-		it("should select all library roots without pulling in feeds", async function () {
-			var group = await createGroup();
-			await createFeed();
-
-			// Expand the Feeds container so its feed rows are in the tree, which is the
-			// state that triggered the bug
-			var feedsRow = cv._rows.findIndex(row => row.isFeeds());
-			assert.isAbove(feedsRow, -1);
-			if (!cv.isContainerOpen(feedsRow)) {
-				await cv.toggleOpenState(feedsRow);
-			}
-			assert.isTrue(cv._rows.some(row => row.isFeed()));
-
-			// Select My Library and do Cmd/Ctrl-A
-			await cv.selectByID("L" + userLibraryID);
-			await cv._handleSelectAll();
-			await zp.onCollectionSelected();
-
-			var selectedRows = cv.getSelectedRows();
-			// My Library and the group are both selected...
-			assert.isTrue(selectedRows.some(row => row.id == "L" + userLibraryID));
-			assert.isTrue(selectedRows.some(row => row.id == group.treeViewID));
-			// ...and no feeds were pulled in, so the selection wasn't collapsed to a
-			// single row for not being shown together
-			assert.isFalse(selectedRows.some(row => row.isFeed()));
-			assert.isAbove(cv.selection.count, 1);
-		});
-	});
-
-	describe("#deleteSelectedCollection()", function () {
-		it("shouldn't delete a mixed-type selection", async function () {
-			let collection = await createDataObject('collection');
-			let search = await createDataObject('search');
-			await cv.selectByID("C" + collection.id);
-			cv.selection.toggleSelect(cv.getRowIndexByID("S" + search.id));
-			await zp.onCollectionSelected();
-			assert.equal(cv.selection.count, 2);
-
-			let stub = sinon.stub().returns(0);
-			let promptService = win.Services.prompt;
-			win.Services.prompt = { confirmEx: stub };
-			try {
-				await zp.deleteSelectedCollection(false);
-			}
-			finally {
-				win.Services.prompt = promptService;
-			}
-
-			assert.isFalse(stub.called, "Mixed selection shouldn't prompt or delete");
-			assert.isFalse(collection.deleted);
-			assert.isFalse(search.deleted);
-		});
-	});
-
 	describe("#onDrop()", function () {
 		/**
 		 * Simulate a drag and drop
@@ -904,7 +731,7 @@ describe("Zotero.CollectionTree", function () {
 			}
 			
 			Zotero.DragDrop.currentDragSource = objectType == "item"
-				? zp.itemsView.collectionTreeRows[0]
+				? zp.itemsView.collectionTreeRow
 				: null;
 			
 			if (!promise) {
@@ -936,7 +763,7 @@ describe("Zotero.CollectionTree", function () {
 			var row = cv.getRowIndexByID(targetRowID);
 			
 			Zotero.DragDrop.currentDragSource = objectType == "item"
-				? zp.itemsView.collectionTreeRows[0]
+				? zp.itemsView.collectionTreeRow
 				: null;
 			var dt = {
 				dropEffect: 'copy',
@@ -954,46 +781,6 @@ describe("Zotero.CollectionTree", function () {
 			}
 			Zotero.DragDrop.currentDragSource = null;
 			return canDrop;
-		};
-		
-		// Simulate a drag over a row and return the resulting dropEffect ('copy', 'move', or
-		// 'none'). Pass { move: true } to simulate the platform's move modifier being held.
-		var dragOver = function (objectType, targetRowID, ids, { move = false } = {}) {
-			var index = cv.getRowIndexByID(targetRowID);
-			
-			Zotero.DragDrop.currentDragSource = objectType == "item"
-				? zp.itemsView.collectionTreeRows[0]
-				: null;
-			
-			// Drop directly onto the middle of the row (orient 0)
-			var rowEl = {
-				classList: { contains: () => true },
-				getBoundingClientRect: () => ({ y: 0, height: 100 })
-			};
-			var dataTransfer = {
-				dropEffect: 'copy',
-				effectAllowed: 'copyMove',
-				types: [`zotero/${objectType}`],
-				getData: function (type) {
-					if (type == `zotero/${objectType}`) {
-						return ids.join(",");
-					}
-					return "";
-				},
-				setDragImage: () => {}
-			};
-			cv.onDragOver({
-				preventDefault: () => {},
-				stopPropagation: () => {},
-				currentTarget: rowEl,
-				target: rowEl,
-				clientY: 50,
-				metaKey: move && Zotero.isMac,
-				shiftKey: move && !Zotero.isMac,
-				dataTransfer
-			}, index);
-			Zotero.DragDrop.currentDragSource = null;
-			return dataTransfer.dropEffect;
 		};
 		
 		describe("with items", function () {
@@ -1055,126 +842,13 @@ describe("Zotero.CollectionTree", function () {
 				assert.equal(zp.itemsView.rowCount, 0);
 				
 				await select(win, collection2);
-
+				
 				// Target collection should have item
 				assert.equal(zp.itemsView.rowCount, 1);
 				var treeRow = zp.itemsView.getRow(0);
 				assert.equal(treeRow.ref.id, item.id);
 			});
-
-			it("should add a multiple-library item selection to a collection, copying out-of-library items", async function () {
-				await Zotero.Users.setCurrentUserID(1);
-				await Zotero.Users.setName(1, 'Name');
-				
-				var collection = await createDataObject('collection');
-				var libraryItem = await createDataObject('item', false, { skipSelect: true });
-				
-				var group = await createGroup();
-				var groupItem = await createDataObject('item', { libraryID: group.libraryID });
-				
-				// Drop one item from the personal library and one from the group onto a
-				// personal-library collection
-				await onDrop('item', 'C' + collection.id, [libraryItem.id, groupItem.id]);
-				await collection.loadDataType('childItems');
-				
-				// The collection now contains the same-library item plus a copy of the group item
-				var childItemIDs = collection.getChildItems(true);
-				assert.lengthOf(childItemIDs, 2);
-				assert.include(childItemIDs, libraryItem.id);
-				
-				// The group item was copied into the personal library, and the copy links back to it
-				var copiedItem = Zotero.Items.get(childItemIDs.find(id => id != libraryItem.id));
-				assert.equal(copiedItem.libraryID, collection.libraryID);
-				assert.equal((await copiedItem.getLinkedItem(group.libraryID)).id, groupItem.id);
-				
-				await group.eraseTx();
-			});
 			
-			it("should disallow moving a multiple-library item selection", async function () {
-				var sourceCollection = await createDataObject('collection');
-				var targetCollection = await createDataObject('collection');
-				var libraryItem = await createDataObject('item', { collections: [sourceCollection.id] });
-
-				var group = await createGroup();
-				var groupItem = await createDataObject('item', { libraryID: group.libraryID });
-
-				// Source collection has to be selected so it's used as the drag source
-				await select(win, sourceCollection);
-				await waitForItemsLoad(win);
-
-				var ids = [libraryItem.id, groupItem.id];
-				// A plain drag copies the selection
-				assert.equal(dragOver('item', 'C' + targetCollection.id, ids), 'copy');
-				// A move is disallowed, since the out-of-library item can't be moved
-				assert.equal(dragOver('item', 'C' + targetCollection.id, ids, { move: true }), 'none');
-
-				await group.eraseTx();
-			});
-
-			it("should copy out-of-library items from a multiple-library selection dropped on a library root", async function () {
-				await Zotero.Users.setCurrentUserID(1);
-				await Zotero.Users.setName(1, 'Name');
-
-				var libraryItem = await createDataObject('item', false, { skipSelect: true });
-
-				var group = await createGroup();
-				var groupItem = await createDataObject('item', { libraryID: group.libraryID });
-
-				// Drop a personal-library item and a group item onto the personal library root: the
-				// item already in the library is a no-op, and the group item is copied in
-				var ids = (await onDrop('item', 'L' + userLibraryID, [libraryItem.id, groupItem.id])).ids;
-				assert.lengthOf(ids, 1);
-
-				var copiedItem = Zotero.Items.get(ids[0]);
-				assert.equal(copiedItem.libraryID, userLibraryID);
-				assert.equal((await copiedItem.getLinkedItem(group.libraryID)).id, groupItem.id);
-
-				await group.eraseTx();
-			});
-
-			it("should refuse a single-library selection dropped on its own library root", async function () {
-				var item1 = await createDataObject('item', false, { skipSelect: true });
-				var item2 = await createDataObject('item', false, { skipSelect: true });
-
-				// With no out-of-library items to copy, the drag is refused
-				assert.isFalse(await canDrop('item', 'L' + userLibraryID, [item1.id, item2.id]));
-			});
-
-			it("should record an undo step when adding an item to a collection", async function () {
-				var collection = await createDataObject('collection');
-				var item = await createDataObject('item', false, { skipSelect: true });
-				Zotero.UndoHistory.clear();
-
-				// Add observer to wait for collection add
-				var deferred = Zotero.Promise.defer();
-				var observerID = Zotero.Notifier.registerObserver({
-					notify: function (event, type, ids, extraData) {
-						if (type == 'collection-item' && event == 'add'
-								&& ids[0] == collection.id + "-" + item.id) {
-							setTimeout(function () {
-								deferred.resolve();
-							});
-						}
-					}
-				}, 'collection-item', 'test');
-
-				await onDrop('item', 'C' + collection.id, [item.id], deferred.promise);
-
-				Zotero.Notifier.unregisterObserver(observerID);
-
-				assert.include(item.getCollections(), collection.id);
-				assert.isTrue(Zotero.UndoHistory.canUndo());
-				var action = Zotero.UndoHistory.getUndoAction();
-				assert.equal(action.action, 'undo-action-add-to-collection');
-				assert.equal(action.actionArgs.count, 1);
-
-				await Zotero.UndoHistory.undo();
-				assert.notInclude(item.getCollections(), collection.id);
-
-				await Zotero.UndoHistory.redo();
-				assert.include(item.getCollections(), collection.id);
-			});
-
 			describe("My Publications", function () {
 				function getItemModifyPromise(item) {
 					// Add observer to wait for item modification
@@ -1743,16 +1417,9 @@ describe("Zotero.CollectionTree", function () {
 			
 			after(async function () {
 				await new Promise(resolve => httpd.stop(resolve));
-				Zotero.Prefs.clear('downloadAssociatedFiles');
-				Zotero.Prefs.clear('automaticSnapshots');
 			});
-
+			
 			it("should add a translated feed item retrieved from a URL", async function () {
-				// Disable file/snapshot saving to avoid external network requests and async
-				// attachment processing
-				Zotero.Prefs.set('downloadAssociatedFiles', false);
-				Zotero.Prefs.set('automaticSnapshots', false);
-
 				// Serve the feed entry webpage via localhost
 				const urlPath = "/journalArticle-single.html";
 				const url = `http://localhost:${httpdPort}` + urlPath;
@@ -1770,21 +1437,21 @@ describe("Zotero.CollectionTree", function () {
 				await feedItem.saveTx();
 				var translateFn = sinon.spy(feedItem, 'translate');
 				
+				// Add observer to wait for collection add
+				var deferred = Zotero.Promise.defer();
+				var itemIds;
+
 				var ids = ((await onDrop('item', 'C' + collection.id, [feedItem.id]))).ids;
 				
 				// Check that the translated item was the one that was created after drag
-				var item = await translateFn.returnValues[0];
-				assert.ok(item, 'Translation should return an item');
-
+				var item;
+				await translateFn.returnValues[0].then(function (i) {
+					item = i;
+					assert.equal(item.id, ids[0]);
+				});
+				
 				await select(win, collection);
-				// TEMP: Some extra asserts to debug flakiness in CI
-				var selectedTreeRow = win.ZoteroPane.getCollectionTreeRows()[0];
-				assert.ok(selectedTreeRow, 'a collection tree row should be selected');
-				assert.isTrue(selectedTreeRow.isCollection(),
-					'selected tree row should be a collection');
-				assert.equal(selectedTreeRow.ref.id, collection.id,
-					'selected collection tree row should match created collection');
-
+				
 				var itemsView = win.ZoteroPane.itemsView;
 				assert.equal(itemsView.rowCount, 1);
 				var treeRow = itemsView.getRow(0);
@@ -1919,15 +1586,6 @@ describe("Zotero.CollectionTree", function () {
 			});
 		}
 
-		it('should match an accented collection name from an unaccented filter', async function () {
-			var collection = await createDataObject('collection', { name: "zdiacrésumé", libraryID: userLibraryID });
-			await cv.setFilter("zdiacresume");
-			let displayedNames = cv._rows.filter(row => row.type == "collection").map(row => row.ref.name);
-			assert.include(displayedNames, "zdiacrésumé");
-			await cv.setFilter("");
-			await collection.eraseTx();
-		});
-
 		it('should show non-passing entries whose children pass the filter', async function () {
 			await cv.setFilter("three");
 			let displayedRowNames = cv._rows.filter(row => row.type == "collection").map(row => row.ref.name);
@@ -2019,7 +1677,7 @@ describe("Zotero.CollectionTree", function () {
 			win.document.getElementById("zotero-collections-search").value = "_2";
 			await cv.setFilter("_2");
 			win.document.getElementById("zotero-collections-search").dispatchEvent(keyboardClick("Enter"));
-			assert.equal(cv.getSelectedCollections(true)[0], collection3.id);
+			assert.equal(cv.getSelectedCollection(true), collection3.id);
 			assert.equal(win.document.activeElement.id, 'collection-tree');
 		});
 
@@ -2031,7 +1689,7 @@ describe("Zotero.CollectionTree", function () {
 			win.document.getElementById("zotero-collections-search").dispatchEvent(keyboardClick("Enter"));
 			// Wait for the selection to go through
 			await Zotero.Promise.delay(100);
-			assert.equal(cv.getSelectedCollections(true)[0], collection3.id);
+			assert.equal(cv.getSelectedCollection(true), collection3.id);
 			assert.equal(win.document.activeElement.id, 'collection-tree');
 		});
 
@@ -2050,12 +1708,12 @@ describe("Zotero.CollectionTree", function () {
 			await cv.focusFirstMatchingRow();
 			// Skip collection6 that does not match on the way up and down
 			for (let col of [collection3, collection7, collection8]) {
-				assert.equal(cv.getSelectedCollections(true)[0], col.id);
+				assert.equal(cv.getSelectedCollection(true), col.id);
 				await cv.focusNextMatchingRow(cv.selection.focused);
 			}
 			await cv.selectByID(`C${collection8.id}`);
 			for (let col of [collection8, collection7, collection3]) {
-				assert.equal(cv.getSelectedCollections(true)[0], col.id);
+				assert.equal(cv.getSelectedCollection(true), col.id);
 				await cv.focusNextMatchingRow(cv.selection.focused, true);
 			}
 		});
@@ -2067,7 +1725,7 @@ describe("Zotero.CollectionTree", function () {
 			cv.focusFirstMatchingRow();
 			colTree.dispatchEvent(keyboardClick("Escape"));
 			assert.equal(cv._filter, "");
-			assert.equal(cv.getSelectedCollections(true)[0], collection2.id);
+			assert.equal(cv.getSelectedCollection(true), collection2.id);
 		});
 	});
 

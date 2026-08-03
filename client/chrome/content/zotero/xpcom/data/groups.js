@@ -124,11 +124,9 @@ Zotero.Groups = new function () {
 		
 		var editable = false;
 		var filesEditable = false;
-		var isAdmin = false;
 		// If user is owner or admin, make library editable, and make files editable unless they're
 		// disabled altogether
 		if (json.owner == userID || (json.admins && json.admins.indexOf(userID) != -1)) {
-			isAdmin = true;
 			editable = true;
 			if (json.fileEditing != 'none') {
 				filesEditable = true;
@@ -143,6 +141,6 @@ Zotero.Groups = new function () {
 				}
 			}
 		}
-		return { editable, filesEditable, isAdmin };
+		return { editable, filesEditable };
 	};
 }

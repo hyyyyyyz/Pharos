@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sincronitza">
 <!ENTITY zotero.preferences.sync.username "Nom d'usuari">
 <!ENTITY zotero.preferences.sync.password "Contrasenya">
+<!ENTITY zotero.preferences.sync.syncServer "Sincronització de dades">
+<!ENTITY zotero.preferences.sync.setUpSync "Configura la sincronització">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Desvincula el compte…">
 <!ENTITY zotero.preferences.sync.createAccount "Crea un compte">
 <!ENTITY zotero.preferences.sync.lostPassword "Has oblidat la contrasenya?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Sincronitza automàticament">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Sincronització dels fitxers">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Sincronitza els fitxers adjunts de la biblioteca mitjançant">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Sincronitza els fitxers adjunts de les biblioteques de grup mitjançant l'emmagatzematge del Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Descarrega els fitxers">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "quan se sincronitzi">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "segons sigui necessari">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verifica el servidor">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Amb l'ús de l'emmagatzematge del Zotero, accepteu quedar obligat pels">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "termes i condicions">
 <!ENTITY zotero.preferences.sync.librariesToSync "Biblioteques per sincronitzar">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Trieu les biblioteques…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Sincronitza">

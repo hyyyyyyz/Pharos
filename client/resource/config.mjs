@@ -59,5 +59,4 @@ export var ZOTERO_CONFIG = {
 	// the major version alone would 404. zoteroPane.js's replace() on the
 	// missing placeholder is a harmless no-op.
 	NEW_FEATURES_URL: 'https://github.com/hyyyyyyz/Pharos/releases',
-	READ_ALOUD_URL: 'https://www.zotero.org/settings/readaloud'
 };

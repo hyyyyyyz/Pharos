@@ -111,7 +111,7 @@
 		<command id="cmd_zotero_import" oncommand="Zotero_File_Interface.showImportWizard();"/>
 		<command id="cmd_zotero_importFromClipboard" oncommand="Zotero_File_Interface.importFromClipboard();"/>
 		<command id="cmd_zotero_exportLibrary" oncommand="Zotero_File_Interface.exportFile();"/>
-		<command id="cmd_zotero_advancedSearch" oncommand="ZoteroPane.toggleAdvancedSearchState('open');"/>
+		<command id="cmd_zotero_advancedSearch" oncommand="ZoteroPane_Local.openAdvancedSearchWindow();"/>
 		<command id="cmd_zotero_copyCitation"
 				 oncommand="ZoteroPane_Local.copySelectedItemsToClipboard(true);"
 				 disabled="true"/>
@@ -123,8 +123,9 @@
 				 disabled="true"/>
 		<command id="cmd_zotero_createTimeline" oncommand="Zotero_Timeline_Interface.loadTimeline();"/>
 		<command id="cmd_zotero_rtfScan" oncommand="window.openDialog('chrome://zotero/content/rtfScan.xhtml', 'rtfScan', 'chrome,centerscreen')"/>
-		<command id="cmd_zotero_newCollection" oncommand="ZoteroPane_Local.newCollection(ZoteroPane_Local.getSelectedCollections()[0]?.key)"/>
+		<command id="cmd_zotero_newCollection" oncommand="ZoteroPane_Local.newCollection(ZoteroPane_Local.getSelectedCollection()?.key)"/>
 		<command id="cmd_zotero_newFeed_fromURL" oncommand="ZoteroPane_Local.newFeedFromURL()"/>
+		<command id="cmd_zotero_newSavedSearch" oncommand="ZoteroPane_Local.newSearch()"/>
 		<command id="cmd_zotero_addByIdentifier" oncommand="Zotero_Lookup.showPanel()"/>
 		<command id="cmd_zotero_newStandaloneFileAttachment" oncommand="ZoteroPane.addAttachmentFromDialog()"/>
 		<command id="cmd_zotero_newStandaloneLinkedFileAttachment" oncommand="ZoteroPane.addAttachmentFromDialog(true)"/>
@@ -332,11 +333,11 @@
 									oncommand="ZoteroStandalone.currentReader.export()"/>
 							<menuseparator class="menu-type-reader pdf"/>
 							<menuitem id="menu_print" data-l10n-id="menu-print" class="menu-type-reader" oncommand="ZoteroStandalone.currentReader.print()"/>
-							<menuitem id="menu_showInLibrary" label="&zotero.items.menu.showInLibrary;" class="menu-type-reader menu-type-note" oncommand="ZoteroPane.showInLibrary()"/>
+							<menuitem id="menu_showInLibrary" label="&zotero.items.menu.showInLibrary;" class="menu-type-reader" oncommand="ZoteroStandalone.currentReader.showInLibrary()"/>
 							<menuseparator/>
 							<menuitem id="menu_close" class="menu-type-library" label="&closeCmd.label;" key="key_close"
 									accesskey="&closeCmd.accesskey;" command="cmd_close"/>
-							<menuitem id="menu_close_tab" class="menu-type-reader menu-type-note" label="&closeCmd.label;" key="key_close"
+							<menuitem id="menu_close_tab" class="menu-type-reader" label="&closeCmd.label;" key="key_close"
 									accesskey="&closeCmd.accesskey;" oncommand="Zotero_Tabs.close()"/>
 							<menuseparator class="menu-type-library"/>
 							<menuitem id="menu_showFile"
@@ -429,14 +430,11 @@
 									oncommand="ZoteroStandalone.currentReader.rotatePageRight()"
 							/>
 							<menuseparator/>
-							<menuitem id="menu_find" class="menu-type-library" label="&findCmd.label;"
+							<menuitem id="menu_find" label="&findCmd.label;"
 									key="key_find" accesskey="&findCmd.accesskey;"
 									command="cmd_find"/>
-							<menuitem id="menu_find_reader" class="menu-type-reader" label="&findCmd.label;"
-									key="key_find" accesskey="&findCmd.accesskey;"
-									oncommand="ZoteroStandalone.currentReader.toggleFindPopup({ open: true });"/>
 							<menuitem id="menu_advancedSearch"
-									data-l10n-id="menuitem-advanced-search"
+									label="&zotero.toolbar.advancedSearch;"
 									key="key_advancedSearch"
 									command="cmd_zotero_advancedSearch"/>
 							<menuseparator hidden="true" id="textfieldDirection-separator"/>
@@ -915,12 +913,12 @@
 			<menuitem class="zotero-menuitem-sync"/>
 			<menuseparator/>
 			<menuitem class="zotero-menuitem-new-collection" data-l10n-id="menu-new-collection"/>
+			<menuitem class="zotero-menuitem-new-saved-search" label="&zotero.toolbar.newSavedSearch.label;"/>
 			<menuitem class="zotero-menuitem-new-collection" label="&zotero.toolbar.newSubcollection.label;"/>
 			<menuitem class="zotero-menuitem-refresh-feed"/>
 			<menuseparator/>
 			<menuitem class="zotero-menuitem-show-duplicates" label="&zotero.toolbar.duplicate.label;"/>
 			<menuitem class="zotero-menuitem-show-unfiled" label="&zotero.collections.showUnfiledItems;"/>
-			<menuitem class="zotero-menuitem-show-recently-read" data-l10n-id="collections-menu-show-recently-read"/>
 			<menuitem class="zotero-menuitem-show-retracted" label="&zotero.collections.showRetractedItems;"/>
 			<menuitem class="zotero-menuitem-show-publications" data-l10n-id="show-publications-menuitem" />
 			<menuitem class="zotero-menuitem-edit-collection"/>
@@ -944,7 +942,6 @@
 				</menupopup>
 			</menu>
 			<menuitem class="zotero-menuitem-delete-collection"/>
-			<menuitem class="zotero-menuitem-clear-all-last-read" data-l10n-id="collections-menu-clear-all-last-read"/>
 			<menuitem class="zotero-menuitem-move-to-trash"/>
 			<menuseparator/>
 			<menuitem class="zotero-menuitem-export"/>
@@ -1027,17 +1024,31 @@
 
 		<!-- Tag Selector -->
 		<menupopup id="tag-menu">
-			<menuitem id="assign-color-tag" label="&zotero.tagSelector.assignColor;"
+			<menuitem label="&zotero.tagSelector.assignColor;"
 				oncommand="ZoteroPane.tagSelector.openColorPickerWindow(); event.stopPropagation();"/>
-			<menuitem id="rename-tag" label="&zotero.tagSelector.renameTag;"
+			<menuitem label="&zotero.tagSelector.renameTag;"
 				oncommand="ZoteroPane.tagSelector.openRenamePrompt(); event.stopPropagation();"/>
 			<menuitem id="split-tag" label="&zotero.tagSelector.splitTag;"
 				oncommand="ZoteroPane.tagSelector.openTagSplitterWindow(event)"/>
-			<menuitem id="delete-tag" label="&zotero.tagSelector.deleteTag;"
+			<menuitem label="&zotero.tagSelector.deleteTag;"
 				oncommand="ZoteroPane.tagSelector.openDeletePrompt(); event.stopPropagation();"/>
 		</menupopup>
 		<menupopup id="tag-selector-view-settings-menu"
-			onpopupshowing="ZoteroPane.updateTagSelectorViewSettingsMenu();">
+			onpopupshowing="
+				document.getElementById('show-automatic').setAttribute('checked', ZoteroPane.tagSelector.showAutomatic);
+				document.getElementById('display-all-tags').setAttribute('checked', ZoteroPane.tagSelector.displayAllTags);
+				document.getElementById('num-selected').label = ZoteroPane.tagSelector.label;
+				(async function () {
+					var libraryID = ZoteroPane.tagSelector.libraryID;
+					var library = Zotero.Libraries.get(libraryID);
+					var enabled = false;
+					if (library.editable) {
+						if ((await Zotero.Tags.getAutomaticInLibrary(libraryID)).length) {
+							enabled = true;
+						}
+					}
+					document.getElementById('delete-automatic-tags').disabled = !enabled;
+				})();">
 			<menuitem id="num-selected" disabled="true"/>
 			<menuitem id="deselect-all" label="&zotero.tagSelector.clearAll;"
 				oncommand="ZoteroPane.tagSelector.deselectAll();;"/>
@@ -1179,9 +1190,7 @@
 									<html:div class="spacer"/>
 									<html:a id="sync-reminder-disable" class="link"/>
 									<html:a id="sync-reminder-remind" class="link"/>
-									<html:div role="button" id="sync-reminder-close" class="close-btn" data-l10n-id="banner-close-button">
-										<html:span class="icon" />
-									</html:div>
+									<label is="text-link" id="sync-reminder-close" class="close-link">×</label>
 								</html:div>
 							</vbox>
 							
@@ -1206,9 +1215,7 @@
 								<html:div id="retracted-items-banner" class="banner">
 									<html:div id="retracted-items-message" class="message"/>
 									<label is="text-link" id="retracted-items-link"/>
-									<html:div role="button" id="retracted-items-close" class="close-btn" data-l10n-id="banner-close-button">
-										<html:span class="icon" />
-									</html:div>
+									<label is="text-link" id="retracted-items-close" class="close-link">×</label>
 								</html:div>
 							</vbox>
 
@@ -1218,9 +1225,7 @@
 									<html:a id="architecture-warning-action" data-l10n-id="architecture-warning-action" class="link" />
 									<html:div class="spacer" />
 									<label is="text-link" id="architecture-warning-remind" data-l10n-id="general-remind-me-later" />
-									<html:div role="button" id="architecture-warning-close" class="close-btn" data-l10n-id="banner-close-button">
-										<html:span class="icon" />
-									</html:div>
+									<label is="text-link" id="architecture-warning-close" class="close-link">×</label>
 								</html:div>
 							</vbox>
 
@@ -1229,9 +1234,7 @@
 									<html:div id="file-renaming-message" class="message" data-l10n-id="file-renaming-banner-message" />
 									<html:a id="file-renaming-documentation-link" data-l10n-id="file-renaming-banner-documentation-link" class="link" />
 									<html:div class="spacer" />
-									<html:div role="button" id="file-renaming-banner-close" class="close-btn" data-l10n-id="banner-close-button">
-										<html:span class="icon" />
-									</html:div>
+									<label is="text-link" id="file-renaming-banner-close" class="close-link">×</label>
 								</html:div>
 							</vbox>
 							
@@ -1323,7 +1326,6 @@
 													/>
 												
 													<panel id="zotero-lookup-panel" type="arrow" animate="false"
-															noautohide="true"
 															onpopupshown="Zotero_Lookup.onShown(event)"
 															onpopuphidden="Zotero_Lookup.onHidden(event)"
 															onfocusout="Zotero_Lookup.onFocusOut(event)"
@@ -1416,7 +1418,6 @@
 												</hbox>
 											
 											</toolbar>
-											<advanced-search-deck id="zotero-advanced-search-pane-deck"/>
 											<hbox id="zotero-items-pane" class="virtualized-table-container" flex="1" clickthrough="never">
 												<html:div id="zotero-items-tree"></html:div>
 											</hbox>

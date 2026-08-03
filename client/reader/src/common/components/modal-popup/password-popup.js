@@ -11,7 +11,7 @@ function PasswordPopup({ params, onEnterPassword }) {
 	}
 
 	return (
-		<DialogPopup className="password-popup" onSubmit={handleSubmit}>
+		<DialogPopup className="password-popup">
 			<form onSubmit={handleSubmit}>
 				<div className="row description">{l10n.getString('reader-enter-password')}</div>
 				<div className="row"><input type="password" ref={inputRef}/></div>

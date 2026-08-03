@@ -28,11 +28,6 @@
 import { getCSSItemTypeIcon } from 'components/icons';
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
-
 	class NotesBox extends ItemPaneSectionElementBase {
 		content = MozXULElement.parseXULToFragment(`
 			<collapsible-section data-l10n-id="section-notes" data-pane="notes" extra-buttons="add">

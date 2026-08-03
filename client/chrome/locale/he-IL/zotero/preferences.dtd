@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "סנכרון">
 <!ENTITY zotero.preferences.sync.username "שם משתמש:">
 <!ENTITY zotero.preferences.sync.password "סיסמה:">
+<!ENTITY zotero.preferences.sync.syncServer "סנכרון נתונים">
+<!ENTITY zotero.preferences.sync.setUpSync "הקמת סנכרון">
+<!ENTITY zotero.preferences.sync.unlinkAccount "ניתוק חשבון…">
 <!ENTITY zotero.preferences.sync.createAccount "יצירת חשבון">
 <!ENTITY zotero.preferences.sync.lostPassword "איבדת סיסמה?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "סנכרון אוטומטית">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "סנכרון קבצים">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "כתובת:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "סנכרון קובצי הצרופות בספרייה שלי עם">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "סנכרון קובצי הצרופות בספריות הקבוצה עם האחסון של Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "להוריד קבצים">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "בזמן הסנכרון">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "לפי הצורך">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "אימות השרת">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "השימוש באחסון של Zotero דורש את הסכמתך לעמוד">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "בתנאים">
 <!ENTITY zotero.preferences.sync.librariesToSync "ספריות לסנכרון">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "בחירת ספריות…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "סנכרון">

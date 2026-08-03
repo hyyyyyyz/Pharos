@@ -392,7 +392,7 @@ prefs_file=defaults/preferences/zotero.js
 # - network.captive-portal-service.enabled
 #       Disable the captive portal check against Mozilla servers
 # - extensions.systemAddon.update.url
-grep -E -v '(network.captive-portal-service.enabled|extensions.systemAddon.update.url)' defaults/preferences/firefox.js > $prefs_file
+egrep -v '(network.captive-portal-service.enabled|extensions.systemAddon.update.url)' defaults/preferences/firefox.js > $prefs_file
 rm defaults/preferences/firefox.js
 
 # Combine app and "extension" Zotero prefs
@@ -458,58 +458,6 @@ if [ $DEVTOOLS -eq 1 ]; then
 	replace_line 'let command = Services.dirsvc.get\("XREExeF", Ci.nsIFile\).path;' \
 		'let command = Services.dirsvc.get("XREExeF", Ci.nsIFile).path; command = command.replace("zotero-bin", "zotero");' \
 		chrome/devtools/modules/devtools/client/framework/browser-toolbox/Launcher.sys.mjs
-	
-	# Fix source display breaking when switching windows in the Browser Toolbox.
-	# When the user switches which chrome window is being inspected (via the frame
-	# picker), the thread actor's _onWindowReady handler clears all debuggees and
-	# source actors, then re-adds debuggees. But it never calls addAllSources() to
-	# re-emit the existing scripts — it only does that for BFCache navigations.
-	# Since the scripts already exist (they're not new), onNewScript won't fire,
-	# so the debugger's source list stays empty. Fix: also call addAllSources()
-	# after frame switching, just like BFCache.
-	replace_line '_onWindowReady\(\{ isTopLevel, isBFCache \}\)' \
-		'_onWindowReady({ isTopLevel, isBFCache, isFrameSwitching })' \
-		chrome/devtools/modules/devtools/server/actors/thread.js
-	replace_line 'if \(isBFCache\) {' \
-		'if (isBFCache || isFrameSwitching) {' \
-		chrome/devtools/modules/devtools/server/actors/thread.js
-
-	# Suppress "Failed to get the active browserId" error when profile recording starts
-	replace_line 'console\.error\(' \
-		'if (false) console.error(' \
-		chrome/devtools/modules/devtools/shared/performance-new/recording-utils.sys.mjs
-
-	# Stub out profile favicon lookup since we don't have PlacesUtils
-	replace_line 'return getPageFavicons\(pageUrls\);' \
-		'return pageUrls ? pageUrls.map(() => null) : [];' \
-		chrome/devtools/modules/devtools/client/performance-new/shared/background.sys.mjs
-
-	# Use our profilerViewer.xhtml to display profiles.
-	# We can't use basicViewer because that loads Zotero scripts, and profiling
-	# runs in the Browser Toolbox child process, where a second Zotero instance
-	# would collide with the locked database.
-	replace_line 'const contentBrowser = await new Promise\(resolveOnContentBrowserCreated =>' \
-		'if (typeof win.openWebLinkIn !== "function") {
-			const ww = Cc["\@mozilla.org\/embedcomp\/window-watcher;1"].getService(
-				Ci.nsIWindowWatcher
-			);
-			const arg = { uri: urlToLoad };
-			arg.wrappedJSObject = arg;
-			const viewerWin = ww.openWindow(
-				null,
-				"chrome:\/\/zotero\/content\/standalone\/profilerViewer.xhtml",
-				null,
-				"chrome,dialog=no,resizable,centerscreen,scrollbars",
-				arg
-			);
-			return await new Promise(resolve => {
-				viewerWin.addEventListener("load", () => {
-					resolve(viewerWin.document.getElementById("content"));
-					}, { once: true });
-				});
-			}
-			const contentBrowser = await new Promise(resolveOnContentBrowserCreated =>' \
-		chrome/devtools/modules/devtools/client/performance-new/shared/browser.js
 fi
 
 # 5.0.96.3 / 5.0.97-beta.37+ddc7be75c
@@ -738,66 +686,12 @@ if [ $BUILD_MAC == 1 ]; then
 	find "$CONTENTSDIR" -depth -type d -name .git -exec rm -rf {} \;
 	find "$CONTENTSDIR" \( -name .DS_Store -or -name update.rdf \) -exec rm -f {} \;
 	
-	# Add Safari extensions -- this depends on signing but needs to be done before generating
+	# Add Safari App Extension -- this depends on signing but needs to be done before generating
 	# the precomplete file
-	#
-	# $SAFARI_APPEX is a stub appex built from the safari-web-extension wrapper project. The web
-	# extension itself comes from $SAFARI_EXT_RESOURCES (a zotero-connectors build/safari
-	# directory), which replaces the stub's placeholder resources here before signing.
-	#
-	# $SAFARI_APP_EXTENSION is an optional prebuilt legacy Safari App Extension, embedded
-	# alongside the web extension for Safari versions that can't load Developer ID web
-	# extensions (supported in Safari 18.4 and later). On Safari versions that can load the
-	# web extension, the SFSafariAppExtensionBundleIdentifiersToReplace key causes it to
-	# replace the App Extension.
 	if [[ $SIGN == 1 ]] && [[ -n "$SAFARI_APPEX" ]] && [[ -d "$SAFARI_APPEX" ]]; then
-		if [[ -z "${SAFARI_EXT_RESOURCES:-}" ]] || [[ ! -f "$SAFARI_EXT_RESOURCES/manifest.json" ]]; then
-			echo "SAFARI_EXT_RESOURCES doesn't contain a web extension -- aborting" 2>&1
-			exit 1
-		fi
-		bundle_identifier=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APPDIR/Contents/Info.plist")
 		mkdir "$APPDIR/Contents/PlugIns"
-		
-		webext_appex="$APPDIR/Contents/PlugIns/ZoteroSafariWebExtension.appex"
-		cp -R "$SAFARI_APPEX" "$webext_appex"
-		appex_resources="$webext_appex/Contents/Resources"
-		rm -rf "$appex_resources"
-		mkdir "$appex_resources"
-		cp -R "$SAFARI_EXT_RESOURCES/." "$appex_resources/"
-		
-		# Show the connector version in Safari
-		connector_version=$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['version'])" "$appex_resources/manifest.json")
-		if [[ $connector_version == *999* ]] && [ "$UPDATE_CHANNEL" != "test" ]; then
-			echo "Placeholder connector version $connector_version not allowed for '$UPDATE_CHANNEL' channel -- aborting" 2>&1
-			exit 1
-		fi
-		/usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $connector_version" \
-			"$webext_appex/Contents/Info.plist"
-		/usr/libexec/PlistBuddy -c "Set CFBundleVersion $connector_version" \
-			"$webext_appex/Contents/Info.plist"
-		
-		# Give the appex the same bundle identifier prefix as the parent app
-		/usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $bundle_identifier.SafariWebExtension" \
-			"$webext_appex/Contents/Info.plist"
-		
-		# Replace the legacy App Extension on Safari versions that can load the web extension
-		/usr/libexec/PlistBuddy -c "Add :NSExtension:SFSafariAppExtensionBundleIdentifiersToReplace array" \
-			"$webext_appex/Contents/Info.plist"
-		/usr/libexec/PlistBuddy -c "Add :NSExtension:SFSafariAppExtensionBundleIdentifiersToReplace:0 string $bundle_identifier.SafariExtension" \
-			"$webext_appex/Contents/Info.plist"
-		
-		# Add legacy Safari App Extension
-		if [[ -n "${SAFARI_APP_EXTENSION:-}" ]]; then
-			if [[ ! -d "$SAFARI_APP_EXTENSION" ]]; then
-				echo "SAFARI_APP_EXTENSION not found at $SAFARI_APP_EXTENSION -- aborting" 2>&1
-				exit 1
-			fi
-			appext_appex="$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex"
-			cp -R "$SAFARI_APP_EXTENSION" "$appext_appex"
-			rm -rf "$appext_appex/Contents/Resources/safari/test"
-			/usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $bundle_identifier.SafariExtension" \
-				"$appext_appex/Contents/Info.plist"
-		fi
+		cp -R $SAFARI_APPEX "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex"
+		rm -rf "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex/Contents/Resources/safari/test/"
 	fi
 	
 	# Copy over removed-files and make a precomplete file
@@ -841,36 +735,34 @@ if [ $BUILD_MAC == 1 ]; then
 		
 		# Sign .jnilib (Java native shared library) within LibreOffice extension, since notarization
 		# started failing without this. The .jnilib is within a .jar within the .oxt, so we have to
-		# extract both, sign the libraries, and then update each ZIP.
-		#
-		# TODO: Remove this block once the plugin ships a jna.jar without the macOS native
-		# libraries, which are never loaded (JNA is used only on Windows)
+		# extract both, sign the library, and then update each ZIP.
 		pushd "$BUILD_DIR"
 		mkdir libreoffice-repack
 		cd libreoffice-repack
 		unzip -q "$APPDIR/Contents/Resources/integration/libreoffice/Zotero_LibreOffice_Integration.oxt" external_jars/jna.jar
-		unzip -q external_jars/jna.jar 'com/sun/jna/darwin*/libjnidispatch.jnilib'
-		/usr/bin/codesign --force --options runtime --sign "$DEVELOPER_ID" com/sun/jna/darwin*/libjnidispatch.jnilib
-		zip -u external_jars/jna.jar com/sun/jna/darwin*/libjnidispatch.jnilib
+		unzip -q external_jars/jna.jar com/sun/jna/darwin/libjnidispatch.jnilib
+		/usr/bin/codesign --force --options runtime --sign "$DEVELOPER_ID" com/sun/jna/darwin/libjnidispatch.jnilib
+		zip -u external_jars/jna.jar com/sun/jna/darwin/libjnidispatch.jnilib
 		zip -u "$APPDIR/Contents/Resources/integration/libreoffice/Zotero_LibreOffice_Integration.oxt" external_jars/jna.jar
 		cd ..
 		rm -rf libreoffice-repack
 		popd
 		
-		# Sign Safari extensions
+		# Sign Safari App Extension
 		#
-		# Even though they're signed by Xcode, we sign them again to make sure they match the parent app signature
-		for appex in "$APPDIR"/Contents/PlugIns/*.appex; do
-			if [ ! -d "$appex" ]; then
-				continue
-			fi
+		# Even though it's signed by Xcode, we sign it again to make sure it matches the parent app signature
+		if [ -d "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex" ]; then
 			echo
 			# Extract entitlements, which differ from parent app
-			/usr/bin/codesign -d --entitlements "$BUILD_DIR/safari-entitlements.plist" --xml "$appex"
+			/usr/bin/codesign -d --entitlements "$BUILD_DIR/safari-entitlements.plist" --xml "$SAFARI_APPEX"
 			
-			find "$appex/Contents" -name '*.dylib' -exec /usr/bin/codesign --force --options runtime --entitlements "$entitlements_file" --sign "$DEVELOPER_ID" {} \;
-			/usr/bin/codesign --force --options runtime --entitlements "$BUILD_DIR/safari-entitlements.plist" --sign "$DEVELOPER_ID" "$appex"
-		done
+			# Change appex bundle identifier to have same prefix as parent app
+			bundle_identifier=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APPDIR/Contents/Info.plist")
+			perl -pi -e "s/org\.zotero\.SafariExtensionApp\.SafariExtension/$bundle_identifier.SafariExtension/" "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex/Contents/Info.plist"
+
+			find "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex/Contents" -name '*.dylib' -exec /usr/bin/codesign --force --options runtime --entitlements "$entitlements_file" --sign "$DEVELOPER_ID" {} \;
+			/usr/bin/codesign --force --options runtime --entitlements "$BUILD_DIR/safari-entitlements.plist" --sign "$DEVELOPER_ID" "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex"
+		fi
 		
 		# Sign final app package
 		echo
@@ -878,14 +770,11 @@ if [ $BUILD_MAC == 1 ]; then
 		
 		# Verify app
 		/usr/bin/codesign --verify -vvvv "$APPDIR"
-		# Verify Safari extensions
-		for appex in "$APPDIR"/Contents/PlugIns/*.appex; do
-			if [ ! -d "$appex" ]; then
-				continue
-			fi
+		# Verify Safari App Extension
+		if [[ -n "$SAFARI_APPEX" ]] && [[ -d "$SAFARI_APPEX" ]]; then
 			echo
-			/usr/bin/codesign --verify -vvvv "$appex"
-		done
+			/usr/bin/codesign --verify -vvvv "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex"
+		fi
 	fi
 	
 	# Build and notarize disk image
@@ -1172,8 +1061,6 @@ if [ $BUILD_LINUX == 1 ]; then
 		mkdir "$APPDIR/integration"
 		cp -RH "$CALLDIR/modules/zotero-libreoffice-integration/install" "$APPDIR/integration/libreoffice"
 		
-		# Firefox includes an 'icons' folder with updater.png, but some Linux distro builds omit it
-		mkdir -p "$APPDIR/icons"
 		# Copy icons
 		cp "$CALLDIR/linux/icons/icon32.png" "$APPDIR/icons/"
 		cp "$CALLDIR/linux/icons/icon64.png" "$APPDIR/icons/"

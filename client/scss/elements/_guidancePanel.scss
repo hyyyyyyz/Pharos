@@ -21,18 +21,12 @@ guidance-panel {
 	.panel-container {
 		width: 400px;
 		display: flex;
-		flex-direction: column;
+		align-items: center;
 		font-size: 1.1em;
 		padding: 8px 0;
 		@media (-moz-platform: linux) {
 			padding: 8px;
 		}
-	}
-
-	.dismiss-button {
-		align-self: end;
-		margin: 8px 0 -4px;
-		min-width: 80px;
 	}
 	#nav-buttons {
 		-moz-box-align: end;

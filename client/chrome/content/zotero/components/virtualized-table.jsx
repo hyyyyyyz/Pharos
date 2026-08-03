@@ -33,7 +33,6 @@ const Draggable = require('./draggable');
 const { CSSIcon, getCSSIcon } = require('components/icons');
 
 const TYPING_TIMEOUT = 1000;
-// TODO: Move these to CSS variables
 const MINIMUM_ROW_HEIGHT = 20; // px
 const RESIZER_WIDTH = 5; // px
 const COLUMN_MIN_WIDTH = 20;
@@ -144,10 +143,9 @@ class TreeSelection {
 	 * @returns {boolean} False if nothing to select and select handlers won't be called
 	 */
 	select(index, shouldDebounce) {
-		index = Math.max(0, index);
 		if (!this._tree.props.isSelectable(index)) return;
+		index = Math.max(0, index);
 		if (this.selected.size == 1 && this.isSelected(index)) {
-			this._updateTree(shouldDebounce);
 			return false;
 		}
 
@@ -163,12 +161,7 @@ class TreeSelection {
 		this._tree.scrollToRow(index);
 		this._updateTree(shouldDebounce);
 		if (this._tree.invalidate) {
-			const rowCount = this._tree.props.getRowCount();
-			toInvalidate.forEach((idx) => {
-				// this._updateTree() may change row count
-				if (idx >= rowCount) return;
-				this._tree.invalidateRow(idx);
-			});
+			toInvalidate.forEach(this._tree.invalidateRow.bind(this._tree));
 		}
 		return true;
 	}
@@ -279,9 +272,8 @@ class TreeSelection {
 	}
 
 	set selectEventsSuppressed(val) {
-		let valChanged = val !== this._selectEventsSuppressed;
 		this._selectEventsSuppressed = val;
-		if (!val && valChanged) {
+		if (!val) {
 			this._updateTree();
 			if (this._tree.invalidate) {
 				this._tree.invalidate();
@@ -331,8 +323,6 @@ class VirtualizedTable extends React.Component {
 		this._typingString = "";
 		this._jsWindowID = `virtualized-table-list-${Zotero.Utilities.randomString(5)}`;
 		this._containerWidth = props.containerWidth || window.innerWidth;
-		this.className = props.className || "";
-		this.firstColumnExtraWidth = (props.firstColumnExtraWidth) - (COLUMN_PADDING / 2); // missing left-padding of the content cell
 		
 		this._columns = new Columns(this);
 		
@@ -372,23 +362,10 @@ class VirtualizedTable extends React.Component {
 		staticColumns: false,
 		alternatingRowColors: Zotero.isMac ? ['-moz-OddTreeRow', '-moz-EvenTreeRow'] : null,
 
-		firstColumnExtraWidth: 0,
-
 		// Render with display: none
 		hide: false,
 
 		multiSelect: false,
-
-		// When true, the last selected row can't be toggled off, so the selection
-		// never becomes empty through user action
-		requireSelection: false,
-
-		// When true, the header row of the section currently at the top of the view is
-		// pinned to the top while scrolling (see isSectionHeader)
-		stickySectionHeaders: false,
-		// Returns whether the row at the given index begins a section, i.e., should be
-		// pinned to the top while its section is scrolled through
-		isSectionHeader: () => false,
 
 		onSelectionChange: noop,
 
@@ -442,8 +419,6 @@ class VirtualizedTable extends React.Component {
 		staticColumns: PropTypes.bool,
 		// Used for initial column widths calculation
 		containerWidth: PropTypes.number,
-		// If first column is injected with extra stuff, like an item icon
-		// and we need to reserve extra min-width for it, set this prop
 		firstColumnExtraWidth: PropTypes.number,
 
 		// Internal windowed-list ref
@@ -453,11 +428,6 @@ class VirtualizedTable extends React.Component {
 		hide: PropTypes.bool,
 
 		multiSelect: PropTypes.bool,
-
-		requireSelection: PropTypes.bool,
-
-		stickySectionHeaders: PropTypes.bool,
-		isSectionHeader: PropTypes.func,
 
 		onSelectionChange: PropTypes.func,
 
@@ -670,7 +640,7 @@ class VirtualizedTable extends React.Component {
 			if (this.props.isContainer(this.selection.focused)
 					&& !this.props.isContainerEmpty(this.selection.focused)
 					&& this.props.isContainerOpen(this.selection.focused)) {
-				this.toggleOpenState(this.selection.focused);
+				this.props.toggleOpenState(this.selection.focused);
 			}
 			else if (parentIndex != -1) {
 				this.onSelection(parentIndex);
@@ -681,7 +651,7 @@ class VirtualizedTable extends React.Component {
 			if (this.props.isContainer(this.selection.focused)
 					&& !this.props.isContainerEmpty(this.selection.focused)) {
 				if (!this.props.isContainerOpen(this.selection.focused)) {
-					this.toggleOpenState(this.selection.focused);
+					this.props.toggleOpenState(this.selection.focused);
 				}
 				else {
 					this.onSelection(this.selection.focused + 1);
@@ -813,16 +783,7 @@ class VirtualizedTable extends React.Component {
 	 * @param index {Number}
 	 */
 	scrollToRow(index) {
-		if (!this._jsWindow) return;
-		// When a sticky section header is pinned at the top of the view, it overlays the rows
-		// below it. Reserve a row's worth of space so a row scrolled up into view lands below the
-		// pinned header rather than behind it.
-		let topOffset = 0;
-		if (this.props.stickySectionHeaders && !this.props.isSectionHeader(index)
-				&& this._getSectionHeaderIndices().some(i => i < index)) {
-			topOffset = this._rowHeight;
-		}
-		this._jsWindow.scrollToRow(index, false, topOffset);
+		this._jsWindow && this._jsWindow.scrollToRow(index);
 	}
 
 	/**
@@ -848,11 +809,6 @@ class VirtualizedTable extends React.Component {
 			this.selection.shiftSelect(index, toggleSelection, shouldDebounce);
 		}
 		else if (toggleSelection) {
-			// Don't allow toggling off the last selected row when a selection is required
-			if (this.props.requireSelection
-					&& this.selection.count === 1 && this.selection.isSelected(index)) {
-				return;
-			}
 			this.selection.toggleSelect(index, shouldDebounce);
 		}
 		else if (moveFocused) {
@@ -865,9 +821,7 @@ class VirtualizedTable extends React.Component {
 		}
 		// Normal selection
 		else if (!toggleSelection) {
-			// Non-selectable rows (e.g. a sticky library header) are a no-op, including no
-			// scroll-to-row below -- otherwise clicking the header at index 0 jumps to the top
-			if (!this.props.isSelectable(index)) {
+			if (index > 0 && !this.props.isSelectable(index)) {
 				return;
 			}
 			this.selection.select(index, shouldDebounce);
@@ -910,7 +864,10 @@ class VirtualizedTable extends React.Component {
 		event.stopPropagation();
 		const result = this._getResizeColumns();
 		if (!result) return;
+		const columns = this._getVisibleColumns();
 		const [aColumn, bColumn, resizingColumn] = result;
+		const isFirstColumn = columns[0].dataKey === aColumn.dataKey;
+		const firstColumnExtraWidth = isFirstColumn ? (this.props.firstColumnExtraWidth || 0) : 0;
 		const a = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(aColumn.dataKey)}`);
 		const b = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(bColumn.dataKey)}`);
 		const resizing = document.querySelector(`#${this.props.id} .virtualized-table-header .cell.${window.CSS.escape(resizingColumn.dataKey)}`);
@@ -924,12 +881,9 @@ class VirtualizedTable extends React.Component {
 		const widthSum = aRect.width + bRect.width;
 		const aColumnPadding = aColumn.iconLabel ? 0 : COLUMN_PADDING;
 		const bColumnPadding = bColumn.iconLabel ? 0 : COLUMN_PADDING;
-		const aMinWidth = (aColumn.minWidth ? aColumn.minWidth : COLUMN_MIN_WIDTH) + aColumnPadding;
-		const bMinWidth = (bColumn.minWidth ? bColumn.minWidth : COLUMN_MIN_WIDTH) + bColumnPadding;
-		const aMaxWidth = widthSum - bMinWidth;
-		const aDragWidth = event.clientX - (RESIZER_WIDTH / 2) - offset;
-		// Constrain the drag position to the min and max widths
-		const aColumnWidth = Math.min(aMaxWidth, Math.max(aMinWidth, aDragWidth));
+		const aSpacingOffset = (aColumn.minWidth ? aColumn.minWidth : COLUMN_MIN_WIDTH) + aColumnPadding + firstColumnExtraWidth;
+		const bSpacingOffset = (bColumn.minWidth ? bColumn.minWidth : COLUMN_MIN_WIDTH) + bColumnPadding;
+		const aColumnWidth = Math.min(widthSum - bSpacingOffset, Math.max(aSpacingOffset, event.clientX - (RESIZER_WIDTH / 2) - offset));
 		const bColumnWidth = widthSum - aColumnWidth;
 		let onResizeData = {};
 		onResizeData[aColumn.dataKey] = aColumnWidth;
@@ -1101,31 +1055,18 @@ class VirtualizedTable extends React.Component {
 	
 		this._setXulTooltip();
 
-		this._topDiv.style.setProperty("--first-column-extra-width", `${this.firstColumnExtraWidth}px`);
-		this._resizeObserver = new ResizeObserver(() => this.rerender());
-		this._resizeObserver.observe(this._jsWindow.targetElement);
-
-		if (this.props.stickySectionHeaders) {
-			this._jsWindow.targetElement.addEventListener('scroll', this._updateStickySectionHeader, { passive: true });
-			// The pinned header overlays the rows, so reject drops on it rather than letting
-			// them reach the body's drop handler (which would treat them as a list drop)
-			this._stickyHeader.addEventListener('dragover', this._rejectStickyHeaderDrop);
-			this._stickyHeader.addEventListener('drop', this._rejectStickyHeaderDrop);
-			this._updateStickySectionHeader();
-		}
+		this._topDiv.style.setProperty("--firstColumnExtraWidth", `${this.props.firstColumnExtraWidth || 0}px`);
+		window.addEventListener("resize", () => {
+			this._debouncedRerender();
+		});
 	}
-
+	
 	componentWillUnmount() {
-		this._resizeObserver?.disconnect();
-		if (this.props.stickySectionHeaders && this._jsWindow) {
-			this._jsWindow.targetElement.removeEventListener('scroll', this._updateStickySectionHeader);
-		}
 		this._jsWindow.destroy();
 	}
 	
 	componentDidUpdate(prevProps) {
-		if (this.props.id !== prevProps.id
-				|| this.props.columns !== prevProps.columns) {
+		if (this.props.id !== prevProps.id) {
 			this._columns = new Columns(this);
 			this.forceUpdate();
 		}
@@ -1171,13 +1112,13 @@ class VirtualizedTable extends React.Component {
 		return {
 			getItemCount: this.props.getRowCount,
 			itemHeight: this._rowHeight,
-			renderItem: this._renderItem.bind(this),
+			renderItem: this._renderItem,
 			targetElement: document.getElementById(this._jsWindowID),
 			customRowHeights: this.props.customRowHeights ?? []
 		};
 	}
-
-	_renderItem(index, oldElem = null) {
+	
+	_renderItem = (index, oldElem = null) => {
 		let node = this.props.renderItem(index, this.selection, oldElem, this._getColumns());
 		if (!node.dataset.eventHandlersAttached) {
 			node.dataset.eventHandlersAttached = true;
@@ -1192,12 +1133,8 @@ class VirtualizedTable extends React.Component {
 		}
 		node.style.height = (index in this._customRowHeightMap ? this._customRowHeightMap[index] : this._rowHeight) + 'px';
 		node.id = this.props.id + "-row-" + index;
-		// Row striping restarts at each section header, so every section's first row is
-		// the same shade (see _sectionRelativeIndex); without section headers this is just
-		// the row index
-		let stripeIndex = this._sectionRelativeIndex(index);
-		node.classList.toggle('odd', stripeIndex % 2 == 1);
-		node.classList.toggle('even', stripeIndex % 2 == 0);
+		node.classList.toggle('odd', index % 2 == 1);
+		node.classList.toggle('even', index % 2 == 0);
 		if (!node.hasAttribute('role')) {
 			node.setAttribute('role', 'row');
 		}
@@ -1246,7 +1183,7 @@ class VirtualizedTable extends React.Component {
 			if (!column.iconLabel && column.sortDirection) {
 				sortIndicator = <CSSIcon name="sort-indicator" className={"icon-8 sort-indicator " + (column.sortDirection === 1 ? "ascending" : "descending")} />;
 			}
-			const className = cx("cell", column.className, { dragging: this.state.draggingColumn == index },
+			const className = cx("cell", column.className, { 'first-column': index === 0, dragging: this.state.draggingColumn == index },
 				{ "cell-icon": !!column.iconLabel });
 			return (<Draggable
 				onDragStart={this._handleColumnDragStart.bind(this, index)}
@@ -1300,9 +1237,7 @@ class VirtualizedTable extends React.Component {
 				{
 				resizing: this.state.resizing,
 				'multi-select': this.props.multiSelect
-			},
-				this.className
-			]),
+			}]),
 			id: this.props.id,
 			ref: ref => this._topDiv = ref,
 			tabIndex: 0,
@@ -1327,12 +1262,7 @@ class VirtualizedTable extends React.Component {
 		}
 		let jsWindowProps = {
 			id: this._jsWindowID,
-			// Reserve a scrollbar gutter when there are sticky section headers (see CSS), so the
-			// scrollbar doesn't float over the content. Without it a macOS overlay scrollbar
-			// overlaps the rows, and the opaque pinned header -- which must paint above the rows
-			// to occlude them, and so above the scrollbar -- covers the scrollbar's edge.
-			className: "virtualized-table-body"
-				+ (this.props.stickySectionHeaders ? " has-sticky-section-headers" : ""),
+			className: "virtualized-table-body",
 			onFocus: (e) => {
 				if (e.target.id == this._jsWindowID) {
 					// Focus should always remain on the list itself.
@@ -1345,23 +1275,7 @@ class VirtualizedTable extends React.Component {
 			<div {...props}>
 				{columnDragMarker}
 				{header}
-				<div {...jsWindowProps}>
-					{/* Pinned copy of the current section's header. Lives inside the scrolling
-					    body (as its first child, before the windowed-list) and pins with
-					    position: sticky, so its width tracks the body's content box automatically
-					    and it lines up with the rows without any JS geometry. */}
-					{this.props.stickySectionHeaders
-						&& <div
-							className="virtualized-table-sticky-section-header"
-							ref={ref => this._stickyHeader = ref}
-							aria-hidden="true"
-						>
-							<div
-								className="virtualized-table-sticky-section-header-content"
-								ref={ref => this._stickyHeaderContent = ref}
-							/>
-						</div>}
-				</div>
+				<div {...jsWindowProps} />
 			</div>
 		);
 	}
@@ -1373,7 +1287,6 @@ class VirtualizedTable extends React.Component {
 		if (!this._jsWindow) return;
 		this._jsWindow.invalidate();
 		this._updateWidth();
-		this._refreshStickySectionHeader();
 	}
 
 	/**
@@ -1384,149 +1297,6 @@ class VirtualizedTable extends React.Component {
 		if (!this._jsWindow) return;
 		this._jsWindow.render();
 		this._updateWidth();
-		this._refreshStickySectionHeader();
-	}
-
-	// ------------------------ Sticky Section Headers ------------------------ //
-
-	/**
-	 * Make a drop on the pinned header a no-op. Not preventing the default on dragover leaves
-	 * it an invalid drop target (so no drop fires), and stopping propagation keeps the event
-	 * from the body's handlers, which would otherwise allow the drop and treat it as a drop on
-	 * the list. The header occludes a row, but dropping on it shouldn't act on that row.
-	 */
-	_rejectStickyHeaderDrop = (e) => {
-		e.stopPropagation();
-		if (e.type == 'dragover' && e.dataTransfer) {
-			e.dataTransfer.dropEffect = 'none';
-		}
-	}
-
-	/**
-	 * The set of section-header rows can change whenever the row model changes, so drop
-	 * the cached indices and repin. Called after the list is invalidated/rerendered.
-	 */
-	_refreshStickySectionHeader() {
-		if (!this.props.stickySectionHeaders) return;
-		this._sectionHeaderIndices = null;
-		this._stickyHeaderIndex = null;
-		this._updateStickySectionHeader();
-	}
-
-	/**
-	 * The stripe index of a row, so striping restarts at each section header. The header
-	 * counts as the section's first (unstriped) row, so the data row right below it is
-	 * striped; subsequent rows alternate. Without section headers this is just the row
-	 * index, preserving the normal whole-list striping (first row unstriped).
-	 */
-	_sectionRelativeIndex(index) {
-		let base = -1;
-		for (let headerIndex of this._getSectionHeaderIndices()) {
-			if (headerIndex <= index) {
-				base = headerIndex;
-			}
-			else {
-				break;
-			}
-		}
-		// No header above: stripe from the top (first row unstriped). With a header above,
-		// the header is the unstriped row 0, so the row below it (index - base == 1) is striped.
-		return base === -1 ? index : index - base;
-	}
-
-	/**
-	 * Indices of all section-header rows, ascending. Cached until the row model changes.
-	 */
-	_getSectionHeaderIndices() {
-		// Only trees that opt into section headers have them
-		if (!this.props.stickySectionHeaders) {
-			return [];
-		}
-		if (this._sectionHeaderIndices) {
-			return this._sectionHeaderIndices;
-		}
-		let indices = [];
-		let count = this.props.getRowCount();
-		for (let i = 0; i < count; i++) {
-			if (this.props.isSectionHeader(i)) {
-				indices.push(i);
-			}
-		}
-		this._sectionHeaderIndices = indices;
-		return indices;
-	}
-
-	/**
-	 * Pin the header of the section currently at the top of the view, pushing it up as
-	 * the next section's header scrolls into it, and reuse the consumer's renderItem so the
-	 * pinned copy matches the real header row's appearance.
-	 *
-	 * The pinned header is the first child of the scrolling body and stays put via position:
-	 * sticky, taking its width from the body's content box so it lines up with the rows. The
-	 * outer element has zero height (so it adds no space to the flow); the inner (opaque)
-	 * element holds the rendered header, overflows downward over the rows, and is the part that
-	 * translates, so a header pushed up by the next section is clipped at the top of the body
-	 * (by the body's own overflow) rather than spilling over the column header.
-	 */
-	_updateStickySectionHeader = () => {
-		if (!this.props.stickySectionHeaders || !this._stickyHeader || !this._jsWindow) {
-			return;
-		}
-		let clip = this._stickyHeader;
-		let content = this._stickyHeaderContent;
-		let headerIndices = this._getSectionHeaderIndices();
-		let scrollTop = this._jsWindow.targetElement.scrollTop;
-		// The section in view is the last header at or above the top of the view; the
-		// next header (if any) is what pushes it up
-		let currentIndex = -1;
-		let nextIndex = -1;
-		for (let index of headerIndices) {
-			if (this._jsWindow._getItemPosition(index) <= scrollTop) {
-				currentIndex = index;
-			}
-			else {
-				nextIndex = index;
-				break;
-			}
-		}
-		// Show the pinned copy only once the header row has scrolled up past the top edge of
-		// the view
-		let stuck = currentIndex != -1
-			&& scrollTop > this._jsWindow._getItemPosition(currentIndex);
-		if (!stuck) {
-			clip.style.display = 'none';
-			this._stickyHeaderIndex = null;
-			return;
-		}
-		clip.style.display = '';
-		clip.classList.add('stuck');
-		// Re-render only when the pinned section changes. Use _renderItem (not the raw
-		// renderItem prop) so the pinned copy gets the same post-processing as a real row
-		// (e.g. the tree's indent/twisty spacer), then drop its id to avoid duplicating the
-		// real row's.
-		if (this._stickyHeaderIndex !== currentIndex) {
-			this._stickyHeaderIndex = currentIndex;
-			let node = this._renderItem(currentIndex);
-			node.removeAttribute('id');
-			// Strip the focus ring: focus defaults to row 0, which can be a header, but a
-			// pinned header shouldn't show focus
-			node.classList.remove('focused');
-			content.textContent = '';
-			content.appendChild(node);
-		}
-		// Geometry is all CSS now: the clip is the first child of the scrolling body, has zero
-		// height (so it takes no space in the flow and the rows below aren't shifted down), and
-		// pins itself with position: sticky. Its content overflows downward over the rows and
-		// gets its width from the body's content box, so it lines up with the real rows.
-		// Push the pinned header up as the next section's header approaches the top
-		let translateY = 0;
-		if (nextIndex != -1) {
-			let nextTop = this._jsWindow._getItemPosition(nextIndex) - scrollTop;
-			if (nextTop < this._rowHeight) {
-				translateY = nextTop - this._rowHeight;
-			}
-		}
-		content.style.transform = `translateY(${translateY}px)`;
 	}
 	
 	updateFontSize = () => {
@@ -1589,6 +1359,8 @@ class VirtualizedTable extends React.Component {
 		return parseFloat(height.split('px')[0]);
 	}
 	
+	_debouncedRerender = Zotero.Utilities.debounce(this.rerender, 200);
+	
 	_updateWidth() {
 		if (!this.props.showHeader) return;
 		const jsWindow = document.querySelector(`#${this._jsWindowID} .windowed-list`);
@@ -1635,19 +1407,10 @@ class VirtualizedTable extends React.Component {
 			&& row <= this._jsWindow.getLastVisibleRow();
 	}
 
-	toggleOpenState(index, ...args) {
-		let onToggleOpenState = this.props.toggleOpenState;
-		if (typeof onToggleOpenState == 'function') return onToggleOpenState(index, ...args);
-	}
-
 	async _resetColumns() {
+		this.invalidate();
 		this._columns = new Columns(this);
-		return new Promise((resolve) => {
-			this.forceUpdate(() => {
-				this._jsWindow.invalidate();
-				resolve();
-			});
-		})
+		await new Promise((resolve) => {this.forceUpdate(resolve)});
 	}
 	
 	// Set aria-activedescendant on table container
@@ -1659,143 +1422,6 @@ class VirtualizedTable extends React.Component {
 		}
 	}
 }
-
-/**
- * VirtualizedTree wraps VirtualizedTable to provide common tree affordances:
- * - Adds an indent spacer based on depth to the first visible cell
- * - Adds a twisty for non-empty containers
- * - Sets tree-specific ARIA attributes on rows and the container
- * - Wires twisty mouse handlers to toggle container open state
- *
- * Consumers should provide isContainer/isContainerEmpty/isContainerOpen/onToggleOpenState
- * and getParentIndex(index) to compute ancestry.
- */
-class VirtualizedTree extends VirtualizedTable {
-	static propTypes = { ...VirtualizedTable.propTypes,
-		getParentIndex: PropTypes.func.isRequired,
-		isContainer: PropTypes.func.isRequired,
-		isContainerEmpty: PropTypes.func.isRequired,
-		isContainerOpen: PropTypes.func.isRequired,
-		onToggleOpenState: PropTypes.func.isRequired,
-	}
-
-	_toggledOpenStateIndex = null;
-
-	constructor(props) {
-		super(props);
-		this.className += " virtualized-tree";
-		this.firstColumnExtraWidth += 16; // 16px for twisty
-	}
-
-	toggleOpenState(index, ...args) {
-		this._toggledOpenStateIndex = index;
-		return this.props.onToggleOpenState(index, ...args);
-	}
-
-	_renderItem(index, oldElem=null) {
-		let node = super._renderItem(index, oldElem);
-		if (!(node instanceof (node?.ownerDocument?.defaultView || window).Element)) {
-			return node;
-		}
-		node = this._addIndentAndTwisty(node, index);
-		this._setRowAria(node, index);
-		return node;
-	}
-
-	_getDepth(index) {
-		let depth = 0;
-		try {
-			let parent = typeof this.props.getParentIndex == 'function' ? this.props.getParentIndex(index) : -1;
-			while (parent != -1 && typeof parent == 'number') {
-				depth++;
-				parent = this.props.getParentIndex(parent);
-			}
-		}
-		catch (e) {}
-		return depth;
-	}
-	
-	/**
-	 * Adds an indent spacer and twisty to the first cell of the node
-	 * 
-	 * We add it to the first cell instead of as a separate pseudo-cell or just elements before
-	 * the first cell because otherwise it messes with column spacing.
-	 * 
-	 * @param node {HTMLElement} The rendered item row
-	 * @param index {number} The index of the node being rendered
-	 * @returns {HTMLElement}
-	 */
-	_addIndentAndTwisty(node, index) {
-		let firstCell = node.querySelector('.cell');
-		if (!firstCell) return node;
-
-		let twisty;
-		if (this.props.isContainerEmpty(index)) {
-			twisty = firstCell.querySelector('.spacer-twisty');
-			if (!twisty) {
-				twisty = node.ownerDocument.createElement('span');
-				firstCell.prepend(twisty);
-				twisty.classList.add('spacer-twisty');
-			}
-			firstCell.querySelector(`:scope > .twisty`)?.remove();
-		}
-		else {
-			twisty = firstCell.querySelector('.twisty');
-			if (!twisty) {
-				twisty = getCSSIcon('twisty');
-				twisty.classList.add('twisty');
-				twisty.style.pointerEvents = 'auto';
-				twisty.addEventListener('mousedown', (event) => event.stopPropagation());
-				twisty.addEventListener('mouseup', (event) => {
-					this.toggleOpenState(index);
-					event.stopPropagation();
-				}, { passive: true });
-				twisty.addEventListener('dblclick', (event) => event.stopImmediatePropagation(), { passive: true });
-				firstCell.prepend(twisty);
-			}
-			firstCell.querySelector(`:scope > .spacer-twisty`)?.remove();
-
-			// Apply the twisty animation
-			if (this._toggledOpenStateIndex == index) {
-				twisty.classList.toggle('open', !this.props.isContainerOpen(index));
-				requestAnimationFrame(() => {
-					twisty.classList.toggle('open', this.props.isContainerOpen(index));
-					this._toggledOpenStateIndex = null;
-				});
-			}
-			else {
-				twisty.classList.toggle('open', this.props.isContainerOpen(index));
-			}
-		}
-
-		let indentSpan = firstCell.querySelector('.cell-indent');
-		if (!indentSpan) {
-			indentSpan = node.ownerDocument.createElement('span');
-			indentSpan.className = 'cell-indent';
-			firstCell.prepend(indentSpan);
-		}
-		// Use padding for indent similar to ItemTree
-		const CHILD_INDENT = 16;
-		indentSpan.style.paddingInlineStart = (CHILD_INDENT * this._getDepth(index)) + 'px';
-
-		return node;
-	}
-
-	_setRowAria(node, index) {
-		const depth = this._getDepth(index);
-		node.setAttribute('role', 'treeitem');
-		node.setAttribute('aria-level', depth + 1);
-		if (!this.props.isContainerEmpty(index)) {
-			node.setAttribute('aria-expanded', !!this.props.isContainerOpen(index));
-		}
-		else {
-			node.removeAttribute('aria-expanded');
-		}
-	}
-}
-
-VirtualizedTree.propTypes = Object.assign({}, VirtualizedTable.propTypes);
-VirtualizedTree.defaultProps = Object.assign({}, VirtualizedTable.defaultProps, { role: 'tree' });
 
 /**
  * Create a function that calls the given function `fn` only once per animation
@@ -1842,10 +1468,9 @@ var Columns = class {
 			// Fixed width columns can sometimes somehow obtain a width property
 			// this fixes it for users that may have run into the bug
 			if (column.fixedWidth && typeof columnsSettings[column.dataKey] == "object") {
-				delete columnsSettings[column.dataKey].width;
+				delete columnsSettings[column.dataKey].width;;
 			}
-			// Don't load column settings for disabled columns (they are overriden to be hidden)
-			column = Object.assign({}, column, column.disabled ? {} : columnsSettings[column.dataKey]);
+			column = Object.assign({}, column, columnsSettings[column.dataKey]);
 			column.className = cx(column.className, column.dataKey, column.dataKey + this._cssSuffix,
 				{ 'fixed-width': column.fixedWidth });
 			if (column.type) {
@@ -1865,22 +1490,33 @@ var Columns = class {
 		// if new columns got added recently
 		columns.forEach((column, index) => column.ordinal = index);
 
-		// Compute initial CSS widths for visible columns. Widths are not persisted
-		// from here — they flow to disk only when the user resizes (see onResize).
+		// Setting column widths
+		const visibleColumns =
+			columns.reduce((accumulator, column) => accumulator += column.hidden ? 0 : 1, 0);
+		const containerWidth = this._virtualizedTable._containerWidth;
 		let columnWidths = {};
-		for (let column of columns) {
-			if (column.disabled || column.hidden) continue;
-			if (column.width) {
-				columnWidths[column.dataKey] = column.width;
-			}
-			else {
-				column.flex = column.flex || 1;
-				columnWidths[column.dataKey] = column.width = this._computeFlexWidth(column);
-			}
-		}
+		for (let i = 0; i < columns.length; i++) {
+			let column = columns[i];
 
+			if (!column.hidden) {
+				if (column.width) {
+					columnWidths[column.dataKey] = column.width;
+				}
+				else {
+					column.flex = column.flex || 1;
+					columnWidths[column.dataKey] = column.width = containerWidth / visibleColumns * (column.flex || 1);
+				}
+			}
+			// Serializing back column settings for storage
+			columnsSettings[column.dataKey] = this._getColumnPrefsToPersist(column);
+		}
+		// Storing back persist settings to account for legacy upgrades
+		this._storePrefs(columnsSettings);
+
+		this._adjustColumnWidths();
 		// Set column width CSS rules
 		this.onResize(columnWidths);
+		// Whew, all this just to get a list of columns
 	}
 
 	_initializeStyleMap() {
@@ -1944,6 +1580,24 @@ var Columns = class {
 		this._virtualizedTable.props.storeColumnPrefs(prefs);
 	}
 
+	_adjustColumnWidths = () => {
+		if (!this._virtualizedTable.props.firstColumnExtraWidth) {
+			return;
+		}
+
+		const extraWidth = this._virtualizedTable.props.firstColumnExtraWidth;
+		this._columns.filter(c => !c.hidden).forEach((column, index) => {
+			const isFirstColumn = index === 0;
+			if (column.fixedWidth) {
+				column.width = isFirstColumn ? parseInt(column.originalWidth) + extraWidth : column.originalWidth;
+			}
+			if (column.staticWidth) {
+				column.minWidth = isFirstColumn ? (column.originalMinWidth ?? 20) + extraWidth : column.originalMinWidth;
+				column.width = isFirstColumn ? Math.max(parseInt(column.width) ?? 0, column.minWidth) : column.width;
+			}
+		});
+	};
+
 	/**
 	 * Programatically sets the injected CSS width rules for each column.
 	 * This is necessary for performance reasons
@@ -1955,36 +1609,28 @@ var Columns = class {
 			var prefs = this._getPrefs();
 		}
 
-		let visibleColumns = this.getAsArray().filter(column => !column.hidden);
-
 		for (let [dataKey, width] of Object.entries(columnWidths)) {
 			if (typeof dataKey == "number") {
 				dataKey = this._columns[dataKey].dataKey;
 			}
 			const column = this._columns.find(column => column.dataKey == dataKey);
-			if (column.hidden) continue;
 			const styleIndex = this._columnStyleMap[window.CSS.escape(dataKey)];
 			const columnPadding = column.iconLabel ? 0 : COLUMN_PADDING;
-			let cssWidth = width;
-			// It's set in CSS, so we subtract it here to prevent sliding
-			if (column.dataKey === visibleColumns[0].dataKey) {
-				cssWidth -= this._virtualizedTable.firstColumnExtraWidth;
+			if (storePrefs && !column.fixedWidth) {
+				column.width = width;
+				prefs[dataKey] = this._getColumnPrefsToPersist(column);
 			}
 			if (column.fixedWidth) {
-				cssWidth = width = column.width;
+				width = column.width;
 			}
 			if (column.fixedWidth && column.width || column.staticWidth) {
 				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('flex', `0 0`, `important`);
-				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('max-width', `calc(var(--extra-width, 0px) + ${cssWidth}px`, 'important');
-				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('min-width', `calc(var(--extra-width, 0px) + ${cssWidth}px`, 'important');
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('max-width', `${width}px`, 'important');
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('min-width', `${width}px`, 'important');
 			} else {
-				width -= columnPadding;
-				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('flex-basis', `calc(var(--extra-width, 0px) + ${cssWidth}px`);
-			}
-			Zotero.debug(`Columns ${dataKey} width ${width}`);
-			if (storePrefs) {
-				column.width = width;
-				prefs[dataKey] = this._getColumnPrefsToPersist(column);
+				width = (width - columnPadding);
+				Zotero.debug(`Columns ${dataKey} width ${width}`);
+				this._stylesheet.sheet.cssRules[styleIndex].style.setProperty('flex-basis', `${width}px`);
 			}
 		}
 		if (storePrefs) {
@@ -2002,6 +1648,7 @@ var Columns = class {
 			return a.ordinal - b.ordinal;
 		});
 
+		this._adjustColumnWidths();
 		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
 
 		let prefs = this._getPrefs();
@@ -2041,6 +1688,7 @@ var Columns = class {
 			this._columns.find(c => c.dataKey === 'title').hidden = false;
 		}
 		
+		this._adjustColumnWidths();
 		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
 		this._storePrefs(prefs);
 		this._updateVirtualizedTable();
@@ -2050,33 +1698,14 @@ var Columns = class {
 		const column = this._columns[index];
 		column.hidden = !column.hidden;
 
-		if (!column.hidden && !column.width && !(column.fixedWidth || column.staticWidth)) {
-			column.width = this._computeFlexWidth(column);
-		}
-
 		let prefs = this._getPrefs();
-		prefs[column.dataKey] = prefs[column.dataKey] || {};
-		prefs[column.dataKey].hidden = column.hidden;
+		if (prefs[column.dataKey]) {
+			prefs[column.dataKey].hidden = column.hidden;
+		}
+		this._adjustColumnWidths();
 		this.onResize(Object.fromEntries(this._columns.map(c => [c.dataKey, c.width])));
 		this._storePrefs(prefs);
 		this._updateVirtualizedTable();
-	}
-
-	_computeFlexWidth(column) {
-		const containerWidth = this._virtualizedTable._containerWidth;
-		const visibleColumns = this._columns.filter(c => !c.hidden);
-		let fixedWidth = 0;
-		let totalFlex = 0;
-		for (let col of visibleColumns) {
-			if (col.fixedWidth || col.staticWidth || !col.flex) {
-				fixedWidth += parseFloat(col.width) || col.minWidth || 0;
-			}
-			else {
-				totalFlex++;
-			}
-		}
-		let availableWidth = containerWidth - fixedWidth;
-		return availableWidth / totalFlex * (column.flex || 1);
 	}
 	
 	toggleSort(sortIndex) {
@@ -2097,9 +1726,8 @@ var Columns = class {
 				}
 			}
 		});
-		let result = this._virtualizedTable.props.onColumnSort(sortIndex, sortedColumn.sortDirection);
+		this._virtualizedTable.props.onColumnSort(sortIndex, sortedColumn.sortDirection);
 		this._virtualizedTable.forceUpdate();
-		return result;
 	}
 
 	getAsArray() {
@@ -2109,8 +1737,8 @@ var Columns = class {
 
 function renderCell(index, data, column, dir = null) {
 	column = column || { dataKey: "" };
-	if (column.renderCell) {
-		return column.renderCell(index, data, column, dir);
+	if (column.renderer) {
+		return column.renderer(index, data, column, dir);
 	}
 	let span = document.createElement('span');
 	span.className = `cell ${column.className}`;
@@ -2236,8 +1864,7 @@ function formatColumnName(column) {
 	if (column.label in Zotero.Intl.strings) {
 		return Zotero.getString(column.label);
 	}
-	// Dotted keys (.properties) or hyphenated keys with 3+ segments (Fluent)
-	else if (/^[^\s]+\w\.\w[^\s]+$/.test(column.label) || /^\w+(-\w+){2,}$/.test(column.label)) {
+	else if (/^[^\s]+\w\.\w[^\s]+$/.test(column.label)) {
 		try {
 			let labelString = Zotero.getString(column.label);
 			if (labelString !== column.label) {
@@ -2252,8 +1879,6 @@ function formatColumnName(column) {
 }
 
 module.exports = VirtualizedTable;
-module.exports.VirtualizedTree = VirtualizedTree;
-
 module.exports.TreeSelection = TreeSelection;
 module.exports.TreeSelectionStub = TreeSelectionStub;
 module.exports.renderCell = renderCell;

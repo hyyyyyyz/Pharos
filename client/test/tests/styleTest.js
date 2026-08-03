@@ -80,7 +80,7 @@ describe("Zotero.Styles", function () {
 				[item],
 				'bibliography=http://www.zotero.org/styles/nlm-citation-sequence'
 			);
-			assert.equal(o.text, '1. Foo bar: baz qux. 2019.\n');
+			assert.equal(o.text, '1. Foo bar: baz qux. 2019; \n');
 		});
 	});
 	
@@ -125,20 +125,6 @@ describe("Zotero.Styles", function () {
 			var text = Zotero.Cite.makeFormattedBibliographyOrCitationList(cslEngine, [item], "text");
 			cslEngine.free();
 			assert.equal(text, 'Conference - Conference - Place\n');
-		});
-	});
-
-	describe("Zotero.Styles.resolveLocale", function () {
-		it("should return available locale unchanged", function () {
-			assert.equal(Zotero.Styles.resolveLocale('de-AT'), 'de-AT');
-		});
-
-		it("should return primary dialect for a language code", function () {
-			assert.equal(Zotero.Styles.resolveLocale('fa'), 'fa-IR');
-		});
-
-		it("should return closest available locale for locale without a CSL locale", function () {
-			assert.equal(Zotero.Styles.resolveLocale('sr-RS'), 'sr-Cyrl-RS');
 		});
 	});
 
@@ -215,42 +201,6 @@ describe("Zotero.Styles", function () {
 			assert.equal(style.styleID, prefix + newName);
 			var visible = Zotero.Styles.getVisible();
 			assert.isFalse(visible.some(s => s.styleID === prefix + oldName));
-		});
-	});
-
-	describe("Zotero.Style#effectiveLocale", function () {
-		it("should return the style's own default-locale", function () {
-			let xml = `<?xml version="1.0" encoding="utf-8"?>
-			<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="fr-FR">
-			  <info>
-				<title>Test</title>
-				<id>http://www.zotero.org/styles/test-own-locale</id>
-				<link href="http://www.zotero.org/styles/test-own-locale" rel="self"/>
-				<updated>2024-01-01T00:00:00+00:00</updated>
-			  </info>
-			  <citation><layout><text variable="title"/></layout></citation>
-			</style>`;
-			let style = new Zotero.Style(xml);
-			assert.equal(style.effectiveLocale, "fr-FR");
-		});
-
-		it("should fall back to the parent's default-locale when the dependent has none", function () {
-			let parentID = "http://www.zotero.org/styles/american-medical-association";
-			assert.equal(Zotero.Styles.get(parentID).locale, "en-US");
-
-			let xml = `<?xml version="1.0" encoding="utf-8"?>
-			<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
-			  <info>
-				<title>Test Dependent</title>
-				<id>http://www.zotero.org/styles/test-dependent</id>
-				<link href="http://www.zotero.org/styles/test-dependent" rel="self"/>
-				<link href="${parentID}" rel="independent-parent"/>
-				<updated>2024-01-01T00:00:00+00:00</updated>
-			  </info>
-			</style>`;
-			let style = new Zotero.Style(xml);
-			assert.isNull(style.locale);
-			assert.equal(style.effectiveLocale, "en-US");
 		});
 	});
 });

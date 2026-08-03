@@ -44,7 +44,7 @@ var Zotero_Preferences = {
 
 		this.navigation.addEventListener('mouseover', event => this._handleNavigationMouseOver(event));
 		this.navigation.addEventListener('select', () => this._handleNavigationSelect());
-		this.searchField.addEventListener('command', () => this._search(this.searchField.value.trim()));
+		this.searchField.addEventListener('command', () => this._search(this.searchField.value));
 		
 		document.getElementById('prefs-subpane-back-button').addEventListener('command', () => {
 			let parent = this.panes.get(this.navigation.value).parent;
@@ -68,10 +68,7 @@ var Zotero_Preferences = {
 			io = io.wrappedJSObject || io;
 
 			if (io.pane) {
-				this.navigateToPane(io.pane, {
-					scrollTo: io.scrollTo,
-					action: io.action,
-				});
+				this.navigateToPane(io.pane, { scrollTo: io.scrollTo });
 			}
 		}
 		else if (document.location.hash == "#cite") {
@@ -122,13 +119,10 @@ var Zotero_Preferences = {
 	 * @param {String} [options.scrollTo] Selector to scroll to after displaying the pane
 	 * @returns {Promise<void>}
 	 */
-	async navigateToPane(paneID, { scrollTo, action } = {}) {
-		let isNewPane = this.navigation.value !== paneID;
-		if (action) {
-			this._pendingAction = action;
-		}
+	async navigateToPane(paneID, { scrollTo } = {}) {
+		let oldPaneID = this.navigation.value;
 		this.navigation.value = paneID;
-		if (isNewPane) {
+		if (oldPaneID !== paneID) {
 			await this.waitForPaneSelect();
 		}
 		if (scrollTo) {
@@ -137,20 +131,6 @@ var Zotero_Preferences = {
 				elem.scrollIntoView({ block: 'start' });
 			}
 		}
-		// If the pane is already loaded, it won't call consumePendingAction()
-		// again from init(), so dispatch an event
-		if (action && !isNewPane) {
-			let container = this.panes.get(paneID)?.container;
-			if (container) {
-				container.dispatchEvent(new Event('action'));
-			}
-		}
-	},
-
-	consumePendingAction: function () {
-		let action = this._pendingAction;
-		this._pendingAction = null;
-		return action;
 	},
 
 	openHelpLink: function () {
@@ -699,7 +679,6 @@ ${str}
 		let termForDisplay = Zotero.Utilities.trimInternal(term).toLowerCase();
 		term = this._normalizeSearch(term);
 
-		let scrolled = false;
 		for (let paneContainer of this.content.querySelectorAll(':scope > .pane-container')) {
 			let roots = paneContainer.children;
 			while (roots.length === 1 && roots[0].childElementCount) {
@@ -720,11 +699,6 @@ ${str}
 							range.setStart(node, index);
 							range.setEnd(node, index + term.length);
 							this._getSearchSelection().addRange(range);
-							
-							if (!scrolled) {
-								node.parentElement?.scrollIntoView({ block: 'center' });
-								scrolled = true;
-							}
 						}
 						else if (node.nodeType == Node.ELEMENT_NODE) {
 							// For element nodes, wrap the element and add a tooltip
@@ -749,11 +723,6 @@ ${str}
 							// https://searchfox.org/mozilla-central/rev/703391c381f92a73d9a938cbe0d33ca64d94583b/browser/components/preferences/findInPage.js#689-691
 							let tooltipRect = tooltip.getBoundingClientRect();
 							tooltip.style.left = `calc(50% - ${tooltipRect.width / 2}px)`;
-							
-							if (!scrolled) {
-								node.scrollIntoView({ block: 'center' });
-								scrolled = true;
-							}
 						}
 
 						let tabPanel = this._closest(node, 'tabpanels > tabpanel');
@@ -837,25 +806,16 @@ ${str}
 					localizedStrings = localizedStrings.flatMap((message, i) => {
 						// If we got something from Fluent, use the value and relevant attributes
 						if (message) {
-							let attributeValues = (message.attributes ?? [])
-								.filter(attr => attr.name === 'title' || attr.name === 'label')
-								.map(attr => attr.value);
-							return [message.value, ...attributeValues];
+							return [message.value, message.attributes?.title, message.attributes?.label];
 						}
 
 						// If we didn't, try strings from DTDs and properties
 						let key = stringKeys[i];
-						if (Zotero.Intl.strings.hasOwnProperty(key)) {
-							return [Zotero.Intl.strings[key]];
-						}
-						try {
-							return [Zotero.getString(key)];
-						}
-						catch (e) {
-							// Don't let one missing string abort the entire search
-							Zotero.logError(e);
-							return [];
-						}
+						return [
+							Zotero.Intl.strings.hasOwnProperty(key)
+								? Zotero.Intl.strings[key]
+								: Zotero.getString(key)
+						];
 					}).filter(Boolean)
 						.map(this._normalizeSearch)
 						.filter(Boolean);

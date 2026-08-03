@@ -21,6 +21,7 @@
 // Components
 // --------------------------------------------------
 
+@import "components/advancedSearch";
 @import "components/annotation";
 @import "components/autosuggest";
 @import "components/banners";
@@ -50,8 +51,7 @@
 @import "components/notesList";
 @import "components/progressMeter";
 @import "components/publications-dialog";
-@import "components/readAloudFirstRunDialog";
-@import "components/readAloudVoicesDialog";
+@import "components/renameFilesPreview";
 @import "components/richlistbox";
 @import "components/rtfScan";
 @import "components/runJS";
@@ -71,14 +71,11 @@
 @import "components/window";
 @import "components/newCollectionDialog";
 @import "components/reader";
-@import "components/fileRenamingDialog";
-@import "components/renameFilesPreview";
 
 
 // Elements
 // --------------------------------------------------
 
-@import "elements/advancedSearchPane";
 @import "elements/attachmentBox";
 @import "elements/attachmentPreview";
 @import "elements/attachmentPreviewBox";
@@ -118,4 +115,3 @@
 @import "elements/itemPane";
 @import "elements/itemPaneCustomSection";
 @import "elements/contextPane";
-@import "elements/fileRenamingSettings";

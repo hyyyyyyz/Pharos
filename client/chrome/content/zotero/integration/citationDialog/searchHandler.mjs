@@ -50,9 +50,6 @@ export class CitationDialogSearchHandler {
 		this.selectedItems = null;
 		this.openItems = null;
 		this.citedItems = null;
-		// number of cited items in each library, keyed by libraryID.
-		// Populated once cited items are loaded in refreshCitedItems.
-		this.citedItemCountsByLibrary = {};
 	}
 
 	setSearchValue(str, enforceMinQueryLength) {
@@ -66,12 +63,12 @@ export class CitationDialogSearchHandler {
 		if (typeof id == "string" && (id.includes("cited") || id.includes("/"))) {
 			return this.results.cited.find(item => item.cslItemID === id);
 		}
-		// otherwise, it may be a item with an ordinary id from the database (still potentially cited)
+		// otherwise, it will be a item with an ordinary id from the database (still potentially cited)
 		for (let key of ['selected', 'open', 'found', 'cited']) {
 			let item = this.results[key].find(item => item.id === parseInt(id));
 			if (item) return item;
 		}
-		return Zotero.Items.get(id);
+		return null;
 	}
 
 	// how many selected items there are without applying the filter
@@ -87,8 +84,7 @@ export class CitationDialogSearchHandler {
 	// where key is selected/open/cited/{libraryID}, and group is the respective list of items.
 	// Groups are sorted in the order they will be rendered:
 	// Selected, Opened, Cited go first, followed by found library item groups ordered
-	// by the number of cited items in each library (if loaded). Ties are broken by
-	// keeping My Library first, then sorting other libraries alphabetically by name.
+	// by the number of results in each library.
 	// Items/notes in the libraries group are sorted via _createItemsSort/_createNotesSort comparators.
 	// Takes citedItems as a parameter to filter them out from Selected, Opened and Cited groups.
 	getOrderedSearchResultGroups(citedItemIDs = new Set()) {
@@ -96,15 +92,11 @@ export class CitationDialogSearchHandler {
 			return items.filter(i => !citedItemIDs.has(i.cslItemID ? i.cslItemID : i.id));
 		};
 		let result = [];
-		let groupKeys = ["selected", "open", "cited"];
-		if (this.dialogState.isAddingAnnotations()) {
-			groupKeys = ["selectedAnnotations", "selectedItems", "open", "cited"];
-		}
 		// selected/open/cited go first
-		for (let groupKey of groupKeys) {
+		for (let groupKey of ["selected", "open", "cited"]) {
 			let groupItems = this.results[groupKey];
 			// in selected and opened items, do not display items already in the citation
-			if (["selected", "selectedAnnotations", "selectedItems", "open"].includes(groupKey)) {
+			if (groupKey == "selected" || groupKey == "open") {
 				groupItems = removeItemsIncludedInCitation(groupItems);
 			}
 			if (groupItems.length) {
@@ -132,18 +124,8 @@ export class CitationDialogSearchHandler {
 			library.group.sort(itemComparator);
 		});
 	
-		// sort libraries by the number of cited items in each library;
-		// when counts are equal (or cited items have not been loaded yet),
-		// keep My Library first and sort the rest alphabetically by name
-		let collation = Zotero.getLocaleCollation();
-		libraryItems.sort((a, b) => {
-			let aCount = this.citedItemCountsByLibrary[a.key] || 0;
-			let bCount = this.citedItemCountsByLibrary[b.key] || 0;
-			if (aCount !== bCount) return bCount - aCount;
-			if (a.key === Zotero.Libraries.userLibraryID) return -1;
-			if (b.key === Zotero.Libraries.userLibraryID) return 1;
-			return collation.compareString(1, Zotero.Libraries.get(a.key).name, Zotero.Libraries.get(b.key).name);
-		});
+		// sort libraries by the number of items
+		libraryItems.sort((a, b) => b.group.length - a.group.length);
 		result.push(...libraryItems);
 
 		return result;
@@ -155,7 +137,7 @@ export class CitationDialogSearchHandler {
 	// for the library search to complete to show these results.
 	async refreshSelectedAndOpenItems() {
 		if (this.openItems === null) {
-			this.openItems = await this._getOpenTabItems();
+			this.openItems = await this._getReaderOpenItems();
 		}
 		if (this.selectedItems === null) {
 			this.selectedItems = this._getSelectedLibraryItems();
@@ -164,11 +146,6 @@ export class CitationDialogSearchHandler {
 		// apply filtering to item groups
 		this.results.open = this.searchValue ? this._filterNonMatchingItems(this.openItems) : this.openItems;
 		this.results.selected = this.searchValue ? this._filterNonMatchingItems(this.selectedItems) : this.selectedItems;
-		if (this.dialogState.isAddingAnnotations()) {
-			// separate selected annotations into its own group which appears in a separate deck
-			this.results.selectedItems = this.results.selected.filter(item => !item.isAnnotation());
-			this.results.selectedAnnotations = this.results.selected.filter(item => item.isAnnotation());
-		}
 		// if a specific library ID is specified, only keep items from that library
 		if (this.io.filterLibraryIDs) {
 			this.results.open = this.results.open.filter(item => this.io.filterLibraryIDs.includes(item.libraryID));
@@ -194,13 +171,6 @@ export class CitationDialogSearchHandler {
 	async refreshCitedItems() {
 		if (this.citedItems === null) {
 			this.citedItems = await this._getCitedItems();
-			// Record how many items from each library are already cited in the document.
-			// Used for sorting to move currently cited libraries to the top of search results.
-			for (let item of this.citedItems || []) {
-				let libraryID = item.libraryID;
-				if (!libraryID) continue;
-				this.citedItemCountsByLibrary[libraryID] = (this.citedItemCountsByLibrary[libraryID] || 0) + 1;
-			}
 		}
 		if (!this.citedItems) return;
 
@@ -253,56 +223,16 @@ export class CitationDialogSearchHandler {
 		return str;
 	}
 
-	// Return items that are either annotations or are ancestors of annotations
-	keepItemsWithAnnotations(items) {
-		return items.filter(item => this.isItemWithAnnotations(item));
-	}
-	
-	isItemWithAnnotations(item) {
-		if (item.isAnnotation()) return true;
-		if (item.isFileAttachment() && item.getAnnotations().length) return true;
-		if (item.isRegularItem()) {
-			let attachments = Zotero.Items.get(item.getAttachments());
-			return attachments.some(att => att.isFileAttachment() && att.getAnnotations().length);
-		}
-		return false;
-	}
-
-	isItemWithNotes(item) {
-		if (item.isNote() && item.getNote().length > 0) return true;
-		if (item.isRegularItem()) {
-			let notes = Zotero.Items.get(item.getNotes());
-			return notes.some(note => note.getNote().length > 0);
-		}
-		return false;
-	}
-
-	getAllAnnotations(item) {
-		if (item.isAnnotation()) return [item];
-		if (item.isFileAttachment()) return item.getAnnotations();
-		let attachmentIDs = item.getAttachments();
-		let attachments = Zotero.Items.get(attachmentIDs).filter(item => item.isFileAttachment());
-		let annotations = attachments.flatMap(attachment => attachment.getAnnotations());
-		annotations.sort((a, b) => {
-			if (a.parentItemID !== b.parentItemID) return 0;
-			return (a.annotationSortIndex > b.annotationSortIndex) - (a.annotationSortIndex < b.annotationSortIndex);
-		});
-		return annotations;
-	}
-
 	// make sure that each item appears only in one group.
-	// Items that are opened are removed from selected.
-	// Items that are opened or selected are removed from cited.
-	// Items that are opened or selected or cited are removed from library results.
+	// Items that are selected are removed from opened.
+	// Items that are selected or opened are removed from cited.
+	// Items that are selected or opened or cited are removed from library results.
 	_deduplicate() {
 		let selectedIDs = new Set(this.results.selected.map(item => item.id));
 		let openIDs = new Set(this.results.open.map(item => item.id));
 		let citedIDs = new Set(this.results.cited.map(item => item.id));
 
-		this.results.selected = this.results.selected.filter(item => !openIDs.has(item.id));
-		if (this.results.selectedItems) {
-			this.results.selectedItems = this.results.selectedItems.filter(item => !openIDs.has(item.id));
-		}
+		this.results.open = this.results.open.filter(item => !selectedIDs.has(item.id));
 		this.results.cited = this.results.cited.filter(item => !selectedIDs.has(item.id) && !openIDs.has(item.id));
 		this.results.found = this.results.found.filter(item => !selectedIDs.has(item.id) && !openIDs.has(item.id) && !citedIDs.has(item.id));
 	}
@@ -349,10 +279,8 @@ export class CitationDialogSearchHandler {
 		return citedItems;
 	}
 
-	async _getOpenTabItems() {
-		// When adding a note, suggest notes open in note tabs. Otherwise, suggest
-		// items open in reader tabs.
-		let tabType = this.dialogState.isAddingNote() ? 'note' : 'reader';
+	async _getReaderOpenItems() {
+		if (this.dialogState.isAddingNote()) return [];
 		let tabs = [];
 		let win = Zotero.getMainWindow();
 		// If the main window is open, use it to get open tabs
@@ -365,107 +293,52 @@ export class CitationDialogSearchHandler {
 			if (!mainWindowLastState) return [];
 			tabs = mainWindowLastState.tabs;
 		}
-		tabs = tabs.filter(t => t.type === tabType);
-		if (!tabs.length) return [];
+		let itemIDs = tabs.filter(t => t.type === 'reader').sort((a, b) => {
+			// Sort selected tab first
+			if (a.selected) return -1;
+			else if (b.selected) return 1;
+			// Then in reverse chronological select order
+			else if (a.timeUnselected && b.timeUnselected) return b.timeUnselected - a.timeUnselected;
+			// Then in reverse order for tabs that never got loaded in this session
+			else if (a.timeUnselected) return -1;
+			return 1;
+		}).map(t => t.data.itemID);
+		if (!itemIDs.length) return [];
 
-		// Fetch each tab's top-most item and load necessary data, in case tabs belong
-		// to an unloaded library
-		let tabItems = [];
-		for (let tab of tabs) {
-			let item = await Zotero.Items.getAsync(tab.data.itemID);
-			if (item && item.parentItemID && tabType === 'reader') {
+		// Fetch top-most items and load necessary data, in case tabs belong to an unloaded library
+		let items = [];
+		for (let itemID of itemIDs) {
+			let item = await Zotero.Items.getAsync(itemID);
+			if (item && item.parentItemID) {
 				item = await Zotero.Items.getAsync(item.parentItemID);
 			}
-			if (item) {
-				tabItems.push({ tab, item });
-			}
+			items.push(item);
 		}
-
-		if (this.selectedItems === null) {
-			this.selectedItems = this._getSelectedLibraryItems();
-		}
-		let selectedItemIDs = new Set(this.selectedItems.map(item => item.id));
-		tabItems.sort((a, b) => {
-			// Sort selected tab first
-			if (a.tab.selected) return -1;
-			else if (b.tab.selected) return 1;
-			// Then tabs whose items are selected in the item tree, since they get
-			// deduplicated out of the Selected Items group
-			let aItemSelected = selectedItemIDs.has(a.item.id);
-			let bItemSelected = selectedItemIDs.has(b.item.id);
-			if (aItemSelected !== bItemSelected) return aItemSelected ? -1 : 1;
-			// Then in reverse chronological select order
-			if (a.tab.timeUnselected && b.tab.timeUnselected) return b.tab.timeUnselected - a.tab.timeUnselected;
-			// Then in reverse order for tabs that never got loaded in this session
-			else if (a.tab.timeUnselected) return -1;
-			return 1;
-		});
-		let items = tabItems.map(tabItem => tabItem.item);
-
-		if (this.dialogState.isAddingNote()) {
-			await Zotero.Items.loadDataTypes(items);
-			items = items.filter(i => i.isNote());
-		}
-		else if (this.dialogState.isAddingAnnotations()) {
-			// Make sure annotations are loaded on unloaded tabs from unloaded libraries
-			await this._ensureRelevantItemsAreLoaded(items);
-			items = this.keepItemsWithAnnotations(items);
-		}
-		else {
-			await Zotero.Items.loadDataTypes(items);
-			// Exclude non-citeable items (e.g., a standalone attachment open in a tab)
-			items = items.filter(i => i.isRegularItem());
-		}
+		await Zotero.Items.loadDataTypes(items);
 		// Return deduplicated items since there may be multiple tabs opened for the same
 		// top-level item (duplicate tabs or a multiple attachments belonging to the same item)
 		return [...new Set(items)];
 	}
 
 	_getSelectedLibraryItems() {
-		let selected = Zotero.getActiveZoteroPane()?.getSelectedItems(false, { libraryTabOnly: true }) || [];
 		if (this.dialogState.isAddingNote()) {
-			return selected.filter(i => i.isNote()) || [];
+			return Zotero.getActiveZoteroPane()?.getSelectedItems().filter(i => i.isNote()) || [];
 		}
-		if (this.dialogState.isAddingAnnotations()) {
-			return this.keepItemsWithAnnotations(selected);
-		}
-		return selected.filter(i => i.isRegularItem());
+		return Zotero.getActiveZoteroPane()?.getSelectedItems().filter(i => i.isRegularItem()) || [];
 	}
 	
 
 	_filterNonMatchingItems(items) {
 		let matchedItems = new Set();
 		let splits = Zotero.Fulltext.semanticSplitter(this.searchValue);
-
-		let makeSearchString = (item) => {
-			return item.getCreators()
-				.map(creator => creator.firstName + " " + creator.lastName)
-				.concat([
-					// conditions from quicksearch-titleCreatorYear
-					item.getField("title"),
-					item.getField("date", true, true).substr(0, 4),
-					item.getField("publicationTitle"),
-					item.getField("shortTitle"),
-					item.getField("court"),
-					item.getField("year"),
-					item.getField("citationKey")
-				])
-				.join(" ")
-				.toLowerCase();
-		};
 		for (let item of items) {
 			// Generate a string to search for each item
-			let itemStr = makeSearchString(item);
-
-			if (this.dialogState.isAddingAnnotations()) {
-				if (item.isAnnotation()) {
-					// Include annotation text and comment
-					itemStr += " " + (item.annotationText || "").toLowerCase();
-					itemStr += " " + (item.annotationComment || "").toLowerCase();
-					// Also allow to search by the parent item's info
-					itemStr += " " + makeSearchString(item.topLevelItem);
-				}
-			}
+			let itemStr = item.getCreators()
+				.map(creator => creator.firstName + " " + creator.lastName)
+				.concat([item.getField("title"), item.getField("date", true, true).substr(0, 4)])
+				.join(" ")
+				.toLowerCase();
+			
 			// Include items that match every word that was typed
 			let allMatch = splits.every(split => itemStr.includes(split));
 			if (allMatch) {
@@ -537,25 +410,5 @@ export class CitationDialogSearchHandler {
 		let stringNoYear = string.substr(0, maybeYear.index) + string.substring(maybeYear.index + maybeYear[0].length);
 		if (!year) return stringNoYear;
 		return stringNoYear + " " + year;
-	}
-
-	// load all ancestors,descendants, and siblings of provided items
-	async _ensureRelevantItemsAreLoaded(items) {
-		let topLevelItems = items.map(item => item.topLevelItem);
-		// load all data of top-level items and their attachments
-		await Zotero.Items.loadDataTypes(topLevelItems);
-		let regularItems = topLevelItems.filter(item => item.isRegularItem());
-		let attachmentIDs = regularItems.flatMap(item => item.getAttachments());
-		let attachments = await Zotero.Items.getAsync(attachmentIDs);
-		await Zotero.Items.loadDataTypes(attachments);
-
-		// Load annotations.
-		// Zotero.Items.loadDataTypes on parent items will set the
-		// _annotations cache on attachments but not load the annotations themselves.
-		// So fetch annotationIDs from the cache and load annotations separately.
-		attachments = attachments.filter(attachment => attachment.isFileAttachment());
-		let annotationIDs = attachments.flatMap(attachment => attachment.getAnnotations(false, true));
-		let annotations = await Zotero.Items.getAsync(annotationIDs);
-		await Zotero.Items.loadDataTypes(annotations);
 	}
 }

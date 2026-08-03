@@ -37,18 +37,24 @@ Zotero.Pharos.API = new function () {
 	/**
 	 * Where the login manager keeps the bearer token.
 	 *
-	 * Mirrors how Zotero stores its own Web API key (see
-	 * xpcom/sync/syncLocal.js:32): the login manager, with the secret
-	 * additionally encrypted through OSKeyStore rather than sitting in
-	 * logins.json in the clear. A Pharos token is a live credential for the
-	 * user's whole library, so it gets the same treatment as Zotero's.
+	 * Exactly how Zotero stores its own Web API key (xpcom/sync/syncLocal.js):
+	 * the login manager, which Gecko encrypts at rest and which on macOS is
+	 * backed by the system keychain. A Pharos token is a live credential for the
+	 * user's whole library, so it gets the same treatment as Zotero's own.
+	 *
+	 * An earlier version wrapped the secret in `Zotero.OSKeyStore` for a second
+	 * layer. That API does not exist in the Zotero release this client is now
+	 * built on -- it arrived in a later development branch -- and calling it
+	 * threw on every sign-in. `_encrypt`/`_decrypt` below use it when it is
+	 * present and pass the value through when it is not, so the token is stored
+	 * the way Zotero stores its own either way.
 	 *
 	 * The host is deliberately not "chrome://zotero" -- sharing that host with
 	 * Zotero's own entry would put two unrelated credentials in one bucket,
 	 * where clearing one could clear the other.
 	 */
 	const LOGIN_HOST = 'chrome://pharos';
-	const LOGIN_REALM = 'Pharos API (encrypted)';
+	const LOGIN_REALM = 'Pharos API';
 
 	/**
 	 * Requests get a generous timeout because translation upload is a multi-MB
@@ -134,7 +140,7 @@ Zotero.Pharos.API = new function () {
 			return null;
 		}
 		try {
-			_cachedToken = await Zotero.OSKeyStore.decrypt(login.password);
+			_cachedToken = await _decrypt(login.password);
 		}
 		catch (e) {
 			// A token that cannot be decrypted is not recoverable, and leaving it
@@ -146,6 +152,39 @@ Zotero.Pharos.API = new function () {
 		}
 		return _cachedToken;
 	};
+
+
+	/**
+	 * Wrap a secret for storage, using OSKeyStore where the platform has it.
+	 *
+	 * Capability-detected rather than assumed: `Zotero.OSKeyStore` is absent from
+	 * the release this client is built on and present in later branches, and a
+	 * bare call to it fails at sign-in -- the one moment a user cannot work
+	 * around. Storage is the login manager either way, which is already
+	 * encrypted at rest.
+	 */
+	async function _encrypt(secret) {
+		if (Zotero.OSKeyStore && typeof Zotero.OSKeyStore.encrypt == 'function') {
+			return Zotero.OSKeyStore.encrypt(secret);
+		}
+		return secret;
+	}
+
+	/**
+	 * The inverse, and deliberately tolerant of a value the other path wrote.
+	 *
+	 * A profile that was written by a build WITH OSKeyStore and is then opened by
+	 * one without it holds a ciphertext this cannot read. Returning it verbatim
+	 * would send an unusable token as a bearer credential and produce a 401 loop;
+	 * throwing sends the caller down the "drop the token and ask again" path,
+	 * which is recoverable.
+	 */
+	async function _decrypt(stored) {
+		if (Zotero.OSKeyStore && typeof Zotero.OSKeyStore.decrypt == 'function') {
+			return Zotero.OSKeyStore.decrypt(stored);
+		}
+		return stored;
+	}
 
 	this.setToken = async function (token) {
 		let oldLogin = this._getLoginInfo();
@@ -164,7 +203,7 @@ Zotero.Pharos.API = new function () {
 			return;
 		}
 
-		let encrypted = await Zotero.OSKeyStore.encrypt(token);
+		let encrypted = await _encrypt(token);
 		let nsLoginInfo = new Components.Constructor(
 			'@mozilla.org/login-manager/loginInfo;1',
 			Components.interfaces.nsILoginInfo,

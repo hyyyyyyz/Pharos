@@ -28,11 +28,6 @@
 import { getCSSIcon } from 'components/icons';
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
-
 	class LibrariesCollectionsBox extends ItemPaneSectionElementBase {
 		content = MozXULElement.parseXULToFragment(`
 			<collapsible-section data-l10n-id="section-libraries-collections" data-pane="libraries-collections" extra-buttons="add">
@@ -66,7 +61,7 @@ import { getCSSIcon } from 'components/icons';
 		}
 
 		get _renderDependencies() {
-			return [...super._renderDependencies, this.collectionTreeRows?.map(o => o.id).join(',')];
+			return [...super._renderDependencies, this.collectionTreeRow?.id];
 		}
 
 		init() {
@@ -148,17 +143,14 @@ import { getCSSIcon } from 'components/icons';
 						Zotero.getString('pane.items.removeFromOther', [obj.name])
 					)) {
 						contextItem.removeFromCollection(obj.id);
-						contextItem.saveTx({
-							undoAction: 'undo-action-remove-from-collection',
-							undoActionArgs: { count: 1 }
-						});
+						contextItem.saveTx();
 					}
 				});
 				row.append(remove);
 			}
 			
 			let isCurrent = this.tabType === 'library'
-				&& this.collectionTreeRows.map(o => o.id).includes(obj.treeViewID);
+				&& this.collectionTreeRow?.id == obj.treeViewID;
 			box.classList.toggle('current', isCurrent);
 
 			// Disable clicky if this is a context row or we're already in the library/collection it points to

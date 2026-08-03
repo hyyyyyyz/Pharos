@@ -25,10 +25,16 @@
 "use strict";
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
+	// ItemPaneSectionElementBase is a GLOBAL here, not an ES module.
+	// customElements.js loads elements/itemPaneSection.js through
+	// loadSubScript before registering any section (line 31), which is how
+	// every upstream box -- abstractBox, attachmentsBox -- reaches it too.
+	//
+	// It was an importESModule of itemPaneSectionElementBase.mjs while this
+	// client was built on a later Zotero branch, where the class had been moved
+	// into a module. On the release it is built on now that file does not exist,
+	// and the failed import took the whole section down: no header, no body, and
+	// `hidden` stuck false so it showed on notes and on items with no PDF.
 
 	/**
 	 * Where a paper's translation stands, in the item pane beside it.

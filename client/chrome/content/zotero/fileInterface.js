@@ -131,10 +131,9 @@ Zotero_File_Exporter.prototype.save = async function () {
 		return;
 	}
 	
-	if (this.collection) {
+	if(this.collection) {
 		translation.setCollection(this.collection);
-	}
-	else if (this.items) {
+	} else if(this.items) {
 		translation.setItems(this.items);
 	} else if(this.libraryID === undefined) {
 		throw new Error('No export configured');
@@ -191,8 +190,8 @@ var Zotero_File_Interface = new function () {
 	 */
 	this.exportFile = async function () {
 		var exporter = new Zotero_File_Exporter();
-		exporter.libraryID = ZoteroPane_Local.getSelectedLibraryIDs()[0];
-		if (exporter.libraryID === undefined) {
+		exporter.libraryID = ZoteroPane_Local.getSelectedLibraryID();
+		if (exporter.libraryID === false) {
 			throw new Error('No library selected');
 		}
 		exporter.name = Zotero.Libraries.getName(exporter.libraryID);
@@ -202,28 +201,22 @@ var Zotero_File_Interface = new function () {
 	/*
 	 * exports a collection or saved search
 	 */
-	async function exportCollection() {
+	function exportCollection() {
 		var exporter = new Zotero_File_Exporter();
 	
-		var collections = ZoteroPane_Local.getSelectedCollections();
-		if (collections.length == 1) {
-			exporter.name = collections[0].getName();
-			exporter.collection = collections[0];
-		}
-		else if (collections.length > 1) {
-			exporter.name = collections.map(c => c.getName()).join(', ');
-			exporter.items = await ZoteroPane.getUnfilteredItems();
-			if (!exporter.items.length) throw ("No items to save");
-		}
-		else {
+		var collection = ZoteroPane_Local.getSelectedCollection();
+		if(collection) {
+			exporter.name = collection.getName();
+			exporter.collection = collection;
+		} else {
 			// find sorted items
 			exporter.items = ZoteroPane_Local.getSortedItems();
-			if (!exporter.items) throw ("No items to save");
+			if(!exporter.items) throw ("No items to save");
 			
 			// find name
-			var searches = ZoteroPane_Local.getSelectedSavedSearches();
-			if (searches.length) {
-				exporter.name = searches.map(s => s.name).join(', ');
+			var search = ZoteroPane_Local.getSelectedSavedSearch();
+			if(search) {
+				exporter.name = search.name;
 			}
 		}
 		exporter.save();
@@ -385,7 +378,7 @@ var Zotero_File_Interface = new function () {
 		var libraryID = Zotero.Libraries.userLibraryID;
 		try {
 			let zp = Zotero.getActiveZoteroPane();
-			libraryID = zp.getSelectedLibraryIDs()[0];
+			libraryID = zp.getSelectedLibraryID();
 		}
 		catch (e) {
 			Zotero.logError(e);
@@ -588,15 +581,15 @@ var Zotero_File_Interface = new function () {
 		}
 		
 		var libraryID = Zotero.Libraries.userLibraryID;
-		var importCollections = [];
+		var importCollection = null;
 		try {
 			let zp = Zotero.getActiveZoteroPane();
-			libraryID = zp.getSelectedLibraryIDs()[0];
+			libraryID = zp.getSelectedLibraryID();
 			if (addToLibraryRoot) {
 				await zp.collectionsView.selectLibrary(libraryID);
 			}
 			else if (!createNewCollection) {
-				importCollections = zp.getSelectedCollections();
+				importCollection = zp.getSelectedCollection();
 			}
 		}
 		catch (e) {
@@ -621,11 +614,10 @@ var Zotero_File_Interface = new function () {
 			else {
 				collectionName = defaultNewCollectionPrefix + " " + (new Date()).toLocaleString();
 			}
-			let importCollection = new Zotero.Collection;
+			importCollection = new Zotero.Collection;
 			importCollection.libraryID = libraryID;
 			importCollection.name = collectionName;
 			await importCollection.saveTx();
-			importCollections = [importCollection];
 		}
 
 		translation.setTranslator(translators[0]);
@@ -658,7 +650,7 @@ var Zotero_File_Interface = new function () {
 		try {
 			await translation.translate({
 				libraryID,
-				collections: importCollections.length ? importCollections.map(c => c.id) : null,
+				collections: importCollection ? [importCollection.id] : null,
 				linkFiles,
 				saveOptions: {
 					notifierQueue
@@ -734,18 +726,18 @@ var Zotero_File_Interface = new function () {
 	 * Creates a bibliography from a collection or saved search
 	 */
 	this.bibliographyFromCollection = async function () {
-		var items = await ZoteroPane.getUnfilteredItems();
+		var items = ZoteroPane.getSortedItems();
 		
 		// Find collection name
 		var name = false;
-		var collections = ZoteroPane.getSelectedCollections();
-		if (collections.length) {
-			name = collections.map(c => c.name).join(', ');
+		var collection = ZoteroPane.getSelectedCollection();
+		if (collection) {
+			name = collection.name;
 		}
 		else {
-			let searches = ZoteroPane.getSelectedSavedSearches();
-			if (searches.length) {
-				name = searches.map(s => s.name).join(', ');
+			let search = ZoteroPane.getSelectedSavedSearch();
+			if (search) {
+				name = search.name;
 			}
 		}
 		

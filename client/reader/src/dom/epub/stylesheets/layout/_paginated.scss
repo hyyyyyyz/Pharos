@@ -1,20 +1,7 @@
 & {
+	margin: 40px !important;
 	overflow: hidden;
 	overscroll-behavior: none;
-	// Suppress pan-x action that conflicts with page turning on Android
-	touch-action: pan-y;
-}
-
-&:not(.fixed-layout) {
-	--block-margin: 40px;
-
-	// Reduce on phone-size screens
-	@media (max-width: 800px) {
-		--block-margin: 20px;
-	}
-
-	margin-block: var(--block-margin) !important;
-	margin-inline: 40px !important;
 }
 
 .swipe-indicators {
@@ -44,27 +31,17 @@
 	}
 }
 
-&.fixed-layout > .sections {
-	overflow: hidden;
-	overscroll-behavior: none;
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	width: 100vw;
-	height: 100vh;
-}
-
-&:not(.fixed-layout) > .sections {
-	overflow: visible;
-	position: relative;
+> .sections {
 	max-width: calc(100vw - 80px);
-	min-height: calc(100vh - var(--block-margin) * 2);
-	max-height: calc(100vh - var(--block-margin) * 2);
+	min-height: calc(100vh - 80px);
+	max-height: calc(100vh - 80px);
 	margin-inline: auto;
 	column-fill: auto;
 	-webkit-column-fill: auto;
 	column-gap: 60px;
 	column-width: 800px;
+	overflow: hidden;
+	overscroll-behavior: none;
 
 	&.spread-mode-odd {
 		column-width: calc(50vw - 80px);
@@ -72,7 +49,7 @@
 	}
 
 	&.spread-mode-none {
-		column-gap: 9999px; // Just a big number
+		column-gap: 100vw; // Just a big number, doesn't need to adjust for writing-mode
 		--media-max-width: calc(100vw - 80px);
 	}
 
@@ -110,7 +87,7 @@
 	}
 }
 
-&:not(.fixed-layout) replaced-body {
+replaced-body {
 	section {
 		position: relative !important;
 	}
@@ -126,7 +103,7 @@
 
 	img, svg, audio, video {
 		max-width: calc(min(0.98 * var(--media-max-width), 100%)) !important;
-		max-height: calc(0.98 * (100vh - var(--block-margin) * 2)) !important;
+		max-height: calc(0.98 * (100vh - 80px)) !important;
 		object-fit: contain;
 		position: static !important;
 		width: auto;
@@ -141,8 +118,8 @@
 		table, mtable {
 			display: block;
 			overflow: auto;
-			max-block-size: calc(100vh - var(--block-margin) * 2);
-			max-block-size: calc(100vb - var(--block-margin) * 2);
+			max-block-size: calc(100vh - 80px);
+			max-block-size: calc(100vb - 80px);
 			border: none !important;
 		}
 

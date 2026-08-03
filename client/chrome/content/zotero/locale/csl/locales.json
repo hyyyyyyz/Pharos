@@ -23,7 +23,6 @@
         "hi":  "hi-IN",
         "hr":  "hr-HR",
         "hu":  "hu-HU",
-        "hy":  "hy-AM",
         "id":  "id-ID",
         "is":  "is-IS",
         "it":  "it-IT",
@@ -49,7 +48,6 @@
         "sr":  "sr-Latn-RS",
         "sv":  "sv-SE",
         "th":  "th-TH",
-        "tl":  "tl-PH",
         "tr":  "tr-TR",
         "uk":  "uk-UA",
         "vi":  "vi-VN",
@@ -172,10 +170,6 @@
             "Magyar",
             "Hungarian"
         ],
-        "hy-AM": [
-            "Հայերեն",
-            "Armenian"
-        ],
         "id-ID": [
             "Bahasa Indonesia",
             "Indonesian"    
@@ -283,10 +277,6 @@
         "th-TH": [
             "ไทย",
             "Thai"
-        ],
-        "tl-PH": [
-            "Tagalog",
-            "Tagalog"
         ],
         "tr-TR": [
             "Türkçe",

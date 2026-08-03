@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Sinkronizacija">
 <!ENTITY zotero.preferences.sync.username "Korisničko ime:">
 <!ENTITY zotero.preferences.sync.password "Lozinka:">
+<!ENTITY zotero.preferences.sync.syncServer "Sinkronizacija podataka">
+<!ENTITY zotero.preferences.sync.setUpSync "Postavljanje sinkronizacije">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Prekini vezu s računom...">
 <!ENTITY zotero.preferences.sync.createAccount "Stvori račun">
 <!ENTITY zotero.preferences.sync.lostPassword "Zaboravljena lozinka?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Sinkroniziraj automatski">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Sinkronizacija datoteka">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Sinkronizaj datoteke privitaka u mojoj biblioteci pomoću">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Sinkroniziraj datoteke privitaka u grupnim bibliotekama pomoću Zoterove pohrane">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Preuzmi datoteke">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "u vrijeme sinkronizacije">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "po potrebi">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Potvrdi poslužitelj">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Korištenjem Zoterove pohrane, slažete se s njegovim">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "odredbama i uvjetima">
 <!ENTITY zotero.preferences.sync.librariesToSync "Biblioteke za sinkronizaciju">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Odaberi biblioteke...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Sinkroniziraj">

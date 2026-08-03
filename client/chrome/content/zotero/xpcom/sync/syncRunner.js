@@ -116,13 +116,13 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 	this.sync = Zotero.serial(function (options = {}) {
 		return this._sync(options);
 	});
-
-
+	
+	
 	this._sync = async function (options) {
 		// Clear message list
 		_errors = [];
 		_tooltipMessages = [];
-
+		
 		// Shouldn't be possible because of serial()
 		if (_syncInProgress) {
 			let msg = Zotero.getString('sync.error.syncInProgress');
@@ -132,10 +132,6 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 		}
 		_syncInProgress = true;
 		_stopping = false;
-
-		// Reset remote-change tracking for this sync; the undo stack is
-		// cleared lazily at the end only if remote mutations were applied.
-		Zotero.Sync.Data.Local.resetRemoteChangesApplied();
 		
 		try {
 			await Zotero.Notifier.trigger('start', 'sync', []);
@@ -198,8 +194,7 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 				lastWin,
 				keyInfo.userID,
 				keyInfo.username,
-				keyInfo.displayName,
-				keyInfo.emails
+				keyInfo.displayName
 			);
 			if (!ok) {
 				Zotero.debug("User cancelled sync on username mismatch");
@@ -325,14 +320,7 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 		}
 		finally {
 			await this.end(options);
-
-			// Clear undo history if this iteration applied remote changes.
-			// Done before any restart/queued recursive call so the inner
-			// sync's reset doesn't lose the decision made here.
-			if (Zotero.Sync.Data.Local.remoteChangesApplied) {
-				Zotero.UndoHistory.clear();
-			}
-
+			
 			if (options.restartSync) {
 				delete options.restartSync;
 				Zotero.debug("Restarting sync");
@@ -345,7 +333,7 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 				await this._sync(JSON.parse(_queuedSyncOptions.shift()));
 				return;
 			}
-
+			
 			Zotero.debug("Done syncing");
 			Zotero.Notifier.trigger('finish', 'sync', librariesToSync || []);
 		}
@@ -707,9 +695,6 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 	 */
 	var _doFileSync = async function (libraries, options) {
 		Zotero.debug("Starting file syncing");
-		// Drain file change events and run the modification check on the changed files across
-		// all libraries
-		await Zotero.Sync.Storage.FileChangeWatcher.snapshot();
 		var resyncLibraries = []
 		for (let libraryID of libraries) {
 			_stopCheck();
@@ -923,40 +908,15 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 		_syncInProgress = false;
 		await this.checkErrors(_errors, options);
 		if (!options.restartSync) {
-			let showOnSyncButton = !options.background
-				&& _errors.length
-				&& _errors[0].showOnSyncButton;
-			// Don't show the error icon for errors that will be shown on
-			// the sync button
-			this.updateIcons(showOnSyncButton ? [] : _errors);
-
+			this.updateIcons(_errors);
+			
+			// If foreground sync, trigger dialog button immediately for some errors
+			// (e.g., long tag fixer)
 			if (!options.background && _errors.length) {
-				// Trigger dialog button immediately for some errors
-				// (e.g., long tag fixer)
 				if (_errors[0].dialogButtonImmediate) {
 					let maybePromise = _errors[0].dialogButtonCallback();
 					if (maybePromise && maybePromise.then) {
 						await maybePromise;
-					}
-				}
-				// Show the error panel anchored to the sync button
-				else if (showOnSyncButton) {
-					let win = Services.wm.getMostRecentWindow("navigator:browser");
-					if (win) {
-						let doc = win.document;
-						let syncButton = doc.getElementById('zotero-tb-sync');
-						let panel = this.updateErrorPanel(doc, _errors);
-						panel.openPopup(syncButton, "after_end", 0, 0, false, false);
-					}
-				}
-				// Auto-open the error panel for other foreground errors
-				else {
-					let win = Services.wm.getMostRecentWindow("navigator:browser");
-					if (win) {
-						let icon = win.document.getElementById('zotero-tb-sync-error');
-						if (icon && !icon.hidden) {
-							icon.click();
-						}
 					}
 				}
 			}
@@ -1163,15 +1123,54 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 			switch (e.error) {
 				case Zotero.Error.ERROR_API_KEY_NOT_SET:
 				case Zotero.Error.ERROR_API_KEY_INVALID:
-					e.message = Zotero.ftl.formatValueSync('account-not-logged-in-text');
-					e.dialogButtonText = Zotero.ftl.formatValueSync('account-log-in');
+					// TODO: the setTimeout() call below should just simulate a click on the sync error icon
+					// instead of creating its own dialog, but updateIcons() doesn't yet provide full control
+					// over dialog title and primary button text/action, which is why this version of the
+					// dialog is a bit uglier than the manual click version
+					// TODO: localize (=>done) and combine with below (=>?)
+					var msg = Zotero.getString('sync.error.invalidLogin.text');
+					e.message = msg;
+					e.dialogButtonText = Zotero.getString('sync.openSyncPreferences');
 					e.dialogButtonCallback = function () {
-						Zotero.Utilities.Internal.openPreferences(
-							"zotero-prefpane-account",
-							{ action: 'logIn' }
-						);
+						var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
+								.getService(Components.interfaces.nsIWindowMediator);
+						var win = wm.getMostRecentWindow("navigator:browser");
+						win.ZoteroPane.openPreferences("zotero-prefpane-sync");
 					};
-					e.showOnSyncButton = true;
+					
+					// Manual click
+					if (!options.background) {
+						setTimeout(function () {
+							var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
+										.getService(Components.interfaces.nsIWindowMediator);
+							var win = wm.getMostRecentWindow("navigator:browser");
+							
+							var ps = Services.prompt;
+							var buttonFlags = (ps.BUTTON_POS_0) * (ps.BUTTON_TITLE_IS_STRING)
+												+ (ps.BUTTON_POS_1) * (ps.BUTTON_TITLE_CANCEL);
+							if (e.error == Zotero.Error.ERROR_API_KEY_NOT_SET) {
+								var title = Zotero.getString('sync.error.usernameNotSet');
+								var msg = Zotero.getString('sync.error.usernameNotSet.text');
+							}
+							else {
+								var title = Zotero.getString('sync.error.invalidLogin');
+								var msg = Zotero.getString('sync.error.invalidLogin.text');
+							}
+							var index = ps.confirmEx(
+								win,
+								title,
+								msg,
+								buttonFlags,
+								Zotero.getString('sync.openSyncPreferences'),
+								null, null, null, {}
+							);
+							
+							if (index == 0) {
+								Zotero.Utilities.Internal.openPreferences("zotero-prefpane-sync");
+								return;
+							}
+						}, 1);
+					}
 					break;
 			}
 		}
@@ -1658,47 +1657,10 @@ Zotero.Sync.Runner_Module = function (options = {}) {
 	}
 
 
-	this.startLoginSession = async function () {
-		let client = this.getAPIClient();
-		let userID = Zotero.Users.getCurrentUserID();
-		return client.createLoginSession(userID || undefined);
-	}
-
-
-	this.checkLoginSession = async function (sessionToken, result) {
-		if (!result) {
-			let client = this.getAPIClient();
-			result = await client.checkLoginSession(sessionToken);
-		}
-		// Polling returns { status: "completed", ... }
-		// Streaming returns { event: "loginComplete", ... }
-		if (result.status == "completed" || result.event == "loginComplete") {
-			if (!result.apiKey) throw new Error("apiKey not found in session response");
-			if (!result.userID) throw new Error("userID not found in session response");
-			if (!result.username) throw new Error("username not found in session response");
-			await Zotero.Sync.Data.Local.setAPIKey(result.apiKey);
-		}
-		return result;
-	}
-
-
-	this.cancelLoginSession = async function (sessionToken) {
-		try {
-			let client = this.getAPIClient();
-			await client.cancelLoginSession(sessionToken);
-		}
-		catch (e) {
-			Zotero.debug("Failed to cancel login session: " + e, 2);
-		}
-	}
-
-
 	this.deleteAPIKey = async function () {
 		this.resetStorageController('zfs');
 		var apiKey = await Zotero.Sync.Data.Local.getAPIKey();
 		var client = this.getAPIClient({apiKey});
-		// Remove streaming subscription before clearing the key
-		await Zotero.Streamer.removeSyncSubscription();
 		await Zotero.Sync.Data.Local.setAPIKey();
 		await client.deleteAPIKey();
 	}

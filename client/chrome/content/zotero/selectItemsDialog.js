@@ -24,7 +24,7 @@
 */
 
 import CollectionTree from 'zotero/collectionTree';
-import CollectionViewItemTree from 'zotero/collectionViewItemTree';
+import ItemTree from 'zotero/itemTree';
 
 var itemsView;
 var collectionsView;
@@ -63,7 +63,7 @@ var doLoad = async function () {
 	if(io.addBorder) document.getElementsByTagName("dialog")[0].style.border = "1px solid black";
 	if(io.singleSelection) document.getElementById("zotero-items-tree").setAttribute("seltype", "single");
 	
-	itemsView = await CollectionViewItemTree.init(document.getElementById('zotero-items-tree'), {
+	itemsView = await ItemTree.init(document.getElementById('zotero-items-tree'), {
 		onSelectionChange: () => {
 			if (isEditBibliographyDialog) {
 				Zotero_Bibliography_Dialog.treeItemSelected();
@@ -77,6 +77,7 @@ var doLoad = async function () {
 		},
 		id: io.itemTreeID || "select-items-dialog",
 		dragAndDrop: false,
+		persistColumns: true,
 		regularOnly: io.onlyRegularItems,
 		columnPicker: true,
 		multiSelect: io.multiSelect,
@@ -139,7 +140,7 @@ var onCollectionSelected = async function () {
 	var collectionTreeRow = collectionsView.getRow(collectionsView.selection.focused);
 	if (!collectionsView.selection.count) return;
 	// Collection not changed
-	if (itemsView && itemsView.collectionTreeRows[0]?.id == collectionTreeRow.id) {
+	if (itemsView && itemsView.collectionTreeRow && itemsView.collectionTreeRow.id == collectionTreeRow.id) {
 		return;
 	}
 	collectionTreeRow.setSearch('');
@@ -154,7 +155,7 @@ var onCollectionSelected = async function () {
 		await library.waitForDataLoad('item');
 	}
 	
-	await itemsView.changeCollectionTreeRows([collectionTreeRow]);
+	await itemsView.changeCollectionTreeRow(collectionTreeRow);
 	
 	itemsView.clearItemsPaneMessage();
 };

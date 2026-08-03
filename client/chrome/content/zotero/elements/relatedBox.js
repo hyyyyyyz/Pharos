@@ -28,11 +28,6 @@
 import { getCSSItemTypeIcon } from 'components/icons';
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
-
 	class RelatedBox extends ItemPaneSectionElementBase {
 		content = MozXULElement.parseXULToFragment(`
 			<collapsible-section data-l10n-id="section-related" data-pane="related" extra-buttons="add">
@@ -178,7 +173,6 @@ import { getCSSItemTypeIcon } from 'components/icons';
 				return;
 			}
 			await Zotero.DB.executeTransaction(async () => {
-				Zotero.UndoHistory.stageAction('undo-action-add-related');
 				for (let relItem of relItems) {
 					if (this._item.addRelatedItem(relItem)) {
 						await this._item.save({
@@ -198,7 +192,6 @@ import { getCSSItemTypeIcon } from 'components/icons';
 			let item = await Zotero.Items.getAsync(id);
 			if (item) {
 				await Zotero.DB.executeTransaction(async () => {
-					Zotero.UndoHistory.stageAction('undo-action-remove-related');
 					if (this._item.removeRelatedItem(item)) {
 						await this._item.save({
 							skipDateModifiedUpdate: true

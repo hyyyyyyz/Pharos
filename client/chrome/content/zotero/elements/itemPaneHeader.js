@@ -26,11 +26,6 @@
 "use strict";
 
 {
-	const { ItemPaneSectionElementBase } = ChromeUtils.importESModule(
-		"chrome://zotero/content/elements/itemPaneSectionElementBase.mjs",
-		{ global: "current" }
-	);
-
 	const PREF_HEADER_MODE = 'itemPaneHeader';
 	const PREF_BIB_ENTRY_STYLE = 'itemPaneHeader.bibEntry.style';
 	const PREF_BIB_ENTRY_LOCALE = 'itemPaneHeader.bibEntry.locale';
@@ -70,10 +65,6 @@
 
 		_editable = true;
 		
-		get _renderDependencies() {
-			return [this._tabID, this._item?.id, this.extraItems?.length ?? 0];
-		}
-
 		get item() {
 			return this._item;
 		}
@@ -154,8 +145,8 @@
 				event.preventDefault();
 				let menupopup = ZoteroPane.buildFieldTransformMenu({
 					target: this.titleField,
-					onTransform: (newValues) => {
-						this._setTransformedValue(newValues[0]);
+					onTransform: (newValue) => {
+						this._setTransformedValue(newValue);
 					},
 				});
 				
@@ -201,15 +192,9 @@
 			if (newValue.toLowerCase().startsWith(shortTitleVal.toLowerCase())) {
 				this._item.setField('shortTitle', newValue.substring(0, shortTitleVal.length));
 			}
-			await this._item.saveTx({
-				undoAction: 'undo-action-edit-field',
-				undoActionArgs: {
-					field: Zotero.ItemFields.getLocalizedString(this._titleFieldID),
-					count: 1
-				}
-			});
+			await this._item.saveTx();
 		}
-
+		
 		async save() {
 			if (!this.editable) {
 				return;
@@ -219,13 +204,7 @@
 					throw new Error('Item has not been added to library');
 				}
 				this._item.setField(this._titleFieldID, this.titleField.value);
-				await this._item.saveTx({
-					undoAction: 'undo-action-edit-field',
-					undoActionArgs: {
-						field: Zotero.ItemFields.getLocalizedString(this._titleFieldID),
-						count: 1
-					}
-				});
+				await this._item.saveTx();
 			}
 			this._forceRenderAll();
 		}
@@ -247,12 +226,6 @@
 			if (this._item.isAttachment()) {
 				headerMode = 'title';
 			}
-			
-			if (this.extraItems?.length) {
-				headerMode = 'none';
-			}
-
-			this.classList.toggle('batch-edit', !!this.extraItems?.length);
 
 			this.title.hidden = true;
 			this.creatorYear.hidden = true;

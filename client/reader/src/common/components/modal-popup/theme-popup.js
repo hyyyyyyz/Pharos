@@ -184,7 +184,7 @@ function ThemePopup({ params, customThemes, colorScheme, lightTheme, darkTheme, 
 	);
 
 	return (
-		<DialogPopup className="theme-popup" onSubmit={handleSubmit}>
+		<DialogPopup className="theme-popup">
 			<form onSubmit={handleSubmit}>
 				<div className="grid">
 					<label>{l10n.getString('reader-theme-name')}</label>

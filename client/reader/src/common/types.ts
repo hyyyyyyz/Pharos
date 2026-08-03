@@ -1,5 +1,5 @@
 import { Selector } from "../dom/common/lib/selector";
-import { ReflowableAppearance } from "../dom/common/lib/appearance";
+import { ReflowableAppearance } from "../dom/common/dom-view";
 
 export type ToolType =
 	| 'highlight'
@@ -59,44 +59,15 @@ export type NavLocation = {
 	position?: Position;
 	href?: string;
 	scrollCoords?: [number, number];
-	scrollYPercent?: number;
 };
 
-export type Position = PDFPosition | Selector | SDTPosition;
-
-/**
- * A position in the source document's own coordinate system, as stored in
- * annotations and view states: PDFPosition for PDFs, a WADM Selector for
- * EPUBs and snapshots.
- */
-export type SourcePosition = Exclude<Position, SDTPosition>;
+export type Position = PDFPosition | Selector;
 
 export type PDFPosition = {
 	pageIndex: number;
 	rects?: number[][];
 	paths?: number[][];
-	nextPageRects?: number[][];
 };
-
-/**
- * A range in a Structured Document Text content tree. Each endpoint is a
- * content point per the SDT schema: a path of child indices leading to a
- * text node, followed by a character offset within that node's text.
- * Endpoints can be compared with compareRefs() and split into
- * { ref, offset } with splitContentPoint() from the
- * structured-document-text module.
- */
-export type SDTPosition = {
-	start: number[];
-	end: number[];
-};
-
-export function isSDTPosition(position: unknown): position is SDTPosition {
-	return !!position
-		&& typeof position === 'object'
-		&& Array.isArray((position as SDTPosition).start)
-		&& Array.isArray((position as SDTPosition).end);
-}
 
 type NewAnnotationOptionalFields =
 	'id'
@@ -141,8 +112,9 @@ export type ViewStats = {
 	spreadMode?: number;
 	flowMode?: string;
 	appearance?: Partial<ReflowableAppearance>;
-	fixedLayout?: boolean;
+	fontFamily?: string;
 	outlinePath?: number[];
+	readingModeEnabled?: boolean;
 };
 
 export type AnnotationPopupParams<A extends Annotation = Annotation> = {
@@ -153,8 +125,6 @@ export type AnnotationPopupParams<A extends Annotation = Annotation> = {
 export type SelectionPopupParams<A extends Annotation = Annotation> = {
 	rect: ArrayRect;
 	annotation?: NewAnnotation<A> | null;
-	preferTop?: boolean;
-	preferLeft?: boolean;
 }
 
 type FootnotePopupParams = {
@@ -203,83 +173,6 @@ export type FindState = {
 	} | null;
 };
 
-export type ReadAloudAnnotationPopup = {
-	annotation: Annotation;
-	baseSegmentIndex: number;
-	startSegmentIndex: number;
-	endSegmentIndex: number;
-	segments: ReadAloudSegment[];
-};
-
-/**
- * UI-only state stored on the React state tree.
- * Engine state (playback, segments, and voice) lives in ReadAloudManager.
- */
-export type ReadAloudState = {
-	popupOpen: boolean;
-	lang?: string;
-	annotationPopup: ReadAloudAnnotationPopup | null;
-	segmentAnnotations: Map<number, string>;
-	savedPosition?: Position | null;
-	highlightGranularity: ReadAloudGranularity;
-};
-
-/**
- * Composed state pushed to views for display (spotlights and scrolling)
- * and segment computation.
- */
-export type ReadAloudStateSnapshot = {
-	popupOpen: boolean;
-	active: boolean;
-	paused: boolean;
-	segmentGranularity: ReadAloudGranularity | null;
-	highlightGranularity: ReadAloudGranularity;
-	segments: ReadAloudSegment[] | null;
-	activeSegment: ReadAloudSegment | null;
-	activeWordSourcePosition: SourcePosition | null;
-	lang: string | null;
-	lastSkipGranularity: ReadAloudGranularity | null;
-	annotationPopup: ReadAloudAnnotationPopup | null;
-};
-
-/**
- * Modifications to composed state that can be returned by views
- * using onSetReadAloudState().
- */
-export type ReadAloudStateDelta = {
-	targetPosition?: Position;
-	lang?: string | null;
-};
-
-export type ReadAloudSegment = {
-	position: SDTPosition;
-
-	/**
-	 * The segment's position in the source document's coordinate system,
-	 * materialized by the reader when segments are built so views only
-	 * have to display it.
-	 */
-	sourcePosition?: SourcePosition | null;
-
-	/**
-	 * Like sourcePosition, but spanning the whole logical paragraph the
-	 * segment belongs to.
-	 */
-	paragraphSourcePosition?: SourcePosition | null;
-	text: string;
-	granularity: ReadAloudGranularity;
-	anchor: 'paragraphStart' | null;
-};
-
-export type ReadAloudGranularity = 'paragraph' | 'sentence' | 'word';
-
-export type ReadAloudTimestamp = {
-	start: number;
-	end: number;
-	charStart: number;
-	charEnd: number;
-};
-
 export type MaybePromise<T> = Promise<T> | T;
 
 export type ColorScheme = 'light' | 'dark';
@@ -305,4 +198,3 @@ export type ViewContextMenuOverlay =
 		type: 'image';
 		image: ImageBitmapSource;
 	};
-

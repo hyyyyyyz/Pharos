@@ -4,7 +4,6 @@
 // http://www.zotero.org/documentation/hidden_prefs
 
 pref("extensions.zotero.firstRun2", true);
-pref("extensions.zotero.undoHistory.steps", 100);
 
 pref("extensions.zotero.saveRelativeAttachmentPath", false);
 pref("extensions.zotero.baseAttachmentPath", "");
@@ -51,7 +50,6 @@ pref("extensions.zotero.showTrashWhenEmpty", true);
 pref("extensions.zotero.trashAutoEmptyDays", 30);
 pref("extensions.zotero.viewOnDoubleClick", true);
 pref("extensions.zotero.firstRunGuidance", true);
-pref("extensions.zotero.firstRunGuidanceShown.readAloud", true);
 pref("extensions.zotero.showPostUpgradeBanner", true);
 pref("extensions.zotero.showConnectorVersionWarning", true);
 
@@ -68,9 +66,6 @@ pref("extensions.zotero.feeds.defaultCleanupUnreadAfter", 30);
 
 pref("extensions.zotero.backup.numBackups", 2);
 pref("extensions.zotero.backup.interval", 1440);
-
-pref("extensions.zotero.vacuum.interval", 14);  // days
-pref("extensions.zotero.vacuum.freelistThreshold", 10);  // percentage of free pages to trigger
 
 pref("extensions.zotero.lastCreatorFieldMode",0);
 pref("extensions.zotero.lastAbstractExpand", true);
@@ -91,8 +86,8 @@ pref("extensions.zotero.itemPaneHeader.bibEntry.locale", "");
 pref("extensions.zotero.tagSelector.showAutomatic", true);
 pref("extensions.zotero.tagSelector.displayAllTags", false);
 
-pref("extensions.zotero.browserRequest.onLoadTimeout", 3000);
-pref("extensions.zotero.browserRequest.timeout", 60000);
+pref("extensions.zotero.downloadPDFViaBrowser.onLoadTimeout", 3000);
+pref("extensions.zotero.downloadPDFViaBrowser.downloadTimeout", 60000);
 
 // Keyboard shortcuts
 pref("extensions.zotero.keys.saveToZotero", "S");
@@ -153,9 +148,6 @@ pref("extensions.zotero.integration.keepAddCitationDialogRaised", false);
 pref("extensions.zotero.integration.upgradeTemplateDelayedOn", 0);
 pref("extensions.zotero.integration.dontPromptMendeleyImport", false);
 pref("extensions.zotero.integration.citationDialogMode", "last-used");
-pref("extensions.zotero.integration.citationDialogShowLocatorTip", true);
-pref("extensions.zotero.integration.annotationDialogIncludeComments", true);
-pref("extensions.zotero.integration.citationPreviewShown", true);
 
 // Connector settings
 pref("extensions.zotero.httpServer.enabled", true);
@@ -249,7 +241,6 @@ pref("extensions.zotero.reader.autoDisableTool.note", true);
 pref("extensions.zotero.reader.autoDisableTool.text", true);
 pref("extensions.zotero.reader.autoDisableTool.image", true);
 pref("extensions.zotero.reader.lastSidebarTab", "annotations");
-pref("extensions.zotero.reader.readAloud.highlightGranularity", "sentence");
 
 // Set color scheme to auto by default
 pref("browser.theme.toolbar-theme", 2);

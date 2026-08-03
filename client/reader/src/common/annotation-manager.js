@@ -14,7 +14,7 @@ class AnnotationManager {
 			colors: [],
 			tags: [],
 			authors: [],
-			enabledTypes: null,
+			hiddenIDs: [],
 		};
 		this._readOnly = options.readOnly;
 		this._authorName = options.authorName;
@@ -32,7 +32,6 @@ class AnnotationManager {
 
 		this._lastChangeTime = 0;
 		this._lastSaveTime = 0;
-		this._saveTimeout = null;
 
 		this._undoStack = [];
 		this._redoStack = [];
@@ -171,6 +170,7 @@ class AnnotationManager {
 			changedAnnotations.set(annotation.id, annotation);
 		}
 		this._applyChanges(changedAnnotations);
+		this.render();
 	}
 
 	deleteAnnotations(ids) {
@@ -349,15 +349,9 @@ class AnnotationManager {
 		if ((Date.now() - this._lastChangeTime < DEBOUNCE_TIME)
 			&& (Date.now() - this._lastSaveTime < DEBOUNCE_MAX_TIME)
 			&& !this._skipAnnotationSavingDebounce) {
-			clearTimeout(this._saveTimeout);
-			this._saveTimeout = setTimeout(() => {
-				this._saveTimeout = null;
-				this._triggerSaving();
-			}, DEBOUNCE_TIME);
+			setTimeout(this._triggerSaving.bind(this), 1000);
 			return;
 		}
-		clearTimeout(this._saveTimeout);
-		this._saveTimeout = null;
 		this._lastSaveTime = Date.now();
 		this._savingInProgress = true;
 
@@ -399,10 +393,10 @@ class AnnotationManager {
 		this._annotations.forEach(x => delete x._score);
 
 		let annotations = this._annotations.slice();
-		let { tags, colors, authors, query, enabledTypes } = this._filter;
+		let { tags, colors, authors, query, hiddenIDs } = this._filter;
 
-		if (enabledTypes) {
-			annotations = annotations.filter(x => enabledTypes.includes(x.type));
+		if (hiddenIDs.length) {
+			annotations = annotations.filter(x => !hiddenIDs.includes(x.id));
 		}
 
 		if (tags.length || colors.length || authors.length) {

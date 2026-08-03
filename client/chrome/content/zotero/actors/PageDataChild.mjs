@@ -29,9 +29,6 @@ export class PageDataChild extends JSWindowActorChild {
 			case "documentHTML":
 				return new XMLSerializer().serializeToString(document);
 			
-			case "querySelectorMatches":
-				return !!document.querySelector(message.data.selector);
-
 			case "channelInfo": {
 				let docShell = this.contentWindow.docShell;
 				try {

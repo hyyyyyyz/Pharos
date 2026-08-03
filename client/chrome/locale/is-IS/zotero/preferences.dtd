@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Samstilla">
 <!ENTITY zotero.preferences.sync.username "Notandanafn:">
 <!ENTITY zotero.preferences.sync.password "Lykilorð:">
+<!ENTITY zotero.preferences.sync.syncServer "Samstilling gagna">
+<!ENTITY zotero.preferences.sync.setUpSync "Setja upp samstillingu">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Aftengja aðgang…">
 <!ENTITY zotero.preferences.sync.createAccount "Nýr notandi">
 <!ENTITY zotero.preferences.sync.lostPassword "Týnt lykilorð?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Samstilla sjálfkrafa">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Samstilling skráa">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "slóð:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Samstilla viðhengi í Mínu færslusafni með">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Samstilla viðhengi í hópsöfnum með Zotero-gagnageymslu">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Hlaða niður skrám">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "um leið og gagnasamstilling á sér stað">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "eftir þörfum">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Sannreyna netþjón">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Með notkun Zotero-gagnageymslu samþykkir þú">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "skilmála">
 <!ENTITY zotero.preferences.sync.librariesToSync "Söfn sem á að samstilla">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Veldu söfn…">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Samstilla">

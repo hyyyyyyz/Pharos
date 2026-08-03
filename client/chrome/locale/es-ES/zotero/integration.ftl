@@ -22,8 +22,6 @@ integration-editBibliography-wrapper =
 integration-citationDialog = Diálogo de citas
 integration-citationDialog-section-open = Abrir documentos ({ $count })
 integration-citationDialog-section-selected = Elementos seleccionados ({ $count }/{ $total })
-integration-citationDialog-section-selectedAnnotations = Anotaciones seleccionadas
-integration-citationDialog-section-selectedItems = Elementos seleccionados
 integration-citationDialog-section-cited =
     { $count ->
         [0] Elementos citados
@@ -32,8 +30,6 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = Sufijo
 integration-citationDialog-details-prefix = Prefijo
 integration-citationDialog-details-suppressAuthor = Omitir autor
-integration-citationDialog-details-locator-info = Consejo: También puede escribir números de página y otros datos de localización directamente en el campo principal. <a data-l10n-name="docs-link">Más información</a>
-integration-citationDialog-details-includeComments = Incluir comentarios
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -49,16 +45,7 @@ integration-citationDialog-lib-message-add-note =
         [true] No hay notas seleccionadas que coincidan con la búsqueda actual
        *[other] No hay notas seleccionadas
     }
-integration-citationDialog-lib-message-annotations =
-    { $search ->
-        [true] No hay elementos con anotaciones que coincidan con la búsqueda actual
-       *[other] No hay elementos seleccionados ni abiertos con anotaciones
-    }
 integration-citationDialog-settings-keepSorted = Mantener las fuentes ordenadas.
-integration-citationDialog-preview-empty = Previsualizar
-integration-citationDialog-preview-error = Vista previa no disponible
-integration-citationDialog-btn-displayPreview =
-    .title = Mostrar vista previa de la cita
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = Biblioteca
@@ -67,8 +54,6 @@ integration-citationDialog-btn-type-citation =
     .title = Añadir/Editar cita
 integration-citationDialog-btn-type-add-note =
     .title = Añadir nota
-integration-citationDialog-btn-type-annotations =
-    .title = Añadir anotaciones
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -81,18 +66,11 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = Presione la tecla Tab para seleccionar los elementos que desea añadir a esta cita. Presione la tecla Escape para descartar los cambios y cerrar el cuadro de diálogo.
-integration-citationDialog-just-added-input-placeholder = Escribe «10-15» para citar páginas o buscar elementos
-integration-citationDialog-just-added-input-citation =
-    .placeholder = { $placeholder }
-    .title = { $title }
-    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = Buscar una nota para insertar en el documento
-integration-citationDialog-single-input-annotations =
-    .placeholder = Buscar anotaciones para insertarlas en el documento
 integration-citationDialog-aria-item-list =
     .aria-description = Use las flechas arriba/abajo para cambiar la selección de elementos. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -109,9 +87,6 @@ integration-citationDialog-collapse-section =
     .title = Contraer sección
 integration-citationDialog-bubble-empty = (sin título)
 integration-citationDialog-add-to-citation = Añadir a cita
-integration-citationDialog-annotations-filter =
-    .placeholder = Filtrar anotaciones
-integration-citationDialog-annotations-empty = Seleccione un elemento, un archivo adjunto o una anotación para ver los detalles de la anotación
 integration-prefs-displayAs-label = Mostrar citas como:
 integration-prefs-footnotes =
     .label = Notas al pie
@@ -141,6 +116,8 @@ integration-warning-documentPreferences-changes-will-be-lost = Ha realizado camb
 integration-warning-discard-changes = Descartar cambios
 integration-warning-command-is-running = Ya se está ejecutando un comando de integración del procesador de textos.
 first-run-guidance-citationDialog =
-    Haga clic en el globo o utilice las teclas ← y ↓  para ver los detalles de la cita y personalizar opciones como el número de página, el prefijo y el sufijo.
+    Escriba un título, autor o año para buscar una referencia.
     
-    También puede añadir un número de página u otro identificador incluyéndolo entre los términos de búsqueda (p. ej., «historia { $locator }») o escribiéndolo después del globo y pulsando { return-or-enter }.
+    Una vez realizada la selección, haga clic en la burbuja o selecciónela con el teclado y pulse ↓/Espacio para mostrar las opciones de cita, como el número de página, el prefijo y el sufijo.
+    
+    También puede añadir un número de página u otro localizador incluyéndolo en los términos de búsqueda (p. ej., «historia { $locator }») o escribiéndolo después de la burbuja y pulsando { return-or-enter }.

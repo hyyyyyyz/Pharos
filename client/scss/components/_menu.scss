@@ -27,6 +27,7 @@ $menu-icons: (
 	library-lookup: "library-lookup",
 	new-feed: "feed",
 	note: "note",
+	new-saved-search: "saved-search",
 	show-duplicates: "duplicate",
 	show-unfiled: "unfiled",
 	show-retracted: "retracted",
@@ -68,7 +69,6 @@ $menu-icons: (
 	duplicate-saved-search: 'duplicate',
 	copy-collection: 'copy-collection',
 	move-collection: 'move-collection',
-	relate-items: 'related',
 );
 
 @each $cls, $icon in $menu-icons {
@@ -102,10 +102,10 @@ menuitem,
 menu {
 	&.zotero-custom-menu-item {
 		@media (prefers-color-scheme: light) {
-			list-style-image: var(--custom-menu-icon-light, none);
+			list-style-image: var(--custom-menu-icon-light);
 		}
 		@media (prefers-color-scheme: dark) {
-			list-style-image: var(--custom-menu-icon-dark, none);
+			list-style-image: var(--custom-menu-icon-dark);
 		}
 	}
 }

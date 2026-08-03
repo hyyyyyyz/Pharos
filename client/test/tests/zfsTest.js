@@ -42,7 +42,10 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 	// Tests
 	//
 	beforeEach(async function () {
-		await resetData();
+		await resetDB({
+			thisArg: this,
+			skipBundledFiles: true
+		});
 		win = await loadZoteroPane();
 		
 		Zotero.HTTP.mock = sinon.FakeXMLHttpRequest;
@@ -143,23 +146,22 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 			item.attachmentSyncState = "to_download";
 			await item.saveTx();
 			
-			server.respondWith(
-				'GET',
-				baseURL + `users/1/items/${item.key}/file`,
-				[404, {}, ""]
+			httpd.registerPathHandler(
+				`/users/1/items/${item.key}/file`,
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 404, null);
+					}
+				}
 			);
 			var result = await engine.start();
-
+			
 			assert.isFalse(result.localChanges);
 			assert.isFalse(result.remoteChanges);
 			assert.isFalse(result.syncRequired);
-
+			
 			assert.isFalse(library.storageDownloadNeeded);
 			assert.equal(library.storageVersion, library.libraryVersion);
-			assert.equal(
-				item.attachmentSyncState,
-				Zotero.Sync.Storage.Local.SYNC_STATE_IN_SYNC
-			);
 		})
 		
 		it("shouldn't update storageVersion if stopped", async function () {
@@ -211,10 +213,13 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 			await item.saveTx();
 			
 			Zotero.HTTP.disableErrorRetry = true;
-			server.respondWith(
-				'GET',
-				baseURL + `users/1/items/${item.key}/file`,
-				[500, {}, ""]
+			httpd.registerPathHandler(
+				`/users/1/items/${item.key}/file`,
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 500, null);
+					}
+				}
 			);
 			// TODO: In stopOnError mode, this the promise is rejected.
 			// This should probably test with stopOnError mode turned off instead.
@@ -245,17 +250,27 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 			var md5 = Zotero.Utilities.Internal.md5(text)
 			
 			var s3Path = `pretend-s3/${item.key}`;
-			server.respondWith(function (req) {
-				if (req.method == "GET"
-						&& req.url == baseURL + `users/1/items/${item.key}/file`) {
-					req.respond(302, {
-						"Zotero-File-Modification-Time": mtime,
-						"Zotero-File-MD5": md5,
-						"Zotero-File-Compressed": "No",
-						"Location": baseURL + s3Path,
-					}, "");
+			httpd.registerPathHandler(
+				`/users/1/items/${item.key}/file`,
+				{
+					handle: function (request, response) {
+						if (!request.hasHeader('Zotero-API-Key')) {
+							response.setStatusLine(null, 403, "Forbidden");
+							return;
+						}
+						var key = request.getHeader('Zotero-API-Key');
+						if (key != apiKey) {
+							response.setStatusLine(null, 403, "Invalid key");
+							return;
+						}
+						response.setStatusLine(null, 302, "Found");
+						response.setHeader("Zotero-File-Modification-Time", mtime, false);
+						response.setHeader("Zotero-File-MD5", md5, false);
+						response.setHeader("Zotero-File-Compressed", "No", false);
+						response.setHeader("Location", baseURL + s3Path, false);
+					}
 				}
-			});
+			);
 			httpd.registerPathHandler(
 				"/" + s3Path,
 				{
@@ -297,17 +312,18 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 			var md5 = Zotero.Utilities.Internal.md5(text);
 			
 			var s3Path = `pretend-s3/${item.key}`;
-			server.respondWith(function (req) {
-				if (req.method == "GET"
-						&& req.url == baseURL + `users/1/items/${item.key}/file`) {
-					req.respond(302, {
-						"Zotero-File-Modification-Time": mtime,
-						"Zotero-File-MD5": md5,
-						"Zotero-File-Compressed": "No",
-						"Location": baseURL + s3Path,
-					}, "");
+			httpd.registerPathHandler(
+				`/users/1/items/${item.key}/file`,
+				{
+					handle: function (request, response) {
+						response.setStatusLine(null, 302, "Found");
+						response.setHeader("Zotero-File-Modification-Time", mtime, false);
+						response.setHeader("Zotero-File-MD5", md5, false);
+						response.setHeader("Zotero-File-Compressed", "No", false);
+						response.setHeader("Location", baseURL + s3Path, false);
+					}
 				}
-			});
+			);
 			httpd.registerPathHandler(
 				"/" + s3Path,
 				{
@@ -666,17 +682,27 @@ describe("Zotero.Sync.Storage.Mode.ZFS", function () {
 			var processDownloadSpy = sinon.spy(Zotero.Sync.Storage.Local, "processDownload");
 			
 			var s3Path = `pretend-s3/${item.key}`;
-			server.respondWith(function (req) {
-				if (req.method == "GET"
-						&& req.url == baseURL + `users/1/items/${item.key}/file`) {
-					req.respond(302, {
-						"Zotero-File-Modification-Time": mtime,
-						"Zotero-File-MD5": md5,
-						"Zotero-File-Compressed": "No",
-						"Location": baseURL + s3Path,
-					}, "");
+			httpd.registerPathHandler(
+				`/users/1/items/${item.key}/file`,
+				{
+					handle: function (request, response) {
+						if (!request.hasHeader('Zotero-API-Key')) {
+							response.setStatusLine(null, 403, "Forbidden");
+							return;
+						}
+						var key = request.getHeader('Zotero-API-Key');
+						if (key != apiKey) {
+							response.setStatusLine(null, 403, "Invalid key");
+							return;
+						}
+						response.setStatusLine(null, 302, "Found");
+						response.setHeader("Zotero-File-Modification-Time", mtime, false);
+						response.setHeader("Zotero-File-MD5", md5, false);
+						response.setHeader("Zotero-File-Compressed", "No", false);
+						response.setHeader("Location", baseURL + s3Path, false);
+					}
 				}
-			});
+			);
 			var result = await engine.start();
 			
 			assert.equal(item.attachmentSyncedModificationTime, mtime);

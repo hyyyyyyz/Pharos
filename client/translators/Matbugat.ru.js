@@ -76,7 +76,7 @@ FW.MultiScraper({ itemType  : "multiple",
 var testCases = [
 	{
 		"type": "web",
-		"url": "https://matbugat.ru/news/?id=5069",
+		"url": "http://matbugat.ru/news/?id=5069",
 		"items": [
 			{
 				"itemType": "newspaperArticle",
@@ -93,7 +93,7 @@ var testCases = [
 				"libraryCatalog": "Matbugat.ru",
 				"publicationTitle": "Бердәмлек",
 				"section": "Мәгариф",
-				"url": "https://matbugat.ru/news/?id=5069",
+				"url": "http://matbugat.ru/news/?id=5069",
 				"attachments": [
 					{
 						"title": "Matbugat.ru Snapshot",

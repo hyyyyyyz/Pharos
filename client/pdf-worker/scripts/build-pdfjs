@@ -1,0 +1,9 @@
+#!/bin/bash
+cd pdf.js
+# TEMP: Use --force because of https://github.com/mozilla/pdf.js/issues/15429#issuecomment-1278856773
+npm ci --force
+npx gulp lib-legacy
+cd ..
+mkdir -p build/cmaps
+rsync -av --recursive --exclude='.*' pdf.js/external/bcmaps/ build/cmaps/
+rsync -av --recursive --exclude='.*'  pdf.js/external/standard_fonts/ build/standard_fonts/

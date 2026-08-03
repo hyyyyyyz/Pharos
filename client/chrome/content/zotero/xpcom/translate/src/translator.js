@@ -190,6 +190,6 @@ Zotero.Translator.TRANSLATOR_OPTIONAL_PROPERTIES = TRANSLATOR_OPTIONAL_PROPERTIE
 Zotero.Translator.TRANSLATOR_PASSING_PROPERTIES = TRANSLATOR_PASSING_PROPERTIES;
 Zotero.Translator.TRANSLATOR_CACHING_PROPERTIES = TRANSLATOR_CACHING_PROPERTIES;
 
-if (typeof module === 'object' && module.exports) {
+if (typeof process === 'object' && process + '' === '[object process]'){
 	module.exports = Zotero.Translator;
 }

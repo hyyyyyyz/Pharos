@@ -48,6 +48,9 @@
 <!ENTITY zotero.preferences.prefpane.sync "Синхронізація">
 <!ENTITY zotero.preferences.sync.username "Ім'я користувача:">
 <!ENTITY zotero.preferences.sync.password "Пароль:">
+<!ENTITY zotero.preferences.sync.syncServer "Синхронізація даних">
+<!ENTITY zotero.preferences.sync.setUpSync "Налаштувати синхронізацію">
+<!ENTITY zotero.preferences.sync.unlinkAccount "Від'єднати обліковий запис...">
 <!ENTITY zotero.preferences.sync.createAccount "Створити обліковий запис">
 <!ENTITY zotero.preferences.sync.lostPassword "Забули пароль?">
 <!ENTITY zotero.preferences.sync.syncAutomatically "Синхронізувати автоматично">
@@ -57,11 +60,13 @@
 <!ENTITY zotero.preferences.sync.fileSyncing "Синхрнізація фалів">
 <!ENTITY zotero.preferences.sync.fileSyncing.url "URL-адреса:">
 <!ENTITY zotero.preferences.sync.fileSyncing.myLibrary "Синхронізувати файли вкладень в Моїй бібілотеці, використовуючи:">
-
+<!ENTITY zotero.preferences.sync.fileSyncing.groups "Синхронізувати файли вкладень в групових бібліотеках, використовуючи сховище Zotero">
 <!ENTITY zotero.preferences.sync.fileSyncing.download "Завантажити файли">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.atSyncTime "під час синхронізації">
 <!ENTITY zotero.preferences.sync.fileSyncing.download.onDemand "за необхідності">
 <!ENTITY zotero.preferences.sync.fileSyncing.verifyServer "Verify Server">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos1 "Використовуючи сховище Zotero, ви погоджуєтесь бути пов'язаним його">
+<!ENTITY zotero.preferences.sync.fileSyncing.tos2 "умвами використання">
 <!ENTITY zotero.preferences.sync.librariesToSync "Бібліотеки для синхронізації">
 <!ENTITY zotero.preferences.sync.librariesToSync.button "Вибрати бібліотеки...">
 <!ENTITY zotero.preferences.sync.librariesToSync.sync "Синхронізація">

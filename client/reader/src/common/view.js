@@ -1,18 +1,9 @@
-import PDFView from '../pdf/pdf-view';
 import EPUBView from '../dom/epub/epub-view';
 import SnapshotView from '../dom/snapshot/snapshot-view';
 import { debounce } from './lib/debounce';
 import AnnotationManager from './annotation-manager';
 import { DEBOUNCE_STATE_CHANGE, DEBOUNCE_STATS_CHANGE, DEFAULT_THEMES } from './defines';
 import { getCurrentColorScheme } from './lib/utilities';
-import pako from 'pako';
-import { createPositionMapper } from './sdt/create-position-mapper';
-import { getTextNodeSpans } from './sdt/position-mapper';
-import {
-	openStructuredDocumentTextPack,
-	SDT_PACK_VERSION,
-	SDT_SCHEMA_VERSION,
-} from '../../structured-document-text/src/read.js';
 
 let nop = () => undefined;
 
@@ -48,7 +39,6 @@ class View {
 			annotations: options.annotations,
 			onSave: options.onSaveAnnotations,
 			onDelete: nop,
-			adjustTextAnnotationPosition: (annotation, adjustOptions) => this._view.adjustTextAnnotationPosition(annotation, adjustOptions),
 			onRender: (annotations) => {
 				this._view.setAnnotations(annotations);
 			},
@@ -78,7 +68,6 @@ class View {
 
 		let common = {
 			primary: true,
-			platform: this._options.platform,
 			mobile: true,
 			showAnnotations: true,
 			container: this._options.container,
@@ -92,6 +81,7 @@ class View {
 			lightTheme: this._lightTheme,
 			darkTheme: this._darkTheme,
 			colorScheme: this._colorScheme,
+			penConnected: this._options.penConnected ?? false,
 			penActive: this._options.penActive ?? false,
 			penExclusive: this._options.penExclusive ?? false,
 			fontFamily: this._options.fontFamily,
@@ -109,48 +99,25 @@ class View {
 			onOpenAnnotationContextMenu: nop,
 			onOpenViewContextMenu: nop,
 			onSetOverlayPopup: nop,
-			onSetOutline: (outline) => {
-				this._options.onSetOutline(outline);
-				// Propagate back to view, as in Reader
-				this._view.setOutline(outline);
-			},
+			onSetOutline: this._options.onSetOutline,
 			onTabOut: nop,
 			onKeyDown: nop,
 			onKeyUp: nop,
 			onFocusAnnotation: nop,
+			onSetHiddenAnnotations: nop,
 			onBackdropTap: this._options.onBackdropTap,
 		};
 
-		let view;
-		if (this._type === 'pdf') {
-			view = new PDFView({
-				...common,
-				password: this._options.password,
-				pageLabels: this._options.pageLabels || [],
-				onRequestPassword: this._options.onRequestPassword || nop,
-				onInitThumbnails: this._options.onInitThumbnails,
-				onSetThumbnails: this._options.onSetThumbnails || nop,
-				onRenderThumbnail: this._options.onRenderThumbnail,
-				onSetPageLabels: this._options.onSetPageLabels || nop,
-				// PDF can delete annotations inside the view, for example by completely erasing ink.
-				onDeleteAnnotations: this._options.onDeleteAnnotations || nop
+		if (this._type === 'epub') {
+			return new EPUBView({
+				...common
 			});
-		}
-		else if (this._type === 'epub') {
-			view = new EPUBView({
+		} else if (this._type === 'snapshot') {
+			return new SnapshotView({
 				...common
 			});
 		}
-		else if (this._type === 'snapshot') {
-			view = new SnapshotView({
-				...common
-			});
-		}
-		else {
-			throw new Error('Invalid view type');
-		}
-		view.initializedPromise.then(() => this._options.onInitialized());
-		return view;
+		throw new Error('Invalid view type');
 	}
 
 	/**
@@ -237,7 +204,6 @@ class View {
 	 * @param {Array} ids Array of annotation ids (item keys)
 	 */
 	selectAnnotations(ids) {
-		this._options.selectedAnnotationIDs = ids;
 		this._view.setSelectedAnnotationIDs(ids);
 	}
 
@@ -275,18 +241,6 @@ class View {
 		this._view.navigateForward();
 	}
 
-	enterPassword(password) {
-		this._ensureType('pdf');
-		this._options.password = password;
-		if (this._view.enterPassword?.(password)) {
-			return;
-		}
-		this._options.container.replaceChildren();
-		this._view = this._createView();
-		this._view.setAnnotations([...this._annotationManager._annotations]);
-		this._view.setSelectedAnnotationIDs(this._options.selectedAnnotationIDs || []);
-	}
-
 	/**
 	 * Change flow mode
 	 * @param mode paginated|scrolled
@@ -297,18 +251,10 @@ class View {
 	}
 
 	/**
-	 * @param {import('../dom/epub/epub-view').SpreadMode} mode
-	 */
-	setSpreadMode(mode) {
-		this._ensureType('pdf', 'epub');
-		this._view.setSpreadMode(mode);
-	}
-
-	/**
 	 * @returns {string} Theme ID
 	 */
 	getTheme() {
-		let theme = getCurrentColorScheme(this._colorScheme) === 'dark'
+		let theme = getCurrentColorScheme(null) === 'dark'
 			? this._darkTheme
 			: this._lightTheme;
 		return theme?.id ?? 'light';
@@ -345,6 +291,10 @@ class View {
 		this._view.setColorScheme(scheme);
 	}
 
+	setPenConnected(penConnected) {
+		this._view.setPenConnected(penConnected);
+	}
+
 	setPenActive(penActive) {
 		this._view.setPenActive(penActive);
 	}
@@ -355,109 +305,6 @@ class View {
 
 	setFontFamily(fontFamily) {
 		this._view.setFontFamily(fontFamily);
-	}
-
-	setPageLabels(pageLabels) {
-		this._view.setPageLabels?.(pageLabels);
-	}
-
-	renderThumbnails(pageIndexes) {
-		this._ensureType('pdf');
-		this._view.renderThumbnails?.(pageIndexes);
-	}
-
-	setReadAloudSpotlight(selector) {
-		this._ensureType('epub', 'snapshot');
-		this._view.setSpotlight('ReadAloudActiveSegment', selector, null);
-		if (selector) {
-			this._view.navigate(selector, {
-				ifNeeded: true,
-				block: 'center',
-				behavior: 'smooth'
-			});
-		}
-	}
-
-	// Store an SDT pack for later operations.
-	setSDTPack(pack) {
-		this._sdtPack = pack;
-		this._sdt = null;
-		this._sdtPromise = null;
-	}
-
-	// Materialize the stored pack and build the position mapper. Resolves
-	// to null when SDT is unavailable or the pack version doesn't match.
-	async _loadSDT() {
-		if (this._sdt) {
-			return this._sdt;
-		}
-		if (!this._sdtPromise) {
-			this._sdtPromise = (async () => {
-				let pack = this._sdtPack;
-				if (!pack) {
-					return null;
-				}
-				if (pack.packVersion !== SDT_PACK_VERSION
-						|| pack.schemaMajorVersion !== Number(SDT_SCHEMA_VERSION.split('.')[0])) {
-					console.warn('Unsupported SDT pack version', pack.packVersion, pack.schemaMajorVersion);
-					return null;
-				}
-				let bytes = new Uint8Array(pack.bytes);
-				let source = {
-					byteLength: bytes.byteLength,
-					read: async (offset, length) => bytes.buffer.slice(
-						bytes.byteOffset + offset,
-						bytes.byteOffset + offset + length
-					),
-				};
-				let reader = await openStructuredDocumentTextPack(source, {
-					inflate: b => pako.inflateRaw(b),
-				});
-				let structure = await reader.materialize();
-				this._sdt = { structure, mapper: createPositionMapper(structure) };
-				return this._sdt;
-			})().catch((e) => {
-				this._sdtPromise = null;
-				console.warn('Failed to load SDT', e);
-				return null;
-			});
-		}
-		return this._sdtPromise;
-	}
-
-	async sdtAnchorToPosition(sdtAnchor) {
-		let sdt = await this._loadSDT();
-		return sdt ? sdt.mapper.sdtToSourcePosition(sdtAnchor) : null;
-	}
-
-	async createAnnotationFromSDT({ sdtAnchor, type, color, comment, tags }) {
-		let sdt = await this._loadSDT();
-		if (!sdt) {
-			return null;
-		}
-		let spans = getTextNodeSpans(sdt.structure, sdtAnchor);
-		let position = sdt.mapper.textNodeSpansToSourcePosition(spans);
-		if (!position) {
-			return null;
-		}
-		// Adjust for format conventions (e.g. PDF notes -> fixed-size rect)
-		position = sdt.mapper.transformAnnotationPosition(position, type);
-		// sortIndex and pageLabel can only come from the live view
-		let meta = this._view.getAnnotationMeta?.(position);
-		if (!meta) {
-			return null;
-		}
-		let text = spans.map(s => s.node.text.slice(s.start, s.end)).join('');
-		return this._annotationManager.addAnnotation({
-			type,
-			color,
-			comment,
-			tags,
-			position,
-			text,
-			sortIndex: meta.sortIndex,
-			pageLabel: meta.pageLabel,
-		});
 	}
 }
 

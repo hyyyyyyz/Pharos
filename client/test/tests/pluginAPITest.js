@@ -943,7 +943,7 @@ describe("Plugin API", function () {
 					contextKeys: [
 						...defaultContextKeys,
 						"items",
-						"collectionTreeRows",
+						"collectionTreeRow",
 					]
 				},
 				"main/library/collection": {
@@ -953,7 +953,7 @@ describe("Plugin API", function () {
 					},
 					contextKeys: [
 						...defaultContextKeys,
-						"collectionTreeRows",
+						"collectionTreeRow",
 					]
 				},
 				"main/library/addAttachment": {
@@ -997,7 +997,6 @@ describe("Plugin API", function () {
 						let itemDetails = ZoteroPane.itemPane._itemDetails;
 						let infoBox = itemDetails.getPane("info");
 						let row = infoBox.querySelector("#itembox-field-value-title");
-						row.focus();
 						let event = new MouseEvent("contextmenu", {
 							bubbles: true,
 							cancelable: true,
@@ -1107,33 +1106,6 @@ describe("Plugin API", function () {
 			}
 
 			reader.close();
-		});
-
-		it("should remove menu DOM elements on plugin shutdown", async function () {
-			let pluginID = "test-plugin@zotero.org";
-			let option = Object.assign({}, defaultOption, {
-				pluginID,
-				target: "main/menubar/file",
-			});
-
-			initCache("onShowing");
-			let menuID = Zotero.MenuManager.registerMenu(option);
-			assert.isString(menuID);
-
-			let popup = doc.querySelector("#menu_FilePopup");
-			await simulateMenuOpen(popup);
-			await getCache("onShowing");
-
-			let menuSelector = `.zotero-custom-menu-item.${CSS.escape(menuID)}`;
-			assert.exists(popup.querySelector(menuSelector),
-				"Menu element should exist after registration");
-
-			await simulateMenuClosed(popup);
-
-			await Zotero.MenuManager._menuManager._unregisterByPluginID(pluginID);
-
-			assert.notExists(popup.querySelector(menuSelector),
-				"Menu element should be removed after plugin shutdown");
 		});
 
 		it("should group custom menus", async function () {

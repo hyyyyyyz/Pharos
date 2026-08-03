@@ -29,7 +29,11 @@ function Findbar({ searchState, active }) {
 		if ((!isMac() && event.ctrlKey || isMac() && event.metaKey) && event.key === 'f') {
 			event.preventDefault();
 			event.stopPropagation();
-			searchState.openFindbar();
+			searchState.setActive(true);
+			setTimeout(() => {
+				searchInputRef.current?.focus();
+				searchInputRef.current?.select();
+			});
 			return;
 		}
 
@@ -59,7 +63,7 @@ function Findbar({ searchState, active }) {
 				}
 			}, 100);
 		}
-	}, [active, searchState.openFindbarRequestID]);
+	}, [active]);
 
 	function handleMouseDown(event) {
 		if (event.target.nodeName !== 'INPUT') {

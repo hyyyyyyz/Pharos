@@ -33,24 +33,18 @@
  */
 
 Zotero.DataObject = function () {
-	// Set type-derived properties on the prototype (once per subclass) rather than
-	// on each instance, to avoid duplicating identical strings across all instances
-	let proto = Object.getPrototypeOf(this);
-	if (!proto.hasOwnProperty('_ObjectType')) {
-		let objectType = this._objectType;
-		proto._ObjectType = objectType[0].toUpperCase() + objectType.substr(1);
-		proto._objectTypePlural = Zotero.DataObjectUtilities.getObjectTypePlural(objectType);
-		proto._ObjectTypePlural = proto._objectTypePlural[0].toUpperCase() + proto._objectTypePlural.substr(1);
-		proto._ObjectsClass = Zotero.DataObjectUtilities.getObjectsClassForObjectType(objectType);
-	}
-
+	let objectType = this._objectType;
+	this._ObjectType = objectType[0].toUpperCase() + objectType.substr(1);
+	this._objectTypePlural = Zotero.DataObjectUtilities.getObjectTypePlural(objectType);
+	this._ObjectTypePlural = this._objectTypePlural[0].toUpperCase() + this._objectTypePlural.substr(1);
+	this._ObjectsClass = Zotero.DataObjectUtilities.getObjectsClassForObjectType(objectType);
+	
 	this._id = null;
 	this._libraryID = null;
 	this._key = null;
 	this._dateAdded = null;
 	this._dateModified = null;
 	this._version = null;
-	this._clientVersion = null;
 	this._synced = null;
 	this._identified = false;
 	this._parentID = null;
@@ -885,96 +879,6 @@ Zotero.DataObject.prototype._markForReload = function (dataType) {
 }
 
 
-Zotero.DataObject.UNDO_SKIP_FIELDS = new Set(['version', 'synced', 'clientDateModified', 'dateModified']);
-
-/**
- * Build a change record for UndoHistory from the current pending changes.
- * Called during save() before _saveData() clears change tracking.
- *
- * @return {Object|null} - ChangeRecord or null if nothing undoable
- */
-Zotero.DataObject.prototype._getUndoData = function () {
-	let skipFields = Zotero.DataObject.UNDO_SKIP_FIELDS;
-	let fields = {};
-
-	// Fields tracked via _previousData (old-style: old value stored)
-	for (let field of Object.keys(this._previousData)) {
-		if (skipFields.has(field)) continue;
-		// Skip non-scalar fields like relations
-		if (typeof this._previousData[field] === 'object' && this._previousData[field] !== null) {
-			continue;
-		}
-		fields[field] = {
-			old: this._previousData[field],
-			new: this['_' + field]
-		};
-	}
-
-	// Fields tracked via _changedData (new-style: new value stored)
-	for (let field of Object.keys(this._changedData)) {
-		if (skipFields.has(field)) continue;
-		if (field === 'deleted') {
-			fields[field] = {
-				old: this._deleted,
-				new: this._changedData[field]
-			};
-		}
-	}
-
-	if (!Object.keys(fields).length) return null;
-
-	return {
-		objectType: this._objectType,
-		id: this._id,
-		libraryID: this._libraryID,
-		key: this._key,
-		fields
-	};
-};
-
-
-/**
- * Whether the object still holds the values captured in an undo snapshot for
- * the given side -- the read-and-compare counterpart of _getUndoData(). Used by
- * Zotero.UndoHistory to avoid replaying a snapshot over an external change.
- *
- * @param {Object} fields -- a change record's `fields` map (field -> { old, new })
- * @param {String} side -- 'new' (undo) or 'old' (redo)
- * @return {Boolean} -- true if every field still matches the recorded value
- */
-Zotero.DataObject.prototype.matchesUndoSnapshot = function (fields, side) {
-	for (let field of Object.keys(fields)) {
-		if (!this._undoFieldMatches(field, fields[field][side])) {
-			return false;
-		}
-	}
-	return true;
-};
-
-
-/**
- * Whether a single field still holds a recorded undo value. Overridden by
- * Zotero.Item for item-specific fields; the base handles the primary scalar
- * fields shared by all data objects.
- *
- * @param {String} field
- * @param {*} recorded -- the recorded value for the side being checked
- * @return {Boolean}
- */
-Zotero.DataObject.prototype._undoFieldMatches = function (field, recorded) {
-	if (field === 'deleted') {
-		return this._deleted === recorded;
-	}
-	if (field === 'name') {
-		return this._name === recorded;
-	}
-	if (field === 'parentKey') {
-		return this._parentKey === recorded;
-	}
-	return this['_' + field] === recorded;
-};
-
-
 /**
  * @param {String} [op='edit'] - Operation to check; if not provided, check edit privileges for
  *     library
@@ -998,11 +902,6 @@ Zotero.DataObject.prototype.isEditable = function (_op = 'edit') {
  * @param {Boolean} [options.skipNotifier] - Don't trigger Zotero.Notifier events
  * @param {Boolean} [options.skipSelect] - Don't select object automatically in trees
  * @param {Boolean} [options.skipSyncedUpdate] - Don't automatically set 'synced' to false
- * @param {String} [options.undoAction] - Fluent message ID for the undo entry's action label
- *                                        (e.g. 'undo-action-edit-creator'); without this the save
- *                                        is captured but discarded at commit
- * @param {Object} [options.undoActionArgs] - Fluent message arguments for the action label
- *                                            (e.g. { count: 3 })
  * @return {Promise<Integer|Boolean>}  Promise for itemID of new item,
  *                                     TRUE on item update, or FALSE if item was unchanged
  */
@@ -1030,17 +929,17 @@ Zotero.DataObject.prototype.save = async function (options = {}) {
 		].forEach(x => env.options[x] = true);
 	}
 	
+	var proceed = await this._initSave(env);
+	if (!proceed) return false;
+	
+	if (env.isNew) {
+		Zotero.debug('Saving data for new ' + this._objectType + ' to database', 4);
+	}
+	else {
+		Zotero.debug('Updating database with new ' + this._objectType + ' data', 4);
+	}
+	
 	try {
-		var proceed = await this._initSave(env);
-		if (!proceed) return false;
-		
-		if (env.isNew) {
-			Zotero.debug('Saving data for new ' + this._objectType + ' to database', 4);
-		}
-		else {
-			Zotero.debug('Updating database with new ' + this._objectType + ' data', 4);
-		}
-		
 		if (Zotero.DataObject.prototype._finalizeSave == this._finalizeSave) {
 			throw new Error("_finalizeSave not implemented for Zotero." + this._ObjectType);
 		}
@@ -1065,17 +964,7 @@ Zotero.DataObject.prototype.save = async function (options = {}) {
 				env.notifierData.changed[field] = this['_' + field];
 			}
 		}
-
-		// Capture undo data before _saveData clears change tracking.
-		// Capture is unconditional for non-isNew saves; whether it lands on the
-		// undo stack depends on a stageAction() call within the same transaction.
-		if (Zotero.UndoHistory && !env.isNew) {
-			env.undoData = this._getUndoData();
-			if (env.undoData) {
-				env.undoData.skipDateModified = !!env.options.skipDateModifiedUpdate;
-			}
-		}
-
+		
 		// Create transaction
 		let result
 		if (env.options.tx) {
@@ -1083,12 +972,6 @@ Zotero.DataObject.prototype.save = async function (options = {}) {
 				Zotero.DataObject.prototype._saveData.call(this, env);
 				await this._saveData(env);
 				await Zotero.DataObject.prototype._finalizeSave.call(this, env);
-				if (env.undoData) {
-					Zotero.UndoHistory.stageChange(env.undoData);
-					if (env.options.undoAction) {
-						Zotero.UndoHistory.stageAction(env.options.undoAction, env.options.undoActionArgs);
-					}
-				}
 				return this._finalizeSave(env);
 			}.bind(this), env.transactionOptions);
 		}
@@ -1099,12 +982,6 @@ Zotero.DataObject.prototype.save = async function (options = {}) {
 			await this._saveData(env);
 			await Zotero.DataObject.prototype._finalizeSave.call(this, env);
 			result = this._finalizeSave(env);
-			if (env.undoData) {
-				Zotero.UndoHistory.stageChange(env.undoData);
-				if (env.options.undoAction) {
-					Zotero.UndoHistory.stageAction(env.options.undoAction, env.options.undoActionArgs);
-				}
-			}
 		}
 		this._postSave(env);
 		return result;
@@ -1297,13 +1174,6 @@ Zotero.DataObject.prototype._finalizeSave = async function (env) {
 	else if (env.skipCache) {
 		Zotero.logError("skipCache is only for new objects");
 	}
-
-	let libraryClientVersion = await this.library.incrementClientVersion();
-	await Zotero.DB.queryAsync(
-		`UPDATE ${this.ObjectsClass.table} SET clientVersion = ? WHERE ${this.ObjectsClass.idColumn}=?`,
-		[libraryClientVersion, this.id]
-	);
-	this._clientVersion = libraryClientVersion;
 };
 
 
@@ -1462,8 +1332,6 @@ Zotero.DataObject.prototype._initErase = function (env) {
 };
 
 Zotero.DataObject.prototype._finalizeErase = async function (env) {
-	await this.library.incrementClientVersion();
-	
 	// Delete versions from sync cache
 	if (this._objectType != 'feedItem') {
 		await Zotero.Sync.Data.Local.deleteCacheObjectVersions(
@@ -1492,15 +1360,10 @@ Zotero.DataObject.prototype._finalizeErase = async function (env) {
 
 
 Zotero.DataObject.prototype.toResponseJSON = function (options = {}) {
-	// Default to showing synced properties, since that's what the API does, and this function
-	// is generally used to emulate the API
-	options.syncedStorageProperties ??= true;
-	options.syncedVersionProperty ??= true;
-
 	let uri = Zotero.URI.getObjectURI(this);
 	var json = {
 		key: this.key,
-		version: options.syncedVersionProperty ? this.version : this.clientVersion,
+		version: this.version,
 		library: this.library.toResponseJSON({ ...options, includeGroupDetails: false }),
 		links: {
 			self: {
@@ -1515,9 +1378,6 @@ Zotero.DataObject.prototype.toResponseJSON = function (options = {}) {
 		meta: {},
 		data: this.toJSON(options)
 	};
-	// Keep the data block's version consistent with the top-level version (toJSON() reports
-	// the synced version, which differs from clientVersion when syncedVersionProperty is false)
-	json.data.version = json.version;
 	if (options.version) {
 		json.version = json.data.version = options.version;
 	}

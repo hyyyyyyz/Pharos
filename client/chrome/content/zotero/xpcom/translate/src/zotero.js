@@ -92,12 +92,3 @@ Zotero.Prefs = new function(){
 		delete tempStore[pref];
 	}
 }
-
-if (typeof globalThis !== 'undefined') {
-	globalThis.Zotero = Zotero;
-	globalThis.ZOTERO_CONFIG = ZOTERO_CONFIG;
-}
-
-if (typeof module === 'object' && module.exports) {
-	module.exports = Zotero;
-}

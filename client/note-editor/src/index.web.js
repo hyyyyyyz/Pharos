@@ -109,12 +109,6 @@ class EditorInstance {
 				viewMode="web"
 				showUpdateNotice={this._editorCore.unsupportedSchema}
 				editorCore={this._editorCore}
-				onFocusBack={() => {
-					this._postMessage({ action: 'focusBack' });
-				}}
-				onFocusForward={() => {
-					this._postMessage({ action: 'focusForward' });
-				}}
 				onClickReturn={() => {
 				}}
 				onShowNote={() => {

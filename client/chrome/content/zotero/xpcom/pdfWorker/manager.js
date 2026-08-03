@@ -23,16 +23,10 @@
     ***** END LICENSE BLOCK *****
 */
 
-const WORKER_URL = 'resource://zotero/document-worker/worker.js';
-const ASSETS_URL = 'resource://zotero/document-worker/';
-const READER_PDF_ASSETS_URL = 'resource://zotero/reader/pdf/web/';
-
-function getAssetURL(path) {
-	if (path.startsWith('cmaps/') || path.startsWith('standard_fonts/')) {
-		return READER_PDF_ASSETS_URL + path;
-	}
-	return ASSETS_URL + path;
-}
+const WORKER_URL = 'chrome://zotero/content/xpcom/pdfWorker/worker.js';
+const CMAPS_URL = 'resource://zotero/reader/pdf/web/cmaps/';
+const STANDARD_FONTS_URL = 'resource://zotero/reader/pdf/web/standard_fonts/';
+const WASM_URL = 'resource://zotero/reader/pdf/web/wasm/';
 
 class PDFWorker {
 	constructor() {
@@ -78,33 +72,12 @@ class PDFWorker {
 		});
 	}
 
-	async _query(action, data, transfer, options = {}) {
+	async _query(action, data, transfer) {
 		return new Promise((resolve, reject) => {
 			this._lastPromiseID++;
-			this._waitingPromises[this._lastPromiseID] = {
-				resolve,
-				reject,
-				onProgress: typeof options.onProgress === 'function' ? options.onProgress : null,
-			};
+			this._waitingPromises[this._lastPromiseID] = { resolve, reject };
 			this._worker.postMessage({ id: this._lastPromiseID, action, data }, transfer);
 		});
-	}
-
-	/**
-	 * Log and rethrow a worker error wrapped with the action name and
-	 * optional context, restoring the error name (e.g., 'PasswordException')
-	 * from the worker error JSON
-	 */
-	_throwWorkerError(action, e, details = {}) {
-		let error = new Error(`Worker action '${action}' failed: ${JSON.stringify({ ...details, error: e.message })}`);
-		try {
-			error.name = JSON.parse(e.message).name;
-		}
-		catch (e) {
-			Zotero.logError(e);
-		}
-		Zotero.logError(error);
-		throw error;
 	}
 
 	_init() {
@@ -112,48 +85,62 @@ class PDFWorker {
 		this._worker = new Worker(WORKER_URL);
 		this._worker.addEventListener('message', async (event) => {
 			let message = event.data;
-			if ('progressID' in message) {
-				let promise = this._waitingPromises[message.progressID];
-				if (promise?.onProgress) {
-					try {
-						promise.onProgress(message.data?.progress);
-					}
-					catch {
-						// Progress reporting is best-effort and must not affect extraction.
-					}
-				}
-				return;
-			}
-			if ('responseID' in message) {
-				let promise = this._waitingPromises[message.responseID];
-				if (!promise) {
-					Zotero.debug(`Received response from PDF worker for unknown request ${message.responseID}`);
-					return;
-				}
+			if (message.responseID) {
+				let { resolve, reject } = this._waitingPromises[message.responseID];
 				delete this._waitingPromises[message.responseID];
-				let { resolve, reject } = promise;
-				if ('error' in message) {
-					reject(new Error(JSON.stringify(message.error)));
-				}
-				else {
+				if (message.data) {
 					resolve(message.data);
 				}
+				else {
+					reject(new Error(JSON.stringify(message.error)));
+				}
 				return;
 			}
-			if ('id' in message) {
+			if (message.id) {
 				let respData = null;
 				try {
-					if (message.action === 'FetchData') {
+					if (message.action === 'FetchBuiltInCMap') {
 						let response = await Zotero.HTTP.request(
 							'GET',
-							getAssetURL(message.data),
+							CMAPS_URL + message.data + '.bcmap',
+							{ responseType: 'arraybuffer' }
+						);
+						respData = {
+							isCompressed: true,
+							cMapData: new Uint8Array(response.response)
+						};
+					}
+				}
+				catch (e) {
+					Zotero.debug('Failed to fetch CMap data:');
+					Zotero.debug(e);
+				}
+				try {
+					if (message.action === 'FetchStandardFontData') {
+						let response = await Zotero.HTTP.request(
+							'GET',
+							STANDARD_FONTS_URL + message.data,
 							{ responseType: 'arraybuffer' }
 						);
 						respData = new Uint8Array(response.response);
 					}
 				}
 				catch (e) {
-					Zotero.debug(`Failed to fetch data (${message.data}):`);
+					Zotero.debug('Failed to fetch standard font data:');
+					Zotero.debug(e);
+				}
+				try {
+					if (message.action === 'FetchWasm') {
+						let response = await Zotero.HTTP.request(
+							'GET',
+							WASM_URL + message.data,
+							{ responseType: 'arraybuffer' }
+						);
+						respData = new Uint8Array(response.response);
+					}
+				}
+				catch (e) {
+					Zotero.debug('Failed to fetch wasm data:');
 					Zotero.debug(e);
 				}
 				try {
@@ -171,14 +158,11 @@ class PDFWorker {
 					Zotero.debug('Failed to save rendered annotation:');
 					Zotero.logError(e);
 				}
-				this._worker.postMessage(
-					{ responseID: event.data.id, data: respData },
-					respData instanceof Uint8Array ? [respData.buffer] : []
-				);
+				this._worker.postMessage({ responseID: event.data.id, data: respData });
 			}
 		});
 		this._worker.addEventListener('error', (event) => {
-			Zotero.logError(`Document worker error (${event.filename}:${event.lineno}): ${event.message}`);
+			Zotero.logError(`PDF Web Worker error (${event.filename}:${event.lineno}): ${event.message}`);
 		});
 	}
 	
@@ -238,19 +222,30 @@ class PDFWorker {
 				return 0;
 			}
 			if (!annotations.length) {
-				await Zotero.File.copyFile(attachmentPath, path);
+				await OS.File.copy(attachmentPath, path);
 				return 0;
 			}
 			let buf = await IOUtils.read(attachmentPath);
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var res = await this._query('pdf.writeAnnotations', {
+				var res = await this._query('export', {
 					buf, annotations, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.writeAnnotations', e, { annotations });
+				let error = new Error(`Worker 'export' failed: ${JSON.stringify({
+					annotations,
+					error: e.message
+				})}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 			
 			await IOUtils.write(path, new Uint8Array(res.buf));
@@ -336,12 +331,23 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var { imported, deleted, buf: modifiedBuf } = await this._query('pdf.importAnnotations', {
+				var { imported, deleted, buf: modifiedBuf } = await this._query('import', {
 					buf, existingAnnotations, password, transfer
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.importAnnotations', e, { existingAnnotations });
+				let error = new Error(`Worker 'import' failed: ${JSON.stringify({
+					existingAnnotations,
+					error: e.message
+				})}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 			
 			let ids = [];
@@ -398,12 +404,17 @@ class PDFWorker {
 			let buf = await IOUtils.read(pdfPath);
 			buf = new Uint8Array(buf).buffer;
 			try {
-				var annotations = await this._query('pdf.importCitaviAnnotations', {
+				var annotations = await this._query('importCitavi', {
 					buf, citaviAnnotations, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.importCitaviAnnotations', e, { citaviAnnotations });
+				let error = new Error(`Worker 'importCitavi' failed: ${JSON.stringify({
+					citaviAnnotations,
+					error: e.message
+				})}`);
+				Zotero.logError(error);
+				throw error;
 			}
 			return annotations;
 		}, isPriority);
@@ -427,12 +438,17 @@ class PDFWorker {
 			let buf = await IOUtils.read(pdfPath);
 			buf = new Uint8Array(buf).buffer;
 			try {
-				var annotations = await this._query('pdf.importMendeleyAnnotations', {
+				var annotations = await this._query('importMendeley', {
 					buf, mendeleyAnnotations, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.importMendeleyAnnotations', e, { mendeleyAnnotations });
+				let error = new Error(`Worker 'importMendeley' failed: ${JSON.stringify({
+					mendeleyAnnotations,
+					error: e.message
+				})}`);
+				Zotero.logError(error);
+				throw error;
 			}
 			return annotations;
 		}, isPriority);
@@ -491,12 +507,20 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var { buf: modifiedBuf } = await this._query('pdf.deletePages', {
+				var { buf: modifiedBuf } = await this._query('deletePages', {
 					buf, pageIndexes, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.deletePages', e);
+				let error = new Error(`Worker 'deletePages' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			// Delete annotations from deleted pages
@@ -581,12 +605,20 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var { buf: modifiedBuf } = await this._query('pdf.rotatePages', {
+				var { buf: modifiedBuf } = await this._query('rotatePages', {
 					buf, pageIndexes, degrees, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.rotatePages', e);
+				let error = new Error(`Worker 'rotatePages' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			await IOUtils.write(path, new Uint8Array(modifiedBuf));
@@ -625,73 +657,26 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var result = await this._query('pdf.getFulltext', {
+				var result = await this._query('getFulltext', {
 					buf, maxPages, password
 				}, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.getFulltext', e);
+				let error = new Error(`Worker 'getFullText' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			Zotero.debug(`Extracted full text for item ${attachment.libraryKey} in ${new Date() - t} ms`);
 
 			return result;
 		}, isPriority);
-	}
-
-	/**
-	 * Get structured document text for a PDF, EPUB, or snapshot attachment
-	 *
-	 * @param {Integer} itemID Attachment item id
-	 * @param {Object} [options]
-	 * @param {Boolean} [options.isPriority]
-	 * @param {String} [options.password]
-	 * @param {Function} [options.onProgress]
-	 * @returns {Promise<Object|null>}
-	 */
-	async getStructuredDocumentText(itemID, { isPriority = false, password, onProgress } = {}) {
-		return this._enqueue(async () => {
-			let attachment = await Zotero.Items.getAsync(itemID);
-			if (!(attachment.isPDFAttachment()
-					|| attachment.isEPUBAttachment()
-					|| attachment.isSnapshotAttachment())) {
-				throw new Error('Item must be a PDF, EPUB, or snapshot attachment');
-			}
-
-			let path = await attachment.getFilePathAsync();
-			if (!path) {
-				return null;
-			}
-
-			let sourceHash = await attachment.attachmentHash;
-			if (!sourceHash) {
-				throw new Error('Attachment is missing an MD5 hash');
-			}
-
-			Zotero.debug(`Getting structured document text from item ${attachment.libraryKey}`);
-			let t = new Date();
-			let buf = await IOUtils.read(path);
-			buf = new Uint8Array(buf).buffer;
-
-			try {
-				var result = await this._query('getStructuredDocumentText', {
-					buf,
-					contentType: attachment.attachmentContentType,
-					password,
-					sourceHash,
-					reportProgress: typeof onProgress === 'function',
-				}, [buf], {
-					onProgress,
-				});
-			}
-			catch (e) {
-				this._throwWorkerError('getStructuredDocumentText', e);
-			}
-
-			Zotero.debug(`Extracted structured document text for item ${attachment.libraryKey} in ${new Date() - t} ms`);
-
-			return result;
-		}, !!isPriority);
 	}
 
 	/**
@@ -718,10 +703,18 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var result = await this._query('pdf.getRecognizerData', { buf, password }, [buf]);
+				var result = await this._query('getRecognizerData', { buf, password }, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.getRecognizerData', e);
+				let error = new Error(`Worker 'getRecognizerData' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			Zotero.debug(`Extracted PDF recognizer data for item ${attachment.libraryKey} in ${new Date() - t} ms`);
@@ -757,19 +750,24 @@ class PDFWorker {
 			Zotero.debug(`Rendering ${annotations.length} annotation(s) for attachment ${attachment.key}`);
 
 			let path = await attachment.getFilePathAsync();
-			if (!path) {
-				return 0;
-			}
 			let buf = await OS.File.read(path, {});
 			buf = new Uint8Array(buf).buffer;
 
 			let { libraryID } = attachment;
 
 			try {
-				var result = await this._query('pdf.renderAnnotations', { libraryID, buf, annotations, password }, [buf]);
+				var result = await this._query('renderAnnotations', { libraryID, buf, annotations, password }, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.renderAnnotations', e);
+				let error = new Error(`Worker 'renderAnnotations' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			Zotero.debug(`Rendered ${annotations.length} PDF annotation(s) ${attachment.libraryKey} in ${new Date() - t} ms`);
@@ -801,10 +799,18 @@ class PDFWorker {
 			buf = new Uint8Array(buf).buffer;
 
 			try {
-				var result = await this._query('pdf.hasAnnotations', { buf, password }, [buf]);
+				var result = await this._query('hasAnnotations', { buf, password }, [buf]);
 			}
 			catch (e) {
-				this._throwWorkerError('pdf.hasAnnotations', e);
+				let error = new Error(`Worker 'hasAnnotations' failed: ${JSON.stringify({ error: e.message })}`);
+				try {
+					error.name = JSON.parse(e.message).name;
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				Zotero.logError(error);
+				throw error;
 			}
 
 			return result.hasAnnotations;

@@ -45,7 +45,10 @@ describe("Zotero.Sync.Data.FullTextEngine", function () {
 	// Tests
 	//
 	beforeEach(function* () {
-		yield resetData();
+		yield resetDB({
+			thisArg: this,
+			skipBundledFiles: true
+		});
 		
 		Zotero.HTTP.mock = sinon.FakeXMLHttpRequest;
 		
@@ -75,7 +78,7 @@ describe("Zotero.Sync.Data.FullTextEngine", function () {
 			await attachment.saveTx();
 			
 			var content = generateContent()
-			var spy = sinon.spy(Zotero.Fulltext, "registerSyncContentProcessor")
+			var spy = sinon.spy(Zotero.Fulltext, "registerContentProcessor")
 			
 			var itemFullTextVersion = 10;
 			var libraryVersion = 15;
@@ -141,7 +144,7 @@ describe("Zotero.Sync.Data.FullTextEngine", function () {
 			await attachment.saveTx();
 			
 			content = generateContent()
-			spy = sinon.spy(Zotero.Fulltext, "registerSyncContentProcessor")
+			spy = sinon.spy(Zotero.Fulltext, "registerContentProcessor")
 			
 			itemFullTextVersion = 17;
 			var lastLibraryVersion = libraryVersion;

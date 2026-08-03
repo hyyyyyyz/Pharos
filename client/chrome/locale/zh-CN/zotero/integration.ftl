@@ -22,8 +22,6 @@ integration-editBibliography-wrapper =
 integration-citationDialog = 引注对话框
 integration-citationDialog-section-open = 已打开的文档 ({ $count })
 integration-citationDialog-section-selected = 已选中的条目 ({ $count }/{ $total })
-integration-citationDialog-section-selectedAnnotations = 已选中的注释
-integration-citationDialog-section-selectedItems = 已选中的条目
 integration-citationDialog-section-cited =
     { $count ->
         [0] 已引用条目
@@ -32,8 +30,6 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = 后缀
 integration-citationDialog-details-prefix = 前缀
 integration-citationDialog-details-suppressAuthor = 省略作者
-integration-citationDialog-details-locator-info = 提示：您还可以直接在主字段中键入页码和其他定位符。 <a data-l10n-name="docs-link">了解更多</a>
-integration-citationDialog-details-includeComments = 包含评论
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -49,16 +45,7 @@ integration-citationDialog-lib-message-add-note =
         [true] 无匹配的笔记
        *[other] 未选中笔记
     }
-integration-citationDialog-lib-message-annotations =
-    { $search ->
-        [true] 当前搜索未找到带注释的匹配条目
-       *[other] 没有已选中或已打开的带注释条目
-    }
 integration-citationDialog-settings-keepSorted = 保持文献自动排序
-integration-citationDialog-preview-empty = 预览
-integration-citationDialog-preview-error = 预览不可用
-integration-citationDialog-btn-displayPreview =
-    .title = 显示引注预览
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = 文献库
@@ -67,8 +54,6 @@ integration-citationDialog-btn-type-citation =
     .title = 添加/编辑引注
 integration-citationDialog-btn-type-add-note =
     .title = 添加笔记
-integration-citationDialog-btn-type-annotations =
-    .title = 添加注释
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -81,18 +66,11 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = 按 Tab 键选择要添加到此引注中的条目。按 Esc 键放弃修改并关闭对话框。
-integration-citationDialog-just-added-input-placeholder = 键入“10-15”以引用页面或搜索条目
-integration-citationDialog-just-added-input-citation =
-    .placeholder = { $placeholder }
-    .title = { $title }
-    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = 搜索要添加到文档中的笔记
-integration-citationDialog-single-input-annotations =
-    .placeholder = 搜索要插入到文档中的注释
 integration-citationDialog-aria-item-list =
     .aria-description = 使用向上/向下箭头修改条目选择。 { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -109,9 +87,6 @@ integration-citationDialog-collapse-section =
     .title = 折叠此栏
 integration-citationDialog-bubble-empty = （无标题）
 integration-citationDialog-add-to-citation = 添加到引文
-integration-citationDialog-annotations-filter =
-    .placeholder = 筛选注释
-integration-citationDialog-annotations-empty = 选择一个条目、附件或注释以查看注释详细信息
 integration-prefs-displayAs-label = 引注显示为:
 integration-prefs-footnotes =
     .label = 脚注
@@ -141,6 +116,8 @@ integration-warning-documentPreferences-changes-will-be-lost = 您已修改文�
 integration-warning-discard-changes = 放弃修改
 integration-warning-command-is-running = 文字处理器集成命令已在运行。
 first-run-guidance-citationDialog =
-    点击气泡或使用 ← 和↓按键可查看引注详情并自定义选项，如页码、前缀和后缀等。
+    键入标题、作者和/或年份以搜索参考文献。
+    
+    完成选择后点击气泡或使用键盘选中它，然后按下↓/空格键显示引用选项，如页码、前缀和后缀等。
     
     您还可以通过以下两种方式添加页码或其他定位符 ① 将其与搜索词（例如："history { $locator }"）一并输入；② 在气泡框后直接输入并按 { return-or-enter }。

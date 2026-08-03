@@ -19,41 +19,6 @@ describe("Zotero.Sync.Data.Local", function () {
 			assert.strictEqual(await Zotero.Sync.Data.Local.getAPIKey(apiKey), "");
 		})
 	})
-
-
-	describe("#repairLoginManager()", function () {
-		it("should reset a key database with a primary password set", async function () {
-			var token = Components.classes["@mozilla.org/security/pk11tokendb;1"]
-				.getService(Components.interfaces.nsIPK11TokenDB)
-				.getInternalKeyToken();
-
-			// No-op if no primary password is set
-			assert.isFalse(Zotero.Sync.Data.Local.repairLoginManager());
-
-			if (token.needsUserInit) {
-				token.initPassword("repair-test");
-			}
-			else {
-				token.changePassword("", "repair-test");
-			}
-			try {
-				assert.isTrue(token.hasPassword);
-				assert.isTrue(Zotero.Sync.Data.Local.repairLoginManager());
-				assert.isFalse(token.hasPassword);
-
-				// Credentials should be saveable and readable again
-				var apiKey = Zotero.Utilities.randomString(24);
-				await Zotero.Sync.Data.Local.setAPIKey(apiKey);
-				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
-			}
-			finally {
-				if (token.hasPassword) {
-					token.changePassword("repair-test", "");
-				}
-				await Zotero.Sync.Data.Local.setAPIKey("");
-			}
-		})
-	})
 	
 	
 	describe("#checkUser()", function () {
@@ -575,7 +540,10 @@ describe("Zotero.Sync.Data.Local", function () {
 		var types = Zotero.DataObjectUtilities.getTypes();
 		
 		beforeEach(function* () {
-			yield resetData();
+			yield resetDB({
+				thisArg: this,
+				skipBundledFiles: true
+			});
 		})
 		
 		it("shouldn't trigger an auto-sync", async function () {
@@ -2324,19 +2292,12 @@ describe("Zotero.Sync.Data.Local", function () {
 						},
 						{
 							field: "conditions",
-							op: "modify",
-							value: [
-								{
-									condition: "title",
-									operator: "contains",
-									value: "A"
-								},
-								{
-									condition: "place",
-									operator: "is",
-									value: "Chicago"
-								}
-							]
+							op: "member-add",
+							value: {
+								condition: "place",
+								operator: "is",
+								value: "Chicago"
+							}
 						}
 					]
 				);
@@ -2408,19 +2369,21 @@ describe("Zotero.Sync.Data.Local", function () {
 					[
 						{
 							field: "conditions",
-							op: "modify",
-							value: [
-								{
-									condition: "title",
-									operator: "contains",
-									value: "A"
-								},
-								{
-									condition: "place",
-									operator: "is",
-									value: "New York"
-								}
-							]
+							op: "member-add",
+							value: {
+								condition: "place",
+								operator: "is",
+								value: "New York"
+							}
+						},
+						{
+							field: "conditions",
+							op: "member-remove",
+							value: {
+								condition: "place",
+								operator: "is",
+								value: "Chicago"
+							}
 						}
 					]
 				);
@@ -2573,19 +2536,12 @@ describe("Zotero.Sync.Data.Local", function () {
 						},
 						{
 							field: "conditions",
-							op: "modify",
-							value: [
-								{
-									condition: "title",
-									operator: "contains",
-									value: "A"
-								},
-								{
-									condition: "place",
-									operator: "is",
-									value: "Chicago"
-								}
-							]
+							op: "member-add",
+							value: {
+								condition: "place",
+								operator: "is",
+								value: "Chicago"
+							}
 						}
 					]
 				);
@@ -2880,59 +2836,6 @@ describe("Zotero.Sync.Data.Local", function () {
 			);
 			assert.lengthOf(result.conflicts, 0);
 			assert.isFalse(result.localChanged);
-		});
-		
-		it("should automatically use more recent remote lastRead value", function () {
-			var json1 = {
-				key: "AAAAAAAA",
-				version: 1234,
-				itemType: "attachment",
-				lastRead: 1700000100
-			};
-			var json2 = {
-				key: "AAAAAAAA",
-				version: 1235,
-				itemType: "attachment",
-				lastRead: 1700000200
-			};
-			var ignoreFields = ['dateAdded', 'dateModified'];
-			var result = Zotero.Sync.Data.Local._reconcileChangesWithoutCache(
-				'item', json1, json2, ignoreFields
-			);
-			assert.sameDeepMembers(
-				result.changes,
-				[
-					{
-						field: "lastRead",
-						op: "modify",
-						value: 1700000200
-					}
-				]
-			);
-			assert.lengthOf(result.conflicts, 0);
-			assert.isFalse(result.localChanged);
-		});
-		
-		it("should automatically use more recent local lastRead value", function () {
-			var json1 = {
-				key: "AAAAAAAA",
-				version: 1234,
-				itemType: "attachment",
-				lastRead: 1700000200
-			};
-			var json2 = {
-				key: "AAAAAAAA",
-				version: 1235,
-				itemType: "attachment",
-				lastRead: 1700000100
-			};
-			var ignoreFields = ['dateAdded', 'dateModified'];
-			var result = Zotero.Sync.Data.Local._reconcileChangesWithoutCache(
-				'item', json1, json2, ignoreFields
-			);
-			assert.lengthOf(result.changes, 0);
-			assert.lengthOf(result.conflicts, 0);
-			assert.isTrue(result.localChanged);
 		});
 	})
 })

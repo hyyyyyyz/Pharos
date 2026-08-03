@@ -972,15 +972,18 @@ var gDownloadingPage = {
 			gUpdates.update.QueryInterface(Ci.nsIWritablePropertyBag);
 			gUpdates.update.setProperty("foregroundDownload", "true");
 
-			// Add this UI as a listener for active downloads
-			gAUS.addDownloadListener(this);
-
-			let result = await gAUS.downloadUpdate(gUpdates.update);
-			if (result != Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS) {
+			let state = gAUS.downloadUpdate(gUpdates.update, false);
+			if (state == "failed") {
+				// We've tried as hard as we could to download a valid update -
+				// we fell back from a partial patch to a complete patch and even
+				// then we couldn't validate. Show a validation error with instructions
+				// on how to manually update.
 				this.cleanUp();
 				gUpdates.wiz.goTo("errors");
 				return;
 			}
+			// Add this UI as a listener for active downloads
+			gAUS.addDownloadListener(this);
 
 			if (activeUpdate) {
 				this._downloadProgress.removeAttribute("value");
@@ -1093,7 +1096,7 @@ var gDownloadingPage = {
 			"gDownloadingPage",
 			"onHide - continuing download in background at full speed"
 		);
-		gAUS.downloadUpdate(gUpdates.update);
+		gAUS.downloadUpdate(gUpdates.update, false);
 		gUpdates.wiz.cancel();
 	},
 
@@ -1101,6 +1104,8 @@ var gDownloadingPage = {
 	 * When the data transfer begins
 	 * @param	 request
 	 *					The nsIRequest object for the transfer
+	 * @param	 context
+	 *					Additional data
 	 */
 	onStartRequest(request) {
 		this._downloadProgress.removeAttribute("value");
@@ -1111,12 +1116,14 @@ var gDownloadingPage = {
 	 * When new data has been downloaded
 	 * @param	 request
 	 *					The nsIRequest object for the transfer
+	 * @param	 context
+	 *					Additional data
 	 * @param	 progress
 	 *					The current number of bytes transferred
 	 * @param	 maxProgress
 	 *					The total number of bytes that must be transferred
 	 */
-	onProgress(request, progress, maxProgress) {
+	onProgress(request, context, progress, maxProgress) {
 		let status = this._updateDownloadStatus(progress, maxProgress);
 		var currentProgress = Math.round(100 * (progress / maxProgress));
 
@@ -1147,12 +1154,14 @@ var gDownloadingPage = {
 	 * When we have new status text
 	 * @param	 request
 	 *					The nsIRequest object for the transfer
+	 * @param	 context
+	 *					Additional data
 	 * @param	 status
 	 *					A status code
 	 * @param	 statusText
 	 *					Human readable version of |status|
 	 */
-	onStatus(request, status, statusText) {
+	onStatus(request, context, status, statusText) {
 		this._setStatus(statusText);
 	},
 
@@ -1160,6 +1169,8 @@ var gDownloadingPage = {
 	 * When data transfer ceases
 	 * @param	 request
 	 *					The nsIRequest object for the transfer
+	 * @param	 context
+	 *					Additional data
 	 * @param	 status
 	 *					Status code containing the reason for the cessation.
 	 */
