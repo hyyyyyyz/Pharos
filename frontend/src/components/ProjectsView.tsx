@@ -15,6 +15,7 @@ import type {
   ResearchStage,
 } from "../api/types";
 import { Icons } from "../design/icons";
+import { isRulesAnalysis, sourceName } from "../lib/discovery";
 import { useUI } from "../store";
 import "./ProjectsView.css";
 
@@ -165,6 +166,12 @@ function SourceCard({
   onCancelRemove: () => void;
 }): JSX.Element {
   const result = source.result;
+  const rules = isRulesAnalysis(result);
+  // Bibliographic only. The retrieval sources used to be joined in here as raw
+  // wire ids; they belong in the provenance row below, under their real names.
+  const bibliography = [result.year?.toString(), result.venue]
+    .filter((value): value is string => value !== null && value !== undefined && value !== "")
+    .join(" · ");
   return (
     <article className="ph-proj-source-card">
       <div className="ph-proj-source-head">
@@ -174,15 +181,36 @@ function SourceCard({
           ) : (
             <a href={result.url} target="_blank" rel="noreferrer">{result.title}</a>
           )}
-          <p>
-            {[result.year?.toString(), result.venue, result.sources.join(" + ")]
-              .filter((value): value is string => value !== null && value !== undefined && value !== "")
-              .join(" · ")}
-          </p>
+          {/* Omitted entirely when the backend knew neither: an empty line
+              still takes its margin and reads as a field that failed to load. */}
+          {bibliography !== "" && <p>{bibliography}</p>}
         </div>
-        <span className={cx("ph-proj-analysis", result.analysis_mode === "llm" && "is-ai")}>
-          {result.analysis_model ?? (result.analysis_mode === "llm" ? "AI 深读" : "摘要提取")}
+      </div>
+
+      {/* Where this reading came from. The chip used to print
+          `result.analysis_model`, so 「AI 深读」 appeared only when the backend
+          had recorded NO model, and the normal case was a bare `deepseek-chat`
+          sitting in the same row as the retrieval sources — read as a third
+          source, with the fact that a model wrote the paragraph below never
+          stated anywhere on screen. The MODE is the question a reader is
+          asking; the model id is the footnote, so it follows as plain text
+          rather than as a second capsule. */}
+      <div className="ph-proj-source-prov">
+        <span className={cx("ph-proj-analysis", !rules && "is-ai")}>
+          {rules ? "摘要提取" : "AI 深读"}
         </span>
+        {!rules && (
+          <span className="ph-proj-analysis-model">
+            {result.analysis_model === null
+              ? "解读模型未记录"
+              : `解读模型：${result.analysis_model}`}
+          </span>
+        )}
+        {result.sources.map((name) => (
+          // Display names, never the bare lowercase wire id: neither project
+          // writes its own name as `arxiv` or `openalex`.
+          <span key={name} className="ph-proj-source-src">{sourceName(name)}</span>
+        ))}
       </div>
 
       {(result.summary_zh !== "" || result.core_trick !== "") && (
@@ -251,6 +279,12 @@ function ArtifactCard({
     <article className="ph-proj-artifact-card">
       <div className="ph-proj-artifact-top">
         <span>{TYPE_LABEL[artifact.type]}</span>
+        {/* The record's OWN stage, which is not always the panel's: saving a
+            record moves the panel to `saved.stage`, and a record's stage can be
+            edited to somewhere other than where it is being read. Type and
+            stage side by side is also why `review` must not render as the same
+            word twice — the stage is 反方审阅, the type 审阅记录. */}
+        <span className="ph-proj-artifact-stage">{stageDef(artifact.stage).label}</span>
         <span className={cx("ph-proj-artifact-status", `is-${artifact.status}`)}>
           {STATUS_LABEL[artifact.status]}
         </span>
@@ -634,6 +668,20 @@ export function ProjectsView(): JSX.Element {
                 </div>
                 <h1>{project.name}</h1>
                 {project.description !== "" && <p>{project.description}</p>}
+                {/* When the project was opened and when it last moved. A
+                    workspace that spans months is the point of the module, and
+                    without these the only dates on screen belong to individual
+                    sources and records — so a project dormant since April and
+                    one touched this morning looked identical. `updated_at`
+                    defaults to NULL and is only written by a PATCH, so it is
+                    omitted rather than backfilled from `created_at`: "never
+                    edited" is a fact, not a gap to paper over. */}
+                <div className="ph-proj-header-meta">
+                  <span>创建于 {fmtDate(project.created_at)}</span>
+                  {project.updated_at !== null && (
+                    <span>更新于 {fmtDate(project.updated_at)}</span>
+                  )}
+                </div>
               </div>
               <div className="ph-proj-header-actions">
                 <button type="button" onClick={startEdit}>编辑</button>

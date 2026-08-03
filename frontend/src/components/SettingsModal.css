@@ -529,16 +529,21 @@
   color: var(--c-tx3);
 }
 
+/* Three options, not two: 跟随系统 joined 浅色 and 深色, and at the pair's old
+   280px its four-character label had ~88px to sit in. Widened to the accent
+   grid's 328px below, which both gives the label room and lines the two
+   appearance groups up on the same right edge. */
 .ph-set-themes {
   display: flex;
   gap: 8px;
   margin-bottom: 22px;
-  max-width: 280px;
+  max-width: 328px;
 }
 
 /* The 阅读 tab's on/off pair. Only the container differs from .ph-set-themes —
-   it sits above a description line rather than another labelled group, so it
-   takes less trailing space. The buttons themselves share the rules below. */
+   it holds two buttons rather than three and sits above a description line
+   rather than another labelled group, so it is narrower and takes less
+   trailing space. The buttons themselves share the rules below. */
 .ph-set-seg {
   display: flex;
   gap: 8px;

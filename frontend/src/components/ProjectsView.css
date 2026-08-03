@@ -228,6 +228,7 @@
   line-height: 1.25;
 }
 .ph-proj-header-title > p { max-width: 720px; margin: 5px 0 0; color: var(--c-tx2); font-size: 11.5px; line-height: 1.65; }
+.ph-proj-header-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px; color: var(--c-tx3); font-size: 9.5px; }
 .ph-proj-header-actions { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
 .ph-proj-header-actions > button,
 .ph-proj-delete-confirm button {
@@ -493,6 +494,16 @@
 }
 .ph-proj-source-head a:hover { color: var(--c-aclink); text-decoration: none; }
 .ph-proj-source-head p { margin: 2px 0 0; color: var(--c-tx3); font-size: 8.5px; }
+/* Mode, then model, then retrieval sources — in that order because that is the
+   order a reader asks the questions. Unconditional: a provenance row that only
+   appears sometimes is what makes rules and llm indistinguishable at a glance. */
+.ph-proj-source-prov {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
 .ph-proj-analysis {
   flex: none;
   padding: 1px 5px;
@@ -502,6 +513,16 @@
   font-size: 8px;
 }
 .ph-proj-analysis.is-ai { border-color: var(--c-acsb); background: var(--c-acs); color: var(--c-ac); }
+/* Plain text, deliberately not a capsule: a second chip beside the mode reads
+   as a second claim of the same weight, and the model id is the footnote. */
+.ph-proj-analysis-model { color: var(--c-tx3); font-size: 8px; }
+.ph-proj-source-src {
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: var(--c-hv);
+  color: var(--c-tx3);
+  font-size: 8px;
+}
 
 .ph-proj-source-insight { margin-top: 6px; padding: 6px 7px; border-left: 2px solid var(--c-ac); background: var(--c-acs); }
 .ph-proj-source-insight p { margin: 0; color: var(--c-tx2); font-size: 9.5px; line-height: 1.5; }
@@ -604,6 +625,7 @@
 
 .ph-proj-artifact-top { display: flex; align-items: center; gap: 6px; }
 .ph-proj-artifact-top > span:first-child { color: var(--c-ac); font-size: 8.5px; font-weight: 700; letter-spacing: 0.04em; }
+.ph-proj-artifact-stage { padding: 1px 5px; border-radius: 20px; background: var(--c-hv); color: var(--c-tx3); font-size: 8px; }
 .ph-proj-artifact-status { margin-left: auto; padding: 1px 5px; border-radius: 20px; background: var(--c-hv); color: var(--c-tx3); font-size: 8px; }
 .ph-proj-artifact-status.is-ready { background: var(--c-acs); color: var(--c-ac); }
 .ph-proj-artifact-status.is-verified { background: var(--c-ok-soft); color: var(--c-ok); }

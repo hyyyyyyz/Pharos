@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { AccentKey, ThemeMode } from "./design/tokens";
+import { resolveTheme } from "./design/tokens";
+import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
 import type { AuthUser, ZoteroOAuthResult } from "./api/types";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
@@ -34,6 +35,37 @@ const save = (key: string, value: string) => {
   }
 };
 
+const THEME_KEY = "ph-theme";
+
+/** The live `prefers-color-scheme` query, or null where matchMedia is absent. */
+const darkQuery = (): MediaQueryList | null =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+
+const systemPrefersDark = (): boolean => darkQuery()?.matches ?? false;
+
+/**
+ * The stored appearance preference, validated rather than cast.
+ *
+ * The key predates `auto` and holds whatever a previous build wrote, so a value
+ * outside the three known ones has to fall back rather than become the theme —
+ * an unchecked `as ThemePref` would put a garbage string into `resolveTheme`
+ * and paint light without anyone being able to tell why.
+ *
+ * The default stays `light`, NOT `auto`. A user who has never opened 外观 has
+ * nothing stored, and defaulting to `auto` would restyle every one of those
+ * browsers on a release that only added an option. Retiring a stored default is
+ * something this file does deliberately and visibly, by versioning the key —
+ * see `ph-accent-v2` below.
+ */
+function initialThemePref(): ThemePref {
+  const raw = ls(THEME_KEY);
+  return raw === "light" || raw === "dark" || raw === "auto" ? raw : "light";
+}
+
+const INITIAL_THEME_PREF = initialThemePref();
+
 export function clampRailWidth(width: number): number {
   return Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, Math.round(width)));
 }
@@ -47,9 +79,13 @@ function initialRailWidth(): number {
 
 interface UIState {
   /* ---------------------------------------------------------- appearance */
+  /** What the user chose — the value the 主题 picker highlights. */
+  themePref: ThemePref;
+  /** What to paint. Equal to `themePref` unless that is `auto`, in which case
+   *  it tracks the OS. Everything that renders reads THIS one. */
   theme: ThemeMode;
   accent: AccentKey;
-  setTheme: (t: ThemeMode) => void;
+  setTheme: (t: ThemePref) => void;
   setAccent: (a: AccentKey) => void;
 
   /* ---------------------------------------------------------------- rail */
@@ -138,16 +174,19 @@ export function isAiOpen(s: Pick<UIState, "aiOpenPref" | "winW">): boolean {
 }
 
 export const useUI = create<UIState>((set) => ({
-  theme: (ls("ph-theme") as ThemeMode) ?? "light",
+  // One read, used twice: the preference and the theme it resolves to are two
+  // views of the same stored value and must never be able to disagree.
+  themePref: INITIAL_THEME_PREF,
+  theme: resolveTheme(INITIAL_THEME_PREF, systemPrefersDark()),
   // Storage key is versioned because the palette was rebranded: the previous
   // default, "indigo", is indistinguishable from a deliberate choice once it
   // is in localStorage, so every existing browser would have kept showing the
   // pre-brand accent forever. Bumping the key retires those values once and
   // lets the brand default apply; a user who re-picks indigo keeps it.
   accent: (ls("ph-accent-v2") as AccentKey) ?? "pharos",
-  setTheme: (theme) => {
-    save("ph-theme", theme);
-    set({ theme });
+  setTheme: (themePref) => {
+    save(THEME_KEY, themePref);
+    set({ themePref, theme: resolveTheme(themePref, systemPrefersDark()) });
   },
   setAccent: (accent) => {
     save("ph-accent-v2", accent);
@@ -270,6 +309,17 @@ export const useUI = create<UIState>((set) => ({
   closeSettings: () => set({ settingsOpen: false }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),
 }));
+
+/* The OS flipping to dark (or back) while 跟随系统 is the chosen preference.
+   One subscription for the app's lifetime rather than an effect in a component:
+   the resolved theme is read by App, by AuthGate — which are two separate trees
+   — and by every accent swatch, so a listener owned by one of them would leave
+   the others painting the previous scheme. `resolveTheme` re-reads the stored
+   preference on every event, so a user who picks 浅色 or 深色 in the meantime
+   keeps it and the OS is simply ignored from then on. */
+darkQuery()?.addEventListener("change", (event) => {
+  useUI.setState((s) => ({ theme: resolveTheme(s.themePref, event.matches) }));
+});
 
 /* ======================================================================= */
 /*                                session                                  */

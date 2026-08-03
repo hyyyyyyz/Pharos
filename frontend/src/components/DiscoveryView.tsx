@@ -11,6 +11,7 @@ import type {
   ResearchProjectCreateBody,
 } from "../api/types";
 import { Icons } from "../design/icons";
+import { isRulesAnalysis, sourceList, sourceName } from "../lib/discovery";
 import { useUI } from "../store";
 import "./DiscoveryView.css";
 
@@ -45,17 +46,53 @@ function fmtTime(value: string | null): string {
   }).format(date);
 }
 
-const SOURCE_NAMES: Record<string, string> = {
-  arxiv: "arXiv",
-  openalex: "OpenAlex",
-};
+/**
+ * The four abstract-derived sections, in the reading prompt's own order.
+ *
+ * `core_trick` is deliberately not among them — it has the accent block above,
+ * and repeating it here would print the same sentence twice.
+ */
+const HIGHLIGHT_ROWS: { key: HighlightKey; label: string }[] = [
+  { key: "contribution", label: "贡献" },
+  { key: "method", label: "方法" },
+  { key: "results", label: "结果" },
+  { key: "limitations", label: "局限" },
+];
 
-function sourceName(source: string): string {
-  return SOURCE_NAMES[source.toLowerCase()] ?? source;
-}
+type HighlightKey = "contribution" | "method" | "results" | "limitations";
 
-function sourceList(sources: string[]): string {
-  return sources.length === 0 ? "来源未知" : sources.map(sourceName).join("、");
+/** Why 局限 keeps its own marker even under the AI banner — see `highlightsOf`. */
+const LIMITATIONS_RULES_HINT =
+  "「生成核心思路」不覆盖这一项：以下句子由规则从英文摘要中摘出，模型未阅读或评估它。";
+
+/**
+ * The highlight rows that actually have text, and where each one came from.
+ *
+ * A deep read overwrites contribution, method and results but DELIBERATELY
+ * leaves limitations at what `rule_summary()` produced — a cue-matched sentence
+ * copied out of the English abstract, which the model never saw
+ * (`backend/pharos/services/projects.py::analyze_result`). By then the card
+ * carries the accent 「AI 中文解读」 chip, so an unlabelled 局限 row reads as
+ * that named model's assessment of the paper's weaknesses. It is also the only
+ * English row among four, which reads as a translation gap rather than the
+ * provenance gap it is. Hence `fromRules`: the field is rendered, and it says
+ * what it is.
+ *
+ * Empty rows are dropped rather than shown as blanks — in rules mode
+ * `contribution` is always empty and the other three are only filled when a cue
+ * actually matched, so "no evidence for this section" is the common case and a
+ * bordered empty row would read as a failure.
+ */
+function highlightsOf(
+  result: LiteratureResult,
+): { key: HighlightKey; label: string; text: string; fromRules: boolean }[] {
+  const generated = !isRulesAnalysis(result);
+  return HIGHLIGHT_ROWS.map(({ key, label }) => ({
+    key,
+    label,
+    text: result[key].trim(),
+    fromRules: generated && key === "limitations",
+  })).filter((row) => row.text !== "");
 }
 
 function paperMeta(result: LiteratureResult): string[] {
@@ -107,12 +144,28 @@ function SearchHistoryItem({
       onClick={onOpen}
     >
       <span className="ph-disc-history-top">
-        <span className={cx("ph-disc-status-dot", `is-${search.status}`)} />
+        <span
+          className={cx("ph-disc-status-dot", `is-${search.status}`)}
+          title={STATUS_TEXT[search.status]}
+        />
         <span className="ph-disc-history-query">{search.query}</span>
       </span>
       <span className="ph-disc-history-meta">
         {fmtTime(search.created_at)} · {search.result_count} 篇
       </span>
+      {/* The outcome in words, for every state except a clean run.
+          The dot alone said it in hue, with the word reachable only by
+          hovering. `partial` means a source died and results are missing, and
+          about one man in twelve cannot separate its gold from complete's
+          teal — so a partial run read as a clean one, and its lower result
+          count was indistinguishable from a genuinely narrower query. Absence
+          of this line is what "nothing went wrong" looks like, and complete is
+          the only state that gets to be silent. */}
+      {search.status !== "complete" && (
+        <span className={cx("ph-disc-history-state", `is-${search.status}`)}>
+          {STATUS_TEXT[search.status]}
+        </span>
+      )}
       <span className="ph-disc-history-sources">{sourceList(search.sources)}</span>
     </button>
   );
@@ -135,11 +188,12 @@ function ResultCard({
   onToggle: () => void;
   onAnalyze: () => void;
 }): JSX.Element {
-  const generated = result.analysis_mode === "llm";
+  const generated = !isRulesAnalysis(result);
   const trick = generated
     ? result.core_trick.trim() || "AI 未返回中文核心思路"
     : "尚未生成中文核心思路";
   const analysisLabel = generated ? "AI 中文解读" : "仅摘要规则";
+  const highlights = highlightsOf(result);
   return (
     <article className={cx("ph-disc-result", selected && "is-selected")}>
       <div className="ph-disc-result-select">
@@ -169,6 +223,26 @@ function ResultCard({
           <span>核心思路</span>
           <p>{trick}</p>
         </div>
+
+        {highlights.length > 0 && (
+          <div className="ph-disc-highlights">
+            {highlights.map(({ key, label, text, fromRules }) => (
+              <div
+                key={key}
+                className={cx("ph-disc-hl", fromRules && "is-rules")}
+                title={fromRules ? LIMITATIONS_RULES_HINT : undefined}
+              >
+                <span className="ph-disc-hl-k">
+                  {label}
+                  {/* Visible text, never a title= alone: a provenance marker
+                      nobody hovers is a marker nobody sees. */}
+                  {fromRules && <span className="ph-disc-hl-src">规则摘录</span>}
+                </span>
+                <span className="ph-disc-hl-v">{text}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {analysisError !== null && (
           <div className="ph-disc-analysis-warning is-error">

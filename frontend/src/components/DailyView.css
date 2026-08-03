@@ -193,6 +193,16 @@
   overflow: hidden;
 }
 
+/* Tabular figures: the number changes as filters are clicked, and proportional
+   digits make the label jitter sideways every time it does. */
+.ph-dv-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
 .ph-dv-sbtn {
   height: 23px;
   padding: 0 9px;

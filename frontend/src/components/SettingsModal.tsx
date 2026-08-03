@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icons } from "../design/icons";
 import { ACCENTS, accentSwatch } from "../design/tokens";
-import type { ThemeMode } from "../design/tokens";
+import type { ThemePref } from "../design/tokens";
 import { api } from "../api/client";
 import type { AuthUser, ZoteroOAuthResult, ZoteroStatus } from "../api/types";
 import { pdfTranslationEnabled, useSession, useUI, type SettingsTab } from "../store";
@@ -21,9 +21,12 @@ const TABS: { key: SettingsTab; label: string; Icon: IconComponent }[] = [
   { key: "daily", label: "每日论文", Icon: Icons.daily },
 ];
 
-const THEMES: { key: ThemeMode; label: string; Icon: IconComponent }[] = [
+const THEMES: { key: ThemePref; label: string; Icon: IconComponent }[] = [
   { key: "light", label: "浅色", Icon: Icons.sun },
   { key: "dark", label: "深色", Icon: Icons.moon },
+  // Last, so the two explicit answers read as the primary pair and this as the
+  // "let something else decide" option, which is what it is.
+  { key: "auto", label: "跟随系统", Icon: Icons.display },
 ];
 
 /** The 整篇 PDF 翻译 control, shaped exactly like the 主题 buttons above it. */
@@ -91,6 +94,11 @@ export function SettingsModal(): JSX.Element | null {
   const closeSettings = useUI((s) => s.closeSettings);
   const zoteroOAuthResult = useUI((s) => s.zoteroOAuthResult);
   const setZoteroOAuthResult = useUI((s) => s.setZoteroOAuthResult);
+  /* Two values, and the difference matters here: the picker highlights what the
+     user CHOSE (so 跟随系统 stays selected on a light machine instead of
+     lighting up 浅色 beside it), while the accent swatches are previews and
+     must be drawn in the scheme actually on screen. */
+  const themePref = useUI((s) => s.themePref);
   const theme = useUI((s) => s.theme);
   const setTheme = useUI((s) => s.setTheme);
   const accent = useUI((s) => s.accent);
@@ -769,7 +777,7 @@ export function SettingsModal(): JSX.Element | null {
                     key={key}
                     type="button"
                     onClick={() => setTheme(key)}
-                    className={cx("ph-set-theme", theme === key && "ph-set-theme--on")}
+                    className={cx("ph-set-theme", themePref === key && "ph-set-theme--on")}
                   >
                     <span className="ph-set-ic">
                       <Icon />

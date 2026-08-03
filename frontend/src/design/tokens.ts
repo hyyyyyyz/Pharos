@@ -22,6 +22,28 @@
 import type { CSSProperties } from "react";
 
 export type ThemeMode = "light" | "dark";
+
+/** What the user picked. `auto` defers to the OS's `prefers-color-scheme`. */
+export type ThemePref = ThemeMode | "auto";
+
+/**
+ * The theme to actually paint.
+ *
+ * An explicit light or dark ALWAYS wins, including over an OS that says the
+ * opposite and over the OS changing later — someone who picked 浅色 on a
+ * machine set to dark did so knowing what the machine says, and having the
+ * choice quietly revert at sunset is the failure this signature is shaped to
+ * prevent: `systemPrefersDark` cannot be consulted unless the preference is
+ * `auto`.
+ *
+ * The OS signal is a parameter rather than a `matchMedia` call inside so that
+ * this stays a pure function of the two inputs — the caller owns subscribing to
+ * the media query, and the resolution rule stays testable without a browser.
+ */
+export function resolveTheme(pref: ThemePref, systemPrefersDark: boolean): ThemeMode {
+  if (pref === "light" || pref === "dark") return pref;
+  return systemPrefersDark ? "dark" : "light";
+}
 export type AccentKey =
   | "mint"
   | "sky"

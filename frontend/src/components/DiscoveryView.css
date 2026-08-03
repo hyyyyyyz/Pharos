@@ -82,6 +82,16 @@
   gap: 7px;
 }
 
+/* The run's outcome, at a glance. Four states, never three: a run still in
+   flight is not the same thing as one that failed, and neither is a partial.
+
+   SHAPE carries the state and colour only reinforces it. `partial` means a
+   source died and results are missing, and roughly one man in twelve cannot
+   separate this gold from the teal beside it — so a partial that differed by
+   hue alone would be read as a clean run, which is the one mistake this rail
+   exists to prevent. Every variant below survives its colour being removed,
+   and every state except `complete` also spells itself out in
+   .ph-disc-history-state. */
 .ph-disc-status-dot {
   width: 6px;
   height: 6px;
@@ -90,10 +100,33 @@
   border-radius: 50%;
   background: var(--c-tx3);
 }
+/* A ringed dot: in flight, and the only state with a halo. */
 .ph-disc-status-dot.is-running { background: var(--c-ac); box-shadow: 0 0 0 3px var(--c-acs); }
+/* Solid disc — the plain, unremarkable shape, for the unremarkable outcome. */
 .ph-disc-status-dot.is-complete { background: var(--c-ok); }
-.ph-disc-status-dot.is-partial { background: #C98A13; }
-.ph-disc-status-dot.is-error { background: var(--c-err); }
+/* Half filled: some of what was asked for came back and some did not. The ring
+   keeps the missing half visible against the rail rather than letting it read
+   as a smaller dot. */
+.ph-disc-status-dot.is-partial {
+  background: linear-gradient(to right, #C98A13 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1px #C98A13;
+}
+/* The only shape in the set with corners. */
+.ph-disc-status-dot.is-error { border-radius: 1px; background: var(--c-err); }
+
+/* The outcome in words, for everything except a clean run. The dot alone is a
+   colour cue with a hover tooltip, and neither survives a reader who cannot
+   separate the hues and is not hovering. Aligned under the query, past the
+   dot's column, so it reads as part of the row rather than as a second dot. */
+.ph-disc-history-state {
+  display: block;
+  margin: 2px 0 0 13px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--c-tx2);
+}
+.ph-disc-history-state.is-error { color: var(--c-err); }
 
 .ph-disc-history-query {
   min-width: 0;
@@ -652,6 +685,61 @@ a.ph-disc-result-title:hover { color: var(--c-aclink); text-decoration: none; }
   line-height: 1.4;
 }
 .ph-disc-trick.is-pending p { color: var(--c-tx3); }
+
+/* 贡献 / 方法 / 结果 / 局限, on the same 68px key column as 核心思路 above so the
+   five sections read as one block rather than as two unrelated layouts. */
+.ph-disc-highlights {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ph-disc-hl {
+  padding: 1px 7px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 5px;
+}
+.ph-disc-hl-k {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--c-tx3);
+  font-size: 8.5px;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+.ph-disc-hl-v {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--c-tx2);
+  font-size: 10px;
+  line-height: 1.4;
+}
+/* A row the AI reading did not touch, sitting under the card's AI chip. The
+   left rule and the source tag are what keep it from being read as the named
+   model's own words — see `highlightsOf` in DiscoveryView.tsx. */
+.ph-disc-hl.is-rules {
+  border-left: 2px solid var(--c-bds);
+  border-radius: 0 4px 4px 0;
+  padding-left: 5px;
+  background: var(--c-hv);
+}
+.ph-disc-hl-src {
+  padding: 0 4px;
+  border: 1px solid var(--c-bd);
+  border-radius: 20px;
+  color: var(--c-tx3);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
 
 .ph-disc-result-footer {
   min-height: 22px;

@@ -54,6 +54,7 @@ cd backend && .venv/bin/pytest
 
 # Web client
 cd frontend && npm run build && npx tsc -b
+npm test                         # Vitest, sharing vite.config.ts
 
 # Desktop client
 cd client

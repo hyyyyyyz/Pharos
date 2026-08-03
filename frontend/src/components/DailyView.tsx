@@ -738,6 +738,23 @@ export function DailyView(): JSX.Element {
               时间
             </button>
           </div>
+          {/* How many papers are actually in the list below. The rail carries a
+              per-date total, but once a direction chip narrows the day the two
+              numbers differ and only this one describes what is on screen — so
+              it is the VISIBLE count, with the day's own total kept in reach
+              rather than dropped. Suppressed on an empty day: the centre panel
+              already spells out which of the four causes produced it, and
+              「0 篇」 over that would only repeat it. */}
+          {papersQuery.isSuccess && papers.length > 0 && (
+            <span
+              className="ph-dv-count"
+              title={
+                visible.length === papers.length ? undefined : `全天 ${papers.length} 篇`
+              }
+            >
+              {visible.length} 篇
+            </span>
+          )}
           <button
             className={vaultNeedsRestore ? "ph-dv-vault is-warn" : "ph-dv-vault"}
             onClick={() => setVaultOpen(true)}

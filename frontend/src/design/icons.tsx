@@ -88,6 +88,12 @@ export const Icons = {
     { size: 16 },
   ),
   moon: make(["M15.4 12.3A5.8 5.8 0 1 1 9 4.1a4.6 4.6 0 0 0 6.4 8.2z"], { size: 16 }),
+  // 跟随系统: a display, not a half sun/moon. The choice is "whatever this
+  // machine says", and the machine is the thing worth drawing.
+  display: make(
+    [{ r0: { x: 3.2, y: 4.5, width: 13.6, height: 9, rx: 1.4 } }, "M7.5 16.5h5M10 13.5v3"],
+    { size: 16, sw: 1.4 },
+  ),
   palette: make(
     [
       { c: true, cx: 7, cy: 7, r: 2 },
