@@ -68,6 +68,32 @@ test/runtests.sh pharosAPI pharosTranslate pharosTranslateBox pharosChat \
 node test/check-locale-parity.js  # both locale files define the same ids
 ```
 
+### The upstream baseline
+
+The whole suite is **3364/3404** on a clean tree. Nobody had run it end to end
+before, so that number is worth stating rather than discovering again:
+
+```bash
+cd client && test/runtests.sh          # all of it, ~30 minutes
+```
+
+The 40 failures are pre-existing and cluster into four causes, none of them
+Pharos's: tests that need the network (retraction data, arXiv lookup, sync error
+paths), tests that assume an `en-US` application locale (month names, plural
+forms, `timestamp`), tests that need the window to be OS-active (tab traversal,
+the citation dialog's bubbles and locators), and a handful in
+`collectionViewItemTree` and `itemPane`. That last group was A/B'd against the
+Pharos item-tree column specifically -- 124/129 with it and 124/129 without --
+so the column is not the cause.
+
+**`syncLocalTest` opens a modal that no stub catches**, and the run blocks until
+somebody dismisses it by hand. It is upstream's: `syncLocal.js`, `syncLocalTest.js`
+and `test/content/support.js` have never been edited in this repository. Budget
+for it, or skip that file, but do not expect the full suite to run unattended.
+
+For day-to-day work the Pharos suites plus `itemPane zoteroPane` are the gate;
+the full run is for before a release.
+
 When checking the upstream baseline, run it **without `-f`**. That flag stops at
 the first failure, so a suite with four known pre-existing failures reports a
 misleading `5/6 tests passed -- aborting` and looks like a fresh regression.
