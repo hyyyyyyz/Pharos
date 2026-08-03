@@ -918,10 +918,22 @@ describe("Zotero.Pharos.Chat", function () {
 				return box;
 			}
 
-			it("should keep the picker hidden until there is a choice to make", async function () {
+			it("should name the thread even when it is the only one", async function () {
+				// Matching the web client. The picker is a label as much as a
+				// control: conversations are created implicitly and outlive the
+				// window, so at one entry it still answers "which thread am I
+				// in?". Hiding it below two also meant the row appeared out of
+				// nowhere and pushed the composer down the moment a second
+				// conversation existed.
 				var box = await openWithConversations([{ id: 'c1', title: '只有一个' }]);
+				assert.isFalse(box._sessions.hidden);
+				assert.equal(box._sessionSelect.value, 'c1');
+				assert.isFalse(box._newButton.hidden, "and the paper can take another thread");
+			});
+
+			it("should hide the picker when the paper has no thread at all", async function () {
+				var box = await openWithConversations([]);
 				assert.isTrue(box._sessions.hidden);
-				assert.isFalse(box._newButton.hidden, "but the paper can take another thread");
 			});
 
 			it("should list every thread newest first and select the resumed one", async function () {

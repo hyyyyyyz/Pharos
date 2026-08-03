@@ -192,3 +192,19 @@ incident remains valid and is the reason isolated launchers stay mandatory.
 This also supersedes the desktop portion of decision 8. One-way Zotero Cloud
 import remains valid for the browser and remote-device companion, which cannot
 open a local Zotero database.
+
+## 12. The desktop's discovery does not poll
+
+The web client polls the search history and the open run every two seconds while
+any status is `running`. The desktop does not, and this is deliberate rather than
+missing.
+
+**Why:** `POST /api/discovery/search` is synchronous and commits only on success,
+so a persisted `running` row does not mean a search is in progress — it means a
+request died mid-flight. Polling for it would wait for a transition that will
+never arrive. The one case the web's poll genuinely wins is a search started in
+another client, which is a narrow benefit against a request every two seconds for
+the life of the window.
+
+Recorded because a comparison of the two clients keeps surfacing it as a gap, and
+re-deriving the same answer each time costs more than writing it down once.

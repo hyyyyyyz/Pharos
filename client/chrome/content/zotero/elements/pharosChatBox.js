@@ -518,10 +518,15 @@
 		}
 
 		_renderSessions() {
-			// One conversation is the case this section had for its whole life,
-			// and a picker with a single entry is a control that cannot do
-			// anything. It appears when there is a choice to make.
-			this._sessions.hidden = this._conversations.length < 2;
+			// Shown from the first conversation, as the web client's is. This
+			// hid below two on the argument that a one-entry picker is a control
+			// that cannot do anything -- true of the control, false of the label.
+			// Conversations are created implicitly and outlive the window, so at
+			// one entry the picker is still answering "which thread am I in?",
+			// which is the question a returning reader has. It also stops the
+			// row appearing out of nowhere and shifting the composer down the
+			// moment a second conversation exists.
+			this._sessions.hidden = !this._conversations.length;
 			this._newButton.hidden = !this._paperID;
 			this._moreButton.hidden = !this._paperID;
 			if (this._sessions.hidden) {
