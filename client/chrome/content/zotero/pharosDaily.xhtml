@@ -60,6 +60,16 @@
 							data-l10n-id="pharos-daily-sort-time"/>
 					</html:div>
 					<html:span id="pharos-dv-count" class="pharos-dv-count"/>
+					<!-- The data folder, beside the two controls whose data it
+					     saves. The dot is a separate element rather than part
+					     of the label so "connected" survives the label changing
+					     to 保存中 and back. -->
+					<html:button id="pharos-dv-vault" class="pharos-dv-vault">
+						<html:span id="pharos-dv-vault-ic" class="pharos-dv-vault-ic"/>
+						<html:span id="pharos-dv-vault-label"/>
+						<html:span id="pharos-dv-vault-dot" class="pharos-dv-vault-dot"
+							hidden="hidden"/>
+					</html:button>
 					<!-- The label lives in its own span so swapping the text
 					     between 更新 and 更新中 cannot take the icon with it. -->
 					<html:button id="pharos-daily-refresh" class="pharos-dv-refresh">
@@ -79,6 +89,64 @@
 			</html:div>
 
 			<html:div id="pharos-dv-detail" class="pharos-dv-detail"/>
+		</html:div>
+
+		<!-- The data folder sheet. Static shell, dynamic body: the two
+		     paragraphs that state what a Vault does and does not back up are
+		     fixed prose and belong here, where a translator can see them beside
+		     each other; everything that depends on the connection is built in
+		     pharosDaily.js.
+
+		     position: fixed inside this browser resolves against the panel's own
+		     viewport, so the layer covers the module and nothing else. -->
+		<html:div id="pharos-dv-vault-layer" class="pharos-dv-vault-layer" hidden="hidden">
+			<!-- tabindex is what lets openVault() move focus in here, which is
+			     what puts Escape within reach of the keydown handler below. -->
+			<html:div id="pharos-dv-vault-sheet" class="pharos-dv-vault-sheet" tabindex="-1"
+				role="dialog" aria-modal="true" aria-labelledby="pharos-dv-vault-title">
+				<html:div class="pharos-dv-vault-head">
+					<html:div class="pharos-dv-vault-headings">
+						<html:div class="pharos-dv-vault-eyebrow"
+							data-l10n-id="pharos-daily-vault-eyebrow"/>
+						<html:div id="pharos-dv-vault-title" class="pharos-dv-vault-h"
+							data-l10n-id="pharos-daily-vault-title"/>
+					</html:div>
+					<html:button id="pharos-dv-vault-close" class="pharos-dv-vault-close"
+						data-l10n-id="pharos-daily-vault-close"/>
+				</html:div>
+
+				<html:div class="pharos-dv-vault-summary">
+					<html:span id="pharos-dv-vault-mark" class="pharos-dv-vault-mark"/>
+					<html:div class="pharos-dv-vault-summary-text">
+						<html:div id="pharos-dv-vault-path" class="pharos-dv-vault-path"/>
+						<html:div id="pharos-dv-vault-msg" class="pharos-dv-vault-msg"/>
+					</html:div>
+				</html:div>
+
+				<html:div id="pharos-dv-vault-warn" class="pharos-dv-vault-warn"
+					hidden="hidden"/>
+				<html:div id="pharos-dv-vault-error" class="pharos-dv-vault-error"
+					hidden="hidden"/>
+				<html:div id="pharos-dv-vault-actions" class="pharos-dv-vault-actions"/>
+
+				<!-- The part that matters most. A reader who takes this for a
+				     library backup and finds out otherwise after a disk failure
+				     is the failure this whole panel is written against, so the
+				     boundary is stated in the sheet itself and not in a tooltip. -->
+				<html:div class="pharos-dv-vault-scope">
+					<html:div class="pharos-dv-vault-scope-h"
+						data-l10n-id="pharos-daily-vault-scope-head"/>
+					<html:div class="pharos-dv-vault-scope-p"
+						data-l10n-id="pharos-daily-vault-scope-in"/>
+					<html:div class="pharos-dv-vault-scope-p"
+						data-l10n-id="pharos-daily-vault-scope-out"/>
+					<html:div class="pharos-dv-vault-scope-p"
+						data-l10n-id="pharos-daily-vault-scope-when"/>
+				</html:div>
+
+				<html:button id="pharos-dv-vault-disconnect" class="pharos-dv-vault-disconnect"
+					data-l10n-id="pharos-daily-vault-disconnect" hidden="hidden"/>
+			</html:div>
 		</html:div>
 	</vbox>
 </window>

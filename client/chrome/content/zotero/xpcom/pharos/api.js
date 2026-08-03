@@ -58,6 +58,30 @@ Zotero.Pharos.API = new function () {
 	const UPLOAD_TIMEOUT = 300000;
 	const DEFAULT_TIMEOUT = 30000;
 
+	/**
+	 * The parts of the session user this client keeps a local copy of.
+	 *
+	 * Both are read off the server and never chosen here, which is why they are
+	 * cached where the server's answer arrives rather than at each sign-in path.
+	 * The address is the exception and is deliberately not written here: it is
+	 * *typed* by whoever signs in, so `pharos.accountEmail` already has one
+	 * writer per sign-in route and a second one would make it ambiguous which
+	 * of them lost a race.
+	 *
+	 * Prefs rather than variables for the same reason Admin caches `isAdmin`:
+	 * the rail and the preferences pane have to paint an account before any
+	 * request could have come back, and a window opening must not show a
+	 * signed-in user as anonymous for the length of a round trip.
+	 *
+	 * pharos.pdfTranslation is read by Zotero.Pharos.Translate.isEnabled(),
+	 * which is where the rule for an ABSENT value is written down.
+	 */
+	const DISPLAY_NAME_PREF = 'pharos.accountName';
+	const PDF_TRANSLATION_PREF = 'pharos.pdfTranslation';
+
+	/** Matches _MAX_DISPLAY_NAME in backend/pharos/api/auth.py; longer is a 422. */
+	const MAX_DISPLAY_NAME = 128;
+
 	let _cachedToken = null;
 
 	/**
@@ -131,6 +155,12 @@ Zotero.Pharos.API = new function () {
 				Services.logins.removeLogin(oldLogin);
 			}
 			_cachedToken = null;
+			// Every route out of an account passes through here -- sign out,
+			// sign out everywhere, and the 401 handler below. What the cache
+			// holds describes the account that has just gone, and the next one
+			// in may be a different person; a leftover "translation off" would
+			// hide the feature from someone who has it.
+			this.cacheUser(null);
 			return;
 		}
 
@@ -367,12 +397,69 @@ Zotero.Pharos.API = new function () {
 	// Account
 	//
 
+	/**
+	 * Keep a local copy of the parts of the session user the UI paints from.
+	 *
+	 * Called from every point a UserOut arrives, and with null when the account
+	 * goes. Tolerant of anything: a stubbed request() in a test, or a backend
+	 * old enough to predate a field, must not take a sign-in down.
+	 *
+	 * An ABSENT pdf_translation is not written at all, so the pref stays unset
+	 * and isEnabled() resolves it to on. Writing `false` for a field the server
+	 * did not send would turn "this build is older than that field" into "this
+	 * account has translation switched off".
+	 *
+	 * @param {Object|null} user - a UserOut, or null to forget the account
+	 */
+	this.cacheUser = function (user) {
+		// Cleared rather than set to `true`: an unset pref and an explicit true
+		// mean the same thing to isEnabled(), and only one of them survives a
+		// later change to what the default should be.
+		let forget = () => {
+			if (Zotero.Prefs.prefHasUserValue(PDF_TRANSLATION_PREF)) {
+				Zotero.Prefs.clear(PDF_TRANSLATION_PREF);
+			}
+		};
+
+		if (!user || typeof user != 'object') {
+			Zotero.Prefs.set(DISPLAY_NAME_PREF, '');
+			forget();
+			return;
+		}
+		Zotero.Prefs.set(
+			DISPLAY_NAME_PREF, String(user.display_name || '').trim()
+		);
+		if (user.pdf_translation === undefined || user.pdf_translation === null) {
+			forget();
+		}
+		else {
+			Zotero.Prefs.set(PDF_TRANSLATION_PREF, !!user.pdf_translation);
+		}
+	};
+
+	/**
+	 * The label this account has chosen for itself, or '' if it has none.
+	 *
+	 * Synchronous, and never a substitute for the address: the address is what
+	 * identifies the account, and callers that show this are expected to keep
+	 * the address reachable. Mirrors the web client's `display_name?.trim() ||
+	 * user.email` (frontend/src/components/Rail.tsx).
+	 *
+	 * @return {String}
+	 */
+	this.getDisplayName = function () {
+		return String(Zotero.Prefs.get(DISPLAY_NAME_PREF) || '').trim();
+	};
+
 	this.login = async function (email, password) {
 		let res = await this.request('POST', '/api/auth/login', {
 			anon: true,
 			body: { email, password },
 		});
 		await this.setToken(res.token);
+		// After setToken, not before: setToken(null) clears this cache, and a
+		// sign-in that raced it would leave the new account wearing nothing.
+		this.cacheUser(res.user);
 		return res.user;
 	};
 
@@ -397,7 +484,49 @@ Zotero.Pharos.API = new function () {
 	};
 
 	this.me = async function () {
-		return this.request('GET', '/api/auth/me');
+		let user = await this.request('GET', '/api/auth/me');
+		// The one round trip every surface already makes, so the cache is
+		// refreshed by simply being signed in rather than by anyone remembering
+		// to refresh it. A setting changed in the web client lands here at the
+		// next window open.
+		this.cacheUser(user);
+		return user;
+	};
+
+	/**
+	 * Edit the profile. Only the fields given are sent.
+	 *
+	 * The backend's UpdateMeRequest is `extra="forbid"` and distinguishes
+	 * "omitted" from "null", so a key must be left out to mean "leave alone" --
+	 * sending null means *clear*, and for display_name that is a legitimate
+	 * request (the account goes back to being known by its address). The
+	 * address itself is not editable here and the backend refuses it: changing
+	 * a login identifier needs proof of ownership, and Pharos sends no mail.
+	 *
+	 * @param {Object} patch
+	 * @param {String|null} [patch.displayName] - null or blank clears it
+	 * @return {Promise<Object>} the updated user
+	 */
+	this.updateMe = async function (patch = {}) {
+		let body = {};
+		if (patch.displayName !== undefined) {
+			// Blank is sent as null rather than "": the backend collapses
+			// whitespace and stores null for an empty result anyway, so this
+			// says the same thing in the shape the schema documents.
+			let name = String(patch.displayName || '').trim();
+			body.display_name = name ? name.slice(0, MAX_DISPLAY_NAME) : null;
+		}
+		if (patch.pdfTranslation !== undefined) {
+			body.pdf_translation = !!patch.pdfTranslation;
+		}
+		if (!Object.keys(body).length) {
+			// The backend answers an empty patch with a 400. Refusing here keeps
+			// a no-op save from looking like a server error.
+			throw new Error('No fields to update');
+		}
+		let user = await this.request('PATCH', '/api/auth/me', { body });
+		this.cacheUser(user);
+		return user;
 	};
 
 	/**

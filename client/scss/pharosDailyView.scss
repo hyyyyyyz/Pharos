@@ -1018,3 +1018,314 @@
 		@include dv-icon("chrome://zotero/skin/16/universal/open-link.svg", 12px);
 	}
 }
+
+// ============================================================== 数据目录
+
+// The toolbar button, beside 更新 because it is that button's data it saves.
+//
+// Quiet by default: this is a backup control, not an action anyone came here to
+// take. It earns colour only in the state that needs a decision.
+.pharos-dv-vault {
+	flex: none;
+	height: 25px;
+	padding: 0 9px;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	border: var(--material-border);
+	border-radius: 5px;
+	background: var(--material-background);
+	color: var(--fill-secondary);
+	font-size: 11.5px;
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+	}
+
+	&.is-on {
+		color: var(--fill-primary);
+	}
+
+	// "Connected, but Pharos has stopped writing to it." Tinted rather than
+	// coloured like an error, because nothing has failed -- something has to be
+	// decided, and the sheet is where that happens.
+	&.is-warn {
+		border-color: var(--accent-yellow);
+		background: color-mix(in srgb, var(--accent-yellow) 14%, transparent);
+		color: var(--accent-yellow);
+		font-weight: 600;
+	}
+
+	&:disabled {
+		opacity: 0.6;
+	}
+}
+
+.pharos-dv-vault-ic {
+	@include dv-icon("chrome://zotero/skin/16/universal/folder.svg", 12px);
+}
+
+// Present only while the directory is actually being written to. See
+// _renderVaultButton(): a dot on the attention state would claim the one thing
+// that state is not.
+.pharos-dv-vault-dot {
+	width: 5px;
+	height: 5px;
+	flex: none;
+	border-radius: 50%;
+	background: var(--accent-teal);
+}
+
+// ------------------------------------------------------------------ sheet
+
+// position: fixed inside the module's own <browser> resolves against that
+// browser's viewport, so this covers the module and stops at its edge -- no
+// z-index war with the main window's toolbars, and no way to cover the rail
+// the user needs in order to understand what is being backed up.
+.pharos-dv-vault-layer {
+	position: fixed;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background: color-mix(in srgb, var(--fill-primary) 32%, transparent);
+}
+
+.pharos-dv-vault-sheet {
+	width: 100%;
+	max-width: 520px;
+	max-height: 100%;
+	overflow-y: auto;
+	padding: 16px;
+	border: var(--material-border);
+	border-radius: 8px;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+
+	// Focused by openVault() so Escape reaches the sheet's own handler; the
+	// ring around a whole dialog is noise.
+	&:focus-visible {
+		outline: none;
+	}
+}
+
+.pharos-dv-vault-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.pharos-dv-vault-headings {
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-dv-vault-eyebrow {
+	font-size: 9.5px;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-dv-vault-h {
+	margin-block-start: 2px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.pharos-dv-vault-close {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	color: var(--fill-tertiary);
+
+	// The label is the accessible name; the glyph is the visible control, so
+	// the text itself must not paint over it.
+	font-size: 0;
+
+	&::after {
+		content: "";
+		display: block;
+		@include dv-icon("chrome://zotero/skin/16/universal/cross.svg", 12px);
+		margin: 4px;
+	}
+
+	&:hover {
+		background: var(--pharos-dv-hover);
+		color: var(--fill-primary);
+	}
+}
+
+.pharos-dv-vault-summary {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin-block-start: 12px;
+	padding: 9px 10px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--pharos-dv-soft);
+}
+
+.pharos-dv-vault-mark {
+	margin-block-start: 1px;
+	color: var(--fill-tertiary);
+	@include dv-icon("chrome://zotero/skin/16/universal/folder.svg", 14px);
+}
+
+.pharos-dv-vault-summary-text {
+	flex: 1;
+	min-width: 0;
+}
+
+// Absolute paths are long and the interesting end is the last component, so
+// this wraps rather than ellipsising -- a truncated path cannot be checked,
+// which is the only reason it is on screen.
+.pharos-dv-vault-path {
+	font-size: 12px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.pharos-dv-vault-msg {
+	margin-block-start: 3px;
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--fill-secondary);
+}
+
+.pharos-dv-vault-warn {
+	margin-block-start: 12px;
+	padding: 9px 10px;
+	border: 1px solid var(--accent-yellow);
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--accent-yellow) 11%, transparent);
+}
+
+.pharos-dv-vault-warn-h {
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.pharos-dv-vault-warn-p {
+	margin-block-start: 3px;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--fill-secondary);
+	overflow-wrap: anywhere;
+}
+
+.pharos-dv-vault-error {
+	margin-block-start: 12px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--pharos-dv-err-soft);
+	color: var(--accent-red);
+	font-size: 11.5px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+// ---------------------------------------------------------------- actions
+
+.pharos-dv-vault-actions {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	margin-block-start: 12px;
+}
+
+.pharos-dv-vault-act {
+	display: block;
+	padding: 9px 10px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	text-align: start;
+
+	&:hover:not(:disabled) {
+		background: var(--pharos-dv-hover);
+	}
+
+	&:disabled {
+		opacity: 0.45;
+	}
+
+	&.is-primary {
+		border-color: var(--pharos-dv-accent-line);
+		background: var(--pharos-dv-accent-soft);
+
+		.pharos-dv-vault-act-k {
+			color: var(--color-accent);
+		}
+	}
+
+	// 覆盖目录 destroys someone's snapshot. It is never the primary and it is
+	// never the only option on screen -- see _vaultActions().
+	&.is-danger {
+		border-color: color-mix(in srgb, var(--accent-red) 40%, transparent);
+
+		.pharos-dv-vault-act-k {
+			color: var(--accent-red);
+		}
+	}
+}
+
+.pharos-dv-vault-act-k {
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.pharos-dv-vault-act-v {
+	margin-block-start: 3px;
+	font-size: 10.5px;
+	line-height: 1.5;
+	color: var(--fill-tertiary);
+}
+
+// ------------------------------------------------------------------ scope
+
+// The boundary statement. Bordered and kept at the bottom of the sheet rather
+// than hidden behind a tooltip: someone who believes this is a library backup
+// and discovers otherwise after a disk failure is the failure this panel is
+// written against, and a tooltip is not read by the person who most needs it.
+.pharos-dv-vault-scope {
+	margin-block-start: 14px;
+	padding: 10px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--pharos-dv-soft);
+}
+
+.pharos-dv-vault-scope-h {
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-dv-vault-scope-p {
+	margin-block-start: 6px;
+	font-size: 11px;
+	line-height: 1.65;
+	color: var(--fill-secondary);
+}
+
+.pharos-dv-vault-disconnect {
+	margin-block-start: 12px;
+	padding: 4px 0;
+	color: var(--fill-tertiary);
+	font-size: 11px;
+
+	&:hover:not(:disabled) {
+		color: var(--fill-secondary);
+		text-decoration: underline;
+	}
+
+	&:disabled {
+		opacity: 0.5;
+	}
+}

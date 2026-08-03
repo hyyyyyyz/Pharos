@@ -63,7 +63,14 @@
  *     `imported_paper_id`, which names a row in that same web library.
  *   - Links open in the system browser through Zotero.launchURL.
  *   - The card keeps the desktop's author line and its four-line summary clamp.
+ *   - 数据目录 uses FilePicker and a path in a pref. The web's directory handle,
+ *     its IndexedDB handle store, its permission re-grant dance and its JSON
+ *     fallback are all browser scaffolding and none of it is ported; see
+ *     Zotero.Pharos.Daily.Vault.
  */
+
+var { FilePicker } = ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs');
+
 var Zotero_Pharos_Daily = new function () {
 	let _resolveInit;
 	let _pollTimer = null;
@@ -234,6 +241,49 @@ var Zotero_Pharos_Daily = new function () {
 	/** Whether the initial load sequence ever completed. False after a startup
 	 *  that stopped at the credentials check, which is what onShown() resumes. */
 	let _loaded = false;
+
+	/* ------------------------------------------------------- 数据目录 state */
+
+	/** The connected directory's absolute path, or null. Read from the pref once
+	 *  in _initVault() -- the pref is this window's own and nothing else writes
+	 *  it, so there is nothing to re-check the way _signedOut is re-checked. */
+	let _vaultPath = null;
+
+	/** The manifest currently in that directory, as this window last saw it.
+	 *  Passed back into Vault.write() so a snapshot inherits the directory's own
+	 *  vault_id and created_at instead of minting a new identity each save. */
+	let _vaultManifest = null;
+
+	/**
+	 * off | ok | attention.
+	 *
+	 * Auto-saving happens on 'ok' and only on 'ok'. 'attention' is every reason
+	 * to stop writing without disconnecting: the path is gone, the manifest
+	 * there is not the one we wrote, there is no manifest at all, or it would
+	 * not parse. Each of those is a question only the user can answer, and
+	 * writing anyway answers it for them by overwriting.
+	 */
+	let _vaultState = 'off';
+
+	/** Which 'attention' state, as the Fluent id and arguments that explain it. */
+	let _vaultWarn = null;
+	let _vaultWarnArgs = null;
+
+	/** The one-line status under the path, and the last failure, if any. */
+	let _vaultMessage = '';
+	let _vaultError = null;
+
+	/** A user-initiated operation is running: the sheet's buttons are disabled
+	 *  and the toolbar button says so. Distinct from _vaultSaving, which also
+	 *  covers the silent save after a sweep and is purely a reentrancy guard. */
+	let _vaultBusy = false;
+	let _vaultSaving = false;
+
+	/** Whether the sheet is open. */
+	let _vaultOpen = false;
+
+	/** What _renderVault() last drew. See _vaultKey(). */
+	let _vaultDrawn = null;
 
 	/**
 	 * Settles once init() has finished, however it finished.
@@ -560,6 +610,18 @@ var Zotero_Pharos_Daily = new function () {
 			bannerText: document.getElementById('pharos-dv-banner-text'),
 			list: document.getElementById('pharos-dv-list'),
 			detail: document.getElementById('pharos-dv-detail'),
+			vault: document.getElementById('pharos-dv-vault'),
+			vaultLabel: document.getElementById('pharos-dv-vault-label'),
+			vaultDot: document.getElementById('pharos-dv-vault-dot'),
+			vaultLayer: document.getElementById('pharos-dv-vault-layer'),
+			vaultSheet: document.getElementById('pharos-dv-vault-sheet'),
+			vaultClose: document.getElementById('pharos-dv-vault-close'),
+			vaultPath: document.getElementById('pharos-dv-vault-path'),
+			vaultMsg: document.getElementById('pharos-dv-vault-msg'),
+			vaultWarn: document.getElementById('pharos-dv-vault-warn'),
+			vaultError: document.getElementById('pharos-dv-vault-error'),
+			vaultActions: document.getElementById('pharos-dv-vault-actions'),
+			vaultDisconnect: document.getElementById('pharos-dv-vault-disconnect'),
 		};
 
 		_el.sortScore.addEventListener('click', () => this.setSort('score'));
@@ -567,6 +629,23 @@ var Zotero_Pharos_Daily = new function () {
 		// `click` only. This is an html:button, which has no `command` event;
 		// the XUL button it replaced needed both and rendered a blank label.
 		_el.refresh.addEventListener('click', () => this.refresh());
+
+		_el.vault.addEventListener('click', () => this.openVault());
+		_el.vaultClose.addEventListener('click', () => this.closeVault());
+		_el.vaultDisconnect.addEventListener('click', () => this.disconnectVault());
+		// Dismissed by clicking the backdrop, never by clicking the sheet: the
+		// sheet carries three paragraphs of prose, and a stray click while
+		// selecting one of them must not close the thing being read.
+		_el.vaultLayer.addEventListener('mousedown', (event) => {
+			if (event.target === _el.vaultLayer) {
+				this.closeVault();
+			}
+		});
+		_el.vaultSheet.addEventListener('keydown', (event) => {
+			if (event.key == 'Escape') {
+				this.closeVault();
+			}
+		});
 
 		// The one thing this module caches about the local library is whether a
 		// paper is already in it, and the library is edited from everywhere else
@@ -585,6 +664,13 @@ var Zotero_Pharos_Daily = new function () {
 				this._renderDetail();
 			}
 		}, ['item'], 'pharosDaily');
+
+		// Before the credentials check, and awaited: the connection lives on the
+		// local disk, so it is answerable while signed out, and every render
+		// below draws the toolbar button from it. Left to run in the background
+		// the button would show 未连接 for the first frames of a session that
+		// has a directory, which is the one thing it must never say wrongly.
+		await this._initVault();
 
 		if (!Zotero.Pharos.API.hasCredentials()) {
 			_signedOut = true;
@@ -890,6 +976,350 @@ var Zotero_Pharos_Daily = new function () {
 		this._renderDetail();
 	};
 
+	/* -------------------------------------------------------------- 数据目录 */
+
+	/** Papers a manifest accounts for, without opening a single day file. */
+	function _vaultPapers(manifest) {
+		return Zotero.Pharos.Daily.Vault.paperCount(manifest);
+	}
+
+	function _vaultDays(manifest) {
+		return manifest && Array.isArray(manifest.days) ? manifest.days.length : 0;
+	}
+
+	/** Stop auto-saving and say which of the four reasons it is. */
+	function _vaultAttention(id, args) {
+		_vaultState = 'attention';
+		_vaultWarn = id;
+		_vaultWarnArgs = args || null;
+	}
+
+	function _vaultOK(manifest) {
+		_vaultManifest = manifest;
+		_vaultState = 'ok';
+		_vaultWarn = null;
+		_vaultWarnArgs = null;
+	}
+
+	/**
+	 * Adopt the remembered connection, if there is one.
+	 *
+	 * Nothing is written here, ever. Opening the module must not modify a
+	 * directory -- the user has not asked for anything yet, and the first thing
+	 * a startup save would do on a machine restored from a backup is overwrite
+	 * the good copy with an empty account.
+	 */
+	this._initVault = async function () {
+		let Vault = Zotero.Pharos.Daily.Vault;
+		let connection = Vault.getConnection();
+		if (!connection) {
+			_vaultState = 'off';
+			_vaultMessage = _str('pharos-daily-vault-idle');
+			return;
+		}
+		_vaultPath = connection.path;
+		await this._probeVault(connection.vaultID);
+	};
+
+	/**
+	 * Decide, from what is on disk right now, whether the directory is ours to
+	 * write to.
+	 *
+	 * @param {String|null} rememberedID - the vault_id we last wrote there
+	 */
+	this._probeVault = async function (rememberedID) {
+		let Vault = Zotero.Pharos.Daily.Vault;
+		_vaultManifest = null;
+		try {
+			if (!(await Vault.directoryExists(_vaultPath))) {
+				// The commonest desktop failure by far, and one the web cannot
+				// have: an external disk that is not plugged in, or a sync
+				// folder the user moved. Not an error and not a disconnection --
+				// the directory is very likely to come back.
+				_vaultAttention('pharos-daily-vault-warn-missing', { path: _vaultPath });
+				_vaultMessage = _str('pharos-daily-vault-paused');
+				return;
+			}
+			let manifest = await Vault.readManifest(_vaultPath);
+			if (manifest === null) {
+				_vaultAttention('pharos-daily-vault-warn-empty', null);
+				_vaultMessage = _str('pharos-daily-vault-paused');
+				return;
+			}
+			_vaultManifest = manifest;
+			if (manifest.vault_id !== rememberedID) {
+				// A path can be reused, replaced, or synced over by another
+				// machine. Overwriting a manifest whose id is not the one we
+				// wrote destroys someone's backup to save ours.
+				_vaultAttention('pharos-daily-vault-warn-changed', null);
+				_vaultMessage = _str('pharos-daily-vault-paused');
+				return;
+			}
+			_vaultOK(manifest);
+			_vaultMessage = _fmt('pharos-daily-vault-connected', {
+				days: _vaultDays(manifest),
+				papers: _vaultPapers(manifest),
+			});
+		}
+		catch (e) {
+			// A manifest that will not parse, a file the digest does not match,
+			// a permission problem. All of them mean the same thing about
+			// writing: not until someone has looked.
+			Zotero.logError(e);
+			_vaultAttention('pharos-daily-vault-warn-broken', { error: _clip(e.message) });
+			_vaultMessage = _str('pharos-daily-vault-paused');
+		}
+	};
+
+	this.openVault = function () {
+		_vaultOpen = true;
+		this._renderVault();
+		// Focus moves into the sheet so Escape reaches its keydown handler and
+		// so a keyboard user is not left tabbing through the list behind it.
+		_el.vaultSheet.focus();
+	};
+
+	this.closeVault = function () {
+		if (!_vaultOpen) {
+			return;
+		}
+		_vaultOpen = false;
+		_vaultError = null;
+		this._renderVault();
+		_el.vault.focus();
+	};
+
+	/**
+	 * Pick a directory and connect it.
+	 *
+	 * A directory that already holds a Vault is NOT written to here. Choosing a
+	 * folder is how someone restores onto a new machine, and that is exactly the
+	 * moment when the account is empty and the directory is not -- so the
+	 * question is asked rather than answered by writing.
+	 */
+	this.chooseVault = async function () {
+		if (_vaultBusy) {
+			return;
+		}
+		let Vault = Zotero.Pharos.Daily.Vault;
+		_vaultBusy = true;
+		_vaultError = null;
+		this._renderVault();
+		try {
+			let fp = new FilePicker();
+			if (_vaultPath) {
+				fp.displayDirectory = _vaultPath;
+			}
+			fp.init(window, _str('pharos-daily-vault-picker'), fp.modeGetFolder);
+			fp.appendFilters(fp.filterAll);
+			if ((await fp.show()) != fp.returnOK) {
+				return;
+			}
+			let path = PathUtils.normalize(fp.file);
+			_vaultPath = path;
+			_vaultManifest = null;
+
+			let existing = await Vault.readManifest(path);
+			if (existing !== null) {
+				_vaultManifest = existing;
+				_vaultAttention('pharos-daily-vault-warn-existing', {
+					days: _vaultDays(existing),
+					papers: _vaultPapers(existing),
+				});
+				_vaultMessage = _str('pharos-daily-vault-paused');
+				// Remembered with NO id: the directory is connected, but nothing
+				// in it is ours yet, so a restart must arrive back in exactly
+				// this state rather than deciding the manifest is trusted.
+				Vault.remember(path, '');
+				return;
+			}
+			let archive = await Vault.exportArchive();
+			let manifest = await Vault.write(path, archive, null);
+			_vaultOK(manifest);
+			_vaultMessage = _fmt('pharos-daily-vault-created', {
+				days: _vaultDays(manifest),
+				papers: _vaultPapers(manifest),
+			});
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._noteSignedOut(e);
+			_vaultError = _fmt('pharos-daily-vault-failed', { error: _clip(_errorText(e)) });
+		}
+		finally {
+			_vaultBusy = false;
+		}
+		this._renderVaultButton();
+		this._renderVault();
+	};
+
+	/**
+	 * Write the account's current digest into the connected directory.
+	 *
+	 * @param {Object} [options]
+	 * @param {Boolean} [options.silent] - the automatic save after a sweep. It
+	 *     reports through the toolbar button and the sheet, and never opens
+	 *     anything or steals focus.
+	 * @param {Boolean} [options.adopt] - write even though the directory is in
+	 *     the attention state, taking over the manifest already there. Only ever
+	 *     set from the 用当前账户覆盖 button, which confirms first.
+	 */
+	this.saveVault = async function ({ silent = false, adopt = false } = {}) {
+		let Vault = Zotero.Pharos.Daily.Vault;
+		if (!_vaultPath || _signedOut || _vaultSaving) {
+			return;
+		}
+		if (!adopt && _vaultState != 'ok') {
+			return;
+		}
+		_vaultSaving = true;
+		if (!silent) {
+			_vaultBusy = true;
+			_vaultError = null;
+		}
+		this._renderVaultButton();
+		this._renderVault();
+		try {
+			let archive = await Vault.exportArchive();
+			// _vaultManifest, not null: the directory keeps its own vault_id and
+			// created_at across every save, including the adopting one, so its
+			// identity is a property of the DIRECTORY and not of whichever
+			// account happened to write it last.
+			let manifest = await Vault.write(_vaultPath, archive, _vaultManifest);
+			if (_destroyed) {
+				return;
+			}
+			_vaultOK(manifest);
+			_vaultError = null;
+			_vaultMessage = _fmt('pharos-daily-vault-saved', {
+				days: _vaultDays(manifest),
+				papers: _vaultPapers(manifest),
+			});
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._noteSignedOut(e);
+			// Reported on the silent path too. A backup that quietly stopped
+			// working is worse than one that was never configured, and the
+			// toolbar button is the one place a reader would notice.
+			_vaultError = _fmt('pharos-daily-vault-failed', { error: _clip(_errorText(e)) });
+			_vaultMessage = _str('pharos-daily-vault-unsaved');
+		}
+		finally {
+			_vaultSaving = false;
+			_vaultBusy = false;
+		}
+		this._renderVaultButton();
+		this._renderVault();
+	};
+
+	/**
+	 * Read the directory back and merge it into the account.
+	 *
+	 * Every file is verified before a single byte is sent -- see Vault.read().
+	 * The profile is REPLACED rather than merged, which is the destructive half
+	 * of this and the reason for the confirmation.
+	 */
+	this.restoreVault = async function () {
+		let Vault = Zotero.Pharos.Daily.Vault;
+		if (!_vaultPath || _vaultBusy) {
+			return;
+		}
+		_vaultBusy = true;
+		_vaultError = null;
+		this._renderVault();
+		try {
+			let archive = await Vault.read(_vaultPath);
+			if (!this.confirmVaultRestore(archive)) {
+				return;
+			}
+			let result = await Vault.importArchive(archive, true);
+			// The whole digest just changed underneath the panel.
+			await this.loadConfig();
+			await this.loadStatus();
+			await this.loadDates();
+			await this.load(_dates.length ? _dates[0].date : Zotero.Pharos.Daily.today(),
+				{ quiet: true });
+			// The directory is now the account's own history, so adopt its id
+			// and resume automatic saving.
+			let manifest = await Vault.readManifest(_vaultPath);
+			if (manifest !== null) {
+				Vault.remember(_vaultPath, manifest.vault_id);
+				_vaultOK(manifest);
+			}
+			_vaultMessage = _fmt('pharos-daily-vault-restored', {
+				added: result.papers_added || 0,
+				updated: result.papers_updated || 0,
+				unchanged: result.papers_unchanged || 0,
+			});
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._noteSignedOut(e);
+			_vaultError = _fmt('pharos-daily-vault-failed', { error: _clip(_errorText(e)) });
+		}
+		finally {
+			_vaultBusy = false;
+		}
+		this._render();
+	};
+
+	/** Take over a directory whose contents are not ours, after saying so. */
+	this.overwriteVault = async function () {
+		if (!_vaultPath || _vaultBusy || !this.confirmVaultOverwrite()) {
+			return;
+		}
+		await this.saveVault({ adopt: true });
+	};
+
+	this.disconnectVault = function () {
+		Zotero.Pharos.Daily.Vault.forget();
+		_vaultPath = null;
+		_vaultManifest = null;
+		_vaultState = 'off';
+		_vaultWarn = null;
+		_vaultWarnArgs = null;
+		_vaultError = null;
+		_vaultMessage = _str('pharos-daily-vault-disconnected');
+		this._renderVaultButton();
+		this._renderVault();
+	};
+
+	/**
+	 * Two confirmations, both of which destroy something.
+	 *
+	 * Own methods rather than inline calls so a test can replace them; a modal
+	 * from Services.prompt has no way to answer itself.
+	 */
+	this.confirmVaultRestore = function (archive) {
+		let papers = archive.days.reduce(
+			(total, day) => total + (Array.isArray(day.papers) ? day.papers.length : 0), 0);
+		return _confirm(
+			_str('pharos-daily-vault-restore-title'),
+			_fmt('pharos-daily-vault-restore-body',
+				{ days: archive.days.length, papers }),
+			_str('pharos-daily-vault-restore-ok')
+		);
+	};
+
+	this.confirmVaultOverwrite = function () {
+		return _confirm(
+			_str('pharos-daily-vault-overwrite-title'),
+			_fmt('pharos-daily-vault-overwrite-body', {
+				days: _vaultDays(_vaultManifest),
+				papers: _vaultPapers(_vaultManifest),
+			}),
+			_str('pharos-daily-vault-overwrite-ok')
+		);
+	};
+
+	function _confirm(title, body, okLabel) {
+		let ps = Services.prompt;
+		let flags = ps.BUTTON_POS_0 * ps.BUTTON_TITLE_IS_STRING
+			+ ps.BUTTON_POS_1 * ps.BUTTON_TITLE_CANCEL;
+		return ps.confirmEx(window, title, body, flags, okLabel, null, null, null, {}) === 0;
+	}
+
 	/* ---------------------------------------------------------------- polling */
 
 	this._syncPoll = function () {
@@ -946,6 +1376,22 @@ var Zotero_Pharos_Daily = new function () {
 
 		this._syncPoll();
 		this._render();
+
+		if (ended) {
+			// The one moment the digest changes wholesale, and the only place
+			// this window can be sure the new day is already loaded. Deliberately
+			// after _render(): the export and the write take seconds, and doing
+			// them first would leave 更新 disabled and the counters stale for the
+			// whole of it, which reads as a sweep that has not finished.
+			//
+			// No timer and no periodic full snapshot, unlike the web's. A page
+			// that can be closed at any moment has to keep re-saving to be sure
+			// it saved at all; this window is here until the application quits,
+			// and the sweep is where new data comes from. Direction edits happen
+			// in the preferences pane and are picked up by the next sweep, or by
+			// 立即保存.
+			await this.saveVault({ silent: true });
+		}
 	};
 
 	/**
@@ -1012,11 +1458,182 @@ var Zotero_Pharos_Daily = new function () {
 		// sign-in from leaving every panel describing a state that ended.
 		this._refreshAuth();
 		this._renderToolbar();
+		this._renderVaultButton();
+		this._renderVault();
 		this._renderNote();
 		this._renderBanner();
 		this._renderRail();
 		this._renderList();
 		this._renderDetail();
+	};
+
+	/**
+	 * The toolbar's 数据目录 button.
+	 *
+	 * Three things at once, in one 25px control: whether a directory is
+	 * connected (the dot), whether it needs a decision (the warning tint and a
+	 * different word), and whether a save is running right now. The tooltip
+	 * carries the same line the sheet shows, so the state is readable without
+	 * opening anything.
+	 */
+	this._renderVaultButton = function () {
+		// Every vault operation awaits the network and the disk, and both of
+		// those settle into a document that may already be gone.
+		if (_destroyed || !_el.vault) {
+			return;
+		}
+		let attention = _vaultState == 'attention';
+		let label;
+		if (_vaultSaving) {
+			label = 'pharos-daily-vault-saving';
+		}
+		else if (attention) {
+			label = 'pharos-daily-vault-attention';
+		}
+		else {
+			label = 'pharos-daily-vault';
+		}
+		_el.vaultLabel.textContent = _str(label);
+		_el.vault.classList.toggle('is-warn', attention);
+		_el.vault.classList.toggle('is-on', _vaultState == 'ok');
+		// Only for a directory that is actually being written to. A dot on the
+		// attention state would say "connected and fine" about the one state
+		// that is neither.
+		_el.vaultDot.hidden = _vaultState != 'ok';
+		_el.vault.title = _vaultMessage || _str('pharos-daily-vault-idle');
+	};
+
+	/**
+	 * Everything _renderVault() draws, as one comparable value.
+	 *
+	 * Same reason as _railKey() and _detailKey(): _render() runs every 1.5s
+	 * while a sweep is live, and rebuilding the action tiles moves focus off
+	 * whichever one had it. An input read below and missing here is a sheet that
+	 * silently stops updating for it.
+	 */
+	function _vaultKey() {
+		return JSON.stringify([
+			_vaultOpen,
+			_vaultPath,
+			_vaultState,
+			_vaultWarn,
+			_vaultWarnArgs,
+			_vaultMessage,
+			_vaultError,
+			_vaultBusy,
+			_signedOut,
+			_vaultManifest && _vaultManifest.vault_id,
+			_vaultDays(_vaultManifest),
+		]);
+	}
+
+	this._renderVault = function () {
+		if (_destroyed || !_el.vaultLayer) {
+			return;
+		}
+		let key = _vaultKey();
+		if (key === _vaultDrawn) {
+			return;
+		}
+		_vaultDrawn = key;
+
+		_el.vaultLayer.hidden = !_vaultOpen;
+		if (!_vaultOpen) {
+			return;
+		}
+
+		_el.vaultPath.textContent = _vaultPath || _str('pharos-daily-vault-none');
+		_el.vaultMsg.textContent = _vaultMessage;
+
+		_el.vaultWarn.replaceChildren();
+		_el.vaultWarn.hidden = _vaultWarn === null;
+		if (_vaultWarn !== null) {
+			_el.vaultWarn.append(_div('pharos-dv-vault-warn-h',
+				_str('pharos-daily-vault-warn-head')));
+			_el.vaultWarn.append(_div('pharos-dv-vault-warn-p',
+				_vaultWarnArgs ? _fmt(_vaultWarn, _vaultWarnArgs) : _str(_vaultWarn)));
+		}
+
+		_el.vaultError.textContent = _vaultError || '';
+		_el.vaultError.hidden = !_vaultError;
+
+		_el.vaultActions.replaceChildren();
+		for (let spec of this._vaultActions()) {
+			_el.vaultActions.append(this._vaultAction(spec));
+		}
+
+		_el.vaultDisconnect.hidden = !_vaultPath;
+		_el.vaultDisconnect.disabled = _vaultBusy;
+	};
+
+	/**
+	 * The action tiles, in the order the situation makes them useful.
+	 *
+	 * 恢复 leads whenever the directory holds a snapshot this account has not
+	 * adopted, because that is what a new machine is for. 覆盖 is offered beside
+	 * it and never alone -- an "overwrite" with no "restore" next to it is a
+	 * trap on exactly the machine where the account is empty.
+	 */
+	this._vaultActions = function () {
+		let connected = !!_vaultPath;
+		let attention = _vaultState == 'attention';
+		let hasManifest = _vaultManifest !== null;
+		let actions = [];
+
+		if (attention && hasManifest) {
+			actions.push({
+				label: 'pharos-daily-vault-restore',
+				hint: 'pharos-daily-vault-restore-hint',
+				action: () => this.restoreVault(),
+				primary: true,
+			});
+			actions.push({
+				label: 'pharos-daily-vault-overwrite',
+				hint: 'pharos-daily-vault-overwrite-hint',
+				action: () => this.overwriteVault(),
+				danger: true,
+			});
+		}
+
+		actions.push({
+			label: connected ? 'pharos-daily-vault-change' : 'pharos-daily-vault-choose',
+			hint: 'pharos-daily-vault-choose-hint',
+			action: () => this.chooseVault(),
+			primary: !connected,
+		});
+
+		actions.push({
+			label: 'pharos-daily-vault-save-now',
+			hint: 'pharos-daily-vault-save-now-hint',
+			action: () => this.saveVault(),
+			// Signed out there is nothing to export; in the attention state the
+			// two buttons above are the decision this one would pre-empt.
+			disabled: !connected || _signedOut || attention,
+		});
+
+		if (connected && !attention && hasManifest) {
+			// Disaster recovery on a machine whose directory is already trusted:
+			// the account was reset, the server moved, someone deleted a month.
+			actions.push({
+				label: 'pharos-daily-vault-restore',
+				hint: 'pharos-daily-vault-restore-hint',
+				action: () => this.restoreVault(),
+				disabled: _signedOut,
+			});
+		}
+		return actions;
+	};
+
+	this._vaultAction = function (spec) {
+		let className = 'pharos-dv-vault-act'
+			+ (spec.primary ? ' is-primary' : '')
+			+ (spec.danger ? ' is-danger' : '');
+		let button = _btn(className);
+		button.disabled = _vaultBusy || !!spec.disabled;
+		button.append(_div('pharos-dv-vault-act-k', _str(spec.label)));
+		button.append(_div('pharos-dv-vault-act-v', _str(spec.hint)));
+		button.addEventListener('click', spec.action);
+		return button;
 	};
 
 	this._renderToolbar = function () {

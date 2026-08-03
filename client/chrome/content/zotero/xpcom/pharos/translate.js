@@ -58,6 +58,15 @@ Zotero.Pharos.Translate = new function () {
 	 *  object with its stack. */
 	const ERROR_MAX = 200;
 
+	/**
+	 * Where Zotero.Pharos.API.cacheUser() leaves this account's
+	 * `pdf_translation`. See isEnabled() for how an absent value is resolved.
+	 */
+	const ENABLED_PREF = 'pharos.pdfTranslation';
+
+	/** The column's key before ItemTreeManager namespaces it with the app id. */
+	const COLUMN_KEY = 'pharosTranslation';
+
 	let _queue = [];
 	let _queueProcessing = false;
 	let _cancelled = false;
@@ -77,6 +86,24 @@ Zotero.Pharos.Translate = new function () {
 
 	/** The localized filename suffixes, resolved on first use. */
 	let _suffixes = null;
+
+	/** The localized state labels, resolved on first use. */
+	let _stateLabels = null;
+
+	/**
+	 * Attachment id -> page count, or null for "asked, and there is none".
+	 *
+	 * A Map with a meaningful `has()`: absent means the question has not been
+	 * put yet, and only that is worth another query. Zotero.Fulltext.getPages()
+	 * is a DB read, and both surfaces that show this run on every selection
+	 * change, so a PDF the indexer has never reached must be asked about once
+	 * and then left alone -- otherwise a library of unindexed PDFs pays a query
+	 * per row for an answer that will not change.
+	 */
+	let _pageCounts = new Map();
+
+	/** The dataKey ItemTreeManager gave the column back, or null. */
+	let _columnKey = null;
 
 	let _progressQueue = Zotero.ProgressQueues.create({
 		id: 'pharos-translate',

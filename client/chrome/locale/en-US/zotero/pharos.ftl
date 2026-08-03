@@ -338,6 +338,130 @@ pharos-daily-info-categories = Categories
 pharos-daily-info-keywords = Matched
 pharos-daily-info-keywords-hint = Which of your keywords hit this paper
 
+## Daily papers · the data folder
+
+# A Daily Vault is the portable copy of the digest: an ordinary folder holding
+# pharos-vault.json and a set of content-addressed snapshot files. The format is
+# docs/DAILY_VAULT_FORMAT.md, byte for byte the same one the web client writes,
+# so a folder written by either opens in the other.
+#
+# The line that must not slip: this backs up the DIGEST, not the library. An
+# imported paper, its PDF and its provenance note already live in the Zotero
+# data directory and are covered by whatever backs that up. Any wording that
+# lets someone read this as a library backup becomes the worst kind of
+# misinformation on the day a disk fails -- so the three scope sentences below
+# are not to be trimmed for brevity.
+
+pharos-daily-vault = Data folder
+pharos-daily-vault-saving = Saving
+pharos-daily-vault-attention = Needs a decision
+pharos-daily-vault-eyebrow = PHAROS DAILY VAULT · V1
+pharos-daily-vault-title = Daily Papers data folder
+pharos-daily-vault-close = Close
+pharos-daily-vault-none = No folder connected
+pharos-daily-vault-picker = Choose a folder for your Daily Papers data
+
+## Daily papers · the data folder · status line
+
+pharos-daily-vault-idle = No data folder chosen yet
+# Shared by all four paused states; which one it is, is spelled out in the
+# notice below it.
+pharos-daily-vault-paused = Automatic saving is paused, waiting for you
+# $days (Number) - days in the folder
+# $papers (Number) - papers in the folder
+pharos-daily-vault-connected = Connected · { $days } days · { $papers } papers
+pharos-daily-vault-created = Folder initialised · { $days } days · { $papers } papers
+pharos-daily-vault-saved = Saved · { $days } days · { $papers } papers
+pharos-daily-vault-unsaved = The last save did not go through
+# $added, $updated, $unchanged (Number) - the backend's merge result
+pharos-daily-vault-restored = Restored · { $added } added · { $updated } updated · { $unchanged } unchanged; your research directions and filter settings were replaced with the folder's
+pharos-daily-vault-disconnected = Disconnected. Nothing in the folder was deleted.
+# $error (String)
+pharos-daily-vault-failed = Data folder operation failed: { $error }
+
+## Daily papers · the data folder · needs a decision
+
+pharos-daily-vault-warn-head = Needs a decision
+# $path (String) - the remembered folder
+pharos-daily-vault-warn-missing = This folder is not there: { $path }. Usually an external disk that is not mounted, or a folder that was moved or renamed. Nothing is written until it comes back, and no empty folder is created in its place -- that would hide the real backup the next time it mounts.
+pharos-daily-vault-warn-empty = The folder is there, but it holds no pharos-vault.json. Save now writes a fresh one -- or you may have picked the wrong folder.
+pharos-daily-vault-warn-changed = The data in this folder is not what Pharos last wrote there. Another machine may have synced over it, or the path may now point somewhere else. Choose a direction first: restore it into this account, or overwrite it with this account.
+# $error (String)
+pharos-daily-vault-warn-broken = The folder's manifest could not be read: { $error }. It will not be overwritten until this is understood.
+# $days (Number), $papers (Number)
+pharos-daily-vault-warn-existing = This folder already holds a snapshot ({ $days } days, { $papers } papers). On a new machine the account is usually empty and the folder is not, so nothing is written yet: choose restore or overwrite.
+
+## Daily papers · the data folder · actions
+
+pharos-daily-vault-choose = Choose a folder
+pharos-daily-vault-change = Change folder
+pharos-daily-vault-choose-hint = Any ordinary folder. Put it in iCloud, OneDrive, Dropbox, Syncthing or on an external disk to carry it between machines.
+pharos-daily-vault-save-now = Save now
+pharos-daily-vault-save-now-hint = Write this account's complete Daily Papers snapshot into the folder.
+pharos-daily-vault-restore = Restore from this folder
+pharos-daily-vault-restore-hint = Verifies every file, merges the papers, and replaces your research directions and filter settings with the folder's.
+pharos-daily-vault-overwrite = Overwrite with this account
+pharos-daily-vault-overwrite-hint = Keeps the folder's own identity and writes a new snapshot from this account's data.
+pharos-daily-vault-disconnect = Disconnect (nothing in the folder is deleted)
+
+## Daily papers · the data folder · confirmations
+
+pharos-daily-vault-restore-title = Restore from the data folder
+# $days (Number), $papers (Number)
+# Two sentences with a fixed division of labour: the first says what is gained,
+# the second what is lost. Merged into one, the "replaces your settings" half is
+# reliably the half nobody reads.
+pharos-daily-vault-restore-body =
+    This restores { $days } days and { $papers } papers. Papers are merged; nothing already on the server is deleted.
+    It also REPLACES this account's research directions and filter settings with the folder's: your current directions, keywords, categories and daily cap are overwritten, and that cannot be undone.
+pharos-daily-vault-restore-ok = Restore and replace settings
+pharos-daily-vault-overwrite-title = Overwrite the folder with this account
+# $days (Number), $papers (Number)
+pharos-daily-vault-overwrite-body =
+    The folder currently holds { $days } days and { $papers } papers. After this, Pharos keeps writing this account's data into it.
+    The old snapshot files are not deleted, but the manifest stops pointing at them. If that data is the only copy another machine or account has, restore it or copy it elsewhere first.
+pharos-daily-vault-overwrite-ok = Overwrite the folder
+
+## Daily papers · the data folder · what it covers
+
+# The three most important sentences in the panel. The desktop's answer differs
+# from the web's, because the desktop HAS a real local library and therefore has
+# to say plainly that this folder is not responsible for it.
+pharos-daily-vault-scope-head = This backs up the digest, not your library
+pharos-daily-vault-scope-in = Written to the folder: your research directions and filter settings -- categories, the daily cap, the on/off switch, and every direction with its keywords and order. Those exist only on the server; this machine holds no copy of them, so losing the account or moving servers means retyping every one by hand. Plus each day's paper snapshot, Chinese reading, highlights, scores and matched direction -- including the papers you never imported, which is most of any digest.
+pharos-daily-vault-scope-out = Not written to the folder: your Zotero library. An imported paper's item, its PDF and its provenance note already live in the local data directory and are covered by whatever backs that up. This folder neither duplicates them nor brings them back after a disk failure. Passwords, JWTs, LLM keys, Zotero tokens and account ids are never written either.
+pharos-daily-vault-scope-when = Saved automatically once each sweep finishes. After editing directions in settings, come back here and use Save now. Older snapshots in the folder are never deleted.
+
+## Daily papers · the data folder · read and write failures
+
+# The text of the Errors Zotero.Pharos.Daily.Vault throws. The folder is a path
+# the user picked and its contents may have been edited by anything, so every
+# refusal has to name what was refused.
+# $path (String)
+pharos-daily-vault-unsafe-path = Refused an unsafe path in the folder's manifest: { $path }
+pharos-daily-vault-missing-file = The manifest names a file that is not there: { $path }
+pharos-daily-vault-too-large = Refused to read an oversized file: { $path }
+pharos-daily-vault-root-missing = The folder does not exist; nothing was written: { $path }
+# $label (String) - which manifest entry is at fault
+pharos-daily-vault-entry-missing = The manifest has no { $label } entry
+pharos-daily-vault-entry-invalid = The manifest's { $label } entry is malformed
+pharos-daily-vault-entry-digest = The manifest's { $label } checksum is malformed
+pharos-daily-vault-checksum = { $label } failed verification; the file may be damaged or edited
+pharos-daily-vault-bad-file = { $label } is not valid JSON
+pharos-daily-vault-label-profile = the directions profile
+pharos-daily-vault-label-day = a daily snapshot
+pharos-daily-vault-bad-json = pharos-vault.json is not valid JSON
+pharos-daily-vault-bad-manifest = pharos-vault.json is missing required fields
+pharos-daily-vault-bad-version = This folder is not a supported Pharos data folder v1
+pharos-daily-vault-bad-index = The data folder's date index is invalid
+pharos-daily-vault-bad-archive = The server returned an incomplete Daily Papers snapshot
+pharos-daily-vault-no-manifest = The chosen folder holds no pharos-vault.json
+pharos-daily-vault-bad-profile = The folder's directions profile uses an unsupported version
+# $date (String) - YYYY-MM-DD
+pharos-daily-vault-bad-date = Invalid date: { $date }
+pharos-daily-vault-bad-day = The daily snapshot for { $date } is malformed
+pharos-daily-vault-bad-count = The paper count for { $date } does not match the manifest
+
 ## Literature discovery
 
 pharos-discovery-menu = Find Literature…

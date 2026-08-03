@@ -318,6 +318,123 @@ pharos-daily-info-categories = 分类
 pharos-daily-info-keywords = 命中
 pharos-daily-info-keywords-hint = 你的哪些关键词命中了这篇论文
 
+## 每日论文 · 数据目录
+
+# 数据目录（Daily Vault）是「每日论文」的可携带副本：一个普通文件夹，里面是
+# pharos-vault.json 加一批内容寻址的快照文件。格式见 docs/DAILY_VAULT_FORMAT.md，
+# 与网页版逐字节一致，两边可以互相打开。
+#
+# 措辞底线：这里备份的是「日报」，不是「文库」。已导入的论文、它的 PDF 和那条
+# 溯源笔记都在 Zotero 数据目录里，由数据目录自己的备份负责。任何一句让人以为
+# 这是文库备份的文案，都会在硬盘坏掉那天变成最坏的一种误导——所以下面的
+# scope 三条不要为了简洁而删。
+
+pharos-daily-vault = 数据目录
+pharos-daily-vault-saving = 保存中
+pharos-daily-vault-attention = 待确认
+pharos-daily-vault-eyebrow = PHAROS DAILY VAULT · V1
+pharos-daily-vault-title = 每日论文数据目录
+pharos-daily-vault-close = 关闭
+pharos-daily-vault-none = 尚未连接本地目录
+pharos-daily-vault-picker = 选择存放每日论文数据的文件夹
+
+## 每日论文 · 数据目录 · 状态行
+
+pharos-daily-vault-idle = 尚未选择数据目录
+# 自动保存暂停时共用这一句；到底是哪一种，由下面的提示块说明。
+pharos-daily-vault-paused = 自动保存已暂停，等待你确认
+# $days (Number) - 目录里的天数
+# $papers (Number) - 目录里的论文总数
+pharos-daily-vault-connected = 已连接 · { $days } 天 · { $papers } 篇
+pharos-daily-vault-created = 目录已初始化 · { $days } 天 · { $papers } 篇
+pharos-daily-vault-saved = 已保存 · { $days } 天 · { $papers } 篇
+pharos-daily-vault-unsaved = 最近一次保存没有成功
+# $added, $updated, $unchanged (Number) - 后端返回的合并结果
+pharos-daily-vault-restored = 恢复完成 · 新增 { $added } 篇 · 更新 { $updated } 篇 · 保留 { $unchanged } 篇；研究方向与筛选设置已被目录里的版本替换
+pharos-daily-vault-disconnected = 已解除连接；目录里的文件没有被删除
+# $error (String)
+pharos-daily-vault-failed = 数据目录操作失败：{ $error }
+
+## 每日论文 · 数据目录 · 需要确认
+
+pharos-daily-vault-warn-head = 需要你确认
+# $path (String) - 记住的那个目录
+pharos-daily-vault-warn-missing = 找不到这个目录：{ $path }。多半是外置磁盘没挂载，或者文件夹被移走、改名了。目录回来之前不会写入，也不会在原位置新建一个空的——那会让下次挂载时真正的备份被盖住。
+pharos-daily-vault-warn-empty = 目录还在，但里面没有 pharos-vault.json。点「立即保存」可以重新写一份；也可能是你选错了文件夹。
+pharos-daily-vault-warn-changed = 目录里的这份数据不是 Pharos 上次写进去的那一份——可能被另一台机器同步过，或者路径被别的文件夹顶替了。先选一个方向：把它恢复到这个账号，或者用这个账号的数据覆盖它。
+# $error (String)
+pharos-daily-vault-warn-broken = 读不出目录里的清单：{ $error }。在弄清原因之前不会覆盖它。
+# $days (Number), $papers (Number)
+pharos-daily-vault-warn-existing = 这个目录里已经有一份数据（{ $days } 天、{ $papers } 篇）。换新机器时，账号往往是空的而目录不是，所以不会直接写入：先选择恢复还是覆盖。
+
+## 每日论文 · 数据目录 · 操作
+
+pharos-daily-vault-choose = 选择目录
+pharos-daily-vault-change = 更换目录
+pharos-daily-vault-choose-hint = 任意普通文件夹。放进 iCloud、OneDrive、Dropbox、Syncthing 或移动硬盘即可在多台机器之间使用。
+pharos-daily-vault-save-now = 立即保存
+pharos-daily-vault-save-now-hint = 把当前账号完整的每日论文快照写进这个目录。
+pharos-daily-vault-restore = 从此目录恢复
+pharos-daily-vault-restore-hint = 逐个文件校验后合并论文，并用目录里的版本替换研究方向与筛选设置。
+pharos-daily-vault-overwrite = 用当前账号覆盖目录
+pharos-daily-vault-overwrite-hint = 保留目录本身的身份，用当前账号的数据写入新的快照。
+pharos-daily-vault-disconnect = 解除连接（不删除目录里的文件）
+
+## 每日论文 · 数据目录 · 二次确认
+
+pharos-daily-vault-restore-title = 从数据目录恢复
+# $days (Number), $papers (Number)
+# 两句话，分工固定：第一句说会得到什么，第二句说会失去什么。合并成一句时，
+# 「替换设置」这半句总是被读漏。
+pharos-daily-vault-restore-body =
+    将恢复 { $days } 天、{ $papers } 篇论文。论文是合并，不会删掉服务器上已有的解读。
+    同时会用目录里的版本替换这个账号的研究方向与筛选设置：现有方向、关键词、分类与每日上限都会被覆盖，且无法撤销。
+pharos-daily-vault-restore-ok = 恢复并替换设置
+pharos-daily-vault-overwrite-title = 用当前账号覆盖目录
+# $days (Number), $papers (Number)
+pharos-daily-vault-overwrite-body =
+    目录里现有 { $days } 天、{ $papers } 篇。覆盖后 Pharos 会以当前账号的数据继续写入这个目录。
+    旧的快照文件不会被删除，但清单不再指向它们；如果那份数据是另一台机器或另一个账号的唯一副本，请先恢复或另存一份。
+pharos-daily-vault-overwrite-ok = 覆盖目录
+
+## 每日论文 · 数据目录 · 边界说明
+
+# 整个面板里最重要的三句。桌面端和网页版在这里的答案不一样：桌面端**有**真正的
+# 本地文库，所以必须说清楚这个目录不管文库。
+pharos-daily-vault-scope-head = 备份的是「每日论文」，不是你的文库
+pharos-daily-vault-scope-in = 会写进目录：研究方向与筛选设置（分类、每日上限、开关，以及每个方向的关键词与排序）——它们只存在于服务器上，本机没有任何副本，换服务器或丢账号就得一条条重打；还有每天的论文快照、中文解读、要点、评分与命中方向，包括你没有导入文库的那些，也就是日报里的绝大多数。
+pharos-daily-vault-scope-out = 不会写进目录：你的 Zotero 文库。已导入的论文条目、它的 PDF 和那条溯源笔记本来就在本地数据目录里，由数据目录自己的备份负责，这里既不重复保存，硬盘坏了也救不回它们。登录密码、JWT、LLM Key、Zotero Token 和账号 id 同样不会写入。
+pharos-daily-vault-scope-when = 每次抓取结束后自动保存一次；在设置里改完研究方向，可以回到这里点「立即保存」。目录里的旧快照永远不会被删除。
+
+## 每日论文 · 数据目录 · 读写失败
+
+# 下面这些是 Zotero.Pharos.Daily.Vault 抛出的 Error 的文案。目录是用户随手指定
+# 的路径，内容可能被任何东西改过，所以每一种拒绝都要说清楚拒绝的是什么。
+# $path (String)
+pharos-daily-vault-unsafe-path = 目录清单里有不安全的路径，已拒绝：{ $path }
+pharos-daily-vault-missing-file = 清单指向的文件不存在：{ $path }
+pharos-daily-vault-too-large = 文件过大，已拒绝读取：{ $path }
+pharos-daily-vault-root-missing = 目录不存在，未写入任何文件：{ $path }
+# $label (String) - 出问题的是清单里的哪一条
+pharos-daily-vault-entry-missing = 清单缺少 { $label } 条目
+pharos-daily-vault-entry-invalid = 清单里的 { $label } 条目格式错误
+pharos-daily-vault-entry-digest = 清单里的 { $label } 校验值格式错误
+pharos-daily-vault-checksum = { $label } 校验失败，文件可能已损坏或被改动
+pharos-daily-vault-bad-file = { $label } 不是有效 JSON
+pharos-daily-vault-label-profile = 研究方向配置
+pharos-daily-vault-label-day = 每日快照
+pharos-daily-vault-bad-json = pharos-vault.json 不是有效 JSON
+pharos-daily-vault-bad-manifest = pharos-vault.json 缺少必要字段
+pharos-daily-vault-bad-version = 这个目录不是受支持的 Pharos 数据目录 v1
+pharos-daily-vault-bad-index = 数据目录的日期索引无效
+pharos-daily-vault-bad-archive = 服务器返回的每日论文快照不完整
+pharos-daily-vault-no-manifest = 所选目录里没有 pharos-vault.json
+pharos-daily-vault-bad-profile = 目录里的研究方向配置版本不受支持
+# $date (String) - YYYY-MM-DD
+pharos-daily-vault-bad-date = 日期无效：{ $date }
+pharos-daily-vault-bad-day = { $date } 的每日快照格式错误
+pharos-daily-vault-bad-count = { $date } 的论文数量与清单不符
+
 ## 文献探索
 
 pharos-discovery-menu = 文献探索…
