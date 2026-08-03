@@ -200,6 +200,77 @@ Zotero.Pharos.Translate = new function () {
 	};
 
 	/**
+	 * Whether this account gets whole-PDF translation at all.
+	 *
+	 * Server-owned, not a device preference: the web client writes it onto the
+	 * account and both surfaces have to agree, or the same account answers one
+	 * way in a browser and the opposite way here.
+	 *
+	 * An ABSENT value resolves to true, and that direction is deliberate. The
+	 * pref is only written once a login or a verify has seen the account, so
+	 * "not set" means "not asked yet" -- and defaulting the other way would hide
+	 * a feature the account actually has, every time, for the window between
+	 * startup and the first successful verify. The web resolves it identically
+	 * (frontend/src/store.ts pdfTranslationEnabled) for the same reason: a
+	 * session blob written by an older build genuinely lacks the field.
+	 *
+	 * @return {Boolean}
+	 */
+	this.isEnabled = function () {
+		let value = Zotero.Prefs.get(ENABLED_PREF);
+		return value === undefined || value === null ? true : !!value;
+	};
+
+	/**
+	 * How many pages a stored PDF has, or null if nothing knows yet.
+	 *
+	 * Synchronous by contract: both callers -- the item pane section and the
+	 * item tree column -- run on every selection change, including a key held
+	 * down to scroll a list, and neither may await. So this answers from the
+	 * memo and starts a lookup for a question it has not been asked before,
+	 * returning null for that first call.
+	 *
+	 * The number comes from Zotero's own full-text indexer, which is also where
+	 * attachmentBox.js reads it. That means it is absent until the indexer has
+	 * reached the file, and stays absent for a PDF it cannot read. Null is the
+	 * honest answer in both cases, and the callers show nothing rather than a
+	 * zero -- "0 pages" is a claim about the document.
+	 *
+	 * @param {Zotero.Item} attachment
+	 * @return {Integer|null}
+	 */
+	this.getPageCount = function (attachment) {
+		if (!attachment || !this.canTranslate(attachment)) {
+			return null;
+		}
+		if (_pageCounts.has(attachment.id)) {
+			return _pageCounts.get(attachment.id);
+		}
+		// Marked before the query resolves so a second render in the same tick
+		// does not queue a second one for the same file.
+		_pageCounts.set(attachment.id, null);
+		Zotero.Fulltext.getPages(attachment.id)
+			.then((pages) => {
+				let total = pages && pages.total ? pages.total : null;
+				if (total === _pageCounts.get(attachment.id)) {
+					return;
+				}
+				_pageCounts.set(attachment.id, total);
+				// Reuses the state channel rather than adding a second one: every
+				// listener already redraws the whole row for this attachment, and
+				// a page count arriving is exactly as interesting as a state
+				// change to all of them.
+				_notify(attachment.id);
+			})
+			.catch((e) => {
+				// A page count is decoration. It must never take down the pane or
+				// the row it was going to appear in.
+				Zotero.logError(e);
+			});
+		return null;
+	};
+
+	/**
 	 * Whether an item is something this can translate.
 	 *
 	 * @param {Zotero.Item} item
@@ -375,6 +446,14 @@ Zotero.Pharos.Translate = new function () {
 	 * @return {Object|null} null when translation does not apply to this item
 	 */
 	this.getState = function (item) {
+		// The account switch comes first, ahead of even asking what the item is:
+		// an account with translation turned off must show no state, no buttons
+		// and no column value, exactly as the web removes the whole apparatus.
+		// A user who switched it off in a browser and finds 译文/对照 waiting for
+		// them here is being told their own setting did not take.
+		if (!this.isEnabled()) {
+			return null;
+		}
 		let attachment = this.getTranslatableAttachment(item);
 		if (!attachment) {
 			return null;
@@ -446,6 +525,96 @@ Zotero.Pharos.Translate = new function () {
 	 *
 	 * @param {Function} listener
 	 */
+	/**
+	 * Put the translation state in the item tree.
+	 *
+	 * The section shows this well, but only for the row that is selected -- so
+	 * "which of these forty papers have I translated?" needs forty clicks. The
+	 * column is the answer to that question, and it is cheap here for one
+	 * reason: getState() is synchronous by construction, which is exactly the
+	 * contract dataProvider has. Nothing below touches the network or the
+	 * database, because a provider runs per visible row on every scroll.
+	 *
+	 * Registered lazily and idempotently. Zotero.Pharos loads before the item
+	 * tree exists in any window, and a second call would otherwise add a second
+	 * column with the same label.
+	 *
+	 * @return {String|null} the namespaced dataKey, or null if registration
+	 *     failed -- a missing column is not worth failing startup over
+	 */
+	/**
+	 * The one-word name of a state, for a place with no room to explain.
+	 *
+	 * Returns '' for STATE_UNKNOWN, and that is the design rather than a gap.
+	 * The column answers "which of these have I translated?", where the useful
+	 * values are the three that say something happened. "No translation here"
+	 * is the resting state of almost every row, and printing it on all of them
+	 * would turn a scannable column into a wall of the same phrase -- while
+	 * also making a paper translated on another machine look identical to a
+	 * book, which is the distinction the section exists to draw when you select
+	 * the row and have space for a sentence.
+	 *
+	 * @param {String} state - one of the STATE_* constants
+	 * @return {String}
+	 */
+	this.stateLabel = function (state) {
+		if (!_stateLabels) {
+			_stateLabels = {
+				[this.STATE_RUNNING]: Zotero.getString('pharos-translate-state-translating'),
+				[this.STATE_FAILED]: Zotero.getString('pharos-translate-state-failed'),
+				[this.STATE_TRANSLATED]: Zotero.getString('pharos-translate-state-translated'),
+			};
+		}
+		return _stateLabels[state] || '';
+	};
+
+	this.registerColumn = function () {
+		if (_columnKey) {
+			return _columnKey;
+		}
+		try {
+			_columnKey = Zotero.ItemTreeManager.registerColumn({
+				dataKey: COLUMN_KEY,
+				label: Zotero.getString('pharos-translate-column-state'),
+				pluginID: 'pharos@pharos.selab.top',
+				enabledTreeIDs: ['main'],
+				flex: 0,
+				width: 72,
+				minWidth: 56,
+				showInColumnPicker: true,
+				zoteroPersist: ['width', 'hidden', 'sortDirection'],
+				dataProvider: (item) => {
+					// The empty string, not a dash or a word: this column is
+					// meaningless for a note, a link attachment or a book, and
+					// most rows in most libraries are one of those. A placeholder
+					// on every one of them would make the column read as "nothing
+					// here is translated" rather than "this does not apply".
+					let state = this.getState(item);
+					return state ? this.stateLabel(state.state) : '';
+				},
+			});
+		}
+		catch (e) {
+			Zotero.logError(e);
+			_columnKey = null;
+		}
+		return _columnKey;
+	};
+
+	/** Remove the column again. Only the tests need this. */
+	this.unregisterColumn = function () {
+		if (!_columnKey) {
+			return;
+		}
+		try {
+			Zotero.ItemTreeManager.unregisterColumn(_columnKey);
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+		_columnKey = null;
+	};
+
 	this.addStateListener = function (listener) {
 		_stateListeners.add(listener);
 	};
@@ -464,6 +633,17 @@ Zotero.Pharos.Translate = new function () {
 	 */
 	function _setJob(itemID, patch) {
 		_jobs.set(itemID, Object.assign({}, _jobs.get(itemID), patch));
+		_notify(itemID);
+	}
+
+	/**
+	 * Tell every listener that what is known about this attachment has changed.
+	 *
+	 * Separate from _setJob() because not everything worth redrawing a row for is
+	 * a job: a page count arriving is the other case, and routing it through a
+	 * fake job patch would put a field in _jobs that no run ever produced.
+	 */
+	function _notify(itemID) {
 		for (let listener of _stateListeners) {
 			try {
 				listener(itemID);

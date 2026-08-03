@@ -540,7 +540,11 @@
 				// localization retranslates anything still carrying one, which
 				// would drop the placeholder back over the address.
 				name.removeAttribute('data-l10n-id');
-				name.textContent = email;
+				// The display name when the account has one, as the web rail
+				// does. The address is what IDENTIFIES the account, so it does
+				// not disappear -- it moves to the tooltip below, which is also
+				// the only label this button has when the rail is collapsed.
+				name.textContent = Zotero.Pharos.API.getDisplayName() || email;
 			}
 			else {
 				// Emptied rather than merely relabelled: DOM localization fills

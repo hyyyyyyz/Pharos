@@ -77,6 +77,54 @@ Zotero_Preferences.Pharos = {
 		document.getElementById('pharos-signed-out').hidden = signedIn;
 		if (signedIn) {
 			document.getElementById('pharos-account-email').textContent = email;
+			// Only when the field is not being edited: _render() runs on every
+			// account refresh, and overwriting what someone is halfway through
+			// typing is how a rename silently loses its last few characters.
+			let field = document.getElementById('pharos-display-name');
+			if (field && document.activeElement != field) {
+				field.value = Zotero.Pharos.API.getDisplayName();
+			}
+		}
+	},
+
+	/**
+	 * Save the display name.
+	 *
+	 * Blank is a legitimate value and means "go back to showing my address" --
+	 * so this is not gated on the field being non-empty, and the note below says
+	 * which of the two just happened rather than only reporting success.
+	 */
+	saveDisplayName: async function () {
+		let field = document.getElementById('pharos-display-name');
+		let button = document.getElementById('pharos-display-name-save');
+		let note = document.getElementById('pharos-display-name-note');
+		let name = field.value.trim();
+
+		button.disabled = true;
+		try {
+			let user = await Zotero.Pharos.API.updateMe({ displayName: name });
+			// From the server's answer, not from what was typed: it trims and
+			// collapses whitespace, so echoing the input would show a name the
+			// account does not have.
+			field.value = String((user && user.display_name) || '');
+			note.textContent = Zotero.getString(field.value
+				? 'pharos-prefs-display-name-saved'
+				: 'pharos-prefs-display-name-cleared');
+			note.hidden = false;
+			// The rail is the surface this exists for, and it is not rebuilt by
+			// the preferences window closing.
+			for (let win of Zotero.getMainWindows()) {
+				win.document.getElementById('pharos-rail')?.refreshAccount?.();
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+			note.textContent = e.message
+				|| Zotero.getString('pharos-prefs-display-name-failed');
+			note.hidden = false;
+		}
+		finally {
+			button.disabled = false;
 		}
 	},
 

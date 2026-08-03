@@ -50,6 +50,21 @@
 				<html:span data-l10n-id="pharos-prefs-signed-in-as"/>
 				<html:strong id="pharos-account-email"/>
 			</html:div>
+			<!-- The display name. The rail shows it in place of the address, so
+			     this is the one thing about the account a user can change from
+			     here. The email identifies it and cannot move. -->
+			<hbox align="center">
+				<html:label for="pharos-display-name"
+					data-l10n-id="pharos-prefs-display-name"/>
+				<html:input id="pharos-display-name" type="text"
+					data-l10n-id="pharos-prefs-display-name-input"
+					data-l10n-attrs="placeholder"/>
+				<button id="pharos-display-name-save"
+					data-l10n-id="pharos-prefs-display-name-save"
+					oncommand="Zotero_Preferences.Pharos.saveDisplayName()"/>
+			</hbox>
+			<html:div id="pharos-display-name-note" class="pharos-prefs-help" hidden="hidden"/>
+
 			<hbox align="center">
 				<button id="pharos-sign-out" data-l10n-id="pharos-prefs-sign-out"
 					oncommand="Zotero_Preferences.Pharos.signOut()"/>

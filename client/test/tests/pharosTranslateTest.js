@@ -665,4 +665,64 @@ describe("Zotero.Pharos.Translate", function () {
 			assert.lengthOf(item.getAttachments(), 2, "the translation still landed");
 		});
 	});
+
+	describe("#isEnabled()", function () {
+		var PREF = 'pharos.pdfTranslation';
+
+		afterEach(function () {
+			Zotero.Prefs.clear(PREF);
+		});
+
+		it("should treat an unset value as enabled", function () {
+			// The direction matters. The pref is written only once a login or a
+			// verify has seen the account, so "unset" means "not asked yet" --
+			// defaulting the other way would hide the feature from every account
+			// for the window between startup and the first verify.
+			Zotero.Prefs.clear(PREF);
+			assert.isTrue(Zotero.Pharos.Translate.isEnabled());
+		});
+
+		it("should honour the account switch being off", function () {
+			Zotero.Prefs.set(PREF, false);
+			assert.isFalse(Zotero.Pharos.Translate.isEnabled());
+		});
+
+		it("should report no state at all when the account has it off",
+			async function () {
+				// The whole apparatus has to go, not just the buttons: a user who
+				// switched this off in the web client and still finds 译文/对照
+				// waiting here is being told their own setting did not take.
+				var item = await createDataObject('item');
+				var attachment = await importFileAttachment('test.pdf', {
+					parentItemID: item.id,
+				});
+
+				Zotero.Prefs.clear(PREF);
+				assert.ok(Zotero.Pharos.Translate.getState(attachment),
+					"the fixture cannot show the gate if it has no state to begin with");
+
+				Zotero.Prefs.set(PREF, false);
+				assert.isNull(Zotero.Pharos.Translate.getState(attachment));
+			});
+	});
+
+	describe("#stateLabel()", function () {
+		it("should name the three states that report something happened", function () {
+			var T = Zotero.Pharos.Translate;
+			for (let state of [T.STATE_RUNNING, T.STATE_FAILED, T.STATE_TRANSLATED]) {
+				let label = T.stateLabel(state);
+				assert.isNotEmpty(label, `${state} has no label`);
+				assert.notEqual(label, state, `${state} rendered as its own key`);
+			}
+		});
+
+		it("should say nothing for the unknown state", function () {
+			// Deliberate: "no translation here" is the resting state of nearly
+			// every row, and printing it on all of them makes a scannable column
+			// unreadable -- while making a paper translated on another machine
+			// look exactly like a book.
+			assert.equal(Zotero.Pharos.Translate.stateLabel(
+				Zotero.Pharos.Translate.STATE_UNKNOWN), '');
+		});
+	});
 });

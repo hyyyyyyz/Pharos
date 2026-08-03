@@ -881,6 +881,11 @@ var ZoteroPane = new function () {
 
 		ZoteroPane.showPharosGate();
 
+		// The translation column. Registered from here rather than at module load
+		// because ItemTreeManager needs a tree to add it to, and idempotent
+		// because every window runs this.
+		Zotero.Pharos.Translate.registerColumn();
+
 		return true;
 	};
 
@@ -4685,6 +4690,11 @@ var ZoteroPane = new function () {
 		// has already stripped the menu down -- annotations selected, a
 		// read-only collection -- keeps the last word.
 		if (!annotationsSelected
+				// The account switch, same as the item pane section and the
+				// column. An account with translation off must not be offered it
+				// here either; a menu entry that only fails when clicked is worse
+				// than no entry.
+				&& Zotero.Pharos.Translate.isEnabled()
 				&& items.some(item => Zotero.Pharos.Translate.hasTranslatableAttachment(item))) {
 			show.add(m.pharosSep);
 			show.add(m.pharosTranslate);

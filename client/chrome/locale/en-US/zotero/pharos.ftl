@@ -46,6 +46,15 @@ pharos-prefs-error-incomplete = Enter your email and password.
 pharos-prefs-error-sign-in = Could not sign in.
 
 pharos-prefs-signed-in-as = Signed in as
+# The display name. The rail's account row prefers it and moves the address to
+# the tooltip -- the address identifies the account, so it never disappears.
+pharos-prefs-display-name = Display name
+pharos-prefs-display-name-input =
+    .placeholder = Blank shows your email
+pharos-prefs-display-name-save = Save
+pharos-prefs-display-name-saved = Saved. The rail shows this name now.
+pharos-prefs-display-name-cleared = Cleared. The rail shows your email again.
+pharos-prefs-display-name-failed = Could not save. Please try again.
 pharos-prefs-sign-out = Sign Out
 pharos-prefs-sign-out-all = Sign Out Everywhere
 pharos-prefs-sign-out-all-confirm = This signs out every device where you are signed in to Pharos. Continue?
@@ -1288,6 +1297,9 @@ sidenav-pharos-translate =
 # local library; a translation made in the web client or on another machine is
 # invisible to it, so "Not translated" would be a claim about the account made
 # from the evidence of one library.
+# The item-tree column header. The column is narrow and carries a value only
+# when something actually happened -- see Translate.stateLabel().
+pharos-translate-column-state = Translation
 pharos-translate-state-unknown = No translation here
 pharos-translate-state-unknown-detail = This reflects this library only. A translation made in the web client or on another device does not appear here.
 pharos-translate-state-is-translation = This is a translation

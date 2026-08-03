@@ -46,6 +46,14 @@ pharos-prefs-error-incomplete = 请填写邮箱和密码。
 pharos-prefs-error-sign-in = 登录失败。
 
 pharos-prefs-signed-in-as = 已登录：
+# 显示名。左栏底部的账号区优先显示它，地址退到提示框——地址是账号的标识，不能消失。
+pharos-prefs-display-name = 显示名
+pharos-prefs-display-name-input =
+    .placeholder = 留空则显示邮箱
+pharos-prefs-display-name-save = 保存
+pharos-prefs-display-name-saved = 已保存。左栏现在显示这个名字。
+pharos-prefs-display-name-cleared = 已清空。左栏恢复显示邮箱地址。
+pharos-prefs-display-name-failed = 保存失败，请稍后再试。
 pharos-prefs-sign-out = 退出登录
 pharos-prefs-sign-out-all = 退出所有设备
 pharos-prefs-sign-out-all-confirm = 这会让所有已登录 Pharos 的设备一并退出，是否继续？
@@ -1214,6 +1222,9 @@ sidenav-pharos-translate =
 
 # 「本地无译文」而不是「未译」。这一栏只看得见本机文库，网页版或另一台机器上翻译过
 # 的论文它无从知晓，说「未译」就是拿一个文库的证据去断言整个账号的状态。
+# 条目树里那一列的表头。列宽有限，所以只在真的发生过什么时才有值——
+# 见 Translate.stateLabel()。
+pharos-translate-column-state = 翻译
 pharos-translate-state-unknown = 本地无译文
 pharos-translate-state-unknown-detail = 这里只反映本机文库。在网页版或其他设备上翻译过的论文，这里看不到。
 pharos-translate-state-is-translation = 本篇是译文
