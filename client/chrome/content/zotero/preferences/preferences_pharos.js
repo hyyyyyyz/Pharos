@@ -84,6 +84,10 @@ Zotero_Preferences.Pharos = {
 			if (field && document.activeElement != field) {
 				field.value = Zotero.Pharos.API.getDisplayName();
 			}
+			let box = document.getElementById('pharos-pdf-translation');
+			if (box) {
+				box.checked = Zotero.Pharos.Translate.isEnabled();
+			}
 		}
 	},
 
@@ -94,6 +98,38 @@ Zotero_Preferences.Pharos = {
 	 * so this is not gated on the field being non-empty, and the note below says
 	 * which of the two just happened rather than only reporting success.
 	 */
+	/**
+	 * Turn whole-PDF translation on or off for this account.
+	 *
+	 * Applied optimistically: the checkbox is what the user just clicked, and
+	 * reverting it under them on a network blip reads as the click not landing.
+	 * A failure restores it and says so instead.
+	 */
+	savePdfTranslation: async function () {
+		let box = document.getElementById('pharos-pdf-translation');
+		let note = document.getElementById('pharos-pdf-translation-note');
+		let wanted = box.checked;
+
+		box.disabled = true;
+		try {
+			await Zotero.Pharos.API.updateMe({ pdfTranslation: wanted });
+			note.hidden = true;
+			// Every surface that reads the flag -- the item pane section, the
+			// item tree column, the context menu -- reads it from the pref that
+			// updateMe() has just written, so nothing else needs telling.
+		}
+		catch (e) {
+			Zotero.logError(e);
+			box.checked = !wanted;
+			note.textContent = e.message
+				|| Zotero.getString('pharos-prefs-pdf-translation-failed');
+			note.hidden = false;
+		}
+		finally {
+			box.disabled = false;
+		}
+	},
+
 	saveDisplayName: async function () {
 		let field = document.getElementById('pharos-display-name');
 		let button = document.getElementById('pharos-display-name-save');

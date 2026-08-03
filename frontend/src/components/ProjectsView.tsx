@@ -549,7 +549,11 @@ export function ProjectsView(): JSX.Element {
     if (artifactDraft === null) return;
     const title = artifactDraft.title.trim();
     const body = artifactDraft.body.trim();
-    if (title === "" || body === "") return;
+    // Title only. An empty body is allowed by the backend (`body` defaults to
+    // "") and by the desktop client, and refusing it here meant a researcher
+    // could not park a hypothesis they had named but not yet written up --
+    // which is exactly when a record is worth making.
+    if (title === "") return;
     saveArtifactMutation.mutate({
       id: artifactDraft.id,
       create: {
@@ -892,7 +896,7 @@ export function ProjectsView(): JSX.Element {
                     </label>
                     <div className="ph-proj-artifact-actions">
                       <button type="button" onClick={() => setArtifactDraft(null)}>取消</button>
-                      <button type="submit" className="is-primary" disabled={artifactDraft.title.trim() === "" || artifactDraft.body.trim() === "" || saveArtifactMutation.isPending}>
+                      <button type="submit" className="is-primary" disabled={artifactDraft.title.trim() === "" || saveArtifactMutation.isPending}>
                         {saveArtifactMutation.isPending ? "保存中…" : "保存记录"}
                       </button>
                     </div>

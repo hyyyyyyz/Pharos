@@ -161,6 +161,29 @@ describe("Pharos translation section", function () {
 			assert.isTrue(show(item).hidden);
 		});
 
+		it("should hide itself when the account has translation switched off",
+			async function () {
+				// Not merely render nothing. The section decided visibility from
+				// item + credentials + attachment and NOT from the account flag,
+				// so an account with translation off got a "PDF 翻译" header over
+				// a body render() then declined to fill. An empty section is not
+				// the apparatus being gone; it is the apparatus, broken -- and the
+				// web removes the whole thing.
+				signedIn();
+				var item = await createDataObject('item');
+				await importPDFAttachment(item);
+				assert.isFalse(show(item).hidden, "the fixture cannot show the gate "
+					+ "if the section is hidden to begin with");
+
+				Zotero.Prefs.set('pharos.pdfTranslation', false);
+				try {
+					assert.isTrue(show(item).hidden);
+				}
+				finally {
+					Zotero.Prefs.clear('pharos.pdfTranslation');
+				}
+			});
+
 		it("should hide itself for an item with no PDF", async function () {
 			signedIn();
 			var item = await createDataObject('item');

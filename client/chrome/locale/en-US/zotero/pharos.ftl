@@ -55,6 +55,11 @@ pharos-prefs-display-name-save = Save
 pharos-prefs-display-name-saved = Saved. The rail shows this name now.
 pharos-prefs-display-name-cleared = Cleared. The rail shows your email again.
 pharos-prefs-display-name-failed = Could not save. Please try again.
+# An account-level switch, not a device preference -- changing it in the web app
+# changes it here too.
+pharos-prefs-pdf-translation = Whole-PDF translation
+pharos-prefs-pdf-translation-help = Rebuilds the whole paper with its layout intact. It is slow and spends API budget. Off hides the translate actions, the status column and the reading modes.
+pharos-prefs-pdf-translation-failed = Could not save. Please try again.
 pharos-prefs-sign-out = Sign Out
 pharos-prefs-sign-out-all = Sign Out Everywhere
 pharos-prefs-sign-out-all-confirm = This signs out every device where you are signed in to Pharos. Continue?
@@ -80,6 +85,7 @@ sidenav-pharos-chat =
     .tooltiptext = AI Chat
 pharos-chat-placeholder =
     .placeholder = Ask about this paper…
+pharos-chat-hint = Enter to send · Shift+Enter for a new line
 pharos-chat-send = Send
 pharos-chat-stop = Stop
 pharos-chat-dismiss = Dismiss
@@ -185,6 +191,9 @@ pharos-daily-heading = Daily Papers
 pharos-daily-error = Could not load the digest.
 pharos-daily-loading = Loading…
 # $count (Number) - papers matched for the selected day
+# The day's own total while a direction chip narrows the list, so a filtered
+# count cannot be read as the day being thin.
+pharos-daily-count-all = { $count } that day
 pharos-daily-count = { $count } papers
 pharos-daily-matched = Matched
 # The provenance line written into the Zotero note. That note lives in the
@@ -1134,6 +1143,14 @@ pharos-prefs-daily-warn-keyword-total = The keyword list is too long (at most { 
 pharos-prefs-daily-warn-keyword-long = { $count } keywords are longer than { $max } characters. A whole sentence is unlikely ever to appear verbatim.
 
 pharos-prefs-daily-sweep-header = What Gets Fetched
+# The module's master switch. The digest's own "switched off" empty state sends
+# the user to this pane and tells them to turn it back on here -- without this
+# control that instruction was wrong and the state was unrecoverable.
+#
+# Not named -enabled: that id already exists as a single direction's state label
+# ("Enabled").
+pharos-prefs-daily-module-on = Enable Daily Papers
+pharos-prefs-daily-module-on-help = Off means nothing is fetched and nothing is read. Existing digests and imported papers are kept.
 pharos-prefs-daily-categories = arXiv categories
 # $max (Number)
 pharos-prefs-daily-categories-help = These decide which papers are fetched each day. Directions can only filter what was fetched, so no number of keywords will surface a paper from outside them. Separate with commas or spaces; at most { $max }.

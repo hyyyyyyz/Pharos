@@ -290,7 +290,10 @@ export function DiscoveryView(): JSX.Element {
 
   const [query, setQuery] = useState("");
   const [sources, setSources] = useState<DiscoverySource[]>(["arxiv", "openalex"]);
-  const [limit, setLimit] = useState(12);
+  // 20, matching the backend's own default (research_schemas.py) and the desktop
+  // client. It was 12, which meant the same query run in the two products came
+  // back with different numbers of candidates and no way to tell why.
+  const [limit, setLimit] = useState(20);
   const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newProjectOpen, setNewProjectOpen] = useState(false);

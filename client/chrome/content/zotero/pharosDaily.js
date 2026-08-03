@@ -602,6 +602,7 @@ var Zotero_Pharos_Daily = new function () {
 			sortScore: document.getElementById('pharos-dv-sort-score'),
 			sortTime: document.getElementById('pharos-dv-sort-time'),
 			count: document.getElementById('pharos-dv-count'),
+			model: document.getElementById('pharos-dv-model'),
 			refresh: document.getElementById('pharos-daily-refresh'),
 			refreshIcon: document.getElementById('pharos-dv-refresh-ic'),
 			refreshLabel: document.getElementById('pharos-dv-refresh-label'),
@@ -1653,9 +1654,22 @@ var Zotero_Pharos_Daily = new function () {
 		_el.sortScore.classList.toggle('is-on', _sort == 'score');
 		_el.sortTime.classList.toggle('is-on', _sort == 'time');
 
-		_el.count.textContent = _dayState == 'ready' && !_signedOut
-			? _fmt('pharos-daily-count', { count: _visible().length })
+		// Suppressed on a day with nothing in it: the empty-state panel below
+		// already explains why, and "0 篇" over it reads as a second, contentless
+		// answer to the same question.
+		let visible = _visible();
+		_el.count.textContent = _dayState == 'ready' && !_signedOut && _papers.length
+			? _fmt('pharos-daily-count', { count: visible.length })
 			: '';
+		// The day's own total when a direction chip is narrowing the list, so a
+		// filtered count cannot be read as the day being thin.
+		_el.count.title = visible.length != _papers.length
+			? _fmt('pharos-daily-count-all', { count: _papers.length })
+			: '';
+
+		let model = _status && _status.provider && _status.provider.model;
+		_el.model.textContent = _statusReady && !_signedOut && model ? model : '';
+		_el.model.title = _el.model.textContent ? _providerText() : '';
 
 		let busy = _busy();
 		_el.refresh.disabled = _signedOut || busy;

@@ -49,6 +49,10 @@ Zotero_Preferences.PharosDaily = {
 	/** Server state, as last returned. Never edited in place. */
 	_directions: null,
 	_config: null,
+
+	/** The pending on/off choice, or null for "unchanged". Kept beside the
+	 *  other two drafts so one save carries all three. */
+	_enabledDraft: null,
 	_provider: null,
 
 	/** Which row the editor is open on: null, 'new', or a direction id. */
@@ -570,6 +574,17 @@ Zotero_Preferences.PharosDaily = {
 		this._catField.disabled = !this._config;
 		this._maxField.disabled = !this._config;
 
+		let enabledBox = document.getElementById('pharos-daily-prefs-enabled');
+		let enabled = this._enabledDraft !== null
+			? this._enabledDraft
+			// Absent resolves to ON, matching the digest window: a config that
+			// could not be read is not a config that is off.
+			: (this._config ? this._config.enabled !== false : true);
+		if (enabledBox.checked !== enabled) {
+			enabledBox.checked = enabled;
+		}
+		enabledBox.disabled = !this._config;
+
 		document.getElementById('pharos-daily-prefs-categories-help').textContent
 			= Zotero.ftl.formatValueSync('pharos-prefs-daily-categories-help', {
 				max: limits.categories,
@@ -614,7 +629,8 @@ Zotero_Preferences.PharosDaily = {
 				max: limits.maxPerDay,
 			}));
 		}
-		let dirty = this._catDraft !== null || this._maxDraft !== null;
+		let dirty = this._catDraft !== null || this._maxDraft !== null
+			|| this._enabledDraft !== null;
 		// A cleared box reads as "leave this alone", which is exactly what the
 		// request will do. Saying so beats letting an empty field look broken.
 		if (maxState.blank && dirty) {
@@ -648,9 +664,19 @@ Zotero_Preferences.PharosDaily = {
 		return { blank: false, valid: true, unparseable: false, outOfRange, value };
 	},
 
+	/** The checkbox has no text to diff, so its change handler records the
+	 *  choice and lets _renderConfig() do the rest. */
+	markConfigDirty: function () {
+		this._enabledDraft = document.getElementById('pharos-daily-prefs-enabled').checked;
+		this._setConfigError('');
+		document.getElementById('pharos-daily-prefs-config-status').textContent = '';
+		this._renderConfig();
+	},
+
 	revertConfig: function () {
 		this._catDraft = null;
 		this._maxDraft = null;
+		this._enabledDraft = null;
 		this._setConfigError('');
 		document.getElementById('pharos-daily-prefs-config-status').textContent = '';
 		this._renderConfig();
@@ -673,6 +699,9 @@ Zotero_Preferences.PharosDaily = {
 			// Blank or unparseable: the key is omitted entirely rather than sent
 			// as 0 or NaN.
 		}
+		if (this._enabledDraft !== null) {
+			changes.enabled = this._enabledDraft;
+		}
 		if (!Object.keys(changes).length) {
 			this.revertConfig();
 			return;
@@ -687,6 +716,7 @@ Zotero_Preferences.PharosDaily = {
 			this._config = await Zotero.Pharos.Directions.updateConfig(changes);
 			this._catDraft = null;
 			this._maxDraft = null;
+			this._enabledDraft = null;
 			statusNode.textContent = Zotero.getString('pharos-prefs-daily-config-saved');
 		}
 		catch (e) {

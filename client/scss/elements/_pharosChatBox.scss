@@ -318,3 +318,14 @@
 		}
 	}
 }
+
+// The send-key hint. Pushed to the left of the buttons so the row reads
+// hint-then-actions, and quiet enough not to compete with them.
+.pharos-chat-hint {
+	flex: 1;
+	color: var(--fill-tertiary);
+	font-size: 0.85em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

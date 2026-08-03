@@ -578,6 +578,14 @@ Zotero.Pharos.Translate = new function () {
 				label: Zotero.getString('pharos-translate-column-state'),
 				pluginID: 'pharos@pharos.selab.top',
 				enabledTreeIDs: ['main'],
+				// Visible on a fresh profile, unlike a plugin's column. Zotero's
+				// convention that custom columns are opt-in exists because a
+				// plugin's column is a guest in somebody else's list; this one is
+				// part of the product, and the web client has 状态 in its default
+				// set. Without it a user moving web -> desktop loses "which of
+				// these have I translated?" until they think to go looking in the
+				// column picker.
+				defaultIn: ['*'],
 				flex: 0,
 				width: 72,
 				minWidth: 56,

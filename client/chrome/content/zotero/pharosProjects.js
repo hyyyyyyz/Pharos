@@ -277,7 +277,15 @@ var Zotero_Pharos_Projects = new function () {
 			return iso;
 		}
 		if (!_dateFormat) {
-			_dateFormat = new Intl.DateTimeFormat(undefined, {
+			// Zotero.locale, not undefined: undefined gives the SYSTEM locale,
+			// which can differ from the one the application is displaying in --
+			// so a zh-CN build on an en-US machine drew its own labels in Chinese
+			// and its dates in English. The discovery window already used it.
+			//
+			// No time component, unlike that window's. A project's dates are
+			// days -- when it was made, when it last moved -- while a search run
+			// is a moment you might have several of in an hour.
+			_dateFormat = new Intl.DateTimeFormat(Zotero.locale, {
 				year: 'numeric', month: 'short', day: 'numeric',
 			});
 		}

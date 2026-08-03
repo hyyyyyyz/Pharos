@@ -1329,3 +1329,19 @@
 		opacity: 0.5;
 	}
 }
+
+// Which model wrote the readings. Beside the count rather than in the banner:
+// the banner is for problems, and this is a standing fact about everything on
+// screen. Quiet by design -- it is provenance, not a headline.
+.pharos-dv-model {
+	color: var(--fill-tertiary);
+	font-size: 0.85em;
+	max-width: 14em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+
+	&:empty {
+		display: none;
+	}
+}

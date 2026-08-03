@@ -130,6 +130,11 @@
 						<html:textarea class="pharos-chat-input" rows="2"
 							data-l10n-id="pharos-chat-placeholder" data-l10n-attrs="placeholder"/>
 						<html:div class="pharos-chat-actions">
+							<!-- The behaviour matched the web already; only the
+							     sentence explaining it was missing, which makes
+							     Shift+Enter something a user has to guess. -->
+							<html:span class="pharos-chat-hint"
+								data-l10n-id="pharos-chat-hint"/>
 							<html:button class="pharos-chat-stop" hidden="hidden"
 								data-l10n-id="pharos-chat-stop"/>
 							<html:button class="pharos-chat-send" data-l10n-id="pharos-chat-send"/>

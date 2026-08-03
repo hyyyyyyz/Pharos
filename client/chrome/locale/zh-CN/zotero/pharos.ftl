@@ -54,6 +54,10 @@ pharos-prefs-display-name-save = 保存
 pharos-prefs-display-name-saved = 已保存。左栏现在显示这个名字。
 pharos-prefs-display-name-cleared = 已清空。左栏恢复显示邮箱地址。
 pharos-prefs-display-name-failed = 保存失败，请稍后再试。
+# 账号级的整篇翻译开关，不是本机偏好——网页版改了这里也会变。
+pharos-prefs-pdf-translation = 整篇 PDF 翻译
+pharos-prefs-pdf-translation-help = 保留排版重建整篇论文，耗时且消耗接口额度。关闭后翻译入口、状态列与阅读模式一并隐藏。
+pharos-prefs-pdf-translation-failed = 未能保存，请稍后再试。
 pharos-prefs-sign-out = 退出登录
 pharos-prefs-sign-out-all = 退出所有设备
 pharos-prefs-sign-out-all-confirm = 这会让所有已登录 Pharos 的设备一并退出，是否继续？
@@ -77,6 +81,7 @@ sidenav-pharos-chat =
     .tooltiptext = AI 对话
 pharos-chat-placeholder =
     .placeholder = 就这篇论文提问…
+pharos-chat-hint = Enter 发送 · Shift+Enter 换行
 pharos-chat-send = 发送
 pharos-chat-stop = 停止
 pharos-chat-dismiss = 关闭
@@ -172,6 +177,8 @@ pharos-daily-heading = 每日论文
 pharos-daily-error = 无法加载每日论文。
 pharos-daily-loading = 载入中…
 # $count (Number) - 当天匹配到的论文数
+# 方向筛选把列表收窄时，给出当天的总数，免得筛后的数字被读成"这天没什么论文"。
+pharos-daily-count-all = 全天 { $count } 篇
 pharos-daily-count = { $count } 篇
 pharos-daily-matched = 命中方向
 # 写进 Zotero 笔记的溯源行。这条笔记会永久留在文库里，和用户自己写的读书笔记
@@ -1067,6 +1074,12 @@ pharos-prefs-daily-warn-keyword-total = 关键词总长度超出上限（最多 
 pharos-prefs-daily-warn-keyword-long = 有 { $count } 个关键词超过 { $max } 字。整句话几乎不可能原样出现。
 
 pharos-prefs-daily-sweep-header = 抓取范围
+# 模块总开关。每日文摘的「已关闭」空状态会把用户送到这个面板并让他在这里重新打开——
+# 没有这个控件，那句指引就是错的，而那个状态在桌面端无法恢复。
+#
+# 不叫 -enabled：那个 id 已经存在，是单个研究方向的状态标签（「启用中」）。
+pharos-prefs-daily-module-on = 启用每日论文
+pharos-prefs-daily-module-on-help = 关闭后不再抓取，也不再解读。已有的文摘和已导入的论文都保留。
 pharos-prefs-daily-categories = arXiv 分类
 # $max (Number)
 pharos-prefs-daily-categories-help = 这些分类决定每天有哪些论文被抓回来。方向只能在抓回来的论文里筛选——分类之外的论文，写再多关键词也不会出现。逗号或空格分隔，最多 { $max } 个。

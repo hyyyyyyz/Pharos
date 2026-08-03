@@ -122,6 +122,20 @@
 			<html:div id="pharos-daily-prefs-config-error" class="pharos-daily-prefs-error"
 				role="alert" hidden="hidden"/>
 
+			<!-- The module's master switch, and the reason it has to be here:
+			     the digest's own 已关闭 empty state sends the user to this pane
+			     and says to switch it back on. Without this control that
+			     instruction was wrong and the state was unrecoverable from the
+			     desktop. It sits above the sweep fields because turning the
+			     module off makes them moot. -->
+			<html:label class="pharos-daily-prefs-toggle">
+				<html:input id="pharos-daily-prefs-enabled" type="checkbox"
+					onchange="Zotero_Preferences.PharosDaily.markConfigDirty()"/>
+				<html:span data-l10n-id="pharos-prefs-daily-module-on"/>
+			</html:label>
+			<html:div id="pharos-daily-prefs-enabled-help" class="pharos-daily-prefs-help"
+				data-l10n-id="pharos-prefs-daily-module-on-help"/>
+
 			<html:label for="pharos-daily-prefs-categories" data-l10n-id="pharos-prefs-daily-categories"/>
 			<html:input id="pharos-daily-prefs-categories" type="text" autocomplete="off"
 				spellcheck="false" placeholder="cs.RO, cs.CV, cs.LG"/>

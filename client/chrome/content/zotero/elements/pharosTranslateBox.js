@@ -128,6 +128,12 @@
 		_applies(item) {
 			return !!item
 				&& Zotero.Pharos.API.hasCredentials()
+				// The account switch. Without it this section still appeared for
+				// an account with translation turned off -- a header over a body
+				// that render() then declined to fill, because getState() returns
+				// null in that case. An empty section is not "the apparatus is
+				// gone"; it is the apparatus, broken.
+				&& Zotero.Pharos.Translate.isEnabled()
 				&& !!Zotero.Pharos.Translate.getTranslatableAttachment(item);
 		}
 

@@ -65,6 +65,20 @@
 			</hbox>
 			<html:div id="pharos-display-name-note" class="pharos-prefs-help" hidden="hidden"/>
 
+			<!-- The account's whole-PDF translation switch. Server-owned, not a
+			     device preference, which is why it is here rather than in a
+			     checkbox bound to a pref. The client already HONOURS it; without
+			     this the account could only be changed from the web app. -->
+			<hbox align="center">
+				<html:label class="pharos-prefs-toggle">
+					<html:input id="pharos-pdf-translation" type="checkbox"
+						onchange="Zotero_Preferences.Pharos.savePdfTranslation()"/>
+					<html:span data-l10n-id="pharos-prefs-pdf-translation"/>
+				</html:label>
+			</hbox>
+			<html:div data-l10n-id="pharos-prefs-pdf-translation-help" class="pharos-prefs-help"/>
+			<html:div id="pharos-pdf-translation-note" class="pharos-prefs-help" hidden="hidden"/>
+
 			<hbox align="center">
 				<button id="pharos-sign-out" data-l10n-id="pharos-prefs-sign-out"
 					oncommand="Zotero_Preferences.Pharos.signOut()"/>

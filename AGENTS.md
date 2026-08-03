@@ -94,9 +94,27 @@ for it, or skip that file, but do not expect the full suite to run unattended.
 For day-to-day work the Pharos suites plus `itemPane zoteroPane` are the gate;
 the full run is for before a release.
 
-When checking the upstream baseline, run it **without `-f`**. That flag stops at
-the first failure, so a suite with four known pre-existing failures reports a
-misleading `5/6 tests passed -- aborting` and looks like a fresh regression.
+### `itemPane` and `zoteroPane` are a RANGE, not a number
+
+They score roughly **189-199 out of 203**, and which number you get is largely
+luck. Four failures are hard and repeatable (bibliography-entry mode, `不详` vs
+`n.d.`); the rest are focus and interaction tests that time out when the window
+is not OS-active, and how many time out varies run to run on the same code.
+
+This was written down after quoting "199/203, four known failures" for a long
+time as though it were a baseline. It is the top of the range. Treating it as
+stable makes every comparison against it unreliable in both directions -- a good
+run hides a regression, and a bad run invents one.
+
+So: a single run tells you almost nothing. To decide whether a change regressed
+these suites, run the SAME suites three times with the change and three times
+without it, and compare the ranges. Both A/B checks done that way here found the
+change innocent and the variation to be noise -- including one where the version
+WITHOUT the change scored lower.
+
+Run it **without `-f`**. That flag stops at the first failure, so a suite with
+four repeatable failures reports a misleading `5/6 tests passed -- aborting` and
+looks like a fresh regression.
 
 For the desktop client, read [`client/BRANDING.md`](client/BRANDING.md) first.
 It records a set of Zotero behaviours that **fail silently** — a menu addressed
