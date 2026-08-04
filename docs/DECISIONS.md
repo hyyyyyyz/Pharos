@@ -204,11 +204,19 @@ PDFs, annotations, collection membership, and sync state. Vibero demonstrates
 the simpler boundary: separate application state, shared Zotero library, and a
 separate feature database.
 
-**Current implementation gate:** the installed Zotero/Vibero 8 library is
-userdata schema 123, while the imported Pharos 10.0.SOURCE core is schema 129
-and already depends on the newer columns. Shared-library mode remains disabled
-until Pharos is aligned to a compatible Zotero core and the round-trip suite in
-[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md) passes.
+**The implementation gate is satisfied, as of `desktop-v1.0.0`.** It read: the
+installed Zotero/Vibero 8 library is userdata schema 123, while the imported
+Pharos 10.0.SOURCE core was schema 129 and already depended on the newer columns,
+so shared-library mode stayed disabled until Pharos was aligned to a compatible
+Zotero core and the round trip passed. The core was migrated to the Zotero 8.0.5
+baseline (`client/UPSTREAM.txt`), `resource/schema/userdata.sql` now declares
+123, and the round trip was verified against a copy of a real library — 279 of
+279 attachments. `resource/config.mjs` sets `DB_NAME: 'zotero'` against
+`ID: 'pharos'`, which is what `SharedLibrary.isShared()` derives from.
+
+Kept rather than deleted because the condition is the thing to re-check, not a
+step that is finished: any future move of the baseline re-opens it, and the guard
+in `schema.js` exists precisely to make that failure loud instead of destructive.
 
 **Supersedes:** decision 5 as a production architecture. Its development-data
 incident remains valid and is the reason isolated launchers stay mandatory.
@@ -231,3 +239,36 @@ the life of the window.
 
 Recorded because a comparison of the two clients keeps surfacing it as a gap, and
 re-deriving the same answer each time costs more than writing it down once.
+
+## 13. The desktop version number states the size of the change
+
+Releases are numbered `MAJOR.MINOR.PATCH` and tagged `desktop-v<version>`. Which
+component moves is decided by **how large the change is for the person using
+Pharos**, not by how much code moved:
+
+- **PATCH** — the third component. A defect in existing behaviour, corrected.
+  Nothing the user could do before behaves differently afterwards except that it
+  now works. `1.0.0` → `1.0.1`.
+- **MINOR** — the second component. Anything larger: a capability that did not
+  exist, behaviour a user would have to relearn, or a fix substantial enough that
+  describing it as "a bug fix" would understate it. Resets PATCH to zero.
+  `1.0.1` → `1.1.0`.
+- **MAJOR** — deliberately left undefined for now. Nothing so far has warranted
+  it, and inventing a threshold before there is a case to test it against is how
+  a rule gets written wrongly and then followed anyway.
+
+**Why it is written down rather than left to judgement:** the number is the only
+thing a user sees before they decide whether to update. A version that moves the
+same amount for "fixed a crash on launch" and for "the library now lives
+somewhere else" tells them nothing, and the second one is the one they needed to
+read carefully. Recording the rule also means two contributors do not have to
+negotiate it per release.
+
+**Where the boundary genuinely is unclear, prefer MINOR.** Over-stating the size
+of a change costs a user a moment's extra attention; under-stating it costs them
+the chance to pay attention at all.
+
+The version lives in `client/version` and must keep its `.SOURCE` suffix
+(`1.0.1.SOURCE`) — `prepare_build` matches `/([0-9].+)\.SOURCE/` to find the
+version at all, and substitutes the suffix per channel. A bare `1.0.1` fails the
+build with "Version number not found".

@@ -179,3 +179,10 @@ problem, or a licence violation.
   suite. `itemPane` and `zoteroPane` have four pre-existing failures
   (bibliography-entry mode); anything beyond that is yours.
 - **Commit messages say why.** The diff already says what.
+- **Version by the size of the change, not the size of the diff.** Desktop
+  releases are `MAJOR.MINOR.PATCH`, tagged `desktop-v<version>`. A defect
+  corrected is a PATCH bump; a new capability, changed behaviour, or a fix too
+  large to call a bug fix is a MINOR bump. When it is genuinely unclear, take the
+  MINOR — over-stating a change costs a moment's attention, under-stating it
+  costs the user the chance to pay any. See [`docs/DECISIONS.md`](docs/DECISIONS.md)
+  §13. The number lives in `client/version` and keeps its `.SOURCE` suffix.

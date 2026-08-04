@@ -49,10 +49,16 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
   15 for code with no usable signature. Windows gets a portable archive, not an
   installer, because the NSIS path needs Cygwin and this project has no way to
   test it.
-- The imported desktop core is currently Zotero `10.0.SOURCE` (userdata schema
-  129), while the supported installed Zotero/Vibero 8 library is schema 123.
-  Until the core is realigned and the copied-library round trip passes, builds
-  remain isolated and must not open the user's real Zotero library.
+- **On first launch the desktop opens `pharos.selab.top` in the system browser.**
+  Inherited from Zotero, which shows a welcome page the same way
+  (`zoteroPane.js` on `firstRun2` calls `loadURI(ZOTERO_CONFIG.START_URL)`, and
+  `loadURI` hands external URLs to the OS). For Pharos it is wrong on its own
+  terms: the desktop client is the product, and sending a first-time user
+  straight into a browser is the seam this project exists to remove. Fix due in
+  `1.0.1`.
+- Pharos does not read Zotero's own settings, so a **relocated Zotero data
+  directory is not found** — it silently creates an empty `~/Zotero` instead.
+  Work around it by passing `-datadir` on the first launch.
 - Discovery reads search metadata and abstracts, not full papers.
 - Research projects persist records supplied by the researcher. Nothing runs
   code, allocates GPUs, or validates a metric. A `verified` record is a user's
