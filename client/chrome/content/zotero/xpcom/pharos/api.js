@@ -31,7 +31,11 @@
  * the two stay interchangeable: an account, a library and a translation started
  * in one is visible in the other.
  */
-Zotero.Pharos = {};
+// Not `= {}`: these modules are loaded in a list, and whichever ran second used
+// to wipe what the first had attached. The order in zotero.mjs is chosen for
+// other reasons -- sharedLibrary has to exist before schema.js asks it anything
+// -- so no file here may assume it is the one that creates the namespace.
+Zotero.Pharos = Zotero.Pharos || {};
 
 Zotero.Pharos.API = new function () {
 	/**

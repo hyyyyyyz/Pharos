@@ -114,4 +114,16 @@ build_cmd=("$APP_ROOT_DIR/build.sh" -d "$build_dir" -p "$platform" -c "$CHANNEL"
 
 "${build_cmd[@]}"
 
+# Ad-hoc-sign the Word integration dylib so macOS will load it.
+#
+# Dropped by accident when this file was merged onto the 8.0.5 baseline -- the
+# conflict was resolved in upstream's favour on the reasoning that build
+# infrastructure follows the new baseline, and this block went with it. The
+# result was visible immediately: Word integration failed at first run with
+# "couldn't open library libZoteroWordIntegration.dylib". `codesign_local`
+# exists in 8.0.5; only the call to it had gone.
+if [[ $platform = "m" ]] && [[ "$(uname -s)" = "Darwin" ]]; then
+	"$SCRIPT_DIR/codesign_local" "$STAGE_DIR/$APP_NAME.app"
+fi
+
 echo Done

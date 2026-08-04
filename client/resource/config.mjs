@@ -13,13 +13,37 @@
 //     Repointing them at a host that does not implement the Zotero API breaks
 //     sync silently.
 //
-// CLIENT_NAME drives the default data directory and ID drives the database
-// filename, so those two are what keep Pharos off the user's real ~/Zotero
-// library. ID is also the OS-level URL scheme -- see ZoteroProtocolHandler.mjs.
+// SHARING THE LIBRARY WITH ZOTERO
+//
+// Pharos and Zotero are meant to open the SAME library -- not at once, but
+// either one reading and writing the same papers and collections, the way
+// Vibero does. Two values decide that, and they are deliberately NOT the two
+// that decide identity:
+//
+//   DATA_DIR_NAME  the default data directory under the home folder
+//   DB_NAME        the SQLite file inside it
+//
+// They used to be CLIENT_NAME and ID, which meant that sharing a library and
+// being a distinct application were the same switch. They are not. ID is also
+// the OS-level URL scheme (ZoteroProtocolHandler.mjs) and part of the profile
+// identity, so pointing the database at Zotero's by changing ID would have
+// registered Pharos for `zotero://` links as well and had the two applications
+// fight over them.
+//
+// THE PRECONDITION, and it is not optional: this only works while the client's
+// userdata schema matches the Zotero release the user runs. Zotero migrates any
+// database older than itself, so a client built from a newer branch silently
+// upgrades the shared library and the user's real Zotero can then never open it
+// again. See client/UPSTREAM.txt and docs/CLIENT_DATA_ARCHITECTURE.md. If the
+// baseline is ever moved forward, set these two back to 'Pharos'/'pharos' until
+// the schema matches again.
 export var ZOTERO_CONFIG = {
 	GUID: 'pharos@pharos.selab.top',
-	ID: 'pharos', // used for db filename, etc.
+	ID: 'pharos', // identity: URL scheme, profile, extension id -- NOT the db
 	CLIENT_NAME: 'Pharos',
+	//: The shared library. Both of these name Zotero's own, on purpose.
+	DATA_DIR_NAME: 'Zotero',
+	DB_NAME: 'zotero',
 	DOMAIN_NAME: 'pharos.selab.top',
 	PRODUCER: 'Pharos',
 	PRODUCER_URL: 'https://pharos.selab.top',

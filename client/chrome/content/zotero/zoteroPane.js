@@ -6736,10 +6736,22 @@ var ZoteroPane = new function () {
 		if (versionShown >= majorVersion) {
 			return;
 		}
+		// A FIRST RUN is not an upgrade. Upstream treats "never shown" as "show
+		// it", which is right for an application whose users are all upgrading
+		// from an earlier major version. Pharos has first-time users, and telling
+		// one of them they have just upgraded to something they have never run
+		// before is simply false. Record the version and stay quiet; the banner
+		// then works normally the next time a major version actually changes.
+		if (!versionShown) {
+			Zotero.Prefs.set('postUpgradeBannerVersionShown', majorVersion);
+			return;
+		}
 		
 		// Set message and link to current version
 		let div = document.getElementById('post-upgrade-message');
-		document.l10n.setArgs(div, { version: "8" });
+		// The real version, not a literal. Upstream hardcoded "8" for its own
+		// release, so this banner announced "Pharos 8" on a build numbered 1.0.0.
+		document.l10n.setArgs(div, { version: String(majorVersion) });
 		let link = document.getElementById('post-upgrade-new-features-link');
 		link.href = ZOTERO_CONFIG.NEW_FEATURES_URL.replace('{version}', majorVersion);
 		document.getElementById('post-upgrade-container').removeAttribute('collapsed');

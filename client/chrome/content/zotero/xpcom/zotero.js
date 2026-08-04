@@ -822,11 +822,11 @@ const { CommandLineOptions } = ChromeUtils.importESModule("chrome://zotero/conte
 	var _initDB = async function (haveReleasedLock) {
 		// Initialize main database connection
 		//
-		// Derived from ZOTERO_CONFIG.ID rather than hardcoded, so that this agrees
+		// Derived from ZOTERO_CONFIG.DB_NAME rather than hardcoded, so that this agrees
 		// with Zotero.DataDirectory.getDatabaseFilename(), which already defaults to
 		// that value. Hardcoding 'zotero' here made the app create zotero.sqlite in a
 		// directory that the data-directory lookup then searched for pharos.sqlite.
-		Zotero.DB = new Zotero.DBConnection(ZOTERO_CONFIG.ID);
+		Zotero.DB = new Zotero.DBConnection(ZOTERO_CONFIG.DB_NAME || ZOTERO_CONFIG.ID);
 		
 		try {
 			// Test read access

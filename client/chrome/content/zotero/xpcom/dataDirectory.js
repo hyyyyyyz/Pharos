@@ -42,7 +42,13 @@ Zotero.DataDirectory = {
 		if (CommandLineOptions.test) {
 			return OS.Path.join(PathUtils.parent(OS.Constants.Path.profileDir), "Zotero");
 		}
-		return OS.Path.join(OS.Constants.Path.homeDir, ZOTERO_CONFIG.CLIENT_NAME);
+		// DATA_DIR_NAME, not CLIENT_NAME: the directory names the LIBRARY, and
+		// Pharos shares Zotero's. CLIENT_NAME still names the application
+		// everywhere it is shown to a user. Falls back so that a config without
+		// the key keeps the old, unshared behaviour rather than silently
+		// pointing somewhere new.
+		return OS.Path.join(OS.Constants.Path.homeDir,
+			ZOTERO_CONFIG.DATA_DIR_NAME || ZOTERO_CONFIG.CLIENT_NAME);
 	},
 	
 	get legacyDirName() {
@@ -1249,7 +1255,9 @@ Zotero.DataDirectory = {
 	
 	
 	getDatabaseFilename: function (name) {
-		return (name || ZOTERO_CONFIG.ID) + '.sqlite';
+		// DB_NAME, not ID. ID is this application's identity -- URL scheme,
+		// profile, extension id -- and the database is the shared library's.
+		return (name || ZOTERO_CONFIG.DB_NAME || ZOTERO_CONFIG.ID) + '.sqlite';
 	},
 	
 	getDatabase: function (name, ext) {

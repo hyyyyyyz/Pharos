@@ -159,6 +159,9 @@ const xpcomFilesLocal = [
 	'translation/translators',
 	// Pharos. Loaded last so that everything these build on -- HTTP, prefs,
 	// OSKeyStore, the data layer -- is already present on the Zotero namespace.
+	// Before everything: schema.js asks it whether this is a shared library
+	// before it will migrate, and that happens during startup.
+	'pharos/sharedLibrary',
 	'pharos/api',
 	// Right after the API: commandLineHandler asks it whether to open the
 	// sign-in window instead of the library, before any window exists.
