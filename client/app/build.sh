@@ -823,7 +823,14 @@ if [ $BUILD_WIN == 1 ]; then
 	mkdir "$COMMON_APPDIR"
 	
 	# Package non-arch-specific components
-	if [ $PACKAGE -eq 1 ]; then
+	# WIN_NATIVE as well as PACKAGE. Everything in here prepares the NSIS
+	# installer, and cygpath is a Cygwin tool: on Linux it is simply absent, so
+	# the command substitution yields an empty string and upx fails with
+	# "missing output name" -- an error that names neither cygpath nor the
+	# installer. The rcedit block below is already guarded this way; this one was
+	# not, which is what broke building a Windows PORTABLE archive on Linux,
+	# where no installer is wanted in the first place.
+	if [ $PACKAGE -eq 1 ] && [ $WIN_NATIVE == 1 ]; then
 		# Copy installer files
 		cp -r "$CALLDIR/win/installer" "$BUILD_DIR/win_installer"
 
