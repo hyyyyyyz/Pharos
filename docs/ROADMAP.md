@@ -49,13 +49,19 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
   15 for code with no usable signature. Windows gets a portable archive, not an
   installer, because the NSIS path needs Cygwin and this project has no way to
   test it.
-- **On first launch the desktop opens `pharos.selab.top` in the system browser.**
-  Inherited from Zotero, which shows a welcome page the same way
-  (`zoteroPane.js` on `firstRun2` calls `loadURI(ZOTERO_CONFIG.START_URL)`, and
-  `loadURI` hands external URLs to the OS). For Pharos it is wrong on its own
-  terms: the desktop client is the product, and sending a first-time user
-  straight into a browser is the seam this project exists to remove. Fix due in
-  `1.0.1`.
+- **AI chat and translation are hard to reach while reading.** Both are built,
+  wired and shipped — `pharos-chat-box` and `pharos-translate-box` are item-pane
+  sections — but in a reader tab the item pane is the right-hand context pane,
+  which ships collapsed, so opening a paper shows a plain PDF viewer. The reader
+  submodule has no Pharos integration at all: `grep -rn pharos client/reader`
+  returns nothing.
+
+  Forcing the context pane open by default does **not** work and was tried:
+  setting `state="open"` on `#zotero-context-splitter` hangs window
+  construction, and every suite that opens a main window times out in its
+  `before all` hook (104/104 → 6 hook failures, bisected to that one attribute).
+  Whatever opens it has to run after a reader tab exists, not while the window is
+  being built. The durable answer is an affordance in the reader itself.
 - Pharos does not read Zotero's own settings, so a **relocated Zotero data
   directory is not found** — it silently creates an empty `~/Zotero` instead.
   Work around it by passing `-datadir` on the first launch.
