@@ -63,6 +63,54 @@ if (processTestOptions) {
 	cmdLine.preventDefault = true;
 }
 
+// PHAROS: show the sign-in window instead of the library, on a first run.
+//
+// This has to live HERE, in the block spliced into BrowserContentHandler, and
+// not in xpcom/commandLineHandler.js where the rest of Pharos's command-line
+// handling is -- which is exactly the mistake that shipped in 1.0.0. That file
+// registers its handler under `m-zotero` at the bottom of itself, so the
+// handler exists only once Zotero.init() has sub-script-loaded it; and Zotero
+// is first loaded BY the library window (zoteroPane.xhtml imports zotero.mjs).
+// The code deciding whether to open the library was therefore loaded by the
+// library, and its `if (!Zotero.getMainWindow())` branch could never be true at
+// startup. The sign-in window was built, tested and shipped, and nothing could
+// ever open it.
+//
+// Nothing above has loaded Zotero yet, so the checks below cannot call
+// Zotero.Pharos.Auth.shouldGate(). They mirror it -- api.js's LOGIN_HOST and
+// LOGIN_REALM, and the pref auth.js reads -- and auth.js remains the place the
+// policy is explained.
+if (cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH && !cmdLine.preventDefault
+		&& !CommandLineOptions.test) {
+	// A probe that throws must not gate. api.js:118-128 wraps the same call and
+	// returns false, costing one hasCredentials(); a throw HERE aborts this
+	// spliced block before dch_handle runs, and the application starts with no
+	// window at all. So a failed probe is treated as "signed in" -- degrading to
+	// the previous behaviour rather than to nothing on screen.
+	let gate = false;
+	try {
+		gate = !Services.logins.findLogins("chrome://pharos", null, "Pharos API").length
+			&& !Services.prefs.getBoolPref("extensions.zotero.pharos.auth.skipped", false);
+	}
+	catch (e) {
+		Components.utils.reportError(e);
+	}
+	if (gate) {
+		Services.ww.openWindow(
+			null,
+			"chrome://zotero/content/pharosAuth.xhtml",
+			"_blank",
+			// No `modal`: there is nothing to be modal to, and a modal here would
+			// spin a nested event loop during startup.
+			"chrome,dialog=no,centerscreen,resizable",
+			null
+		);
+		// Suppress dch_handle's openBrowserWindow. The sign-in window opens the
+		// library itself when it finishes, whichever way it finishes.
+		cmdLine.preventDefault = true;
+	}
+}
+
 if (cmdLine.handleFlag("debugger", false)) {
 	(async function () {
 		try {

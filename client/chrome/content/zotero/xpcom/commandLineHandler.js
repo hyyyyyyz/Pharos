@@ -55,6 +55,18 @@ Zotero.CommandLineIngester = {
 
 		fileToOpen = fileToOpen || CommandLineOptions.file;
 		if (fileToOpen) {
+			// PHAROS: on a first run the sign-in window is the only window, so
+			// there is nothing to import into yet -- and `mainWindow` below would
+			// be null. Return with the options still set rather than clearing
+			// them: pharosAuth.js re-ingests once it has opened the library, and
+			// dropping the path here would silently lose an Open With.
+			//
+			// Before the gate existed this could not happen, because the library
+			// was always the first window.
+			if (!mainWindow) {
+				return;
+			}
+
 			var file = Zotero.File.pathToFile(fileToOpen);
 
 			if (file.leafName.substr(-4).toLowerCase() === ".csl"
@@ -121,6 +133,21 @@ var ZoteroCommandLineHandler = {
 			// The main window is opened by whichever path finishes -- see
 			// pharosAuth.js `_finish()`. Closing the sign-in window without
 			// answering opens nothing, which is what a sign-in window does.
+			//
+			// This branch does NOT cover the first run. This handler registers
+			// itself under `m-zotero` at the bottom of this file, so it exists
+			// only once Zotero.init() has loaded it -- and Zotero is first loaded
+			// BY the library window. At initial launch the library is already up,
+			// so `!Zotero.getMainWindow()` is false and shouldGate() would refuse
+			// anyway. 1.0.0 shipped with the gate here and nothing could open it.
+			// The first-run trigger lives in app/assets/commandLineHandler.js,
+			// which runs before any of this exists.
+			//
+			// It stays because it IS load-bearing for the case it can reach:
+			// app/scripts/fetch_xulrunner patches dch_handle to return
+			// immediately on STATE_REMOTE_AUTO, so for a dock-icon click on an
+			// already-running application with no window, m-zotero is the only
+			// handler that acts.
 			if (Zotero.Pharos?.Auth?.shouldGate()) {
 				Zotero.Pharos.Auth.openGate();
 			}

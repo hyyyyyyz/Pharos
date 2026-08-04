@@ -534,6 +534,12 @@ var Zotero_Pharos_Auth = new function () {
 		// empty screen between the two, and because a window count of zero is
 		// what tells the platform to quit.
 		Zotero.openMainWindow();
+		// Anything the command line asked for was deferred: startup ingest ran
+		// while this window was the only one, and there was nothing to import
+		// into. Re-run it now that there is. Same shape as the second-invocation
+		// path in xpcom/commandLineHandler.js, which also opens the window and
+		// ingests straight after.
+		Zotero.CommandLineIngester.ingest();
 		window.close();
 	};
 };
