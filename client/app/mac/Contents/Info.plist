@@ -210,6 +210,13 @@
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
-	<string>10.9.0</string>
+	<!-- Matches the Gecko runtime this bundle actually ships: every Mach-O in it
+	     reports minos 10.15. At 10.9 LaunchServices believes 10.9-10.14 is
+	     supported and lets the launch proceed, so dyld fails on the first library
+	     instead of LaunchServices refusing cleanly -- a crash where the key exists
+	     to produce a sentence. Not raised to 11.0 to match the arm64 slice: this
+	     is one bundle-wide value, and the floor is the lowest-requirement slice
+	     that can run on the oldest supported Mac. -->
+	<string>10.15.0</string>
 </dict>
 </plist>

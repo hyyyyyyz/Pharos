@@ -812,10 +812,23 @@ if [ $BUILD_MAC == 1 ]; then
 		#
 		# ChannelPrefs.framework has the same requirement for a different reason
 		# and is handled where it is broken, above.
+		# Named outright rather than found. `find -exec` reports success whether it
+		# signed one file or none, so a rename upstream, a moved directory or a
+		# codesign that failed outright would all leave this block green while
+		# producing exactly the silently-broken artifact it exists to prevent --
+		# which is the same failure shape as the bug that made it necessary.
+		word_dylib="$APPDIR/Contents/Resources/integration/word-for-mac/libZoteroWordIntegration.dylib"
+		if [ ! -f "$word_dylib" ]; then
+			echo "Word integration dylib not found at $word_dylib" >&2
+			exit 1
+		fi
 		if [[ "$(uname -s)" = "Darwin" ]]; then
-			find "$APPDIR/Contents" -name 'libZoteroWordIntegration.dylib' \
-				-exec /usr/bin/codesign --force --options runtime \
-					--entitlements "$CALLDIR/mac/entitlements.xml" --sign - {} \;
+			/usr/bin/codesign --force --options runtime \
+				--entitlements "$CALLDIR/mac/entitlements.xml" --sign - "$word_dylib"
+			/usr/bin/codesign --verify --strict "$word_dylib"
+		else
+			echo "WARNING: cannot ad-hoc sign the Word dylib on $(uname -s)." >&2
+			echo "         Word integration will not load on Apple Silicon." >&2
 		fi
 	fi
 
@@ -837,7 +850,9 @@ if [ $BUILD_MAC == 1 ]; then
 				echo "Test build -- skipping notarization"
 			elif [ -z "$NOTARIZATION_USER" ]; then
 				echo "No notarization credentials -- skipping notarization"
-				echo "The disk image is unsigned: macOS needs Control-click, Open on first launch"
+				echo "The disk image is unsigned. The first launch is refused; allow it once under"
+				echo "System Settings > Privacy & Security > Open Anyway. (Control-click, Open no"
+				echo "longer works -- macOS 15 removed it for code with no usable signature.)"
 			else
 				# Upload disk image to Apple
 				"$CALLDIR/scripts/notarize_mac_app" "$dmg"

@@ -563,17 +563,22 @@ if [ $BUILD_MAC == 1 ]; then
 	modify_omni mac
 	popd
 	
-	# Replace "FirefoxCP" with "ZoteroCP" for subprocesses ("Isolated Web Content", "Socket Process", "Web Content", etc.)
-	info_plist=Firefox.app/Contents/MacOS/plugin-container.app/Contents/Resources/English.lproj/InfoPlist.strings
-	from=$(get_utf16_chars "FirefoxCP")
-	to=$(get_utf16_chars "ZoteroCP")
-	perl -pi -e "s/$from/$to/" $info_plist
-	# Check for UTF-16 "ZoteroCP"
-	if ! grep -a -q "Z.o.t.e.r.o.C.P." $info_plist; then
-		echo '"ZoteroCP" not found in InfoPlist.strings after replacement'
-		exit 1
-	fi
-	
+	# Upstream renames the subprocess label here -- "FirefoxCP" to "ZoteroCP" in
+	# plugin-container.app's InfoPlist.strings -- and that is removed rather than
+	# rebranded, deliberately.
+	#
+	# plugin-container.app is a bundle Mozilla ships with a valid Developer ID
+	# signature, and InfoPlist.strings is a SEALED RESOURCE: editing it breaks the
+	# seal, and the build stays green while shipping a bundle that fails
+	# `codesign --verify`. That is the same shape as the ChannelPrefs bug that made
+	# the 1.0.0 macOS build unlaunchable, and it cannot be repaired the same way --
+	# plugin-container carries hardened runtime and links Mozilla-signed dylibs, so
+	# ad-hoc re-signing it strips the team ID and the allow-jit entitlement while
+	# leaving library validation on, killing every content process at exec.
+	#
+	# What is lost is the string in Activity Monitor's process list. It said
+	# "ZoteroCP", which was not Pharos branding anyway.
+
 	rm -f Firefox.dmg
 	
 	echo $("$SCRIPT_DIR/xulrunner_hash" -p m) > hash-mac
