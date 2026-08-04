@@ -27,6 +27,7 @@ desktop-first platform.
 [Parity phase](docs/PHASE-PARITY.md) ·
 [Parity phase 2](docs/PHASE-PARITY-2.md) ·
 [Parity phase 3](docs/PHASE-PARITY-3.md) ·
+[Baseline & shared library](docs/PHASE-BASELINE.md) ·
 [Contributing](CONTRIBUTING.md)
 
 </div>

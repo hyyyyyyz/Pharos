@@ -25,6 +25,7 @@
 [界面复刻阶段记录](docs/PHASE-PARITY.md) ·
 [界面复刻第二轮](docs/PHASE-PARITY-2.md) ·
 [界面复刻第三轮](docs/PHASE-PARITY-3.md) ·
+[基线迁移与共享文库](docs/PHASE-BASELINE.md) ·
 [参与贡献](CONTRIBUTING.md)
 
 </div>
