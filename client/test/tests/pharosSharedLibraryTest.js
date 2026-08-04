@@ -90,6 +90,54 @@ describe("Pharos shared library", function () {
 		});
 	});
 
+	describe("call site ordering", function () {
+		// The policy above is only half the guarantee. The other half is WHERE it
+		// runs, and that half is invisible to every test that calls
+		// assertMigrationAllowed directly.
+		//
+		// It originally sat immediately before the migration transaction, which
+		// reads as the obvious place. Between the top of updateSchema() and that
+		// point, Zotero writes to the database three times -- backUpDatabase,
+		// integrityCheck(true), and _fixSciteValues(), which issues
+		// UPDATE itemDataValues and DELETE FROM itemData and swallows its own
+		// errors. A guard that fires after those has already permitted writes to a
+		// library it was about to refuse.
+		//
+		// integrityCheckRequired() is the first call after the guard's position, so
+		// asserting it has not run when the guard throws pins the ordering exactly:
+		// move the guard back down past anything, and this fails.
+		it("should refuse before anything reads or writes the database", async function () {
+			var realAssert = Shared.assertMigrationAllowed;
+			var realCheck = Zotero.Schema.integrityCheckRequired;
+			var checkRan = false;
+
+			Shared.assertMigrationAllowed = function () {
+				throw new Error('PHAROS_TEST_REFUSAL');
+			};
+			Zotero.Schema.integrityCheckRequired = async function () {
+				checkRan = true;
+				return realCheck.apply(Zotero.Schema, arguments);
+			};
+
+			var e = null;
+			try {
+				await Zotero.Schema.updateSchema();
+			}
+			catch (err) {
+				e = err;
+			}
+			finally {
+				Shared.assertMigrationAllowed = realAssert;
+				Zotero.Schema.integrityCheckRequired = realCheck;
+			}
+
+			assert.ok(e, 'a refusal from the guard did not stop updateSchema()');
+			assert.include(e.message, 'PHAROS_TEST_REFUSAL');
+			assert.isFalse(checkRan,
+				'the guard ran too late -- work against the shared library had already started');
+		});
+	});
+
 	describe("#sidecarPath()", function () {
 		it("should sit beside the shared database, not inside it", function () {
 			// Pharos-native records must never become tables in zotero.sqlite:

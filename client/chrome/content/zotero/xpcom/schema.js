@@ -142,6 +142,36 @@ Zotero.Schema = new function () {
 			throw new Zotero.DB.IncompatibleVersionException(msg, dbClientVersion);
 		}
 		
+		// PHAROS: never migrate a library that is shared with Zotero.
+		//
+		// The whole point of this client is that the user's Zotero opens the same
+		// database. Zotero's rule is "older than me, so upgrade it", and an upgrade
+		// is one-way: once this client has raised the schema, the Zotero the user
+		// actually runs refuses to open its own data. That is not a risk to warn
+		// about after the fact -- it is the failure, and it happens on the first
+		// launch after any baseline drift.
+		//
+		// So a shared library must match EXACTLY. Refusing is recoverable (the user
+		// keeps using Zotero, and this build is fixed); migrating is not.
+		//
+		// POSITION IS PART OF THE GUARD. It sat lower down, immediately before the
+		// migration transaction, which reads as the natural place and is wrong:
+		// three writes to the user's real library happen between here and there --
+		// backUpDatabase below, integrityCheck(true), and _fixSciteValues(), which
+		// issues UPDATE itemDataValues and DELETE FROM itemData and has its errors
+		// swallowed by logError. A guard that fires after those has already let the
+		// thing it promises not to happen, happen. Here, nothing has run yet: no
+		// debug listener to leak, no `PRAGMA foreign_keys = false` left set, and the
+		// version is recomputed inline so there is no dependency on anything below.
+		//
+		// NOT optional-chained. `Zotero.Pharos.SharedLibrary` is loaded from
+		// zotero.mjs before this runs, and if it ever is not, a guard that silently
+		// evaluates to undefined is worse than no guard -- it would let the
+		// migration proceed while looking protected.
+		Zotero.Pharos.SharedLibrary.assertMigrationAllowed(
+			userdata, await _getSchemaSQLVersion('userdata')
+		);
+
 		// Check if DB is coming from the DB Repair Tool and should be checked
 		var integrityCheckRequired = await this.integrityCheckRequired();
 		
@@ -191,28 +221,6 @@ Zotero.Schema = new function () {
 			catch (e) {
 				Zotero.logError(e);
 			}
-			
-			// PHAROS: never migrate a library that is shared with Zotero.
-			//
-			// The whole point of this client is that the user's Zotero opens the
-			// same database. Zotero's rule is "older than me, so upgrade it", and
-			// an upgrade is one-way: once this client has raised the schema, the
-			// Zotero the user actually runs refuses to open its own data. That is
-			// not a risk to warn about after the fact -- it is the failure, and it
-			// happens on the first launch after any baseline drift.
-			//
-			// So a shared library must match EXACTLY. Refusing to open is
-			// recoverable (the user keeps using Zotero, and this build is fixed);
-			// migrating is not. The check is deliberately here rather than in the
-			// migration function, so that no future caller can reach the migration
-			// by another route.
-			// NOT optional-chained. `Zotero.Pharos.SharedLibrary` is loaded from
-			// zotero.mjs before this runs, and if it ever is not, a guard that
-			// silently evaluates to undefined is worse than no guard -- it would
-			// let the migration proceed while looking protected.
-			Zotero.Pharos.SharedLibrary.assertMigrationAllowed(
-				userdata, await _getSchemaSQLVersion('userdata')
-			);
 
 			updated = await Zotero.DB.executeTransaction(async function (conn) {
 				var updated = await _updateSchema('system');
