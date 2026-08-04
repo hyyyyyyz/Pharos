@@ -1,0 +1,181 @@
+name: Release
+
+# Tag a commit `desktop-v0.5.0` and push it, or run this by hand from the
+# Actions tab. The prefix is not decoration: this repository also holds the
+# backend and the web client, and an unprefixed `v*` would claim the whole
+# monorepo's version for one of its three products.
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the leading v (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # macOS is built on macOS because the disk image needs hdiutil, and because
+  # the universal binary is assembled from the Mac Gecko runtime.
+  macos:
+    name: macOS (.dmg)
+    runs-on: macos-14
+    # Every `run` below is a client build. The workflow was written when this
+    # lived in the client's own repository, where these paths were the root.
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - run: npm ci
+
+      # Gecko is ~100MB per platform and does not change between releases,
+      # so it is keyed on the hash files the build compares against.
+      - name: Cache Gecko runtime
+        uses: actions/cache@v4
+        with:
+          path: client/app/xulrunner
+          key: xulrunner-mac-${{ hashFiles('client/app/config.sh') }}
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          # The .SOURCE suffix is required, not decorative: prepare_build
+          # matches /([0-9].+)\.SOURCE/ to find the version at all, then
+          # substitutes the suffix per channel -- "release" replaces it with
+          # nothing. A bare "0.1.0" here fails with "Version number not found".
+          echo "${{ steps.version.outputs.value }}.SOURCE" > version
+          npm run build
+          build_dir=$(mktemp -d)
+          app/scripts/prepare_build -s build -o "$build_dir" -c release
+          # No -e: these builds are unsigned. See app/config.sh for what setting
+          # DEVELOPER_ID and the NOTARIZATION_* values would change.
+          app/build.sh -d "$build_dir" -p m -c release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pharos-macos
+          path: client/app/dist/*.dmg
+
+  # Windows and Linux are built on Linux and shipped as portable archives.
+  #
+  # The Windows NSIS installer needs WIN_NATIVE, i.e. Cygwin -- GitHub's Windows
+  # runners are MSYS2, so build.sh takes its non-native path there anyway. Rather
+  # than ship an installer this project cannot test, both platforms get the
+  # archive build.sh already produces on this path.
+  portable:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: w
+            label: Windows (portable .zip)
+            glob: 'client/app/dist/*_x64.zip'
+            artifact: pharos-windows
+          - platform: l
+            label: Linux (.tar.xz)
+            glob: 'client/app/dist/*_linux-x86_64.tar.xz'
+            artifact: pharos-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - run: npm ci
+
+      - name: Cache Gecko runtime
+        uses: actions/cache@v4
+        with:
+          path: client/app/xulrunner
+          key: xulrunner-${{ matrix.platform }}-x64-${{ hashFiles('client/app/config.sh') }}
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          # The .SOURCE suffix is required, not decorative: prepare_build
+          # matches /([0-9].+)\.SOURCE/ to find the version at all, then
+          # substitutes the suffix per channel -- "release" replaces it with
+          # nothing. A bare "0.1.0" here fails with "Version number not found".
+          echo "${{ steps.version.outputs.value }}.SOURCE" > version
+          npm run build
+          build_dir=$(mktemp -d)
+          app/scripts/prepare_build -s build -o "$build_dir" -c release
+          app/build.sh -d "$build_dir" -p ${{ matrix.platform }} -a x64 -c release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
+
+  release:
+    name: Publish release
+    needs: [macos, portable]
+    runs-on: ubuntu-latest
+    # Only for real tags. A manual run is for checking that the build works,
+    # and should not create a release for a version that was never tagged.
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          draft: true
+          body: |
+            ## Install
+
+            **macOS** — open the `.dmg` and drag Pharos to Applications. The
+            first launch needs Control-click, Open: these builds are not signed
+            with an Apple Developer certificate, so a double-click is refused.
+
+            **Windows** — unzip and run `zotero.exe`. This is a portable build,
+            not an installer. The executable still carries Zotero's name: it is a
+            prebuilt binary from Firefox source that ships in the tree, and
+            renaming it is a build change that has not been made yet. The
+            application itself is Pharos.
+
+            **Linux** — extract the `.tar.xz` and run `zotero`, for the same
+            reason.
+
+            Pharos keeps its library in `~/Pharos`, separate from Zotero's own
+            `~/Zotero`. Installing it does not touch an existing Zotero
+            installation or its data.
