@@ -632,6 +632,32 @@ if [ $BUILD_MAC == 1 ]; then
 	tar xvf "$CALLDIR/mac/ChannelPrefs.framework.tar.xz" -C "$CONTENTSDIR/Frameworks"
 	if [ "$UPDATE_CHANNEL" != "source" ]; then
 		"$CALLDIR/mac/set-channel-prefs-channel" "$CONTENTSDIR/Frameworks/ChannelPrefs.framework/ChannelPrefs" source $UPDATE_CHANNEL
+		# That patched a string inside a Mach-O binary Mozilla had already signed,
+		# which invalidates the signature it still carries. On Apple Silicon a
+		# present-but-invalid signature is fatal in a way an absent one is not:
+		# the kernel kills the process with CODESIGNING / Invalid Page the moment
+		# a page of the file fails validation, so the app dies inside dlopen with
+		# no message. Re-sign ad-hoc to restore a signature that matches the bytes.
+		#
+		# Only when we are not about to sign properly -- the $SIGN block below
+		# re-signs this framework with DEVELOPER_ID, and doing it twice is waste.
+		#
+		# Found the hard way: this is invisible to a source-channel build, because
+		# the patch above never runs and Mozilla's signature stays intact. Every
+		# local build is a source build, so the first thing to hit it was a
+		# release-channel build downloaded from CI, which crashed on launch.
+		if [ $SIGN != 1 ]; then
+			if [[ "$(uname -s)" = "Darwin" ]]; then
+				/usr/bin/codesign --force --options runtime --sign - \
+					"$CONTENTSDIR/Frameworks/ChannelPrefs.framework"
+			else
+				# Cross-building a Mac app from Linux, where there is no codesign.
+				# Say so rather than shipping a bundle that dies on launch with a
+				# kernel message and no explanation.
+				echo "WARNING: ChannelPrefs was patched but cannot be re-signed on $(uname -s)." >&2
+				echo "         The resulting app will not launch on Apple Silicon." >&2
+			fi
+		fi
 	fi
 	
 	# Use our own launcher
@@ -775,8 +801,24 @@ if [ $BUILD_MAC == 1 ]; then
 			echo
 			/usr/bin/codesign --verify -vvvv "$APPDIR/Contents/PlugIns/ZoteroSafariExtension.appex"
 		fi
+	else
+		# An unsigned build still needs the few binaries that CANNOT be unsigned.
+		# Apple Silicon refuses to load an arm64 Mach-O with no signature at all,
+		# so this dylib -- built here rather than shipped by Mozilla, and so
+		# arriving unsigned -- fails to dlopen and Word integration is simply dead
+		# with no diagnostic. app/scripts/codesign_local does this for local
+		# `dir_build` runs; doing it here as well covers builds that go straight
+		# to a package, which is every build CI produces.
+		#
+		# ChannelPrefs.framework has the same requirement for a different reason
+		# and is handled where it is broken, above.
+		if [[ "$(uname -s)" = "Darwin" ]]; then
+			find "$APPDIR/Contents" -name 'libZoteroWordIntegration.dylib' \
+				-exec /usr/bin/codesign --force --options runtime \
+					--entitlements "$CALLDIR/mac/entitlements.xml" --sign - {} \;
+		fi
 	fi
-	
+
 	# Build and notarize disk image
 	if [ $PACKAGE == 1 ]; then
 		if [ $MAC_NATIVE == 1 ]; then
