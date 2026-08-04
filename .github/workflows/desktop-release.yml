@@ -199,15 +199,22 @@ jobs:
               echo "> Do not publish it as a full release without saying so."
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
           else
             echo "note=" >> "$GITHUB_OUTPUT"
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
           fi
           find artifacts -maxdepth 2 -type f | sort
 
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          draft: true
+          # Published outright, not held as a draft -- a tag is the decision to
+          # release, and a draft nobody remembers to publish is a release that
+          # did not happen. The one exception is a release missing a platform:
+          # that stays a draft, because publishing it marks it Latest and offers
+          # some users a download that is not there. The banner above says which.
+          draft: ${{ steps.missing.outputs.incomplete }}
           body: |
             ${{ steps.missing.outputs.note }}
             ## Install
