@@ -357,9 +357,10 @@ and refuses to run against `~/Zotero`: `-profile` isolates only the Gecko
 profile, **not** Zotero's data directory. Production shared-library support does
 not permit development or automated tests to use real data.
 
-Sign in under **Settings → Pharos** to reach the backend. Tagging `v*` builds
-installers through `client/.github/workflows/release.yml`; macOS builds are
-unsigned, so their first launch needs Control-click, Open.
+Sign in under **Settings → Pharos** to reach the backend. Tagging `desktop-v*`
+builds all three platforms through `.github/workflows/desktop-release.yml`;
+macOS builds are unsigned, so the first launch is refused and has to be allowed
+once under System Settings → Privacy & Security → Open Anyway.
 
 ## Develop the marketing site
 

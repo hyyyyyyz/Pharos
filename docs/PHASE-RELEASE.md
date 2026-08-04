@@ -119,12 +119,140 @@ app/build.sh -d "$build_dir" -p m -c release
 | `CFBundleIdentifier` | `top.selab.pharos` (unsuffixed — the suffix is applied only for `beta`/`dev`/`source`) |
 | Mount `.dmg`, copy out, set `com.apple.quarantine`, launch | runs and stays running |
 
+## The audit that followed
+
+Shipping two broken releases in a row is a pattern, not two accidents, so the
+whole pipeline was audited from four independent angles — the missing Windows
+artifact, other ways a green build can ship a broken binary, the integrity of
+the artifacts that did build, and whether the release notes are true — with
+every finding handed to a separate agent whose job was to refute it. Eleven
+survived; three did not.
+
+### The Windows build has never once shipped
+
+`build.sh:1065` writes `$DIST_DIR/$APP_NAME-${VERSION}_$arch.zip`, and `$arch`
+at that point has been through `get_canonical_arch`, which turns `x64` into
+`win-x64`. The file is `Pharos-1.0.0_win-x64.zip`. The workflow's upload glob
+said `*_x64.zip`.
+
+One character. The Windows job downloaded the Gecko runtime, staged the app and
+wrote a correct zip on every tagged release since `desktop-v0.1.0`; the upload
+step matched zero files, the job went green, and the runner deleted the
+workspace. Five releases, no Windows build, no red job.
+
+It survived because the two names look alike and because nothing checked. The
+Linux glob works by accident of a different naming shape — its format string
+carries `_linux-` as a literal and `$arch` holds only `x86_64` — so reading one
+and inferring the other gives the wrong answer.
+
+`actions/upload-artifact` defaults to `if-no-files-found: warn`. Both upload
+steps now set `error`: a build that produces no artifact has not succeeded.
+
+### The schema guard fired after three writes to the shared library
+
+The one that matters most, because it is the user's real library.
+
+`Zotero.Pharos.SharedLibrary.assertMigrationAllowed()` was called immediately
+before the migration transaction — the obvious place, and the wrong one. Between
+the top of `updateSchema()` and that point, Zotero writes to the database three
+times: `backUpDatabase`, `integrityCheck(true)`, and `_fixSciteValues()`, which
+issues `UPDATE itemDataValues` and `DELETE FROM itemData` and has its errors
+swallowed by `logError`.
+
+So the release notes' promise — "it refuses to open a library whose schema does
+not match" — was not what the code did. A mismatched library got written to
+first and refused second.
+
+The guard now runs immediately after the compatibility check, before anything
+reads or writes. That position is load-bearing, so `pharosSharedLibraryTest.js`
+now pins it: `integrityCheckRequired()` is the first call after the guard, and
+the test asserts it has not run when the guard throws. Move the guard back down
+past anything and the test fails.
+
+The note was corrected too, to say **migrate** rather than **open** — by the
+time the guard runs, `Zotero.DB` has already opened `zotero.sqlite` in WAL mode,
+so "does not open" is not a promise this code can make.
+
+### Install instructions that cannot work
+
+"The first launch needs Control-click, Open" appeared in seven places. macOS 15
+removed that bypass for code with no usable signature; on 15 and later the
+override lives only in System Settings → Privacy & Security → Open Anyway, and
+it appears only after a launch has already been blocked.
+
+Measured rather than assumed: `spctl --assess` reports `source=no usable
+signature`, and Apple's own `syspolicy_check distribution` calls it
+`Codesign Error … File is not signed at all` at Fatal severity. The bundle is
+not merely un-notarised; it has no `_CodeSignature` directory at all.
+
+### Two more claims in the notes that were false
+
+- **"Pharos opens your existing Zotero library."** Only if that library is at
+  `~/Zotero`. Pharos does not read Zotero's settings, so a relocated data
+  directory is not found and a new empty one is created silently. Worse, the
+  obvious repair — Settings → Data Directory Location — ends at a Zotero dialog
+  reading "move files from your existing Zotero data directory to the new
+  location", where "existing" now means the empty directory Pharos just made.
+  A user obeying it literally copies an empty database over their real one. The
+  notes now give `-datadir` as the first answer and warn about that sentence by
+  name.
+- **"Linux — run `zotero`, for the same reason."** The Windows `zotero.exe` is a
+  prebuilt binary checked into the tree; the Linux `zotero` is a bash script.
+  Same name, and on Linux genuinely just a rename nobody has done.
+
+### Same bug class, found before it shipped
+
+`fetch_xulrunner` patched `InfoPlist.strings` inside `plugin-container.app` to
+rename subprocesses from "FirefoxCP" to "ZoteroCP". That file is a sealed
+resource of a bundle Mozilla signs, so editing it breaks the seal — structurally
+identical to ChannelPrefs, and equally invisible to a green build.
+
+It is deleted rather than repaired. The ChannelPrefs recipe does not transfer:
+`plugin-container` carries hardened runtime and links Mozilla-signed dylibs, so
+ad-hoc re-signing strips the team ID and the `allow-jit` entitlement while
+leaving library validation on — which kills every content process at exec. What
+is lost is a string in Activity Monitor that said "ZoteroCP", which was not
+Pharos branding anyway.
+
+Two smaller ones went with it: the DMG's committed `.DS_Store` positioned an icon
+named `Zotero.app`, so `Pharos.app` got no saved position and Finder auto-placed
+it wherever it liked — fixed by an equal-length UTF-16 substitution of the record
+key, both names being exactly ten code units, verified to leave the 6148-byte
+B-tree structurally intact. And `LSMinimumSystemVersion` claimed 10.9 while every
+Mach-O in the bundle reports `minos 10.15`, so 10.9–10.14 got a dyld crash where
+LaunchServices should have given a sentence.
+
+### What was refuted
+
+Three findings did not survive: that the macOS cross-build path ships a
+kernel-killed app (the new warning covers it), that a custom mac XUL is copied
+in unsigned (it is not), and a duplicate of the plugin-container finding that
+proposed the ad-hoc re-sign that would have broken it worse.
+
+Worth recording that the verification pass earned its cost twice over: it did not
+just kill three findings, it corrected the proposed fix on four that were real —
+including the plugin-container one, where the obvious repair was demonstrated,
+by running it on a scratch copy, to turn a cosmetic seal break into a hard crash.
+
+### The ordering lesson, again
+
+The ChannelPrefs hunt cost three wrong hypotheses before a file-by-file diff
+answered it in one step. The audit found the Windows bug the same way: not by
+reasoning about why the job might not have uploaded, but by asking what filename
+the code actually writes and comparing it to the glob. Both times the mechanical
+comparison was cheap, decisive, and not the first thing tried.
+
 ## Still open
 
 - **The bundle as a whole is unsigned**, by decision 6 — there is no Apple
-  Developer account. First launch therefore needs Control-click → Open. The
-  build says so on the way past. Fixing this properly is `DEVELOPER_ID` plus
-  the `NOTARIZATION_*` values in `app/config-custom.sh` and nothing else.
+  Developer account. `codesign --verify` reports "code object is not signed at
+  all", `spctl --assess` reports "no usable signature", and Apple's own
+  `syspolicy_check distribution` calls it a fatal pre-distribution error. The
+  first launch is therefore refused and has to be allowed once under System
+  Settings → Privacy & Security → Open Anyway; Control-click → Open, which every
+  doc in this repo used to say, stopped working in macOS 15. Fixing this
+  properly is `DEVELOPER_ID` plus the `NOTARIZATION_*` values in
+  `app/config-custom.sh` and nothing else.
 - **The executable inside the bundle is still named `zotero`**
   (`CFBundleExecutable`). Cosmetic in the Dock, visible in Activity Monitor and
   in crash reports — which is how it was read throughout this investigation.

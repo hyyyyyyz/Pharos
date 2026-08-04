@@ -27,8 +27,10 @@ SIGN=0
 # account sets this (and the NOTARIZATION_* values below) in config-custom.sh,
 # which is sourced at the end of this file and is not in the repository.
 #
-# An unsigned build still runs on macOS -- the first launch needs Control-click,
-# Open, because Gatekeeper will not open it from a double-click.
+# An unsigned build still runs on macOS, but not from a double-click: Gatekeeper
+# refuses it, and the refusal has to be overridden once under System Settings >
+# Privacy & Security > Open Anyway. Control-click, Open used to do this and no
+# longer does -- macOS 15 removed that bypass for code with no usable signature.
 DEVELOPER_ID=""
 # Keychain and keychain password, if not building via the GUI
 KEYCHAIN=""
