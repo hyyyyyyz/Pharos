@@ -157,19 +157,47 @@ jobs:
     name: Publish release
     needs: [macos, portable]
     runs-on: ubuntu-latest
-    # Only for real tags. A manual run is for checking that the build works,
-    # and should not create a release for a version that was never tagged.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Only for real tags. A manual run is for checking that the build works, and
+    # should not create a release for a version that was never tagged.
+    #
+    # `always()` so that ONE failing platform does not discard the others. The
+    # default would skip this job entirely if `portable` failed, throwing away a
+    # good macOS build because the Windows leg was missing a tool. The release is
+    # a draft either way, and the step below names any platform that is absent --
+    # a short release is fine, a silently short one is not.
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.macos.result == 'success'
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Note any platform that did not build
+        id: missing
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -d artifacts/pharos-macos ]   || missing="$missing macOS"
+          [ -d artifacts/pharos-windows ] || missing="$missing Windows"
+          [ -d artifacts/pharos-linux ]   || missing="$missing Linux"
+          if [ -n "$missing" ]; then
+            {
+              echo "note<<EOF"
+              echo ""
+              echo "> **This release is incomplete.** No build was produced for:$missing."
+              echo "> Do not publish it as a full release without saying so."
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "note=" >> "$GITHUB_OUTPUT"
+          fi
+          find artifacts -maxdepth 2 -type f | sort
 
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
           draft: true
           body: |
+            ${{ steps.missing.outputs.note }}
             ## Install
 
             **macOS** — open the `.dmg` and drag Pharos to Applications. The
