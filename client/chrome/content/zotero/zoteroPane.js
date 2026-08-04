@@ -603,17 +603,20 @@ var ZoteroPane = new function () {
 				}
 			}, 1000);
 		}
-		// If the database was initialized or there are no sync credentials and
-		// Zotero hasn't been run before in this profile, display the start page
-		// -- this way the page won't be displayed when they sync their DB to
-		// another profile or if the DB is initialized erroneously (e.g. while
-		// switching data directory locations)
+		// PHAROS: no start page. Upstream opens ZOTERO_CONFIG.START_URL here on a
+		// first run, and `loadURI` hands an external URL to the operating system
+		// -- so installing Pharos, launching it, and having the system browser
+		// come up on pharos.selab.top was the first thing it did. That is the
+		// seam this project exists to remove: the desktop client IS the product,
+		// and the web app is for writing, not for being introduced to the reader.
+		//
+		// The first run already has a first surface -- the sign-in window, from
+		// app/assets/commandLineHandler.js -- which explains what an account buys
+		// and offers 暂不登录. Nothing here needs to add a browser tab to that.
+		//
+		// The pref bookkeeping stays. `firstRun2` is read elsewhere and clearing
+		// the legacy `firstRun` is unrelated to the page; only the launch is gone.
 		else if (Zotero.Prefs.get('firstRun2')) {
-			if (Zotero.Schema.dbInitialized || !Zotero.Sync.Server.enabled) {
-				setTimeout(function () {
-					ZoteroPane_Local.loadURI(ZOTERO_CONFIG.START_URL);
-				}, 400);
-			}
 			Zotero.Prefs.set('firstRun2', false);
 			try {
 				Zotero.Prefs.clear('firstRun');
