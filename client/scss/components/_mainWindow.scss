@@ -29,7 +29,22 @@
 	// Let window chrome, tabs, and toolbar shrink even when sidebars overflow
 	min-width: 0;
 }
-#browser, #zotero-pane-stack, #zotero-trees {
+// Every ancestor of the item tree has to be allowed to shrink below its
+// content. XUL is real flexbox in this Gecko -- xul.css gives every element
+// `display: flex` and `[flex="1"] { flex: 1 !important }` -- so a flex item
+// left at `min-height: auto` is floored at its content's size, and the item
+// tree's content is the FULL virtual list (windowed-list.js sizes the inner
+// div to rowCount * rowHeight). One link missing from this chain and the
+// scroll container is sized to the whole list: clientHeight == scrollHeight,
+// nothing overflows, no scrollbar is created, and the wheel has nothing to
+// scroll. Rows past the bottom of the window are laid out and then clipped.
+//
+// #pharos-deck is Pharos's own -- it wraps #zotero-trees so the library panel
+// and the module <browser>s can sit side by side (zoteroPane.xhtml:1251) --
+// and it was added to the chain without this. It only shows up once a library
+// holds more items than fit on one screen, which is why no test caught it and
+// why the shipped 1.0.0 had an item list that could not be scrolled.
+#browser, #zotero-pane-stack, #zotero-trees, #pharos-deck {
 	min-height: 0;
 }
 
