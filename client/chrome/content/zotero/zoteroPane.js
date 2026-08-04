@@ -142,7 +142,8 @@ var ZoteroPane = new function () {
 		
 		// Set the sync tooltip label
 		let syncLabel = document.getElementById('zotero-tb-sync-label');
-		syncLabel.value = Zotero.getString('sync.syncWith', ZOTERO_CONFIG.DOMAIN_NAME);
+		// The service being synced with is Zotero's, not ours.
+		syncLabel.value = Zotero.getString('sync.syncWith', ZOTERO_CONFIG.SERVICE_DOMAIN_NAME);
 		let syncButton = document.querySelector("#zotero-tb-sync");
 		syncButton.setAttribute("aria-label", syncLabel.value);
 		// Update the aria-description on focus
@@ -5619,7 +5620,10 @@ var ZoteroPane = new function () {
 						? 'linked'
 						: 'stored' + (notOnServer ? '.notOnServer' : '')
 					),
-				[ZOTERO_CONFIG.CLIENT_NAME, ZOTERO_CONFIG.DOMAIN_NAME]
+				// CLIENT_NAME is this application; the domain is the FILE SYNC service,
+				// which is Zotero's. Naming ours sent the user to check a server
+				// that never holds their attachments.
+				[ZOTERO_CONFIG.CLIENT_NAME, ZOTERO_CONFIG.SERVICE_DOMAIN_NAME]
 			);
 		var supportURL = linkedFile
 			? 'https://www.zotero.org/support/kb/missing_linked_file'

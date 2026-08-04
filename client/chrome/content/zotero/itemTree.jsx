@@ -3736,7 +3736,8 @@ var ItemTree = class ItemTree extends LibraryTree {
 				div = doc.createElement('div');
 				div.className = 'publications';
 				let p = doc.createElement('p');
-				p.textContent = Zotero.getString('publications.intro.text1', ZOTERO_CONFIG.DOMAIN_NAME);
+				p.textContent = // My Publications is a zotero.org feature.
+				Zotero.getString('publications.intro.text1', ZOTERO_CONFIG.SERVICE_DOMAIN_NAME);
 				div.appendChild(p);
 
 				p = doc.createElement('p');

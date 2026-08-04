@@ -45,6 +45,18 @@ export var ZOTERO_CONFIG = {
 	DATA_DIR_NAME: 'Zotero',
 	DB_NAME: 'zotero',
 	DOMAIN_NAME: 'pharos.selab.top',
+	//: The domain of the SYNC AND PUBLISHING service, which is Zotero's.
+	//
+	// Not the same thing as DOMAIN_NAME, and conflating them told users the
+	// wrong thing in three places at once: the sync pane offered to "sync with
+	// pharos.selab.top", a missing attachment blamed a file sync that had not
+	// yet reached pharos.selab.top, and My Publications pointed there too. None
+	// of those is ours. Library sync, file storage and publications all run on
+	// Zotero's servers -- API_URL and WWW_BASE_URL below deliberately still
+	// point at them, because that is what lets a Pharos user keep using their
+	// Zotero account. Sending them to look at our domain for a file that lives
+	// on Zotero's is not a cosmetic slip; it is an instruction that cannot work.
+	SERVICE_DOMAIN_NAME: 'zotero.org',
 	PRODUCER: 'Pharos',
 	PRODUCER_URL: 'https://pharos.selab.top',
 	REPOSITORY_URL: 'https://repo.zotero.org/repo/',
