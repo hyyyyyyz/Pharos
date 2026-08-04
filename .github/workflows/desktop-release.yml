@@ -213,6 +213,25 @@ jobs:
             **Linux** — extract the `.tar.xz` and run `zotero`, for the same
             reason.
 
-            Pharos keeps its library in `~/Pharos`, separate from Zotero's own
-            `~/Zotero`. Installing it does not touch an existing Zotero
-            installation or its data.
+            ## Your library
+
+            **Pharos opens your existing Zotero library** — `~/Zotero`, the same
+            database Zotero itself uses. Papers, collections, tags and
+            annotations are the same objects in both, and whichever application
+            you open sees what the other one did.
+
+            **Run one at a time.** SQLite gives the library to a single
+            application; Zotero, Pharos and Vibero can take turns, but not
+            overlap.
+
+            **Back up `~/Zotero` before the first run.** Pharos will not migrate
+            the database — it refuses to open a library whose schema does not
+            match, because upgrading it would leave Zotero unable to open its own
+            data, and that cannot be undone. The check is tested and the round
+            trip was verified against a copy of a real library. It is still your
+            only library, and this is still the first time another program has
+            opened it.
+
+            These builds are unsigned. Translation, AI chat and the daily digest
+            need a Pharos account; the library, the reader and annotations are
+            entirely local and need none.
