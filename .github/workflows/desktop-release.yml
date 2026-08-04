@@ -120,6 +120,15 @@ jobs:
 
       - run: npm ci
 
+      # The Windows runtime arrives as a Firefox .exe installer, and
+      # fetch_xulrunner extracts it with 7z, which the Ubuntu runner does not
+      # ship. macOS uses hdiutil and Linux uses tar, so both of those pass and
+      # only this leg fails -- which is how the first run of this workflow
+      # ended: two green jobs and one red one, at the same step name.
+      - name: Install p7zip
+        if: matrix.platform == 'w'
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
       - name: Cache Gecko runtime
         uses: actions/cache@v4
         with:
