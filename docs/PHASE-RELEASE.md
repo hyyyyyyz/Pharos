@@ -256,9 +256,34 @@ comparison was cheap, decisive, and not the first thing tried.
 - **The executable inside the bundle is still named `zotero`**
   (`CFBundleExecutable`). Cosmetic in the Dock, visible in Activity Monitor and
   in crash reports — which is how it was read throughout this investigation.
-- **The Windows job's fix is unverified.** `build.sh:833` was missing its
-  `WIN_NATIVE` guard and called `cygpath` on a runner that has none; the guard
-  is restored but no green Windows run has confirmed it.
+- **Pharos cannot find a relocated Zotero library.** It reads none of Zotero's
+  own settings, so a data directory the user moved — an external drive, Dropbox,
+  anywhere — is not found, and a new empty `~/Zotero` is created silently
+  instead. The release notes now lead with `-datadir` and warn about the
+  misleading repair path, but notes are a workaround, not a fix. The durable one
+  is in the client: extend `Zotero.Profile.getOtherAppProfilesDir` — or add a
+  sibling — so the "New installation" branch at `dataDirectory.js:183` also reads
+  Zotero's own profile root for `extensions.zotero.dataDir`, using the
+  `readPrefsFromFile` path already written for Firefox at
+  `dataDirectory.js:262-275`. Failing that, prompt on first run rather than
+  silently creating a library.
 - **The deployed backend lags the code**, missing `/api/auth/status` and
   `/api/evidence`. The desktop degrades rather than fails, but the features
   behind those routes are dark until it is redeployed.
+
+## Verified end state
+
+Run `30882249864`, tag `desktop-v1.0.0`, all four jobs green and — for the first
+time — **three** artifacts:
+
+| Artifact | Size |
+| --- | --- |
+| `pharos-macos` | 179.1 MB |
+| `pharos-windows` | 124.9 MB |
+| `pharos-linux` | 105.7 MB |
+
+The macOS build was additionally verified locally on the same commit, on the
+release channel, by mounting the produced `.dmg`, copying the app out, setting
+`com.apple.quarantine` on it, and launching: it runs. `ChannelPrefs` verifies,
+the Word dylib verifies, the DMG window positions `Pharos.app`, and the shared
+library's ordering guard is pinned by a test proven to fail when the guard moves.
