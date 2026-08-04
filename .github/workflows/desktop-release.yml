@@ -75,6 +75,7 @@ jobs:
         with:
           name: pharos-macos
           path: client/app/dist/*.dmg
+          if-no-files-found: error
 
   # Windows and Linux are built on Linux and shipped as portable archives.
   #
@@ -94,7 +95,14 @@ jobs:
         include:
           - platform: w
             label: Windows (portable .zip)
-            glob: 'client/app/dist/*_x64.zip'
+            # `_win-x64`, not `_x64`. build.sh:1065 writes
+            # "$APP_NAME-${VERSION}_$arch.zip" where $arch has already been through
+            # get_canonical_arch, which turns `x64` into `win-x64` -- the platform
+            # lives inside $arch rather than in a literal infix the way the Linux
+            # name has one. This glob said `_x64` for five releases and matched
+            # nothing every time: the job built a correct zip, the upload step found
+            # no files, and the runner threw the workspace away. Green, and empty.
+            glob: 'client/app/dist/*_win-x64.zip'
             artifact: pharos-windows
           - platform: l
             label: Linux (.tar.xz)
@@ -152,6 +160,10 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.glob }}
+          # The default is `warn`, which is how a glob that matched nothing shipped
+          # five releases with no Windows build and never once turned a job red.
+          # A build that produces no artifact has not succeeded.
+          if-no-files-found: error
 
   release:
     name: Publish release
@@ -200,37 +212,61 @@ jobs:
             ${{ steps.missing.outputs.note }}
             ## Install
 
-            **macOS** — open the `.dmg` and drag Pharos to Applications. The
-            first launch needs Control-click, Open: these builds are not signed
-            with an Apple Developer certificate, so a double-click is refused.
+            **macOS** — open the `.dmg` and drag Pharos to Applications. These
+            builds carry no Apple Developer signature, so the first launch is
+            refused. Double-click it anyway to get the refusal, then go to
+            **System Settings → Privacy & Security**, scroll to Security, and
+            press **Open Anyway** next to the message about Pharos. Confirm once
+            more and it launches; later launches are normal.
+
+            Control-click → Open, which older instructions give, no longer works:
+            macOS 15 removed that bypass for code with no usable signature.
 
             **Windows** — unzip and run `zotero.exe`. This is a portable build,
             not an installer. The executable still carries Zotero's name: it is a
-            prebuilt binary from Firefox source that ships in the tree, and
-            renaming it is a build change that has not been made yet. The
-            application itself is Pharos.
+            prebuilt binary that ships in the tree, and renaming it is a build
+            change that has not been made yet. The application itself is Pharos.
 
-            **Linux** — extract the `.tar.xz` and run `zotero`, for the same
-            reason.
+            **Linux** — extract the `.tar.xz` and run `zotero`. Same name, lesser
+            reason: here it is only a launcher script, so this one really is just
+            a rename nobody has done.
 
             ## Your library
 
-            **Pharos opens your existing Zotero library** — `~/Zotero`, the same
-            database Zotero itself uses. Papers, collections, tags and
-            annotations are the same objects in both, and whichever application
-            you open sees what the other one did.
+            **Pharos opens the Zotero library at `~/Zotero`** — the same database
+            Zotero itself uses. Papers, collections, tags and annotations are the
+            same objects in both, and whichever application you open sees what
+            the other one did.
+
+            **If your Zotero data directory is somewhere else** — an external
+            drive, Dropbox, anywhere you moved it — Pharos will not find it. It
+            does not read Zotero's settings, and it will create a new, empty
+            library at `~/Zotero` without saying so. Avoid that by giving the
+            first launch an explicit path:
+
+            ```
+            /Applications/Pharos.app/Contents/MacOS/zotero -datadir /path/to/your/Zotero
+            ```
+
+            If Pharos has already opened an empty library: quit, then Settings →
+            Advanced → Files and Folders → Data Directory Location → Custom, and
+            choose your real Zotero directory. It will ask you to restart and
+            advise you to "move files from your existing Zotero data directory to
+            the new location". **Ignore that sentence — move nothing.** The
+            directory it means is the empty `~/Zotero` it just made, and obeying
+            it literally would copy an empty database over your real one.
 
             **Run one at a time.** SQLite gives the library to a single
             application; Zotero, Pharos and Vibero can take turns, but not
             overlap.
 
             **Back up `~/Zotero` before the first run.** Pharos will not migrate
-            the database — it refuses to open a library whose schema does not
+            the database — it refuses to *migrate* a library whose schema does not
             match, because upgrading it would leave Zotero unable to open its own
-            data, and that cannot be undone. The check is tested and the round
-            trip was verified against a copy of a real library. It is still your
-            only library, and this is still the first time another program has
-            opened it.
+            data, and that cannot be undone. It refuses before reading or writing
+            anything. The check is tested and the round trip was verified against
+            a copy of a real library. It is still your only library, and this is
+            still the first time another program has opened it.
 
             These builds are unsigned. Translation, AI chat and the daily digest
             need a Pharos account; the library, the reader and annotations are
