@@ -89,8 +89,12 @@ var Plugin = new (function() {
 		if (lastDisplayed > Math.round(Date.now() / 1000) - remindInterval) {
 			return false;
 		}
-		let zp = Zotero.getActiveZoteroPane()
-		let result = await zp.showMacWordPluginInstallWarning()
+		let zp = Zotero.getActiveZoteroPane();
+		if (!zp) {
+			zoteroPluginInstaller.debug('Main interface unavailable; postponing permission warning');
+			return false;
+		}
+		let result = await zp.showMacWordPluginInstallWarning();
 		zoteroPluginInstaller.debug('User closed banner with ' + JSON.stringify(result));
 		if (result.install) return true;
 		else if (result.dismiss) return false;

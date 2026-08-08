@@ -57,11 +57,24 @@ export var ZoteroPluginInstaller = function (addon, failSilently, force) {
 	this.prefPaneDoc = null;
 	this._errorDisplayed = false;
 	
-	this.init();
+	// Keep the promise so startup-order regressions can be tested without
+	// guessing when this asynchronous constructor has finished.
+	this._initPromise = this.init();
 };
 
 ZoteroPluginInstaller.prototype = {
 	init: async function () {
+		// Automatic installers are started during Zotero core initialization. In
+		// Pharos, that can happen while the standalone sign-in window is still the
+		// only application window, before a ZoteroPane exists. Besides putting an
+		// unrelated installer over the sign-in form, the Mac Word permission
+		// prompt requires that pane and otherwise throws. Manual installs are
+		// explicitly requested from Preferences and must remain immediate.
+		if (!this.force && !Zotero.getActiveZoteroPane()) {
+			this.debug('Waiting for the main interface before automatic installation');
+			await Zotero.uiReadyPromise;
+		}
+
 		this.debug('Fetching addon info');
 		
 		this._currentPluginVersion = (await Zotero.File.getContentsFromURLAsync(this._addon.VERSION_FILE)).trim();
