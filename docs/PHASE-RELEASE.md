@@ -242,6 +242,41 @@ reasoning about why the job might not have uploaded, but by asking what filename
 the code actually writes and comparing it to the glob. Both times the mechanical
 comparison was cheap, decisive, and not the first thing tried.
 
+## The 1.0.1 first-window regression
+
+Version 1.0.1 made the standalone Pharos sign-in window actually become the
+application's first window. That fixed the dead login gate from 1.0.0, but it
+also broke an assumption inherited from Zotero: core initialization started the
+Word and LibreOffice installers as though a library window and its `ZoteroPane`
+already existed.
+
+On a fresh macOS profile the result was two unrelated office-integration flows
+over the sign-in form. LibreOffice could open its installation wizard, while
+the Word permission banner dereferenced a null pane and displayed:
+
+```
+TypeError: can't access property "showMacWordPluginInstallWarning", zp is null
+```
+
+This was a Pharos startup-order regression, not an upstream Zotero defect. A
+normal Zotero launch opens `zoteroPane.xhtml` first, so the implicit pane
+precondition happens to hold; Pharos 1.0.1 deliberately opens only
+`pharosAuth.xhtml` until the user signs in or chooses local mode.
+
+Version 1.0.2 keeps the office communication services available at startup but
+defers their automatic installers whenever no active library pane exists. They
+resume after `Zotero.uiReadyPromise`, before which they neither inspect plugin
+versions nor record an attempted installation. A forced installation from
+Settings remains immediate, and the Mac Word banner has a second null-pane
+guard so a future window-order race cannot become a user-facing exception.
+
+The regression test uses a fake installer and a pending UI promise to pin all
+three branches: auth-only startup waits without changing attempt state, normal
+startup with a pane keeps the upstream immediate path, and manual installation
+bypasses the wait. A real fresh-profile launch was also checked on macOS: the
+only visible window was `登录 Pharos`, and both installers logged that they were
+waiting for the main interface.
+
 ## Still open
 
 - **The bundle as a whole is unsigned**, by decision 6 — there is no Apple
