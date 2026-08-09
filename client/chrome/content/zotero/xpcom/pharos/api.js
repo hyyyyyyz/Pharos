@@ -88,11 +88,35 @@ Zotero.Pharos.API = new function () {
 	 */
 	const DISPLAY_NAME_PREF = 'pharos.accountName';
 	const PDF_TRANSLATION_PREF = 'pharos.pdfTranslation';
+	const ACCOUNT_CHANGED_TOPIC = 'pharos-api-account-changed';
 
 	/** Matches _MAX_DISPLAY_NAME in backend/pharos/api/auth.py; longer is a 422. */
 	const MAX_DISPLAY_NAME = 128;
 
 	let _cachedToken = null;
+	let _tokenEpoch = 0;
+
+	/**
+	 * A monotonically increasing identity for account-scoped async work.
+	 *
+	 * A token is deliberately not exposed to callers merely so they can tell
+	 * whether an upload still belongs to the account that started it. The epoch
+	 * answers that question without copying a credential out of this module.
+	 */
+	this.getTokenEpoch = function () {
+		return _tokenEpoch;
+	};
+
+	/** Observer topic emitted after every token replacement or removal. */
+	this.ACCOUNT_CHANGED_TOPIC = ACCOUNT_CHANGED_TOPIC;
+
+	function _accountChanged() {
+		_tokenEpoch++;
+		// Clear the shared transport caches before mounted surfaces hear about the
+		// new identity and begin restoring themselves.
+		Zotero.Pharos.Chat?._clearCache();
+		Services.obs.notifyObservers(null, ACCOUNT_CHANGED_TOPIC, String(_tokenEpoch));
+	}
 
 	/**
 	 * Base URL of the backend, without a trailing slash.
@@ -204,6 +228,7 @@ Zotero.Pharos.API = new function () {
 			// in may be a different person; a leftover "translation off" would
 			// hide the feature from someone who has it.
 			this.cacheUser(null);
+			_accountChanged();
 			return;
 		}
 
@@ -225,6 +250,10 @@ Zotero.Pharos.API = new function () {
 			await Services.logins.addLoginAsync(login);
 		}
 		_cachedToken = token;
+		// Paper ids, model configuration and in-flight preparation all belong to
+		// the bearer-token account. Reusing any of them after an account change
+		// can point a question at an id that only existed for the previous user.
+		_accountChanged();
 	};
 
 

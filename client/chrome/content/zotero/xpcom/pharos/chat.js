@@ -30,8 +30,10 @@
  * repeatedly without re-uploading or re-parsing it.
  */
 Zotero.Pharos.Chat = new function () {
+	let _paperIDs = new Map();
+
 	/**
-	 * Zotero attachment id -> Pharos paper id, for this session only.
+	 * The attachment id -> paper id caches are for this session only.
 	 *
 	 * Not persisted, and deliberately so. The backend content-addresses uploads
 	 * by sha256 and returns the existing row for a file it already has
@@ -40,8 +42,29 @@ Zotero.Pharos.Chat = new function () {
 	 * unbounded blob in a pref -- and would then have to be invalidated whenever
 	 * the file behind an attachment changed. Re-resolving costs one upload of a
 	 * file the server already holds.
+	 *
+	 * _paperIDs holds settled ids. _paperIDPromises makes concurrent readers of
+	 * the same attachment join the upload already in progress.
 	 */
-	let _paperIDs = new Map();
+	let _paperIDPromises = new Map();
+
+	/** Paper id -> the extraction/profile preparation currently in progress. */
+	let _contextPromises = new Map();
+
+	/** Prevent an upload from a signed-out account repopulating the next one's cache. */
+	let _cacheGeneration = 0;
+
+	function _accountChangedError() {
+		let error = new Error('Pharos account changed');
+		error.name = 'AbortError';
+		return error;
+	}
+
+	function _assertCacheGeneration(generation) {
+		if (generation != _cacheGeneration) {
+			throw _accountChangedError();
+		}
+	}
 
 	/**
 	 * The in-flight or settled promise for the account's model provider.
@@ -96,14 +119,22 @@ Zotero.Pharos.Chat = new function () {
 		if (!item) {
 			return null;
 		}
-		if (Zotero.Pharos.Translate.canTranslate(item)) {
+		// Chat only needs a readable PDF path. Unlike layout-preserving
+		// translation it does not import a sibling attachment, so a Zotero linked
+		// file is every bit as usable as a stored file and must not disappear from
+		// the reader merely because the user keeps PDFs outside Zotero storage.
+		if (item.isPDFAttachment()) {
 			return item;
 		}
 		if (!item.isRegularItem()) {
 			return null;
 		}
-		return Zotero.Items.get(item.getAttachments())
-			.find(a => Zotero.Pharos.Translate.canTranslate(a)) || null;
+		let attachments = Zotero.Items.get(item.getAttachments())
+			.filter(a => a.isPDFAttachment());
+		// Prefer the source when a Pharos translation is attached beside it.
+		return attachments.find(a => !Zotero.Pharos.Translate.isTranslation(a))
+			|| attachments[0]
+			|| null;
 	};
 
 	/**
@@ -127,24 +158,42 @@ Zotero.Pharos.Chat = new function () {
 	 * @param {Zotero.Item} attachment
 	 * @return {Promise<String>}
 	 */
-	this.resolvePaperID = async function (attachment) {
+	this.resolvePaperID = function (attachment) {
 		if (_paperIDs.has(attachment.id)) {
-			return _paperIDs.get(attachment.id);
+			return Promise.resolve(_paperIDs.get(attachment.id));
 		}
-		let path = await attachment.getFilePathAsync();
-		if (!path) {
-			throw new Error(Zotero.getString('pharos-translate-error-missing-file'));
+		if (_paperIDPromises.has(attachment.id)) {
+			return _paperIDPromises.get(attachment.id);
 		}
-		let bytes = await IOUtils.read(path);
-		let form = new FormData();
-		form.append(
-			'file',
-			new Blob([bytes], { type: 'application/pdf' }),
-			attachment.attachmentFilename
-		);
-		let paper = await Zotero.Pharos.API.request('POST', '/api/papers', { body: form });
-		_paperIDs.set(attachment.id, paper.id);
-		return paper.id;
+
+		let cacheGeneration = _cacheGeneration;
+		let promise = (async () => {
+			let path = await attachment.getFilePathAsync();
+			_assertCacheGeneration(cacheGeneration);
+			if (!path) {
+				throw new Error(Zotero.getString('pharos-translate-error-missing-file'));
+			}
+			let bytes = await IOUtils.read(path);
+			_assertCacheGeneration(cacheGeneration);
+			let form = new FormData();
+			form.append(
+				'file',
+				new Blob([bytes], { type: 'application/pdf' }),
+				attachment.attachmentFilename
+			);
+			let paper = await Zotero.Pharos.API.request('POST', '/api/papers', { body: form });
+			_assertCacheGeneration(cacheGeneration);
+			_paperIDs.set(attachment.id, paper.id);
+			return paper.id;
+		})();
+		_paperIDPromises.set(attachment.id, promise);
+		let clear = () => {
+			if (_paperIDPromises.get(attachment.id) === promise) {
+				_paperIDPromises.delete(attachment.id);
+			}
+		};
+		promise.then(clear, clear);
+		return promise;
 	};
 
 	/**
@@ -164,14 +213,27 @@ Zotero.Pharos.Chat = new function () {
 	 */
 	this.getProvider = function ({ refresh } = {}) {
 		if (!_provider || refresh) {
-			_provider = Zotero.Pharos.API.request('GET', '/api/ai/provider')
+			let cacheGeneration = _cacheGeneration;
+			let promise = Zotero.Pharos.API.request('GET', '/api/ai/provider')
+				.then((provider) => {
+					// A successful response is account-scoped too. The request may
+					// have started before sign-out and completed after the next
+					// account signed in; handing that value to its direct caller would
+					// briefly install the previous account's model in the new box.
+					_assertCacheGeneration(cacheGeneration);
+					return provider;
+				})
 				.catch((e) => {
 					// A rejection must not be cached: every later caller would
 					// get this same failure, including after the server came
-					// back, and nothing would ever ask again.
-					_provider = null;
+					// back, and nothing would ever ask again. An OLD account's
+					// rejection must not clear the new account's promise.
+					if (cacheGeneration == _cacheGeneration && _provider === promise) {
+						_provider = null;
+					}
 					throw e;
 				});
+			_provider = promise;
 		}
 		return _provider;
 	};
@@ -197,38 +259,65 @@ Zotero.Pharos.Chat = new function () {
 	 * @param {Function} [onProgress] - called with a status string
 	 * @return {Promise<Object>} the context
 	 */
-	this.ensureContext = async function (paperID, onProgress) {
-		let context = await this.getContext(paperID);
-		if (context && context.status == 'ready') {
-			return context;
+	this.ensureContext = function (paperID, onProgress) {
+		if (_contextPromises.has(paperID)) {
+			if (onProgress) {
+				onProgress(Zotero.getString('pharos-chat-status-preparing'));
+			}
+			return _contextPromises.get(paperID);
 		}
 
-		if (onProgress) {
-			onProgress(Zotero.getString('pharos-chat-status-preparing'));
-		}
-		context = await Zotero.Pharos.API.request(
-			'POST', `/api/ai/papers/${paperID}/prepare`
-		);
+		let cacheGeneration = _cacheGeneration;
+		let promise = (async () => {
+			let context = await this.getContext(paperID);
+			_assertCacheGeneration(cacheGeneration);
+			if (context && context.status == 'ready' && context.hasSummary) {
+				return context;
+			}
 
-		// prepare() hands the extraction to a background task, so a "pending"
-		// reply means it started, not that it finished.
-		const POLL_INTERVAL = 1500;
-		const TIMEOUT = 5 * 60 * 1000;
-		let deadline = Date.now() + TIMEOUT;
-		while (context.status != 'ready') {
-			if (context.status == 'error') {
-				throw new Error(context.error || Zotero.getString('pharos-chat-error-prepare'));
+			if (onProgress) {
+				onProgress(Zotero.getString('pharos-chat-status-preparing'));
 			}
-			if (Date.now() > deadline) {
-				throw new Error(Zotero.getString('pharos-chat-error-prepare-timeout'));
+			context = await Zotero.Pharos.API.request(
+				'POST', `/api/ai/papers/${paperID}/prepare`
+			);
+			_assertCacheGeneration(cacheGeneration);
+
+			// prepare() hands the extraction to a background task, so a "pending"
+			// reply means it started, not that it finished.
+			const POLL_INTERVAL = 1500;
+			const TIMEOUT = 5 * 60 * 1000;
+			let deadline = Date.now() + TIMEOUT;
+			while (context.status == 'understanding') {
+				if (Date.now() > deadline) {
+					throw new Error(Zotero.getString('pharos-chat-error-prepare-timeout'));
+				}
+				await Zotero.Promise.delay(POLL_INTERVAL);
+				_assertCacheGeneration(cacheGeneration);
+				context = await this.getContext(paperID);
+				_assertCacheGeneration(cacheGeneration);
+				if (!context) {
+					throw new Error(Zotero.getString('pharos-chat-error-prepare'));
+				}
 			}
-			await Zotero.Promise.delay(POLL_INTERVAL);
-			context = await this.getContext(paperID);
-			if (!context) {
+			if (context.status != 'ready' || !context.hasSummary) {
+				if (context.error) {
+					throw new Error(
+						context.error
+					);
+				}
 				throw new Error(Zotero.getString('pharos-chat-error-prepare'));
 			}
-		}
-		return context;
+			return context;
+		})();
+		_contextPromises.set(paperID, promise);
+		let clear = () => {
+			if (_contextPromises.get(paperID) === promise) {
+				_contextPromises.delete(paperID);
+			}
+		};
+		promise.then(clear, clear);
+		return promise;
 	};
 
 	/**
@@ -433,9 +522,12 @@ Zotero.Pharos.Chat = new function () {
 		return reply;
 	};
 
-	/** Test seam: drop everything cached for this session. */
+	/** Drop all account-scoped state on sign-in, sign-out, and between tests. */
 	this._clearCache = function () {
+		_cacheGeneration++;
 		_paperIDs.clear();
+		_paperIDPromises.clear();
+		_contextPromises.clear();
 		_provider = null;
 	};
 };

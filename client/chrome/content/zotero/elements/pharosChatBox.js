@@ -75,13 +75,54 @@
 	}
 
 	/**
+	 * Stop waiting for shared work without cancelling the work itself.
+	 *
+	 * PDF upload and profile construction are shared by the reader and send(),
+	 * and Zotero.HTTP cannot take an AbortSignal. The stop button still has to
+	 * release the composer immediately, so the send run abandons its wait while
+	 * the reader-owned preparation is allowed to finish and fill the cache.
+	 */
+	function _abortable(promise, signal) {
+		if (!signal) {
+			return promise;
+		}
+		if (signal.aborted) {
+			let error = new Error('aborted');
+			error.name = 'AbortError';
+			return Promise.reject(error);
+		}
+		return new Promise((resolve, reject) => {
+			let settled = false;
+			let finish = (callback, value) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				signal.removeEventListener('abort', onAbort);
+				callback(value);
+			};
+			let onAbort = () => {
+				let error = new Error('aborted');
+				error.name = 'AbortError';
+				finish(reject, error);
+			};
+			signal.addEventListener('abort', onAbort, { once: true });
+			promise.then(
+				value => finish(resolve, value),
+				error => finish(reject, error)
+			);
+		});
+	}
+
+	/**
 	 * Ask questions about the open paper, in the item pane beside it.
 	 *
-	 * The section is deliberately inert until the user sends something. Resolving
-	 * the paper means uploading it and having the backend extract its text, which
-	 * costs bandwidth and a model's context window; doing that merely because a
-	 * pane scrolled into view would charge the user for a question they never
-	 * asked.
+	 * Merely selecting rows in the library keeps this section inert. Resolving a
+	 * paper means uploading it and having the backend extract and understand its
+	 * text, so doing that while arrowing through the library would upload papers
+	 * the user never opened. The PDF reader explicitly calls prepare(), because
+	 * opening a paper is the point at which Pharos promises to understand it
+	 * before the first question.
 	 *
 	 * Everything the section shows before that point is therefore a report of
 	 * what is already known -- a paper resolved earlier in this session, the
@@ -166,6 +207,9 @@
 		/** The backend's id for this item's PDF, once something has paid for it. */
 		_paperID = null;
 
+		/** The exact PDF this pane is about; readers set it explicitly. */
+		_attachment = null;
+
 		/** 'unknown' | 'understanding' | 'indexed' | 'ready' | 'error' */
 		_phase = 'unknown';
 
@@ -178,7 +222,25 @@
 		/** Whether the stored turns have already been painted for this item. */
 		_historyLoaded = false;
 
+		/** Invalidates a history response whenever its destination changes. */
+		_historyEpoch = 0;
+
+		/** The history request currently allowed to paint, if any. */
+		_historyLoad = null;
+
 		_busy = false;
+
+		/** The reader-triggered preparation for the current item, if any. */
+		_preparePromise = null;
+
+		/** Generation owned by _preparePromise. */
+		_prepareGeneration = -1;
+
+		/** Account epoch owned by _preparePromise. */
+		_prepareAccountEpoch = -1;
+
+		/** Attachment id owned by _preparePromise. */
+		_prepareAttachmentID = null;
 
 		/** Whether the header's overflow actions are showing. */
 		_menuOpen = false;
@@ -186,16 +248,11 @@
 		/** Whether the delete confirmation is on screen. */
 		_confirming = false;
 
-		/**
-		 * Set only by the stop button, so that the abort can be told apart from
-		 * the ones an item switch and teardown raise. Those two must paint
-		 * nothing; this one owes the user an explanation for the answer that
-		 * just vanished.
-		 */
-		_stopped = false;
+		/** The send run that alone owns _busy and the stop button. */
+		_sendRun = null;
 
-		/** Aborts the in-flight reply when the user switches items mid-answer. */
-		_abort = null;
+		/** Observer registered after init() so account replacement resets this box. */
+		_accountObserver = null;
 
 		/**
 		 * Bumped on every item change. Async work captures it and paints only
@@ -253,9 +310,16 @@
 			this._conversationID = null;
 			this._conversations = [];
 			this._paperID = null;
+			this._attachment = null;
 			this._phase = 'unknown';
 			this._charCount = 0;
-			this._historyLoaded = false;
+			this._invalidateHistory(false);
+			// The old preparation cannot be cancelled (ordinary API requests do not
+			// take an AbortSignal), but it must not be joined by the new paper.
+			this._preparePromise = null;
+			this._prepareGeneration = -1;
+			this._prepareAccountEpoch = -1;
+			this._prepareAttachmentID = null;
 			// Cleared even for an item that cannot be chatted about. Skipping it
 			// while hidden left the previous paper's turns in the DOM, and an
 			// item that acquires a PDF later -- which is the one case the
@@ -270,7 +334,12 @@
 		}
 
 		init() {
-			this._sectionEl = this.querySelector('collapsible-section');
+			// ItemPaneSectionElementBase owns the public `open` state and the
+			// force-render-on-expand behaviour. Without this registration the chat
+			// body can exist in the DOM, but reader integrations cannot actually
+			// reveal it (`pane.open = true` is otherwise a no-op).
+			this.initCollapsibleSection();
+			this._sectionEl = this._section;
 			this._phaseEl = this.querySelector('.pharos-chat-phase');
 			this._phaseLabel = this.querySelector('.pharos-chat-phase-label');
 			this._phaseChars = this.querySelector('.pharos-chat-phase-chars');
@@ -348,10 +417,25 @@
 				this._render();
 			});
 
+			this._accountObserver = {
+				observe: () => this._accountChanged(),
+			};
+			Services.obs.addObserver(
+				this._accountObserver,
+				Zotero.Pharos.API.ACCOUNT_CHANGED_TOPIC
+			);
+
 			this._render();
 		}
 
 		destroy() {
+			if (this._accountObserver) {
+				Services.obs.removeObserver(
+					this._accountObserver,
+					Zotero.Pharos.API.ACCOUNT_CHANGED_TOPIC
+				);
+				this._accountObserver = null;
+			}
 			this._cancel();
 			// Stops a load in flight from painting into a section that is being
 			// taken down.
@@ -373,11 +457,52 @@
 		}
 
 		_cancel() {
-			if (this._abort) {
-				this._abort.abort();
-				this._abort = null;
+			let run = this._sendRun;
+			if (run) {
+				run.controller.abort();
+				if (this._sendRun === run) {
+					this._sendRun = null;
+				}
 			}
 			this._busy = false;
+		}
+
+		/**
+		 * Make every earlier history response stale and set the canonical state.
+		 *
+		 * Ordinary API requests cannot be aborted, so invalidation happens at the
+		 * painting boundary. The old promise may still settle, but it no longer
+		 * owns `_historyLoad` and therefore cannot touch this conversation's DOM or
+		 * loaded state.
+		 *
+		 * @param {Boolean} loaded - whether the messages already on screen are the
+		 *     complete canonical history for the current conversation
+		 */
+		_invalidateHistory(loaded = false) {
+			this._historyEpoch++;
+			this._historyLoad = null;
+			this._historyLoaded = loaded;
+		}
+
+		/** Invalidate every account-owned id and async painter in this mounted box. */
+		_accountChanged() {
+			this._cancel();
+			this._generation++;
+			this._provider = null;
+			this._conversationID = null;
+			this._conversations = [];
+			this._paperID = null;
+			this._phase = 'unknown';
+			this._charCount = 0;
+			this._invalidateHistory(false);
+			this._preparePromise = null;
+			this._prepareGeneration = -1;
+			this._prepareAccountEpoch = -1;
+			this._prepareAttachmentID = null;
+			this._reset();
+			if (this.item && !this.hidden) {
+				this._restore(this.item, this._generation);
+			}
 		}
 
 		_reset() {
@@ -389,7 +514,6 @@
 			// tick on every selection before the gate came back.
 			this._menuOpen = false;
 			this._confirming = false;
-			this._stopped = false;
 			if (this._input) {
 				this._input.value = '';
 			}
@@ -656,7 +780,8 @@
 			}
 			this._loadProvider(generation);
 
-			let attachment = Zotero.Pharos.Chat.getAttachment(item);
+			let attachment = this._attachment || Zotero.Pharos.Chat.getAttachment(item);
+			this._attachment = attachment;
 			let paperID = Zotero.Pharos.Chat.getKnownPaperID(attachment);
 			if (!paperID) {
 				return;
@@ -675,6 +800,7 @@
 				// live at all -- is a function of which conversation is current,
 				// and a repaint that ran first would settle both on "none".
 				this._conversationID = conversations.length ? conversations[0].id : null;
+				this._invalidateHistory(false);
 				this._render();
 				this._reportContext(paperID, generation);
 				if (this._conversationID) {
@@ -716,11 +842,183 @@
 		}
 
 		/**
+		 * Prepare the paper opened in the PDF reader before its first question.
+		 *
+		 * This is intentionally a public method on the pane: ReaderChat is the
+		 * only automatic caller, while send() remains the explicit fallback for a
+		 * library item. Concurrent toolbar/context-pane events and a question sent
+		 * during preparation all join the same promise.
+		 *
+		 * @param {Zotero.Item|null} [attachment] - the exact PDF in a reader tab;
+		 *     omitted by the library pane, which resolves from its bibliographic item
+		 * @return {Promise<Boolean>} true when the paper is ready for questions
+		 */
+		prepare(attachment = null) {
+			// A parent item may own several PDFs. The reader knows which one is open,
+			// and that identity must win over getAttachment()'s source-first default.
+			if (attachment && this._attachment && attachment.id != this._attachment.id) {
+				this._cancel();
+				this._generation++;
+				this._conversationID = null;
+				this._conversations = [];
+				this._paperID = null;
+				this._phase = 'unknown';
+				this._charCount = 0;
+				this._invalidateHistory(false);
+				this._preparePromise = null;
+				this._prepareGeneration = -1;
+				this._prepareAccountEpoch = -1;
+				this._prepareAttachmentID = null;
+				this._reset();
+			}
+			if (attachment) {
+				this._attachment = attachment;
+			}
+			let target = this._attachment || Zotero.Pharos.Chat.getAttachment(this.item);
+			let generation = this._generation;
+			let accountEpoch = Zotero.Pharos.API.getTokenEpoch();
+			if (!target || !Zotero.Pharos.API.hasCredentials()) {
+				return Promise.resolve(false);
+			}
+			if (this._preparePromise
+					&& this._prepareGeneration == generation
+					&& this._prepareAccountEpoch == accountEpoch
+					&& this._prepareAttachmentID == target.id) {
+				return this._preparePromise;
+			}
+
+			this._attachment = target;
+			let promise = this._preparePaper(target, generation, accountEpoch);
+			this._preparePromise = promise;
+			this._prepareGeneration = generation;
+			this._prepareAccountEpoch = accountEpoch;
+			this._prepareAttachmentID = target.id;
+			let clear = () => {
+				if (this._preparePromise === promise) {
+					this._preparePromise = null;
+					this._prepareGeneration = -1;
+					this._prepareAccountEpoch = -1;
+					this._prepareAttachmentID = null;
+				}
+			};
+			promise.then(clear, clear);
+			return promise;
+		}
+
+		async _preparePaper(attachment, generation, accountEpoch) {
+			let isCurrent = () => (
+				generation == this._generation
+				&& accountEpoch == Zotero.Pharos.API.getTokenEpoch()
+			);
+			try {
+				let provider = this._provider || await Zotero.Pharos.Chat.getProvider();
+				if (!isCurrent()) {
+					return false;
+				}
+				this._provider = provider;
+				this._render();
+				// Do not upload a byte when there is no model to understand it. In
+				// particular, ensureContext() would otherwise poll for five minutes.
+				if (!provider?.configured) {
+					return false;
+				}
+
+				let paperID = this._paperID;
+				if (!paperID) {
+					this._phase = 'understanding';
+					this._setStatus(_str('pharos-chat-status-connecting'));
+					this._render();
+					paperID = await Zotero.Pharos.Chat.resolvePaperID(attachment);
+					if (!isCurrent()) {
+						return false;
+					}
+					this._paperID = paperID;
+				}
+
+				if (this._phase != 'ready') {
+					this._phase = 'understanding';
+					this._render();
+					let context = await Zotero.Pharos.Chat.ensureContext(paperID, (status) => {
+						if (isCurrent()) {
+							this._setStatus(status);
+						}
+					});
+					if (!isCurrent()) {
+						return false;
+					}
+					this._applyContext(context);
+					this._render();
+				}
+
+				// Once the context is ready, the paper is answerable. Restoring the
+				// conversation picker and scrollback is useful, but neither network
+				// request is a prerequisite for the first question.
+				this._restorePreparedConversation(paperID, generation, accountEpoch)
+					.catch(e => Zotero.logError(e));
+				return isCurrent() && this._phase == 'ready';
+			}
+			catch (e) {
+				Zotero.logError(e);
+				if (isCurrent()) {
+					if (e instanceof Zotero.Pharos.API.SignedOutError) {
+						this._provider = null;
+					}
+					else {
+						this._phase = this._phase == 'understanding' ? 'error' : this._phase;
+						this._setError(e.message || _str('pharos-chat-error-prepare'));
+					}
+					this._render();
+				}
+				throw e;
+			}
+			finally {
+				if (isCurrent()) {
+					this._setStatus('');
+				}
+			}
+		}
+
+		/**
+		 * Restore the newest thread after reader preparation, without delaying it.
+		 *
+		 * send() may start while the list request is still in flight. In that case
+		 * getOrCreateConversation() owns the selection and this older snapshot must
+		 * not clear or replace it; send() refreshes the picker after resolving it.
+		 *
+		 * @param {String} paperID
+		 * @param {Number} generation
+		 * @param {Number} accountEpoch
+		 */
+		async _restorePreparedConversation(paperID, generation, accountEpoch) {
+			let conversationID = this._conversationID;
+			let conversations = await Zotero.Pharos.Chat.listConversations(paperID);
+			if (generation != this._generation
+					|| accountEpoch != Zotero.Pharos.API.getTokenEpoch()
+					|| paperID != this._paperID
+					|| this._busy
+					|| conversationID != this._conversationID) {
+				return;
+			}
+			this._conversations = conversations;
+			if (!this._conversationID
+					|| !conversations.some(c => c.id == this._conversationID)) {
+				this._conversationID = conversations.length ? conversations[0].id : null;
+				this._invalidateHistory(false);
+			}
+			this._render();
+			if (this._conversationID) {
+				// Deliberately detached: scrollback failure costs scrollback only.
+				this._renderHistory(this._conversationID, generation)
+					.catch(e => Zotero.logError(e));
+			}
+		}
+
+		/**
 		 * Report what the backend has already extracted for this paper.
 		 *
-		 * A read, not a prepare. The distinction is the whole of this section's
-		 * laziness: getContext() answers with what exists, ensureContext() would
-		 * start the extraction, and only send() is allowed to do the latter.
+		 * A read, not a prepare. The distinction preserves library navigation:
+		 * getContext() answers with what exists, while ensureContext() is reached
+		 * only from an explicitly opened PDF reader or from send().
 		 *
 		 * @param {String} paperID
 		 * @param {Number} generation
@@ -761,39 +1059,75 @@
 		 *
 		 * @param {String} conversationID
 		 * @param {Number} generation
+		 * @param {Object} [options]
+		 * @param {Boolean} [options.replace] - replace local optimistic turns with
+		 *     the server's canonical history after a successful send
 		 */
-		async _renderHistory(conversationID, generation) {
-			if (this._historyLoaded || generation != this._generation) {
-				return;
+		_renderHistory(conversationID, generation, { replace = false } = {}) {
+			if (generation != this._generation || conversationID != this._conversationID) {
+				return Promise.resolve(false);
 			}
-			// Claimed before the first await: _restore() and send() can both
-			// reach here for the same item, and a second pass would paint the
-			// whole thread twice. Released again on failure so that the later
-			// caller is a real retry rather than a no-op.
-			this._historyLoaded = true;
-			let messages;
-			try {
-				messages = await Zotero.Pharos.Chat.getMessages(conversationID);
+			if (this._historyLoaded && !replace) {
+				return Promise.resolve(true);
 			}
-			catch (e) {
-				this._historyLoaded = false;
-				throw e;
+			let current = this._historyLoad;
+			if (current
+					&& current.conversationID == conversationID
+					&& current.generation == generation
+					&& current.epoch == this._historyEpoch) {
+				return current.promise;
 			}
-			if (generation != this._generation) {
-				return;
-			}
-			if (messages.length) {
+
+			let load = {
+				conversationID,
+				generation,
+				epoch: this._historyEpoch,
+				promise: null,
+			};
+			let isCurrent = () => (
+				this._historyLoad === load
+				&& generation == this._generation
+				&& conversationID == this._conversationID
+				&& load.epoch == this._historyEpoch
+			);
+			this._historyLoad = load;
+			load.promise = (async () => {
+				let messages;
+				try {
+					messages = await Zotero.Pharos.Chat.getMessages(conversationID);
+				}
+				catch (e) {
+					if (!isCurrent()) {
+						return false;
+					}
+					this._historyLoad = null;
+					this._historyLoaded = false;
+					throw e;
+				}
+				if (!isCurrent()) {
+					return false;
+				}
+
 				let fragment = this.ownerDocument.createDocumentFragment();
 				for (let message of messages) {
 					fragment.append(this._buildMessage(message.role, message.content));
 				}
-				this._messages.insertBefore(fragment, this._messages.firstChild);
+				if (replace) {
+					this._messages.replaceChildren(fragment);
+				}
+				else if (messages.length) {
+					this._messages.insertBefore(fragment, this._messages.firstChild);
+				}
 				this._messages.scrollTop = this._messages.scrollHeight;
-			}
-			// Also for an empty thread: a conversation with no turns yet is
-			// still a conversation, and the controls that act on it -- the
-			// picker's selection, delete -- have to come alive for it.
-			this._render();
+				this._historyLoad = null;
+				this._historyLoaded = true;
+				// Also for an empty thread: a conversation with no turns yet is
+				// still a conversation, and the controls that act on it -- the
+				// picker's selection, delete -- have to come alive for it.
+				this._render();
+				return true;
+			})();
+			return load.promise;
 		}
 
 		/** Switch the box to another of this paper's threads. */
@@ -803,7 +1137,8 @@
 			}
 			let generation = this._generation;
 			this._conversationID = conversationID;
-			this._historyLoaded = false;
+			this._invalidateHistory(false);
+			let historyEpoch = this._historyEpoch;
 			this._menuOpen = false;
 			this._confirming = false;
 			this._messages.replaceChildren();
@@ -814,7 +1149,9 @@
 			}
 			catch (e) {
 				Zotero.logError(e);
-				if (generation == this._generation) {
+				if (generation == this._generation
+						&& conversationID == this._conversationID
+						&& historyEpoch == this._historyEpoch) {
 					this._setError(e.message || _str('pharos-chat-error-history'));
 				}
 			}
@@ -835,7 +1172,7 @@
 				this._conversationID = conversation.id;
 				// Nothing stored to fetch, and saying so is what stops send()
 				// from going looking and painting the thread it just left.
-				this._historyLoaded = true;
+				this._invalidateHistory(true);
 				this._messages.replaceChildren();
 				this._menuOpen = false;
 				this._confirming = false;
@@ -875,10 +1212,10 @@
 			}
 			this._conversations = this._conversations.filter(c => c.id != conversationID);
 			this._messages.replaceChildren();
-			this._historyLoaded = false;
 			// Falling back to the newest of what is left, which is the same rule
 			// getOrCreateConversation() would apply on the next question.
 			this._conversationID = this._conversations.length ? this._conversations[0].id : null;
+			this._invalidateHistory(false);
 			this._render();
 			if (this._conversationID) {
 				try {
@@ -900,11 +1237,12 @@
 		 * stays, because the backend kept that.
 		 */
 		stop() {
-			if (!this._busy) {
+			let run = this._sendRun;
+			if (!this._busy || !run) {
 				return;
 			}
-			this._stopped = true;
-			this._cancel();
+			run.stopped = true;
+			run.controller.abort();
 		}
 
 		/**
@@ -919,11 +1257,34 @@
 			if (!question) {
 				return;
 			}
+			// Capture identity before the provider lookup. It is an ordinary HTTP
+			// request and cannot be cancelled; a click followed by an immediate tab
+			// switch must not send this question against the paper switched to.
+			let generation = this._generation;
 
 			if (!Zotero.Pharos.API.hasCredentials()) {
 				this._provider = null;
 				this._render();
 				return;
+			}
+			// Wait for the selection-time lookup when it is still in flight. This
+			// keeps a question in the composer until Pharos knows it can answer,
+			// rather than echoing it and only then discovering that no model exists.
+			if (!this._provider) {
+				try {
+					this._provider = await Zotero.Pharos.Chat.getProvider();
+				}
+				catch (e) {
+					Zotero.logError(e);
+					if (generation == this._generation) {
+						this._setError(e.message || _str('pharos-chat-error-failed'));
+					}
+					return;
+				}
+				if (generation != this._generation) {
+					return;
+				}
+				this._render();
 			}
 			// Asked again rather than trusted: the cached answer can predate the
 			// user configuring a model in the web app, and the cost of being
@@ -935,29 +1296,43 @@
 				catch (e) {
 					Zotero.logError(e);
 				}
+				if (generation != this._generation) {
+					return;
+				}
 				this._render();
 				if (this._gate()) {
 					return;
 				}
 			}
+			// Another click may have completed the same provider wait first.
+			if (this._busy || generation != this._generation) {
+				return;
+			}
 
+			// A history GET that began before this turn may settle after the backend
+			// has stored it and return the new question and answer as well. Letting
+			// that old painter prepend its response would duplicate both optimistic
+			// bubbles. Invalidate it now; if history was not already complete, a
+			// canonical replacement is fetched after the stream succeeds.
+			let historyWasLoaded = this._historyLoaded;
+			this._invalidateHistory(historyWasLoaded);
 			this._busy = true;
-			this._stopped = false;
 			this._menuOpen = false;
 			this._confirming = false;
 			this._setError('');
 			if (fromComposer) {
 				this._input.value = '';
 			}
-			this._addMessage('user', question);
+			let questionBubble = this._addMessage('user', question);
 
-			// Captured now: `this.item` can change under us while awaiting, and
-			// the reply belongs to the paper the question was asked about.
-			let item = this.item;
-			let generation = this._generation;
-			this._abort = new AbortController();
-			let signal = this._abort.signal;
+			let run = {
+				controller: new AbortController(),
+				stopped: false,
+			};
+			this._sendRun = run;
+			let signal = run.controller.signal;
 			let bubble = null;
+			let messageStarted = false;
 			// What the status line should say once this run is over. Empty for
 			// every ordinary ending: the progress messages written along the way
 			// describe work that has finished, and leaving the last one up is
@@ -975,48 +1350,44 @@
 			let conversationID = this._conversationID;
 
 			try {
-				if (!paperID) {
-					this._setStatus(_str('pharos-chat-status-connecting'));
-					let attachment = Zotero.Pharos.Chat.getAttachment(item);
-					paperID = await Zotero.Pharos.Chat.resolvePaperID(attachment);
-					if (generation != this._generation) {
-						return;
-					}
-					this._paperID = paperID;
+				// Reader auto-preparation and an immediate first question share this
+				// exact task. Library-item chat also comes through here, but only after
+				// the user explicitly sends, so row navigation remains upload-free.
+				await _abortable(this.prepare(), signal);
+				if (generation != this._generation) {
+					return;
 				}
-				if (this._phase != 'ready') {
-					this._phase = 'understanding';
-					this._render();
-					let context = await Zotero.Pharos.Chat.ensureContext(
-						paperID, status => this._setStatus(status)
-					);
-					if (generation != this._generation) {
-						return;
+				if (signal.aborted) {
+					if (run.stopped) {
+						questionBubble.remove();
+						ending = _str('pharos-chat-stopped');
 					}
-					this._applyContext(context);
-					this._render();
+					return;
+				}
+				paperID = this._paperID;
+				conversationID = this._conversationID;
+				if (!paperID || this._phase != 'ready') {
+					throw new Error(_str('pharos-chat-error-prepare'));
 				}
 				if (!conversationID) {
-					let conversation = await Zotero.Pharos.Chat.getOrCreateConversation(paperID);
+					let conversation = await _abortable(
+						Zotero.Pharos.Chat.getOrCreateConversation(paperID), signal
+					);
 					if (generation != this._generation) {
 						return;
 					}
 					conversationID = conversation.id;
 					this._conversationID = conversationID;
-					// That conversation is usually not new -- it is whichever one
-					// this paper already had, from an earlier session or another
-					// client -- and the backend is about to answer with all of it
-					// in context. Paint it before the answer arrives, so the reply
-					// is not the first sign that the model remembers.
-					try {
-						await this._renderHistory(conversationID, generation);
-					}
-					catch (e) {
-						// Scrollback is a convenience; the question is not.
-						Zotero.logError(e);
-					}
+					this._invalidateHistory(false);
 				}
-				if (signal.aborted || generation != this._generation) {
+				if (generation != this._generation) {
+					return;
+				}
+				if (signal.aborted) {
+					if (run.stopped) {
+						questionBubble.remove();
+						ending = _str('pharos-chat-stopped');
+					}
 					return;
 				}
 				// The picker only has something to show once the paper is
@@ -1025,9 +1396,13 @@
 
 				this._setStatus(_str('pharos-chat-status-thinking'));
 				bubble = this._addMessage('assistant', '');
-				await Zotero.Pharos.Chat.sendMessage(this._conversationID, question, {
+				messageStarted = true;
+				await Zotero.Pharos.Chat.sendMessage(conversationID, question, {
 					signal,
 					onDelta: (delta) => {
+						if (this._sendRun !== run || generation != this._generation) {
+							return;
+						}
 						this._setStatus('');
 						bubble.textContent += delta;
 						this._messages.scrollTop = this._messages.scrollHeight;
@@ -1037,15 +1412,28 @@
 					bubble.remove();
 					this._setError(_str('pharos-chat-error-empty'));
 				}
+				if (!historyWasLoaded
+						&& this._sendRun === run
+						&& generation == this._generation
+						&& conversationID == this._conversationID) {
+					// Do not await: the composer is released as soon as streaming is
+					// done. Replacing with the server's history removes any optimistic
+					// duplicates and recovers the older turns the invalidated GET held.
+					this._renderHistory(conversationID, generation, { replace: true })
+						.catch(e => Zotero.logError(e));
+				}
 			}
 			catch (e) {
 				if (e.name == 'AbortError') {
 					// An abort raised by an item switch or teardown belongs to a
 					// box the user is no longer looking at; only the stop button
 					// owes anyone an explanation.
-					if (this._stopped && generation == this._generation) {
+					if (run.stopped && generation == this._generation) {
 						if (bubble) {
 							bubble.remove();
+						}
+						if (!messageStarted) {
+							questionBubble.remove();
 						}
 						ending = _str('pharos-chat-stopped');
 					}
@@ -1079,13 +1467,16 @@
 				}
 			}
 			finally {
-				this._busy = false;
-				this._stopped = false;
-				this._abort = null;
-				if (generation == this._generation) {
-					this._setStatus(ending);
+				// Item/account switches may already have installed a new run. Only the
+				// run that still owns the box may release its controller and _busy.
+				if (this._sendRun === run) {
+					this._sendRun = null;
+					this._busy = false;
+					if (generation == this._generation) {
+						this._setStatus(ending);
+					}
+					this._render();
 				}
-				this._render();
 			}
 		}
 

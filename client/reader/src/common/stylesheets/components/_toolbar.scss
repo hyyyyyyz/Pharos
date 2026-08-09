@@ -43,6 +43,28 @@
 		gap: 3px;
 	}
 
+	.pharos-reader-chat-button {
+		width: auto;
+		padding-inline: 7px;
+		gap: 4px;
+		color: var(--color-accent);
+
+		svg {
+			flex: none;
+		}
+	}
+
+	@media (max-width: 820px) {
+		.pharos-reader-chat-button {
+			width: 28px;
+			padding-inline: 0;
+
+			.pharos-reader-chat-label {
+				display: none;
+			}
+		}
+	}
+
 	.toolbar-button, .toolbar-text-input {
 		-moz-window-dragging: no-drag;
 	}

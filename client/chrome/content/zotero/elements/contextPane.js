@@ -234,6 +234,24 @@
 				await this._addItemContext(ids[0], tab.data.itemID, tab.type);
 	
 				this._selectItemContext(tabID);
+
+				// Pharos AI chat is a real reader surface, not a section users should
+				// have to discover behind Zotero's initially collapsed context pane.
+				// Open only for a context being created (or an unloaded tab completing
+				// its load). ReaderChat marks success per tab, so a later select event
+				// respects a user who has deliberately collapsed the pane.
+				if (tabType == 'reader') {
+					let reader = Zotero.Reader.getByTabID(tabID);
+					if (reader) {
+						// Opening the pane tells the reader about the new available
+						// width. ReaderTab.setContextPaneOpen() itself waits for
+						// _initPromise, so doing this before that promise settles creates
+						// a startup cycle. Schedule the reveal after the PDF UI is ready.
+						reader._initPromise
+							.then(() => Zotero.Pharos.ReaderChat.autoOpen(reader))
+							.catch(Zotero.logError);
+					}
+				}
 			}
 
 			ZoteroContextPane.update();

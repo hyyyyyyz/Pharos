@@ -170,6 +170,9 @@ const xpcomFilesLocal = [
 	'pharos/theme',
 	'pharos/translate',
 	'pharos/chat',
+	// Reader-native entry point for the chat section. Kept separate from the
+	// chat transport so the latter remains usable without a main window.
+	'pharos/readerChat',
 	// Before daily and discovery: both call into it at load time.
 	'pharos/library',
 	'pharos/daily',

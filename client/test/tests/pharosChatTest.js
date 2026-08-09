@@ -232,6 +232,44 @@ describe("Zotero.Pharos.Chat", function () {
 			fail = false;
 			assert.isTrue((await Zotero.Pharos.Chat.getProvider()).configured);
 		});
+
+		it("should not let the previous account's failure clear the new provider", async function () {
+			var pending = [];
+			captureRequests(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
+			var oldProvider = Zotero.Pharos.Chat.getProvider();
+			var oldError = getPromiseError(oldProvider);
+			await waitForCallback(() => pending.length == 1, 10, 5);
+
+			Zotero.Pharos.Chat._clearCache();
+			var newProvider = Zotero.Pharos.Chat.getProvider();
+			await waitForCallback(() => pending.length == 2, 10, 5);
+			pending[0].reject(new Error('old account failed'));
+			pending[1].resolve({ configured: true, model: 'new-account-model' });
+
+			assert.equal((await oldError).message, 'old account failed');
+			assert.equal((await newProvider).model, 'new-account-model');
+			assert.equal((await Zotero.Pharos.Chat.getProvider()).model, 'new-account-model');
+			assert.lengthOf(requests, 2);
+		});
+
+		it("should reject the previous account's successful provider response", async function () {
+			var pending = [];
+			captureRequests(() => new Promise(resolve => pending.push(resolve)));
+			var oldProvider = Zotero.Pharos.Chat.getProvider();
+			var oldError = getPromiseError(oldProvider);
+			await waitForCallback(() => pending.length == 1, 10, 5);
+
+			Zotero.Pharos.Chat._clearCache();
+			var newProvider = Zotero.Pharos.Chat.getProvider();
+			await waitForCallback(() => pending.length == 2, 10, 5);
+			pending[0]({ configured: true, model: 'old-account-model' });
+			pending[1]({ configured: true, model: 'new-account-model' });
+
+			assert.equal((await oldError).name, 'AbortError');
+			assert.equal((await newProvider).model, 'new-account-model');
+			assert.equal((await Zotero.Pharos.Chat.getProvider()).model, 'new-account-model');
+			assert.lengthOf(requests, 2);
+		});
 	});
 
 	describe("#getContext()", function () {
@@ -244,6 +282,74 @@ describe("Zotero.Pharos.Chat", function () {
 			assert.equal(context.charCount, 1234);
 			assert.deepEqual(requests.map(r => r.method), ['GET']);
 			assert.equal(requests[0].path, '/api/ai/papers/paper-1/context');
+		});
+	});
+
+	describe("#resolvePaperID()", function () {
+		it("should share one upload between concurrent callers and cache the result", async function () {
+			var release;
+			captureRequests(() => new Promise(resolve => (release = resolve)));
+			var file = getTestDataDirectory();
+			file.append('test.pdf');
+			var attachment = {
+				id: 901,
+				attachmentFilename: 'paper.pdf',
+				getFilePathAsync: () => Promise.resolve(file.path),
+			};
+
+			var first = Zotero.Pharos.Chat.resolvePaperID(attachment);
+			var second = Zotero.Pharos.Chat.resolvePaperID(attachment);
+			await waitForCallback(() => requests.length == 1, 10, 5);
+			release({ id: 'paper-1' });
+
+			assert.equal(await first, 'paper-1');
+			assert.equal(await second, 'paper-1');
+			assert.equal(await Zotero.Pharos.Chat.resolvePaperID(attachment), 'paper-1');
+			assert.lengthOf(requests, 1);
+		});
+
+		it("should permit a retry after an upload fails", async function () {
+			var attempts = 0;
+			captureRequests(() => {
+				if (++attempts == 1) {
+					throw new Error('upload failed');
+				}
+				return { id: 'paper-after-retry' };
+			});
+			var file = getTestDataDirectory();
+			file.append('test.pdf');
+			var attachment = {
+				id: 902,
+				attachmentFilename: 'retry.pdf',
+				getFilePathAsync: () => Promise.resolve(file.path),
+			};
+
+			assert.equal(
+				(await getPromiseError(Zotero.Pharos.Chat.resolvePaperID(attachment))).message,
+				'upload failed'
+			);
+			assert.equal(
+				await Zotero.Pharos.Chat.resolvePaperID(attachment),
+				'paper-after-retry'
+			);
+			assert.lengthOf(requests, 2);
+		});
+	});
+
+	describe("#ensureContext()", function () {
+		it("should stop immediately when preparation falls back to indexed", async function () {
+			captureRequests((method) => {
+				if (method == 'GET') {
+					return null;
+				}
+				return { status: 'indexed', hasSummary: false, error: 'model failed' };
+			});
+
+			var error = await getPromiseError(
+				Zotero.Pharos.Chat.ensureContext('paper-1')
+			);
+			assert.equal(error.message, 'model failed');
+			assert.deepEqual(requests.map(r => r.method), ['GET', 'POST']);
 		});
 	});
 
@@ -586,11 +692,11 @@ describe("Zotero.Pharos.Chat", function () {
 		/** An item with a PDF, selected, with its section handed the item. */
 		async function openBox() {
 			var item = await createDataObject('item');
-			await importPDFAttachment(item);
+			var attachment = await importPDFAttachment(item);
 			await zp.itemsView.selectItems([item.id]);
 			var box = win.document.getElementById('zotero-editpane-pharos-chat');
 			switchTo(box, item);
-			return { box, item };
+			return { box, item, attachment };
 		}
 
 		beforeEach(async function () {
@@ -743,6 +849,324 @@ describe("Zotero.Pharos.Chat", function () {
 			});
 		});
 
+		describe("reader preparation", function () {
+			it("should not upload when the account has no model", async function () {
+				signedInWith({ configured: false, source: 'none' });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var resolve = stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				var ensure = stub(Zotero.Pharos.Chat, 'ensureContext').resolves({});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				assert.isFalse(await box.prepare());
+
+				assert.isFalse(resolve.called);
+				assert.isFalse(ensure.called);
+			});
+
+			it("should prepare once and restore the existing thread", async function () {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var resolve = stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				var ensure = stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true, charCount: 4321,
+				});
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([
+					{ id: 'conversation-1', title: 'existing' },
+				]);
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([
+					{ role: 'user', content: 'an earlier question' },
+				]);
+				var create = stub(Zotero.Pharos.Chat, 'createConversation').resolves({});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				var first = box.prepare();
+				var second = box.prepare();
+				assert.strictEqual(first, second, "both reader triggers join one task");
+				assert.isTrue(await first);
+
+				assert.isTrue(resolve.calledOnce);
+				assert.isTrue(ensure.calledOnce);
+				assert.isFalse(create.called, "pre-reading does not create an empty thread");
+				assert.equal(box._phase, 'ready');
+				assert.equal(box._charCount, 4321);
+				await waitForCallback(() => box._conversationID == 'conversation-1', 10, 5);
+				assert.equal(box._conversationID, 'conversation-1');
+				await waitForCallback(() => box._messages.childElementCount == 1, 10, 5);
+				assert.equal(box._messages.firstChild.textContent, 'an earlier question');
+			});
+
+			it("should not let conversation restoration delay the first question", async function () {
+				var releaseList;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true,
+				});
+				stub(Zotero.Pharos.Chat, 'listConversations')
+					.returns(new Promise((_resolve, reject) => (releaseList = reject)));
+				var getConversation = stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({
+					id: 'conversation-1',
+				});
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([
+					{ role: 'user', content: 'what is new?' },
+					{ role: 'assistant', content: 'answer' },
+				]);
+				var send = stub(Zotero.Pharos.Chat, 'sendMessage')
+					.callsFake((id, message, { onDelta }) => {
+						onDelta('answer');
+						return Promise.resolve('answer');
+					});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				assert.isTrue(await box.prepare(), "context readiness is enough to prepare");
+
+				box._input.value = 'what is new?';
+				await box.send();
+				releaseList(new Error('conversation list unavailable'));
+				await Zotero.Promise.delay(0);
+
+				assert.isTrue(getConversation.calledOnce);
+				assert.isTrue(send.calledOnce);
+				assert.equal(send.firstCall.args[0], 'conversation-1');
+				assert.equal(box._messages.lastChild.textContent, 'answer');
+			});
+
+			it("should canonicalize a send that overtakes an old history request", async function () {
+				var releaseOldHistory;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns('paper-1');
+				stub(Zotero.Pharos.Chat, 'getContext').resolves({
+					status: 'ready', hasSummary: true,
+				});
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([
+					{ id: 'conversation-1', title: 'existing' },
+				]);
+				var history = stub(Zotero.Pharos.Chat, 'getMessages');
+				history.onFirstCall()
+					.returns(new Promise(resolve => (releaseOldHistory = resolve)));
+				history.onSecondCall().resolves([
+					{ role: 'user', content: 'older question' },
+					{ role: 'assistant', content: 'older answer' },
+					{ role: 'user', content: 'current question' },
+					{ role: 'assistant', content: 'current answer' },
+				]);
+				stub(Zotero.Pharos.Chat, 'sendMessage')
+					.callsFake((id, message, { onDelta }) => {
+						onDelta('current answer');
+						return Promise.resolve('current answer');
+					});
+
+				var { box } = await openBox();
+				await waitForCallback(
+					() => history.calledOnce && box._phase == 'ready', 10, 5
+				);
+				box._input.value = 'current question';
+				await box.send();
+				await waitForCallback(
+					() => history.callCount == 2 && box._messages.childElementCount == 4,
+					10, 5
+				);
+
+				// A server may answer the old GET after the new turn was committed,
+				// in which case it contains that turn too. It is no longer allowed to
+				// prepend this snapshot over the canonical replacement.
+				releaseOldHistory([
+					{ role: 'user', content: 'older question' },
+					{ role: 'assistant', content: 'older answer' },
+					{ role: 'user', content: 'current question' },
+					{ role: 'assistant', content: 'current answer' },
+				]);
+				await Zotero.Promise.delay(20);
+
+				assert.deepEqual(
+					Array.from(box._messages.children).map(el => el.textContent),
+					['older question', 'older answer', 'current question', 'current answer']
+				);
+				assert.isTrue(box._historyLoaded);
+				assert.isNull(box._historyLoad);
+			});
+
+			it("should prepare the exact attachment supplied by the reader", async function () {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var resolve = stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-reader');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true,
+				});
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+
+				var { box, item, attachment: firstPDF } = await openBox();
+				var secondPDF = await importPDFAttachment(item);
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				assert.notEqual(firstPDF.id, secondPDF.id);
+				assert.isTrue(await box.prepare(secondPDF));
+
+				assert.strictEqual(resolve.firstCall.args[0], secondPDF,
+					"the parent item's first PDF must not replace the open reader PDF");
+				assert.strictEqual(box._attachment, secondPDF);
+			});
+
+			it("should make the first question join preparation already in progress", async function () {
+				var releaseContext;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var resolve = stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				var ensure = stub(Zotero.Pharos.Chat, 'ensureContext')
+					.returns(new Promise(resolve => (releaseContext = resolve)));
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([
+					{ id: 'conversation-1', title: 'existing' },
+				]);
+				var rejectHistory;
+				stub(Zotero.Pharos.Chat, 'getMessages')
+					.returns(new Promise((_resolve, reject) => (rejectHistory = reject)));
+				var getConversation = stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({
+					id: 'conversation-1',
+				});
+				var send = stub(Zotero.Pharos.Chat, 'sendMessage')
+					.callsFake((id, message, { onDelta }) => {
+						onDelta('answer');
+						return Promise.resolve('answer');
+					});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				var preparing = box.prepare();
+				await waitForCallback(() => ensure.called, 10, 5);
+				box._input.value = 'what is the trick?';
+				var sending = box.send();
+				await Zotero.Promise.delay(30);
+				assert.isFalse(send.called, "the model is not asked before pre-reading finishes");
+
+				releaseContext({ status: 'ready', hasSummary: true, charCount: 99 });
+				await preparing;
+				await sending;
+				rejectHistory(new Error('history unavailable'));
+				await Zotero.Promise.delay(0);
+
+				assert.isTrue(resolve.calledOnce);
+				assert.isTrue(ensure.calledOnce);
+				assert.isAtMost(getConversation.callCount, 1,
+					"the detached restore and send share the existing conversation");
+				assert.equal(send.firstCall.args[0], 'conversation-1');
+				assert.equal(box._messages.lastChild.textContent, 'answer');
+			});
+
+			it("should stop waiting for shared preparation immediately", async function () {
+				var releaseContext;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID').resolves('paper-1');
+				stub(Zotero.Pharos.Chat, 'ensureContext')
+					.returns(new Promise(resolve => (releaseContext = resolve)));
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({
+					id: 'conversation-1',
+				});
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				var send = stub(Zotero.Pharos.Chat, 'sendMessage')
+					.callsFake((id, message, { onDelta }) => {
+						onDelta('answer');
+						return Promise.resolve('answer');
+					});
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				var preparing = box.prepare();
+				await waitForCallback(
+					() => Zotero.Pharos.Chat.ensureContext.called, 10, 5
+				);
+				box._input.value = 'first question';
+				var sending = box.send();
+				await waitForCallback(() => box._busy, 10, 5);
+
+				box.stop();
+				assert.equal(
+					await Promise.race([
+						sending.then(() => 'stopped'),
+						Zotero.Promise.delay(250).then(() => 'timeout'),
+					]),
+					'stopped',
+					"stop releases the composer without waiting for profile construction"
+				);
+				assert.isFalse(box._busy);
+				assert.equal(box._messages.childElementCount, 0,
+					"a question never sent to the backend is not kept as history");
+
+				var second = box.send('second question');
+				await waitForCallback(() => box._busy, 10, 5);
+				assert.isFalse(send.called, "the replacement question still joins preparation");
+
+				releaseContext({ status: 'ready', hasSummary: true, charCount: 99 });
+				await preparing;
+				await second;
+
+				assert.isFalse(box._busy);
+				assert.isTrue(send.calledOnce);
+				assert.equal(send.firstCall.args[1], 'second question');
+			});
+
+			it("should invalidate a mounted box when the account changes", async function () {
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._paperID = 'old-account-paper';
+				box._conversationID = 'old-account-conversation';
+				box._phase = 'ready';
+				box._addMessage('assistant', 'old account answer');
+				var generation = box._generation;
+
+				await Zotero.Pharos.API.setToken('replacement-account-token');
+
+				assert.equal(box._generation, generation + 1);
+				assert.isNull(box._paperID);
+				assert.isNull(box._conversationID);
+				assert.equal(box._phase, 'unknown');
+				assert.equal(box._messages.childElementCount, 0);
+			});
+
+			it("should discard preparation that finishes after the account changes", async function () {
+				var releasePaper;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				stub(Zotero.Pharos.Chat, 'resolvePaperID')
+					.returns(new Promise(resolve => (releasePaper = resolve)));
+				var ensure = stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true,
+				});
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([
+					{ id: 'old-account-conversation' },
+				]);
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({
+					id: 'old-account-conversation',
+				});
+				var send = stub(Zotero.Pharos.Chat, 'sendMessage').resolves('old answer');
+
+				var { box } = await openBox();
+				await waitForCallback(() => box._provider !== null, 10, 5);
+				box._input.value = 'old account question';
+				var sent = box.send();
+				await waitForCallback(() => Zotero.Pharos.Chat.resolvePaperID.called, 10, 5);
+
+				await Zotero.Pharos.API.setToken('another-account-token');
+				await sent;
+				releasePaper('old-account-paper');
+				await Zotero.Promise.delay(20);
+
+				assert.isNull(box._paperID);
+				assert.isNull(box._conversationID);
+				assert.equal(box._phase, 'unknown');
+				assert.lengthOf(box._conversations, 0);
+				assert.equal(box._messages.childElementCount, 0);
+				assert.isFalse(ensure.called, "old preparation stops after paper resolution");
+				assert.isFalse(send.called, "an old-account question is never sent");
+			});
+		});
+
 		describe("stopping", function () {
 			async function startStreaming() {
 				signedInWith({ configured: true });
@@ -821,6 +1245,54 @@ describe("Zotero.Pharos.Chat", function () {
 				assert.equal(box._status.textContent, '');
 				assert.isTrue(box._banner.hidden);
 				assert.equal(box._messages.childElementCount, 0);
+			});
+
+			it("should not let an old send release the replacement run", async function () {
+				var releaseFirstPaper;
+				signedInWith({ configured: true });
+				stub(Zotero.Pharos.Chat, 'getKnownPaperID').returns(null);
+				var resolvePaper = stub(Zotero.Pharos.Chat, 'resolvePaperID');
+				resolvePaper.onFirstCall()
+					.returns(new Promise(resolve => (releaseFirstPaper = resolve)));
+				resolvePaper.onSecondCall().resolves('paper-2');
+				stub(Zotero.Pharos.Chat, 'ensureContext').resolves({
+					status: 'ready', hasSummary: true,
+				});
+				stub(Zotero.Pharos.Chat, 'getOrCreateConversation').resolves({
+					id: 'conversation-2',
+				});
+				stub(Zotero.Pharos.Chat, 'getMessages').resolves([]);
+				stub(Zotero.Pharos.Chat, 'listConversations').resolves([]);
+				var stream = stubHangingStream('answer for paper 2');
+
+				var { box } = await openBox();
+				var second = await createDataObject('item');
+				await importPDFAttachment(second);
+				await waitForCallback(() => box._provider !== null, 10, 5);
+
+				var firstSend = box.send('question for paper 1');
+				await waitForCallback(
+					() => Zotero.Pharos.Chat.resolvePaperID.calledOnce, 10, 5
+				);
+				switchTo(box, second);
+				var secondSend = box.send('question for paper 2');
+				await waitForCallback(() => box._busy && stream.calledOnce, 10, 5);
+				let secondRun = box._sendRun;
+
+				releaseFirstPaper('paper-1');
+				await firstSend;
+				await Zotero.Promise.delay(20);
+
+				assert.strictEqual(box._sendRun, secondRun);
+				assert.isTrue(box._busy);
+				assert.isFalse(secondRun.controller.signal.aborted);
+				assert.equal(box._paperID, 'paper-2');
+				assert.equal(box._conversationID, 'conversation-2');
+
+				box.stop();
+				await secondSend;
+				assert.isFalse(box._busy);
+				assert.isNull(box._sendRun);
 			});
 		});
 
@@ -918,6 +1390,18 @@ describe("Zotero.Pharos.Chat", function () {
 				return box;
 			}
 
+			async function openForHistoryRace() {
+				var box = await openWithConversations([
+					{ id: 'c1', title: 'initial' },
+					{ id: 'c2', title: 'thread A' },
+					{ id: 'c3', title: 'thread B' },
+				]);
+				await waitForCallback(() => box._historyLoaded, 10, 5);
+				Zotero.Pharos.Chat.getMessages.resetHistory();
+				Zotero.Pharos.Chat.getMessages.resetBehavior();
+				return box;
+			}
+
 			it("should name the thread even when it is the only one", async function () {
 				// Matching the web client. The picker is a label as much as a
 				// control: conversations are created implicitly and outlive the
@@ -965,6 +1449,54 @@ describe("Zotero.Pharos.Chat", function () {
 				assert.equal(box._conversationID, 'c2');
 				assert.equal(box._messages.childElementCount, 1);
 				assert.equal(box._messages.firstChild.textContent, 'from the older thread');
+			});
+
+			it("should paint only the last conversation selected quickly", async function () {
+				var pending = {};
+				var box = await openForHistoryRace();
+				Zotero.Pharos.Chat.getMessages.callsFake(id => new Promise(resolve => {
+					pending[id] = { resolve };
+				}));
+
+				var selectA = box._selectConversation('c2');
+				await waitForCallback(() => pending.c2, 10, 5);
+				var selectB = box._selectConversation('c3');
+				await waitForCallback(() => pending.c3, 10, 5);
+				pending.c3.resolve([{ role: 'user', content: 'history B' }]);
+				await selectB;
+				pending.c2.resolve([{ role: 'user', content: 'history A' }]);
+				await selectA;
+
+				assert.equal(box._conversationID, 'c3');
+				assert.deepEqual(
+					Array.from(box._messages.children).map(el => el.textContent),
+					['history B']
+				);
+				assert.isTrue(box._historyLoaded);
+				assert.isNull(box._historyLoad);
+			});
+
+			it("should ignore an old conversation's history failure", async function () {
+				var pending = {};
+				var box = await openForHistoryRace();
+				Zotero.Pharos.Chat.getMessages.callsFake(id => new Promise((resolve, reject) => {
+					pending[id] = { resolve, reject };
+				}));
+
+				var selectA = box._selectConversation('c2');
+				await waitForCallback(() => pending.c2, 10, 5);
+				var selectB = box._selectConversation('c3');
+				await waitForCallback(() => pending.c3, 10, 5);
+				pending.c3.resolve([{ role: 'assistant', content: 'history B' }]);
+				await selectB;
+				pending.c2.reject(new Error('history A failed'));
+				await selectA;
+
+				assert.equal(box._conversationID, 'c3');
+				assert.equal(box._messages.firstChild.textContent, 'history B');
+				assert.isTrue(box._historyLoaded);
+				assert.isNull(box._historyLoad);
+				assert.isTrue(box._banner.hidden);
 			});
 
 			it("should start an empty thread without fetching one", async function () {

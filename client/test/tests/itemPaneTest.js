@@ -2459,7 +2459,14 @@ describe("Item pane", function () {
 
 		it("should show in reader toolbar when collapsed in Standard mode", async function () {
 			await ZoteroPane.viewItems([attachment]);
-			await Zotero.Reader.getByTabID(Zotero_Tabs.selectedID)._waitForReader();
+			let tabID = Zotero_Tabs.selectedID;
+			await Zotero.Reader.getByTabID(tabID)._waitForReader();
+			// Pharos intentionally reveals AI chat the first time a PDF opens. Wait
+			// for that one-shot behaviour before testing Zotero's manual collapsed
+			// state, or the late auto-open races this assertion.
+			let details = ZoteroContextPane.context._getItemContext(tabID);
+			await waitForCallback(() => details.dataset.pharosChatAutoOpened, 50, 10);
+			ZoteroContextPane.collapsed = true;
 
 			assert.isTrue(isCollapsed());
 			await waitForToggle('reader toolbar');

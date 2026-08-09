@@ -96,6 +96,27 @@ describe("Zotero.Pharos.API", function () {
 			await Zotero.Pharos.API.setToken(null);
 			assert.isNull(await Zotero.Pharos.API.getToken());
 		});
+
+		it("should invalidate account-scoped work when the token changes", async function () {
+			var original = Zotero.Pharos.Chat._clearCache;
+			var calls = 0;
+			var epochs = [];
+			var observer = { observe: (_subject, _topic, data) => epochs.push(Number(data)) };
+			Zotero.Pharos.Chat._clearCache = () => calls++;
+			Services.obs.addObserver(observer, Zotero.Pharos.API.ACCOUNT_CHANGED_TOPIC);
+			var before = Zotero.Pharos.API.getTokenEpoch();
+			try {
+				await Zotero.Pharos.API.setToken('another-account-token');
+				await Zotero.Pharos.API.setToken(null);
+			}
+			finally {
+				Services.obs.removeObserver(observer, Zotero.Pharos.API.ACCOUNT_CHANGED_TOPIC);
+				Zotero.Pharos.Chat._clearCache = original;
+			}
+			assert.equal(calls, 2);
+			assert.deepEqual(epochs, [before + 1, before + 2]);
+			assert.equal(Zotero.Pharos.API.getTokenEpoch(), before + 2);
+		});
 	});
 
 	describe("#request()", function () {
