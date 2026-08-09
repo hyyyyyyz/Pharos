@@ -71,11 +71,15 @@ data rather than static mockups.
 | **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
 | **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
 
-Both the web and desktop readers include paper-aware **AI Chat**. Each opened
-paper has its own persistent conversations; when a model is configured, Pharos
-prepares a reusable Chinese research profile before the first question. The web
-app and the desktop client read the same owner-scoped state from the backend, so
-a conversation started in one continues in the other.
+Both the web and desktop readers include paper-aware **AI Chat**. In the desktop
+PDF Reader, an **AI Chat** button lives in the reader toolbar; the first time a
+paper tab opens, Pharos reveals the AI section in the right-hand context pane and
+starts preparing the current PDF before the first question. The preparation is
+bound to the exact attachment open in the reader, even when one bibliographic
+item has several PDFs. Each paper has persistent conversations and a reusable
+Chinese research profile. The web app and desktop client read the same
+owner-scoped state from the backend, so a conversation started in one continues
+in the other.
 
 ### Reading and translation
 
@@ -139,8 +143,15 @@ contracts and remain future work.
   Its API key is encrypted with `PHAROS_CREDENTIAL_SECRET`, never returned to
   browser JavaScript, and never stored in `localStorage` or IndexedDB. An
   operator-configured `PHAROS_CHAT_PROVIDER` can be used as the server fallback.
-- The desktop client asks the same backend, from a section in the item pane
-  beside the paper being read. The answer streams in as it is generated.
+- The desktop PDF Reader exposes **AI Chat** in its own toolbar. On the first
+  open of a paper tab it reveals the AI section in the right-hand context pane
+  and, when an account and model are configured, begins understanding the PDF
+  before the first question. Collapsing the pane manually is respected when the
+  user returns to that tab.
+- Reader preparation is attached to the exact PDF on screen, not merely its
+  parent library item. A parent with multiple PDF attachments therefore cannot
+  make the model read an arbitrary sibling; linked PDFs are supported as well.
+  Answers stream as they are generated.
 
 ### What the desktop client adds
 
@@ -151,7 +162,9 @@ in the same window as the reading:
   bilingual rendering. BabelDOC rebuilds the document with figures, equations
   and pagination in place, and the result is imported as an ordinary attachment
   on the same item -- it opens in the same reader, takes highlights, and syncs.
-- **AI chat** about the open paper, in the item pane.
+- **AI chat** about the open paper. The PDF Reader toolbar opens the shared AI
+  section in the right-hand context pane, and the reader starts preparing the
+  exact open attachment before the first question.
 - **Daily papers**, **literature discovery** and **research projects** under the
   Tools menu. Anything found can be saved into the local library, PDF and the
   model's reading included.
@@ -162,18 +175,24 @@ attachments, PDFs, notes, and annotations are available when Zotero, Vibero, or
 Pharos opens it. These applications take turns; they do not open one database
 simultaneously.
 
-The current source tree is still in the compatibility transition: it was copied
-from Zotero 10.0.SOURCE while the supported Zotero/Vibero 8 library uses an
-older schema. Development and release builds remain isolated until the client
-is realigned to Zotero 8.0.5 and the copied-library round trip passes. See
+The compatibility transition is complete. The desktop client now follows the
+Zotero 8.0.5 baseline and userdata schema 123, and production builds use the
+same Zotero data directory and `zotero.sqlite`. A copied-library round trip was
+verified with all 279 attachments intact. Development, tests, and CI remain
+strictly isolated and must never open a real library. See
 [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
+
+Production builds currently discover the default `~/Zotero` directory only. If
+the Zotero library was moved to another drive or folder, pass
+`-datadir /path/to/Zotero` on the first launch; otherwise Pharos can silently
+create an empty `~/Zotero` instead of finding the existing library.
 
 ### Connect Zotero
 
 The desktop client needs no import or Local API mirror: it is a Zotero-derived
-application and, after the compatibility gate above, opens the same local
-library directly. Zotero OAuth below is for the web companion and remote devices
-that cannot access the local database or local-only PDFs.
+application and opens the same local library directly. Zotero OAuth below is for
+the web companion and remote devices that cannot access the local database or
+local-only PDFs.
 
 **Web/cloud connection.** For a self-hosted deployment, register a web application at
 [Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
@@ -435,7 +454,7 @@ npm --prefix frontend run build
 npm --prefix site run build
 
 # Desktop client
-(cd client && test/runtests.sh -f pharosAPI pharosTranslate pharosChat)
+(cd client && test/runtests.sh pharosAPI pharosTranslate pharosChat pharosReaderChat)
 
 # Zotero Connector transport
 npm --prefix zotero-connector test
@@ -457,10 +476,10 @@ Pharos deliberately distinguishes implemented records from automated research:
 - A `verified` project record is a user decision, not independent reproduction.
 - Tags, paper-level notes, direct arXiv-link import, and one-click
   Discovery-to-Library download are not yet complete end-to-end frontend flows.
-- The desktop target is direct, schema-compatible access to the Zotero library,
-  not a Local API mirror. Zotero Cloud remains a limited companion path for the
-  web app and remote devices; local-only PDFs stay local unless explicitly
-  uploaded.
+- The desktop client directly uses the schema-compatible Zotero library rather
+  than maintaining a Local API mirror. Zotero Cloud remains a limited companion
+  path for the web app and remote devices; local-only PDFs stay local unless
+  explicitly uploaded.
 - The full product backend is currently self-hosted; GitHub Pages hosts only
   the public marketing site.
 - Desktop builds are unsigned. Signed and notarized releases, a Windows

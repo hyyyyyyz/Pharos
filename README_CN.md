@@ -59,7 +59,12 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 | **文献探索** | 同时检索 arXiv 和 OpenAlex，合并重复记录，单个来源失败时保留其余结果，重新打开搜索历史，快速查看核心思路，并把选中的论文纳入研究项目。 |
 | **研究项目** | 保存研究问题、文献纳入理由、九阶段项目状态，以及假设、实验计划、结果、主张、草稿和审阅记录。 |
 
-网页端和桌面端都提供论文感知的 **AI 对话**：每篇论文拥有独立、持久化的对话；配置模型后，Pharos 会在第一次提问前先建立可复用的中文论文理解档案。网页端和桌面端读取后端同一份按账户隔离的状态，在一端开始的对话可以在另一端继续。
+网页端和桌面端都提供论文感知的 **AI 对话**。桌面 PDF 阅读器顶栏有明确的
+「AI 对话」入口；论文标签页第一次打开时，Pharos 会自动展开右侧上下文面板中的
+AI 对话区域，并在已登录且配置模型时、于第一次提问前开始理解当前 PDF。预理解严格绑定阅读器里实际
+打开的附件，即使同一条目下有多个 PDF，也不会误读另一个附件。每篇论文拥有独立、
+持久化的会话和可复用的中文理解档案；网页端和桌面端读取后端同一份按账户隔离的
+状态，在一端开始的对话可以在另一端继续。
 
 ### 论文阅读与翻译
 
@@ -98,7 +103,12 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 
 - 网页端只读取当前登录账户已经拥有的论文，在后端保存每篇论文的理解档案和独立会话；刷新页面或换一台浏览器设备登录后仍可恢复。
 - 用户可以在“设置 → AI 对话”中填写自己的 OpenAI 兼容接口。API Key 使用 `PHAROS_CREDENTIAL_SECRET` 在后端加密，绝不回传给浏览器 JavaScript，也不会进入 `localStorage` 或 IndexedDB。管理员配置的 `PHAROS_CHAT_PROVIDER` 可作为全站默认模型。
-- 桌面端在条目面板里就着正在读的论文提问，请求同一个后端，回答边生成边显示。
+- 桌面 PDF 阅读器顶栏提供「AI 对话」按钮。论文标签页第一次打开时会自动展开
+  右侧上下文面板中的 AI 对话区域；登录且已经配置模型时，系统会在第一次提问前
+  开始理解当前 PDF。用户手动收起后，再切回同一标签页不会被强制展开。
+- 预理解绑定阅读器中实际打开的 PDF，而不是只绑定其父级文献条目。因此同一条目
+  下存在多个 PDF 时不会误读相邻附件，链接到 Zotero 存储目录之外的 PDF 也支持。
+  回答会边生成边显示。
 
 ### 桌面客户端加了什么
 
@@ -107,7 +117,8 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 - **保排版翻译。** 右键 PDF 选「仅译文」或「中英对照」。BabelDOC 重建文档，图表、
   公式、分页全部保持原位，结果作为普通附件挂回同一条目——用同一个阅读器打开、
   能标注、能同步。
-- **AI 对话**：在条目面板里就着正在读的论文提问。
+- **AI 对话**：PDF 阅读器顶栏可以直接打开右侧上下文面板中的 AI 对话区域，
+  并在第一次提问前理解阅读器里实际打开的那一个 PDF 附件。
 - **每日论文**、**文献探索**、**研究项目** 都在工具菜单下。找到的论文可连同 PDF
   与模型解读一起存进本地文库。
 
@@ -115,16 +126,20 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 的同一套条目、分类、附件、PDF、笔记和标注。Zotero、Vibero、Pharos 可以轮流打开，
 但不能同时占用同一个数据库。
 
-当前源码仍处在兼容迁移阶段：Pharos 的原始基线是 Zotero 10.0.SOURCE，而本机
-Zotero/Vibero 8 使用更旧的数据库 schema。回到 Zotero 8.0.5 兼容基线并通过文库
-副本往返测试之前，开发版和发布版仍保持隔离，不能打开真实文库。详见
-[`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md)。
+兼容迁移已经完成。桌面端当前基于 Zotero 8.0.5、userdata schema 123，正式版
+直接使用同一个 Zotero 数据目录与 `zotero.sqlite`；真实文库副本往返验证中，279 个
+附件全部保持完整。开发、测试与 CI 仍必须使用隔离数据目录，绝不能打开真实文库。
+详见 [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md)。
+
+正式版目前只会自动发现默认的 `~/Zotero`。如果 Zotero 文库被移动到其他磁盘或目录，
+第一次启动必须传入 `-datadir /path/to/Zotero`；否则 Pharos 可能找不到现有文库，
+并静默建立一个空的 `~/Zotero`。
 
 ### 连接 Zotero
 
 桌面客户端不需要“导入 Zotero”或维护 Local API 镜像：它本身就是 Zotero 衍生应用，
-完成兼容门槛后会直接打开同一套本地文库。下面的 OAuth 账号关联只给网页端和远程
-设备使用，因为浏览器无法访问本机 SQLite 与只存在本地的 PDF。
+会直接打开同一套本地文库。下面的 OAuth 账号关联只给网页端和远程设备使用，因为
+浏览器无法访问本机 SQLite 与只存在本地的 PDF。
 
 **网页/云端连接：** 自行部署时，需要先在 [Zotero OAuth 应用管理页面](https://www.zotero.org/oauth/apps) 注册网页应用：
 
@@ -196,7 +211,7 @@ Pharos/
 - Node.js **20 或更高版本**以及 npm
 - 现代浏览器
 - 在 Apple Silicon Mac 上使用 PDF 翻译：conda 与 Rosetta 2
-- 运行桌面客户端：Rust **1.77.2 或更高版本**以及对应平台的构建工具
+- 运行桌面客户端：Node.js **20 或更高版本**以及对应平台的构建工具
 
 仓库目前提供的翻译引擎自动安装脚本面向 Apple Silicon Mac。Linux 与 Windows x86_64 可以使用原生引擎依赖，但仓库暂未提供对应的一键安装脚本。
 
@@ -269,11 +284,12 @@ app/scripts/run_pharos_dev       # 用隔离的数据目录启动
 
 **开发期始终用 `run_pharos_dev` 启动。** 它强制传 `-datadir`，并在路径等于
 `~/Zotero` 时拒绝运行——`-profile` 只隔离 Gecko profile，**不隔离 Zotero 的数据
-目录**。正式版未来共享文库，不代表开发和自动测试可以使用真实数据。
+目录**。正式版共享文库，不代表开发和自动测试可以使用真实数据。
 
-在「设置 → Pharos」登录后端。推 `v*` 标签会由
-`client/.github/workflows/release.yml` 构建安装包；macOS 构建未签名，
-首次启动需按住 Control 点击图标、选「打开」。
+在「设置 → Pharos」登录后端。推送 `desktop-v*` 标签会由仓库根目录的
+`.github/workflows/desktop-release.yml` 构建三平台安装包。macOS 构建仍未签名，
+首次启动被拦截后，需要到「系统设置 → 隐私与安全性」中选择「仍要打开」；
+macOS 15 已不再支持旧的 Control 点击 →「打开」绕过方式。
 
 ## 开发宣传网站
 
@@ -335,8 +351,8 @@ python -m pytest backend/tests
 npm --prefix frontend run build
 npm --prefix site run build
 
-# 桌面端 Rust 能力层
-(cd client && test/runtests.sh -f pharosAPI pharosTranslate pharosChat)
+# 桌面客户端
+(cd client && test/runtests.sh pharosAPI pharosTranslate pharosChat pharosReaderChat)
 
 # Zotero Connector 安全传输层
 npm --prefix zotero-connector test
@@ -354,7 +370,7 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - 研究项目保存由研究者填写的计划和结果，不会自动运行代码、分配 GPU 或验证指标来源。
 - 项目记录中的“人工核验”是用户作出的状态判断，不代表平台已经独立复现。
 - 标签、论文级笔记、直接粘贴 arXiv 链接导入、从文献探索一键下载到文库等前端流程仍未完全闭环。
-- 桌面端目标是以兼容 schema 直接使用 Zotero 文库，而不是维护 Local API 镜像。Zotero Cloud 只作为网页端和远程设备的受限伴随路径；本地 PDF 只有在用户明确上传时才会离开本机。
+- 桌面端已经以兼容 schema 直接使用 Zotero 文库，而不是维护 Local API 镜像。Zotero Cloud 只作为网页端和远程设备的受限伴随路径；本地 PDF 只有在用户明确上传时才会离开本机。
 - 完整产品后端目前需要自行部署；GitHub Pages 只托管公开宣传站。
 - 桌面客户端已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 

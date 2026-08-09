@@ -277,6 +277,63 @@ bypasses the wait. A real fresh-profile launch was also checked on macOS: the
 only visible window was `登录 Pharos`, and both installers logged that they were
 waiting for the main interface.
 
+## The 1.1.0 reader-native AI chat release
+
+Version 1.1.0 makes paper-aware AI a first-class part of the PDF Reader rather
+than a feature that exists but is easy to miss behind a collapsed pane. This is
+a **MINOR** release, not a patch: it adds a reader-native entry point, changes
+what happens when a paper opens, and begins understanding that paper before the
+first question. Those are new user-visible capabilities, not corrections to an
+otherwise unchanged interaction.
+
+### Release highlights
+
+- The PDF Reader toolbar now has an **AI Chat** button. It reveals the existing
+  AI section in the right-hand context pane and focuses the composer after the
+  reader and pane have finished laying out.
+- The first open of each paper tab automatically reveals that section once. If
+  the user later collapses the context pane, returning to the same tab respects
+  that choice instead of opening it again.
+- When the user is signed in and a model is configured, opening a PDF starts its
+  reusable paper profile before the first question. Selecting rows in the
+  library remains inert, so ordinary navigation does not upload papers the user
+  never opened.
+- Preparation is bound to the exact attachment held by the Reader. If a parent
+  bibliographic item owns several PDFs, Pharos does not fall back to an
+  arbitrary first attachment; linked PDFs outside Zotero's storage directory
+  use the same path.
+- Reader preparation and an immediate first question join one shared task, while
+  per-paper conversation history and streamed answers continue to use the same
+  backend state as the web client.
+
+The toolbar is a bridge, not a second chat implementation. The conversation UI
+remains the item-pane section shared by library and reader contexts. The bridge
+waits until the PDF UI and its item context exist, expands that section, then
+passes the Reader's concrete attachment to it. This preserves one conversation
+implementation while fixing reachability and attachment identity at the Reader
+boundary.
+
+The timing is load-bearing. Setting `state="open"` on
+`#zotero-context-splitter` during main-window construction was tried and caused
+window initialization to hang: suites that open the main window timed out in
+their setup hooks. The final design never forces the splitter during
+construction. It schedules the one-time reveal only after `reader._initPromise`
+settles and re-checks that the same reader tab still owns the shared pane after
+every asynchronous wait, so a quick tab switch cannot open or focus the wrong
+paper's UI.
+
+Reader-specific coverage pins the toolbar entry point, one-time automatic
+reveal, preservation of a manual collapse, stale-tab cancellation, focus after
+layout, linked PDFs, and exact attachment selection for multi-PDF items. The
+chat-box coverage separately pins shared preparation, stop behaviour, account
+replacement, conversation restoration, and streamed replies.
+
+The release does not change the two existing installation risks: macOS builds
+remain unsigned and require System Settings → Privacy & Security → Open Anyway,
+and a relocated Zotero library still requires an explicit `-datadir` on first
+launch. The shared library must still be opened by only one of Zotero, Vibero,
+or Pharos at a time.
+
 ## Still open
 
 - **The bundle as a whole is unsigned**, by decision 6 — there is no Apple

@@ -31,13 +31,18 @@ reader, annotations, citation styles and translators, plus:
 | Feature | Where it lives |
 | --- | --- |
 | Layout-preserving translation | Right-click a PDF |
-| AI chat about the open paper | Item pane section |
+| AI chat about the open paper | PDF Reader toolbar + automatically revealed right-hand context pane |
 | Daily papers | Tools menu |
 | Literature discovery | Tools menu |
 | Research projects | Tools menu |
 
-Release installers are built by `client/.github/workflows/release.yml` on a `v*`
-tag.
+Opening a PDF tab reveals the AI section once and starts preparing the exact PDF
+attachment before the first question when a model is configured. A reader item
+with several PDFs stays bound to the attachment actually open on screen; a later
+manual collapse is respected when returning to the tab.
+
+Release installers are built by the repository-root
+`.github/workflows/desktop-release.yml` on a `desktop-v*` tag.
 
 ### Known gaps in what is built
 
@@ -49,19 +54,6 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
   15 for code with no usable signature. Windows gets a portable archive, not an
   installer, because the NSIS path needs Cygwin and this project has no way to
   test it.
-- **AI chat and translation are hard to reach while reading.** Both are built,
-  wired and shipped — `pharos-chat-box` and `pharos-translate-box` are item-pane
-  sections — but in a reader tab the item pane is the right-hand context pane,
-  which ships collapsed, so opening a paper shows a plain PDF viewer. The reader
-  submodule has no Pharos integration at all: `grep -rn pharos client/reader`
-  returns nothing.
-
-  Forcing the context pane open by default does **not** work and was tried:
-  setting `state="open"` on `#zotero-context-splitter` hangs window
-  construction, and every suite that opens a main window times out in its
-  `before all` hook (104/104 → 6 hook failures, bisected to that one attribute).
-  Whatever opens it has to run after a reader tab exists, not while the window is
-  being built. The durable answer is an affordance in the reader itself.
 - Pharos does not read Zotero's own settings, so a **relocated Zotero data
   directory is not found** — it silently creates an empty `~/Zotero` instead.
   Work around it by passing `-datadir` on the first launch.
@@ -83,10 +75,10 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 
 In rough order. Each is a workstream, not a ticket.
 
-1. **Make the Zotero foundation version-compatible.** Re-establish the client on
-   Zotero 8.0.5, replay the Pharos product layer, share the Zotero data directory
-   only in release mode, add a Pharos sidecar, and pass the Zotero ↔ Pharos ↔
-   Vibero copied-library round trip.
+1. ~~**Make the Zotero foundation version-compatible.**~~ **Done.** The client is
+   on Zotero 8.0.5/userdata schema 123, production shared-library mode is
+   enabled, Pharos-native data stays in the sidecar, and the Zotero → Pharos →
+   Vibero copied-library round trip kept all 279 attachments intact.
 2. ~~**Finish the client as the daily-use product.**~~ **Done.** The reader, AI
    chat, Daily Papers, discovery, projects and the data directory are at parity
    with the web client; a final module-by-module audit found ten differences and

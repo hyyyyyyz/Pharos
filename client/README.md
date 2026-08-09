@@ -12,8 +12,10 @@ Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → �
 - **保排版翻译** — 右键任意 PDF，选「仅译文」或「中英对照」。译文由 BabelDOC
   重建，图表、公式、分页全部保持原位，并作为普通附件挂回同一条目——
   用同一个阅读器打开，能标注、能同步、离线可读。
-- **AI 对话** — 在条目面板里就着正在读的论文提问。后端抽一次正文存成可复用的
-  上下文，同一篇反复问不必重传。
+- **AI 对话** — PDF 阅读器顶栏有直接入口。论文标签页第一次打开时会自动展开
+  右侧上下文面板中的 AI 对话区域，并在已登录且配置模型时、于第一次提问前理解当前 PDF；后端保存可复用
+  的论文档案，同一篇反复问不必重传。同一条目有多个 PDF 时，预理解绑定阅读器里
+  实际打开的附件，链接到 Zotero 存储目录之外的 PDF 也支持。
 - **每日论文** — 按你自己写的方向扫 arXiv，模型读过之后列出来，可连同 PDF
   和解读一起存进文库。
 - **文献探索** — 搜 arXiv 与 OpenAlex，可对单条结果做模型精读。
@@ -24,29 +26,35 @@ Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → �
 
 ## 安装
 
-从 [Releases](../../releases) 下载。
+从 [GitHub Releases](https://github.com/hyyyyyyz/Pharos/releases) 下载。
 
-- **macOS** — 打开 `.dmg`，把 Pharos 拖进「应用程序」。**首次启动需要按住
-  Control 点击图标、选「打开」**：这些构建没有 Apple 开发者证书签名，
-  双击会被 Gatekeeper 拦下。
+- **macOS** — 打开 `.dmg`，把 Pharos 拖进「应用程序」。这些构建没有 Apple
+  开发者证书签名，首次双击会被 Gatekeeper 拦下；随后到「系统设置 → 隐私与
+  安全性」中选择「仍要打开」。macOS 15 已不再支持旧的 Control 点击 →「打开」
+  绕过方式。
 - **Windows** — 解压后运行 `zotero.exe`。这是便携版，不是安装程序。
 - **Linux** — 解压 `.tar.xz` 后运行 `zotero`。
 
 ## 文库与应用数据
 
-正式产品的目标不是再建一个 `~/Pharos` 文库，而是像 Vibero 一样直接使用用户的
-Zotero 数据目录：条目、分类、附件、PDF、笔记和标注都还是 Zotero 自己的数据。
-Zotero、Vibero、Pharos 可以轮流打开这套文库，但不能同时运行。
+正式版不再建立第二套 `~/Pharos` 文库，而是像 Vibero 一样直接使用用户的 Zotero
+数据目录：条目、分类、附件、PDF、笔记和标注都还是 Zotero 自己的数据。Zotero、
+Vibero、Pharos 可以轮流打开这套文库，但不能同时运行。
 
 Pharos 仍有独立的应用 profile、品牌、协议、凭据和设置；AI 对话、每日论文状态、
 研究工作流等 Pharos 独有数据进入单独的 sidecar，不给 `zotero.sqlite` 增加私有
 表或字段。
 
-**当前安全状态：共享文库尚未启用。** 这份源码的 Zotero 基线是
-`10.0.SOURCE`/schema 129，而本机 Zotero 8.0.5 与 Vibero 8.0 是 schema 123。
-直接打开真实文库会有升级后旧客户端无法再打开的风险。客户端正在回到兼容的
-Zotero 8.0.5 基线；完成前，所有构建仍使用隔离文库。详见
+**当前安全状态：正式版共享文库已经启用。** 客户端基线是 Zotero 8.0.5，
+userdata schema 123，数据库名仍为 `zotero.sqlite`。文库副本已经完成 Zotero →
+Pharos → Vibero 往返验证，279 个附件全部保持完整。Pharos 遇到不兼容 schema 时
+不会迁移真实文库，Pharos 独有数据也只写入 sidecar。详见
 [`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
+
+开发、测试和 CI 仍必须使用隔离数据目录。正式版默认寻找 `~/Zotero`；如果 Zotero
+文库被移动到外接磁盘或其他目录，Pharos 目前不会读取 Zotero 自己保存的路径设置，
+首次启动必须显式传 `-datadir /path/to/Zotero`，否则会静默建立一个空的
+`~/Zotero`。
 
 ## 从源码构建
 
@@ -59,21 +67,25 @@ app/scripts/run_pharos_dev       # 用隔离的数据目录启动
 
 **开发期始终用 `run_pharos_dev` 启动。** 它强制传 `-datadir`，并在路径等于
 `~/Zotero` 时拒绝运行——`-profile` 只隔离 Gecko profile，**不隔离 Zotero 的数据
-目录**。正式版未来共享文库，不代表开发版可以拿真实数据做迁移和回归测试。
+目录**。正式版共享文库，不代表开发版可以拿真实数据做迁移和回归测试。
 
 跑测试：
 
 ```bash
-test/runtests.sh -f pharosAPI pharosTranslate pharosChat pharosDaily pharosDiscovery pharosProjects
+test/runtests.sh pharosAPI pharosTranslate pharosChat pharosReaderChat pharosDaily pharosDiscovery pharosProjects
 ```
 
-出安装包（`.github/workflows/release.yml` 会在推 `v*` 标签时自动做同样的事）：
+出安装包（仓库根目录的 `.github/workflows/desktop-release.yml` 会在推送
+`desktop-v*` 标签时自动构建三平台版本）：
 
 ```bash
-echo "0.1.0.SOURCE" > version && npm run build && b=$(mktemp -d) && app/scripts/prepare_build -s build -o "$b" -c release && app/build.sh -d "$b" -p m -c release
+npm run build
+build_dir=$(mktemp -d)
+app/scripts/prepare_build -s build -o "$build_dir" -c release
+app/build.sh -d "$build_dir" -p m -c release
 ```
 
-`version` 里的 `.SOURCE` 后缀是必需的：`prepare_build` 靠正则
+构建前应先让 `version` 包含准备发布的版本。`.SOURCE` 后缀是必需的：`prepare_build` 靠正则
 `([0-9].+)\.SOURCE` 找版本号，再按通道替换该后缀（`release` 替换为空）。
 
 ## 与上游的关系

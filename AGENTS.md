@@ -62,7 +62,7 @@ npm run build                    # transpile JS/JSX, compile SCSS
 app/scripts/dir_build -p m       # package into app/staging/Pharos.app
 app/scripts/run_pharos_dev       # launch with an isolated data directory
 test/runtests.sh pharosAPI pharosTranslate pharosTranslateBox pharosChat \
-    pharosDaily pharosDiscovery pharosProjects pharosProjectsApi pharosRail \
+    pharosReaderChat pharosDaily pharosDiscovery pharosProjects pharosProjectsApi pharosRail \
     pharosRailFooter pharosAdmin pharosProtocol pharosAuth pharosTheme \
     pharosStrings preferences_pharos preferences_pharos_daily
 node test/check-locale-parity.js  # both locale files define the same ids

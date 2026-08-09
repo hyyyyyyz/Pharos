@@ -59,6 +59,17 @@ jobs:
       - name: Build
         run: |
           set -euo pipefail
+          # A tag is a claim about the checked-in source, not permission to make
+          # the runner silently manufacture a different version. Manual builds
+          # remain flexible; release tags must match client/version exactly.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            expected="${{ steps.version.outputs.value }}.SOURCE"
+            actual=$(tr -d '\r\n' < version)
+            if [ "$actual" != "$expected" ]; then
+              echo "Tag version $expected does not match committed client/version $actual" >&2
+              exit 1
+            fi
+          fi
           # The .SOURCE suffix is required, not decorative: prepare_build
           # matches /([0-9].+)\.SOURCE/ to find the version at all, then
           # substitutes the suffix per channel -- "release" replaces it with
@@ -146,6 +157,16 @@ jobs:
       - name: Build
         run: |
           set -euo pipefail
+          # Keep published artifacts tied to the source commit named by the tag.
+          # workflow_dispatch is still allowed to exercise an arbitrary version.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            expected="${{ steps.version.outputs.value }}.SOURCE"
+            actual=$(tr -d '\r\n' < version)
+            if [ "$actual" != "$expected" ]; then
+              echo "Tag version $expected does not match committed client/version $actual" >&2
+              exit 1
+            fi
+          fi
           # The .SOURCE suffix is required, not decorative: prepare_build
           # matches /([0-9].+)\.SOURCE/ to find the version at all, then
           # substitutes the suffix per channel -- "release" replaces it with
@@ -217,6 +238,18 @@ jobs:
           draft: ${{ steps.missing.outputs.incomplete }}
           body: |
             ${{ steps.missing.outputs.note }}
+            ## Desktop AI Chat
+
+            - **AI Chat lives beside the PDF reader.** Opening a paper reveals
+              the right-hand conversation pane automatically, and the reader
+              toolbar keeps an explicit **AI Chat** button if you close it.
+            - Pharos prepares the PDF that is actually open before the first
+              question, including linked files and items with multiple PDF
+              attachments. Existing paper conversations are restored there.
+            - Paper identity, model state and in-flight work are isolated across
+              item, tab and account changes, so an old request cannot repaint a
+              newly opened paper's conversation.
+
             ## Install
 
             **macOS** — open the `.dmg` and drag Pharos to Applications. These
@@ -270,10 +303,12 @@ jobs:
             **Back up `~/Zotero` before the first run.** Pharos will not migrate
             the database — it refuses to *migrate* a library whose schema does not
             match, because upgrading it would leave Zotero unable to open its own
-            data, and that cannot be undone. It refuses before reading or writing
-            anything. The check is tested and the round trip was verified against
-            a copy of a real library. It is still your only library, and this is
-            still the first time another program has opened it.
+            data, and that cannot be undone. It may open the SQLite file to inspect
+            its schema, but it applies no migration and performs no application
+            writes when the schema is incompatible. The check is tested and the
+            round trip was verified against a copy of a real library. It is still
+            your only library, and this is still the first time another program has
+            opened it.
 
             These builds are unsigned. Translation, AI chat and the daily digest
             need a Pharos account; the library, the reader and annotations are
