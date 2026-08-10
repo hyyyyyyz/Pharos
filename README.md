@@ -71,21 +71,25 @@ data rather than static mockups.
 | **Literature Discovery** | Search arXiv and OpenAlex, merge duplicate records, retain partial results when a provider fails, reopen search history, inspect concise core-trick summaries, and save selected sources to a project. |
 | **Research Projects** | Maintain research questions, source-selection rationale, a nine-stage project state, and durable hypothesis, experiment-plan, result, claim, draft, and review records. |
 
-Both the web and desktop readers include paper-aware **AI Chat**. In the desktop
-PDF Reader, an **AI Chat** button lives in the reader toolbar; the first time a
-paper tab opens, Pharos reveals the AI section in the right-hand context pane and
-starts preparing the current PDF before the first question. The preparation is
-bound to the exact attachment open in the reader, even when one bibliographic
-item has several PDFs. Each paper has persistent conversations and a reusable
-Chinese research profile. The web app and desktop client read the same
-owner-scoped state from the backend, so a conversation started in one continues
-in the other.
+Both the web and desktop readers include paper-aware **AI Chat**. When a paper
+opens in the desktop PDF Reader, the full-height conversation surface is the
+default right-hand pane rather than a small section below item metadata. The
+pane's sidenav still switches to Info, Notes, and the other standard reader
+panes. Pharos starts preparing the current PDF before the first question, bound
+to the exact attachment open in the reader even when one bibliographic item has
+several PDFs. Each paper has persistent conversations and a reusable Chinese
+research profile. The web app and desktop client read the same owner-scoped
+state from the backend, so a conversation started in one continues in the
+other.
 
 ### Reading and translation
 
 - **Layout-preserving English-to-Chinese translation.** BabelDOC, invoked
   through `pdf2zh-next`, produces a Chinese-only PDF and a bilingual PDF while
-  aiming to retain the original columns, figures, tables, and mathematics.
+  aiming to retain the original columns, figures, tables, and mathematics. In
+  the desktop PDF Reader, a translation button to the left of Find
+  offers **Translated Only** and **Side by Side**; the same choices remain in the
+  library item's right-click menu.
 - **A real PDF reader.** The React client uses pdf.js with a text layer, zoom,
   drag-to-pan, text selection, copy, in-document search, and annotations.
 - **Coordinate-stable highlights.** Highlight locations are stored in PDF
@@ -143,11 +147,12 @@ contracts and remain future work.
   Its API key is encrypted with `PHAROS_CREDENTIAL_SECRET`, never returned to
   browser JavaScript, and never stored in `localStorage` or IndexedDB. An
   operator-configured `PHAROS_CHAT_PROVIDER` can be used as the server fallback.
-- The desktop PDF Reader exposes **AI Chat** in its own toolbar. On the first
-  open of a paper tab it reveals the AI section in the right-hand context pane
-  and, when an account and model are configured, begins understanding the PDF
-  before the first question. Collapsing the pane manually is respected when the
-  user returns to that tab.
+- The desktop PDF Reader opens with **AI Chat** as its full-height right-hand
+  primary pane. The section sidenav can switch back to Info, Notes, and other
+  reader panes, while the toolbar entry restores chat after the context pane has
+  been closed. When an account and model are configured, Pharos begins
+  understanding the PDF before the first question. Collapsing the pane manually
+  is respected when the user returns to that tab.
 - Reader preparation is attached to the exact PDF on screen, not merely its
   parent library item. A parent with multiple PDF attachments therefore cannot
   make the model read an arbitrary sibling; linked PDFs are supported as well.
@@ -158,13 +163,15 @@ contracts and remain future work.
 Built from Zotero source rather than alongside it, so everything below happens
 in the same window as the reading:
 
-- **Layout-preserving translation.** Right-click a PDF for a translated-only or
-  bilingual rendering. BabelDOC rebuilds the document with figures, equations
-  and pagination in place, and the result is imported as an ordinary attachment
-  on the same item -- it opens in the same reader, takes highlights, and syncs.
-- **AI chat** about the open paper. The PDF Reader toolbar opens the shared AI
-  section in the right-hand context pane, and the reader starts preparing the
-  exact open attachment before the first question.
+- **Layout-preserving translation.** Use the PDF Reader toolbar button to the
+  left of Find, or right-click a PDF item in the library, then choose a
+  translated-only or side-by-side bilingual rendering. BabelDOC rebuilds the
+  document with figures, equations and pagination in place, and the result is
+  imported as an ordinary attachment on the same item -- it opens in the same
+  reader, takes highlights, and syncs.
+- **AI chat** about the open paper. It occupies the Reader's full-height
+  right-hand pane by default; the sidenav still reaches Info and Notes. The
+  reader starts preparing the exact open attachment before the first question.
 - **Daily papers**, **literature discovery** and **research projects** under the
   Tools menu. Anything found can be saved into the local library, PDF and the
   model's reading included.

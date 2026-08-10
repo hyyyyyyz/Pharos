@@ -33,12 +33,23 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
           else
-            echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
+            case "$GITHUB_REF_NAME" in
+              desktop-v*) version="${GITHUB_REF_NAME#desktop-v}" ;;
+              *) echo "Unexpected release ref: $GITHUB_REF_NAME" >&2; exit 1 ;;
+            esac
           fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid desktop version: $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
@@ -57,13 +68,15 @@ jobs:
           key: xulrunner-mac-${{ hashFiles('client/app/config.sh') }}
 
       - name: Build
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
           # A tag is a claim about the checked-in source, not permission to make
           # the runner silently manufacture a different version. Manual builds
           # remain flexible; release tags must match client/version exactly.
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
-            expected="${{ steps.version.outputs.value }}.SOURCE"
+            expected="${RELEASE_VERSION}.SOURCE"
             actual=$(tr -d '\r\n' < version)
             if [ "$actual" != "$expected" ]; then
               echo "Tag version $expected does not match committed client/version $actual" >&2
@@ -74,7 +87,7 @@ jobs:
           # matches /([0-9].+)\.SOURCE/ to find the version at all, then
           # substitutes the suffix per channel -- "release" replaces it with
           # nothing. A bare "0.1.0" here fails with "Version number not found".
-          echo "${{ steps.version.outputs.value }}.SOURCE" > version
+          echo "${RELEASE_VERSION}.SOURCE" > version
           npm run build
           build_dir=$(mktemp -d)
           app/scripts/prepare_build -s build -o "$build_dir" -c release
@@ -124,12 +137,23 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
           else
-            echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
+            case "$GITHUB_REF_NAME" in
+              desktop-v*) version="${GITHUB_REF_NAME#desktop-v}" ;;
+              *) echo "Unexpected release ref: $GITHUB_REF_NAME" >&2; exit 1 ;;
+            esac
           fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid desktop version: $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
@@ -155,12 +179,14 @@ jobs:
           key: xulrunner-${{ matrix.platform }}-x64-${{ hashFiles('client/app/config.sh') }}
 
       - name: Build
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
           # Keep published artifacts tied to the source commit named by the tag.
           # workflow_dispatch is still allowed to exercise an arbitrary version.
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
-            expected="${{ steps.version.outputs.value }}.SOURCE"
+            expected="${RELEASE_VERSION}.SOURCE"
             actual=$(tr -d '\r\n' < version)
             if [ "$actual" != "$expected" ]; then
               echo "Tag version $expected does not match committed client/version $actual" >&2
@@ -171,7 +197,7 @@ jobs:
           # matches /([0-9].+)\.SOURCE/ to find the version at all, then
           # substitutes the suffix per channel -- "release" replaces it with
           # nothing. A bare "0.1.0" here fails with "Version number not found".
-          echo "${{ steps.version.outputs.value }}.SOURCE" > version
+          echo "${RELEASE_VERSION}.SOURCE" > version
           npm run build
           build_dir=$(mktemp -d)
           app/scripts/prepare_build -s build -o "$build_dir" -c release
@@ -238,11 +264,19 @@ jobs:
           draft: ${{ steps.missing.outputs.incomplete }}
           body: |
             ${{ steps.missing.outputs.note }}
-            ## Desktop AI Chat
+            ## PDF Reader workspace
 
-            - **AI Chat lives beside the PDF reader.** Opening a paper reveals
-              the right-hand conversation pane automatically, and the reader
-              toolbar keeps an explicit **AI Chat** button if you close it.
+            - **AI Chat is the Reader's default right-hand pane.** Opening a
+              paper presents the full-height conversation surface directly;
+              the section sidenav still switches to Info, Notes, and other
+              enabled panes.
+            - Closing the context pane is still respected. The explicit
+              **AI Chat** toolbar entry reopens it and focuses the composer when
+              you want it back.
+            - A **Translate** button now sits to the left of Find in
+              the PDF toolbar. It offers **Translated Only** and **Side by Side**
+              and uses the same BabelDOC job and progress flow as the PDF
+              item's right-click commands in the library.
             - Pharos prepares the PDF that is actually open before the first
               question, including linked files and items with multiple PDF
               attachments. Existing paper conversations are restored there.

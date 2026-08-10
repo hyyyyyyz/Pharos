@@ -334,6 +334,60 @@ and a relocated Zotero library still requires an explicit `-datadir` on first
 launch. The shared library must still be opened by only one of Zotero, Vibero,
 or Pharos at a time.
 
+## The 1.2.0 reader workspace release
+
+Version 1.2.0 turns the Reader's right side from a metadata sheet that happens
+to contain chat into a conversation-first working surface, and brings whole-PDF
+translation into the Reader toolbar. This is another **MINOR** release: it
+changes the default layout whenever a PDF opens and adds a new user-visible
+translation entry point, while preserving the existing chat and translation
+backends.
+
+### Release highlights
+
+- Opening a PDF now makes **AI Chat** the full-height primary pane on the right.
+  Conversation history and the composer occupy the reader surface directly
+  instead of appearing as a collapsible section beneath item metadata.
+- The Reader's section sidenav remains active. **Info**, **Notes**, and enabled
+  plugin panes stay mounted and can replace chat on the same right side;
+  selecting AI Chat restores the conversation-first layout.
+- The existing toolbar AI entry still reopens and focuses chat after the user
+  closes the context pane. A manual collapse is still respected when returning
+  to an already-open paper tab.
+- A translation button now sits to the left of the Reader's
+  built-in **Find** control. Its menu offers **Translated Only** and
+  **Side by Side**, the same two commands already available from the PDF context
+  menu in the library item list.
+- Translation still goes through the existing authenticated BabelDOC job and
+  progress queue. The toolbar does not introduce a second translation pipeline
+  or move the engine into the desktop process.
+- Paper preparation remains bound to the exact attachment open in the Reader,
+  including linked PDFs and bibliographic items with multiple PDF attachments.
+
+The full-height state is scoped to a Reader `item-details` instance only while
+AI Chat is its selected primary pane. Ordinary library item details are
+unchanged. Other Reader panes are hidden visually in that state but remain
+mounted, so the sidenav changes mode rather than reconstructing the item pane.
+The chat message list flexes into the remaining height and leaves the composer
+at the bottom.
+
+The translation control is registered through the Reader's existing custom
+toolbar section. That section is immediately before Find, so the placement does
+not depend on patching or reordering the upstream React toolbar. Its commands
+delegate to the same `translateItems()` path as the library item's right-click
+menu and open the existing progress dialog immediately.
+
+Reader coverage pins the scoped full-height layout, switching from chat to
+ordinary panes, restoration through the AI entry, and the fact that library
+item details keep their normal sections. Translation coverage pins the
+before-Find placement, PDF-only visibility, the account-level translation
+switch, and dispatch of both output modes.
+
+The release does not change the existing installation and data-directory
+risks: desktop artifacts are unsigned, relocated Zotero libraries still need
+an explicit `-datadir` on first launch, and Zotero, Vibero, and Pharos must not
+open the shared SQLite library simultaneously.
+
 ## Still open
 
 - **The bundle as a whole is unsigned**, by decision 6 — there is no Apple

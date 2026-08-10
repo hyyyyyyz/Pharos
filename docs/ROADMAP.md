@@ -30,16 +30,20 @@ reader, annotations, citation styles and translators, plus:
 
 | Feature | Where it lives |
 | --- | --- |
-| Layout-preserving translation | Right-click a PDF |
-| AI chat about the open paper | PDF Reader toolbar + automatically revealed right-hand context pane |
+| Layout-preserving translation | PDF Reader toolbar left of Find, or the library PDF item's right-click menu; both offer Translated Only and Side by Side |
+| AI chat about the open paper | Full-height default right-hand reader pane; the sidenav still reaches Info, Notes, and other panes |
 | Daily papers | Tools menu |
 | Literature discovery | Tools menu |
 | Research projects | Tools menu |
 
-Opening a PDF tab reveals the AI section once and starts preparing the exact PDF
-attachment before the first question when a model is configured. A reader item
-with several PDFs stays bound to the attachment actually open on screen; a later
-manual collapse is respected when returning to the tab.
+Opening a PDF tab makes AI chat the full-height primary pane on the right and
+starts preparing the exact PDF attachment before the first question when a model
+is configured. The reader keeps its ordinary Info, Notes, and plugin panes
+mounted and reachable from the sidenav. A reader item with several PDFs stays
+bound to the attachment actually open on screen; a later manual collapse is
+respected when returning to the tab. The Reader's translation button uses the
+same Translated Only and Side by Side commands as the existing library-item
+right-click menu.
 
 Release installers are built by the repository-root
 `.github/workflows/desktop-release.yml` on a `desktop-v*` tag.
