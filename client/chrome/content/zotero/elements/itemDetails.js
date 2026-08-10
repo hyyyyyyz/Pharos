@@ -159,6 +159,51 @@
 			this._savePinnedPane();
 		}
 
+		/**
+		 * A reader-only pane that occupies the whole item-details surface.
+		 *
+		 * The reader still owns an ordinary ItemDetails instance so its information,
+		 * notes and plugin panes remain available from the sidenav. When chat is the
+		 * primary pane, however, it should look and behave like the reader's right-hand
+		 * application surface rather than one collapsible section at the bottom of a
+		 * metadata sheet.
+		 */
+		get primaryPane() {
+			return this.dataset.primaryPane || '';
+		}
+
+		setPrimaryPane(paneID = '') {
+			if (this.tabType != 'reader') {
+				paneID = '';
+			}
+
+			let currentPaneID = this.primaryPane;
+			let pane = paneID ? this.getEnabledPane(paneID) : null;
+			if (paneID && !pane) {
+				return false;
+			}
+
+			if (currentPaneID && currentPaneID != paneID) {
+				let currentPane = this.getPane(currentPaneID);
+				if (currentPane?._section) {
+					currentPane.collapsible = true;
+				}
+			}
+
+			if (!paneID) {
+				delete this.dataset.primaryPane;
+				return true;
+			}
+
+			// `open` must be set before disabling collapse. CollapsibleSection ignores
+			// attempts to change its open state after `no-collapse` is present.
+			pane.open = true;
+			pane.collapsible = false;
+			this.dataset.primaryPane = paneID;
+			this._paneParent.scrollTop = 0;
+			return true;
+		}
+
 		get _minScrollHeight() {
 			return parseFloat(this._paneParent.style.getPropertyValue('--min-scroll-height') || 0);
 		}
@@ -313,7 +358,12 @@
 			}
 
 			if (!collapsed) {
-				let scrollPaneElem = this.getEnabledPane(this._lastScrollPaneID);
+				// A reader primary pane outranks a persisted pin. Otherwise returning to
+				// a paper with Info pinned would silently replace its full-height chat.
+				let scrollPaneElem = this.getEnabledPane(this.primaryPane);
+				if (!scrollPaneElem) {
+					scrollPaneElem = this.getEnabledPane(this._lastScrollPaneID);
+				}
 				// If the last scroll pane is not found, try the pinned pane
 				if (!scrollPaneElem) {
 					scrollPaneElem = this.getEnabledPane(this.pinnedPane);
@@ -556,6 +606,10 @@
 			let paneIndex = panes.findIndex(elem => elem.dataset.pane == paneID);
 			let pane = panes[paneIndex];
 			if (!pane) return null;
+
+			if (this.tabType == 'reader') {
+				this.setPrimaryPane(paneID == 'pharos-chat' ? paneID : '');
+			}
 
 			let scrollPromise;
 

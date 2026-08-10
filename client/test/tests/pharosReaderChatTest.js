@@ -56,7 +56,76 @@ describe("Zotero.Pharos.ReaderChat", function () {
 		assert.ok(chat, "the paper has an AI chat section");
 		assert.equal(contextPane.context.mode, 'item');
 		assert.isTrue(chat.open, "the section body is visible, not only its heading");
+		assert.isFalse(chat.collapsible,
+			"the reader chat is an application surface, not a collapsible item section");
+		assert.equal(details.primaryPane, 'pharos-chat');
 		assert.equal(details.dataset.pharosChatAutoOpened, 'true');
+	});
+
+	it("should make AI chat fill the reader's right-hand pane", async function () {
+		let item = await createDataObject('item');
+		let attachment = await importPDFAttachment(item);
+		let reader = await openPDF(attachment);
+		let details = await waitForAutoOpen(reader);
+		await waitForCallback(() => !contextPane.collapsed, 50, 10);
+
+		let header = details.querySelector('#zotero-item-pane-header');
+		let info = details.getEnabledPane('info');
+		let chat = details.getEnabledPane('pharos-chat');
+		let messages = chat.querySelector('.pharos-chat-messages');
+		let composer = chat.querySelector('.pharos-chat-composer');
+		let surface = details.querySelector('.zotero-view-item');
+
+		assert.equal(win.getComputedStyle(header).display, 'none');
+		assert.equal(win.getComputedStyle(info).display, 'none');
+		assert.notEqual(win.getComputedStyle(chat).display, 'none');
+		assert.equal(win.getComputedStyle(messages).maxHeight, 'none');
+		assert.isAtMost(
+			composer.getBoundingClientRect().bottom,
+			surface.getBoundingClientRect().bottom + 1,
+			"the composer stays inside the visible pane rather than below metadata"
+		);
+	});
+
+	it("should let the reader sidenav leave and return to full-height chat", async function () {
+		let item = await createDataObject('item');
+		let attachment = await importPDFAttachment(item);
+		let reader = await openPDF(attachment);
+		let details = await waitForAutoOpen(reader);
+		let chat = details.getEnabledPane('pharos-chat');
+		let messages = chat.querySelector('.pharos-chat-messages');
+		let marker = win.document.createElement('div');
+		messages.append(marker);
+
+		await details.scrollToPane('info', 'instant');
+		assert.equal(details.primaryPane, '');
+		assert.isTrue(chat.collapsible);
+		assert.notEqual(
+			win.getComputedStyle(details.querySelector('#zotero-item-pane-header')).display,
+			'none'
+		);
+
+		await details.scrollToPane('pharos-chat', 'instant');
+		assert.equal(details.primaryPane, 'pharos-chat');
+		assert.isFalse(chat.collapsible);
+		assert.isTrue(messages.contains(marker),
+			"switching panes must not replace the conversation element");
+	});
+
+	it("should not turn the library item pane into a chat-only surface", async function () {
+		let item = await createDataObject('item');
+		await importPDFAttachment(item);
+		tabs.select('zotero-pane');
+		await zp.selectItem(item.id);
+
+		let details = zp.itemPane._itemDetails;
+		assert.equal(details.tabType, 'library');
+		assert.equal(details.primaryPane, '');
+		assert.notEqual(
+			win.getComputedStyle(details.querySelector('#zotero-item-pane-header')).display,
+			'none'
+		);
+		assert.notEqual(win.getComputedStyle(details.getEnabledPane('info')).display, 'none');
 	});
 
 	it("should keep an explicit AI chat button in the reader toolbar", async function () {

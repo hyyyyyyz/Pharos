@@ -329,3 +329,81 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+
+// In a PDF tab, AI chat is the reader's right-hand surface -- not a small
+// collapsible card after the paper metadata. ItemDetails keeps the other panes
+// mounted so the sidenav can still switch to Info, Notes or plugins; this scope
+// changes only the reader tab that explicitly selected chat as its primary pane.
+#zotero-context-pane item-details[data-primary-pane="pharos-chat"] {
+	.zotero-view-item-main {
+		min-height: 0;
+	}
+
+	#zotero-item-pane-header,
+	.zotero-view-item > [data-pane]:not([data-pane="pharos-chat"]) {
+		display: none;
+	}
+
+	.zotero-view-item {
+		min-height: 0;
+		padding: 0 10px 10px;
+		overflow: hidden;
+		gap: 0;
+
+		&::before {
+			display: none;
+		}
+	}
+
+	#zotero-editpane-pharos-chat {
+		display: flex;
+		flex: 1;
+		min-height: 0;
+
+		> collapsible-section {
+			display: flex;
+			flex: 1;
+			min-height: 0;
+			padding-block: 0;
+			border-bottom: 0;
+
+			> .head {
+				flex: none;
+				min-height: 40px;
+				padding-inline: 2px;
+				border-bottom: 1px solid var(--fill-quinary);
+			}
+
+			> .body {
+				display: flex;
+				flex: 1;
+				flex-direction: column;
+				min-height: 0;
+				max-height: none;
+				padding-block: 10px 0;
+				overflow: hidden;
+				opacity: 1;
+				visibility: visible;
+			}
+		}
+
+		.pharos-chat-empty:not([hidden]) {
+			flex: 1;
+			justify-content: center;
+		}
+
+		.pharos-chat-empty:not([hidden]) + .pharos-chat-messages {
+			flex: 0;
+		}
+
+		.pharos-chat-messages {
+			flex: 1;
+			min-height: 0;
+			max-height: none;
+		}
+
+		.pharos-chat-composer {
+			flex: none;
+		}
+	}
+}

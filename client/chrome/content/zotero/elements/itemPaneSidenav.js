@@ -804,6 +804,11 @@
 					if (event.button !== 0) {
 						return;
 					}
+					// Notes replace the item-details deck, so leave any reader-only
+					// full-height presentation before switching decks. Choosing Chat (or
+					// another item pane) later restores the appropriate presentation in
+					// ItemDetails.scrollToPane().
+					this.container?.setPrimaryPane('');
 					if (event.detail == 2) {
 						this.pinnedPane = null;
 					}

@@ -146,6 +146,7 @@ Zotero.Pharos.ReaderChat = new function () {
 		// after the last await has proved this reader still owns that surface.
 		win.ZoteroContextPane.context.mode = 'item';
 		pane.open = true;
+		details.setPrimaryPane(PANE_ID);
 		if (win.ZoteroContextPane.collapsed) {
 			win.ZoteroContextPane.collapsed = false;
 		}
