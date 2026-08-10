@@ -206,6 +206,123 @@ describe("Zotero.Pharos.Translate", function () {
 		});
 	});
 
+	describe("reader toolbar", function () {
+		async function openPDF(attachment) {
+			await selectLibrary(win);
+			await zp.viewItems([attachment]);
+			let reader = Zotero.Reader.getByTabID(win.Zotero_Tabs.selectedID);
+			await reader._initPromise;
+			await waitForCallback(() => (
+				reader._iframe.contentDocument
+					?.querySelector('[data-pharos-reader-translate="true"]')
+			), 50, 10);
+			return reader;
+		}
+
+		afterEach(function () {
+			win.Zotero_Tabs.select('zotero-pane');
+			win.Zotero_Tabs.closeAll();
+			Zotero.Prefs.clear('pharos.pdfTranslation');
+		});
+
+		it("should put the PDF translation button before Find", async function () {
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			var reader = await openPDF(attachment);
+			var doc = reader._iframe.contentDocument;
+			var button = doc.querySelector('[data-pharos-reader-translate="true"]');
+			var customSections = button.closest('.custom-sections');
+
+			assert.ok(customSections, "the button is injected through CustomSections");
+			assert.strictEqual(customSections.lastElementChild, button.parentElement,
+				"translation is the rightmost custom action, directly beside Find");
+			assert.strictEqual(customSections.nextElementSibling, doc.querySelector('.find'),
+				"CustomSections remains immediately to the left of Find");
+			assert.equal(button.getAttribute('aria-haspopup'), 'menu');
+			assert.equal(button.title, Zotero.getString('pharos-translate-menu'));
+		});
+
+		it("should not add a button for something that cannot be translated",
+			async function () {
+				var attachment = await importFileAttachment('test.png');
+				var append = sinon.spy();
+
+				Zotero.Pharos.Translate._renderToolbar({
+					reader: { _item: attachment, _openContextMenu() {} },
+					doc: win.document,
+					append,
+				});
+
+				assert.isFalse(append.called);
+			}
+		);
+
+		it("should honour the account's whole-PDF translation switch", async function () {
+			var item = await createDataObject('item');
+			var attachment = await importPDFAttachment(item);
+			var append = sinon.spy();
+			Zotero.Prefs.set('pharos.pdfTranslation', false);
+
+			Zotero.Pharos.Translate._renderToolbar({
+				reader: { _item: attachment, _openContextMenu() {} },
+				doc: win.document,
+				append,
+			});
+
+			assert.isFalse(append.called);
+		});
+
+		it("should offer and dispatch both translation modes", async function () {
+			var item = await createDataObject('item');
+			var firstAttachment = await importPDFAttachment(item);
+			var attachment = await importPDFAttachment(item);
+			assert.notEqual(firstAttachment.id, attachment.id);
+			var openContextMenu = sinon.stub().resolves();
+			var reader = {
+				_item: attachment,
+				_window: win,
+				_openContextMenu: openContextMenu,
+			};
+			var button;
+			Zotero.Pharos.Translate._renderToolbar({
+				reader,
+				doc: win.document,
+				append: node => button = node,
+			});
+
+			button.click();
+			assert.isTrue(openContextMenu.calledOnce);
+			var menu = openContextMenu.firstCall.args[0];
+			assert.deepEqual(menu.itemGroups[0].map(option => option.label), [
+				Zotero.getString('pharos-translate-menu-mono'),
+				Zotero.getString('pharos-translate-menu-dual'),
+			]);
+
+			var credentials = sinon.stub(Zotero.Pharos.API, 'hasCredentials').returns(true);
+			var translate = sinon.stub(Zotero.Pharos.Translate, 'translateItems').resolves();
+			var dialog = { open: sinon.spy() };
+			var getDialog = sinon.stub(
+				Zotero.ProgressQueues.get('pharos-translate'), 'getDialog'
+			).returns(dialog);
+			try {
+				menu.itemGroups[0][0].onCommand();
+				menu.itemGroups[0][1].onCommand();
+				await waitForCallback(() => translate.callCount == 2, 10, 5);
+
+				assert.strictEqual(translate.firstCall.args[0][0], attachment);
+				assert.equal(translate.firstCall.args[1], Zotero.Pharos.Translate.MODE_MONO);
+				assert.strictEqual(translate.secondCall.args[0][0], attachment);
+				assert.equal(translate.secondCall.args[1], Zotero.Pharos.Translate.MODE_DUAL);
+				assert.isTrue(dialog.open.calledTwice);
+			}
+			finally {
+				getDialog.restore();
+				translate.restore();
+				credentials.restore();
+			}
+		});
+	});
+
 	describe("#translateItems()", function () {
 		// Only the network is stood in for. Everything downstream of it -- the
 		// temp file, the import, the relation, the queue row -- is the real

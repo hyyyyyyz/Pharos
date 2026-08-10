@@ -39,9 +39,8 @@
  * a queued, per-item, long-running remote operation with a progress dialog.
  */
 Zotero.Pharos.Translate = new function () {
-	/** Poll interval for job status. The backend has an SSE endpoint too
-	 *  (GET /api/jobs/{id}/events), but polling is what the web client does and
-	 *  it needs no streaming support in this environment. */
+	// The backend also exposes SSE, but polling matches the web client and needs
+	// no streaming support in this process.
 	const POLL_INTERVAL = 2000;
 
 	/** A translation of a long PDF legitimately takes minutes. This is the point
@@ -146,6 +145,74 @@ Zotero.Pharos.Translate = new function () {
 	 */
 	this.MODE_MONO = 'mono';
 	this.MODE_DUAL = 'dual';
+
+	/**
+	 * The reader toolbar uses the same two commands as the item context menu.
+	 *
+	 * renderToolbar's append target is Reader's CustomSections container, which
+	 * sits immediately before the built-in find button. Keeping the entry here,
+	 * rather than patching the Reader React tree, also means upstream toolbar
+	 * changes cannot silently move it to a different group.
+	 */
+	this._renderToolbar = ({ reader, doc, append }) => {
+		let attachment = reader && reader._item;
+		if (!this.isEnabled() || !this.canTranslate(attachment)
+				|| typeof reader._openContextMenu != 'function') {
+			return;
+		}
+
+		let label = Zotero.getString('pharos-translate-menu');
+		let button = doc.createElement('button');
+		button.className = 'toolbar-button pharos-reader-translate-button';
+		button.dataset.pharosReaderTranslate = 'true';
+		button.title = label;
+		button.setAttribute('aria-label', label);
+		button.setAttribute('aria-haspopup', 'menu');
+		button.append(_buildReaderToolbarIcon(doc));
+		button.addEventListener('click', () => {
+			let rect = button.getBoundingClientRect();
+			try {
+				Promise.resolve(reader._openContextMenu({
+					x: rect.left,
+					y: rect.bottom,
+					itemGroups: [[
+						{
+							label: Zotero.getString('pharos-translate-menu-mono'),
+							onCommand: () => _translateFromReader(
+								reader, attachment, this.MODE_MONO
+							),
+						},
+						{
+							label: Zotero.getString('pharos-translate-menu-dual'),
+							onCommand: () => _translateFromReader(
+								reader, attachment, this.MODE_DUAL
+							),
+						},
+					]],
+				})).catch(Zotero.logError);
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		});
+		append(button);
+
+		// Translate is loaded before ReaderChat, so its listener is called first.
+		// Move this *section wrapper* after the synchronous renderToolbar dispatch
+		// has let every other listener append, making translation the last custom
+		// action and therefore the control directly beside Find. Moving the node,
+		// rather than assigning a visual flex order, keeps keyboard and visual order
+		// identical. The connection guards cover a React rerender that replaced the
+		// CustomSections container before this microtask ran.
+		Promise.resolve().then(() => {
+			let section = button.parentElement;
+			let container = section && section.parentElement;
+			if (button.isConnected && container?.classList.contains('custom-sections')
+					&& container.lastElementChild !== section) {
+				container.append(section);
+			}
+		});
+	};
 
 	/**
 	 * The four answers getState() is willing to give.
@@ -282,6 +349,42 @@ Zotero.Pharos.Translate = new function () {
 			&& item.attachmentContentType == 'application/pdf'
 			&& item.isStoredFileAttachment();
 	};
+
+	function _buildReaderToolbarIcon(doc) {
+		let svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		svg.setAttribute('width', '20');
+		svg.setAttribute('height', '20');
+		svg.setAttribute('viewBox', '0 0 24 24');
+		svg.setAttribute('aria-hidden', 'true');
+
+		let path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+		path.setAttribute('fill', 'currentColor');
+		path.setAttribute(
+			'd',
+			'M12.87 15.07 10.33 12.56l.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17A15.7 15.7 0 0 1 9 11.35 15.4 15.4 0 0 1 6.69 8h-2a17.5 17.5 0 0 0 3 4.5L2.6 17.52 4 18.93l5-5 3.11 3.11.76-1.97ZM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12Zm-2.62 7 1.62-4.33L19.12 17h-3.24Z'
+		);
+		svg.append(path);
+		return svg;
+	}
+
+	function _translateFromReader(reader, attachment, mode) {
+		let win = reader && reader._window;
+		if (!Zotero.Pharos.API.hasCredentials()) {
+			Services.prompt.alert(
+				win || null,
+				Zotero.getString('pharos-translate-title'),
+				Zotero.getString('pharos-error-signed-out-detail')
+			);
+			return;
+		}
+
+		// translateItems() resolves only after the minutes-long queue is done.
+		// Start it without holding the menu command open, and expose the existing
+		// progress dialog immediately just like the library context-menu command.
+		Zotero.Pharos.Translate.translateItems([attachment], mode)
+			.catch(Zotero.logError);
+		Zotero.ProgressQueues.get('pharos-translate').getDialog().open();
+	}
 
 	/**
 	 * Whether an item, or something hanging off it, could be translated.
@@ -765,7 +868,10 @@ Zotero.Pharos.Translate = new function () {
 		}
 		_queueProcessing = true;
 		try {
-			while (_queue.length && !_cancelled) {
+			while (_queue.length) {
+				if (_cancelled) {
+					break;
+				}
 				let { attachment, mode } = _queue.shift();
 				let itemID = attachment.id;
 				try {
@@ -1075,4 +1181,6 @@ Zotero.Pharos.Translate = new function () {
 		}
 		return text.length > ERROR_MAX ? text.slice(0, ERROR_MAX) + '…' : text;
 	}
+
+	Zotero.Reader.registerEventListener('renderToolbar', this._renderToolbar);
 };
