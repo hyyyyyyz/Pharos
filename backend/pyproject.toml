@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "pharos-backend"
 version = "0.0.1"
 description = "Pharos backend — layout-preserving research-paper translation and reading assistant"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Pharos contributors" }]
