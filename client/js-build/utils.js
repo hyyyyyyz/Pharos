@@ -256,14 +256,28 @@ function getModuleDigest(modulePath, dirs = ['src'], files = ['package.json', 'p
  *
  * So the pins are recorded in js-build/submodule-pins.json instead. When a pin
  * is present the build downloads the artefact Zotero itself published for that
- * commit; when it is absent -- a module edited locally, say -- it falls back to
- * a content digest, which will always miss the cache and build from source.
- * That is the correct behaviour for a modified module: its sources are no longer
- * what any published artefact was built from.
+ * commit. Modules listed in `_build_from_source` intentionally use a content
+ * digest, which misses the upstream artefact cache and builds locally. That is
+ * the correct behaviour for a modified module: its sources are no longer what
+ * any published artefact was built from.
  */
+function shouldBuildModuleFromSource(moduleName) {
+	try {
+		const pins = require(path.join(ROOT, 'js-build', 'submodule-pins.json'));
+		return Array.isArray(pins._build_from_source)
+			&& pins._build_from_source.includes(moduleName);
+	}
+	catch (e) {
+		return false;
+	}
+}
+
 function getModulePin(moduleName, modulePath) {
 	try {
 		const pins = require(path.join(ROOT, 'js-build', 'submodule-pins.json'));
+		if (shouldBuildModuleFromSource(moduleName)) {
+			return getModuleDigest(modulePath);
+		}
 		if (pins[moduleName]) {
 			return pins[moduleName];
 		}
@@ -302,5 +316,6 @@ module.exports = {
 	onError,
 	onProgress,
 	onSuccess,
+	shouldBuildModuleFromSource,
 	writeSignatures,
 };

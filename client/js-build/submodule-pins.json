@@ -14,8 +14,10 @@
     "that names a different commit than the sources present would download an",
     "artefact built from other code and nothing would report the mismatch."
   ],
+  "_build_from_source": [
+    "reader"
+  ],
   "_baseline": "zotero 8.0.5 (bdd3b1df5941ae4626614c626d0f5280205a7e69)",
-  "reader": "584c698eadb4df8049047076f5fa51c32b3b06d7",
   "note-editor": "00f8c2d79487161086f332a41f16f15027e346ec",
   "pdf-worker": "fd642b38287f1e59aaf8e02c3132da6d3daa39c1"
 }

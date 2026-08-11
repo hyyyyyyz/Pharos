@@ -132,10 +132,31 @@ describe("Zotero.Pharos.ReaderChat", function () {
 		let item = await createDataObject('item');
 		let attachment = await importPDFAttachment(item);
 		let reader = await openPDF(attachment);
-		let button = reader._iframe.contentDocument
+		let doc = reader._iframe.contentDocument;
+		let button = doc
 			.querySelector('[data-pharos-reader-chat="true"]');
+		let label = button.querySelector('.pharos-reader-chat-label');
+		let buttonStyle = doc.defaultView.getComputedStyle(button);
+		let labelStyle = doc.defaultView.getComputedStyle(label);
 
 		assert.equal(button.textContent.trim(), Zotero.getString('pane-pharos-chat'));
+		assert.equal(labelStyle.writingMode, 'horizontal-tb');
+		if (doc.documentElement.clientWidth > 820) {
+			assert.notEqual(labelStyle.display, 'none');
+			assert.equal(labelStyle.whiteSpace, 'nowrap');
+			assert.equal(buttonStyle.whiteSpace, 'nowrap');
+			assert.isAbove(button.getBoundingClientRect().width, 48,
+				"the labelled control must not collapse to the 28px icon-button width");
+			assert.isAtMost(
+				label.getBoundingClientRect().bottom,
+				button.getBoundingClientRect().bottom + 1,
+				"the label stays on one line inside the reader toolbar"
+			);
+		}
+		else {
+			assert.equal(labelStyle.display, 'none',
+				"narrow readers use the icon and accessible name instead of wrapping text");
+		}
 		contextPane.collapsed = true;
 		button.click();
 		await waitForCallback(() => !contextPane.collapsed, 50, 10);
