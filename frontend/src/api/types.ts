@@ -769,11 +769,6 @@ export interface AdminUser {
   pdf_translation: boolean;
   created_at: string;
   last_login_at: string | null;
-  /** Resources this account owns — an active researcher versus a dormant signup. */
-  papers: number;
-  projects: number;
-  searches: number;
-  highlights: number;
 }
 
 export interface AdminUserPage {
@@ -787,11 +782,6 @@ export interface AdminStats {
   users: number;
   admins: number;
   inactive_users: number;
-  papers: number;
-  translated_papers: number;
-  projects: number;
-  searches: number;
-  daily_papers: number;
   allow_registration: boolean;
 }
 

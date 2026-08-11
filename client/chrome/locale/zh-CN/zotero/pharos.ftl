@@ -909,46 +909,36 @@ pharos-rail-expand =
 pharos-rail-resize =
     .aria-label = 调整模块栏宽度
 
-## 管理后台
+## 管理员后台
 
-pharos-admin-menu = 管理后台…
+pharos-admin-menu = 管理员后台…
 pharos-admin-window =
-    .title = 管理后台
+    .title = 管理员后台
 
-pharos-rail-admin = 管理
+pharos-rail-admin = 管理员后台
 pharos-rail-admin-tooltip =
-    .title = 管理后台
+    .title = 管理员后台
 
-pharos-admin-tab-users = 用户
+pharos-admin-tab-users = 账号管理
 pharos-admin-tab-providers = API 配置
 pharos-admin-search =
     .placeholder = 搜索邮箱或名称…
     .aria-label = 搜索用户
 
 pharos-admin-loading = 加载中…
-pharos-admin-error = 无法加载管理后台。
+pharos-admin-error = 无法加载管理员后台。
 pharos-admin-forbidden = 当前账号不是管理员。
 # 服务器未返回该项时的占位符
 pharos-admin-none = —
 
-pharos-admin-stat-users = 用户
-# $count (Number) - 拥有管理员权限的账号数
-pharos-admin-stat-admins = { $count } 位管理员
-pharos-admin-stat-papers = 论文
-# $count (Number) - 已完成翻译的论文数
-pharos-admin-stat-translated = { $count } 篇已翻译
-pharos-admin-stat-projects = 研究项目
-pharos-admin-stat-daily = 每日论文
-# $count (Number) - 本实例累计的文献检索次数
-pharos-admin-stat-searches = { $count } 次检索
+pharos-admin-stat-users = 账号
+pharos-admin-stat-admins = 管理员
+pharos-admin-stat-inactive = 已停用
 pharos-admin-registration-open = 注册开放中
 pharos-admin-registration-closed = 注册已关闭
 pharos-admin-registration-hint = · 由服务器的 .env 控制
 
-pharos-admin-column-user = 用户
-pharos-admin-column-papers = 论文
-pharos-admin-column-projects = 项目
-pharos-admin-column-highlights = 高亮
+pharos-admin-column-user = 账号
 pharos-admin-column-created = 注册
 pharos-admin-column-last-login = 最近登录
 pharos-admin-column-role = 角色
@@ -976,10 +966,9 @@ pharos-admin-update-failed = 无法修改该账号。
 
 pharos-admin-delete-title = 删除账号
 # $email (String) - 将被删除的账号
-pharos-admin-delete-body = 将永久删除 { $email } 及其全部数据。
-# $papers, $projects, $highlights (Number) - 删除会一并销毁的内容
-pharos-admin-delete-owns = 含 { $papers } 篇论文、{ $projects } 个项目、{ $highlights } 条高亮。
-pharos-admin-delete-irreversible = 此操作无法撤销。
+pharos-admin-delete-body = 将永久删除 { $email } 的 Pharos 服务器端账号及账号数据。
+pharos-admin-delete-local = 不会读取或删除该用户设备上的本地 Zotero 或 Pharos 文库。
+pharos-admin-delete-irreversible = 服务器端账号删除后无法撤销。
 pharos-admin-delete-prompt = 请输入该账号的邮箱以确认：
 pharos-admin-delete-confirm = 永久删除
 pharos-admin-deleting = 删除中…

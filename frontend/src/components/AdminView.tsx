@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { AdminProbeResult, AdminUser } from "../api/types";
+import type { AdminProbeResult, AdminStats, AdminUser } from "../api/types";
 import { Icons } from "../design/icons";
 import { useSession } from "../store";
 import "./AdminView.css";
@@ -22,7 +22,8 @@ const day = (iso: string | null): string => (iso ? iso.slice(0, 10) : "—");
  * The administrator console.
  *
  * A module beside 文库 and the rest rather than a separate app: an operator is
- * also a researcher, so switching to 管理 must not mean leaving the workbench.
+ * also a researcher, so switching to 管理员后台 must not mean leaving the
+ * workbench.
  */
 export function AdminView(): JSX.Element {
   const [tab, setTab] = useState<Tab>("users");
@@ -32,9 +33,9 @@ export function AdminView(): JSX.Element {
       <header className="ph-admin-head">
         <div className="ph-admin-title">
           <span className="ph-admin-title-icon">
-            <Icons.user size={16} />
+            <Icons.settings size={16} />
           </span>
-          管理后台
+          管理员后台
         </div>
         <nav className="ph-admin-tabs" role="tablist">
           <button
@@ -43,7 +44,7 @@ export function AdminView(): JSX.Element {
             className={cx("ph-admin-tab", tab === "users" && "is-on")}
             onClick={() => setTab("users")}
           >
-            用户
+            账号管理
           </button>
           <button
             role="tab"
@@ -108,14 +109,7 @@ function UsersPanel(): JSX.Element {
 
   return (
     <div className="ph-admin-panel">
-      {s && (
-        <div className="ph-admin-stats">
-          <Stat label="用户" value={s.users} hint={`${s.admins} 位管理员`} />
-          <Stat label="论文" value={s.papers} hint={`${s.translated_papers} 篇已翻译`} />
-          <Stat label="研究项目" value={s.projects} />
-          <Stat label="每日论文" value={s.daily_papers} hint={`${s.searches} 次检索`} />
-        </div>
-      )}
+      {s && <AccountSummary stats={s} />}
 
       <div className="ph-admin-toolbar">
         <div className="ph-admin-searchwrap">
@@ -130,12 +124,6 @@ function UsersPanel(): JSX.Element {
             aria-label="搜索用户"
           />
         </div>
-        {s && (
-          <span className="ph-admin-reg">
-            注册{s.allow_registration ? "开放中" : "已关闭"}
-            <span className="ph-admin-reg-hint">· 由服务器 .env 控制</span>
-          </span>
-        )}
       </div>
 
       {error && <div className="ph-admin-error">{error}</div>}
@@ -150,10 +138,7 @@ function UsersPanel(): JSX.Element {
         <table className="ph-admin-table">
           <thead>
             <tr>
-              <th>用户</th>
-              <th className="ph-admin-num">论文</th>
-              <th className="ph-admin-num">项目</th>
-              <th className="ph-admin-num">高亮</th>
+              <th>账号</th>
               <th>注册</th>
               <th>最近登录</th>
               <th>角色</th>
@@ -190,11 +175,12 @@ function UsersPanel(): JSX.Element {
 }
 
 /**
- * Deleting an account destroys every paper, project, highlight and note it
- * owns, and that cannot be undone. So the confirmation asks the operator to
- * type the address rather than to click a second button: retyping is the
- * cheapest available proof that they read *which* account they are about to
- * erase, and it is the same string the backend independently verifies.
+ * Deleting an account destroys its server-side Pharos account data, and that
+ * cannot be undone. The confirmation asks the operator to type the address
+ * rather than to click a second button: retyping is the cheapest available
+ * proof that they read *which* account they are about to erase, and it is the
+ * same string the backend independently verifies. Local Zotero/Pharos data is
+ * not inventoried by this console and is not part of the request.
  */
 function DeleteDialog({
   user,
@@ -209,7 +195,6 @@ function DeleteDialog({
 }): JSX.Element {
   const [typed, setTyped] = useState("");
   const matches = typed.trim().toLowerCase() === user.email.toLowerCase();
-  const owns = user.papers + user.projects + user.highlights;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -230,16 +215,8 @@ function DeleteDialog({
       >
         <div className="ph-admin-dialog-title">删除用户</div>
         <p className="ph-admin-dialog-body">
-          将永久删除 <b>{user.email}</b> 及其全部数据
-          {owns > 0 && (
-            <>
-              ：
-              <b>
-                {user.papers} 篇论文、{user.projects} 个项目、{user.highlights} 条高亮
-              </b>
-            </>
-          )}
-          。此操作<b>无法撤销</b>。
+          将永久删除 <b>{user.email}</b> 的 Pharos 账号及服务器端数据。本机
+          Zotero/Pharos 文库不会被统计或删除。此操作<b>无法撤销</b>。
         </p>
         <p className="ph-admin-dialog-hint">请输入该用户的邮箱以确认：</p>
         <input
@@ -270,20 +247,26 @@ function DeleteDialog({
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
+function AccountSummary({
+  stats,
 }: {
-  label: string;
-  value: number;
-  hint?: string;
+  stats: AdminStats;
 }): JSX.Element {
   return (
-    <div className="ph-admin-stat">
-      <div className="ph-admin-stat-value">{value}</div>
-      <div className="ph-admin-stat-label">{label}</div>
-      {hint && <div className="ph-admin-stat-hint">{hint}</div>}
+    <div className="ph-admin-account-summary" aria-label="账号概览">
+      <span className="ph-admin-summary-item">
+        <strong>{stats.users}</strong> 个账号
+      </span>
+      <span className="ph-admin-summary-item">
+        <strong>{stats.admins}</strong> 位管理员
+      </span>
+      <span className="ph-admin-summary-item">
+        <strong>{stats.inactive_users}</strong> 个已停用
+      </span>
+      <span className="ph-admin-reg">
+        注册{stats.allow_registration ? "开放中" : "已关闭"}
+        <span className="ph-admin-reg-hint">· 由服务器 .env 控制</span>
+      </span>
     </div>
   );
 }
@@ -318,9 +301,6 @@ function UserRow({
           </div>
         </div>
       </td>
-      <td className="ph-admin-num">{user.papers}</td>
-      <td className="ph-admin-num">{user.projects}</td>
-      <td className="ph-admin-num">{user.highlights}</td>
       <td className="ph-admin-date">{day(user.created_at)}</td>
       <td className="ph-admin-date">{day(user.last_login_at)}</td>
       <td>

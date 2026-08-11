@@ -291,13 +291,14 @@ describe("Zotero.Pharos.Admin", function () {
 	describe("strings", function () {
 		it("should have a label for every column and control", function () {
 			for (let id of [
+				'pharos-rail-admin',
 				'pharos-admin-tab-users',
 				'pharos-admin-tab-providers',
 				'pharos-admin-forbidden',
+				'pharos-admin-stat-users',
+				'pharos-admin-stat-admins',
+				'pharos-admin-stat-inactive',
 				'pharos-admin-column-user',
-				'pharos-admin-column-papers',
-				'pharos-admin-column-projects',
-				'pharos-admin-column-highlights',
 				'pharos-admin-column-created',
 				'pharos-admin-column-last-login',
 				'pharos-admin-column-role',
@@ -312,6 +313,7 @@ describe("Zotero.Pharos.Admin", function () {
 				'pharos-admin-delete-title',
 				'pharos-admin-delete-prompt',
 				'pharos-admin-delete-confirm',
+				'pharos-admin-delete-local',
 				'pharos-admin-delete-irreversible',
 				'pharos-admin-cancel',
 				'pharos-admin-probe',
@@ -334,14 +336,6 @@ describe("Zotero.Pharos.Admin", function () {
 				Zotero.ftl.formatValueSync('pharos-admin-delete-body', { email: 'ada@example.org' }),
 				'ada@example.org'
 			);
-			var owns = Zotero.ftl.formatValueSync('pharos-admin-delete-owns', {
-				papers: 3,
-				projects: 2,
-				highlights: 1,
-			});
-			assert.notInclude(owns, '$papers');
-			assert.notInclude(owns, '$projects');
-			assert.notInclude(owns, '$highlights');
 			assert.include(
 				Zotero.ftl.formatValueSync('pharos-admin-delete-tooltip', { email: 'ada@example.org' }),
 				'ada@example.org'
@@ -374,20 +368,11 @@ describe("Zotero.Pharos.Admin", function () {
 			is_active: true,
 			created_at: '2026-01-02T03:04:05Z',
 			last_login_at: null,
-			papers: 3,
-			projects: 2,
-			searches: 1,
-			highlights: 4,
 		};
 		var STATS = {
 			users: 2,
 			admins: 1,
 			inactive_users: 0,
-			papers: 3,
-			translated_papers: 1,
-			projects: 2,
-			searches: 1,
-			daily_papers: 0,
 			allow_registration: true,
 		};
 		var saved;
@@ -492,8 +477,25 @@ describe("Zotero.Pharos.Admin", function () {
 			var win = await loadWindow("chrome://zotero/content/pharosAdmin.xhtml");
 			try {
 				await win.Zotero_Pharos_Admin.initialized;
+				var headers = Array.from(
+					win.document.querySelectorAll('.pharos-admin-table thead th')
+				).map(cell => cell.textContent);
+				assert.deepEqual(headers, [
+					Zotero.getString('pharos-admin-column-user'),
+					Zotero.getString('pharos-admin-column-created'),
+					Zotero.getString('pharos-admin-column-last-login'),
+					Zotero.getString('pharos-admin-column-role'),
+					Zotero.getString('pharos-admin-column-actions'),
+				]);
+				assert.lengthOf(
+					win.document.querySelectorAll('.pharos-admin-stat'),
+					3,
+					"only account-level counters are shown"
+				);
 				var rows = win.document.querySelectorAll('.pharos-admin-table tbody tr');
 				assert.lengthOf(rows, 2);
+				assert.lengthOf(rows[0].children, 5, "no research-data columns are present");
+				assert.lengthOf(rows[1].children, 5, "no research-data columns are present");
 				assert.lengthOf(rows[0].querySelectorAll('button'), 0);
 				// Promote/demote, deactivate/restore, delete.
 				assert.lengthOf(rows[1].querySelectorAll('button'), 3);
@@ -531,6 +533,10 @@ describe("Zotero.Pharos.Admin", function () {
 					'.pharos-admin-dialog-actions button.pharos-admin-danger'
 				);
 				assert.ok(input);
+				assert.equal(
+					win.document.querySelector('.pharos-admin-dialog-local').textContent,
+					Zotero.getString('pharos-admin-delete-local')
+				);
 				assert.isTrue(confirm.disabled, 'armed before anything was typed');
 
 				input.value = 'ada@example.org';

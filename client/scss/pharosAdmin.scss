@@ -1,10 +1,10 @@
 // The administrator console.
 //
 // Its own stylesheet, as every Pharos window now has. It was the first to split
-// off from the sheet the other windows once shared: those are lists of papers
-// and genuinely have one shape, while this is a table, a set of counters and a
-// modal. It pulls in the same theme, so the palette matches without the layout
-// having to.
+// off from the sheet the other windows once shared: those are research views
+// and genuinely have one shape, while this is an account table, a few account
+// counters and a modal. It pulls in the same theme, so the palette matches
+// without the layout having to.
 
 @import "abstracts/variables";
 @import "abstracts/functions";
@@ -99,7 +99,7 @@
 }
 
 //
-// Instance counters
+// Account counters
 //
 
 .pharos-admin-stats {
@@ -125,11 +125,6 @@
 
 .pharos-admin-stat-label {
 	color: var(--fill-secondary);
-}
-
-.pharos-admin-stat-hint {
-	color: var(--fill-tertiary);
-	font-size: 11px;
 }
 
 .pharos-admin-registration {
@@ -170,11 +165,6 @@
 	tr.is-suspended td {
 		opacity: 0.6;
 	}
-}
-
-.pharos-admin-num {
-	text-align: end;
-	font-variant-numeric: tabular-nums;
 }
 
 .pharos-admin-date {
@@ -278,9 +268,9 @@
 	margin-block-end: 4px;
 }
 
-.pharos-admin-dialog-owns {
+.pharos-admin-dialog-local {
 	color: var(--fill-secondary);
-	margin-block-end: 4px;
+	margin-block: 6px 12px;
 }
 
 .pharos-admin-dialog-warning {

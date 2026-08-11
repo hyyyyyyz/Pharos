@@ -85,40 +85,33 @@
   max-width: 1100px;
 }
 
-/* ----------------------------------------------------------------- stats */
+/* ------------------------------------------------------- account summary */
 
-.ph-admin-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.ph-admin-stat {
-  padding: 12px 14px;
+.ph-admin-account-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 18px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
   background: var(--c-sf);
   border: 1px solid var(--c-bd);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
-.ph-admin-stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--c-tx);
-  font-variant-numeric: tabular-nums;
-}
-
-.ph-admin-stat-label {
-  margin-top: 3px;
-  font-size: 12px;
+.ph-admin-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
   color: var(--c-tx2);
+  white-space: nowrap;
 }
 
-.ph-admin-stat-hint {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--c-tx3);
+.ph-admin-summary-item strong {
+  color: var(--c-tx);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* --------------------------------------------------------------- toolbar */
@@ -163,8 +156,10 @@
 }
 
 .ph-admin-reg {
+  margin-inline-start: auto;
   font-size: 11.5px;
   color: var(--c-tx2);
+  white-space: nowrap;
 }
 .ph-admin-reg-hint {
   margin-left: 4px;
@@ -206,13 +201,6 @@
 /* A suspended account stays legible but visibly inert. */
 .ph-admin-table tr.is-suspended td {
   opacity: 0.55;
-}
-
-.ph-admin-num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--c-tx2);
-  width: 56px;
 }
 
 .ph-admin-date {
@@ -498,24 +486,18 @@
   color: var(--c-err);
 }
 
-@media (max-width: 900px) {
-  /* Owned-resource counts are the first thing worth dropping on a narrow
-     screen; identity, role and status are not. */
-  .ph-admin-table th:nth-child(2),
-  .ph-admin-table th:nth-child(3),
-  .ph-admin-table th:nth-child(4),
-  .ph-admin-table td:nth-child(2),
-  .ph-admin-table td:nth-child(3),
-  .ph-admin-table td:nth-child(4) {
-    display: none;
+@media (max-width: 700px) {
+  .ph-admin-reg {
+    flex-basis: 100%;
+    margin-inline-start: 0;
   }
 }
 
 /* ----------------------------------------------------------------- delete */
 
 /* Red from the start rather than only on hover: this is the one control in the
-   console that destroys another person's work, and it should look like it
-   before the pointer arrives. */
+   console that destroys an account, and it should look like it before the
+   pointer arrives. */
 .ph-admin-trash {
   display: inline-flex;
   align-items: center;

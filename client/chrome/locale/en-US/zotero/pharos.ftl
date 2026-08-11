@@ -981,11 +981,11 @@ pharos-admin-menu = Admin Console…
 pharos-admin-window =
     .title = Admin Console
 
-pharos-rail-admin = Admin
+pharos-rail-admin = Admin Console
 pharos-rail-admin-tooltip =
     .title = Admin Console
 
-pharos-admin-tab-users = Users
+pharos-admin-tab-users = Accounts
 pharos-admin-tab-providers = API Configuration
 pharos-admin-search =
     .placeholder = Search email or name…
@@ -997,24 +997,14 @@ pharos-admin-forbidden = This account is not an administrator.
 # Stands in for a value the server did not report
 pharos-admin-none = —
 
-pharos-admin-stat-users = Users
-# $count (Number) - accounts with administrator rights
-pharos-admin-stat-admins = { $count } administrators
-pharos-admin-stat-papers = Papers
-# $count (Number) - papers with a finished translation
-pharos-admin-stat-translated = { $count } translated
-pharos-admin-stat-projects = Projects
-pharos-admin-stat-daily = Daily papers
-# $count (Number) - literature searches run on this instance
-pharos-admin-stat-searches = { $count } searches
+pharos-admin-stat-users = Accounts
+pharos-admin-stat-admins = Administrators
+pharos-admin-stat-inactive = Deactivated
 pharos-admin-registration-open = Registration is open
 pharos-admin-registration-closed = Registration is closed
 pharos-admin-registration-hint = · set on the server, in .env
 
-pharos-admin-column-user = User
-pharos-admin-column-papers = Papers
-pharos-admin-column-projects = Projects
-pharos-admin-column-highlights = Highlights
+pharos-admin-column-user = Account
 pharos-admin-column-created = Registered
 pharos-admin-column-last-login = Last seen
 pharos-admin-column-role = Role
@@ -1042,10 +1032,9 @@ pharos-admin-update-failed = Could not update this account.
 
 pharos-admin-delete-title = Delete account
 # $email (String) - the account being deleted
-pharos-admin-delete-body = This permanently deletes { $email } and everything it owns.
-# $papers, $projects, $highlights (Number) - what deletion destroys
-pharos-admin-delete-owns = { $papers } papers, { $projects } projects, { $highlights } highlights.
-pharos-admin-delete-irreversible = This cannot be undone.
+pharos-admin-delete-body = This permanently deletes the Pharos server account for { $email } and its server-side account data.
+pharos-admin-delete-local = The user's local Zotero and Pharos libraries on their devices are not accessed or deleted.
+pharos-admin-delete-irreversible = Server-side account deletion cannot be undone.
 pharos-admin-delete-prompt = Type the account's email address to confirm:
 pharos-admin-delete-confirm = Delete Permanently
 pharos-admin-deleting = Deleting…

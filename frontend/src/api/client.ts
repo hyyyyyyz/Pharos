@@ -612,6 +612,9 @@ export const api = {
    * decide who may see what; it only has to avoid *offering* the screen.
    */
   admin: {
+    /** Account-only summary for the console. Research-library activity is
+     * deliberately absent: local papers, projects and annotations are not
+     * administrator inventory. */
     stats: (): Promise<AdminStats> => json<AdminStats>("/admin/stats"),
 
     listUsers: (
@@ -635,7 +638,8 @@ export const api = {
       }),
 
     /**
-     * Permanently delete an account and everything it owns.
+     * Permanently delete an account and its server-side Pharos data.
+     * Local Zotero/Pharos libraries are outside this API and are not touched.
      *
      * `confirmEmail` must match the target's address — the backend checks it
      * too, so a mistyped id fails instead of erasing the wrong researcher.

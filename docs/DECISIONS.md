@@ -272,3 +272,18 @@ The version lives in `client/version` and must keep its `.SOURCE` suffix
 (`1.0.1.SOURCE`) — `prepare_build` matches `/([0-9].+)\.SOURCE/` to find the
 version at all, and substitutes the suffix per channel. A bare `1.0.1` fails the
 build with "Version number not found".
+
+## 14. Administration is account and provider operations, not research surveillance
+
+The administrator console exposes only account metadata and server model
+configuration: account search, role/status changes, account deletion, provider
+selection, key-presence hints, and connectivity probes. It does **not** report
+how many papers, projects, searches, daily digests, highlights, or annotations a
+person has.
+
+**Why:** a Pharos administrator operates the service; they are not the owner of
+each researcher's local Zotero library or Pharos sidecar. Those counts are both
+irrelevant to service operations and an unnecessary privacy leak. Deleting an
+account may remove that account's server-side Pharos records as part of the
+explicit destructive action, but the API never reads or deletes a user's local
+Zotero/Pharos files.

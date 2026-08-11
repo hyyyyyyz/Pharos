@@ -22,7 +22,7 @@ import json
 import urllib.error
 import urllib.request
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,16 +31,8 @@ from sqlalchemy.orm import Session
 
 from pharos.api.deps import get_library, get_session, get_settings, require_admin
 from pharos.config import Settings
+from pharos.db.models import Paper, User
 from pharos.services.library import LibraryService
-from pharos.db.models import (
-    DailyPaper,
-    Highlight,
-    LiteratureSearch,
-    Paper,
-    ResearchProject,
-    TranslationJob,
-    User,
-)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -77,12 +69,6 @@ class AdminUserOut(BaseModel):
     pdf_translation: bool
     created_at: datetime
     last_login_at: datetime | None
-    #: Owned-resource counts, so an operator can tell an active researcher from
-    #: an account that registered and never returned.
-    papers: int
-    projects: int
-    searches: int
-    highlights: int
 
 
 class AdminUserPage(BaseModel):
@@ -95,18 +81,13 @@ class AdminUserPage(BaseModel):
 
 
 class AdminStats(BaseModel):
-    """Instance-wide totals for the console header."""
+    """Account administration totals, never research-library activity."""
 
     model_config = ConfigDict(extra="forbid")
 
     users: int
     admins: int
     inactive_users: int
-    papers: int
-    translated_papers: int
-    projects: int
-    searches: int
-    daily_papers: int
     #: Whether strangers can currently register (``PHAROS_ALLOW_REGISTRATION``).
     allow_registration: bool
 
@@ -176,27 +157,13 @@ class UserPatch(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
-def _counts_by_user(session: Session, column: Any, model: Any) -> dict[str, int]:
-    """``{user_id: row count}`` for one owned table, in a single query.
-
-    One grouped query per table beats one query per user per table: a hundred
-    accounts would otherwise be four hundred round trips to render one page.
-    """
-    rows = session.execute(select(column, func.count()).group_by(column)).all()
-    del model  # signature kept symmetric for the call sites' readability
-    return {user_id: count for user_id, count in rows if user_id is not None}
-
-
 def _admin_count(session: Session) -> int:
     return int(
-        session.scalar(
-            select(func.count()).select_from(User).where(User.is_admin.is_(True))
-        )
-        or 0
+        session.scalar(select(func.count()).select_from(User).where(User.is_admin.is_(True))) or 0
     )
 
 
-def _user_out(user: User, counts: dict[str, dict[str, int]]) -> AdminUserOut:
+def _user_out(user: User) -> AdminUserOut:
     return AdminUserOut(
         id=user.id,
         email=user.email,
@@ -206,10 +173,6 @@ def _user_out(user: User, counts: dict[str, dict[str, int]]) -> AdminUserOut:
         pdf_translation=bool(user.pdf_translation),
         created_at=user.created_at,
         last_login_at=user.last_login_at,
-        papers=counts["papers"].get(user.id, 0),
-        projects=counts["projects"].get(user.id, 0),
-        searches=counts["searches"].get(user.id, 0),
-        highlights=counts["highlights"].get(user.id, 0),
     )
 
 
@@ -277,7 +240,12 @@ def instance_stats(
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AdminStats:
-    """Instance-wide totals."""
+    """Account totals and registration state.
+
+    The administrator console governs accounts and model providers. It does not
+    inventory papers, projects, searches, annotations, or any other research
+    activity -- those belong to the researcher, not to instance operations.
+    """
     count = lambda stmt: int(session.scalar(stmt) or 0)  # noqa: E731 - local shorthand
     return AdminStats(
         users=count(select(func.count()).select_from(User)),
@@ -285,17 +253,6 @@ def instance_stats(
         inactive_users=count(
             select(func.count()).select_from(User).where(User.is_active.is_(False))
         ),
-        papers=count(
-            select(func.count()).select_from(Paper).where(Paper.deleted_at.is_(None))
-        ),
-        translated_papers=count(
-            select(func.count(func.distinct(TranslationJob.paper_id))).where(
-                TranslationJob.status == "done"
-            )
-        ),
-        projects=count(select(func.count()).select_from(ResearchProject)),
-        searches=count(select(func.count()).select_from(LiteratureSearch)),
-        daily_papers=count(select(func.count()).select_from(DailyPaper)),
         allow_registration=bool(settings.allow_registration),
     )
 
@@ -308,7 +265,7 @@ def list_users(
     limit: Annotated[int, Query(ge=1, le=_MAX_PAGE)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AdminUserPage:
-    """Every account, newest first, with the resources each one owns."""
+    """Every account, newest first, with account metadata only."""
     where = []
     if q and q.strip():
         needle = f"%{q.strip().lower()}%"
@@ -317,27 +274,15 @@ def list_users(
             | func.lower(func.coalesce(User.display_name, "")).like(needle)
         )
 
-    total = int(
-        session.scalar(select(func.count()).select_from(User).where(*where)) or 0
-    )
+    total = int(session.scalar(select(func.count()).select_from(User).where(*where)) or 0)
     users = list(
         session.scalars(
-            select(User)
-            .where(*where)
-            .order_by(User.created_at.desc())
-            .limit(limit)
-            .offset(offset)
+            select(User).where(*where).order_by(User.created_at.desc()).limit(limit).offset(offset)
         ).all()
     )
 
-    counts = {
-        "papers": _counts_by_user(session, Paper.user_id, Paper),
-        "projects": _counts_by_user(session, ResearchProject.user_id, ResearchProject),
-        "searches": _counts_by_user(session, LiteratureSearch.user_id, LiteratureSearch),
-        "highlights": _counts_by_user(session, Highlight.user_id, Highlight),
-    }
     return AdminUserPage(
-        users=[_user_out(u, counts) for u in users],
+        users=[_user_out(u) for u in users],
         total=total,
         limit=limit,
         offset=offset,
@@ -376,9 +321,7 @@ def update_user(
         provided.get("is_admin") is False or provided.get("is_active") is False
     )
     if removing_admin and _admin_count(session) <= 1:
-        raise HTTPException(
-            status_code=409, detail="这是最后一位管理员，撤销后将无人可管理此实例"
-        )
+        raise HTTPException(status_code=409, detail="这是最后一位管理员，撤销后将无人可管理此实例")
 
     if "is_admin" in provided:
         target.is_admin = bool(provided["is_admin"])
@@ -396,13 +339,7 @@ def update_user(
             target.token_epoch = int(target.token_epoch or 0) + 1
     session.flush()
 
-    counts = {
-        "papers": _counts_by_user(session, Paper.user_id, Paper),
-        "projects": _counts_by_user(session, ResearchProject.user_id, ResearchProject),
-        "searches": _counts_by_user(session, LiteratureSearch.user_id, LiteratureSearch),
-        "highlights": _counts_by_user(session, Highlight.user_id, Highlight),
-    }
-    return _user_out(target, counts)
+    return _user_out(target)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -413,12 +350,13 @@ def delete_user(
     library: Annotated[LibraryService, Depends(get_library)],
     confirm_email: Annotated[str, Query(max_length=320)],
 ) -> None:
-    """Permanently delete an account and everything it owns.
+    """Permanently delete an account and its server-side Pharos data.
 
     ``confirm_email`` must equal the target's address. The console already asks
     the operator to type it, but the check belongs here too: this is the one
-    endpoint in Pharos that destroys another person's work, and a mistyped id in
-    a script should fail rather than silently erase the wrong researcher.
+    endpoint in Pharos that destroys another person's server-side account data,
+    and a mistyped id in a script should fail rather than silently erase the
+    wrong account.
 
     **Papers are purged one by one rather than left to the database cascade.**
     ``papers.user_id`` is ``ON DELETE CASCADE``, so a bare ``DELETE FROM users``
@@ -430,26 +368,22 @@ def delete_user(
     it reference-counts across all users and defers the unlink until after the
     commit. Reusing it is what makes deletion both complete and safe.
 
-    Everything else the account owns — projects, searches, highlights, notes,
-    collections, conversations, Zotero credentials — is metadata with no files
-    of its own, so the FK cascade is the right tool for those.
+    Everything else the account owns on the server — projects, searches,
+    highlights, notes, conversations and credentials — is metadata with no
+    files of its own, so the FK cascade is the right tool for those. Local
+    Zotero and Pharos libraries are never read by this endpoint and are not
+    affected.
     """
     target = session.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
     if target.id == admin.id:
-        raise HTTPException(
-            status_code=409, detail="不能删除自己的账户，请由另一位管理员操作"
-        )
+        raise HTTPException(status_code=409, detail="不能删除自己的账户，请由另一位管理员操作")
     if target.is_admin and _admin_count(session) <= 1:
-        raise HTTPException(
-            status_code=409, detail="这是最后一位管理员，删除后将无人可管理此实例"
-        )
+        raise HTTPException(status_code=409, detail="这是最后一位管理员，删除后将无人可管理此实例")
     if confirm_email.strip().casefold() != target.email:
-        raise HTTPException(
-            status_code=400, detail="确认邮箱与该账户不一致，未执行删除"
-        )
+        raise HTTPException(status_code=400, detail="确认邮箱与该账户不一致，未执行删除")
 
     # Purge the owned papers first, while the rows still exist to be counted.
     papers = list(session.scalars(select(Paper).where(Paper.user_id == target.id)).all())
@@ -523,9 +457,7 @@ async def probe_provider(
     if provider is None:
         raise HTTPException(status_code=404, detail="Unknown provider")
     if not provider.configured:
-        return ProbeResult(
-            name=name, ok=False, latency_ms=None, detail="未配置密钥或模型"
-        )
+        return ProbeResult(name=name, ok=False, latency_ms=None, detail="未配置密钥或模型")
 
     result = await asyncio.to_thread(
         _probe_provider, provider.base_url, provider.api_key or "", provider.model

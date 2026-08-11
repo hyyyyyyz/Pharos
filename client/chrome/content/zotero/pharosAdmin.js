@@ -211,9 +211,6 @@ var Zotero_Pharos_Admin = new function () {
 
 		const COLUMNS = [
 			['pharos-admin-column-user', ''],
-			['pharos-admin-column-papers', 'pharos-admin-num'],
-			['pharos-admin-column-projects', 'pharos-admin-num'],
-			['pharos-admin-column-highlights', 'pharos-admin-num'],
 			['pharos-admin-column-created', ''],
 			['pharos-admin-column-last-login', ''],
 			['pharos-admin-column-role', ''],
@@ -256,7 +253,7 @@ var Zotero_Pharos_Admin = new function () {
 		let wrap = document.createElement('div');
 		wrap.className = 'pharos-admin-stats';
 
-		let card = (label, value, hint) => {
+		let card = (label, value) => {
 			let box = document.createElement('div');
 			box.className = 'pharos-admin-stat';
 			let number = document.createElement('div');
@@ -266,23 +263,13 @@ var Zotero_Pharos_Admin = new function () {
 			name.className = 'pharos-admin-stat-label';
 			name.textContent = label;
 			box.append(number, name);
-			if (hint) {
-				let sub = document.createElement('div');
-				sub.className = 'pharos-admin-stat-hint';
-				sub.textContent = hint;
-				box.append(sub);
-			}
 			return box;
 		};
 
 		wrap.append(
-			card(Zotero.getString('pharos-admin-stat-users'), stats.users,
-				_fmt('pharos-admin-stat-admins', { count: stats.admins })),
-			card(Zotero.getString('pharos-admin-stat-papers'), stats.papers,
-				_fmt('pharos-admin-stat-translated', { count: stats.translated_papers })),
-			card(Zotero.getString('pharos-admin-stat-projects'), stats.projects),
-			card(Zotero.getString('pharos-admin-stat-daily'), stats.daily_papers,
-				_fmt('pharos-admin-stat-searches', { count: stats.searches }))
+			card(Zotero.getString('pharos-admin-stat-users'), stats.users),
+			card(Zotero.getString('pharos-admin-stat-admins'), stats.admins),
+			card(Zotero.getString('pharos-admin-stat-inactive'), stats.inactive_users)
 		);
 
 		let registration = document.createElement('div');
@@ -322,13 +309,6 @@ var Zotero_Pharos_Admin = new function () {
 		email.textContent = user.email;
 		identity.append(name, email);
 		row.append(identity);
-
-		for (let count of [user.papers, user.projects, user.highlights]) {
-			let cell = document.createElement('td');
-			cell.className = 'pharos-admin-num';
-			cell.textContent = count;
-			row.append(cell);
-		}
 
 		for (let date of [user.created_at, user.last_login_at]) {
 			let cell = document.createElement('td');
@@ -437,11 +417,12 @@ var Zotero_Pharos_Admin = new function () {
 	/**
 	 * Ask for the account's email address before deleting it.
 	 *
-	 * Deleting an account destroys every paper, project, highlight and note it
-	 * owns, and that cannot be undone. So the confirmation asks the operator to
-	 * type the address rather than to click a second button: retyping is the
-	 * cheapest available proof that they read *which* account they are about to
-	 * erase, and it is the same string the backend independently verifies.
+	 * Deleting an account destroys its Pharos server-side account data, and that
+	 * cannot be undone. It does not inspect or alter the user's local Zotero or
+	 * Pharos library. The confirmation asks the operator to type the address
+	 * rather than click a second button: retyping is the cheapest available proof
+	 * that they read *which* account they are about to erase, and it is the same
+	 * string the backend independently verifies.
 	 */
 	this.confirmDelete = function (user) {
 		this._closeDialog();
@@ -462,13 +443,9 @@ var Zotero_Pharos_Admin = new function () {
 		body.className = 'pharos-admin-dialog-body';
 		body.textContent = _fmt('pharos-admin-delete-body', { email: user.email });
 
-		let owns = document.createElement('div');
-		owns.className = 'pharos-admin-dialog-owns';
-		owns.textContent = _fmt('pharos-admin-delete-owns', {
-			papers: user.papers,
-			projects: user.projects,
-			highlights: user.highlights,
-		});
+		let local = document.createElement('div');
+		local.className = 'pharos-admin-dialog-local';
+		local.textContent = Zotero.getString('pharos-admin-delete-local');
 
 		let warning = document.createElement('div');
 		warning.className = 'pharos-admin-dialog-warning';
@@ -496,8 +473,8 @@ var Zotero_Pharos_Admin = new function () {
 		let confirm = document.createElement('button');
 		confirm.className = 'pharos-admin-danger';
 		confirm.textContent = Zotero.getString('pharos-admin-delete-confirm');
-		// The one control in Pharos that destroys another person's work stays
-		// unusable until the typed address matches.
+			// The one control in Pharos that destroys another account's server-side
+			// data stays unusable until the typed address matches.
 		confirm.disabled = true;
 		buttons.append(cancel, confirm);
 
@@ -527,7 +504,7 @@ var Zotero_Pharos_Admin = new function () {
 			}
 		});
 
-		dialog.append(title, body, owns, warning, prompt, error, buttons);
+		dialog.append(title, body, local, warning, prompt, error, buttons);
 		overlay.append(dialog);
 		document.getElementById('pharos-admin-root').append(overlay);
 

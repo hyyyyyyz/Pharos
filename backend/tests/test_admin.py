@@ -8,6 +8,7 @@ absence does:
    demoting or deactivating themselves — because recovering from that needs
    direct database access.
 3. No response ever carries an API key or a password hash.
+4. Account administration never inventories a researcher's library activity.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-
 from pharos.db.models import Paper, User
 from pharos.db.session import session_scope
 from pharos.main import create_app
@@ -168,6 +168,17 @@ def test_user_listing_never_exposes_password_hashes(client: TestClient) -> None:
     assert "argon2" not in body.lower()
 
 
+def test_user_listing_never_exposes_research_activity(client: TestClient) -> None:
+    """The console manages an account, not the person's local research graph."""
+    admin = _account(client, "admin@test.io", admin=True)
+    user = _account(client, "user@test.io")
+
+    page = client.get("/api/admin/users", headers=admin["headers"]).json()
+    listed = next(row for row in page["users"] if row["id"] == user["id"])
+    for key in ("papers", "projects", "searches", "highlights"):
+        assert key not in listed
+
+
 def test_provider_view_never_exposes_a_key(client: TestClient) -> None:
     """A configured key is reported as present, but only by its last four chars.
 
@@ -221,6 +232,7 @@ def test_stats_counts_accounts(client: TestClient) -> None:
 
     assert after["users"] == before["users"] + 2
     assert after["admins"] == before["admins"] + 1
+    assert set(after) == {"users", "admins", "inactive_users", "allow_registration"}
 
 
 def test_empty_patch_is_rejected(client: TestClient) -> None:
@@ -238,7 +250,7 @@ def test_unknown_user_is_404(client: TestClient) -> None:
     admin = _account(client, "admin@test.io", admin=True)
     assert (
         client.patch(
-            f"/api/admin/users/deadbeef", headers=admin["headers"], json={"is_active": True}
+            "/api/admin/users/deadbeef", headers=admin["headers"], json={"is_active": True}
         ).status_code
         == 404
     )

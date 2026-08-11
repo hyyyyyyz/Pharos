@@ -37,7 +37,14 @@ const NAV: NavDef[] = [
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
   { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
   { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
-  { key: "admin", label: "管理后台", title: "管理后台", Icon: Icons.user, comingSoon: false, adminOnly: true },
+  {
+    key: "admin",
+    label: "管理员后台",
+    title: "管理员后台",
+    Icon: Icons.settings,
+    comingSoon: false,
+    adminOnly: true,
+  },
 ];
 
 const cx = (...parts: (string | false)[]): string => parts.filter(Boolean).join(" ");
