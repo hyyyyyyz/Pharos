@@ -4,6 +4,17 @@
 pharos-error-signed-out = Not signed in to Pharos
 pharos-error-signed-out-detail = Sign in to your Pharos account in Settings to use this.
 
+## Page evidence
+
+pharos-evidence-save = Save as evidence
+pharos-evidence-saving = Saving evidence…
+pharos-evidence-saved = Evidence saved
+pharos-evidence-error = Could not save evidence.
+pharos-evidence-error-empty = Select some text first.
+pharos-evidence-error-pdf-only = Evidence capture is available for PDF readers only.
+pharos-evidence-error-signed-out = Sign in to Pharos to save evidence.
+pharos-evidence-error-not-in-paper = This text was not found in the paper's extracted pages.
+
 ## Layout-preserving translation
 
 pharos-translate-title = Translating with Pharos

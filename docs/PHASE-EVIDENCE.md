@@ -60,7 +60,16 @@ claim → evidence statement → paper identity → page + section → exact quo
 服务层再补约束表达不了的部分：
 
 - 引文的页码**永不接受客户端传入**，只能从 chunk 上读出来
+- 阅读器可以带一个 `page_hint`，但它只是待验证的出现位置：只有该页的 owner-scoped
+  chunk 里确实包含同一段归一化引文时才采用。它不是 `page_no`，不能把客户端给的数字
+  变成事实；因此重复引文可以保留用户实际选中的那一处。
+- 选区矩形只有在 `page_hint` 验证通过时才会保存；提示页验证失败时，矩形不会附到后端
+  回退选出的另一页，而是安全降级为不带矩形的 quote；引文本身仍按后端已验证的最早
+  匹配页保存。
 - 改引文的文字会**重新解析页码**——否则"页码留着、字换掉"是这个子系统里最廉价的伪造
+- 改引文的文字会同时清除旧矩形；即使新文字仍在同一页，旧矩形也不再描述它。为避免
+  新文字与未验证位置错配，文字和矩形必须分两次 PATCH；矩形更新仍要求证据已有真实
+  页面定位，并通过统一的坐标形状校验。
 - `kind` 和四个溯源列**不可 PATCH**，事后把人写的备注改标成模型产出，正是这些列存在的理由
 - 引文匹配不到任何 chunk 是 **409 且没有强制选项**：一个无法定位引文的调用方，不该被
   提供一条"仍然当作引文存下来"的路
@@ -114,13 +123,13 @@ claim → evidence statement → paper identity → page + section → exact quo
 
 ## 已知缺口
 
-- **客户端界面还没有**。阅读器里还没有"选中一段 → 存为证据"的动作。已探明可行路径：
-  `Zotero.Reader.registerEventListener('renderTextSelectionPopup', …)` 是 Zotero 给插件的
-  正式扩展点，**不需要改 reader 子模块**；论文身份也不必新建映射，
-  `Zotero.Pharos.Chat.resolvePaperID()` 已经在做 sha256 内容寻址且幂等
-- ⚠️ 做客户端时的已知坑：阅读器的 `pageIndex` 是 **0 基**，而 `Evidence.page_no` 与
-  `Highlight.page` 是 **1 基**。差一就是每条引文都指错页
+- **客户端界面已接入**。PDF 阅读器的文本选区菜单现在提供「保存为证据」，通过
+  `Zotero.Reader.registerEventListener('renderTextSelectionPopup', …)` 扩展点工作，
+  不改 reader 子模块；论文身份复用 `Zotero.Pharos.Chat.resolvePaperID()` 的 sha256
+  内容寻址。矩形只对单页、合法 PDF 坐标提交；跨页选区先保存为不带矩形的引文。
+- ⚠️ 维护契约：阅读器的 `pageIndex` 是 **0 基**，而 `Evidence.page_no` 与
+  `Highlight.page` 是 **1 基**。当前客户端在请求边界显式执行 `+1`，后续改动不得把
+  阅读器索引直接当作服务端页码。
 - 没有"用户主动解除了这个链接"的记录，所以回填会把用户否掉的匹配重新链上。需要一列
   `paper_link_source`（auto / manual）
 - 每日论文导入文库的路径还没接上自动链接——那是论文身份变已知的另一个时刻
-- `RESEARCH_WORKFLOW.md` §5 的 API 清单还是 v1 范围，没有列入这六个证据端点

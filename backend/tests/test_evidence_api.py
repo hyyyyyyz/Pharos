@@ -147,6 +147,54 @@ def test_resolve_previews_a_placement_without_writing_one(client: TestClient) ->
     assert client.get("/api/evidence").json() == []
 
 
+def test_a_verified_page_hint_preserves_a_selected_repeated_occurrence(
+    client: TestClient,
+) -> None:
+    quote = "A repeated finding belongs to the occurrence the reader selected."
+    paper_id = _paper(pages=(PAGE_ONE + " " + quote, PAGE_TWO + " " + quote))
+
+    preview = client.post(
+        "/api/evidence/resolve",
+        json={"paper_id": paper_id, "quote": quote, "page_hint": 2},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["page_no"] == 2
+
+    created = client.post(
+        "/api/evidence",
+        json={
+            "paper_id": paper_id,
+            "kind": "quote",
+            "text": quote,
+            "page_hint": 2,
+            "rects": [{"x": 10, "y": 20, "w": 100, "h": 12}],
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["page_no"] == 2
+    assert created.json()["rects"] == [{"x": 10.0, "y": 20.0, "w": 100.0, "h": 12.0}]
+
+
+def test_quote_rectangles_are_dropped_when_the_hint_page_lacks_the_quote(
+    client: TestClient,
+) -> None:
+    paper_id = _paper()
+    created = client.post(
+        "/api/evidence",
+        json={
+            "paper_id": paper_id,
+            "kind": "quote",
+            "text": "The transformer baseline achieves 92.1% accuracy",
+            "page_hint": 2,
+            "rects": [{"x": 10, "y": 20, "w": 100, "h": 12}],
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["page_no"] == 1
+    assert created.json()["rects"] == []
+    assert len(client.get("/api/evidence").json()) == 1
+
+
 def test_a_note_cannot_claim_an_unextracted_page(client: TestClient) -> None:
     paper_id = _paper()
     refused = client.post(
@@ -223,6 +271,29 @@ def test_patching_a_quote_moves_its_page_and_refuses_an_unfounded_edit(
     )
     assert unfounded.status_code == 409
     assert client.get(f"/api/evidence/{row['id']}").json()["page_no"] == 2
+
+
+def test_patching_quote_text_and_rects_together_is_rejected(client: TestClient) -> None:
+    paper_id = _paper()
+    row = client.post(
+        "/api/evidence",
+        json={
+            "paper_id": paper_id,
+            "kind": "quote",
+            "text": "The transformer baseline achieves 92.1% accuracy",
+            "page_hint": 1,
+            "rects": [{"x": 10, "y": 20, "w": 100, "h": 12}],
+        },
+    ).json()
+    refused = client.patch(
+        f"/api/evidence/{row['id']}",
+        json={
+            "text": "Related work on retrieval augmentation is extensive.",
+            "rects": [{"x": 20, "y": 30, "w": 100, "h": 12}],
+        },
+    )
+    assert refused.status_code == 400
+    assert "separate requests" in refused.json()["detail"]
 
 
 def test_kind_and_provenance_are_rejected_at_the_edge(client: TestClient) -> None:

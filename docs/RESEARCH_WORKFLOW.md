@@ -1,8 +1,8 @@
 # Pharos Research Workflow
 
-> 状态：**v1 已落地。** 本文描述当前可以实际走通的文献探索与研究项目工作流，并定义它向
-> Research OS 演进时必须保持的边界。未接入的自动 Idea 生成、页面级证据、实验执行和自动写作均明确
-> 标为 Future，不应从本文推断为现有能力。
+> 状态：**v1 已落地。** 本文描述当前可以实际走通的文献探索、页面级证据与研究项目工作流，并定义它向
+> Research OS 演进时必须保持的边界。自动 Idea 生成、实验执行和自动写作仍明确标为 Future，
+> 不应从本文推断为现有能力。
 
 本文是 research slice 的唯一详细规范；[`ARCHITECTURE.md`](ARCHITECTURE.md) 只保留全局架构和入口。
 
@@ -110,8 +110,9 @@ schema 不要求模型生成局限性，因此 `limitations` 保留规则抽取�
 仍需核对：正文第几页给出关键实验；是否只在单一数据集上成立。
 ```
 
-`ProjectSource.note` 是研究者的证据备注，不是模型确认过的事实。v1 没有页面级 locator；如果只有摘要，
-备注中不能伪造页码或原文引文。
+`ProjectSource.note` 仍是研究者针对搜索结果的证据备注，不是模型确认过的事实；如果来源只有摘要，备注中
+不能伪造页码或原文引文。论文进入本地文库并完成页面文本提取后，另一个独立的 `Evidence` Ledger 才能
+保存服务端验证过的页码、原文引文和可选的阅读器选区矩形。
 
 ### 2.5 推进研究项目
 
@@ -168,7 +169,7 @@ v1 对它的真实映射如下：
 | 长期概念 | v1 对应实体 | 当前证据强度 |
 |---|---|---|
 | Paper | `LiteratureResult`，以及既有文库 `Paper` | 搜索结果主要是元数据和摘要；文库 Paper 可有完整 PDF |
-| Evidence | `ProjectSource` + `LiteratureResult` + `note` | 摘要级候选证据，没有页面级引文 |
+| Evidence | 搜索阶段的 `ProjectSource`/`note`；文库阶段的 `Evidence` + `PaperChunk` | 搜索来源仍是摘要级候选；文库证据可由服务端验证页码、原文引文和单页矩形 |
 | Hypothesis | `ProjectArtifact(type=hypothesis)` | 人工记录，未自动查新或评分 |
 | Experiment | `ProjectArtifact(type=experiment_plan)` | 计划记录，不执行代码 |
 | Result | `ProjectArtifact(type=result)` | 用户录入；平台不验证指标来源 |
@@ -255,6 +256,10 @@ PATCH/DELETE  /api/projects/{project_id}/sources/{source_id}
 
 GET/POST      /api/projects/{project_id}/artifacts
 GET/PATCH/DELETE /api/projects/{project_id}/artifacts/{artifact_id}
+
+GET/POST      /api/evidence
+POST          /api/evidence/resolve
+GET/PATCH/DELETE /api/evidence/{evidence_id}
 ```
 
 所有搜索、项目、来源和 artifact 都带用户所有权；后端必须先按当前用户过滤。不存在与属于其他用户的 ID
@@ -295,8 +300,9 @@ flowchart LR
 ### Evidence Engine
 
 - **v1：** arXiv/OpenAlex 搜索、去重、摘要级规则分析、可选 AI 摘要深读、搜索历史、ProjectSource
-  和纳入备注。
-- **Future：** 将文库 PDF 切成 page-aware `PaperChunk`，建立可点击的 Evidence Ledger。
+  和纳入备注；文库 PDF 的 page-aware `PaperChunk`、服务端 Evidence Ledger，以及桌面阅读器的
+  「保存为证据」入口也已接通。
+- **Future：** 让问答和研究项目自动消费这些页面证据，并在引用、图表和主张之间建立更强的可点击绑定。
 
 ### Idea Lab
 
@@ -315,9 +321,12 @@ flowchart LR
 - **v1：** claim、draft、review artifact 及其人工状态。
 - **Future：** Claim 与页面证据/实验结果的强绑定、图表溯源、引用审计和受证据约束的写作。
 
-## 8. Future 证据契约
+## 8. 页面级证据契约（当前实现）
 
-页面级 Evidence 尚未实现，但后续实现必须满足：
+页面级 Evidence Ledger 已在后端与 Pharos 桌面阅读器接通。后端端点为
+`GET/POST /api/evidence`、`POST /api/evidence/resolve`、以及按 id 的
+`GET/PATCH/DELETE /api/evidence/{id}`；所有端点都要求登录并按用户隔离。阅读器 PDF
+选区菜单中的「保存为证据」会把当前附件通过内容寻址关联到 `Paper`，再写入下列契约：
 
 ```text
 claim
@@ -330,6 +339,12 @@ claim
 必须区分原文 quote、人工备注、规则摘要和模型推断。只有摘要时显示 `abstract_only`；页面未知时不能生成
 看似精确的页码。每个自动产物记录 provider、model、workflow/schema version 和输入快照哈希。证据不足
 应标记 `insufficient_evidence` 或 `search_incomplete`，而不是补写一个听起来合理的引用。
+
+引文的 `page_no` 永远由服务端从 owner-scoped `PaperChunk` 解析，客户端不能直接指定。桌面
+阅读器可附带 1 基的 `page_hint`，但它只是未信任的出现位置：只有该页 chunk 精确包含引文时
+才采用，否则回退到最早匹配页。只有通过该提示验证的单页选区才写入 `rects`；跨页或无法验证
+的选区安全降级为不带矩形的 quote。编辑 quote 文本会重新解析页码并清除旧矩形，文字与矩形不能
+在同一 PATCH 中替换。
 
 ## 9. 预算、安全与隐私
 
@@ -365,7 +380,7 @@ claim
 
 ## 11. Future：ARIS 式扩展顺序
 
-1. 先连接文库 `Paper` 与 `ProjectSource`，增加页面级 chunk 和 Evidence Ledger；
+1. 让 grounded Q&A、ProjectSource 和 Claim 直接引用已经验证的 `Evidence`；
 2. 再加入 Research Profile、Idea Card 和 Validation Plan 的结构化 schema；
 3. 增加带来源的 Idea 生成、独立反方评审和不确定性明确的 novelty search；
 4. 在隔离环境中实现 Research Contract 与最小实验闭环；

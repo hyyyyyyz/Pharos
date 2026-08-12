@@ -310,7 +310,14 @@ def _unplaced_locator(session: Session, paper: Paper, *, user_id: str) -> str:
     return "abstract_only" if (paper.abstract or "").strip() else "unlocated"
 
 
-def resolve_quote(session: Session, *, user_id: str, paper_id: str, quote: object) -> Placement:
+def resolve_quote(
+    session: Session,
+    *,
+    user_id: str,
+    paper_id: str,
+    quote: object,
+    page_hint: object = None,
+) -> Placement:
     """Find the page a verbatim quote sits on, or say honestly why there is none.
 
     Four outcomes, and the third and fourth are the ones that matter:
@@ -324,15 +331,19 @@ def resolve_quote(session: Session, *, user_id: str, paper_id: str, quote: objec
       this paper somewhere", and the second is the one a reviewer would assume.
 
     When the quote occurs on several pages — a running header, a repeated figure
-    caption — the earliest ``(page_no, ordinal)`` wins. That is not a guess
-    dressed up as a fact: the text really is on that page, and a deterministic
-    choice keeps two identical requests from disagreeing.
+    caption — a reader may supply ``page_hint`` to identify the occurrence the
+    user actually selected. It is never trusted: that page wins only when one of
+    its owner-scoped chunks contains the exact normalised quote. Otherwise the
+    earliest ``(page_no, ordinal)`` match still wins. This makes the hint useful
+    without turning it into the fabricated client-supplied ``page_no`` this
+    service deliberately forbids.
     """
     paper = require_paper(session, paper_id, user_id=user_id)
     text = _clean_text(quote, field="quote", limit=MAX_TEXT, required=True) or ""
     candidates = _match_candidates(text)
     if max((len(candidate) for candidate in candidates), default=0) < MIN_QUOTE_CHARS:
         raise Invalid(f"a quote must contain at least {MIN_QUOTE_CHARS} characters")
+    clean_hint = None if page_hint is None else _clean_page(page_hint)
 
     chunks = session.scalars(
         select(PaperChunk)
@@ -341,6 +352,14 @@ def resolve_quote(session: Session, *, user_id: str, paper_id: str, quote: objec
     ).all()
     if not chunks:
         return Placement(_unplaced_locator(session, paper, user_id=user_id))
+
+    if clean_hint is not None:
+        for chunk in chunks:
+            if chunk.page_no != clean_hint:
+                continue
+            haystack = normalise(chunk.text or "")
+            if any(candidate in haystack for candidate in candidates):
+                return Placement("page", page_no=int(chunk.page_no), chunk_id=chunk.id)
 
     for chunk in chunks:
         haystack = normalise(chunk.text or "")
@@ -507,6 +526,7 @@ def create_evidence(
     project_id: str | None = None,
     statement: object = None,
     page_no: object = None,
+    page_hint: object = None,
     rects: object = None,
     provider: object = None,
     model: object = None,
@@ -520,7 +540,9 @@ def create_evidence(
     * ``quote`` — ``page_no`` may **not** be supplied. It is resolved from the
       paper's chunks, so the only page a quote can ever carry is one where the
       text was actually found. A quote that resolves to ``not_in_paper`` raises
-      :class:`QuoteNotInPaper` rather than being filed as ``unlocated``.
+      :class:`QuoteNotInPaper` rather than being filed as ``unlocated``. A
+      ``page_hint`` can select one repeated occurrence, but only after the quote
+      matcher independently verifies it; quote rectangles require that proof.
     * everything else — the caller may name a page, and it is accepted only if a
       chunk exists for it (:func:`_require_chunk_for_page`). With no page, the
       locator falls back to ``abstract_only`` or ``unlocated`` depending on
@@ -547,8 +569,15 @@ def create_evidence(
                 "page_no cannot be supplied for a quote; it is resolved from the "
                 "paper's extracted pages"
             )
+        clean_page_hint = None if page_hint is None else _clean_page(page_hint)
         clean_body = _clean_text(text, field="text", limit=MAX_TEXT, required=True) or ""
-        placement = resolve_quote(session, user_id=user_id, paper_id=paper.id, quote=clean_body)
+        placement = resolve_quote(
+            session,
+            user_id=user_id,
+            paper_id=paper.id,
+            quote=clean_body,
+            page_hint=clean_page_hint,
+        )
         if not placement.placed:
             raise QuoteNotInPaper(
                 "This text does not appear in the extracted pages of this paper. "
@@ -560,9 +589,23 @@ def create_evidence(
             placement.page_no,
             placement.chunk_id,
         )
+        stored_rects = None
+        if rects is not None and locator == "page":
+            # Geometry is useful only when the caller's occurrence hint was
+            # independently verified. An old client (or an extractor whose
+            # normalisation differs) may still provide a quote that resolves
+            # honestly; preserve that evidence, but discard geometry that could
+            # otherwise be drawn on the resolver's different occurrence. This is
+            # deliberately a quote-only fallback, not a client-visible failure.
+            candidate_rects = _clean_rects(rects, locator=locator)
+            if clean_page_hint is not None and resolved_page == clean_page_hint:
+                stored_rects = candidate_rects
     else:
+        if page_hint is not None:
+            raise Invalid("page_hint is only valid for quote evidence")
         clean_body = _clean_text(text, field="text", limit=MAX_TEXT, required=True) or ""
         chunk_id = None
+        stored_rects = None
         if page_no is None:
             locator, resolved_page = _unplaced_locator(session, paper, user_id=user_id), None
         else:
@@ -571,6 +614,7 @@ def create_evidence(
                 session, user_id=user_id, paper_id=paper.id, page_no=resolved_page
             )
             locator, chunk_id = "page", chunk.id
+        stored_rects = _clean_rects(rects, locator=locator)
 
     _assert_locator_contract(locator, resolved_page)
     row = Evidence(
@@ -581,7 +625,7 @@ def create_evidence(
         kind=clean_kind,
         locator=locator,
         page_no=resolved_page,
-        rects=_clean_rects(rects, locator=locator),
+        rects=stored_rects,
         text=clean_body,
         statement=clean_statement,
         **provenance,
@@ -657,6 +701,9 @@ def update_evidence(
     A design where the text moved but the page stayed would be the cheapest
     fabrication route in the whole subsystem: keep page 7, replace the quotation
     with something the paper never said, and the row still reads as verified.
+    A quote text edit and a rectangle edit are intentionally separate operations;
+    accepting both in one PATCH would have no verified occurrence hint for the
+    replacement geometry.
     """
     row = require_evidence(session, evidence_id, user_id=user_id)
     allowed = {"text", "statement", "project_id", "page_no", "rects"}
@@ -679,6 +726,11 @@ def update_evidence(
         row.statement = _clean_text(changes["statement"], field="statement", limit=MAX_STATEMENT)
 
     if row.kind == "quote":
+        if "text" in changes and "rects" in changes:
+            raise Invalid(
+                "quote text and rects must be edited in separate requests; "
+                "replacement geometry has no verified page hint"
+            )
         if "page_no" in changes:
             raise Invalid(
                 "page_no cannot be set on a quote; it is resolved from the paper's extracted pages"
@@ -695,11 +747,10 @@ def update_evidence(
             row.locator = placement.outcome
             row.page_no = placement.page_no
             row.chunk_id = placement.chunk_id
-            if row.locator != "page":
-                # The re-resolution lost the page (the paper's chunks were
-                # replaced by an extraction that no longer produces any), so any
-                # stored region now points at nothing.
-                row.rects = None
+            # Geometry describes the old text, even when the edited quote lands
+            # on the same page. Clear it; replacement geometry requires a
+            # separate PATCH after the new occurrence has been verified.
+            row.rects = None
     else:
         if "text" in changes:
             row.text = (

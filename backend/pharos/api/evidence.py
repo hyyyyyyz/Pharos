@@ -141,6 +141,10 @@ class EvidenceCreate(BaseModel):
     project_id: str | None = None
     statement: Annotated[str, Field(max_length=evidence_service.MAX_STATEMENT)] | None = None
     page_no: Annotated[int, Field(ge=1, le=evidence_service.MAX_PAGE)] | None = None
+    #: An untrusted occurrence hint for a quote, never a page assertion. The
+    #: service adopts it only after finding the exact quote in that page's own
+    #: extracted chunk. Reader geometry requires this verified association.
+    page_hint: Annotated[int, Field(ge=1, le=evidence_service.MAX_PAGE)] | None = None
     rects: Annotated[list[RectIn], Field(min_length=1, max_length=annotate.MAX_RECTS)] | None = None
     provider: Annotated[str, Field(max_length=32)] | None = None
     model: Annotated[str, Field(max_length=64)] | None = None
@@ -170,6 +174,9 @@ class ResolveIn(BaseModel):
 
     paper_id: str
     quote: Annotated[str, Field(min_length=1, max_length=evidence_service.MAX_TEXT)]
+    #: Prefer this occurrence only if the quote is present on the page. It is a
+    #: hint rather than ``page_no`` because the client is not the page authority.
+    page_hint: Annotated[int, Field(ge=1, le=evidence_service.MAX_PAGE)] | None = None
 
 
 # ---------------------------------------------------------------- converters
@@ -253,7 +260,11 @@ def resolve_quote(
     by an id-shaped one, even if a future edit adds a POST on the id route.
     """
     placement = evidence_service.resolve_quote(
-        session, user_id=user.id, paper_id=body.paper_id, quote=body.quote
+        session,
+        user_id=user.id,
+        paper_id=body.paper_id,
+        quote=body.quote,
+        page_hint=body.page_hint,
     )
     return PlacementOut(
         outcome=placement.outcome,  # type: ignore[arg-type]

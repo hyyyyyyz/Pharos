@@ -4,6 +4,17 @@
 pharos-error-signed-out = 尚未登录 Pharos
 pharos-error-signed-out-detail = 请先在设置中登录 Pharos 账号。
 
+## 页面证据
+
+pharos-evidence-save = 保存为证据
+pharos-evidence-saving = 正在保存证据…
+pharos-evidence-saved = 证据已保存
+pharos-evidence-error = 无法保存证据。
+pharos-evidence-error-empty = 请先选中一段文字。
+pharos-evidence-error-pdf-only = 只有 PDF 阅读器支持保存证据。
+pharos-evidence-error-signed-out = 登录 Pharos 后才能保存证据。
+pharos-evidence-error-not-in-paper = 这段文字未在论文的已提取页面中找到。
+
 ## 保排版翻译
 
 pharos-translate-title = Pharos 翻译

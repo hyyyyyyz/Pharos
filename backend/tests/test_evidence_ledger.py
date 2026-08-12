@@ -213,6 +213,100 @@ def test_a_repeated_quote_takes_the_earliest_page_deterministically() -> None:
     assert second.page_no == first.page_no
 
 
+def test_a_verified_page_hint_selects_the_occurrence_the_reader_opened() -> None:
+    paper_id = _paper()
+    quote = "The transformer baseline achieves 92.1% accuracy on the held-out split"
+    rects = [{"x": 10, "y": 20, "w": 100, "h": 12}]
+    with session_scope() as session:
+        placement = evidence.resolve_quote(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            quote=quote,
+            page_hint=2,
+        )
+        assert placement.page_no == 2
+
+        row = evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text=quote,
+            page_hint=2,
+            rects=rects,
+        )
+        assert (row.locator, row.page_no) == ("page", 2)
+        assert evidence.annotate.load_rects(row.rects) == [evidence.annotate.Rect(**rects[0])]
+
+
+def test_an_unverified_page_hint_saves_quote_but_drops_quote_geometry() -> None:
+    paper_id = _paper()
+    quote = "we evaluate the transformer on ImageNet"
+    with session_scope() as session:
+        # A hint alone is only a preference: because page 2 does not contain the
+        # quote, resolution falls back to the independently proven page 1.
+        placement = evidence.resolve_quote(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            quote=quote,
+            page_hint=2,
+        )
+        assert placement.page_no == 1
+
+    with session_scope() as session:
+        row = evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text=quote,
+            page_hint=2,
+            rects=[{"x": 10, "y": 20, "w": 100, "h": 12}],
+        )
+        assert (row.locator, row.page_no, row.rects) == ("page", 1, None)
+
+    with session_scope() as session:
+        # A missing hint is also backwards-compatible quote-only evidence.
+        row = evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text=quote,
+            rects=[{"x": 10, "y": 20, "w": 100, "h": 12}],
+        )
+        assert (row.locator, row.page_no, row.rects) == ("page", 1, None)
+
+
+def test_quote_geometry_requires_valid_geometry_when_the_hint_is_verified() -> None:
+    paper_id = _paper()
+    with session_scope() as session, pytest.raises(evidence.Invalid, match="greater than zero"):
+        evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text="we evaluate the transformer on ImageNet",
+            page_hint=1,
+            rects=[{"x": 10, "y": 20, "w": 0, "h": 12}],
+        )
+
+
+def test_notes_cannot_use_a_quote_page_hint() -> None:
+    paper_id = _paper()
+    with session_scope() as session, pytest.raises(evidence.Invalid, match="only valid for quote"):
+        evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="note",
+            text="My reading.",
+            page_hint=1,
+        )
+
+
 def test_a_paper_with_no_chunks_but_an_abstract_is_abstract_only() -> None:
     paper_id = _paper(pages=(), abstract="A metadata-only import.", sha="")
     with session_scope() as session:
@@ -399,6 +493,53 @@ def test_editing_a_quote_reresolves_its_page_instead_of_keeping_the_old_one() ->
             changes={"text": "Related work on retrieval augmentation is extensive."},
         )
         assert moved.page_no == 2
+
+
+def test_editing_a_quote_clears_geometry_that_described_the_old_text() -> None:
+    paper_id = _paper()
+    with session_scope() as session:
+        row_id = evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text="we evaluate the transformer on ImageNet",
+            page_hint=1,
+            rects=[{"x": 10, "y": 20, "w": 100, "h": 12}],
+        ).id
+    with session_scope() as session:
+        moved = evidence.update_evidence(
+            session,
+            user_id=OWNER,
+            evidence_id=row_id,
+            changes={"text": "Related work on retrieval augmentation is extensive."},
+        )
+        assert moved.page_no == 2
+        assert moved.rects is None
+
+
+def test_editing_quote_text_and_geometry_together_is_rejected() -> None:
+    paper_id = _paper()
+    with session_scope() as session:
+        row_id = evidence.create_evidence(
+            session,
+            user_id=OWNER,
+            paper_id=paper_id,
+            kind="quote",
+            text="we evaluate the transformer on ImageNet",
+            page_hint=1,
+            rects=[{"x": 10, "y": 20, "w": 100, "h": 12}],
+        ).id
+    with session_scope() as session, pytest.raises(evidence.Invalid, match="separate requests"):
+        evidence.update_evidence(
+            session,
+            user_id=OWNER,
+            evidence_id=row_id,
+            changes={
+                "text": "Related work on retrieval augmentation is extensive.",
+                "rects": [{"x": 20, "y": 30, "w": 100, "h": 12}],
+            },
+        )
 
 
 def test_editing_a_quote_into_text_the_paper_never_said_is_refused() -> None:
