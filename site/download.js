@@ -1,22 +1,30 @@
 const REPOSITORY = "hyyyyyyz/Pharos";
 const RELEASES_URL = `https://github.com/${REPOSITORY}/releases`;
 const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
-const CACHE_KEY = "pharos.public-release.v2";
+// Bump this whenever asset matching changes. A cached release is deliberately
+// kept for offline-friendly rendering, but an old "unavailable" decision must
+// not survive after a new package format is recognised.
+const CACHE_KEY = "pharos.public-release.v3";
 const CACHE_TTL = 15 * 60 * 1000;
 const REQUEST_TIMEOUT = 6500;
 
 const platformRules = {
   windows: {
-    test: (name) => /\.(?:msi|exe)$/i.test(name),
-    score: (name) => scoreName(name, ["windows", "win", "x64", "setup", "msi"]),
+    // The desktop workflow currently publishes a portable ZIP. Keep the
+    // installer extensions for future releases, but do not make a platform
+    // look unavailable merely because it has no NSIS installer yet.
+    test: (name) => /\.(?:msi|exe|zip)$/i.test(name),
+    score: (name) => scoreName(name, ["windows", "win", "x64", "portable", "setup", "msi", "zip"]),
   },
   macos: {
     test: (name) => /\.(?:dmg|pkg)$/i.test(name),
     score: (name) => scoreName(name, ["universal", "aarch64", "arm64", "macos", "mac", "dmg"]),
   },
   linux: {
-    test: (name) => /\.(?:appimage|deb|rpm)$/i.test(name) || (/linux/i.test(name) && /\.(?:tar\.gz|tgz)$/i.test(name)),
-    score: (name) => scoreName(name, ["appimage", "amd64", "x86_64", "linux", "deb", "rpm"]),
+    test: (name) =>
+      /\.(?:appimage|deb|rpm)$/i.test(name) ||
+      (/linux/i.test(name) && /\.(?:tar\.(?:gz|xz|bz2)|tgz)$/i.test(name)),
+    score: (name) => scoreName(name, ["appimage", "amd64", "x86_64", "linux", "tar.xz", "deb", "rpm"]),
   },
   ios: {
     test: (name) => /\.ipa$/i.test(name),
