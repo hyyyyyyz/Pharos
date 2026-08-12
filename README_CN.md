@@ -135,6 +135,8 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 
 正式版第一次启动会读取已安装 Zotero profile 中的 `extensions.zotero.dataDir`，只有在它是绝对路径、
 目录存在且包含真正的 `zotero.sqlite` 时才采用，因此移动到外接磁盘或其他目录的文库可以自动发现。
+对于旧版 macOS profile 中仍保留 persistent descriptor 的情况，客户端还会读取 Zotero 同时保存的
+`lastDataDir` 路径。
 命令行 `-datadir` 和 Pharos 自己明确设置的数据目录始终优先；官方 profile 不可用或校验失败时才回退到
 默认 `~/Zotero`，此时仍可显式传入 `-datadir /path/to/Zotero`。
 

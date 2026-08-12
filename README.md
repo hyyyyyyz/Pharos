@@ -199,7 +199,9 @@ On first launch, a production build reads the installed Zotero profile's
 `extensions.zotero.dataDir` setting and adopts it only when it is an absolute
 path whose directory contains a regular `zotero.sqlite`. This discovers a
 library moved to another drive or folder without copying Zotero's unrelated
-preferences. An absolute `-datadir` argument and an explicit Pharos data
+preferences; older macOS profiles that retain a persistent descriptor are
+handled through Zotero's accompanying `lastDataDir` path. An absolute
+`-datadir` argument and an explicit Pharos data
 directory preference always win; if the official profile is unavailable or
 fails validation, Pharos falls back to the default `~/Zotero` and still accepts
 `-datadir /path/to/Zotero`.

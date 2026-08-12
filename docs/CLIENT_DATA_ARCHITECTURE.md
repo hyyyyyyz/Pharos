@@ -51,6 +51,9 @@ database, malformed preferences, or an inaccessible profile is ignored and the
 normal fallback discovery continues. The probe uses the official profile roots
 for macOS (`~/Library/Application Support/Zotero`), Windows
 (`%APPDATA%/Zotero/Zotero`), and Linux (`~/.zotero/zotero`).
+For older macOS profiles that retain an `nsIFile` persistent descriptor in
+`dataDir`, it also checks Zotero's accompanying `lastDataDir` path before
+falling back.
 
 The precedence is deliberate and tested: an absolute `-datadir` command-line
 argument wins first, an explicit Pharos `useDataDir`/`dataDir` preference wins

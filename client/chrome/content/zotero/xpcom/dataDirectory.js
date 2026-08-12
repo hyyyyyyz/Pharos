@@ -474,39 +474,82 @@ Zotero.DataDirectory = {
 				return null;
 			}
 			let prefs = await Zotero.Profile.readPrefsFromFile(prefsFile);
-			let prefDataDir = prefs['extensions.zotero.dataDir'];
-			if (!prefs['extensions.zotero.useDataDir'] || !prefDataDir
-					|| typeof prefDataDir != 'string') {
+			if (!prefs['extensions.zotero.useDataDir']) {
 				return null;
 			}
-			if (!PathUtils.isAbsolute(prefDataDir)) {
-				Zotero.debug(`Ignoring relative Zotero dataDir pref '${prefDataDir}'`, 1);
-				return null;
+
+			// Older macOS Zotero profiles can retain a persistent-descriptor value in
+			// dataDir while lastDataDir contains the real path. Try the latter first,
+			// then the current value; this keeps an upgraded library discoverable
+			// without copying any sibling preferences into Pharos.
+			let prefValues = [
+				prefs['extensions.zotero.lastDataDir'],
+				prefs['extensions.zotero.dataDir'],
+			];
+			for (let prefValue of prefValues) {
+				let officialDataDir = this._resolveOfficialDataDirectoryPreference(prefValue);
+				if (!officialDataDir) {
+					continue;
+				}
+				let dbFile = OS.Path.join(officialDataDir, dbFilename);
+				if (!await OS.File.exists(dbFile)) {
+					continue;
+				}
+				// A directory or other non-file object named zotero.sqlite is not a
+				// library. Reject it before persisting the sibling profile's setting.
+				if ((await OS.File.stat(dbFile)).isDir) {
+					continue;
+				}
+				Zotero.debug("Found Zotero data directory " + officialDataDir);
+				return officialDataDir;
 			}
-			let officialDataDir;
-			try {
-				officialDataDir = OS.Path.normalize(prefDataDir);
-			}
-			catch {
-				Zotero.debug(`Invalid Zotero dataDir pref '${prefDataDir}'`, 1);
-				return null;
-			}
-			let dbFile = OS.Path.join(officialDataDir, dbFilename);
-			if (!await OS.File.exists(dbFile)) {
-				return null;
-			}
-			// A directory or other non-file object named zotero.sqlite is not a
-			// library. Reject it before persisting the sibling profile's setting.
-			if ((await OS.File.stat(dbFile)).isDir) {
-				return null;
-			}
-			Zotero.debug("Found Zotero data directory " + officialDataDir);
-			return officialDataDir;
+			return null;
 		}
 		catch (e) {
 			// An inaccessible or malformed sibling profile must not prevent the
 			// normal first-run path from creating the default directory.
 			Zotero.logError(e);
+			return null;
+		}
+	},
+
+
+	/**
+	 * Convert one official Zotero data-directory preference to a normalised
+	 * absolute path. Zotero 8 writes a path string, while older macOS profiles
+	 * may still contain an nsIFile persistent descriptor. Both forms are
+	 * untrusted input and are accepted only when the result is absolute.
+	 *
+	 * @param {Object} value
+	 * @return {String|null}
+	 */
+	_resolveOfficialDataDirectoryPreference: function (value) {
+		if (typeof value != 'string' || !value) {
+			return null;
+		}
+
+		let path = value;
+		if (!PathUtils.isAbsolute(path)) {
+			try {
+				let nsIFile = Components.classes["@mozilla.org/file/local;1"]
+					.createInstance(Components.interfaces.nsIFile);
+				nsIFile.persistentDescriptor = value;
+				path = nsIFile.path;
+			}
+			catch {
+				Zotero.debug(`Ignoring invalid Zotero dataDir preference '${value}'`, 1);
+				return null;
+			}
+		}
+		if (!PathUtils.isAbsolute(path)) {
+			Zotero.debug(`Ignoring relative Zotero dataDir preference '${value}'`, 1);
+			return null;
+		}
+		try {
+			return OS.Path.normalize(path);
+		}
+		catch {
+			Zotero.debug(`Ignoring malformed Zotero dataDir preference '${value}'`, 1);
 			return null;
 		}
 	},

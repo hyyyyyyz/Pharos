@@ -186,10 +186,12 @@ describe("Zotero.DataDirectory", function () {
 			await removeDir(discoveryRoot);
 		});
 
-		async function writeOfficialPrefs(dataDir, useDataDir = true) {
+		async function writeOfficialPrefs(dataDir, useDataDir = true, lastDataDir = null) {
 			await Zotero.File.putContentsAsync(
 				OS.Path.join(officialProfileDir, "prefs.js"),
 				`user_pref("extensions.zotero.dataDir", ${JSON.stringify(dataDir)});\n`
+					+ (lastDataDir === null ? "" :
+						`user_pref("extensions.zotero.lastDataDir", ${JSON.stringify(lastDataDir)});\n`)
 					+ `user_pref("extensions.zotero.useDataDir", ${JSON.stringify(useDataDir)});\n`
 			);
 		}
@@ -210,6 +212,17 @@ describe("Zotero.DataDirectory", function () {
 
 			assert.isNull(
 				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should use lastDataDir when an older profile keeps a persistent descriptor", async function () {
+			await OS.File.makeDir(officialDataDir);
+			await Zotero.File.putContentsAsync(OS.Path.join(officialDataDir, dbFilename), "test");
+			await writeOfficialPrefs("old-mac-persistent-descriptor", true, officialDataDir);
+
+			assert.equal(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename),
+				officialDataDir
 			);
 		});
 
