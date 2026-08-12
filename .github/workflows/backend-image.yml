@@ -109,6 +109,13 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/missing.js)" = 404
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/api/not-found)" = 404
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/api/papers)" = 401
+          # Capability sentinels: an owner-scoped route returns 401 when it is
+          # mounted, while an old image with the route missing returns 404.
+          # These pin the two APIs whose production deployment previously
+          # lagged behind an otherwise healthy image.
+          curl --fail --silent --show-error http://127.0.0.1:18400/api/auth/status \
+            | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin)["allow_registration"], bool)'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/api/evidence)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18400/docs)" = 200
 
           test "$(docker inspect pharos-smoke --format '{{.Config.User}}')" = "1000:1000"
