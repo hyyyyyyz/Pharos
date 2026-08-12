@@ -53,6 +53,7 @@ import type {
   AdminUser,
   AdminUserPage,
   AdminUserPatch,
+  ArxivImportBody,
 } from "./types";
 
 // Web production is same-origin, so "/api" reaches the FastAPI process that
@@ -280,6 +281,13 @@ export const api = {
     // upload is authenticated like everything else.
     return json<Paper>("/papers", { method: "POST", body: form });
   },
+
+  /** Import a paper by arXiv id or official abs/pdf URL. */
+  importArxiv: (input: string): Promise<Paper> =>
+    json<Paper>("/papers/import/arxiv", {
+      method: "POST",
+      ...body({ input } satisfies ArxivImportBody),
+    }),
 
   translate: (paperId: string, pages?: string): Promise<Job> => {
     const qs = pages ? `?pages=${encodeURIComponent(pages)}` : "";

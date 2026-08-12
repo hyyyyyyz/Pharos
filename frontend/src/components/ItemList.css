@@ -96,6 +96,10 @@
 .ph-il-btn-ghost:hover {
   background: var(--c-hv);
 }
+.ph-il-btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 
 .ph-il-btn-primary {
   height: 25px;

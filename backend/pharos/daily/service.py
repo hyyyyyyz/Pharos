@@ -1059,7 +1059,57 @@ class PdfDownloadError(RuntimeError):
     """The paper's PDF could not be retrieved."""
 
 
-def download_pdf(url: str, *, timeout: float = _PDF_TIMEOUT_SECONDS) -> bytes:
+def _validate_pdf_url(url: str, *, https_only: bool) -> urllib.parse.SplitResult:
+    """Return a parsed, allowlisted PDF URL or reject it before any connection.
+
+    This helper is used for both the first URL and every redirect target.  A
+    final-response check is too late for SSRF protection: by the time
+    ``response.geturl()`` can be inspected, urllib has already connected to the
+    redirected host.
+    """
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise PdfDownloadError("refusing to download from a malformed URL") from exc
+    if parsed.scheme not in ("http", "https") or (https_only and parsed.scheme != "https"):
+        raise PdfDownloadError(f"refusing to download a non-HTTP URL: {parsed.scheme or url!r}")
+    if parsed.hostname is None or parsed.hostname.lower() not in _PDF_HOSTS:
+        raise PdfDownloadError(f"refusing to download from unexpected host {parsed.hostname!r}")
+    if parsed.username is not None or parsed.password is not None:
+        raise PdfDownloadError("refusing a PDF URL containing credentials")
+    expected_port = 443 if parsed.scheme == "https" else 80
+    if port is not None and port != expected_port:
+        raise PdfDownloadError("refusing a PDF URL using an unexpected port")
+    return parsed
+
+
+class _PdfRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Validate a redirect target *before* urllib opens it."""
+
+    def __init__(self, *, https_only: bool) -> None:
+        super().__init__()
+        self._https_only = https_only
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        _validate_pdf_url(newurl, https_only=self._https_only)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)  # type: ignore[arg-type]
+
+
+def download_pdf(
+    url: str,
+    *,
+    timeout: float = _PDF_TIMEOUT_SECONDS,
+    https_only: bool = False,
+) -> bytes:
     """Fetch a daily paper's PDF, refusing anything that is not one.
 
     ``url`` originates from the arXiv feed, so it is untrusted input on a path
@@ -1071,17 +1121,21 @@ def download_pdf(url: str, *, timeout: float = _PDF_TIMEOUT_SECONDS) -> bytes:
     Uses :mod:`urllib.request` to match :mod:`pharos.services.enrich` and
     :mod:`pharos.daily.fetcher`; ``httpx`` is not a declared dependency.
     """
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme not in ("http", "https"):
-        raise PdfDownloadError(f"refusing to download a non-HTTP URL: {parsed.scheme or url!r}")
-    if parsed.hostname is None or parsed.hostname.lower() not in _PDF_HOSTS:
-        raise PdfDownloadError(f"refusing to download from unexpected host {parsed.hostname!r}")
+    _validate_pdf_url(url, https_only=https_only)
 
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    opener = urllib.request.build_opener(_PdfRedirectHandler(https_only=https_only))
     chunks: list[bytes] = []
     size = 0
+    deadline = time.monotonic() + timeout
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with opener.open(request, timeout=timeout) as response:  # noqa: S310
+            # The redirect handler checks every hop before connecting. Keep a
+            # final defence as well, including for test/different opener
+            # implementations that may return a response without invoking it.
+            geturl = getattr(response, "geturl", None)
+            final_url = (geturl() if callable(geturl) else None) or url
+            _validate_pdf_url(final_url, https_only=https_only)
             while True:
                 # read1() returns after a single socket read, so the size ceiling
                 # is enforced as the body arrives rather than once it is all in
@@ -1093,6 +1147,8 @@ def download_pdf(url: str, *, timeout: float = _PDF_TIMEOUT_SECONDS) -> bytes:
                 if size > _MAX_PDF_BYTES:
                     raise PdfDownloadError("PDF exceeds the maximum import size")
                 chunks.append(chunk)
+                if time.monotonic() >= deadline:
+                    raise PdfDownloadError("PDF download timed out")
     except PdfDownloadError:
         raise
     except urllib.error.HTTPError as exc:

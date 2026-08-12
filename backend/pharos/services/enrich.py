@@ -35,7 +35,9 @@ __all__ = ["enrich_by_doi", "enrich_by_arxiv", "merge"]
 _USER_AGENT = "Pharos/0.1 (https://github.com/hyyyyyyz/Pharos)"
 
 _CROSSREF_WORK_URL = "https://api.crossref.org/works/{doi}"
-_ARXIV_QUERY_URL = "http://export.arxiv.org/api/query?id_list={id}"
+# Metadata is stored and later fed to readers, so do not send ids over cleartext
+# HTTP even though arXiv's older API examples still use that spelling.
+_ARXIV_QUERY_URL = "https://export.arxiv.org/api/query?id_list={id}"
 
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 _ARXIV_NS = "http://arxiv.org/schemas/atom"

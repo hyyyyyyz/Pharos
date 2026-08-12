@@ -196,6 +196,11 @@ export interface Paper {
   latest_job: Job | null;
 }
 
+/** Body accepted by the direct arXiv import endpoint. */
+export interface ArxivImportBody {
+  input: string;
+}
+
 export type PdfKind = "original" | "mono" | "dual";
 
 /* ------------------------------------------------------------------ daily */

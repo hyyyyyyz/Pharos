@@ -335,6 +335,17 @@ export function ItemList(): JSX.Element {
     },
   });
 
+  const importArxivMutation = useMutation({
+    mutationFn: (input: string) => api.importArxiv(input),
+    onSuccess: (paper) => {
+      setArxivInput("");
+      setNote("已导入 arXiv 论文");
+      void qc.invalidateQueries({ queryKey: ["papers"] });
+      void qc.invalidateQueries({ queryKey: ["collections"] });
+      selectRow(paper.id, [paper.id], { meta: false, shift: false });
+    },
+  });
+
   const papers = useMemo(() => (papersQuery.data ?? []).map(toVM), [papersQuery.data]);
   const trashPapers = useMemo(() => (trashQuery.data ?? []).map(toVM), [trashQuery.data]);
   const byId = useMemo(() => new Map(papers.map((p) => [p.id, p])), [papers]);
@@ -389,9 +400,10 @@ export function ItemList(): JSX.Element {
   };
 
   const importArxiv = () => {
-    if (!arxivInput.trim()) return;
-    // TODO: swap for `api.importArxiv(arxivInput)` once the endpoint exists.
-    setNote("arXiv 导入尚未接入后端");
+    const input = arxivInput.trim();
+    if (!input || importArxivMutation.isPending) return;
+    setNote(null);
+    importArxivMutation.mutate(input);
   };
 
   /** Begin dragging papers onto a folder in the rail.
@@ -413,6 +425,8 @@ export function ItemList(): JSX.Element {
 
   const arrow = sortDir === "asc" ? " ↑" : " ↓";
   const uploadError = upload.error instanceof Error ? upload.error.message : null;
+  const importError =
+    importArxivMutation.error instanceof Error ? importArxivMutation.error.message : null;
   const searchError = searchQuery.isError;
 
   const listPending =
@@ -475,8 +489,13 @@ export function ItemList(): JSX.Element {
             }}
             placeholder="arXiv 链接 / ID"
           />
-          <button className="ph-il-btn-ghost" title="导入 arXiv" onClick={importArxiv}>
-            导入
+          <button
+            className="ph-il-btn-ghost"
+            title="导入 arXiv"
+            onClick={importArxiv}
+            disabled={importArxivMutation.isPending || !arxivInput.trim()}
+          >
+            {importArxivMutation.isPending ? "导入中…" : "导入"}
           </button>
           <button
             className="ph-il-btn-primary"
@@ -503,6 +522,7 @@ export function ItemList(): JSX.Element {
 
       {note && <div className="ph-il-note">{note}</div>}
       {uploadError && <div className="ph-il-note is-error">上传失败：{uploadError}</div>}
+      {importError && <div className="ph-il-note is-error">arXiv 导入失败：{importError}</div>}
       {/* The backend reports which engine answered. "like" means FTS5 is not
           available on this deployment and ranking is crude — worth saying once,
           quietly, rather than leaving the user to wonder why. */}

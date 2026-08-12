@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from pharos.api import ai_chat as ai_chat_api
 from pharos.api.deps import current_user, get_blobs, get_library, get_session
 from pharos.api.schemas import PaperOut, as_utc, paper_out
+from pharos.daily.service import PdfDownloadError
 from pharos.db.models import Paper, User
+from pharos.services import arxiv_import
 from pharos.services.library import LibraryService
 from pharos.storage.blobs import BlobStore
 
@@ -69,6 +71,30 @@ class DeleteResult(BaseModel):
     id: str
     purged: bool
     deleted_at: datetime | None = None
+
+
+class ArxivImportRequest(BaseModel):
+    """A pasted arXiv id or URL.
+
+    ``input`` is the public wire name. The validator also accepts the legacy
+    aliases below so an older desktop/web client can be upgraded independently
+    without changing the security boundary in :func:`arxiv_import.normalize_input`.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    input: Annotated[str, Field(min_length=1, max_length=512)] | None = Field(
+        default=None, validation_alias="input"
+    )
+    value: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    arxiv_id: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    url: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+
+    def supplied(self) -> str:
+        for candidate in (self.input, self.value, self.arxiv_id, self.url):
+            if candidate is not None and candidate.strip():
+                return candidate
+        raise ValueError("an arXiv id or URL is required")
 
 
 def _clean(value: str | None) -> str | None:
@@ -130,6 +156,46 @@ def upload_paper(
     paper = library.add_upload(
         session, user_id=user.id, filename=file.filename or "upload.pdf", data=data
     )
+    return paper_out(paper)
+
+
+@router.post("/papers/import/arxiv", response_model=PaperOut, status_code=201)
+def import_arxiv_paper(
+    body: ArxivImportRequest,
+    library: LibraryService = Depends(get_library),
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> PaperOut:
+    """Fetch one arXiv PDF and add it to the caller's library.
+
+    The request never carries an arbitrary download URL to the downloader. The
+    service first normalises the id/URL against arXiv's allowlist, derives its
+    own HTTPS PDF URL, and only then performs the bounded fetch. A malformed
+    identifier is a client error (400); an upstream arXiv failure is a 502.
+    """
+    try:
+        value = body.supplied()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="请输入 arXiv 链接或编号") from exc
+    try:
+        paper = arxiv_import.import_paper(
+            library, session, user_id=user.id, value=value
+        )
+    except arxiv_import.ArxivInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PdfDownloadError as exc:
+        # ``PdfDownloadError`` is intentionally translated without exposing a
+        # traceback or an internal URL. Other ingestion failures remain 500s.
+        message = str(exc)
+        if "maximum import size" in message:
+            detail = "arXiv PDF 超过导入大小上限"
+        elif "timed out" in message or "timeout" in message.lower():
+            detail = "arXiv PDF 下载超时，请稍后重试"
+        elif "HTTP" in message:
+            detail = "arXiv 暂时无法提供这篇 PDF，请稍后重试"
+        else:
+            detail = "无法从 arXiv 下载 PDF，请稍后重试"
+        raise HTTPException(status_code=502, detail=detail) from exc
     return paper_out(paper)
 
 
