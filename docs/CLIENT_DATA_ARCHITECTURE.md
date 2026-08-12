@@ -24,51 +24,29 @@ Sharing the library does **not** mean sharing the whole application identity.
 
 ## Current safety status
 
-The target architecture is **not yet enabled in the current build**.
+Shared-library mode is enabled in production and guarded.
 
-- The user's installed Zotero 8.0.5 and Vibero 8.0 use Zotero userdata schema
-  `123`.
-- The current Pharos source was copied from Zotero `10.0.SOURCE` and bundles
-  userdata schema `129`.
-- Migrations 124-129 add columns and compatibility levels that the current
-  Pharos core already uses at runtime. Merely skipping the migration would make
-  queries fail; allowing it would upgrade the real library and may prevent
-  Zotero 8 and Vibero 8 from reopening it.
+- Pharos is aligned to the Zotero 8.0.5 baseline and userdata schema `123`;
+- `DATA_DIR_NAME: "Zotero"` and `DB_NAME: "zotero"` make a release open the
+  same library and attachments while `ID: "pharos"` keeps the application
+  profile, URL protocol and branding separate;
+- before any integrity check, backup or migration can touch the database,
+  `Zotero.Pharos.SharedLibrary.assertMigrationAllowed()` requires the on-disk
+  schema to match exactly;
+- the Zotero → Pharos → Vibero copied-library round trip retained all 279 test
+  attachments and left the schema unchanged.
 
-Therefore no current Pharos development or release build may open the real
-Zotero database until the core has been aligned to a schema-compatible Zotero
-baseline and the round-trip checks below pass.
+A future baseline change reopens this gate. Pharos must never migrate a user's
+shared Zotero library merely because its own source moved ahead: mismatch means
+refuse to open, then ship a compatible client. Development and CI remain
+isolated even though production intentionally shares the library.
 
-### Where today's safety actually comes from
-
-Worth stating precisely, because it is easy to assume the protection lives
-somewhere it does not, and to then either build a redundant guard or remove the
-real one by accident.
-
-The schema gap above is what blocks the **future** shared direction. It is not
-what protects the library **today**. Today's protection is the database
-filename: `zotero.js:874` opens `new Zotero.DBConnection(ZOTERO_CONFIG.ID)`, and
-`ID` is `pharos` (`resource/config.mjs:21`), so the client reads and writes
-`pharos.sqlite` and has no code path that opens `zotero.sqlite` at all. Pointed
-at `~/Zotero` today, a Pharos build would create a second, separate database
-beside the real one rather than migrate it.
-
-Two consequences follow, and they point in opposite directions:
-
-- The migration hazard is currently **structural**, not procedural. It does not
-  depend on anyone remembering a rule. `run_pharos_dev`'s refusal of `~/Zotero`
-  is a second layer, and a worthwhile one — a stray `pharos.sqlite` in the real
-  data directory is still a mess — but it is not the thing standing between the
-  user and a one-way migration.
-- Enabling the shared plane therefore takes **more** than proving schema
-  compatibility. It means deliberately teaching the client to open Zotero's own
-  database file, which is precisely the step that removes the structural
-  protection. Schema alignment is the precondition; changing that filename is
-  the moment the risk becomes real, and it should be the last change made, not
-  an incidental one.
-
-Verified in this tree: `resource/schema/userdata.sql` declares `129`, and
-`ZOTERO_CONFIG.ID` is `pharos`.
+The remaining data-directory problem is discovery rather than schema safety:
+a fresh Pharos profile knows the default `~/Zotero`, but older releases did not
+read an official Zotero profile that relocated its library. The client must
+adopt that sibling profile setting only after the configured directory is
+proved to contain the expected `zotero.sqlite`; command-line and explicit
+Pharos preferences keep precedence.
 
 ## Shared Zotero data plane
 
