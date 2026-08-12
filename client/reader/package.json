@@ -4,7 +4,7 @@
 	"description": "Zotero Reader",
 	"scripts": {
 		"build": "npm run build:pdf.js && npm run build:reader",
-		"build:pdf.js": "sh pdfjs/build",
+		"build:pdf.js": "bash pdfjs/build",
 		"build:reader": "webpack",
 		"build:ios": "webpack --config-name ios",
 		"build:android": "webpack --config-name android",

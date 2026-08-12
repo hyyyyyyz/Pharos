@@ -5,7 +5,7 @@
 	"main": "",
 	"scripts": {
 		"build": "npm run build:pdf.js && npm run build:worker",
-		"build:pdf.js": "sh scripts/build-pdfjs",
+		"build:pdf.js": "bash scripts/build-pdfjs",
 		"build:worker": "webpack --mode production",
 		"devel:worker": "webpack --mode development",
 		"test": "npx mocha"
