@@ -41,12 +41,23 @@ shared Zotero library merely because its own source moved ahead: mismatch means
 refuse to open, then ship a compatible client. Development and CI remain
 isolated even though production intentionally shares the library.
 
-The remaining data-directory problem is discovery rather than schema safety:
-a fresh Pharos profile knows the default `~/Zotero`, but older releases did not
-read an official Zotero profile that relocated its library. The client must
-adopt that sibling profile setting only after the configured directory is
-proved to contain the expected `zotero.sqlite`; command-line and explicit
-Pharos preferences keep precedence.
+Relocated-library discovery is now implemented as a read-only first-run probe.
+When a fresh Pharos profile has no command-line or Pharos data-directory
+preference, the client reads only the installed Zotero profile's
+`extensions.zotero.dataDir` setting. It adopts that path only when it is an
+absolute, existing directory containing a regular `zotero.sqlite` file. A
+relative path, missing directory/database, directory masquerading as the
+database, malformed preferences, or an inaccessible profile is ignored and the
+normal fallback discovery continues. The probe uses the official profile roots
+for macOS (`~/Library/Application Support/Zotero`), Windows
+(`%APPDATA%/Zotero/Zotero`), and Linux (`~/.zotero/zotero`).
+
+The precedence is deliberate and tested: an absolute `-datadir` command-line
+argument wins first, an explicit Pharos `useDataDir`/`dataDir` preference wins
+second, an explicit relocated path recorded by Zotero is considered before the
+default `~/Zotero` directory, and only then does ordinary legacy/fallback
+discovery run. Tests stub the official profile root to temporary directories;
+they never inspect a developer's real Zotero profile or library.
 
 ## Shared Zotero data plane
 
@@ -172,4 +183,3 @@ The browser cannot directly open a local SQLite database or local-only Zotero
 attachments. Zotero OAuth and the Zotero Web API therefore remain useful for
 the web companion and remote devices. That cloud path is separate from the
 desktop architecture and does not turn a local-only PDF into a cloud file.
-

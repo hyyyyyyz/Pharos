@@ -210,7 +210,24 @@ Zotero.DataDirectory = {
 				Zotero.logError(e);
 			}
 			
-			// Check for ~/Zotero/zotero.sqlite
+			// A fresh Pharos profile has no data-directory preference of its own,
+			// but the installed Zotero application may have moved its library. Read
+			// only the official Zotero profile's data-directory setting and adopt it
+			// only after the expected shared database exists. In particular, do not
+			// copy Zotero's other preferences into the Pharos profile: they can carry
+			// credentials, UI state, or application-specific settings.
+			let officialDataDir = await this._findOfficialZoteroDataDirectory(dbFilename);
+			if (officialDataDir) {
+				dataDir = officialDataDir;
+				this._cache(dataDir);
+				this.set(dataDir);
+				return dataDir;
+			}
+
+			// Check for ~/Zotero/zotero.sqlite only after checking Zotero's explicit
+			// setting. The default directory can be an abandoned library left behind
+			// when Zotero was relocated, so treating it as authoritative would silently
+			// open stale data in a fresh Pharos profile.
 			let dbFile = OS.Path.join(dataDir, dbFilename);
 			if (await OS.File.exists(dbFile)) {
 				Zotero.debug("Using data directory " + dataDir);
@@ -435,6 +452,63 @@ Zotero.DataDirectory = {
 	
 	_cache: function (dir) {
 		this._dir = dir;
+	},
+
+
+	/**
+	 * Find a relocated library selected by the installed Zotero application.
+	 * This is a read-only probe. A candidate is returned only when its database
+	 * file exists; no database contents are opened here.
+	 *
+	 * @param {String} dbFilename
+	 * @return {Promise<String|null>}
+	 */
+	_findOfficialZoteroDataDirectory: async function (dbFilename) {
+		try {
+			let officialProfile = await Zotero.Profile.getOfficialZoteroProfile();
+			if (!officialProfile) {
+				return null;
+			}
+			let prefsFile = OS.Path.join(officialProfile[0], "prefs.js");
+			if (!await OS.File.exists(prefsFile)) {
+				return null;
+			}
+			let prefs = await Zotero.Profile.readPrefsFromFile(prefsFile);
+			let prefDataDir = prefs['extensions.zotero.dataDir'];
+			if (!prefs['extensions.zotero.useDataDir'] || !prefDataDir
+					|| typeof prefDataDir != 'string') {
+				return null;
+			}
+			if (!PathUtils.isAbsolute(prefDataDir)) {
+				Zotero.debug(`Ignoring relative Zotero dataDir pref '${prefDataDir}'`, 1);
+				return null;
+			}
+			let officialDataDir;
+			try {
+				officialDataDir = OS.Path.normalize(prefDataDir);
+			}
+			catch {
+				Zotero.debug(`Invalid Zotero dataDir pref '${prefDataDir}'`, 1);
+				return null;
+			}
+			let dbFile = OS.Path.join(officialDataDir, dbFilename);
+			if (!await OS.File.exists(dbFile)) {
+				return null;
+			}
+			// A directory or other non-file object named zotero.sqlite is not a
+			// library. Reject it before persisting the sibling profile's setting.
+			if ((await OS.File.stat(dbFile)).isDir) {
+				return null;
+			}
+			Zotero.debug("Found Zotero data directory " + officialDataDir);
+			return officialDataDir;
+		}
+		catch (e) {
+			// An inaccessible or malformed sibling profile must not prevent the
+			// normal first-run path from creating the default directory.
+			Zotero.logError(e);
+			return null;
+		}
 	},
 	
 	

@@ -53,10 +53,11 @@ Pharos → Vibero 往返验证，279 个附件全部保持完整。Pharos 遇到
 不会迁移真实文库，Pharos 独有数据也只写入 sidecar。详见
 [`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
 
-开发、测试和 CI 仍必须使用隔离数据目录。正式版默认寻找 `~/Zotero`；如果 Zotero
-文库被移动到外接磁盘或其他目录，Pharos 目前不会读取 Zotero 自己保存的路径设置，
-首次启动必须显式传 `-datadir /path/to/Zotero`，否则会静默建立一个空的
-`~/Zotero`。
+开发、测试和 CI 仍必须使用隔离数据目录。正式版首次启动会先读取已安装 Zotero
+profile 中的 `extensions.zotero.dataDir`，并且只有在该值是绝对路径、目录存在且包含
+真正的 `zotero.sqlite` 时才采用它；因此外接磁盘或其他自定义位置的共享文库可以自动发现。
+命令行 `-datadir` 和 Pharos 自身的明确数据目录设置始终优先。官方 profile 不可用或路径
+校验失败时才回退到默认 `~/Zotero`，此时仍可显式传 `-datadir /path/to/Zotero`。
 
 ## 从源码构建
 

@@ -154,6 +154,205 @@ describe("Zotero.DataDirectory", function () {
 			assert.ok(stubs.setDataDir.calledWith(newDir));
 		}
 	};
+
+
+	describe("#_findOfficialZoteroDataDirectory()", function () {
+		let discoveryRoot;
+		let officialProfilesRoot;
+		let officialProfileDir;
+		let officialDataDir;
+		let rootStub;
+
+		beforeEach(async function () {
+			discoveryRoot = await getTempDirectory();
+			officialProfilesRoot = OS.Path.join(discoveryRoot, "official-profile-root");
+			officialProfileDir = OS.Path.join(
+				officialProfilesRoot,
+				"Profiles",
+				"test.default"
+			);
+			officialDataDir = OS.Path.join(discoveryRoot, "relocated-library");
+			await OS.File.makeDir(officialProfileDir, { from: discoveryRoot });
+			await Zotero.File.putContentsAsync(
+				OS.Path.join(officialProfilesRoot, "profiles.ini"),
+				`[Profile0]\nName=default\nIsRelative=1\nPath=Profiles/test.default\nDefault=1\n`
+			);
+			rootStub = sinon.stub(Zotero.Profile, "getOfficialZoteroProfilesDir")
+				.returns(officialProfilesRoot);
+		});
+
+		afterEach(async function () {
+			rootStub.restore();
+			await removeDir(discoveryRoot);
+		});
+
+		async function writeOfficialPrefs(dataDir, useDataDir = true) {
+			await Zotero.File.putContentsAsync(
+				OS.Path.join(officialProfileDir, "prefs.js"),
+				`user_pref("extensions.zotero.dataDir", ${JSON.stringify(dataDir)});\n`
+					+ `user_pref("extensions.zotero.useDataDir", ${JSON.stringify(useDataDir)});\n`
+			);
+		}
+
+		it("should discover an absolute relocated library in an isolated official profile", async function () {
+			await OS.File.makeDir(officialDataDir);
+			await Zotero.File.putContentsAsync(OS.Path.join(officialDataDir, dbFilename), "test");
+			await writeOfficialPrefs(officialDataDir);
+
+			assert.equal(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename),
+				officialDataDir
+			);
+		});
+
+		it("should reject a relative data-directory preference", async function () {
+			await writeOfficialPrefs(OS.Path.join("relative", "Zotero"));
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should reject a non-string data-directory preference", async function () {
+			await writeOfficialPrefs(42);
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should reject a nonexistent absolute data directory", async function () {
+			await writeOfficialPrefs(officialDataDir);
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should reject an existing directory without zotero.sqlite", async function () {
+			await OS.File.makeDir(officialDataDir);
+			await writeOfficialPrefs(officialDataDir);
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should reject a directory masquerading as zotero.sqlite", async function () {
+			await OS.File.makeDir(OS.Path.join(officialDataDir, dbFilename), {
+				from: discoveryRoot
+			});
+			await writeOfficialPrefs(officialDataDir);
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should ignore dataDir when useDataDir is false", async function () {
+			await OS.File.makeDir(officialDataDir);
+			await Zotero.File.putContentsAsync(OS.Path.join(officialDataDir, dbFilename), "test");
+			await writeOfficialPrefs(officialDataDir, false);
+
+			assert.isNull(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename)
+			);
+		});
+
+		it("should prefer Zotero's explicit relocation over a stale default library", async function () {
+			assert.isTrue(await OS.File.exists(
+				OS.Path.join(Zotero.DataDirectory.defaultDir, dbFilename)
+			));
+			await OS.File.makeDir(officialDataDir);
+			await Zotero.File.putContentsAsync(OS.Path.join(officialDataDir, dbFilename), "test");
+			await writeOfficialPrefs(officialDataDir);
+
+			let previousUseDataDir = Zotero.Prefs.get('useDataDir');
+			let previousDataDir = Zotero.Prefs.get('dataDir');
+			try {
+				Zotero.Prefs.clear('useDataDir');
+				Zotero.Prefs.clear('dataDir');
+				Zotero.DataDirectory._cache(false);
+
+				assert.equal(await Zotero.DataDirectory.init(), officialDataDir);
+				assert.isTrue(stubs.setDataDir.calledWith(officialDataDir));
+			}
+			finally {
+				Zotero.Prefs.set('useDataDir', previousUseDataDir);
+				Zotero.Prefs.set('dataDir', previousDataDir);
+			}
+		});
+	});
+
+
+	describe("data-directory precedence", function () {
+		let precedenceRoot;
+		let officialDataDir;
+		let discoveryStub;
+		let previousForceDataDir;
+		let previousUseDataDir;
+		let previousDataDir;
+
+		beforeEach(async function () {
+			precedenceRoot = await getTempDirectory();
+			officialDataDir = OS.Path.join(precedenceRoot, "official");
+			await OS.File.makeDir(officialDataDir);
+			discoveryStub = sinon.stub(
+				Zotero.DataDirectory,
+				"_findOfficialZoteroDataDirectory"
+			).resolves(officialDataDir);
+			previousForceDataDir = Zotero.forceDataDir;
+			previousUseDataDir = Zotero.Prefs.get('useDataDir');
+			previousDataDir = Zotero.Prefs.get('dataDir');
+		});
+
+		afterEach(async function () {
+			Zotero.forceDataDir = previousForceDataDir;
+			Zotero.Prefs.set('useDataDir', previousUseDataDir);
+			Zotero.Prefs.set('dataDir', previousDataDir);
+			discoveryStub.restore();
+			await removeDir(precedenceRoot);
+		});
+
+		it("should keep an absolute -datadir above official-profile discovery", async function () {
+			let commandLineDir = OS.Path.join(precedenceRoot, "command-line");
+			Zotero.forceDataDir = commandLineDir;
+			Zotero.DataDirectory._cache(false);
+
+			await Zotero.DataDirectory.init();
+			assert.equal(Zotero.DataDirectory.dir, commandLineDir);
+			assert.isFalse(discoveryStub.called);
+		});
+
+		it("should reject a relative -datadir before official-profile discovery", async function () {
+			Zotero.forceDataDir = OS.Path.join("relative", "Zotero");
+			Zotero.DataDirectory._cache(false);
+
+			let error;
+			try {
+				await Zotero.DataDirectory.init();
+			}
+			catch (e) {
+				error = e;
+			}
+
+			assert.include(error, "-datadir requires an absolute path");
+			assert.isFalse(discoveryStub.called);
+		});
+
+		it("should keep the explicit Pharos preference above official-profile discovery", async function () {
+			let pharosDataDir = OS.Path.join(precedenceRoot, "pharos-preference");
+			await OS.File.makeDir(pharosDataDir);
+			Zotero.forceDataDir = false;
+			Zotero.Prefs.set('useDataDir', true);
+			Zotero.Prefs.set('dataDir', pharosDataDir);
+			Zotero.DataDirectory._cache(false);
+
+			await Zotero.DataDirectory.init();
+			assert.equal(Zotero.DataDirectory.dir, pharosDataDir);
+			assert.isFalse(discoveryStub.called);
+		});
+	});
 	
 	
 	describe("#checkForMigration()", function () {

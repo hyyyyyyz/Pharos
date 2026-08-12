@@ -46,6 +46,48 @@ Path=Profiles/${profile3}
 			assert.equal(dir, OS.Path.join(tmpDir, "Profiles", profile1));
 		});
 	});
+
+
+	describe("#_getOfficialZoteroProfilesDir()", function () {
+		it("should resolve the Windows Zotero profile root", function () {
+			assert.equal(
+				Zotero.Profile._getOfficialZoteroProfilesDir({
+					isWin: true,
+					appDataDir: OS.Path.join(tmpDir, "AppData", "Roaming")
+				}),
+				OS.Path.join(tmpDir, "AppData", "Roaming", "Zotero", "Zotero")
+			);
+		});
+
+		it("should resolve the macOS Zotero profile root", function () {
+			assert.equal(
+				Zotero.Profile._getOfficialZoteroProfilesDir({
+					isMac: true,
+					homeDir: OS.Path.join(tmpDir, "home")
+				}),
+				OS.Path.join(
+					tmpDir,
+					"home",
+					"Library",
+					"Application Support",
+					"Zotero"
+				)
+			);
+		});
+
+		it("should resolve the Linux Zotero profile root", function () {
+			assert.equal(
+				Zotero.Profile._getOfficialZoteroProfilesDir({
+					homeDir: OS.Path.join(tmpDir, "home")
+				}),
+				OS.Path.join(tmpDir, "home", ".zotero", "zotero")
+			);
+		});
+
+		it("should not inspect an external profile during tests", function () {
+			assert.isNull(Zotero.Profile.getOfficialZoteroProfilesDir());
+		});
+	});
 	
 	
 	describe("#findOtherProfilesUsingDataDirectory()", function () {

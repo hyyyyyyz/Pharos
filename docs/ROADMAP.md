@@ -58,16 +58,20 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
   15 for code with no usable signature. Windows gets a portable archive, not an
   installer, because the NSIS path needs Cygwin and this project has no way to
   test it.
-- Pharos does not read Zotero's own settings, so a **relocated Zotero data
-  directory is not found** — it silently creates an empty `~/Zotero` instead.
-  Work around it by passing `-datadir` on the first launch.
+- A relocated Zotero data directory is discovered automatically on a fresh
+  Pharos profile. The probe reads the official Zotero profile on each desktop
+  platform, accepts only an absolute path containing a regular
+  `zotero.sqlite`, and leaves command-line/explicit Pharos settings untouched.
+  If the profile is unavailable or the candidate fails validation, Pharos
+  falls back safely and the user can still pass `-datadir` explicitly.
 - Discovery reads search metadata and abstracts, not full papers.
 - Research projects persist records supplied by the researcher. Nothing runs
   code, allocates GPUs, or validates a metric. A `verified` record is a user's
   judgement, not independent reproduction.
 - Zotero cloud sync is metadata-only and one-way into Pharos.
-- Tags, paper-level notes, direct arXiv-link import and one-click
-  discovery-to-library are not complete end-to-end in the web client.
+- Tags and paper-level notes remain Zotero-native in the desktop client. The web
+  client now supports direct arXiv ID/official-link import; one-click
+  discovery-to-library promotion remains a separate incomplete flow.
 - Discovery sources are abstract-only until the paper is in the library. A
   source with no `paper_id` cannot carry a page number, and evidence drawn from
   it is marked `abstract_only` rather than given a plausible-looking one.
@@ -92,10 +96,12 @@ In rough order. Each is a workstream, not a ticket.
    build already skips notarisation cleanly when credentials are absent, and
    `app/config.sh` documents exactly which values to set. This is the only item
    here blocked on something money buys rather than something we write.
-4. **Page-addressable evidence.** Anchoring a claim to a page and a region
-   rather than to a whole document. This is the foundation the next three items
-   rest on. *In progress: `PaperChunk` and `Evidence` exist; the client surface
-   does not.*
+4. ~~**Page-addressable evidence.**~~ **Done for the first vertical slice.**
+   `PaperChunk` and the owner-scoped `Evidence` Ledger resolve quote pages on the
+   server. The PDF Reader adds a «保存为证据» action; verified single-page
+   selections retain rectangles, while ambiguous or cross-page selections safely
+   degrade to quote-only evidence. Grounded Q&A and claim-level bindings remain
+   downstream work.
 5. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
 6. **Evidence-aware idea workflow** — proposing directions that carry the

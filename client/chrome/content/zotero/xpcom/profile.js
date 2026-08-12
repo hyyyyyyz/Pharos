@@ -88,6 +88,76 @@ Zotero.Profile = {
 	getProfilesDir: function () {
 		return PathUtils.parent(this.dir);
 	},
+
+
+	/**
+	 * Get the profile root used by an installed Zotero application.
+	 *
+	 * Pharos has its own Gecko profile root, so `getProfilesDir()` cannot find
+	 * the profile that owns the shared library. Keep this lookup separate from
+	 * `getOtherAppProfilesDir()`, which is the Firefox-for-Zotero migration path.
+	 *
+	 * Unit tests deliberately return no external profile root by default. A test
+	 * that needs to exercise discovery stubs this method with a temporary root;
+	 * this prevents the test runner from ever inspecting a user's real Zotero
+	 * profile or library.
+	 *
+	 * @return {String|null} - The directory containing Zotero profiles.ini
+	 */
+	getOfficialZoteroProfilesDir: function () {
+		if (CommandLineOptions.test) {
+			return null;
+		}
+
+		if (Zotero.isWin) {
+			let appData = Services.dirsvc.get("AppData", Components.interfaces.nsIFile).path;
+			return this._getOfficialZoteroProfilesDir({ isWin: true, appDataDir: appData });
+		}
+		return this._getOfficialZoteroProfilesDir({
+			isMac: Zotero.isMac,
+			homeDir: OS.Constants.Path.homeDir
+		});
+	},
+
+
+	/**
+	 * Resolve the platform-specific Zotero profile root without touching the
+	 * filesystem. Keeping this pure makes the OS layout auditable and lets unit
+	 * tests use synthetic roots instead of a user's real profile.
+	 *
+	 * @param {Object} platform
+	 * @param {Boolean} [platform.isWin]
+	 * @param {Boolean} [platform.isMac]
+	 * @param {String} [platform.appDataDir]
+	 * @param {String} [platform.homeDir]
+	 * @return {String}
+	 */
+	_getOfficialZoteroProfilesDir: function (platform) {
+		if (platform.isWin) {
+			return OS.Path.join(platform.appDataDir, "Zotero", "Zotero");
+		}
+		if (platform.isMac) {
+			return OS.Path.join(platform.homeDir, "Library", "Application Support", "Zotero");
+		}
+
+		// On Linux, Zotero stores profile directories directly below
+		// ~/.zotero/zotero rather than in a Profiles subdirectory.
+		return OS.Path.join(platform.homeDir, ".zotero", "zotero");
+	},
+
+
+	/**
+	 * Find the default profile of the installed Zotero application.
+	 *
+	 * @return {Promise<Array|false>} - [profileDir, hasMultipleProfiles] or false
+	 */
+	getOfficialZoteroProfile: async function () {
+		let profilesDir = this.getOfficialZoteroProfilesDir();
+		if (!profilesDir) {
+			return false;
+		}
+		return this.getDefaultInProfilesDir(profilesDir);
+	},
 	
 	
 	/**
