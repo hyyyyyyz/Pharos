@@ -293,6 +293,9 @@ jobs:
             - Paper identity, model state and in-flight work are isolated across
               item, tab and account changes, so an old request cannot repaint a
               newly opened paper's conversation.
+            - Select text in a PDF and choose **Save as evidence** from the
+              Reader popup. The server verifies the paper page; safe single-page
+              geometry is retained and ambiguous selections remain quote-only.
 
             ## Install
 
@@ -317,28 +320,19 @@ jobs:
 
             ## Your library
 
-            **Pharos opens the Zotero library at `~/Zotero`** — the same database
-            Zotero itself uses. Papers, collections, tags and annotations are the
-            same objects in both, and whichever application you open sees what
-            the other one did.
+            **Pharos opens the same Zotero library as Zotero itself.** On first
+            launch it reads Zotero's official profile and adopts a custom
+            `extensions.zotero.dataDir` only after validating an absolute path
+            containing a regular `zotero.sqlite`. Older macOS profiles using a
+            persistent descriptor are resolved through `lastDataDir`. Papers,
+            collections, tags and annotations are the same objects in both.
 
-            **If your Zotero data directory is somewhere else** — an external
-            drive, Dropbox, anywhere you moved it — Pharos will not find it. It
-            does not read Zotero's settings, and it will create a new, empty
-            library at `~/Zotero` without saying so. Avoid that by giving the
-            first launch an explicit path:
+            **Explicit paths still win.** If automatic discovery is unavailable,
+            or you want to override it, give the first launch an absolute path:
 
             ```
             /Applications/Pharos.app/Contents/MacOS/zotero -datadir /path/to/your/Zotero
             ```
-
-            If Pharos has already opened an empty library: quit, then Settings →
-            Advanced → Files and Folders → Data Directory Location → Custom, and
-            choose your real Zotero directory. It will ask you to restart and
-            advise you to "move files from your existing Zotero data directory to
-            the new location". **Ignore that sentence — move nothing.** The
-            directory it means is the empty `~/Zotero` it just made, and obeying
-            it literally would copy an empty database over your real one.
 
             **Run one at a time.** SQLite gives the library to a single
             application; Zotero, Pharos and Vibero can take turns, but not
