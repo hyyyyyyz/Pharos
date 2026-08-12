@@ -5,6 +5,14 @@ became something you download, install, and double-click. That transition
 exposed a class of bug the project had no way to see before, and this document
 is mostly about that class.
 
+> **Historical snapshot.** This is the audit for the first downloadable release,
+> not the current status page. The “still open” lists below describe the state
+> at the release being audited. Subsequent work moved the shared-library
+> discovery fix into the client and added the first desktop Evidence capture
+> slice; use [`ROADMAP.md`](ROADMAP.md),
+> [`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md), and
+> [`PHASE-EVIDENCE.md`](PHASE-EVIDENCE.md) for the current state.
+
 ## What shipped
 
 `.github/workflows/desktop-release.yml` builds three platforms on a
@@ -388,7 +396,7 @@ risks: desktop artifacts are unsigned, relocated Zotero libraries still need
 an explicit `-datadir` on first launch, and Zotero, Vibero, and Pharos must not
 open the shared SQLite library simultaneously.
 
-## Still open
+## Still open in this release snapshot
 
 - **The bundle as a whole is unsigned**, by decision 6 — there is no Apple
   Developer account. `codesign --verify` reports "code object is not signed at

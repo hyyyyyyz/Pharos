@@ -121,6 +121,12 @@ run experiments, reproduce results, verify claims, or write a complete paper
 autonomously. Those capabilities require stronger evidence and execution
 contracts and remain future work.
 
+The first page-addressable evidence slice is already available: after a PDF's
+pages have been extracted, the desktop Reader can save a selected passage as an
+owner-scoped Evidence row. The server resolves the page from `PaperChunk`; a
+verified single-page selection may retain PDF-point rectangles, while an
+ambiguous or cross-page selection is saved as quote-only evidence.
+
 ### Library, accounts, and integrations
 
 - Multi-user email/password accounts with Argon2id password hashing and signed
@@ -189,10 +195,14 @@ verified with all 279 attachments intact. Development, tests, and CI remain
 strictly isolated and must never open a real library. See
 [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
 
-Production builds currently discover the default `~/Zotero` directory only. If
-the Zotero library was moved to another drive or folder, pass
-`-datadir /path/to/Zotero` on the first launch; otherwise Pharos can silently
-create an empty `~/Zotero` instead of finding the existing library.
+On first launch, a production build reads the installed Zotero profile's
+`extensions.zotero.dataDir` setting and adopts it only when it is an absolute
+path whose directory contains a regular `zotero.sqlite`. This discovers a
+library moved to another drive or folder without copying Zotero's unrelated
+preferences. An absolute `-datadir` argument and an explicit Pharos data
+directory preference always win; if the official profile is unavailable or
+fails validation, Pharos falls back to the default `~/Zotero` and still accepts
+`-datadir /path/to/Zotero`.
 
 ### Connect Zotero
 
@@ -481,8 +491,14 @@ Pharos deliberately distinguishes implemented records from automated research:
 - Research Projects persist plans and results supplied by the researcher; they
   do not run code, allocate GPUs, or validate metrics.
 - A `verified` project record is a user decision, not independent reproduction.
-- Tags, paper-level notes, direct arXiv-link import, and one-click
-  Discovery-to-Library download are not yet complete end-to-end frontend flows.
+- Tags and paper-level notes remain Zotero-native in the desktop client. The web
+  client supports direct arXiv ID/official-link import into the signed-in
+  library; one-click Discovery-to-Library promotion remains a separate
+  incomplete flow.
+- Page-addressable Evidence is implemented for the first vertical slice: the
+  desktop Reader can save a selected passage, with server-verified page
+  resolution and safe quote-only fallback when geometry is ambiguous. Grounded
+  Q&A and automatic claim bindings are still future work.
 - The desktop client directly uses the schema-compatible Zotero library rather
   than maintaining a Local API mirror. Zotero Cloud remains a limited companion
   path for the web app and remote devices; local-only PDFs stay local unless
@@ -492,10 +508,10 @@ Pharos deliberately distinguishes implemented records from automated research:
 - Desktop builds are unsigned. Signed and notarized releases, a Windows
   installer rather than a portable archive, and a mobile client are future work.
 
-The next major workstreams are page-addressable evidence, grounded paper Q&A,
-an evidence-aware idea workflow, sandboxed experiment execution, claim-to-result
-bindings, and an evidence-constrained drafting/review pipeline. The detailed
-contract is recorded in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
+The next major workstreams are grounded paper Q&A, an evidence-aware idea
+workflow, sandboxed experiment execution, claim-to-result bindings, and an
+evidence-constrained drafting/review pipeline. The detailed contract is
+recorded in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
 
 ## Contributing
 
