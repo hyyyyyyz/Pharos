@@ -226,6 +226,20 @@ describe("Zotero.DataDirectory", function () {
 			);
 		});
 
+		it("should resolve a persistent descriptor when no legacy path remains", async function () {
+			await OS.File.makeDir(officialDataDir);
+			await Zotero.File.putContentsAsync(OS.Path.join(officialDataDir, dbFilename), "test");
+			let file = Components.classes["@mozilla.org/file/local;1"]
+				.createInstance(Components.interfaces.nsIFile);
+			file.initWithPath(officialDataDir);
+			await writeOfficialPrefs(file.persistentDescriptor);
+
+			assert.equal(
+				await Zotero.DataDirectory._findOfficialZoteroDataDirectory(dbFilename),
+				officialDataDir
+			);
+		});
+
 		it("should reject a non-string data-directory preference", async function () {
 			await writeOfficialPrefs(42);
 
