@@ -226,54 +226,32 @@ jobs:
     name: Publish release
     needs: [macos, portable]
     runs-on: ubuntu-latest
-    # Only for real tags. A manual run is for checking that the build works, and
-    # should not create a release for a version that was never tagged.
-    #
-    # `always()` so that ONE failing platform does not discard the others. The
-    # default would skip this job entirely if `portable` failed, throwing away a
-    # good macOS build because the Windows leg was missing a tool. The release is
-    # a draft either way, and the step below names any platform that is absent --
-    # a short release is fine, a silently short one is not.
-    if: always() && startsWith(github.ref, 'refs/tags/') && needs.macos.result == 'success'
+    # Only publish a real tag after every platform has produced its artifact.
+    # A manual run is for checking that the build works, and must not create a
+    # release for a version that was never tagged. Keeping this gate strict is
+    # important: an absent portable archive must never become a “latest” draft
+    # that looks like a successful release to download-page automation.
+    if: startsWith(github.ref, 'refs/tags/') && needs.macos.result == 'success' && needs.portable.result == 'success'
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Note any platform that did not build
-        id: missing
+      - name: Verify all platform artifacts
         run: |
           set -euo pipefail
-          missing=""
-          [ -d artifacts/pharos-macos ]   || missing="$missing macOS"
-          [ -d artifacts/pharos-windows ] || missing="$missing Windows"
-          [ -d artifacts/pharos-linux ]   || missing="$missing Linux"
-          if [ -n "$missing" ]; then
-            {
-              echo "note<<EOF"
-              echo ""
-              echo "> **This release is incomplete.** No build was produced for:$missing."
-              echo "> Do not publish it as a full release without saying so."
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-            echo "incomplete=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "note=" >> "$GITHUB_OUTPUT"
-            echo "incomplete=false" >> "$GITHUB_OUTPUT"
-          fi
+          test -d artifacts/pharos-macos
+          test -d artifacts/pharos-windows
+          test -d artifacts/pharos-linux
           find artifacts -maxdepth 2 -type f | sort
 
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          # Published outright, not held as a draft -- a tag is the decision to
-          # release, and a draft nobody remembers to publish is a release that
-          # did not happen. The one exception is a release missing a platform:
-          # that stays a draft, because publishing it marks it Latest and offers
-          # some users a download that is not there. The banner above says which.
-          draft: ${{ steps.missing.outputs.incomplete }}
+          # A tag is the decision to release. Since the job gate and artifact
+          # check above require every platform, publish it outright.
+          draft: false
           body: |
-            ${{ steps.missing.outputs.note }}
             ## PDF Reader workspace
 
             - **AI Chat is the Reader's default right-hand pane.** Opening a
