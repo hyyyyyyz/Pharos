@@ -43,14 +43,15 @@ Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → �
 数据目录：条目、分类、附件、PDF、笔记和标注都还是 Zotero 自己的数据。Zotero、
 Vibero、Pharos 可以轮流打开这套文库，但不能同时运行。
 
-Pharos 仍有独立的应用 profile、品牌、协议、凭据和设置；AI 对话、每日论文状态、
-研究工作流等 Pharos 独有数据进入单独的 sidecar，不给 `zotero.sqlite` 增加私有
-表或字段。
+Pharos 仍有独立的应用 profile、品牌、协议、凭据和设置；AI 对话与研究工作流等
+Pharos 独有记录目前进入可选后端，每日论文另有用户选择的可迁移 Vault，所有这些都
+不会给 `zotero.sqlite` 增加私有表或字段。源码仅预留文库旁的
+`pharos-local.sqlite` 路径，目前没有功能创建或写入它。
 
 **当前安全状态：正式版共享文库已经启用。** 客户端基线是 Zotero 8.0.5，
 userdata schema 123，数据库名仍为 `zotero.sqlite`。文库副本已经完成 Zotero →
 Pharos → Vibero 往返验证，279 个附件全部保持完整。Pharos 遇到不兼容 schema 时
-不会迁移真实文库，Pharos 独有数据也只写入 sidecar。详见
+不会迁移真实文库，也不会把 Pharos 独有数据写入 `zotero.sqlite`。详见
 [`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
 
 开发、测试和 CI 仍必须使用隔离数据目录。正式版首次启动会先读取已安装 Zotero

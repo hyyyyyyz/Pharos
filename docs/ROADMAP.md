@@ -85,8 +85,9 @@ In rough order. Each is a workstream, not a ticket.
 
 1. ~~**Make the Zotero foundation version-compatible.**~~ **Done.** The client is
    on Zotero 8.0.5/userdata schema 123, production shared-library mode is
-   enabled, Pharos-native data stays in the sidecar, and the Zotero → Pharos →
-   Vibero copied-library round trip kept all 279 attachments intact.
+   enabled, Pharos-native server records stay outside `zotero.sqlite`, and the
+   Zotero → Pharos → Vibero copied-library round trip kept all 279 attachments
+   intact. A local sidecar path is reserved but has no writer yet.
 2. ~~**Finish the client as the daily-use product.**~~ **Done.** The reader, AI
    chat, Daily Papers, discovery, projects and the data directory are at parity
    with the web client; a final module-by-module audit found ten differences and

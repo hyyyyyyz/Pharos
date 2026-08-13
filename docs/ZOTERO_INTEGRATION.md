@@ -11,8 +11,7 @@ integrations.
 
 ## Desktop: direct local library
 
-After the schema-compatibility migration is complete, Pharos opens the same
-Zotero data directory and uses Zotero's own APIs for:
+Pharos opens the same Zotero data directory and uses Zotero's own APIs for:
 
 - personal and group libraries;
 - nested collections and many-to-many membership;
@@ -28,20 +27,18 @@ Zotero, Vibero, and Pharos must take turns. SQLite's exclusive lock prevents
 concurrent access; Pharos must turn that low-level error into a clear instruction
 to close the other application.
 
-## Pharos sidecar
+## Pharos-native records
 
-Pharos-only records do not belong in Zotero's schema. They live in a versioned
-sidecar and reference a Zotero object through `(libraryID, key)`:
+Pharos-only records do not belong in Zotero's schema. Today, AI conversations,
+paper profiles, translation metadata, and research workflow records live in the
+optional backend. Daily Papers also has a versioned, user-selected portable
+Vault for backup and migration; the backend database remains its online working
+copy. The desktop reserves `<Zotero data directory>/pharos-local.sqlite` for a
+future local sidecar, but no feature creates or writes that file yet.
 
-- AI conversations and reusable paper profiles;
-- Daily Papers state and model readings;
-- embeddings and retrieval indexes;
-- translation and model-task metadata;
-- research projects, ideas, experiments, claims, and writing workflow state.
-
-The sidecar can be rebuilt or removed without changing a Zotero item or PDF.
-Where a Pharos record is also synchronized to the backend, it retains both its
-stable Zotero identity and its backend object ID.
+Any future sidecar record must reference a Zotero object through
+`(libraryID, key)` and ship with explicit schema, migration, backup, and removal
+tests. It must remain removable without changing a Zotero item or PDF.
 
 ## Browser and remote devices: Zotero Cloud
 

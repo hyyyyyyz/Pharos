@@ -147,7 +147,7 @@ duplicate arXiv ids, excessive counts, and oversized text.
 
 | Client | v1 behavior |
 | --- | --- |
-| Desktop client (macOS, Windows, Linux) | Papers are saved into the Zotero library itself rather than a separate vault directory, so no filesystem scope has to be requested or persisted. |
+| Desktop client (macOS, Windows, Linux) | Native folder picker; the absolute path and trusted `vault_id` are remembered in Pharos preferences. The digest snapshot is written with `IOUtils`; imported papers and PDFs remain in Zotero and are not duplicated into the Vault. |
 | Chrome / Edge desktop | File System Access API, directory handle stored in IndexedDB, permission may need to be granted again after reopening. |
 | Safari / Firefox | Portable JSON export/import fallback; these browsers cannot be promised continuous writable-directory access. |
 | iOS / Android | JSON fallback for now. A later adapter must use iOS security-scoped documents and Android Storage Access Framework rather than desktop paths. |

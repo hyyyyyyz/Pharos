@@ -189,9 +189,12 @@ without a word.
 The Pharos desktop client is a Zotero-derived application and uses the same
 Zotero data directory, `zotero.sqlite`, attachment storage, items, collections,
 notes, and annotations. Pharos keeps a separate application profile, branding,
-credentials, update channel, and `pharos://` protocol. Pharos-native local data
-is stored in a sidecar and linked to Zotero objects by stable library/key
-identities; it never adds private tables or columns to `zotero.sqlite`.
+credentials, update channel, and `pharos://` protocol. It never adds private
+tables or columns to `zotero.sqlite`. The current code reserves a sidecar path
+but has no writer; Pharos-native records remain in the optional backend, while
+Daily Papers has a separate portable Vault. A future sidecar must link to Zotero
+objects by stable library/key identities and ship as an explicit versioned
+storage decision.
 
 Only one Zotero-derived application may open the shared library at a time. A
 schema mismatch is a hard startup failure, not permission to migrate the user's
@@ -282,8 +285,8 @@ how many papers, projects, searches, daily digests, highlights, or annotations a
 person has.
 
 **Why:** a Pharos administrator operates the service; they are not the owner of
-each researcher's local Zotero library or Pharos sidecar. Those counts are both
-irrelevant to service operations and an unnecessary privacy leak. Deleting an
-account may remove that account's server-side Pharos records as part of the
-explicit destructive action, but the API never reads or deletes a user's local
-Zotero/Pharos files.
+each researcher's local Zotero library, Daily Vault, or future Pharos sidecar.
+Those counts are both irrelevant to service operations and an unnecessary
+privacy leak. Deleting an account may remove that account's server-side Pharos
+records as part of the explicit destructive action, but the API never reads or
+deletes a user's local Zotero/Pharos files.

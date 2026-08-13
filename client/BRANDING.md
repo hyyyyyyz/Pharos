@@ -50,17 +50,17 @@ Zotero 官方支持页与论坛。发布前需改掉——否则 Pharos 用户�
 
 ## 应用隔离与共享文库（重要）
 
-品牌身份、Gecko application profile、Zotero 文库、Pharos sidecar 是四个不同
+品牌身份、Gecko application profile、Zotero 文库、Pharos 原生数据是四个不同
 层次。当前产品方向是：
 
 ```text
 Application identity  = Pharos
 Application profile   = Pharos 独立 profile
 Reference library     = Zotero data directory / zotero.sqlite
-Pharos extension data = 独立 sidecar
+Pharos extension data = 可选后端 + Daily Vault；本地 sidecar 仅预留路径
 ```
 
-正式客户端将在 Zotero 核心版本兼容后共享 Zotero 文库；它不会为了共享数据而把
+正式客户端已经在 Zotero 核心版本兼容后共享 Zotero 文库；它不会为了共享数据而把
 bundle ID、协议、凭据或用户可见品牌伪装成 Zotero。完整约束见
 [`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。
 
@@ -73,8 +73,8 @@ bundle ID、协议、凭据或用户可见品牌伪装成 Zotero。完整约束�
    仍是 `Zotero` 时解析到了 `~/Zotero`，构建版直接去开真实的 `zotero.sqlite`——
    当时只因另一进程持有 SQLite 锁而失败（`NS_ERROR_STORAGE_BUSY`）。若那时真 Zotero
    未运行，schema 迁移有可能让正版客户端打不开自己的库。当时把默认目录改为
-   `~/Pharos` 是正确止损，但它不是最终产品架构。当前源码仍停留在这个安全状态，
-   直到 Zotero 8.0.5 兼容迁移和往返测试完成。
+   `~/Pharos` 是正确止损，但它不是最终产品架构。随后 Zotero 8.0.5 兼容迁移和
+   往返测试已经完成，正式版现已共享文库；开发构建继续强制隔离。
 
 2. **自动更新**。`[AppUpdate]` 原本指向 Zotero 官方更新服务器，存在把官方 Zotero 当作
    "更新"下发、静默替换掉 Pharos 的风险，已整段停用。恢复前需先自建更新端点。

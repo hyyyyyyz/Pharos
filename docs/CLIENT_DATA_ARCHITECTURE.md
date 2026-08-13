@@ -19,8 +19,12 @@ Sharing the library does **not** mean sharing the whole application identity.
 | Zotero sync state and citation data | Yes | No private columns or tables |
 | Application profile, caches, window state | No | Separate Pharos profile |
 | Bundle ID, branding, URL protocol | No | Pharos identity and `pharos://` |
-| Pharos login token and provider settings | No | OS credential store / Pharos profile |
-| AI conversations, Daily Papers state, research workflow state | No | Pharos sidecar and/or Pharos backend |
+| Pharos bearer token | No | Gecko login manager / OS credential store |
+| Service URL and local UI preferences | No | Separate Pharos profile |
+| Personal AI provider configuration | No | Optional backend; API key encrypted server-side |
+| Instance-wide model/translation providers | No | Server environment, controlled by the operator |
+| AI conversations and research workflow state | No | Optional Pharos backend today; local sidecar only after a versioned writer exists |
+| Daily Papers portable snapshot | No | User-selected Daily Vault directory; backend remains the online working copy |
 
 ## Current safety status
 
@@ -35,6 +39,8 @@ Shared-library mode is enabled in production and guarded.
   schema to match exactly;
 - the Zotero → Pharos → Vibero copied-library round trip retained all 279 test
   attachments and left the schema unchanged.
+- `SharedLibrary.sidecarPath()` reserves `pharos-local.sqlite` beside the
+  library, but no current feature creates or writes it.
 
 A future baseline change reopens this gate. Pharos must never migrate a user's
 shared Zotero library merely because its own source moved ahead: mismatch means
@@ -64,8 +70,8 @@ they never inspect a developer's real Zotero profile or library.
 
 ## Shared Zotero data plane
 
-After compatibility work is complete, a normal Pharos release uses the same
-Zotero data directory selected by Zotero. That includes:
+A normal Pharos release uses the same Zotero data directory selected by Zotero.
+That includes:
 
 ```text
 <Zotero data directory>/
@@ -101,30 +107,34 @@ The second application must fail safely and explain which action is required:
 
 There is no automatic lock breaking, process killing, or database copying.
 
-## Pharos sidecar
+## Reserved Pharos sidecar
 
-Pharos-native local data belongs in a separate, versioned sidecar. The intended
-layout is:
+The source currently reserves one path and nothing more:
 
 ```text
-<Zotero data directory>/
-└── pharos/
-    ├── pharos.sqlite
-    ├── indexes/
-    ├── cache/
-    └── logs/
+<Zotero data directory>/pharos-local.sqlite
 ```
 
-The sidecar may contain AI conversation metadata, paper profiles, Daily Papers
-state, embeddings, research-workflow records, and task caches. Deleting it may
-remove Pharos-only history, but must never damage Zotero items, attachments, or
-annotations. Large user-owned source files remain Zotero attachments unless a
-feature explicitly creates a Pharos artifact.
+`Zotero.Pharos.SharedLibrary.sidecarPath()` returns that location, but no current
+feature creates, opens, or writes the file. AI conversations, reusable paper
+profiles, research projects, translation tasks, and other remote records remain
+in the optional backend. The reserved path exists so the first genuinely local
+Pharos-only feature cannot be tempted to extend `zotero.sqlite`.
 
-Records that also exist on the Pharos backend need an explicit sync state and a
-stable local identity. The backend is an optional service plane for model calls,
-translation, cross-device continuity, and web access; it is not the authority
-for the desktop Zotero library.
+Before a sidecar writer ships, it needs a versioned schema, migration and backup
+rules, deletion semantics, and stable `(libraryID, key)` links. Large user-owned
+source files remain Zotero attachments unless a feature explicitly creates a
+Pharos artifact. The backend remains a service plane, never the authority for
+the desktop Zotero library.
+
+## Daily Vault
+
+The Daily Vault is already implemented and is deliberately not the sidecar. It
+is a user-selected portable directory shared by the desktop and compatible web
+clients. It stores Daily configuration, digest history, and model readings for
+backup and migration; it does not back up the Zotero library or imported PDFs.
+Its versioned format and trust rules are defined in
+[`DAILY_VAULT_FORMAT.md`](DAILY_VAULT_FORMAT.md).
 
 ## Application identity
 
@@ -175,7 +185,8 @@ copy of a real library:
 7. A simultaneous launch fails with a clear lock message and leaves all files
    untouched.
 8. Default and custom Zotero data directories both work.
-9. Removing the Pharos sidecar leaves the Zotero library fully usable.
+9. No release creates the reserved sidecar until its schema, migration, backup,
+   and removal tests prove that the Zotero library remains fully usable without it.
 
 The supported Zotero version and schema level must be recorded in
 `client/UPSTREAM.txt` and tested on every desktop release.

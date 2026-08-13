@@ -69,17 +69,18 @@ Guard `result.no_watermark_*` for `None` before storing (use `getattr`).
 ```
 client/                   Zotero-derived primary desktop client
    ├── Zotero library     shared zotero.sqlite, storage, items, annotations
-   ├── Pharos sidecar     AI/daily/workflow/index state linked by library/key
-   └── REST + SSE         only when a backend capability is needed
+   ├── Daily Vault        user-selected portable digest snapshot
+   ├── reserved sidecar   pharos-local.sqlite path; no writer yet
+   └── HTTPS              only when a service capability is needed
 frontend/                 React 18 + Vite + TypeScript, pdf.js
-   │  REST + SSE
-backend/                  FastAPI + Uvicorn (native arm64, Python 3.13)
-   ├── api/               routers (papers, jobs, daily, discovery, projects)
+   │  authenticated REST, streamed AI replies, and job polling
+backend/                  FastAPI + Uvicorn
+   ├── api/               papers, jobs, chat, daily, discovery, projects, evidence
    ├── services/          library, translation, search, discovery, research projects
    ├── engines/           TranslationEngine protocol + BabelDocEngine
    ├── db/                SQLAlchemy 2.x models over SQLite (WAL, busy_timeout)
    └── storage/           content-addressed blob store: files/<sha256>/{original,mono,dual}.pdf
-backend/engine_worker/    runs in the osx-64 engine env; emits NDJSON progress
+backend/engine_worker/    separate engine environment/process; emits NDJSON progress
 ```
 
 Zotero, Vibero, and Pharos may use one Zotero library in turn, not
@@ -102,8 +103,9 @@ explicit, persisted, and independently testable.
    bounded asyncio worker pool drives one engine subprocess per job and pushes
    events onto a per-job `asyncio.Queue`. Job status/progress is persisted to
    SQLite so a browser refresh (or worker restart) can re-attach.
-3. `GET /jobs/{job_id}/events` — an **SSE** (`text/event-stream`) stream with
-   heartbeat comments.
+3. `GET /jobs/{job_id}/events` — an optional **SSE** (`text/event-stream`)
+   progress endpoint with heartbeat comments. Current web and desktop clients
+   poll persisted job state instead.
 4. `GET /papers/{id}/pdf/{original|mono|dual}` — serve the PDFs.
 
 A translation takes **2–4 minutes** — it must **never** run inside a request
@@ -190,11 +192,17 @@ attachments, PDFs, notes, annotations, saved searches, citation data, and sync
 state. The Pharos desktop client uses Zotero's own data model and transactions;
 it does not mirror this graph through the Local API.
 
-### Pharos desktop sidecar
+### Reserved Pharos desktop sidecar
 
-Local-only Pharos records such as AI history, paper profiles, Daily Papers
-state, embeddings, task caches, and research workflow state live outside
-`zotero.sqlite`. They reference Zotero entities by `(libraryID, key)`.
+`Zotero.Pharos.SharedLibrary.sidecarPath()` currently reserves
+`<Zotero data directory>/pharos-local.sqlite`, but no feature opens or writes
+that file yet. Current AI conversations, paper profiles, translation tasks,
+research workflow records, and the Daily Papers online working copy live in the
+optional backend. Daily Papers also has a separate, versioned, user-selected
+Vault for portable backup and recovery; it is not a second live database. Any
+future local sidecar writer must introduce an explicit schema, migration,
+backup, and `(libraryID, key)` identity contract before this document may
+describe those records as local.
 
 ### Optional backend and web companion
 
@@ -203,10 +211,18 @@ state, embeddings, task caches, and research workflow state live outside
 - `Paper(id, user_id, title, authors, source[upload|arxiv], arxiv_id,
   source_lang, full_text, bibliographic fields, added_at, orig_sha256,
   page_count)`
+- `PaperChunk(paper_id, user_id, page_no, ordinal, text, char_start, char_end,
+  extraction_version)` — the current page-addressable extraction substrate.
 - `TranslationJob(id, paper_id, status, engine, target_lang, progress, stage,
   mono_path, dual_path, error, started_at, finished_at)`
 - `Collection` / `Tag` / `Highlight` / `Note` — owner-scoped organisation and
   reader annotations.
+- `PaperAiContext` / `AiConversation` / `AiMessage` — reusable paper
+  understanding and durable, owner-scoped chat history.
+- `Evidence(paper_id, project_id, chunk_id, kind, locator, page_no, rects,
+  text, statement, provenance fields)` — page-addressable evidence with an
+  explicit distinction between quotes, notes, rule summaries, and model
+  inferences.
 - `DailyPaper` / `DailyRun` / `UserDirection` / `UserDailyConfig` — shared paper
   fetch/reading data plus per-user feed matching and settings.
 - `ResearchProject(id, user_id, name, description, research_question, status,
@@ -221,17 +237,19 @@ state, embeddings, task caches, and research workflow state live outside
 - `ProjectArtifact(project_id, stage, type, title, body, status)` — durable
   human-authored research records, not proof that an automated experiment ran.
 
-Future page-addressable evidence, automatic Idea review, experiment execution,
-and Claim bindings require new entities; they are not implied by the current
-generic artifact row. Their ordering and evidence contract are defined in
-[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
+Page-addressable `PaperChunk` and `Evidence` rows now implement the first
+evidence vertical slice. Automatic Idea review, experiment execution, grounded
+answer citations, and Claim bindings remain future work; they are not implied
+by the current generic artifact row. Their ordering and evidence contract are
+defined in [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
 
 ## 9. Extensibility seams
 
-- `TranslationEngine` protocol → a future `MinerUEngine` can also populate
-  page-addressable `PaperChunk` rows, with translation APIs unchanged.
-- Future `PaperChunk` + a vector index (sqlite-vec / FAISS) → grounded RAG/Q&A
-  and Evidence Ledger over papers.
+- Current ingestion uses PyMuPDF to populate `Paper.full_text` and
+  page-addressable `PaperChunk` rows. A future structured extractor such as
+  MinerU needs a separate extraction seam; translation APIs remain unchanged.
+- Current `PaperChunk` rows + a future vector index (sqlite-vec / FAISS) →
+  grounded RAG/Q&A over the existing Evidence Ledger.
 - pdf.js text layer + `Highlight`/`Note` → coordinate-anchored annotations.
 - The desktop client is built from Zotero source. Its local reference library is
   usable without the backend; translation, model-backed tasks, and synchronized
