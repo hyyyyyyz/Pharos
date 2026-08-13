@@ -215,16 +215,16 @@ application and opens the same local library directly. Zotero OAuth below is for
 the web companion and remote devices that cannot access the local database or
 local-only PDFs.
 
-**Web/cloud connection.** For a self-hosted deployment, register a web application at
-[Zotero OAuth Apps](https://www.zotero.org/oauth/apps) with:
+**Web/cloud connection.** The official web app at
+[`pharos.selab.top`](https://pharos.selab.top/) uses the Pharos-managed Zotero
+OAuth application. Users connect Zotero from Account Settings; they do not need
+to register an OAuth application or handle its client secret.
 
-- Website: `https://pharos.selab.top/` (replace this with your own public URL)
-- Callback: `https://pharos.selab.top/api/zotero/oauth/callback`
-
-Set the OAuth client key and secret only on the backend. When they are not
-configured, the account settings keep the manual Zotero user-ID/API-key flow
-available. Both connection methods grant Pharos a one-way, metadata-only import
-path for data that exists in Zotero Cloud. Write-back remains disabled.
+The OAuth key and secret remain only on the official backend and are never
+exposed to either client. Account Settings also retains the manual Zotero
+user-ID/API-key flow. Both connection methods provide a one-way, metadata-only
+import path for data already present in Zotero Cloud. Write-back remains
+disabled.
 
 The repository also contains a hardened Zotero 7/8 Connector transport preview.
 It currently advertises data capabilities as disabled until pairing, notifier,
@@ -289,7 +289,11 @@ Pharos/
 The `site/` project is independent of the research application. Running the
 marketing site does not start the FastAPI backend or the Pharos product UI.
 
-## Run Pharos locally
+## Local development
+
+These commands are for source development and testing. Starting with 1.3.1,
+official desktop releases connect to the Pharos cloud service at
+`https://pharos.selab.top` and do not expose a server switch.
 
 ### Requirements
 
@@ -418,7 +422,7 @@ are:
 
 | Variable | Purpose |
 | --- | --- |
-| `PHAROS_AUTH_SECRET` | Signs access tokens. Use at least 32 random characters for any persistent or networked instance. |
+| `PHAROS_AUTH_SECRET` | Signs access tokens. Use at least 32 random characters in production; localhost development may use an ephemeral secret. |
 | `PHAROS_CREDENTIAL_SECRET` | Independently encrypts stored Zotero credentials, temporary OAuth secrets, and users' web AI provider keys. Use at least 32 random characters and do not reuse the auth or OAuth secret. |
 | `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | Optional previous credential-encryption secret used temporarily during key rotation. |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | Server-side key from the registered Zotero OAuth application. |
@@ -430,7 +434,7 @@ are:
 | `PHAROS_TRANSLATOR_TYPE` | `bing`, `google`, `deepseek`, `openai`, or `custom`. |
 | `PHAROS_CHAT_PROVIDER` | Selects the instance-wide provider used by optional model-backed reading tasks and as the web AI Chat fallback when a user has no personal provider. |
 | `PHAROS_DEEPSEEK_*`, `PHAROS_OPENAI_*`, `PHAROS_CUSTOM_*` | API key, base URL, and model for named OpenAI-compatible providers. |
-| `PHAROS_CORS_ORIGINS` | Comma-separated allowed web origins. Set explicit origins in a real deployment. |
+| `PHAROS_CORS_ORIGINS` | Comma-separated allowed web origins. Set explicit origins in production. |
 
 The default translator is keyless Bing. Model-backed daily reading and
 abstract analysis remain unavailable until a usable provider key and model are
@@ -499,8 +503,9 @@ Pharos deliberately distinguishes implemented records from automated research:
   than maintaining a Local API mirror. Zotero Cloud remains a limited companion
   path for the web app and remote devices; local-only PDFs stay local unless
   explicitly uploaded.
-- The full product backend is currently self-hosted; GitHub Pages hosts only
-  the public marketing site.
+- The official Pharos cloud service is available at
+  [pharos.selab.top](https://pharos.selab.top/); GitHub Pages hosts only the
+  public marketing site.
 - Desktop builds are unsigned. Signed and notarized releases, a Windows
   installer rather than a portable archive, and a mobile client are future work.
 

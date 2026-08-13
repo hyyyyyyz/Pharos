@@ -147,12 +147,13 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 会直接打开同一套本地文库。下面的 OAuth 账号关联只给网页端和远程设备使用，因为
 浏览器无法访问本机 SQLite 与只存在本地的 PDF。
 
-**网页/云端连接：** 自行部署时，需要先在 [Zotero OAuth 应用管理页面](https://www.zotero.org/oauth/apps) 注册网页应用：
+**网页/云端连接：** 官方网页端
+[`pharos.selab.top`](https://pharos.selab.top/) 使用由 Pharos 维护的 Zotero OAuth
+应用。用户只需在账户设置中连接 Zotero，不需要自行注册 OAuth 应用或接触客户端密钥。
 
-- 网站地址：`https://pharos.selab.top/`（请替换为自己的公开产品地址）
-- 回调地址：`https://pharos.selab.top/api/zotero/oauth/callback`
-
-OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。未配置 OAuth 时，账户设置仍会提供手动填写 Zotero 用户编号和 API 密钥的连接方式。两种云端连接方式都只同步已经存在于 Zotero Cloud 的数据；当前都不执行写回。
+OAuth 客户端编号与密钥只保存在官方后端，绝不会暴露给网页端或桌面端。账户设置仍保留
+手动填写 Zotero 用户编号和 API Key 的连接方式。两种方式都只单向导入已经存在于
+Zotero Cloud 的书目元数据，当前不执行写回。
 
 仓库中还包含一个面向 Zotero 7/8 的安全 Connector 传输预览。配对界面、Notifier 和事务测试完成前，它会如实把所有数据能力标为关闭。详见 [`docs/ZOTERO_INTEGRATION.md`](docs/ZOTERO_INTEGRATION.md)。
 
@@ -204,7 +205,10 @@ Pharos/
 
 `site/` 是独立的宣传网站工程。运行宣传站不会启动 FastAPI 后端，也不会启动 Pharos 产品界面。
 
-## 在本地运行 Pharos
+## 本地开发
+
+以下命令仅用于源码开发与测试。从 1.3.1 起，官方桌面发行版固定连接
+`https://pharos.selab.top` 提供的 Pharos 云服务，不提供服务器切换入口。
 
 ### 环境要求
 
@@ -314,7 +318,7 @@ npm --prefix site run preview
 
 | 变量 | 用途 |
 | --- | --- |
-| `PHAROS_AUTH_SECRET` | 用于签发访问令牌。持久化或联网运行时，应使用至少 32 个随机字符。 |
+| `PHAROS_AUTH_SECRET` | 用于签发访问令牌。生产环境必须使用至少 32 个随机字符；纯 localhost 开发可使用临时密钥。 |
 | `PHAROS_CREDENTIAL_SECRET` | 独立用于加密已保存的 Zotero 凭据、临时 OAuth 密钥和用户在网页端配置的 AI Provider 密钥。至少使用 32 个随机字符，不要复用登录签名密钥或 OAuth 客户端密钥。 |
 | `PHAROS_CREDENTIAL_SECRET_PREVIOUS` | 可选；轮换凭据加密密钥时，临时保留上一把密钥用于读取并迁移旧密文。 |
 | `PHAROS_ZOTERO_OAUTH_CLIENT_KEY` | 在 Zotero 注册 OAuth 应用后获得的服务端客户端编号。 |
@@ -326,7 +330,7 @@ npm --prefix site run preview
 | `PHAROS_TRANSLATOR_TYPE` | 可选 `bing`、`google`、`deepseek`、`openai` 或 `custom`。 |
 | `PHAROS_CHAT_PROVIDER` | 选择用于可选模型解读任务的全站模型；当网页用户没有个人 Provider 时，也作为 AI 对话的默认模型。 |
 | `PHAROS_DEEPSEEK_*`、`PHAROS_OPENAI_*`、`PHAROS_CUSTOM_*` | 对应服务的密钥、接口地址和模型名称。 |
-| `PHAROS_CORS_ORIGINS` | 允许访问 API 的网页来源，多个来源使用英文逗号分隔；正式部署时应明确填写。 |
+| `PHAROS_CORS_ORIGINS` | 允许访问 API 的网页来源，多个来源使用英文逗号分隔；生产环境中应明确填写。 |
 
 默认翻译服务是无需密钥的 Bing。每日论文的模型解读和文献探索的模型摘要需要配置可用的服务密钥与模型；没有配置时，抓取、检索、方向匹配、项目记录和其他主要功能仍然可用。
 
@@ -375,7 +379,7 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - 页面级 Evidence 的首个纵向切片已经完成：桌面阅读器可以保存选中文本，服务端负责验证页码；选区位置不明确时会安全
   降级为只保存引文。基于证据的问答和主张绑定仍属于后续工作。
 - 桌面端已经以兼容 schema 直接使用 Zotero 文库，而不是维护 Local API 镜像。Zotero Cloud 只作为网页端和远程设备的受限伴随路径；本地 PDF 只有在用户明确上传时才会离开本机。
-- 完整产品后端目前需要自行部署；GitHub Pages 只托管公开宣传站。
+- Pharos 官方云服务位于 [pharos.selab.top](https://pharos.selab.top/)；GitHub Pages 只托管公开宣传站。
 - 桌面客户端已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 
 下一阶段的重点包括基于原文的可靠问答、证据感知的研究想法工作流、沙箱实验执行、结果与论文主张强绑定，以及受证据约束的写作与审阅流程。详细约束见 [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)。

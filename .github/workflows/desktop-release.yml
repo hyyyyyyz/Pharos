@@ -252,28 +252,19 @@ jobs:
           # check above require every platform, publish it outright.
           draft: false
           body: |
-            ## PDF Reader workspace
+            ## Pharos Desktop 1.3.1
 
-            - **AI Chat is the Reader's default right-hand pane.** Opening a
-              paper presents the full-height conversation surface directly;
-              the section sidenav still switches to Info, Notes, and other
-              enabled panes.
-            - Closing the context pane is still respected. The explicit
-              **AI Chat** toolbar entry reopens it and focuses the composer when
-              you want it back.
-            - A **Translate** button now sits to the left of Find in
-              the PDF toolbar. It offers **Translated Only** and **Side by Side**
-              and uses the same BabelDOC job and progress flow as the PDF
-              item's right-click commands in the library.
-            - Pharos prepares the PDF that is actually open before the first
-              question, including linked files and items with multiple PDF
-              attachments. Existing paper conversations are restored there.
-            - Paper identity, model state and in-flight work are isolated across
-              item, tab and account changes, so an old request cannot repaint a
-              newly opened paper's conversation.
-            - Select text in a PDF and choose **Save as evidence** from the
-              Reader popup. The server verifies the paper page; safe single-page
-              geometry is retained and ambiguous selections remain quote-only.
+            - Starting with 1.3.1, official Pharos builds connect to the hosted product at
+              `https://pharos.selab.top`. The editable server-address field has
+              been removed from Settings so an installed client has one clear
+              account and service boundary.
+            - Credentials remain bound to the service that issued them. Since
+              older releases did not record a trustworthy token origin, 1.3.1
+              discards every legacy Pharos token and cached account identity
+              before that token can be attached to an official-service request.
+              Sign in again once after upgrading.
+            - The local Zotero library, PDF Reader, notes and annotations are not
+              affected by this account migration and remain available offline.
 
             ## Install
 

@@ -23,8 +23,14 @@ Pharos 是一体化科研平台：发现 → 阅读 → 翻译 → 整理 → �
 - **文献探索** — 搜 arXiv 与 OpenAlex，可对单条结果做模型精读。
 - **研究项目** — 从文库这一侧看项目的阶段、依据的论文和已写下的记录。
 
-这些功能需要一个 Pharos 后端。默认指向 `https://pharos.selab.top`，
-在「设置 → Pharos」里可以改成你自己部署的实例。
+这些功能需要 Pharos 服务。从桌面版 1.3.1 起，GitHub Releases 提供的官方客户端固定连接
+`https://pharos.selab.top`，设置界面不提供服务器地址切换；账号令牌只属于签发它的
+服务来源，不能带到另一个来源继续使用。
+
+源码开发仍需要连接本机或测试后端。仅 `.SOURCE` 开发构建会读取高级配置中的隐藏偏好
+`extensions.zotero.pharos.baseURL`；例如可将它设为 `http://127.0.0.1:8848`。
+切换该开发地址会清除当前 Pharos 登录状态，之后需要在新地址重新登录。正式 release
+构建忽略这个隐藏偏好，因此修改 profile 不能改变官方客户端的服务地址。
 
 ## 安装
 
@@ -100,7 +106,7 @@ app/build.sh -d "$build_dir" -p m -c release
 
 ## 许可证
 
-Zotero 采用 **AGPL-3.0**，本衍生作品同样以 AGPL-3.0 发布，`COPYING` 与源码内的
+Zotero 采用 **AGPL-3.0-or-later**，本衍生作品同样以 AGPL-3.0-or-later 发布，`COPYING` 与源码内的
 版权声明原样保留。
 
 Zotero 是 Corporation for Digital Scholarship 的商标。本项目不使用该商标，

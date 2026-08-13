@@ -290,3 +290,42 @@ Those counts are both irrelevant to service operations and an unnecessary
 privacy leak. Deleting an account may remove that account's server-side Pharos
 records as part of the explicit destructive action, but the API never reads or
 deletes a user's local Zotero/Pharos files.
+
+## 15. Official desktop builds have one hosted service origin
+
+Starting with desktop 1.3.1, artifacts published by this repository use
+`https://pharos.selab.top` for Pharos account, AI, translation, daily and
+workflow capabilities. A release build does not expose a server-address field
+and does not honour a profile preference that attempts to replace that origin.
+The endpoint is part of the official product boundary, not an ordinary user
+preference.
+
+Source development still needs an isolated backend. A build whose version is on
+the `.SOURCE` channel may read the hidden
+`extensions.zotero.pharos.baseURL` preference so a contributor can point it at
+localhost or a disposable test deployment. There is no corresponding control in
+the normal Settings UI, and a release-channel build ignores the override even if
+an old profile still contains it. Tests should prefer a scoped stub when they do
+not specifically exercise source-build endpoint selection.
+
+Credentials are origin-bound. A bearer token issued by one service must never be
+sent to another. Changing the hidden development origin signs the account out;
+when version 1.3.1 encounters any token saved by an older release without a
+trustworthy origin marker, it clears that token and cached account identity
+before the token can be attached to an official-service request. It does not
+silently infer the token's issuer from a mutable legacy preference.
+
+This packaging decision is not a claim that the source cannot be deployed by
+someone else. Pharos and its Zotero-derived desktop client remain distributed
+under AGPL-3.0-or-later, and the licence continues to permit modification and
+self-deployment under its terms. The distinction is narrower and deliberate:
+the binaries presented as the official Pharos product use the operated Pharos
+service, while people who modify or deploy the source own that build, its
+configuration, its users and its AGPL obligations.
+
+Removing an existing endpoint control would normally meet decision 13's MINOR
+threshold because it changes user-visible behaviour. The product owner
+explicitly designated this correction as `1.3.1`: it closes an unintended
+configuration surface in the official testing release before subscriptions or
+service guarantees exist. This is a recorded PATCH exception, not a silent
+change to the general versioning rule.

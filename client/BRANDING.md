@@ -11,9 +11,9 @@
 - 切分日期：见 `UPSTREAM.txt`
 - 切分版本：见 `UPSTREAM.txt`
 
-**许可证**：Zotero 采用 **AGPL-3.0**。移除 git 历史不影响许可证义务——
-`COPYING` 与源码内的版权声明必须原样保留，衍生作品同样以 AGPL-3.0 发布。
-Pharos 本身已是 AGPL-3.0，二者一致。
+**许可证**：Zotero 采用 **AGPL-3.0-or-later**。移除 git 历史不影响许可证义务——
+`COPYING` 与源码内的版权声明必须原样保留，衍生作品同样以
+AGPL-3.0-or-later 发布。Pharos 本身也采用 AGPL-3.0-or-later，二者一致。
 
 ## 品牌改造点
 
@@ -112,7 +112,8 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
 - [x] **阶段 3**：接入 Pharos 独有能力
   - [x] 后端客户端 `Zotero.Pharos.API`（token 经 OSKeyStore 加密存入登录管理器，
         用独立 login host；401 即清 token，把死墙变回登录提示）
-  - [x] 账号设置面板（服务器不可达 ≠ 已退出；改服务器地址强制退出）
+  - [x] 账号设置面板（服务器不可达 ≠ 已退出；1.3.1 起正式版固定官方服务，
+        `.SOURCE` 隐藏开发地址按来源隔离凭据）
   - [x] 保排版翻译（右键 PDF → 仅译文 / 中英对照，译文作为普通附件挂回同一条目）
   - [x] AI 对话（PDF 阅读器顶栏入口 + 右侧上下文面板区块，`API.stream()` 读 NDJSON 流）
   - [x] 每日论文（工具菜单 → 独立窗口，可把论文连同 PDF 与模型解读存入本地文库）
