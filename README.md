@@ -524,7 +524,18 @@ Pharos is licensed under the **GNU Affero General Public License v3.0 or later**
 See [`LICENSE`](LICENSE). If you offer a modified Pharos to users over a network,
 the AGPL requires those users to be offered the corresponding source code.
 
-## Acknowledgements
+## Thanks
+
+Pharos is built from the source of [Zotero](https://github.com/zotero/zotero).
+We are deeply grateful to the Zotero maintainers and community for the mature
+library model, PDF reader, annotation system, citation infrastructure, and web
+translators that make this research workbench possible.
+
+[Vibero](https://github.com/chenyu-xjtu/Vibero) demonstrated a practical path
+for a Zotero-derived application to keep its own product identity while sharing
+the user's local Zotero library. That precedent helped clarify Pharos's desktop
+data architecture. Pharos does not copy Vibero's product features or interface;
+the thanks here are for that valuable architectural inspiration.
 
 Layout-preserving translation is powered by
 [BabelDOC](https://github.com/funstory-ai/BabelDOC) and

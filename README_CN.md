@@ -391,7 +391,16 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 
 Pharos 使用 **GNU Affero General Public License v3.0 或更高版本**，详见 [`LICENSE`](LICENSE)。如果通过网络向用户提供修改后的 Pharos，AGPL 要求向这些用户提供对应源代码。
 
-## 鸣谢
+## Thanks · 致谢
+
+Pharos 基于 [Zotero](https://github.com/zotero/zotero) 源码构建。感谢 Zotero
+维护者与社区长期打磨文献数据模型、PDF 阅读器、标注系统、引文基础设施和网页抓取器；
+正是这些成熟能力，让 Pharos 可以把精力投入到完整科研工作流，而不是重新制造文献管理器。
+
+感谢 [Vibero](https://github.com/chenyu-xjtu/Vibero) 展示了 Zotero 衍生应用在保持
+独立产品身份的同时，共享用户本地 Zotero 文库这一条可行路径。这个实践先例帮助我们
+厘清了 Pharos 的桌面数据架构；这里感谢的是这份架构启发，并不意味着 Pharos 复制了
+Vibero 的产品功能或界面。
 
 保留版式的翻译能力由 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 和 [PDFMathTranslate / pdf2zh-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 提供。它们由 funstory.ai 维护，并采用 AGPL-3.0 许可证。
 
