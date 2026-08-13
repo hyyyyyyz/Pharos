@@ -140,9 +140,9 @@ ambiguous or cross-page selection is saved as quote-only evidence.
   remains available as a fallback.
 - A desktop client for macOS, Windows and Linux built from Zotero source, so
   the library, PDF reader, annotations, citation styles and 760+ web translators
-  are Zotero's own rather than reimplementations. The target release architecture
-  opens the user's Zotero library directly and keeps only Pharos-specific state
-  in a separate sidecar.
+  are Zotero's own rather than reimplementations. Production builds open the
+  user's existing Zotero library directly. Pharos-specific server records stay
+  outside that library, and the reserved local sidecar path has no writer yet.
 
 ### AI Chat across web and desktop
 
@@ -182,11 +182,13 @@ in the same window as the reading:
   Tools menu. Anything found can be saved into the local library, PDF and the
   model's reading included.
 
-Its application profile, backend token, settings, and Pharos sidecar remain
+Its application profile, backend token, credentials, and settings remain
 separate. The reference library itself is Zotero's: the same items, collections,
 attachments, PDFs, notes, and annotations are available when Zotero, Vibero, or
 Pharos opens it. These applications take turns; they do not open one database
-simultaneously.
+simultaneously. A path for a future local sidecar is reserved next to the
+library, but current Pharos-native records are kept in the optional backend;
+Daily Papers also has a versioned, user-owned portable Vault.
 
 The compatibility transition is complete. The desktop client now follows the
 Zotero 8.0.5 baseline and userdata schema 123, and production builds use the
@@ -232,45 +234,37 @@ and transaction tests are complete. See
 ## Architecture
 
 <div align="center">
-  <img src="assets/brand/architecture-overview.png" alt="Pharos clients connect to one FastAPI core, which delegates PDF translation to an isolated BabelDOC worker" width="100%" />
+  <img src="assets/brand/architecture-overview-en.webp" alt="Pharos architecture overview: a Zotero-derived desktop workspace and shared local library, an optional FastAPI service plane, and an isolated PDF translation worker" width="100%" />
 </div>
 
-The diagram above focuses on the PDF translation execution path. The current
-repository also contains Literature Discovery, Research Projects, and the
-desktop client built from Zotero source.
+Pharos is desktop-primary. The Zotero library is the local source of truth, and
+the web application is a remote companion rather than a mirror of local SQLite.
+Accounts, model calls, translation, cross-device continuity, and other remote
+capabilities cross into the optional service plane only when needed.
 
-The architecture has two data planes. Zotero is authoritative for the desktop
-reference library. The Pharos sidecar and optional FastAPI backend own
-Pharos-native records such as AI conversations, Daily Papers state, translation
-tasks, and the research workflow.
+<div align="center">
+  <img src="assets/brand/architecture-data-flow-en.webp" alt="Pharos data boundaries and PDF translation round trip: Zotero, Vibero, and Pharos take turns opening one local library; the web companion uses FastAPI; translated PDFs return as ordinary Zotero attachments" width="100%" />
+</div>
 
-```text
-Zotero library ← Zotero / Vibero / Pharos desktop (exclusive access)
-                         │
-                         ├── Pharos sidecar (AI, daily, workflow, indexes)
-                         │
-                         └── REST + SSE when a server capability is needed
-                                      ▼
-                                FastAPI service
-                         accounts · jobs · models · remote companion
-                                      │
-                                      ▼
-                         engine worker → BabelDOC
-                                       → mono + bilingual PDF
-```
-
-- **Desktop:** the primary local workbench, built from Zotero source. Shared
-  Zotero data and Pharos sidecar boundaries are defined in
+- **Desktop and local ownership:** Pharos is the primary local workbench, built
+  from Zotero source. Zotero, Vibero, and Pharos may open the shared library one
+  at a time. The reserved `pharos-local.sqlite` path is not written yet; the
+  current Daily Vault is a separate versioned export/restore format. The full
+  boundary is defined in
   [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md).
-- **Backend:** optional FastAPI services, SQLAlchemy 2.x, SQLite in WAL mode, SSE, a
-  content-addressed PDF blob store, and background job managers.
-- **Web client:** React 18, TypeScript, Vite, TanStack Query, Zustand, and pdf.js.
-- **Desktop client:** Gecko/XUL, not Electron; local library work remains usable
-  without an account, while model and translation services stay out of process.
+- **Backend:** optional FastAPI services, SQLAlchemy 2.x, SQLite in WAL mode, a
+  content-addressed PDF blob store, owner-scoped records, and background job
+  managers.
+- **Web companion:** React 18, TypeScript, Vite, TanStack Query, Zustand, and
+  pdf.js. It reaches only authenticated server data; it cannot inspect a local
+  `zotero.sqlite` or a PDF that has never been uploaded.
 - **Translation boundary:** BabelDOC runs in its own Python environment and OS
-  process. The backend consumes NDJSON progress and republishes it over SSE.
+  process. The backend consumes NDJSON progress; clients use authenticated
+  upload/download, streamed replies, job polling, and SSE where appropriate.
+  Desktop results are imported back as ordinary Zotero attachments.
 - **External sources:** arXiv, OpenAlex, Crossref, Zotero, and optional
-  OpenAI-compatible model providers.
+  OpenAI-compatible model providers. Zotero Cloud is a metadata-only companion
+  path and does not make local-only PDFs appear on the web.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the engine boundary,
 storage model, request flow, licensing considerations, and the Apple-Silicon

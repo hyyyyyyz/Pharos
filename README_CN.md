@@ -98,7 +98,7 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 - SQLite FTS5 全文检索和嵌套分类管理。
 - 从 PDF 中提取元数据，并在可以识别 DOI 或 arXiv 编号时通过 Crossref/arXiv 补全。
 - 网页端和跨设备场景通过 Zotero Web API 单向同步云端书目元数据。服务器注册并配置 Zotero OAuth 应用后，用户可以在浏览器中一键授权，同时保留手动 API 密钥方式。
-- 面向 macOS、Windows、Linux 的桌面客户端由 Zotero 源码构建，因此文库、PDF 阅读器、标注、引文样式和 760+ 网页抓取器都是 Zotero 自己的，而非重新实现。正式版目标是直接使用用户现有的 Zotero 文库，Pharos 独有数据单独进入 sidecar。
+- 面向 macOS、Windows、Linux 的桌面客户端由 Zotero 源码构建，因此文库、PDF 阅读器、标注、引文样式和 760+ 网页抓取器都是 Zotero 自己的，而非重新实现。正式版会直接打开用户现有的 Zotero 文库；Pharos 的服务端记录始终位于文库之外，预留的本地 sidecar 路径目前尚未写入数据。
 
 ### 网页端与桌面端的 AI 对话
 
@@ -124,9 +124,10 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 - **每日论文**、**文献探索**、**研究项目** 都在工具菜单下。找到的论文可连同 PDF
   与模型解读一起存进本地文库。
 
-应用 profile、后端令牌、设置与 Pharos sidecar 保持独立；引用文库本身就是 Zotero
-的同一套条目、分类、附件、PDF、笔记和标注。Zotero、Vibero、Pharos 可以轮流打开，
-但不能同时占用同一个数据库。
+应用 profile、后端令牌、凭据与设置保持独立；引用文库本身就是 Zotero 的同一套
+条目、分类、附件、PDF、笔记和标注。Zotero、Vibero、Pharos 可以轮流打开，但不能
+同时占用同一个数据库。文库旁已经预留未来 sidecar 的路径，但目前没有功能向它写入；
+现有 Pharos 原生记录保存在可选后端，每日论文另有带版本、由用户掌控的可迁移 Vault。
 
 兼容迁移已经完成。桌面端当前基于 Zotero 8.0.5、userdata schema 123，正式版
 直接使用同一个 Zotero 数据目录与 `zotero.sqlite`；真实文库副本往返验证中，279 个
@@ -158,35 +159,30 @@ OAuth 客户端密钥只能配置在后端，不能进入前端构建产物。�
 ## 系统架构
 
 <div align="center">
-  <img src="assets/brand/architecture-overview.png" alt="Pharos 客户端连接 FastAPI 核心，后端把 PDF 翻译交给独立 BabelDOC 工作进程" width="100%" />
+  <img src="assets/brand/architecture-overview-zh.webp" alt="Pharos 架构总览：基于 Zotero 的桌面工作台与共享本地文库、可选 FastAPI 服务平面，以及隔离的 PDF 翻译引擎" width="100%" />
 </div>
 
-上图主要展示 PDF 翻译执行链路；当前仓库还包含文献探索、研究项目，以及由 Zotero 源码构建的桌面客户端。
+Pharos 以桌面端为主产品。Zotero 文库是本地事实来源，网页端是远程伴随端，而不是
+本机 SQLite 的镜像。只有账号、模型调用、翻译、跨设备连续性等能力需要时，数据才会
+进入可选服务平面。
 
-系统有两条数据平面：Zotero 是桌面引用文库的事实来源；Pharos sidecar 与可选
-FastAPI 后端负责 AI 对话、每日论文状态、翻译任务和科研工作流等 Pharos 原生记录：
+<div align="center">
+  <img src="assets/brand/architecture-data-flow-zh.webp" alt="Pharos 数据边界与 PDF 翻译闭环：Zotero、Vibero、Pharos 互斥使用同一本地文库，网页伴随端通过 FastAPI 工作，翻译结果最终成为普通 Zotero 附件" width="100%" />
+</div>
 
-```text
-Zotero 文库 ← Zotero / Vibero / Pharos 桌面端（互斥打开）
-                         │
-                         ├── Pharos sidecar（AI / 每日论文 / 工作流 / 索引）
-                         │
-                         └── 需要服务端能力时使用 REST + SSE
-                                      ▼
-                                FastAPI 服务
-                         账号 · 任务 · 模型 · 远程伴随端
-                                      │
-                                      ▼
-                         翻译进程 → BabelDOC
-                                  → 纯中文 + 双语 PDF
-```
-
-- **桌面客户端：** 主本地工作台；共享 Zotero 文库与 Pharos sidecar 的边界见 [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md)。
-- **后端：** 可选的 FastAPI 服务、SQLAlchemy 2.x、WAL 模式的 SQLite、SSE、基于内容哈希的 PDF 文件存储和后台任务管理器。
-- **网页客户端：** React 18、TypeScript、Vite、TanStack Query、Zustand 和 pdf.js。
-- **桌面客户端：** 由 Zotero 源码构建（Gecko/XUL，非 Electron）；后端和翻译引擎仍然独立运行，见 `client/`。
-- **翻译边界：** BabelDOC 在单独的 Python 环境和系统进程中运行。后端读取 NDJSON 进度，并通过 API/SSE 对外提供任务状态。
-- **外部来源：** arXiv、OpenAlex、Crossref、Zotero，以及用户可选的兼容 OpenAI 接口的模型服务。
+- **桌面端与本地所有权：** Pharos 是基于 Zotero 源码构建的主本地工作台；Zotero、
+  Vibero、Pharos 同时只能有一个打开共享文库。`pharos-local.sqlite` 只是尚未写入的
+  预留路径；当前 Daily Vault 是独立、带版本的导出与恢复格式。完整边界见
+  [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md)。
+- **后端：** 可选的 FastAPI 服务、SQLAlchemy 2.x、WAL 模式的 SQLite、按用户隔离的
+  记录、基于内容哈希的 PDF 文件存储和后台任务管理器。
+- **网页伴随端：** React 18、TypeScript、Vite、TanStack Query、Zustand 和 pdf.js。
+  它只能访问已经鉴权的服务端数据，不能读取本机 `zotero.sqlite` 或从未上传的 PDF。
+- **翻译边界：** BabelDOC 在独立 Python 环境和系统进程中运行，后端读取 NDJSON
+  进度；客户端按需使用鉴权上传/下载、流式响应、任务轮询与 SSE。桌面端会把结果重新
+  导入为普通 Zotero 附件。
+- **外部来源：** arXiv、OpenAlex、Crossref、Zotero，以及用户可选的兼容 OpenAI
+  接口的模型服务。Zotero Cloud 只是元数据伴随路径，不会让只存在本地的 PDF 自动出现在网页端。
 
 关于引擎隔离、数据存储、请求流程、许可证边界和 Apple Silicon 上的 `hyperscan` 兼容问题，请阅读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
