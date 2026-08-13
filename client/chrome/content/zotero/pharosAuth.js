@@ -36,7 +36,7 @@
  * THE WAY PAST IT. Everything that makes this a usable reader is local: the
  * library, the PDF reader, annotations, notes, collections, tags. None of it
  * touches the Pharos backend, and someone who has no account -- or is on a
- * plane, or is self-hosting and has not brought their server up yet -- must
+ * plane, or cannot reach the official service -- must
  * still get all of it. "Skip for now" closes the gate and records the choice,
  * so it stops blocking startup rather than asking again every launch; sign-in
  * stays available in Settings → Pharos. Only the server-backed features
@@ -497,11 +497,13 @@ var Zotero_Pharos_Auth = new function () {
 			// "use the email", which is what an empty field means.
 			body.display_name = displayName;
 		}
+		let issuedOrigin;
 		let res = await Zotero.Pharos.API.request('POST', '/api/auth/register', {
 			anon: true,
 			body,
+			captureOrigin: origin => issuedOrigin = origin,
 		});
-		await Zotero.Pharos.API.setToken(res.token);
+		await Zotero.Pharos.API.setToken(res.token, issuedOrigin);
 		return res.user;
 	};
 

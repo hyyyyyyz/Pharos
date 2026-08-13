@@ -254,10 +254,15 @@ pref("svg.context-properties.content.enabled", true);
 // written with that prefix, and ZOTERO_CONFIG.PREF_BRANCH reads it back, so
 // renaming the branch would silently drop every default in the application.
 
-// The backend. A pref rather than a constant because Pharos is open source and
-// meant to be self-hostable -- point this at your own instance and the account,
-// the translation engine and the digest all follow.
+// Hidden endpoint override for .SOURCE builds only. Official release artifacts
+// ignore it and always use https://pharos.selab.top; contributors use this pref
+// to connect an isolated development client to localhost or a test backend.
 pref("extensions.zotero.pharos.baseURL", "https://pharos.selab.top");
+
+// Non-secret origin marker for the bearer token in Gecko's login manager. This
+// prevents a credential issued by one development/backend origin from ever
+// being replayed to another. Empty means a pre-1.3.1 profile awaiting migration.
+pref("extensions.zotero.pharos.credentialBaseURL", "");
 
 // Cached display name of the signed-in account, so the preferences pane and
 // menus can show who is signed in without a round trip on every paint. The

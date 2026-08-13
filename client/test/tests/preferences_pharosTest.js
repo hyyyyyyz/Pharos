@@ -84,48 +84,13 @@ describe("Pharos Preferences", function () {
 		}
 	});
 
-	describe("server address", function () {
-		it("should save a self-hosted URL", async function () {
-			var win = await openPane();
-			try {
-				win.document.getElementById('pharos-base-url').value = 'http://localhost:8848';
-				win.Zotero_Preferences.Pharos.saveBaseURL();
-				assert.equal(Zotero.Pharos.API.getBaseURL(), 'http://localhost:8848');
-			}
-			finally {
-				win.close();
-			}
-		});
-
-		it("should sign out when the server changes", async function () {
-			// A token is only meaningful against the server that issued it.
-			// Keeping it across a server change would send one deployment a
-			// bearer token minted by another.
-			await Zotero.Pharos.API.setToken('test-token');
-			Zotero.Prefs.set('pharos.accountEmail', 'someone@example.org');
-
-			var win = await openPane();
-			try {
-				win.document.getElementById('pharos-base-url').value = 'http://localhost:8848';
-				await win.Zotero_Preferences.Pharos.saveBaseURL();
-				assert.isFalse(Zotero.Pharos.API.hasCredentials());
-			}
-			finally {
-				win.close();
-			}
-		});
-
-		it("should restore the current address when cleared", async function () {
-			var win = await openPane();
-			try {
-				var field = win.document.getElementById('pharos-base-url');
-				field.value = '   ';
-				win.Zotero_Preferences.Pharos.saveBaseURL();
-				assert.equal(field.value, Zotero.Pharos.API.getBaseURL());
-			}
-			finally {
-				win.close();
-			}
-		});
+	it("should not expose a server address control", async function () {
+		var win = await openPane();
+		try {
+			assert.isNull(win.document.getElementById('pharos-base-url'));
+		}
+		finally {
+			win.close();
+		}
 	});
 });

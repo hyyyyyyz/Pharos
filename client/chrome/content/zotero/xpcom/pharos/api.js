@@ -59,6 +59,9 @@ Zotero.Pharos.API = new function () {
 	 */
 	const LOGIN_HOST = 'chrome://pharos';
 	const LOGIN_REALM = 'Pharos API';
+	const OFFICIAL_BASE_URL = 'https://pharos.selab.top';
+	const BASE_URL_PREF = 'pharos.baseURL';
+	const CREDENTIAL_BASE_URL_PREF = 'pharos.credentialBaseURL';
 
 	/**
 	 * Requests get a generous timeout because translation upload is a multi-MB
@@ -95,6 +98,7 @@ Zotero.Pharos.API = new function () {
 
 	let _cachedToken = null;
 	let _tokenEpoch = 0;
+	let _forgettingCredential = false;
 
 	/**
 	 * A monotonically increasing identity for account-scoped async work.
@@ -118,20 +122,26 @@ Zotero.Pharos.API = new function () {
 		Services.obs.notifyObservers(null, ACCOUNT_CHANGED_TOPIC, String(_tokenEpoch));
 	}
 
+	function _normaliseBaseURL(url) {
+		return String(url || '').trim().replace(/\/+$/, '');
+	}
+
 	/**
 	 * Base URL of the backend, without a trailing slash.
 	 *
-	 * A pref rather than a constant because Pharos is open source and meant to
-	 * be self-hostable -- someone running their own instance changes this and
-	 * everything else follows.
+	 * Official artifacts have one product/service boundary and always use the
+	 * operated Pharos origin. A source checkout still needs to reach localhost
+	 * and disposable test servers, so `.SOURCE` builds alone honour the hidden
+	 * developer pref. There is deliberately no Settings control for it.
 	 */
 	this.getBaseURL = function () {
-		let url = Zotero.Prefs.get('pharos.baseURL') || 'https://pharos.selab.top';
-		return url.replace(/\/+$/, '');
-	};
-
-	this.setBaseURL = function (url) {
-		Zotero.Prefs.set('pharos.baseURL', String(url || '').replace(/\/+$/, ''));
+		if (Zotero.isSourceBuild) {
+			let override = _normaliseBaseURL(Zotero.Prefs.get(BASE_URL_PREF));
+			if (override) {
+				return override;
+			}
+		}
+		return OFFICIAL_BASE_URL;
 	};
 
 
@@ -151,26 +161,131 @@ Zotero.Pharos.API = new function () {
 		return logins.length ? logins[0] : false;
 	};
 
+	// Kept as a narrow seam so the failure path can be exercised without asking
+	// the real OS credential store to malfunction in a test.
+	this._removeLogin = function (login) {
+		Services.logins.removeLogin(login);
+	};
+
+	/** Remove a credential and every local identity hint belonging to it. */
+	function _forgetCredential(login) {
+		if (_forgettingCredential) {
+			return false;
+		}
+		_forgettingCredential = true;
+		let removed = !login;
+		try {
+			try {
+				if (login) {
+					Zotero.Pharos.API._removeLogin(login);
+					removed = true;
+				}
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+			_cachedToken = null;
+			if (removed && Zotero.Prefs.prefHasUserValue(CREDENTIAL_BASE_URL_PREF)) {
+				Zotero.Prefs.clear(CREDENTIAL_BASE_URL_PREF);
+			}
+			else if (!removed) {
+				// Fail closed if the platform credential store refuses deletion. A
+				// durable, deliberately impossible marker means the surviving secret
+				// can never be mistaken for an unlabelled legacy token on the next call.
+				Zotero.Prefs.set(
+					CREDENTIAL_BASE_URL_PREF, 'invalid://credential-removal-failed'
+				);
+			}
+			Zotero.Prefs.set('pharos.accountEmail', '');
+			Zotero.Prefs.set('pharos.isAdmin', false);
+			// cacheUser() is attached by the time a credential can be read, but keep
+			// this tolerant of an unusually early call during module initialisation.
+			Zotero.Pharos.API.cacheUser?.(null);
+			_accountChanged();
+			return removed;
+		}
+		finally {
+			_forgettingCredential = false;
+		}
+	}
+
+	/**
+	 * Confirm that a stored bearer token was issued by the requested origin.
+	 *
+	 * Version 1.3.0 stored every token in one login-manager bucket, without an
+	 * origin marker. Its old baseURL pref is not reliable provenance, so every
+	 * unbound legacy token means "sign in again", never "guess the issuer".
+	 */
+	function _credentialBelongsToOrigin(login, requestedOrigin) {
+		let origin = _normaliseBaseURL(requestedOrigin);
+		let credentialOrigin = _normaliseBaseURL(
+			Zotero.Prefs.get(CREDENTIAL_BASE_URL_PREF)
+		);
+		if (credentialOrigin == 'invalid://credential-removal-failed') {
+			return false;
+		}
+
+		if (!credentialOrigin) {
+			// Pre-1.3.1 tokens have no trustworthy issuer marker. The legacy
+			// endpoint pref is only a hint: it could have been changed before an
+			// interrupted sign-out, copied from another profile, or edited by hand.
+			// Discard every unbound token and require one clean sign-in.
+			let removed = _forgetCredential(login);
+			if (removed && !Zotero.isSourceBuild
+					&& Zotero.Prefs.prefHasUserValue(BASE_URL_PREF)) {
+				Zotero.Prefs.clear(BASE_URL_PREF);
+			}
+			return false;
+		}
+
+		if (credentialOrigin != origin) {
+			let removed = _forgetCredential(login);
+			if (removed && !Zotero.isSourceBuild
+					&& Zotero.Prefs.prefHasUserValue(BASE_URL_PREF)) {
+				Zotero.Prefs.clear(BASE_URL_PREF);
+			}
+			return false;
+		}
+
+		// A current, origin-bound official token can stay signed in, but the
+		// obsolete user value should not imply that releases accept overrides.
+		if (!Zotero.isSourceBuild && Zotero.Prefs.prefHasUserValue(BASE_URL_PREF)) {
+			Zotero.Prefs.clear(BASE_URL_PREF);
+		}
+		return true;
+	}
+
 	/**
 	 * Whether a token is stored. Synchronous, so menus and UI state can consult
 	 * it without awaiting a decrypt.
 	 */
 	this.hasCredentials = function () {
-		return !!this._getLoginInfo();
+		let login = this._getLoginInfo();
+		return !!login && _credentialBelongsToOrigin(login, this.getBaseURL());
 	};
 
-	this.getToken = async function () {
+	this.getToken = async function (origin = this.getBaseURL()) {
+		let login = this._getLoginInfo();
+		if (!login || !_credentialBelongsToOrigin(login, origin)) {
+			return null;
+		}
 		if (_cachedToken !== null) {
 			return _cachedToken;
 		}
-		let login = this._getLoginInfo();
-		if (!login) {
-			return null;
-		}
+		let epoch = _tokenEpoch;
 		try {
-			_cachedToken = await _decrypt(login.password);
+			let token = await _decrypt(login.password);
+			// Decryption may cross an account or development-origin switch. Never
+			// let an old async result overwrite the new account's in-memory token.
+			if (epoch != _tokenEpoch) {
+				return null;
+			}
+			_cachedToken = token;
 		}
 		catch (e) {
+			if (epoch != _tokenEpoch) {
+				return null;
+			}
 			// A token that cannot be decrypted is not recoverable, and leaving it
 			// in place would make every request 401 forever with no way out from
 			// the UI. Drop it so the user is asked to sign in again.
@@ -214,21 +329,16 @@ Zotero.Pharos.API = new function () {
 		return stored;
 	}
 
-	this.setToken = async function (token) {
+	this.setToken = async function (token, issuedOrigin = this.getBaseURL()) {
 		let oldLogin = this._getLoginInfo();
 
 		if (!token) {
-			if (oldLogin) {
-				Services.logins.removeLogin(oldLogin);
-			}
-			_cachedToken = null;
 			// Every route out of an account passes through here -- sign out,
 			// sign out everywhere, and the 401 handler below. What the cache
 			// holds describes the account that has just gone, and the next one
 			// in may be a different person; a leftover "translation off" would
 			// hide the feature from someone who has it.
-			this.cacheUser(null);
-			_accountChanged();
+			_forgetCredential(oldLogin);
 			return;
 		}
 
@@ -250,6 +360,21 @@ Zotero.Pharos.API = new function () {
 			await Services.logins.addLoginAsync(login);
 		}
 		_cachedToken = token;
+		let credentialOrigin = Zotero.isSourceBuild
+			? _normaliseBaseURL(issuedOrigin)
+			: OFFICIAL_BASE_URL;
+		if (!credentialOrigin) {
+			_forgetCredential(this._getLoginInfo());
+			throw new Error('Missing Pharos credential origin');
+		}
+		Zotero.Prefs.set(CREDENTIAL_BASE_URL_PREF, credentialOrigin);
+		if (!Zotero.isSourceBuild && Zotero.Prefs.prefHasUserValue(BASE_URL_PREF)) {
+			Zotero.Prefs.clear(BASE_URL_PREF);
+		}
+		if (credentialOrigin != this.getBaseURL()) {
+			_forgetCredential(this._getLoginInfo());
+			throw new Error('Pharos service changed while signing in');
+		}
 		// Paper ids, model configuration and in-flight preparation all belong to
 		// the bearer-token account. Reusing any of them after an account change
 		// can point a question at an id that only existed for the previous user.
@@ -271,12 +396,16 @@ Zotero.Pharos.API = new function () {
 	 *     JSON; FormData is passed through so the boundary is set by the platform
 	 * @param {Boolean} [options.anon] - Send without a token. Only login and
 	 *     register, which are what mint one
+	 * @param {Function} [options.captureOrigin] - Internal sign-in hook that
+	 *     records the exact origin which issued a returned token
 	 * @param {String} [options.responseType] - e.g. "arraybuffer" for PDF bytes
 	 * @param {Number} [options.timeout]
 	 * @return {Promise<Object|ArrayBuffer>} Parsed JSON, or the raw response when
 	 *     responseType is set
 	 */
 	this.request = async function (method, path, options = {}) {
+		let baseURL = this.getBaseURL();
+		options.captureOrigin?.(baseURL);
 		let headers = Object.assign({}, options.headers || {});
 		let body = options.body;
 
@@ -288,7 +417,7 @@ Zotero.Pharos.API = new function () {
 		// so that it can append the multipart boundary.
 
 		if (!options.anon) {
-			let token = await this.getToken();
+			let token = await this.getToken(baseURL);
 			if (!token) {
 				throw new Zotero.Pharos.API.SignedOutError();
 			}
@@ -297,7 +426,7 @@ Zotero.Pharos.API = new function () {
 
 		let xhr;
 		try {
-			xhr = await Zotero.HTTP.request(method, this.getBaseURL() + path, {
+			xhr = await Zotero.HTTP.request(method, baseURL + path, {
 				body,
 				headers,
 				responseType: options.responseType,
@@ -343,14 +472,15 @@ Zotero.Pharos.API = new function () {
 	 * @param {AbortSignal} [options.signal]
 	 */
 	this.stream = async function (path, { body, onEvent, signal } = {}) {
-		let token = await this.getToken();
+		let baseURL = this.getBaseURL();
+		let token = await this.getToken(baseURL);
 		if (!token) {
 			throw new Zotero.Pharos.API.SignedOutError();
 		}
 
 		let response;
 		try {
-			response = await fetch(this.getBaseURL() + path, {
+			response = await fetch(baseURL + path, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -524,11 +654,13 @@ Zotero.Pharos.API = new function () {
 	};
 
 	this.login = async function (email, password) {
+		let issuedOrigin;
 		let res = await this.request('POST', '/api/auth/login', {
 			anon: true,
 			body: { email, password },
+			captureOrigin: origin => issuedOrigin = origin,
 		});
-		await this.setToken(res.token);
+		await this.setToken(res.token, issuedOrigin);
 		// After setToken, not before: setToken(null) clears this cache, and a
 		// sign-in that raced it would leave the new account wearing nothing.
 		this.cacheUser(res.user);

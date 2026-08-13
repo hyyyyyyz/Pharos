@@ -102,6 +102,7 @@ describe("Pharos branding in the shipped locale files", function () {
 		// named `zotero` on the user's server, and Zotero reads the same one.
 		'sync.storage.error.permissionDeniedAtAddress': REASONS.LIBRARY,
 		'pharos-daily-vault-scope-out': REASONS.LIBRARY,
+		'pharos-admin-delete-local': REASONS.LIBRARY,
 
 		// Services on zotero.org.
 		'errorReport.advanceMessage': REASONS.SERVICE,

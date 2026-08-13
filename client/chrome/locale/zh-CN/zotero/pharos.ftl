@@ -74,10 +74,6 @@ pharos-prefs-sign-out-all = 退出所有设备
 pharos-prefs-sign-out-all-confirm = 这会让所有已登录 Pharos 的设备一并退出，是否继续？
 pharos-prefs-sign-out-all-help = 退出所有设备会吊销该账号签发过的全部令牌。
 
-pharos-prefs-server-header = 服务器
-pharos-prefs-server-help = Pharos 是开源的，可以自行部署。填入你自己的实例地址即可切换。令牌只在签发它的服务器上有效，因此更改地址会同时退出登录。
-pharos-prefs-server-url = 地址
-
 ## AI 对话
 
 # 网页版从头到尾叫「AI 对话」。同一个功能在两个客户端上叫两个名字，

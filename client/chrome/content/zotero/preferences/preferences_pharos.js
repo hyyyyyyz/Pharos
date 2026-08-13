@@ -23,7 +23,7 @@
 */
 
 /**
- * The Pharos account pane: sign in, sign out, and point the client at a backend.
+ * The Pharos account pane: sign in, sign out, and manage account preferences.
  *
  * Everything that needs the server -- translation, AI chat, the daily digest --
  * goes through the token this pane obtains, so this is the one place a user has
@@ -31,8 +31,6 @@
  */
 Zotero_Preferences.Pharos = {
 	init: async function () {
-		document.getElementById('pharos-base-url').value = Zotero.Pharos.API.getBaseURL();
-
 		// Optimistic first paint from the cached email, then corrected once the
 		// server has confirmed the token. Without the cached value the pane
 		// flashes "signed out" on every open for anyone who is signed in.
@@ -224,23 +222,5 @@ Zotero_Preferences.Pharos = {
 		}
 		Zotero.Prefs.set('pharos.accountEmail', '');
 		this._render(null);
-	},
-
-	saveBaseURL: function () {
-		let field = document.getElementById('pharos-base-url');
-		let url = field.value.trim();
-		if (!url) {
-			field.value = Zotero.Pharos.API.getBaseURL();
-			return;
-		}
-		Zotero.Pharos.API.setBaseURL(url);
-		field.value = Zotero.Pharos.API.getBaseURL();
-
-		// A token is only meaningful against the server that issued it, so
-		// pointing the client somewhere else has to sign the user out rather
-		// than send that server someone else's bearer token.
-		if (Zotero.Pharos.API.hasCredentials()) {
-			this.signOut();
-		}
 	},
 };

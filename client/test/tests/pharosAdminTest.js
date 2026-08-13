@@ -93,9 +93,9 @@ describe("Zotero.Pharos.Admin", function () {
 			// An offline laptop is not evidence that anyone was demoted. Losing
 			// the console on the train and not getting it back until the next
 			// successful call would be the wrong failure.
+			Zotero.Prefs.set('pharos.baseURL', 'http://localhost:1');
 			await Zotero.Pharos.API.setToken('test-token-admin');
 			Zotero.Prefs.set('pharos.isAdmin', true);
-			Zotero.Prefs.set('pharos.baseURL', 'http://localhost:1');
 			assert.isTrue(await Zotero.Pharos.Admin.refresh());
 			assert.isTrue(!!Zotero.Prefs.get('pharos.isAdmin'));
 		});

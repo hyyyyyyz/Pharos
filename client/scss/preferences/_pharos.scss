@@ -8,7 +8,7 @@
 	.pharos-prefs-field {
 		display: grid;
 		// Fixed label column so the email and password inputs line up with each
-		// other and with the server address below.
+		// other throughout the account form.
 		grid-template-columns: 7em 1fr;
 		align-items: center;
 		gap: 8px;

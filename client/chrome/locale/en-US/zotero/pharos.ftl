@@ -76,10 +76,6 @@ pharos-prefs-sign-out-all = Sign Out Everywhere
 pharos-prefs-sign-out-all-confirm = This signs out every device where you are signed in to Pharos. Continue?
 pharos-prefs-sign-out-all-help = Signing out everywhere revokes every token this account has ever been issued.
 
-pharos-prefs-server-header = Server
-pharos-prefs-server-help = Pharos is open source and can be self-hosted. Point this at your own instance to use it instead. Changing it signs you out, since a token only works on the server that issued it.
-pharos-prefs-server-url = Address
-
 ## AI Chat
 
 # The web client calls this "AI Chat" everywhere. One feature under two names is
