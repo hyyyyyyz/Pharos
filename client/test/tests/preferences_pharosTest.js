@@ -93,4 +93,68 @@ describe("Pharos Preferences", function () {
 			win.close();
 		}
 	});
+
+	it("should show the build version", async function () {
+		var win = await openPane();
+		try {
+			var about = win.document.getElementById('pharos-about-version');
+			assert.ok(about, "the about block exists");
+			assert.equal(about.textContent, Zotero.Pharos.Updates.currentVersion());
+			assert.ok(
+				win.document.getElementById('pharos-check-updates'),
+				"the manual check button exists"
+			);
+		}
+		finally {
+			win.close();
+		}
+	});
+
+	it("should report a newer version from the manual check", async function () {
+		var origRequest = Zotero.Pharos.API.request;
+		Zotero.Pharos.API.request = function () {
+			return Promise.resolve({
+				version: '99.0.0',
+				url: 'https://example.test/releases',
+				notes: null,
+			});
+		};
+		var win = await openPane();
+		try {
+			await win.Zotero_Preferences.Pharos.checkForUpdates();
+			var row = win.document.getElementById('pharos-update-available');
+			assert.isFalse(row.hidden, "a newer build must draw the download row");
+			assert.equal(
+				win.document.getElementById('pharos-update-download').textContent,
+				Zotero.ftl.formatValueSync('pharos-prefs-update-download', { version: '99.0.0' })
+			);
+		}
+		finally {
+			Zotero.Pharos.API.request = origRequest;
+			win.close();
+		}
+	});
+
+	it("should say it is up to date when nothing newer exists", async function () {
+		var origRequest = Zotero.Pharos.API.request;
+		Zotero.Pharos.API.request = function () {
+			return Promise.resolve({ version: '0.0.1', url: null, notes: null });
+		};
+		var win = await openPane();
+		try {
+			await win.Zotero_Preferences.Pharos.checkForUpdates();
+			assert.isTrue(
+				win.document.getElementById('pharos-update-available').hidden,
+				"no download row for an older server version"
+			);
+			assert.equal(
+				win.document.getElementById('pharos-update-message').textContent,
+				Zotero.getString('pharos-prefs-update-latest')
+			);
+		}
+		finally {
+			Zotero.Pharos.API.request = origRequest;
+			win.close();
+		}
+	});
 });

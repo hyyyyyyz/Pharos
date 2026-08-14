@@ -33,6 +33,15 @@
 		margin-block-end: 8px;
 	}
 
+	// The about block: version row and the update-check controls below it.
+	.pharos-prefs-about {
+		margin-block-end: 8px;
+
+		strong {
+			margin-inline-start: 6px;
+		}
+	}
+
 	// Sits beside the sign-in button and carries both progress and failure, so
 	// it must not push the button around as its text changes.
 	.pharos-prefs-message {

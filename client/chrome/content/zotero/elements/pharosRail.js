@@ -54,6 +54,19 @@
 				</html:div>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
 				<html:div class="pharos-rail-spacer"/>
+				<html:div class="pharos-rail-update" hidden="true">
+					<html:div class="pharos-rail-update-body">
+						<html:span class="pharos-rail-update-icon"/>
+						<html:span class="pharos-rail-update-text">
+							<html:span class="pharos-rail-update-title"/>
+							<html:span class="pharos-rail-update-version"/>
+						</html:span>
+					</html:div>
+					<html:div class="pharos-rail-update-actions">
+						<html:button class="pharos-rail-update-download"/>
+						<html:button class="pharos-rail-update-ignore"/>
+					</html:div>
+				</html:div>
 				<html:button class="pharos-rail-acct">
 					<html:span class="pharos-rail-acct-avatar"/>
 					<html:span class="pharos-rail-acct-text">
@@ -176,10 +189,14 @@
 			this._toggle = this.querySelector('.pharos-rail-toggle');
 			this._deck = document.getElementById('pharos-deck');
 			this._splitter = document.getElementById('pharos-rail-splitter');
+			this._updateBox = this.querySelector('.pharos-rail-update');
+			this._updateState = null;
 
 			this._toggle.addEventListener('click', () => {
 				this.railCollapsed = !this.railCollapsed;
 			});
+
+			this._initUpdateBox();
 
 			this.setAttribute('rail-collapsed',
 				Zotero.Prefs.get('pharos.rail.collapsed') ? 'true' : 'false');
@@ -188,6 +205,7 @@
 			this._render();
 			this._renderToggle();
 			this._renderFooter();
+			this._renderUpdate(Zotero.Pharos.Updates.getState());
 
 			// Re-check against the server and redraw. isAdmin() reads a cached pref
 			// so the first paint needs no round trip, but an operator promoted
@@ -195,6 +213,134 @@
 			Zotero.Pharos.Admin.refresh()
 				.then(() => this._render())
 				.catch(e => Zotero.logError(e));
+
+			// Update announcements arrive on observer topics, so a window that
+			// opens after the check finished still paints the cached state (the
+			// _renderUpdate above) and one that stays open repaints when it
+			// fires. start() is idempotent: the timers live once per process.
+			//
+			// The observer is a plain object rather than the element itself: a
+			// DOM node is an XPC native wrapper and cannot convert to
+			// nsIObserver, which addObserver rejects with a conversion error
+			// (the same shape pharosChatBox.js uses for its account observer).
+			this._updateObserver = {
+				observe: (subject, topic, data) => this._observeUpdate(data),
+			};
+			Services.obs.addObserver(
+				this._updateObserver, Zotero.Pharos.Updates.TOPIC_CHECKED, false
+			);
+			Services.obs.addObserver(
+				this._updateObserver, Zotero.Pharos.Updates.TOPIC_AVAILABLE, false
+			);
+			Zotero.Pharos.Updates.start();
+		}
+
+		/**
+		 * The observer half of the update banner.
+		 *
+		 * `data` is a serialised Updates state; every finished check arrives
+		 * here, and only "available" draws the box. Failing to parse a foreign
+		 * topic payload must not take the rail down, so it degrades to "hide".
+		 */
+		_observeUpdate(data) {
+			let state = null;
+			try {
+				state = JSON.parse(data);
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+			this._renderUpdate(state);
+		}
+
+		/**
+		 * Unhook the update observer when the window goes.
+		 */
+		destroy() {
+			if (typeof super.destroy == 'function') {
+				super.destroy();
+			}
+			if (this._updateObserver) {
+				Services.obs.removeObserver(
+					this._updateObserver, Zotero.Pharos.Updates.TOPIC_CHECKED
+				);
+				Services.obs.removeObserver(
+					this._updateObserver, Zotero.Pharos.Updates.TOPIC_AVAILABLE
+				);
+				this._updateObserver = null;
+			}
+		}
+
+		/**
+		 * Wire the update box: download, ignore, and the collapsed shortcut.
+		 *
+		 * Collapsed, the box shrinks to one icon that opens the release page
+		 * directly -- there is no room for two buttons in a 44px column, and the
+		 * icon is the whole affordance, exactly as the account button collapses
+		 * to its avatar.
+		 */
+		_initUpdateBox() {
+			this._updateBox.addEventListener('click', () => {
+				if (this.railCollapsed) {
+					Zotero.Pharos.Updates.openRelease(this._updateState);
+				}
+			});
+
+			this._updateBox.querySelector('.pharos-rail-update-download')
+				.addEventListener('click', () => {
+					Zotero.Pharos.Updates.openRelease(this._updateState);
+				});
+
+			this._updateBox.querySelector('.pharos-rail-update-ignore')
+				.addEventListener('click', () => {
+					if (this._updateState) {
+						Zotero.Pharos.Updates.ignore(this._updateState.version);
+					}
+					// getState() is the state with "ignored" written into it.
+					this._renderUpdate(Zotero.Pharos.Updates.getState());
+				});
+		}
+
+		/**
+		 * Paint the update banner for a finished check, or hide it.
+		 *
+		 * Only "available" is ever shown; "ignored", "latest", "unavailable"
+		 * and "error" all hide it, which is what makes the ignore button a
+		 * permanent dismissal rather than a per-window one.
+		 */
+		_renderUpdate(state) {
+			let box = this._updateBox;
+			if (!box) {
+				return;
+			}
+			let show = !!state && state.status == 'available' && !!state.version;
+			this._updateState = show ? state : null;
+			box.hidden = !show;
+			if (!show) {
+				return;
+			}
+
+			let title = box.querySelector('.pharos-rail-update-title');
+			let version = box.querySelector('.pharos-rail-update-version');
+			document.l10n.setAttributes(
+				title, 'pharos-rail-update-title', { version: state.version }
+			);
+			// A version number is data, not a translatable string, so it goes in
+			// as text next to the title rather than through the l10n arguments.
+			version.textContent = state.version;
+			document.l10n.setAttributes(
+				box.querySelector('.pharos-rail-update-download'),
+				'pharos-rail-update-download'
+			);
+			document.l10n.setAttributes(
+				box.querySelector('.pharos-rail-update-ignore'),
+				'pharos-rail-update-ignore'
+			);
+			// The label is hidden when collapsed, so the tooltip is the only
+			// thing naming the box in that state.
+			document.l10n.setAttributes(
+				box, 'pharos-rail-update-tooltip', { version: state.version }
+			);
 		}
 
 		_render() {

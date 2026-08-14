@@ -88,4 +88,24 @@
 			<html:div data-l10n-id="pharos-prefs-sign-out-all-help" class="pharos-prefs-help"/>
 		</vbox>
 	</groupbox>
+
+	<!-- About the build itself. The version is the one application.ini ships;
+	     update checks reach the same public endpoint the rail banner uses. -->
+	<groupbox>
+		<label><html:h2 data-l10n-id="pharos-prefs-about-header"/></label>
+		<html:div class="pharos-prefs-about">
+			<html:span data-l10n-id="pharos-prefs-about-version"/>
+			<html:strong id="pharos-about-version"/>
+		</html:div>
+		<hbox align="center">
+			<button id="pharos-check-updates" data-l10n-id="pharos-prefs-check-updates"
+				oncommand="Zotero_Preferences.Pharos.checkForUpdates()"/>
+			<html:div id="pharos-update-message" class="pharos-prefs-message" role="alert"/>
+		</hbox>
+		<hbox id="pharos-update-available" align="center" hidden="true">
+			<button id="pharos-update-download" data-l10n-id="pharos-prefs-update-download"
+				oncommand="Zotero_Preferences.Pharos.openUpdate()"/>
+			<html:div id="pharos-update-note" class="pharos-prefs-help"/>
+		</hbox>
+	</groupbox>
 </vbox>

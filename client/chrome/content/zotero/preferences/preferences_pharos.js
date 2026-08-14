@@ -36,6 +36,18 @@ Zotero_Preferences.Pharos = {
 		// flashes "signed out" on every open for anyone who is signed in.
 		this._render(Zotero.Prefs.get('pharos.accountEmail'));
 
+		// The build's own version, straight from application.ini. No request
+		// and no rendering decision to make -- this is the number the update
+		// check compares against.
+		let about = document.getElementById('pharos-about-version');
+		if (about) {
+			about.textContent = Zotero.Pharos.Updates.currentVersion();
+		}
+		// Paint whatever the last finished check found, so a user who opens
+		// this pane right after the rail banner announced something sees the
+		// same answer without another round trip.
+		this._renderUpdate(Zotero.Pharos.Updates.getState());
+
 		if (Zotero.Pharos.API.hasCredentials()) {
 			try {
 				let user = await Zotero.Pharos.API.verify();
@@ -86,6 +98,85 @@ Zotero_Preferences.Pharos = {
 			if (box) {
 				box.checked = Zotero.Pharos.Translate.isEnabled();
 			}
+		}
+	},
+
+	/**
+	 * Ask the server about a newer desktop build and report the answer here.
+	 *
+	 * This is the manual path; the rail banner is the automatic one. They share
+	 * one module and one endpoint, so "no update here" and "no banner" can
+	 * never disagree.
+	 */
+	checkForUpdates: async function () {
+		let button = document.getElementById('pharos-check-updates');
+		button.disabled = true;
+		this._setUpdateMessage(Zotero.getString('pharos-prefs-checking-updates'));
+		try {
+			let state = await Zotero.Pharos.Updates.check({ reason: 'settings' });
+			this._renderUpdate(state);
+		}
+		catch (e) {
+			Zotero.logError(e);
+			this._renderUpdate({ status: 'error' });
+		}
+		finally {
+			button.disabled = false;
+		}
+	},
+
+	/**
+	 * Open the release page for the update the last check found.
+	 */
+	openUpdate: function () {
+		Zotero.Pharos.Updates.openRelease(Zotero.Pharos.Updates.getState());
+	},
+
+	_setUpdateMessage(text) {
+		let message = document.getElementById('pharos-update-message');
+		if (message) {
+			message.textContent = text || '';
+		}
+	},
+
+	/**
+	 * Paint a finished update check: version found, or the honest alternative.
+	 *
+	 * Only "available" and "ignored" draw the download row; "latest",
+	 * "unavailable" and "error" each say what they are, because a silent
+	 * "check finished" leaves the user guessing whether the button worked.
+	 */
+	_renderUpdate(state) {
+		let row = document.getElementById('pharos-update-available');
+		let note = document.getElementById('pharos-update-note');
+		if (!row) {
+			return;
+		}
+		let status = state && state.status;
+		if (status == 'available' || status == 'ignored') {
+			row.hidden = false;
+			let download = document.getElementById('pharos-update-download');
+			// Fluent's own formatter, not Zotero.getString(id, params): handed
+			// a params argument, getString routes to the .properties bundle,
+			// where no pharos-* id exists (see translate.js's identical note).
+			download.textContent = Zotero.ftl.formatValueSync(
+				'pharos-prefs-update-download', { version: state.version }
+			);
+			note.textContent = Zotero.getString(
+				status == 'ignored'
+					? 'pharos-prefs-update-ignored'
+					: 'pharos-prefs-update-found'
+			);
+			this._setUpdateMessage('');
+		}
+		else {
+			row.hidden = true;
+			let id = status == 'latest'
+				? 'pharos-prefs-update-latest'
+				: status == 'unavailable'
+					? 'pharos-prefs-update-none'
+					: 'pharos-prefs-update-failed';
+			this._setUpdateMessage(Zotero.getString(id));
 		}
 	},
 

@@ -74,6 +74,19 @@ pharos-prefs-sign-out-all = 退出所有设备
 pharos-prefs-sign-out-all-confirm = 这会让所有已登录 Pharos 的设备一并退出，是否继续？
 pharos-prefs-sign-out-all-help = 退出所有设备会吊销该账号签发过的全部令牌。
 
+# 「关于」区块：当前构建的版本号，以及是否存在更新。手动检查与左侧栏横幅共用
+# 同一个模块与端点，两个表面不可能给出相互矛盾的回答。
+pharos-prefs-about-header = 关于 Pharos
+pharos-prefs-about-version = 当前版本
+pharos-prefs-check-updates = 检查更新
+pharos-prefs-checking-updates = 正在检查更新…
+pharos-prefs-update-latest = 已是最新版本。
+pharos-prefs-update-none = 服务器暂未发布新版本。
+pharos-prefs-update-failed = 检查更新失败，请稍后重试。
+pharos-prefs-update-found = 新版本已发布。下载安装包并替换当前版本即可。
+pharos-prefs-update-ignored = 你已忽略该版本，仍可从下方下载。
+pharos-prefs-update-download = 下载 v{ $version }
+
 ## AI 对话
 
 # 网页版从头到尾叫「AI 对话」。同一个功能在两个客户端上叫两个名字，
@@ -1217,6 +1230,14 @@ pharos-rail-account-tooltip =
     .title = 设置与账号
 pharos-rail-account-sign-in-tooltip =
     .title = 登录 Pharos
+
+# 位于 spacer 与账号按钮之间的更新横幅。只有检测到用户尚未忽略的新版本时才会
+# 出现，所以这些文案每个版本用户最多看到一次。
+pharos-rail-update-title = 新版本可用：{ $version }
+pharos-rail-update-download = 立即更新
+pharos-rail-update-ignore = 忽略
+pharos-rail-update-tooltip =
+    .title = Pharos { $version } 已发布——点击前往下载
 
 ## 条目面板的翻译栏。
 ##

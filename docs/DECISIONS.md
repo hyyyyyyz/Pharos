@@ -118,6 +118,25 @@ does not own is worse than being honestly unsigned. The build skips notarisation
 cleanly and says so; setting `DEVELOPER_ID` and `NOTARIZATION_*` in
 `app/config-custom.sh` is all that is needed once an account exists.
 
+**Amended (update detection added; the Mozilla updater stays off).** The
+`[AppUpdate]` block remains disabled — Pharos does not use Mozilla's
+update machinery, and the reasoning above still stands. What changed is that
+Pharos now owns a check-and-download channel instead of no channel at all:
+
+- `GET /api/updates/desktop/latest` on the official backend advertises the
+  newest `desktop-v*` release (operator-pinnable via
+  `PHAROS_DESKTOP_UPDATE_VERSION_OVERRIDE`, otherwise the newest GitHub release
+  tag, cached for an hour). It is public, because a signed-out user is the one
+  most likely to be on an old build.
+- The desktop client checks it on startup and every six hours, shows a banner
+  in the module rail above the account button when a newer, non-dismissed
+  version exists, and offers the release page. The version shown in
+  Settings → Pharos compares against `Zotero.version`.
+- Installing remains the user's action. Pharos downloads nothing in the
+  background and never replaces the running build — an unsigned macOS bundle
+  cannot stage an update anyway, and a build that replaces itself mid-session
+  is a support problem, not a feature.
+
 ## 7. Tokens live in the OS credential store, keys never reach the browser
 
 The desktop client stores its bearer token in the login manager, under its own

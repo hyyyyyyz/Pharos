@@ -46,6 +46,7 @@ from pharos.api import (  # noqa: E402
     papers,
     projects,
     search,
+    updates,
     zotero,
 )
 from pharos.main import create_app  # noqa: E402
@@ -62,6 +63,9 @@ PUBLIC = {
     # the callback is instead bound to a one-use request token plus HttpOnly
     # browser state and never accepts a user id from the request.
     ("GET", "/api/zotero/oauth/callback"),
+    # The desktop client checks for new builds before sign-in; the payload is
+    # the same public release page an anonymous visitor can read on GitHub.
+    ("GET", "/api/updates/desktop/latest"),
 }
 
 #: Every router the application is supposed to mount. Listing them here rather
@@ -77,6 +81,7 @@ ROUTERS = [
     projects.router,
     discovery.router,
     evidence.router,
+    updates.router,
     directions.router,
     daily_vault.router,
     daily.router,

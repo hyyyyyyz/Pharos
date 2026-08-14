@@ -53,8 +53,15 @@ describe("Pharos module rail account footer", function () {
 		assert.ok(footer, "the account button is present");
 		assert.equal(inner.lastElementChild, footer,
 			"the account is the last thing in the column");
-		assert.ok(footer.previousElementSibling.classList.contains('pharos-rail-spacer'),
-			"a spacer is what pushes it down there");
+		// Between the spacer and the account sits the update banner: it belongs
+		// with the account (both are chrome the user acts on), and the spacer
+		// still absorbs the column's spare height above them both.
+		var update = rail.querySelector('.pharos-rail-update');
+		assert.ok(update, "the update banner is present");
+		assert.equal(footer.previousElementSibling, update,
+			"the update banner sits directly above the account");
+		assert.ok(update.previousElementSibling.classList.contains('pharos-rail-spacer'),
+			"a spacer is what pushes the banner and account down there");
 		// The spacer taking the leftover height is the whole mechanism: without
 		// it the footer sits directly under the last module and the rail looks
 		// like it lost half its content.
@@ -218,6 +225,127 @@ describe("Pharos module rail account footer", function () {
 			// tight rail rather than like a bug.
 			assert.equal(Math.round(box.width), Math.round(box.height),
 				"square, so it centres like the modules do");
+		});
+	});
+
+	describe("update banner", function () {
+		var box, origIgnored;
+		var origLaunchURL = null;
+		var launched = [];
+
+		function availableState(version) {
+			return {
+				status: 'available',
+				version: version || '9.9.9',
+				url: 'https://example.test/releases',
+				notes: null,
+			};
+		}
+
+		function observeState(state) {
+			// The real observer path: Updates serialises the state and the rail's
+			// observer object feeds it to _observeUpdate, which paints the box.
+			rail._observeUpdate(JSON.stringify(state));
+		}
+
+		before(function () {
+			origIgnored = Zotero.Prefs.get('pharos.update.ignoredVersion');
+			origLaunchURL = Zotero.launchURL;
+			Zotero.launchURL = function (url) {
+				launched.push(url);
+			};
+			box = rail.querySelector('.pharos-rail-update');
+		});
+
+		afterEach(function () {
+			launched = [];
+			rail.railCollapsed = false;
+		});
+
+		after(function () {
+			Zotero.launchURL = origLaunchURL;
+			Zotero.Prefs.set('pharos.update.ignoredVersion', origIgnored || '');
+			// A finished check for something equal-or-older hides the banner
+			// again, so this window leaves the rail in its resting state.
+			rail._observeUpdate(JSON.stringify(
+				{ status: 'latest', version: '9.9.9', url: null, notes: null }
+			));
+		});
+
+		it("should sit between the spacer and the account", function () {
+			assert.ok(box, "the banner exists");
+			assert.equal(box.nextElementSibling, footer);
+			assert.ok(box.previousElementSibling.classList.contains('pharos-rail-spacer'));
+		});
+
+		it("should show for an available version and name it", function () {
+			observeState(availableState('9.9.9'));
+			assert.isFalse(box.hidden, "an available update must draw the banner");
+			var title = box.querySelector('.pharos-rail-update-title');
+			var version = box.querySelector('.pharos-rail-update-version');
+			// The version span is plain text (synchronous); the title goes
+			// through DOM localization, which applies asynchronously, so its id
+			// and its ftl message are what a test can pin.
+			assert.equal(version.textContent, '9.9.9');
+			assert.equal(title.getAttribute('data-l10n-id'), 'pharos-rail-update-title');
+			assert.include(
+				Zotero.ftl.formatValueSync('pharos-rail-update-title', { version: '9.9.9' }),
+				'9.9.9',
+				"the title message must carry the version"
+			);
+			assert.equal(
+				box.querySelector('.pharos-rail-update-download').getAttribute('data-l10n-id'),
+				'pharos-rail-update-download'
+			);
+			assert.equal(
+				box.querySelector('.pharos-rail-update-ignore').getAttribute('data-l10n-id'),
+				'pharos-rail-update-ignore'
+			);
+		});
+
+		it("should hide for anything that is not an available update", function () {
+			observeState(availableState());
+			assert.isFalse(box.hidden);
+			for (let status of ['latest', 'ignored', 'unavailable', 'error']) {
+				rail._observeUpdate(JSON.stringify(
+					{ status, version: null, url: null, notes: null }
+				));
+				assert.isTrue(box.hidden, `${status} must hide the banner`);
+			}
+		});
+
+		it("should open the release page for the download action", function () {
+			observeState(availableState('9.9.9'));
+			box.querySelector('.pharos-rail-update-download').click();
+			assert.deepEqual(launched, ['https://example.test/releases']);
+		});
+
+		it("should remember a dismissal and hide the banner", function () {
+			observeState(availableState('9.9.9'));
+			box.querySelector('.pharos-rail-update-ignore').click();
+			assert.equal(Zotero.Prefs.get('pharos.update.ignoredVersion'), '9.9.9');
+			assert.isTrue(box.hidden, "ignoring hides it immediately");
+			// And a later check for the same version stays quiet.
+			Zotero.Prefs.clear('pharos.update.ignoredVersion');
+		});
+
+		it("should collapse to one icon that opens the release page", function () {
+			observeState(availableState('9.9.9'));
+			rail.railCollapsed = true;
+			assert.isFalse(box.hidden, "the banner survives collapsing");
+			assert.equal(
+				box.querySelector('.pharos-rail-update-text').getBoundingClientRect().width,
+				0,
+				"the labels are hidden when collapsed"
+			);
+			assert.equal(
+				box.querySelector('.pharos-rail-update-actions').getBoundingClientRect().width,
+				0,
+				"the buttons are hidden when collapsed"
+			);
+			box.click();
+			assert.deepEqual(launched, ['https://example.test/releases'],
+				"a collapsed banner is the download button");
 		});
 	});
 });

@@ -76,6 +76,20 @@ pharos-prefs-sign-out-all = Sign Out Everywhere
 pharos-prefs-sign-out-all-confirm = This signs out every device where you are signed in to Pharos. Continue?
 pharos-prefs-sign-out-all-help = Signing out everywhere revokes every token this account has ever been issued.
 
+# The about block: which build this is, and whether a newer one exists. The
+# manual check shares one module and one endpoint with the rail banner, so the
+# two surfaces can never disagree.
+pharos-prefs-about-header = About Pharos
+pharos-prefs-about-version = Current version
+pharos-prefs-check-updates = Check for Updates
+pharos-prefs-checking-updates = Checking for updates…
+pharos-prefs-update-latest = You are on the latest version.
+pharos-prefs-update-none = No new version has been published.
+pharos-prefs-update-failed = Could not check for updates. Please try again.
+pharos-prefs-update-found = A new version has been released. Download the installer and replace the current build.
+pharos-prefs-update-ignored = You dismissed this version. You can still download it below.
+pharos-prefs-update-download = Download v{ $version }
+
 ## AI Chat
 
 # The web client calls this "AI Chat" everywhere. One feature under two names is
@@ -1294,6 +1308,15 @@ pharos-rail-account-tooltip =
     .title = Settings & account
 pharos-rail-account-sign-in-tooltip =
     .title = Sign in to Pharos
+
+# The update banner between the spacer and the account button. It draws only
+# when a check finds a version the user has not dismissed, so every one of
+# these ids is a message someone sees once per release at most.
+pharos-rail-update-title = New version available: { $version }
+pharos-rail-update-download = Update
+pharos-rail-update-ignore = Dismiss
+pharos-rail-update-tooltip =
+    .title = Pharos { $version } is available — click to download
 
 ## The item pane's translation section.
 ##

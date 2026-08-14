@@ -183,6 +183,9 @@ const xpcomFilesLocal = [
 	'pharos/projects',
 	'pharos/admin',
 	'pharos/directions',
+	// Last of the service modules: it only builds on the API and has no
+	// dependents at load time; every UI surface reaches it lazily.
+	'pharos/updates',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";

@@ -429,6 +429,101 @@ $pharos-rail-item-collapsed: 32px;
 	min-height: 8px;
 }
 
+// The update banner: between the spacer and the account, so it sits directly
+// above the account button -- the one surface every user passes on the way to
+// settings. Hidden by default; only an available-and-not-ignored version
+// draws it.
+.pharos-rail-update {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0 6px 6px;
+	padding: 8px 9px;
+	border: 1px solid var(--color-border);
+	border-radius: 8px;
+	background: var(--material-background);
+	// Fixed contribution like the account row; the spacer above it still
+	// absorbs the column's spare height.
+	flex: none;
+	min-width: 0;
+}
+
+.pharos-rail-update-body {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.pharos-rail-update-icon {
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+	background: url("chrome://zotero/skin/16/universal/down.svg") no-repeat center / contain;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: var(--color-accent);
+	stroke: var(--color-accent);
+}
+
+.pharos-rail-update-text {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	flex: 1;
+	min-width: 0;
+}
+
+.pharos-rail-update-title,
+.pharos-rail-update-version {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.pharos-rail-update-title {
+	font-size: $font-size-small;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.pharos-rail-update-version {
+	font-size: 0.8077em;
+	color: var(--fill-tertiary);
+}
+
+.pharos-rail-update-actions {
+	display: flex;
+	gap: 6px;
+
+	button {
+		flex: 1;
+		min-width: 0;
+		padding: 3px 6px;
+		border-radius: 6px;
+		font-size: $font-size-small;
+	}
+
+	.pharos-rail-update-download {
+		border: none;
+		background: var(--color-accent);
+		// The platform-aware text colour for the accent, as the Pharos views
+		// use it (pharosProjects.scss:141); hover keeps the same background,
+		// which is also the convention there.
+		color: var(--color-accent-text);
+	}
+
+	.pharos-rail-update-ignore {
+		border: 1px solid var(--color-border);
+		background: transparent;
+		color: var(--fill-secondary);
+
+		&:hover {
+			background: var(--fill-quinary);
+		}
+	}
+}
+
 .pharos-rail-acct {
 	display: flex;
 	align-items: center;
@@ -522,5 +617,24 @@ $pharos-rail-item-collapsed: 32px;
 		padding: 0;
 		border-radius: 8px;
 		justify-content: center;
+	}
+
+	// The update banner collapses to one icon -- the whole box is the download
+	// button in this state, the way the account button collapses to its avatar.
+	.pharos-rail-update {
+		align-items: center;
+		justify-content: center;
+		width: $pharos-rail-item-collapsed;
+		height: $pharos-rail-item-collapsed;
+		margin: 0 6px 6px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.pharos-rail-update-text,
+	.pharos-rail-update-actions {
+		display: none;
 	}
 }

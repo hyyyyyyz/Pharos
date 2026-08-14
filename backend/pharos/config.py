@@ -167,6 +167,16 @@ class Settings(BaseSettings):
     llm_api_key: str | None = Field(default=None, deprecated=True)
     llm_model: str | None = Field(default=None, deprecated=True)
 
+    # --- desktop updates ---------------------------------------------------
+    #: GitHub repo whose desktop-v* release tags are the official update
+    #: channel. The update endpoint falls back to it when the operator has
+    #: not pinned an advertised version.
+    desktop_update_repo: str = "hyyyyyyz/Pharos"
+    #: Optional operator pin: advertise this exact version as the newest
+    #: desktop build, bypassing GitHub. Useful before a release lands publicly
+    #: or when GitHub is unreachable from the server. Must look like X.Y.Z.
+    desktop_update_version_override: str | None = None
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "pharos.db"
