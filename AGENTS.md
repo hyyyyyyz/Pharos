@@ -15,6 +15,15 @@ rather than after:
   and the reasons behind them. If a change would reverse one, that is a
   conversation, not a commit.
 
+For work on research automation, also read the full Harness set before touching
+code: [`HARNESS_LANDSCAPE.md`](docs/HARNESS_LANDSCAPE.md),
+[`HARNESS_ARCHITECTURE.md`](docs/HARNESS_ARCHITECTURE.md),
+[`HARNESS_WORKFLOWS.md`](docs/HARNESS_WORKFLOWS.md), and
+[`HARNESS_IMPLEMENTATION_PLAN.md`](docs/HARNESS_IMPLEMENTATION_PLAN.md). These
+documents distinguish target architecture from shipped behavior and define the
+phase gates that prevent one Agent from implementing the entire programme in a
+single unsafe change.
+
 ## What Pharos is
 
 An integrated research platform covering the whole arc: discover → read →
@@ -27,8 +36,9 @@ work to go in the wrong direction before.
 ## Repository map
 
 ```text
-backend/        FastAPI, SQLAlchemy, SQLite. The authority for accounts, papers,
-                jobs, AI chat, the daily digest, discovery and projects.
+backend/        FastAPI, SQLAlchemy, SQLite. The authority for accounts,
+                server-side paper records, jobs, AI chat, daily, discovery and
+                projects. The local Zotero library remains desktop-authoritative.
   pharos/       API routers, domain services, storage, engine adapter
   engine_worker/ isolated BabelDOC worker, emits NDJSON progress
 frontend/       React web companion. The browser/remote writing surface and admin console.

@@ -75,9 +75,9 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 - Discovery sources are abstract-only until the paper is in the library. A
   source with no `paper_id` cannot carry a page number, and evidence drawn from
   it is marked `abstract_only` rather than given a plausible-looking one.
-- The web client has no test runner at all — `tsc -b` and a production build are
-  the only gates. A pure predicate that decided whether to show a "translation
-  degraded" banner was wrong for a year because nothing could have caught it.
+- The web client now has focused Vitest coverage plus TypeScript and production
+  build gates, but it still lacks browser-level end-to-end coverage for the
+  complete reader, workflow, authentication, and recovery paths.
 
 ## Next
 
@@ -103,17 +103,28 @@ In rough order. Each is a workstream, not a ticket.
    selections retain rectangles, while ambiguous or cross-page selections safely
    degrade to quote-only evidence. Grounded Q&A and claim-level bindings remain
    downstream work.
-5. **Grounded paper Q&A** — answers that cite the passage they came from, so a
+5. **Build the Pharos Research Harness.** **Planned, not implemented.** H0 freezes
+   contracts and migrations; H1 delivers a restart-safe kernel and canary; H2
+   migrates Literature Discovery; H3 migrates Daily Papers; H4 adds Project
+   suggestions with human approval; H5 adds selected full-text reading plus an
+   outbound, user-approved desktop capability bridge; H6 hardens eval,
+   observability, quotas, and scale. H0-H6 do
+   not execute experiments or expose shell access. See
+   [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md),
+   [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md), and
+   [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md).
+6. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
-6. **Evidence-aware idea workflow** — proposing directions that carry the
+7. **Evidence-aware idea workflow** — proposing directions that carry the
    evidence they rest on.
-7. **Claim-to-result bindings** — a claim that knows which result supports it,
+8. **Claim-to-result bindings** — a claim that knows which result supports it,
    and notices when that result changes.
-8. **Writing.** The last stage of the arc, and the one that makes "一体化" true
+9. **Writing.** The last stage of the arc, and the one that makes "一体化" true
    rather than aspirational.
 
-The detailed contract for 2–6 is in
-[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
+The implemented research contract is in
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md); the planned execution programme
+has its own phase gates so design text cannot be mistaken for shipped behavior.
 
 ## Not doing
 

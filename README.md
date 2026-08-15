@@ -21,6 +21,8 @@ desktop-first platform.
 [Web App](https://pharos.selab.top/) ·
 [Architecture](docs/ARCHITECTURE.md) ·
 [Research workflow](docs/RESEARCH_WORKFLOW.md) ·
+[Research Harness](docs/HARNESS_ARCHITECTURE.md) ·
+[Harness plan](docs/HARNESS_IMPLEMENTATION_PLAN.md) ·
 [Roadmap](docs/ROADMAP.md) ·
 [Client phases](docs/PHASE-CLIENT.md) ·
 [Evidence phase](docs/PHASE-EVIDENCE.md) ·
@@ -179,8 +181,9 @@ in the same window as the reading:
   right-hand pane by default; the sidenav still reaches Info and Notes. The
   reader starts preparing the exact open attachment before the first question.
 - **Daily papers**, **literature discovery** and **research projects** under the
-  Tools menu. Anything found can be saved into the local library, PDF and the
-  model's reading included.
+  Tools menu. Their owner-scoped records are available in the same client;
+  promotion into the shared local Zotero library remains an explicit
+  per-feature import and is not yet available from every result surface.
 
 Its application profile, backend token, credentials, and settings remain
 separate. The reference library itself is Zotero's: the same items, collections,
@@ -509,10 +512,15 @@ Pharos deliberately distinguishes implemented records from automated research:
 - Desktop builds are unsigned. Signed and notarized releases, a Windows
   installer rather than a portable archive, and a mobile client are future work.
 
-The next major workstreams are grounded paper Q&A, an evidence-aware idea
-workflow, sandboxed experiment execution, claim-to-result bindings, and an
-evidence-constrained drafting/review pipeline. The detailed contract is
-recorded in [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
+The next major workstreams are the durable Research Harness, grounded paper
+Q&A, an evidence-aware idea workflow, claim-to-result bindings, and an
+evidence-constrained drafting/review pipeline. The implemented contract is in
+[`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md); the planned Harness
+architecture and phase gates are in
+[`docs/HARNESS_ARCHITECTURE.md`](docs/HARNESS_ARCHITECTURE.md) and
+[`docs/HARNESS_IMPLEMENTATION_PLAN.md`](docs/HARNESS_IMPLEMENTATION_PLAN.md).
+Experiment execution remains outside the authorised programme until Decision 9
+is explicitly superseded and a separate sandbox design is approved.
 
 ## Contributing
 

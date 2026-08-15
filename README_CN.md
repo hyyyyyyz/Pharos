@@ -19,6 +19,8 @@
 [浏览器客户端](https://pharos.selab.top/) ·
 [架构说明](docs/ARCHITECTURE.md) ·
 [科研工作流](docs/RESEARCH_WORKFLOW.md) ·
+[科研 Harness](docs/HARNESS_ARCHITECTURE.md) ·
+[Harness 落实计划](docs/HARNESS_IMPLEMENTATION_PLAN.md) ·
 [路线图](docs/ROADMAP.md) ·
 [客户端阶段记录](docs/PHASE-CLIENT.md) ·
 [证据阶段记录](docs/PHASE-EVIDENCE.md) ·
@@ -121,8 +123,8 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
   结果作为普通附件挂回同一条目——用同一个阅读器打开、能标注、能同步。
 - **AI 对话**：打开论文后，右侧默认直接显示占满高度的对话主面板；信息和笔记仍可
   通过右侧导航进入。系统会在第一次提问前理解阅读器里实际打开的那一个 PDF 附件。
-- **每日论文**、**文献探索**、**研究项目** 都在工具菜单下。找到的论文可连同 PDF
-  与模型解读一起存进本地文库。
+- **每日论文**、**文献探索**、**研究项目** 都在工具菜单下，并可查看各自按用户隔离的记录；
+  写入共享 Zotero 本地文库仍是各功能独立、由用户明确触发的导入动作，目前还没有覆盖所有结果界面。
 
 应用 profile、后端令牌、凭据与设置保持独立；引用文库本身就是 Zotero 的同一套
 条目、分类、附件、PDF、笔记和标注。Zotero、Vibero、Pharos 可以轮流打开，但不能
@@ -382,7 +384,12 @@ Pharos 明确区分“已经持久化的研究记录”和“真正的自动科�
 - Pharos 官方云服务位于 [pharos.selab.top](https://pharos.selab.top/)；GitHub Pages 只托管公开宣传站。
 - 桌面客户端已经存在，但正式签名、公证后的公开安装包以及移动端薄客户端仍属于后续工作。
 
-下一阶段的重点包括基于原文的可靠问答、证据感知的研究想法工作流、沙箱实验执行、结果与论文主张强绑定，以及受证据约束的写作与审阅流程。详细约束见 [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)。
+下一阶段的重点包括可恢复的 Research Harness、基于原文的可靠问答、证据感知的研究想法工作流、
+结果与论文主张强绑定，以及受证据约束的写作与审阅流程。已实现能力的契约见
+[`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md)；Harness 目标架构与阶段门槛见
+[`docs/HARNESS_ARCHITECTURE.md`](docs/HARNESS_ARCHITECTURE.md) 和
+[`docs/HARNESS_IMPLEMENTATION_PLAN.md`](docs/HARNESS_IMPLEMENTATION_PLAN.md)。在正式修订并取代
+Decision 9、且通过独立 sandbox 设计评审之前，实验执行不属于已授权阶段。
 
 ## 参与开发
 
