@@ -1,0 +1,77 @@
+# Pharos Harness run and step lifecycle
+
+Execution state and research outcome are deliberately separate. Leases and
+attempts make restart recovery explicit instead of pretending an in-memory task
+is durable. Approval rejection and input expiry flow through the frozen
+workflow policy; the diagram does not invent one universal terminal result.
+
+```mermaid
+flowchart TB
+    subgraph lifecycles["Durable state machines"]
+        direction LR
+
+        subgraph run["Run lifecycle"]
+            direction TB
+            rq["queued"] --> rr["running"] --> rs["succeeded"]
+            rr --> rwa["waiting_for_approval"]
+            rwa -->|"approve"| rr
+            rwa -->|"reject / expire"| rreduce["Definition reducer"]
+            rr --> rwi["waiting_for_input"]
+            rwi -->|"explicit resume"| rq
+            rwi -->|"expire"| rreduce
+            rreduce --> rterminal["Policy-defined Run result<br/>succeeded + partial/incomplete<br/>or failed / indeterminate"]
+            rr --> rp["paused"] -->|"resume"| rq
+            rr -->|"required failure"| rf["failed"]
+            rr -->|"external result unknown"| ri["indeterminate"]
+            rr -. "cancel request" .-> rc["cancelled"]
+        end
+
+        subgraph step["Step lifecycle"]
+            direction TB
+            sp["pending"] --> sr["ready"] --> sl["leased"] --> sx["running"] --> ss["succeeded"]
+            sx --> sw["waiting_for_approval"]
+            sw -->|"approve"| sr
+            sw -->|"reject / expire"| sreduce["Definition reducer"]
+            sx --> swi["waiting_for_input"]
+            swi -->|"explicit resume"| sr
+            swi -->|"expire"| sreduce
+            sreduce --> sterminal["Policy-defined Step result<br/>skipped · failed · indeterminate"]
+            sx -->|"condition false"| sk["skipped"]
+            sx --> sretry["retry_scheduled"] -->|"ready_at"| sr
+            recovery["reaper + Step policy"] -->|"idempotent + retryable"| sr
+            recovery -->|"not safely retryable"| sreduce
+            sx -->|"terminal error"| sf["failed"]
+            sx -. "cancel request" .-> sc["cancelled"]
+        end
+
+        subgraph attempt["Attempt lifecycle"]
+            direction TB
+            aq["created"] --> ar["running"] --> at["terminal + frozen"]
+            ar -->|"heartbeat / lease CAS"| ar
+            ar --> aa["abandoned + frozen"]
+            ar --> ai["indeterminate + frozen"]
+            aa -. "retry creates" .-> aq2["new Attempt"]
+        end
+    end
+
+    sl -. "lease expired" .-> aa
+    sx -. "heartbeat expired" .-> aa
+    aa -. "reaper CAS" .-> recovery
+
+    outcome["Execution state is separate from research outcome:<br/>complete · partial · incomplete"]
+    rs -.-> outcome
+    rterminal -.-> outcome
+    rf -.-> outcome
+
+    classDef active fill:#EEF2F8,stroke:#0C2040,color:#0C2040,stroke-width:2px;
+    classDef wait fill:#FFF4D6,stroke:#D59B00,color:#0C2040,stroke-width:2px;
+    classDef success fill:#EAF6F4,stroke:#189090,color:#0C2040,stroke-width:2px;
+    classDef danger fill:#FDECEA,stroke:#B94545,color:#0C2040,stroke-width:2px;
+    classDef neutral fill:#F3EEE5,stroke:#8A7550,color:#0C2040,stroke-width:1.5px;
+
+    class rq,rr,rp,sp,sr,sl,sx,aq,ar,aq2 active;
+    class rwa,rwi,sw,swi,sretry wait;
+    class rs,ss,sk,at success;
+    class rf,ri,rc,sf,sc,aa,ai danger;
+    class outcome,rreduce,rterminal,sreduce,sterminal,recovery neutral;
+```

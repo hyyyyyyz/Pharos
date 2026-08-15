@@ -1,0 +1,46 @@
+%%{init: {"flowchart": {"nodeSpacing": 60, "rankSpacing": 12, "curve": "linear"}}}%%
+flowchart LR
+    subgraph daily["Daily Papers"]
+        direction TB
+        d0["Schedule +<br/>deterministic ingest"] --> d1["Bounded<br/>abstract reading"]
+        d1 --> d2["Validate cards +<br/>public release"]
+        d2 --> d3["Owner projection +<br/>match · rank"]
+        d3 --> d4["Optional synthesis +<br/>Daily feed"]
+        d4 -. "optional promotion" .-> d5["Exact approval"]
+        d5 --> d6["Web import · Vault<br/>Zotero action"]
+    end
+
+    subgraph discovery["Literature Discovery"]
+        direction TB
+        l0["Research brief +<br/>bounded query plan"] --> l1["Validate plan +<br/>search sources"]
+        l1 --> l2["Normalize · deduplicate<br/>rule cards"]
+        l2 --> l3["Optional Chinese<br/>trick cards"]
+        l3 --> l4["Cluster · critic +<br/>published result set"]
+        l4 -. "optional promotion" .-> l5["Exact approval"]
+        l5 --> l6["Web library · ProjectSource<br/>Zotero action"]
+    end
+
+    subgraph project["Project Research"]
+        direction TB
+        p0["Project snapshot +<br/>bounded search plan"] --> p1["Optional Discovery<br/>child runs"]
+        p1 --> p2["Evidence inventory"]
+        p2 --> p3["Evidence matrix +<br/>hypotheses"]
+        p3 --> p4["Critic · research plan +<br/>decision packet"]
+        p4 --> p5["Exact promotion approval"]
+        p5 --> p6["Draft ProjectArtifact<br/>no result · no verified · no stage change"]
+    end
+
+    daily ~~~ discovery
+    discovery ~~~ project
+
+    classDef deterministic fill:#EAF6F4,stroke:#189090,color:#0C2040,stroke-width:2px;
+    classDef agent fill:#FFF4D6,stroke:#D59B00,color:#0C2040,stroke-width:2px;
+    classDef mixed fill:#F3EEE5,stroke:#8A7550,color:#0C2040,stroke-width:2px;
+    classDef approval fill:#FDECEA,stroke:#B94545,color:#0C2040,stroke-width:2px;
+    classDef output fill:#EEF2F8,stroke:#0C2040,color:#0C2040,stroke-width:2px;
+
+    class d0,d2,d3,l1,l2,p2 deterministic;
+    class d1,l3 agent;
+    class d4,l0,l4,p0,p1,p3,p4 mixed;
+    class d5,l5,p5 approval;
+    class d6,l6,p6 output;

@@ -4,7 +4,11 @@
 > Research OS 演进时必须保持的边界。自动 Idea 生成、实验执行和自动写作仍明确标为 Future，
 > 不应从本文推断为现有能力。
 
-本文是 research slice 的唯一详细规范；[`ARCHITECTURE.md`](ARCHITECTURE.md) 只保留全局架构和入口。
+本文是已实现 research slice 的详细规范；[`ARCHITECTURE.md`](ARCHITECTURE.md) 只保留全局架构和入口。
+下一代可恢复执行层已进入设计阶段，但尚未实现，见
+[`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md)、
+[`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md) 与
+[`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
 
 ## 1. 四个顶层模块
 
@@ -284,6 +288,11 @@ FastAPI
 Research workflow 直接构建在现有 FastAPI、SQLAlchemy 与 SQLite 上。v1 不引入 Dify、LangGraph、Neo4j
 或另一个工作流控制平面；当前流程有界且主要由用户推进，显式 Python/service 代码更容易测试和审计。
 
+这段话只描述已经上线的 v1。Decision 16 已确定未来新增 Pharos-native Research Harness，但不会
+原地重写 v1：Harness 先以 feature flag 和独立表运行，经 shadow comparison 与阶段验收后，才通过
+显式 publish step 物化到现有业务表。Workflow 决定顺序、权限和恢复，Agent 只在一个有界 Step 中
+判断；聊天记录不成为执行状态。
+
 自动生成内容只应保存结构化结论、简要理由和来源，不保存或展示 raw chain-of-thought。外部 novelty 搜索
 未来只能报告 `likely_distinct`、`likely_overlap` 或 `search_incomplete`，不能声称“确认原创”。
 
@@ -380,11 +389,15 @@ claim
 
 ## 11. Future：ARIS 式扩展顺序
 
-1. 让 grounded Q&A、ProjectSource 和 Claim 直接引用已经验证的 `Evidence`；
-2. 再加入 Research Profile、Idea Card 和 Validation Plan 的结构化 schema；
-3. 增加带来源的 Idea 生成、独立反方评审和不确定性明确的 novelty search；
-4. 在隔离环境中实现 Research Contract 与最小实验闭环；
-5. 最后让 Claim 和写作只消费可追溯 Evidence / Experiment Result。
+1. 先完成 Harness durable kernel，再把文献探索迁移为第一个真实异步工作流；
+2. 迁移每日论文，并把共享抓取与按用户投递拆为两个隐私边界清晰的 Run；
+3. 让 grounded Q&A、ProjectSource 和 Claim 直接引用已经验证的 `Evidence`；
+4. 再加入 Research Profile、Idea Card、Validation Plan、带来源 Idea、反方评审与不确定性明确的
+   novelty search；
+5. 最后让 Claim 和写作只消费可追溯 Evidence 与经过人工接受的研究产物。
+
+实验执行不属于上述已授权阶段。只有正式修订并取代 Decision 9、完成隔离 Runtime/网络/数据/预算
+契约并通过单独安全评审后，才可以规划 Research Contract 与最小实验闭环。
 
 这条顺序确保 Pharos 先建立真实研究记录和证据，再增加自动化程度，而不是先生成无法验证的“完整论文”。
 

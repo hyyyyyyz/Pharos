@@ -14,13 +14,17 @@ side-by-side (`dual`) PDF.
 
 **Long-term:** grow from a Zotero-derived desktop research client into an
 evidence-first Research OS: discover and read papers, turn page-addressable
-evidence into testable ideas, plan and execute bounded experiments, and carry
+evidence into testable ideas, plan experiments, and—only after Decision 9 is
+formally superseded—execute bounded experiments, then carry
 verified claims into writing. The desktop client is primary and owns the local
 research experience. The backend supplies model, translation, account, and
 remote-companion capabilities; it is not the authority for the local Zotero
 library. The detailed workflow lives in
 [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md), and the desktop data contract in
-[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md).
+[`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md). The planned durable
+execution layer for multi-step research automation is specified separately in
+[`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md); it is not an implemented
+capability merely because it is documented.
 
 ## 2. Engine choice
 
@@ -40,13 +44,14 @@ original geometry), and a mature open-source engine already solves it.
 - Formulas / inline math are protected by placeholder tokens so the LLM never
   translates them.
 
-MinerU / marker (structured extraction) are **not** the MVP engine. They become
-useful later to populate text chunks for RAG/Q&A, added behind the same
-`TranslationEngine` seam without disturbing the API or UI.
+MinerU / marker (structured extraction) are **not** the MVP engine. Current
+ingestion uses PyMuPDF to populate full text and page-addressable chunks. A
+future structured extractor belongs behind a separate extraction seam; it must
+not be coupled to the `TranslationEngine` protocol.
 
 ## 3. Engine embedding: arm's-length subprocess
 
-The engine runs as a **separate OS process in its own conda environment**,
+The engine runs as a **separate OS process in its own isolated engine environment**,
 invoked by the backend via `asyncio.create_subprocess_exec`. A thin
 `engine_worker` imports `do_translate_async_stream`, iterates the async
 generator, and prints **one NDJSON line per event** (`progress` / `finish` /
@@ -55,8 +60,10 @@ generator, and prints **one NDJSON line per event** (`progress` / `finish` /
 Three reasons this is a subprocess, not an in-process import:
 
 1. **Native-dep quarantine.** The engine drags in `hyperscan`, `onnxruntime`,
-   and `pymupdf` built for **x86_64 / Rosetta** (see §5). Keeping them in a
-   separate env leaves the backend env a clean native-arm64 Python 3.13.
+   and `pymupdf`. Keeping them in a separate environment prevents their native
+   dependency constraints from leaking into the API environment. Production
+   uses the Linux virtual environment at `/opt/pharos-engine`; Apple-Silicon
+   source development uses the x86_64/Rosetta environment described in §5.
 2. **Crash isolation.** A segfault in a native dep kills the worker, not the API.
 3. **AGPL boundary (see §7).** A genuine arm's-length process is the recognized
    aggregation seam. **Never set `settings.basic.debug=True`** — it collapses the
@@ -92,8 +99,11 @@ The research v1 is implemented in the same FastAPI application: discovery
 adapters query arXiv/OpenAlex, normalise and deduplicate results, and project
 services persist the user's sources and stage records in SQLite. It deliberately
 does not introduce Dify, LangGraph, Neo4j, or another workflow control plane.
-The current stage flow is user-driven; future automated stages must remain
-explicit, persisted, and independently testable.
+That statement describes the **current v1 implementation**, not the target
+architecture. Decision 16 now authorises a Pharos-native Research Harness as a
+future additive control plane. The current stage flow remains user-driven until
+each Harness phase passes its explicit gate; future automated stages must remain
+explicit, persisted, bounded, and independently testable.
 
 ### Request flow
 
@@ -102,7 +112,9 @@ explicit, persisted, and independently testable.
 2. `POST /papers/{id}/translate` — returns **`202` + `job_id` immediately**; a
    bounded asyncio worker pool drives one engine subprocess per job and pushes
    events onto a per-job `asyncio.Queue`. Job status/progress is persisted to
-   SQLite so a browser refresh (or worker restart) can re-attach.
+   SQLite so a browser refresh can re-attach to the latest snapshot. A backend
+   restart can read that snapshot but **cannot resume the lost execution**;
+   durable leases and recovery belong to the planned Research Harness.
 3. `GET /jobs/{job_id}/events` — an optional **SSE** (`text/event-stream`)
    progress endpoint with heartbeat comments. Current web and desktop clients
    poll persisted job state instead.
@@ -145,8 +157,10 @@ pymupdf install with zero compiling. Translation is network/LLM-bound, so the
 Rosetta overhead is negligible. This is automated in
 [`scripts/setup_engine_env.sh`](../scripts/setup_engine_env.sh).
 
-On **Linux / Windows x86_64** (e.g. a future always-on backend), hyperscan has
-native wheels — the engine installs with no Rosetta dance at all.
+On **Linux x86_64**, including the production container, hyperscan has native
+wheels and the image installs the engine in `/opt/pharos-engine`; no Rosetta or
+conda assumption belongs to the production component contract. Windows x86_64
+source environments likewise do not need the Apple-Silicon workaround.
 
 First run downloads a ~75 MB DocLayout-YOLO model + fonts from HuggingFace;
 pre-cache with a warmup (or `--generate-offline-assets` / `--restore-offline-assets`)
@@ -268,3 +282,30 @@ defined in [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md).
 - SQLite remains the source of truth until measured requirements justify a
   vector index or graph store. Adding retrieval infrastructure must not leak a
   user's papers, profile, notes, ideas, or experiment history across accounts.
+
+## 10. Planned Research Harness
+
+Daily Papers, Literature Discovery, and Project Research currently use three
+different execution shapes. Their future automation converges on one additive,
+durable Harness whose database records Run, Step, Attempt, Event, Artifact,
+Approval, lease, and usage state. Existing domain tables remain authoritative;
+an explicit idempotent publish step materialises accepted Harness output into
+`DailyPaper`, `LiteratureResult`, `Evidence`, or `ProjectArtifact`.
+
+The Harness follows one load-bearing rule:
+
+> Workflow controls order, authority, budget, recovery, and publication;
+> an Agent may make decisions only inside one typed, bounded Step.
+
+The target design, open-source comparison, concrete business workflows, staged
+delivery gates, and implementation hand-off are maintained in:
+
+- [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md)
+- [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)
+- [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)
+- [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)
+
+H0-H6 do not grant Agents shell access, direct access to `zotero.sqlite`, or the
+ability to execute experiments. Decision 9 remains in force. A future experiment
+runtime requires a separate decision and sandbox architecture before it can be
+planned as implementation work.

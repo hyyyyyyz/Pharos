@@ -348,3 +348,48 @@ explicitly designated this correction as `1.3.1`: it closes an unintended
 configuration surface in the official testing release before subscriptions or
 service guarantees exist. This is a recorded PATCH exception, not a silent
 change to the general versioning rule.
+
+## 16. Research automation uses a durable workflow Harness with bounded Agents
+
+Daily Papers, Literature Discovery, and Project Research will converge on an
+additive Pharos Research Harness. A versioned Workflow Definition controls the
+graph, state transitions, leases, retry, cancellation, approval, policy,
+entitlement, budget, and publication. An Agent is only a typed Step executor
+with a fixed role, tool catalogue, input/output schema, turn limit, deadline,
+and cost ceiling. Agents do not form an unbounded group chat and cannot create
+new tools, permissions, or child workflows without deterministic validation.
+
+The Harness keeps its own Run, Step, Attempt, Event, Artifact, Approval, and
+usage records, but it is not a second business database. Existing domain tables
+remain authoritative. Only an explicit, validated, idempotent publish Step may
+materialise an accepted result into `DailyPaper`, `LiteratureResult`,
+`Evidence`, or `ProjectArtifact`. Chat history and compacted context are views
+over durable state, not the state itself.
+
+H0 freezes contracts and introduces explicit migrations inside the existing
+FastAPI + SQLAlchemy + SQLite service; it deliberately starts no dispatcher.
+H1 adds the database-backed lease dispatcher and bounded in-process executors.
+We adopt the useful semantics demonstrated by Pi, OpenCode, LangGraph,
+OpenHands, Pydantic AI, CrewAI, AutoGen, and Codex, but do not add those
+orchestration frameworks as H0-H4 dependencies. A framework or external queue
+requires measured pressure, a migration/rollback plan, and a new decision.
+
+This decision supersedes only the v1 stage choice in
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md) that no workflow control plane was
+needed for the current user-driven flow. It does not describe the Harness as
+implemented, does not replace the current APIs before phase cutover, and does
+not weaken any earlier boundary:
+
+- Decision 3 and 11 still make the Zotero-derived desktop and shared local
+  library primary; the backend never opens `zotero.sqlite`;
+- Decision 9 still forbids experiment execution, shell access, and GPU
+  allocation in H0-H6;
+- Decision 14 still prevents administrators from browsing user research
+  content merely because Harness records exist;
+- every owner-scoped Run and Artifact remains private, and secrets or raw
+  chain-of-thought never become Event or Trace payloads.
+
+The source of truth for this decision is
+[`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md); implementation order and
+release gates are in
+[`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md).

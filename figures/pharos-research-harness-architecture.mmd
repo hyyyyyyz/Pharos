@@ -1,0 +1,82 @@
+flowchart TB
+    subgraph top[" "]
+        direction LR
+        subgraph surfaces["Product surfaces"]
+            direction TB
+            desktop["Pharos Desktop<br/>Zotero-derived primary client"]
+            web["React Web Companion"]
+            trigger["User · schedule · operator trigger"]
+        end
+
+        subgraph control["Harness control plane"]
+            direction TB
+            api["Harness API<br/>start · inspect · pause · resume · cancel"]
+            scheduler["Level-triggered scheduler<br/>idempotent due-run creation"]
+            registry["Versioned workflow + config registry<br/>typed DAG · activation · writer fence<br/>prompt/tool/policy versions"]
+            policy["Policy + approval + entitlement<br/>allow · ask · deny · budget"]
+            runsvc["Run service + state machine<br/>Run · Step · Attempt"]
+            store["Durable harness store<br/>config · events · artifacts · approvals · usage"]
+        end
+    end
+
+    subgraph bottom[" "]
+        direction LR
+        subgraph execution["Bounded execution"]
+            direction TB
+            admission["Weighted workload admission<br/>Harness · Daily · translation headroom"]
+            dispatcher["DB-backed dispatcher<br/>lease · heartbeat · safe recovery"]
+            runner["Step runner<br/>timeout · cancel · schema validation"]
+            deterministic["Deterministic capabilities<br/>fetch · parse · dedup · rank · publish"]
+            agent["Bounded agent turn<br/>role · context pack · typed output"]
+            model["Model gateway<br/>official · system-shared · encrypted BYOK<br/>idempotent or explicitly indeterminate"]
+        end
+
+        subgraph integrations["Integrations and domain truth"]
+            direction TB
+            sources["Allowlisted sources<br/>arXiv · OpenAlex · Crossref"]
+            services["Pharos domain services<br/>library · evidence · projects"]
+            artifacts["Immutable artifacts + provenance<br/>hashes · lineage · sensitivity"]
+            projection["Public release → owner projection<br/>user-scoped input for later runs"]
+            domain["Existing business records<br/>DailyPaper · LiteratureResult · Evidence · ProjectArtifact"]
+            blobs["Content-addressed blob storage"]
+            localbridge["Future desktop bridge<br/>outbound and user-approved Zotero/PDF actions"]
+        end
+    end
+
+    desktop --> api
+    web --> api
+    trigger --> api
+    trigger --> scheduler
+    api --> runsvc
+    scheduler --> runsvc
+    registry --> runsvc
+    policy --> runsvc
+    runsvc --> store
+    store --> admission
+    admission --> dispatcher
+    dispatcher --> runner
+    runner --> deterministic
+    runner --> agent
+    agent --> model
+    agent --> deterministic
+    deterministic --> sources
+    deterministic --> services
+    deterministic -. "explicit local request" .-> localbridge
+    runner --> artifacts
+    artifacts --> blobs
+    artifacts -->|"allowlisted public only"| projection
+    artifacts -->|"validated publish step"| domain
+    services --> domain
+    store -. "cursor replay / SSE" .-> api
+
+    classDef surface fill:#EAF6F4,stroke:#189090,color:#0C2040,stroke-width:2px;
+    classDef control fill:#EEF2F8,stroke:#0C2040,color:#0C2040,stroke-width:2px;
+    classDef exec fill:#FFF4D6,stroke:#D59B00,color:#0C2040,stroke-width:2px;
+    classDef data fill:#FFFDF8,stroke:#8A7550,color:#0C2040,stroke-width:2px;
+
+    class desktop,web,trigger surface;
+    class api,scheduler,registry,policy,runsvc,store control;
+    class admission,dispatcher,runner,deterministic,agent,model exec;
+    class sources,services,artifacts,projection,domain,blobs,localbridge data;
+    style top fill:none,stroke:none
+    style bottom fill:none,stroke:none
