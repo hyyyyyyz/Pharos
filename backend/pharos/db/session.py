@@ -72,7 +72,22 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
 
 
 def init_engine(db_path: Path) -> Engine:
-    """Create (once) the SQLite engine, enable WAL, and create tables."""
+    """Create (once) the SQLite engine, enable WAL, and create tables.
+
+    Startup order is deliberately fixed:
+
+    1. the SQLAlchemy engine and its per-connection pragmas;
+    2. legacy ``create_all`` + additive column/index compatibility (legacy
+       tables only -- the Harness tables live on their own metadata and are
+       created exclusively by the versioned migration runner);
+    3. the versioned migration batch (ledger + all pending revisions, one
+       ``BEGIN IMMEDIATE`` transaction, see :mod:`pharos.db.migrations`);
+    4. the FTS virtual table and triggers, which reference legacy columns and
+       must come last.
+
+    A failed migration batch rolls back completely and the exception stops the
+    application from starting with a half-upgraded schema.
+    """
     global _engine, _SessionLocal
     if _engine is not None:
         return _engine
@@ -86,6 +101,11 @@ def init_engine(db_path: Path) -> Engine:
     Base.metadata.create_all(engine)
     _add_missing_columns(engine)
     _add_missing_indexes(engine)
+    # Imported here, not at module top: migrations only needs the db path, and
+    # importing it eagerly would make every db import carry its CLI surface.
+    from pharos.db.migrations import run_migrations
+
+    run_migrations(db_path)
     _init_fts(engine)
     _engine = engine
     _SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
