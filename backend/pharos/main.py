@@ -22,6 +22,7 @@ from pharos.api import (
     directions,
     discovery,
     evidence,
+    harness,
     jobs,
     organise,
     papers,
@@ -67,6 +68,19 @@ def create_app() -> FastAPI:
         app.state.library = library
         app.state.job_manager = JobManager(engine, blobs, settings.max_concurrent_jobs)
 
+        # The Research Harness kernel: definitions, config head, dispatcher and
+        # runner. Its default snapshot keeps every gate off, so a plain
+        # restart changes nothing user-visible; the loop starts only when the
+        # dispatcher gate is enabled by an operator revision.
+        from pharos.harness.app import HarnessApp
+
+        harness = HarnessApp()
+        harness.ensure_bootstrapped()
+        app.state.harness = harness
+        harness_task: asyncio.Task | None = None
+        if harness.current_snapshot().gates.get("dispatcher_enabled"):
+            harness_task = harness.start_loop()
+
         # The daily digest keeps itself current: the scheduler checks hourly
         # whether today has been swept and sweeps it if not, so the user never
         # has to run anything by hand. Disable with PHAROS_DAILY_ENABLED=0.
@@ -78,6 +92,8 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            if harness_task is not None:
+                await harness.stop_loop()
             # Stop the timer before the sweep, so it cannot start a new one
             # while we are cancelling the current one.
             await scheduler.aclose()
@@ -125,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery.router)
     app.include_router(evidence.router)
     app.include_router(updates.router)
+    app.include_router(harness.router)
     # BEFORE daily.router, and the order is load-bearing rather than tidy. Both
     # share the /api/daily prefix, and daily.router serves GET /api/daily/{date}
     # whose path segment matches anything — the YYYY-MM-DD pattern on it is a
