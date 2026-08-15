@@ -4,7 +4,11 @@ describe("Zotero.Pharos.Harness", function () {
 
 	function captureRequests(responder) {
 		requests = [];
-		origRequest = Zotero.Pharos.API.request;
+		// Snapshot the real transport once. A second capture within the same
+		// test would otherwise "restore" to the previous stub and leak it.
+		if (origRequest === null) {
+			origRequest = Zotero.Pharos.API.request;
+		}
 		Zotero.Pharos.API.request = function (method, path, options) {
 			requests.push({ method, path, options });
 			if (typeof responder == 'function') {
