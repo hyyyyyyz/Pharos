@@ -4,9 +4,9 @@ import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
 import type { AuthUser, ZoteroOAuthResult } from "./api/types";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
-export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "admin";
+export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "runs" | "admin";
 /** Modules that are actually built. Everything else falls through to <ComingSoon />. */
-export type LiveModuleKey = "library" | "daily" | "search" | "kb" | "admin";
+export type LiveModuleKey = "library" | "daily" | "search" | "kb" | "runs" | "admin";
 export type ReadMode = "zh" | "bilingual" | "original";
 export type OutlineMode = "outline" | "thumbs";
 export type SettingsTab = "account" | "ai" | "appearance" | "daily";

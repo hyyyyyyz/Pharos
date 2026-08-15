@@ -1,0 +1,381 @@
+/* The Run Center: minimal, honest, durable. State comes from the API; the
+   polling clock is an optimisation, never the truth. */
+
+.ph-runcenter {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ph-runcenter-list {
+  border-inline-end: 1px solid var(--c-bd);
+  background: var(--c-rail);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ph-runcenter-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--c-tx);
+}
+
+.ph-runcenter-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.ph-runcenter-filters button {
+  border: 1px solid var(--c-bd);
+  background: transparent;
+  color: var(--c-tx2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ph-runcenter-filters button.is-on {
+  background: var(--c-acc);
+  color: var(--c-acc);
+  border-color: transparent;
+}
+
+.ph-runcenter-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ph-runcenter-runs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: start;
+  cursor: pointer;
+  color: var(--c-tx);
+}
+
+.ph-runcenter-runs button:hover {
+  background: var(--c-hv);
+}
+
+.ph-runcenter-runs button.is-active {
+  background: var(--c-acc);
+  color: var(--c-acc);
+}
+
+.ph-runcenter-run-workflow {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.ph-runcenter-run-time {
+  font-size: 11px;
+  color: var(--c-tx3);
+}
+
+.ph-runcenter-runs button.is-active .ph-runcenter-run-time {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.ph-run-state {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--c-bd);
+  color: var(--c-tx2);
+  white-space: nowrap;
+}
+
+.ph-run-state--succeeded {
+  background: rgba(23, 144, 144, 0.14);
+  color: #137373;
+}
+
+.ph-run-state--failed {
+  background: rgba(194, 65, 47, 0.14);
+  color: #a33a2a;
+}
+
+.ph-run-state--running,
+.ph-run-state--queued {
+  background: rgba(24, 46, 78, 0.12);
+  color: var(--c-tx);
+}
+
+.ph-run-state--waiting_for_approval,
+.ph-run-state--waiting_for_input {
+  background: rgba(224, 164, 35, 0.18);
+  color: #8a6a1e;
+}
+
+.ph-run-state--indeterminate {
+  background: rgba(138, 106, 79, 0.2);
+  color: #6d5340;
+}
+
+.ph-runcenter-detail {
+  overflow-y: auto;
+  padding: 16px 20px 32px;
+  min-width: 0;
+}
+
+.ph-runcenter-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ph-runcenter-detail-head h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.ph-runcenter-detail-id {
+  font-size: 11px;
+  color: var(--c-tx3);
+  font-family: ui-monospace, monospace;
+}
+
+.ph-runcenter-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ph-runcenter-detail-actions button {
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ph-runcenter-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 16px;
+  color: var(--c-tx2);
+  font-size: 12px;
+}
+
+.ph-runcenter-outcome {
+  color: var(--c-tx);
+}
+
+.ph-runcenter-error {
+  color: var(--c-err);
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.ph-runcenter-section {
+  margin-top: 18px;
+}
+
+.ph-runcenter-section h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: var(--c-tx2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ph-runcenter-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ph-run-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-block-end: 1px solid var(--c-bd);
+  font-size: 13px;
+}
+
+.ph-run-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-bd);
+}
+
+.ph-run-step-dot--succeeded {
+  background: #179090;
+}
+
+.ph-run-step-dot--failed {
+  background: #c2412f;
+}
+
+.ph-run-step-dot--running,
+.ph-run-step-dot--leased {
+  background: #182e4e;
+}
+
+.ph-run-step-dot--waiting_for_approval,
+.ph-run-step-dot--waiting_for_input,
+.ph-run-step-dot--retry_scheduled {
+  background: #e0a423;
+}
+
+.ph-run-step-dot--indeterminate {
+  background: #8a6a4f;
+}
+
+.ph-run-step-key {
+  font-weight: 600;
+}
+
+.ph-run-step-state {
+  color: var(--c-tx3);
+  font-size: 12px;
+}
+
+.ph-run-step-attempts {
+  color: var(--c-tx3);
+  font-size: 12px;
+  margin-inline-start: auto;
+}
+
+.ph-run-step-detail {
+  color: var(--c-err);
+  font-size: 12px;
+  flex-basis: 100%;
+  padding-inline-start: 16px;
+}
+
+.ph-run-approval {
+  border: 1px solid var(--c-bd);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-block-end: 8px;
+}
+
+.ph-run-approval-action {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ph-run-approval-effect {
+  color: var(--c-tx2);
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+
+.ph-run-approval-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ph-run-approval-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--c-bd);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--c-sf);
+  color: var(--c-tx);
+}
+
+.ph-run-approval-row button {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  background: var(--c-acc);
+  color: var(--c-acc);
+}
+
+.ph-run-artifact {
+  border: 1px solid var(--c-bd);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-block-end: 8px;
+}
+
+.ph-run-artifact-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ph-run-artifact-meta {
+  color: var(--c-tx3);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.ph-run-artifact-body {
+  margin: 8px 0 0;
+  font-size: 12px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ph-run-artifact-deleted {
+  color: var(--c-tx3);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.ph-runcenter-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.ph-runcenter-events li {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.ph-runcenter-event-seq {
+  color: var(--c-tx3);
+  min-width: 32px;
+}
+
+.ph-runcenter-event-type {
+  flex: 1;
+}
+
+.ph-runcenter-event-time {
+  color: var(--c-tx3);
+}
+
+.ph-runcenter-empty {
+  color: var(--c-tx3);
+  padding: 24px 8px;
+  text-align: center;
+  font-size: 13px;
+}

@@ -10,6 +10,7 @@ import { ReadingView } from "./components/ReadingView";
 import { DailyView } from "./components/DailyView";
 import { DiscoveryView } from "./components/DiscoveryView";
 import { ProjectsView } from "./components/ProjectsView";
+import { HarnessRunCenter } from "./components/HarnessRunCenter";
 import { AdminView } from "./components/AdminView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
@@ -70,6 +71,8 @@ export default function App() {
           <DiscoveryView />
         ) : activeModule === "kb" ? (
           <ProjectsView />
+        ) : activeModule === "runs" ? (
+          <HarnessRunCenter />
         ) : activeModule === "admin" ? (
           <AdminView />
         ) : (

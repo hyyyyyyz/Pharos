@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { api } from "../api/client";
+import { harnessApi } from "../api/harness";
 import { Icons } from "../design/icons";
 import {
   RAIL_DEFAULT_WIDTH,
@@ -30,10 +31,15 @@ interface NavDef {
    *  at all — the backend refuses the endpoints regardless, so this is about
    *  not advertising a door that will not open. */
   adminOnly?: boolean;
+  /** Only rendered when the Harness surface is reachable, so a deployment
+   *  with the Harness gated off shows no dead navigation. The backend gates
+   *  enforcement; this is presentation. */
+  harnessOnly?: boolean;
 }
 
 const NAV: NavDef[] = [
   { key: "library", label: "文库", title: "文库", Icon: Icons.library, comingSoon: false },
+  { key: "runs", label: "运行", title: "研究运行", Icon: Icons.settings, comingSoon: false, harnessOnly: true },
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
   { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
   { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
@@ -73,7 +79,30 @@ export function Rail(): JSX.Element {
   // non-administrator, so a hidden entry is a courtesy, not the security
   // boundary.
   const isAdmin = useSession((s) => s.user?.is_admin === true);
-  const visibleNav = NAV.filter((item) => !item.adminOnly || isAdmin);
+  // The 运行 entry appears only when the Harness surface actually answers:
+  // with the gates off the backend refuses the endpoint, and an entry that
+  // leads to a wall of errors is worse than no entry. Checked once per mount;
+  // a config flip requires a reload, which is the operator's restart anyway.
+  const [harnessAvailable, setHarnessAvailable] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    harnessApi
+      .workflows()
+      .then(() => {
+        if (!cancelled) setHarnessAvailable(true);
+      })
+      .catch(() => {
+        /* gated off — no entry */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const visibleNav = NAV.filter(
+    (item) =>
+      (!item.adminOnly || isAdmin) &&
+      (!item.harnessOnly || harnessAvailable),
+  );
 
   // The account footer names whoever is actually signed in. It reads the cached
   // session user, which is seeded from localStorage before the first paint and
