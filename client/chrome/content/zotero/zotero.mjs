@@ -186,6 +186,8 @@ const xpcomFilesLocal = [
 	// Last of the service modules: it only builds on the API and has no
 	// dependents at load time; every UI surface reaches it lazily.
 	'pharos/updates',
+	// Dormant owner-authenticated transport for research runs; no UI in H1.
+	'pharos/harness',
 ];
 
 import { CommandLineOptions } from "chrome://zotero/content/modules/commandLineOptions.mjs";
