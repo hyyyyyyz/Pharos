@@ -158,6 +158,7 @@ class RetryClass(StrEnum):
 
 class AttemptErrorClass(StrEnum):
     validation = "validation"
+    configuration = "configuration"
     auth = "auth"
     policy = "policy"
     provider = "provider"
@@ -257,6 +258,10 @@ class BudgetExhaustedError(HarnessError):
 
 class LeaseConflictError(HarnessError):
     """A lease/claim CAS lost its race."""
+
+
+class RetryableCapabilityError(HarnessError):
+    """A capability failed in a class its retry policy may retry."""
 
 
 class IdempotencyConflictError(HarnessError):

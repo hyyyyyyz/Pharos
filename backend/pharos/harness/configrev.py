@@ -141,7 +141,15 @@ def bootstrap_snapshot(
         raw = os.getenv(env)
         if raw:
             mode_overrides[key] = raw.strip().lower()
-    for key in sorted(set(BUSINESS_WORKFLOW_KEYS) | {CANARY_WORKFLOW_KEY}):
+    # Routes cover the workflows this build actually registers. A workflow
+    # with no route row is deterministically disabled + legacy, so H2+ keys
+    # need no row until their definitions exist.
+    known_keys = (
+        {workflow.workflow_key for workflow in registry.all_workflows()}
+        if registry is not None
+        else set(BUSINESS_WORKFLOW_KEYS) | {CANARY_WORKFLOW_KEY}
+    )
+    for key in sorted(known_keys):
         mode = mode_overrides.get(key)
         if mode in ("legacy", "shadow", "harness"):
             routes.append(
@@ -162,14 +170,6 @@ def bootstrap_snapshot(
         else:
             routes.append(WorkflowRoute(workflow_key=key, execution_mode=ExecutionMode.legacy))
 
-    if registry is not None:
-        for known in registry.all_workflows():
-            if not any(route.workflow_key == known.workflow_key for route in routes):
-                routes.append(
-                    WorkflowRoute(
-                        workflow_key=known.workflow_key, execution_mode=ExecutionMode.legacy
-                    )
-                )
     return HarnessConfigSnapshot(gates=gates, routes=tuple(routes), actor=actor, reason=reason)
 
 
@@ -246,7 +246,10 @@ def validate_snapshot(snapshot: HarnessConfigSnapshot, registry: Registry) -> li
                 f"route {route.workflow_key} may not use NULL execution_mode: "
                 "it has a legacy domain writer"
             )
-        if route.activation_state in (ActivationState.active, ActivationState.deprecated) and not route.active_version:
+        if (
+            route.activation_state in (ActivationState.active, ActivationState.deprecated)
+            and not route.active_version
+        ):
             errors.append(
                 f"route {route.workflow_key} is {route.activation_state.value} "
                 "but names no active_version"

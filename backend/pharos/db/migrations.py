@@ -97,11 +97,402 @@ def _ledger_ddl() -> str:
 # revisions; the first revision establishes nothing but the ledger itself.
 # --------------------------------------------------------------------------
 
+
+def _harness_ddl() -> tuple[str, ...]:
+    """The H1 Harness schema, split into revisions.
+
+    Written as literal SQL rather than generated from ORM metadata so that a
+    revision's checksum really means "this revision will always run exactly
+    this SQL". The ORM mirror in :mod:`pharos.harness.tables` must match this
+    DDL; a test pins the two together.
+
+    All lease/heartbeat/deadline times are UTC Unix epoch microseconds, never
+    SQLite datetimes. Owner scope is repeated on every user-visible table and
+    bound by composite foreign keys so a row can never silently change scope.
+    """
+
+    return (
+        # 0002: definitions and the single configuration authority.
+        """
+        CREATE TABLE harness_workflow_versions (
+            id TEXT PRIMARY KEY,
+            workflow_key TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            definition_json TEXT NOT NULL,
+            definition_sha256 TEXT NOT NULL,
+            input_schema TEXT NOT NULL,
+            output_schema TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (workflow_key, version),
+            UNIQUE (workflow_key, definition_sha256)
+        )
+        """,
+        """
+        CREATE TABLE harness_config_revisions (
+            id TEXT PRIMARY KEY,
+            parent_revision_id TEXT,
+            snapshot_json TEXT NOT NULL,
+            snapshot_sha256 TEXT NOT NULL,
+            gates_json TEXT NOT NULL,
+            actor TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE harness_config_workflow_routes (
+            revision_id TEXT NOT NULL REFERENCES harness_config_revisions(id),
+            workflow_key TEXT NOT NULL,
+            active_version INTEGER,
+            activation_state TEXT NOT NULL DEFAULT 'disabled'
+                CHECK (activation_state IN ('active','deprecated','disabled')),
+            execution_mode TEXT
+                CHECK (execution_mode IN ('legacy','shadow','harness')),
+            FOREIGN KEY (workflow_key, active_version)
+                REFERENCES harness_workflow_versions(workflow_key, version),
+            UNIQUE (revision_id, workflow_key)
+        )
+        """,
+        """
+        CREATE TABLE harness_config_head (
+            head_key TEXT PRIMARY KEY CHECK (head_key = 'singleton'),
+            current_revision_id TEXT REFERENCES harness_config_revisions(id),
+            updated_at TEXT NOT NULL
+        )
+        """,
+        # 0003: runs.
+        """
+        CREATE TABLE harness_runs (
+            id TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL CHECK (scope_type IN ('user','system')),
+            scope_id TEXT NOT NULL,
+            user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+            workflow_key TEXT NOT NULL,
+            workflow_version INTEGER NOT NULL,
+            definition_sha256 TEXT NOT NULL,
+            config_revision_id TEXT NOT NULL REFERENCES harness_config_revisions(id),
+            state TEXT NOT NULL
+                CHECK (state IN ('queued','running','waiting_for_approval',
+                    'waiting_for_input','paused','succeeded','failed',
+                    'cancelled','indeterminate')),
+            outcome TEXT CHECK (outcome IN ('complete','partial','incomplete')),
+            input_json TEXT NOT NULL,
+            input_sha256 TEXT NOT NULL,
+            policy_snapshot_json TEXT,
+            budget_json TEXT,
+            usage_json TEXT NOT NULL DEFAULT '{}',
+            initiator TEXT NOT NULL DEFAULT 'user'
+                CHECK (initiator IN ('user','schedule','operator','child_run')),
+            idempotency_key TEXT NOT NULL,
+            parent_run_id TEXT,
+            project_id TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            cancel_requested_at INTEGER,
+            pause_requested_at INTEGER,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            finished_at INTEGER,
+            error_code TEXT,
+            error_message TEXT,
+            UNIQUE (scope_type, scope_id, workflow_key, idempotency_key),
+            UNIQUE (id, scope_type, scope_id)
+        )
+        """,
+        # 0004: steps and attempts.
+        """
+        CREATE TABLE harness_steps (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            definition_step_key TEXT NOT NULL,
+            instance_key TEXT NOT NULL,
+            step_kind TEXT NOT NULL
+                CHECK (step_kind IN ('deterministic','agent','mapped','mapped_agent')),
+            definition_json TEXT NOT NULL,
+            state TEXT NOT NULL
+                CHECK (state IN ('pending','ready','leased','running',
+                    'waiting_for_approval','waiting_for_input',
+                    'retry_scheduled','succeeded','failed','cancelled',
+                    'skipped','indeterminate')),
+            depends_on_json TEXT NOT NULL DEFAULT '[]',
+            fan_in TEXT CHECK (fan_in IN ('all_success','all_terminal',
+                'min_success','allow_partial')),
+            min_success_count INTEGER,
+            input_artifact_ids_json TEXT NOT NULL DEFAULT '[]',
+            output_artifact_id TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            ready_at INTEGER,
+            timeout_seconds REAL,
+            retry_policy_json TEXT,
+            lease_owner TEXT,
+            lease_expires_at INTEGER,
+            heartbeat_at INTEGER,
+            waiting_reason TEXT CHECK (waiting_reason IN ('budget','configuration',
+                'device_offline','user_input','credential')),
+            error_code TEXT,
+            error_message TEXT,
+            skip_reason TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            finished_at INTEGER,
+            UNIQUE (run_id, definition_step_key, instance_key),
+            UNIQUE (id, scope_type, scope_id),
+            FOREIGN KEY (run_id, scope_type, scope_id)
+                REFERENCES harness_runs(id, scope_type, scope_id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE harness_attempts (
+            id TEXT PRIMARY KEY,
+            step_id TEXT NOT NULL REFERENCES harness_steps(id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            attempt_no INTEGER NOT NULL,
+            worker_id TEXT,
+            state TEXT NOT NULL
+                CHECK (state IN ('leased','running','succeeded','failed',
+                    'timed_out','cancelled','abandoned','blocked',
+                    'indeterminate')),
+            role_or_capability TEXT,
+            model_prompt_version TEXT,
+            input_sha256 TEXT,
+            output_sha256 TEXT,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cost_micros INTEGER NOT NULL DEFAULT 0,
+            duration_us INTEGER,
+            request_count INTEGER NOT NULL DEFAULT 0,
+            retryable INTEGER NOT NULL DEFAULT 0,
+            external_outcome TEXT,
+            provider_request_id TEXT,
+            error_class TEXT,
+            error_code TEXT,
+            error_message TEXT,
+            lease_owner TEXT,
+            started_at INTEGER,
+            heartbeat_at INTEGER,
+            finished_at INTEGER,
+            UNIQUE (step_id, attempt_no),
+            FOREIGN KEY (run_id, scope_type, scope_id)
+                REFERENCES harness_runs(id, scope_type, scope_id) ON DELETE CASCADE
+        )
+        """,
+        # 0005: the append-only event log.
+        """
+        CREATE TABLE harness_events (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            step_id TEXT,
+            attempt_id TEXT,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX ix_harness_events_run_seq ON harness_events (run_id, seq)",
+        "CREATE INDEX ix_harness_events_scope_seq ON harness_events (scope_type, scope_id, seq)",
+        # 0006: artifacts, links, public releases and projections.
+        """
+        CREATE TABLE harness_artifacts (
+            id TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+            run_id TEXT NOT NULL,
+            step_id TEXT,
+            artifact_type TEXT NOT NULL,
+            schema_name TEXT NOT NULL,
+            schema_version INTEGER NOT NULL,
+            mime TEXT NOT NULL DEFAULT 'application/json',
+            content_json TEXT,
+            blob_sha256 TEXT,
+            content_sha256 TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL DEFAULT 0,
+            sensitivity TEXT NOT NULL DEFAULT 'private'
+                CHECK (sensitivity IN ('public','private','local_only','secret')),
+            producer_kind TEXT NOT NULL DEFAULT 'deterministic'
+                CHECK (producer_kind IN ('rule_summary','model_inference',
+                    'human_note','quote','deterministic')),
+            workflow_key TEXT,
+            workflow_version INTEGER,
+            role_prompt_version TEXT,
+            provider TEXT,
+            model TEXT,
+            input_artifact_ids_json TEXT NOT NULL DEFAULT '[]',
+            input_sha256 TEXT,
+            source_refs_json TEXT NOT NULL DEFAULT '[]',
+            quality_status TEXT CHECK (quality_status IN ('valid','partial',
+                'insufficient_evidence','invalid')),
+            evidence_level TEXT CHECK (evidence_level IN ('metadata_only',
+                'abstract_only','unlocated','page')),
+            deleted_at INTEGER,
+            deletion_reason TEXT,
+            created_at INTEGER NOT NULL,
+            UNIQUE (id, scope_type, scope_id),
+            FOREIGN KEY (run_id, scope_type, scope_id)
+                REFERENCES harness_runs(id, scope_type, scope_id) ON DELETE CASCADE
+        )
+        """,
+        "CREATE INDEX ix_harness_artifacts_run ON harness_artifacts (run_id)",
+        """
+        CREATE TABLE harness_artifact_links (
+            id TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            from_artifact_id TEXT NOT NULL,
+            to_artifact_id TEXT NOT NULL,
+            link_kind TEXT NOT NULL CHECK (link_kind IN ('derived_from','supports',
+                'contradicts','critiques','supersedes','published_as')),
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (from_artifact_id, scope_type, scope_id)
+                REFERENCES harness_artifacts(id, scope_type, scope_id) ON DELETE CASCADE,
+            FOREIGN KEY (to_artifact_id, scope_type, scope_id)
+                REFERENCES harness_artifacts(id, scope_type, scope_id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE harness_public_artifact_releases (
+            id TEXT PRIMARY KEY,
+            source_artifact_id TEXT NOT NULL REFERENCES harness_artifacts(id),
+            source_schema_name TEXT NOT NULL,
+            source_schema_version INTEGER NOT NULL,
+            source_content_sha256 TEXT NOT NULL,
+            public_manifest_sha256 TEXT NOT NULL,
+            release_policy_version TEXT NOT NULL,
+            release_sha256 TEXT NOT NULL UNIQUE,
+            revoked_at INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE harness_public_artifact_projections (
+            id TEXT PRIMARY KEY,
+            release_id TEXT NOT NULL
+                REFERENCES harness_public_artifact_releases(id),
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            projection_artifact_id TEXT NOT NULL REFERENCES harness_artifacts(id),
+            release_sha256 TEXT NOT NULL,
+            projection_schema_name TEXT NOT NULL,
+            projection_schema_version INTEGER NOT NULL,
+            projection_sha256 TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE (release_id, user_id, projection_schema_name,
+                projection_schema_version)
+        )
+        """,
+        # 0007: approvals, schedules, usage ledger.
+        """
+        CREATE TABLE harness_approvals (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            step_id TEXT,
+            requesting_attempt_id TEXT,
+            consumed_by_attempt_id TEXT,
+            action TEXT NOT NULL,
+            resource_json TEXT NOT NULL,
+            risk TEXT NOT NULL DEFAULT 'write_private',
+            effect_summary_json TEXT NOT NULL DEFAULT '{}',
+            request_hash TEXT NOT NULL,
+            state TEXT NOT NULL
+                CHECK (state IN ('pending','approved','rejected','expired','cancelled')),
+            request_json TEXT NOT NULL DEFAULT '{}',
+            decision_json TEXT NOT NULL DEFAULT '{}',
+            resolver_user_id TEXT,
+            resolver_reason TEXT,
+            requested_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            resolved_at INTEGER,
+            FOREIGN KEY (run_id, scope_type, scope_id)
+                REFERENCES harness_runs(id, scope_type, scope_id) ON DELETE CASCADE
+        )
+        """,
+        "CREATE INDEX ix_harness_approvals_state ON harness_approvals (state, expires_at)",
+        """
+        CREATE TABLE harness_schedules (
+            id TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            workflow_key TEXT NOT NULL,
+            spec_json TEXT NOT NULL,
+            input_json TEXT NOT NULL DEFAULT '{}',
+            next_due_at INTEGER NOT NULL,
+            last_evaluated_at INTEGER,
+            last_run_id TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE (scope_type, scope_id, workflow_key)
+        )
+        """,
+        """
+        CREATE TABLE harness_usage_events (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            step_id TEXT,
+            attempt_id TEXT,
+            scope_type TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            source TEXT NOT NULL
+                CHECK (source IN ('official','byok','system_shared')),
+            kind TEXT NOT NULL CHECK (kind IN ('model_tokens','search_request',
+                'download_bytes','translation_pages','compute_ms')),
+            reservation_id TEXT,
+            op TEXT NOT NULL CHECK (op IN ('reserve','settle','release')),
+            amount INTEGER NOT NULL,
+            cost_micros INTEGER NOT NULL DEFAULT 0,
+            provider TEXT,
+            model TEXT,
+            created_at INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX ix_harness_usage_run ON harness_usage_events (run_id)",
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         revision="0001_schema_ledger",
         description="Establish the versioned migration ledger",
         statements=(_ledger_ddl(),),
+    ),
+    Migration(
+        revision="0002_harness_definitions_config",
+        description="Harness workflow definitions and the configuration revision authority",
+        statements=_harness_ddl()[0:4],
+    ),
+    Migration(
+        revision="0003_harness_runs",
+        description="Durable Harness runs with owner scope and idempotency",
+        statements=_harness_ddl()[4:5],
+    ),
+    Migration(
+        revision="0004_harness_steps_attempts",
+        description="Harness steps and frozen attempt rows",
+        statements=_harness_ddl()[5:7],
+    ),
+    Migration(
+        revision="0005_harness_events",
+        description="Append-only Harness event log with monotonic cursor",
+        statements=_harness_ddl()[7:10],
+    ),
+    Migration(
+        revision="0006_harness_artifacts_links_releases",
+        description="Immutable Harness artifacts, links and public releases",
+        statements=_harness_ddl()[10:16],
+    ),
+    Migration(
+        revision="0007_harness_approvals_schedules_usage",
+        description="Harness approvals, schedules and the usage ledger",
+        statements=_harness_ddl()[16:21],
     ),
 )
 

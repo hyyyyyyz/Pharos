@@ -129,12 +129,16 @@ def _reject_side_effect_contracts(workflow: WorkflowDefinition, registry: Regist
                 f"{workflow.identity()}: publish step {step.key} uses capability "
                 f"{capability.identity()} with no idempotency strategy"
             )
-        if step.retry is not None and step.retry.max_attempts > 1:
-            if capability.idempotency not in _NO_RETRY_IDEMPOTENCY and capability.retry_classes:
-                raise DefinitionError(
-                    f"{workflow.identity()}: retryable step {step.key} runs "
-                    f"non-idempotent capability {capability.identity()}"
-                )
+        if (
+            step.retry is not None
+            and step.retry.max_attempts > 1
+            and capability.idempotency not in _NO_RETRY_IDEMPOTENCY
+            and capability.retry_classes
+        ):
+            raise DefinitionError(
+                f"{workflow.identity()}: retryable step {step.key} runs "
+                f"non-idempotent capability {capability.identity()}"
+            )
 
 
 def _reject_approval_gaps(workflow: WorkflowDefinition) -> None:
