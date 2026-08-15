@@ -311,6 +311,13 @@ describe("Pharos module rail account footer", function () {
 					{ status, version: null, url: null, notes: null }
 				));
 				assert.isTrue(box.hidden, `${status} must hide the banner`);
+				// The attribute alone is not the contract: a `display` rule can
+				// beat the UA's [hidden] style, leaving an "empty" banner on
+				// screen (the ghost icon regression). A hidden banner must
+				// occupy no space at all.
+				var rect = box.getBoundingClientRect();
+				assert.equal(Math.round(rect.width), 0, `${status} must take no width`);
+				assert.equal(Math.round(rect.height), 0, `${status} must take no height`);
 			}
 		});
 

@@ -446,6 +446,14 @@ $pharos-rail-item-collapsed: 32px;
 	// absorbs the column's spare height.
 	flex: none;
 	min-width: 0;
+
+	// The element carries `hidden` and _renderUpdate() flips it. Without this
+	// the author `display: flex` above beats the UA stylesheet's [hidden]
+	// rule, so the "hidden" banner stays visible as an empty bordered box with
+	// a lone download icon -- which is exactly the ghost icon that shipped.
+	&[hidden] {
+		display: none;
+	}
 }
 
 .pharos-rail-update-body {
