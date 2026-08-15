@@ -1,6 +1,9 @@
 # Pharos Research Harness — staged implementation plan
 
-> 状态：**规划已冻结，代码尚未开始。** 本文把目标架构拆成可交付、可验收、可回退的 H0–H7。
+> 状态：**H0 code gate 通过；H1 代码完成，等待生产 canary / 72 小时 soak / 回滚演练。**
+> H0 尚未标 Done（缺 operator 生产副本恢复证据）；H1 状态为
+> `H1_CODE_COMPLETE_AWAITING_CANARY`，不是 `H1_GATE_PASSED`。H2–H7 全部 Planned。
+> 阶段状态与证据见 [`PHASE-HARNESS-KERNEL.md`](PHASE-HARNESS-KERNEL.md)。
 > 它不是“预计完成”清单；只有通过本阶段全部退出门槛，阶段状态才可以改成 Done。
 
 本文必须与以下文档一起阅读：
