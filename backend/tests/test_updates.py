@@ -154,7 +154,7 @@ def test_endpoint_answers_without_a_token(monkeypatch):
     app = FastAPI()
     app.include_router(updates.router)
     client = TestClient(app)
-    response = client.get("/updates/desktop/latest")
+    response = client.get("/api/updates/desktop/latest")
     assert response.status_code == 200
     assert set(response.json()) == {"version", "url", "notes"}
     assert response.json()["version"] == "1.4.2"

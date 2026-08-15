@@ -32,7 +32,7 @@ from fastapi import APIRouter
 
 from pharos.config import Settings, get_settings
 
-router = APIRouter(prefix="/updates", tags=["updates"])
+router = APIRouter(prefix="/api/updates", tags=["updates"])
 
 #: Advertise only what looks like a desktop release: desktop-vX.Y.Z.
 _TAG_VERSION = re.compile(r"^desktop-v(\d+\.\d+\.\d+)$")

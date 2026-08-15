@@ -172,6 +172,21 @@ def test_annotate_endpoints_are_reachable(app: FastAPI) -> None:
         assert path in paths, f"{path} is not mounted on the application"
 
 
+def test_every_public_route_is_mounted(app: FastAPI) -> None:
+    """A PUBLIC exemption must name a route the app actually serves.
+
+    The census above checks that declared routes are mounted; this is the
+    inverse guard. The updates router shipped with a prefix that forgot the
+    ``/api`` segment: its route mounted at ``/updates/desktop/latest``, the
+    client asked for ``/api/updates/desktop/latest``, and every census passed
+    because the mounted set and the declared set were both wrong in the same
+    way. A PUBLIC entry with no matching mounted route fails here instead.
+    """
+    mounted = {(method, r.path) for r in _api_routes(app) for method in r.methods or ()}
+    unmatched = {entry for entry in PUBLIC if entry not in mounted}
+    assert not unmatched, f"public exemptions with no mounted route: {sorted(unmatched)}"
+
+
 def test_every_api_route_requires_authentication(app: FastAPI) -> None:
     """An endpoint with no ``current_user`` is an unowned view of somebody's data.
 
