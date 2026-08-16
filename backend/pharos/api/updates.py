@@ -24,6 +24,7 @@ client treats that as "no update advertised" — an explicit no, not an error.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 import time
@@ -253,7 +254,13 @@ def _fetch_asset_to_cache(settings: Settings, asset: dict[str, Any]) -> Path:
                 raise ValueError("downloaded installer failed its digest check")
             part.rename(target)
             return target
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as error:
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            OSError,
+            http.client.HTTPException,
+            ValueError,
+        ) as error:
             last_error = error
             try:
                 part.unlink(missing_ok=True)
