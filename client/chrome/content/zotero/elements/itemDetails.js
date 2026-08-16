@@ -192,6 +192,11 @@
 
 			if (!paneID) {
 				delete this.dataset.primaryPane;
+				// Pharos: the chat section is the only pane whose layout can
+				// stay usable far below the 320px notes/info minimum. The flag
+				// lets the pane shrink to a chat-sized floor before the
+				// splitter collapses it (see _pharosChatBox.scss).
+				this.removeAttribute('pharos-chat-primary');
 				return true;
 			}
 
@@ -200,6 +205,7 @@
 			pane.open = true;
 			pane.collapsible = false;
 			this.dataset.primaryPane = paneID;
+			this.toggleAttribute('pharos-chat-primary', paneID == 'pharos-chat');
 			this._paneParent.scrollTop = 0;
 			return true;
 		}

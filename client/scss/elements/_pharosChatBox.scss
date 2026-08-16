@@ -6,9 +6,26 @@
 //
 // Scoped by id rather than by class because that is the id the item pane's
 // template gives this section. The reader's context pane builds its own
-// item-details per tab, so several elements in one document can carry it --
+// item-details per page, so several elements in one document can carry it --
 // which is fine for a selector and is why nothing in here reaches for the
 // element by id from script.
+
+// The chat is the reader's full-height primary pane, and its layout stays
+// usable far below the 320px minimum Zotero's notes/info panes need. The
+// splitter collapses a pane when it cannot shrink past its min-width, so
+// without this override the divider snaps shut while the chat is still wide
+// enough to read. `pharos-chat-primary` is toggled by ItemDetails
+// (setPrimaryPane) only while the chat section owns the pane; the ordinary
+// notes/info minimums return the moment any other pane is primary.
+$pharos-chat-pane-min-width: 200px;
+
+#zotero-context-pane:has(item-details[pharos-chat-primary]) {
+	min-width: $pharos-chat-pane-min-width + $width-sidenav;
+}
+
+#zotero-context-pane-inner:has(item-details[pharos-chat-primary]) {
+	min-width: $pharos-chat-pane-min-width;
+}
 
 #zotero-editpane-pharos-chat {
 	// The resting line under the section title. Always present: its job is to
