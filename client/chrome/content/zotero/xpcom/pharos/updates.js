@@ -410,25 +410,43 @@ Zotero.Pharos.Updates = new function () {
 	let _xhrMeta = { sha256: '' };
 
 	function _xhrArrayBuffer(url, onProgress) {
+		// The service may be warming its installer cache during a GitHub
+		// flapping window; retry a few times before showing an error.
+		let attempt = 0;
+		const MAX_ATTEMPTS = 3;
 		return new Promise((resolve, reject) => {
-			let xhr = new XMLHttpRequest();
-			xhr.open('GET', url);
-			xhr.responseType = 'arraybuffer';
-			xhr.onprogress = (event) => {
-				if (event.lengthComputable) {
-					onProgress(event.loaded, event.total);
-				}
+			let run = () => {
+				attempt++;
+				let xhr = new XMLHttpRequest();
+				xhr.open('GET', url);
+				xhr.responseType = 'arraybuffer';
+				xhr.onprogress = (event) => {
+					if (event.lengthComputable) {
+						onProgress(event.loaded, event.total);
+					}
+				};
+				xhr.onload = () => {
+					if (xhr.status !== 200) {
+						if (attempt < MAX_ATTEMPTS && xhr.status >= 500) {
+							setTimeout(run, 3000 * attempt);
+							return;
+						}
+						reject(new Error(`download failed (HTTP ${xhr.status})`));
+						return;
+					}
+					_xhrMeta.sha256 = xhr.getResponseHeader('X-Pharos-Asset-SHA256') || '';
+					resolve(xhr.response);
+				};
+				xhr.onerror = () => {
+					if (attempt < MAX_ATTEMPTS) {
+						setTimeout(run, 3000 * attempt);
+						return;
+					}
+					reject(new Error('download failed'));
+				};
+				xhr.send();
 			};
-			xhr.onload = () => {
-				if (xhr.status !== 200) {
-					reject(new Error(`download failed (HTTP ${xhr.status})`));
-					return;
-				}
-				_xhrMeta.sha256 = xhr.getResponseHeader('X-Pharos-Asset-SHA256') || '';
-				resolve(xhr.response);
-			};
-			xhr.onerror = () => reject(new Error('download failed'));
-			xhr.send();
+			run();
 		});
 	}
 

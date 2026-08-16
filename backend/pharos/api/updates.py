@@ -27,6 +27,7 @@ import hashlib
 import http.client
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -230,8 +231,8 @@ def _cached_asset_path(settings: Settings, asset: dict[str, Any]) -> Path:
 def _fetch_asset_to_cache(settings: Settings, asset: dict[str, Any]) -> Path:
     """Download one installer into the server-side cache, with retries.
 
-    GitHub's edges can disagree briefly after a visibility change, and a
-    multi-hundred-MB stream cannot start over casually; three attempts with
+    GitHub's replicas can disagree after a visibility change, and a
+    multi-hundred-MB stream cannot start over casually; several attempts with
     backoff re-resolve each time.
     """
     target = _cached_asset_path(settings, asset)
@@ -270,6 +271,40 @@ def _fetch_asset_to_cache(settings: Settings, asset: dict[str, Any]) -> Path:
     raise last_error  # type: ignore[misc]
 
 
+_refill_lock = threading.Lock()
+_refill_queued: set[str] = set()
+
+
+def _schedule_background_refill(settings: Settings, asset: dict[str, Any]) -> None:
+    """Keep trying to fill the cache after a failed request.
+
+    During GitHub's post-visibility-change flapping a request can fail while
+    a minute later the same fetch succeeds. Rather than making every client
+    retry against the flapping upstream, one daemon thread keeps the cache
+    warm: the next good window fills it, and every later request is served
+    from disk.
+    """
+    key = asset["name"]
+    with _refill_lock:
+        if key in _refill_queued:
+            return
+        _refill_queued.add(key)
+
+    def work() -> None:
+        try:
+            for _ in range(90):  # up to ~90 minutes of retrying
+                try:
+                    _fetch_asset_to_cache(settings, asset)
+                    return
+                except Exception:  # noqa: BLE001 - keep trying across windows
+                    time.sleep(60)
+        finally:
+            with _refill_lock:
+                _refill_queued.discard(key)
+
+    threading.Thread(target=work, daemon=True, name=f"update-cache-{key}").start()
+
+
 @router.get("/desktop/latest")
 def desktop_latest() -> dict[str, Any]:
     """The newest advertised desktop build, or an explicit "none"."""
@@ -304,6 +339,9 @@ def desktop_download(platform: str, version: str | None = None):
     try:
         cached = _fetch_asset_to_cache(settings, asset)
     except Exception as error:  # noqa: BLE001
+        # The client can retry; meanwhile a background thread keeps the cache
+        # warm so a later attempt succeeds without racing the flapping edge.
+        _schedule_background_refill(settings, asset)
         raise HTTPException(status_code=502, detail="installer unavailable") from error
     return FileResponse(
         cached,
