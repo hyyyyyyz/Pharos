@@ -176,6 +176,10 @@ class Settings(BaseSettings):
     #: desktop build, bypassing GitHub. Useful before a release lands publicly
     #: or when GitHub is unreachable from the server. Must look like X.Y.Z.
     desktop_update_version_override: str | None = None
+    #: Optional GitHub token (fine-grained, read-only on releases) for when
+    #: the repository is private: the anonymous API answers 404 for a private
+    #: repo, so the automatic fallback needs an authenticated call.
+    desktop_update_github_token: str | None = None
 
     @property
     def db_path(self) -> Path:

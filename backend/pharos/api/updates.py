@@ -74,9 +74,15 @@ def _github_payload(settings: Settings, now: float) -> dict[str, Any] | None:
 
     payload: dict[str, Any] = _payload(None, None, None)
     try:
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": _USER_AGENT}
+        token = settings.desktop_update_github_token
+        if token:
+            # A private repository answers the anonymous releases API with
+            # 404; a read-only token turns the automatic fallback back on.
+            headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(
             f"https://api.github.com/repos/{settings.desktop_update_repo}/releases?per_page=30",
-            headers={"Accept": "application/vnd.github+json", "User-Agent": _USER_AGENT},
+            headers=headers,
         )
         with urllib.request.urlopen(request, timeout=_GITHUB_API_TIMEOUT) as response:  # noqa: S310
             raw = response.read(4 * 1024 * 1024)

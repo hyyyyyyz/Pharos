@@ -42,6 +42,30 @@ def _github_response(releases):
     return _Response()
 
 
+def test_github_token_is_sent_for_private_repos(monkeypatch):
+    """A private repo 404s the anonymous API; the token restores the fallback."""
+    monkeypatch.setattr(updates, "_github_cache", None)
+    seen_headers: dict = {}
+
+    def capture(request, timeout):
+        seen_headers.update(dict(request.headers))
+        return _github_response(
+            [{"tag_name": "desktop-v1.5.1", "html_url": "https://example/three", "body": ""}]
+        )
+
+    monkeypatch.setattr(updates.urllib.request, "urlopen", capture)
+    payload = updates._github_payload(
+        _settings(desktop_update_github_token="ghp_test_token"), now=6000.0
+    )
+    assert payload["version"] == "1.5.1"
+    assert seen_headers.get("Authorization") == "Bearer ghp_test_token"
+    # And without a token, no Authorization header is sent at all.
+    monkeypatch.setattr(updates, "_github_cache", None)
+    seen_headers.clear()
+    updates._github_payload(_settings(), now=7000.0)
+    assert "Authorization" not in seen_headers
+
+
 def test_override_wins_and_is_served_verbatim(monkeypatch):
     payload = updates._override_payload(_settings(desktop_update_version_override="1.4.0"))
     assert payload == {
