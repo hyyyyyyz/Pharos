@@ -100,9 +100,10 @@ jobs:
           # DEVELOPER_ID and the NOTARIZATION_* values would change.
           app/build.sh -d "$build_dir" -p m -c release
           # The in-app updater installs the .app bundle itself; the dmg is the
-          # manual path. Zip the staged app so the update service can stream it.
-          ditto -c -k --keepParent "$build_dir/Pharos.app" \
-            "client/app/dist/Pharos-${RELEASE_VERSION}-mac.zip"
+          # manual path. Zip the staged app (config.sh puts it in app/staging)
+          # so the update service can stream it.
+          ditto -c -k --keepParent app/staging/Pharos.app \
+            "app/dist/Pharos-${RELEASE_VERSION}-mac.zip"
 
       - uses: actions/upload-artifact@v4
         with:
