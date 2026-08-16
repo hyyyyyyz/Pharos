@@ -88,6 +88,11 @@
 			{ key: 'daily', icon: 'daily', l10n: 'pharos-rail-daily' },
 			{ key: 'discovery', icon: 'discovery', l10n: 'pharos-rail-discovery' },
 			{ key: 'projects', icon: 'projects', l10n: 'pharos-rail-projects' },
+			// The model console: every ordinary account configures its own AI
+			// conversation provider here. Operators get the admin console
+			// instead, so the two occupy the same bottom slot rather than
+			// stacking a second settings surface above it.
+			{ key: 'models', icon: 'models', l10n: 'pharos-rail-models', nonAdminOnly: true },
 			{ key: 'admin', icon: 'admin', l10n: 'pharos-rail-admin', adminOnly: true },
 		];
 
@@ -352,6 +357,9 @@
 				if (mod.adminOnly && !Zotero.Pharos.Admin.isAdmin()) {
 					continue;
 				}
+				if (mod.nonAdminOnly && Zotero.Pharos.Admin.isAdmin()) {
+					continue;
+				}
 				let button = document.createElement('button');
 				button.className = 'pharos-rail-item'
 					+ (mod.key == this.module ? ' is-active' : '');
@@ -400,7 +408,8 @@
 			// Navigates the VISIBLE entries. Arrowing onto a hidden admin module
 			// would select a panel with no button to show it was selected.
 			let visible = PharosRail.MODULES.filter(
-				m => !m.adminOnly || Zotero.Pharos.Admin.isAdmin()
+				m => (!m.adminOnly || Zotero.Pharos.Admin.isAdmin())
+					&& (!m.nonAdminOnly || !Zotero.Pharos.Admin.isAdmin())
 			);
 			let index = visible.findIndex(m => m.key == this.module);
 			let next;

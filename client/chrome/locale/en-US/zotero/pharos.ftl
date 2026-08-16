@@ -1006,6 +1006,46 @@ pharos-rail-admin = Admin Console
 pharos-rail-admin-tooltip =
     .title = Admin Console
 
+pharos-rail-models = Model Console
+pharos-rail-models-tooltip =
+    .title = Model Console
+
+# The model console: the personal AI conversation provider. The key follows
+# the same rule as every other credential -- encrypted server-side, never
+# returned to this client.
+pharos-models-window =
+    .title = Model Console
+pharos-models-intro = Configure the model used by AI 对话. This applies to your account; other model-backed features keep their own configuration for now.
+pharos-models-current-label = In use:
+pharos-models-source-personal = personal model
+pharos-models-source-server = server model
+pharos-models-source-none = no model configured
+pharos-models-base-url = API Base URL
+pharos-models-base-url-input =
+    .placeholder = https://api.deepseek.com
+pharos-models-model = Model
+pharos-models-model-input =
+    .placeholder = deepseek-chat
+pharos-models-api-key = API Key
+pharos-models-api-key-input =
+    .placeholder = Enter a new key to replace the stored one
+pharos-models-api-key-stored = A key is stored; leave blank to keep it
+pharos-models-temperature = Temperature
+pharos-models-max-tokens = Max output tokens
+pharos-models-key-note = The key is encrypted on the server and never returned to this app. Saving with the key field blank keeps the stored key.
+pharos-models-save = Save
+pharos-models-clear = Clear
+pharos-models-saving = Saving…
+pharos-models-saved = Saved. AI 对话 will use this model now.
+pharos-models-clearing = Clearing…
+pharos-models-cleared = Cleared. AI 对话 falls back to the server model.
+pharos-models-error-incomplete = Enter the Base URL and model name.
+pharos-models-error-temperature = Temperature must be between 0 and 2.
+pharos-models-error-max-tokens = Max output tokens must be between 256 and 128000.
+pharos-models-error-save = Could not save. Please try again.
+pharos-models-error-clear = Could not clear. Please try again.
+pharos-models-server-fallback = When no personal model is saved, AI 对话 uses the model the server operator configured, if any.
+
 pharos-admin-tab-users = Accounts
 pharos-admin-tab-providers = API Configuration
 pharos-admin-search =

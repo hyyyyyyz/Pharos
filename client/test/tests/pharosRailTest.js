@@ -23,11 +23,20 @@ describe("Pharos module rail", function () {
 
 	it("should offer every module", function () {
 		var buttons = rail.querySelectorAll('.pharos-rail-item');
-		assert.lengthOf(buttons, 4);
+		assert.lengthOf(buttons, 5);
 		assert.deepEqual(
 			Array.from(buttons).map(b => b.dataset.module),
-			['library', 'daily', 'discovery', 'projects']
+			['library', 'daily', 'discovery', 'projects', 'models']
 		);
+	});
+
+	it("should offer the model console to ordinary accounts, not the admin console", function () {
+		// The model console occupies the slot an operator's admin console
+		// would: one bottom slot, never both.
+		var keys = Array.from(rail.querySelectorAll('.pharos-rail-item'))
+			.map(button => button.dataset.module);
+		assert.include(keys, 'models');
+		assert.notInclude(keys, 'admin');
 	});
 
 	it("should start on the library", function () {

@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero.css"?>
+<?xml-stylesheet href="chrome://zotero/skin/pharosModels.css" type="text/css"?>
+
+<!DOCTYPE window>
+
+<window data-l10n-id="pharos-models-window"
+		xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+		xmlns:html="http://www.w3.org/1999/xhtml"
+		id="pharos-models-window"
+		windowtype="pharos:models"
+		onload="Zotero_Pharos_Models.init()">
+	<linkset>
+		<html:link rel="localization" href="branding/brand.ftl" />
+		<html:link rel="localization" href="zotero.ftl" />
+		<html:link rel="localization" href="pharos.ftl" />
+	</linkset>
+
+	<script>
+		Services.scriptloader.loadSubScript("chrome://zotero/content/include.js", this);
+	</script>
+	<script src="chrome://zotero/content/pharosModels.js"/>
+
+	<vbox flex="1" id="pharos-models-root">
+		<html:div id="pharos-models-intro" data-l10n-id="pharos-models-intro"/>
+
+		<!-- What is currently in effect. -->
+		<html:div id="pharos-models-current" class="pharos-models-current" hidden="true">
+			<html:span data-l10n-id="pharos-models-current-label"/>
+			<html:strong id="pharos-models-current-model"/>
+			<html:span id="pharos-models-current-source"/>
+		</html:div>
+
+		<!-- The personal provider form. Only the AI conversation model lives
+		     here for now; other model-backed tasks keep their own surfaces. -->
+		<html:div class="pharos-models-field">
+			<html:label for="pharos-models-base-url" data-l10n-id="pharos-models-base-url"/>
+			<html:input id="pharos-models-base-url" type="url" autocomplete="off"
+				data-l10n-id="pharos-models-base-url-input" data-l10n-attrs="placeholder"/>
+		</html:div>
+		<html:div class="pharos-models-field">
+			<html:label for="pharos-models-model" data-l10n-id="pharos-models-model"/>
+			<html:input id="pharos-models-model" type="text" autocomplete="off"
+				data-l10n-id="pharos-models-model-input" data-l10n-attrs="placeholder"/>
+		</html:div>
+		<html:div class="pharos-models-field">
+			<html:label for="pharos-models-api-key" data-l10n-id="pharos-models-api-key"/>
+			<html:input id="pharos-models-api-key" type="password" autocomplete="off"
+				data-l10n-id="pharos-models-api-key-input" data-l10n-attrs="placeholder"/>
+		</html:div>
+		<html:div class="pharos-models-field pharos-models-field--row">
+			<html:div class="pharos-models-subfield">
+				<html:label for="pharos-models-temperature" data-l10n-id="pharos-models-temperature"/>
+				<html:input id="pharos-models-temperature" type="number" min="0" max="2" step="0.05"/>
+			</html:div>
+			<html:div class="pharos-models-subfield">
+				<html:label for="pharos-models-max-tokens" data-l10n-id="pharos-models-max-tokens"/>
+				<html:input id="pharos-models-max-tokens" type="number" min="256" max="128000" step="1"/>
+			</html:div>
+		</html:div>
+
+		<html:div id="pharos-models-key-note" class="pharos-models-help"
+			data-l10n-id="pharos-models-key-note"/>
+
+		<hbox align="center">
+			<button id="pharos-models-save" data-l10n-id="pharos-models-save"
+				oncommand="Zotero_Pharos_Models.save()"/>
+			<button id="pharos-models-clear" data-l10n-id="pharos-models-clear"
+				oncommand="Zotero_Pharos_Models.clear()"/>
+			<html:div id="pharos-models-message" class="pharos-models-message" role="alert"/>
+		</hbox>
+
+		<html:div data-l10n-id="pharos-models-server-fallback" class="pharos-models-help"/>
+	</vbox>
+</window>

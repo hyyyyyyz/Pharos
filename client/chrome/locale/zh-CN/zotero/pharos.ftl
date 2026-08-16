@@ -939,6 +939,45 @@ pharos-rail-admin = 管理员后台
 pharos-rail-admin-tooltip =
     .title = 管理员后台
 
+pharos-rail-models = 模型后台
+pharos-rail-models-tooltip =
+    .title = 模型后台
+
+# 模型后台：个人 AI 对话模型配置。密钥与其他所有凭据遵守同一规则——
+# 服务端加密存储，永不回传给本客户端。
+pharos-models-window =
+    .title = 模型后台
+pharos-models-intro = 配置 AI 对话使用的模型。该设置只属于你的账号；其他模型功能暂时保留各自的配置。
+pharos-models-current-label = 当前使用：
+pharos-models-source-personal = 个人模型
+pharos-models-source-server = 服务器模型
+pharos-models-source-none = 尚未配置模型
+pharos-models-base-url = API Base URL
+pharos-models-base-url-input =
+    .placeholder = https://api.deepseek.com
+pharos-models-model = 模型
+pharos-models-model-input =
+    .placeholder = deepseek-chat
+pharos-models-api-key = API Key
+pharos-models-api-key-input =
+    .placeholder = 输入新密钥以替换已保存的密钥
+pharos-models-api-key-stored = 已保存密钥；留空则保持不变
+pharos-models-temperature = Temperature
+pharos-models-max-tokens = 最大输出 Token
+pharos-models-key-note = 密钥在服务端加密保存，不会回传给本应用。密钥留空保存时沿用已保存的密钥。
+pharos-models-save = 保存
+pharos-models-clear = 清除
+pharos-models-saving = 正在保存…
+pharos-models-saved = 已保存，AI 对话将使用该模型。
+pharos-models-clearing = 正在清除…
+pharos-models-cleared = 已清除，AI 对话回退到服务器模型。
+pharos-models-error-incomplete = 请填写 Base URL 与模型名。
+pharos-models-error-temperature = Temperature 必须在 0 到 2 之间。
+pharos-models-error-max-tokens = 最大输出 Token 必须在 256 到 128000 之间。
+pharos-models-error-save = 保存失败，请重试。
+pharos-models-error-clear = 清除失败，请重试。
+pharos-models-server-fallback = 未保存个人模型时，AI 对话使用服务器运营者配置的模型（如有）。
+
 pharos-admin-tab-users = 账号管理
 pharos-admin-tab-providers = API 配置
 pharos-admin-search =

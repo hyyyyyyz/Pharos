@@ -1,0 +1,77 @@
+// The model console: one form, one provider, nothing else yet.
+//
+// Lives in the rail deck beside the other Pharos modules, so it inherits the
+// module chrome. The form is deliberately narrow-column: the pane surface is
+// a configuration screen, not a dashboard.
+
+#pharos-models-root {
+	padding: 16px 20px;
+	max-width: 560px;
+	font-size: 13px;
+
+	.pharos-models-intro {
+		color: var(--fill-secondary);
+		margin-block-end: 12px;
+	}
+}
+
+.pharos-models-current {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	border: 1px solid var(--color-border);
+	border-radius: 8px;
+	background: var(--material-background);
+	padding: 8px 12px;
+	margin-block-end: 14px;
+
+	strong {
+		color: var(--fill-primary);
+	}
+
+	.pharos-models-current-source {
+		color: var(--fill-tertiary);
+		font-size: 11px;
+		margin-inline-start: auto;
+	}
+}
+
+.pharos-models-field {
+	display: grid;
+	grid-template-columns: 9em 1fr;
+	align-items: center;
+	gap: 8px;
+	margin-block-end: 8px;
+
+	label {
+		color: var(--fill-secondary);
+	}
+
+	input {
+		min-width: 0;
+	}
+}
+
+.pharos-models-field--row {
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+
+	.pharos-models-subfield {
+		display: grid;
+		grid-template-columns: 9em 1fr;
+		align-items: center;
+		gap: 8px;
+	}
+}
+
+.pharos-models-help {
+	color: var(--fill-tertiary);
+	font-size: 11px;
+	margin-block-end: 10px;
+}
+
+.pharos-models-message {
+	margin-inline-start: 8px;
+	color: var(--fill-secondary);
+	font-size: 12px;
+}
