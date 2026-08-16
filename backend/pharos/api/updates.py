@@ -155,6 +155,7 @@ class _MultiIPHTTPSHandler(urllib.request.HTTPSHandler):
         except OSError as error:
             raise urllib.error.URLError(error) from error
         last_error: Exception | None = None
+        last_response = None
         for address in addresses:
             ip = address[4][0]
             connection = _PinnedHTTPSConnection(
@@ -166,10 +167,20 @@ class _MultiIPHTTPSHandler(urllib.request.HTTPSHandler):
             try:
                 connection.request(req.get_method(), req.selector, req.data, req.headers)
                 response = connection.getresponse()
-                return _GitHubResponse(response, req.get_full_url())
+                wrapped = _GitHubResponse(response, req.get_full_url())
+                if response.status == 404:
+                    # A stale address keeps answering 404 for a repository
+                    # whose visibility just changed; keep the answer only if
+                    # every address agrees, and try the next one otherwise.
+                    last_response = wrapped
+                    connection.close()
+                    continue
+                return wrapped
             except (OSError, http.client.HTTPException) as error:
                 last_error = error
                 connection.close()
+        if last_response is not None:
+            return last_response
         assert last_error is not None
         raise urllib.error.URLError(last_error)
 
