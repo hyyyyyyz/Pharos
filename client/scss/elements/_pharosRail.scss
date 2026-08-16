@@ -504,6 +504,23 @@ $pharos-rail-item-collapsed: 32px;
 	color: var(--fill-tertiary);
 }
 
+// The download progress surface: a thin track under the title, filled as
+// the installer streams in.
+.pharos-rail-update-progress {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--fill-quarternary);
+	overflow: hidden;
+
+	.pharos-rail-update-progress-bar {
+		height: 100%;
+		width: 0;
+		border-radius: 2px;
+		background: var(--color-accent);
+		transition: width 0.15s linear;
+	}
+}
+
 .pharos-rail-update-actions {
 	display: flex;
 	gap: 6px;

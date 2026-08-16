@@ -99,11 +99,17 @@ jobs:
           # No -e: these builds are unsigned. See app/config.sh for what setting
           # DEVELOPER_ID and the NOTARIZATION_* values would change.
           app/build.sh -d "$build_dir" -p m -c release
+          # The in-app updater installs the .app bundle itself; the dmg is the
+          # manual path. Zip the staged app so the update service can stream it.
+          ditto -c -k --keepParent "$build_dir/Pharos.app" \
+            "client/app/dist/Pharos-${RELEASE_VERSION}-mac.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: pharos-macos
-          path: client/app/dist/*.dmg
+          path: |
+            client/app/dist/*.dmg
+            client/app/dist/*-mac.zip
           if-no-files-found: error
 
   # Windows and Linux are built on Linux and shipped as portable archives.

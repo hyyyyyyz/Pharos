@@ -232,6 +232,9 @@ describe("Pharos module rail account footer", function () {
 		var box, origIgnored;
 		var origLaunchURL = null;
 		var launched = [];
+		var origDownloadAndInstall = null;
+		var installedCalls = [];
+		var restartCalls = [];
 
 		function availableState(version) {
 			return {
@@ -251,19 +254,29 @@ describe("Pharos module rail account footer", function () {
 		before(function () {
 			origIgnored = Zotero.Prefs.get('pharos.update.ignoredVersion');
 			origLaunchURL = Zotero.launchURL;
+			origDownloadAndInstall = Zotero.Pharos.Updates.downloadAndInstall;
 			Zotero.launchURL = function (url) {
 				launched.push(url);
+			};
+			Zotero.Pharos.Updates.downloadAndInstall = async function (state) {
+				installedCalls.push(state);
+			};
+			Zotero.Pharos.Updates.restartAfterInstall = function () {
+				restartCalls.push(true);
 			};
 			box = rail.querySelector('.pharos-rail-update');
 		});
 
 		afterEach(function () {
 			launched = [];
+			installedCalls = [];
+			restartCalls = [];
 			rail.railCollapsed = false;
 		});
 
 		after(function () {
 			Zotero.launchURL = origLaunchURL;
+			Zotero.Pharos.Updates.downloadAndInstall = origDownloadAndInstall;
 			Zotero.Prefs.set('pharos.update.ignoredVersion', origIgnored || '');
 			// A finished check for something equal-or-older hides the banner
 			// again, so this window leaves the rail in its resting state.
@@ -321,10 +334,36 @@ describe("Pharos module rail account footer", function () {
 			}
 		});
 
-		it("should open the release page for the download action", function () {
+		it("should start the in-app install for the download action", function () {
 			observeState(availableState('9.9.9'));
 			box.querySelector('.pharos-rail-update-download').click();
-			assert.deepEqual(launched, ['https://example.test/releases']);
+			assert.lengthOf(installedCalls, 1, "the update button runs the installer");
+			assert.equal(installedCalls[0].version, '9.9.9');
+			assert.lengthOf(launched, 0, "no browser handoff on a self-install platform");
+		});
+
+		it("should show progress while downloading and a restart button when installed", function () {
+			rail._observeUpdate(JSON.stringify(
+				{ status: 'downloading', version: '9.9.9', percent: 42 }
+			));
+			assert.isFalse(box.hidden);
+			assert.isFalse(
+				box.querySelector('.pharos-rail-update-progress').hidden,
+				"the progress track is visible while downloading"
+			);
+			assert.isTrue(
+				box.querySelector('.pharos-rail-update-download').hidden,
+				"the update button yields to the progress surface"
+			);
+			rail._observeUpdate(JSON.stringify(
+				{ status: 'installed', version: '9.9.9' }
+			));
+			assert.isFalse(
+				box.querySelector('.pharos-rail-update-download').hidden,
+				"the restart button returns once installed"
+			);
+			box.querySelector('.pharos-rail-update-download').click();
+			assert.lengthOf(restartCalls, 1, "the installed button restarts Pharos");
 		});
 
 		it("should remember a dismissal and hide the banner", function () {
@@ -351,8 +390,8 @@ describe("Pharos module rail account footer", function () {
 				"the buttons are hidden when collapsed"
 			);
 			box.click();
-			assert.deepEqual(launched, ['https://example.test/releases'],
-				"a collapsed banner is the download button");
+			assert.lengthOf(installedCalls, 1,
+				"a collapsed banner still starts the in-app install");
 		});
 	});
 });

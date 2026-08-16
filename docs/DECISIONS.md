@@ -137,6 +137,21 @@ Pharos now owns a check-and-download channel instead of no channel at all:
   cannot stage an update anyway, and a build that replaces itself mid-session
   is a support problem, not a feature.
 
+**Amended again (in-app install for macOS, 1.6.0).** The hand-off model was
+reversed for the platform that can support it. macOS bundles can be swapped
+while running (the old process keeps its inodes; the next launch uses the new
+bundle), so the desktop client now offers a full in-app flow: the installer
+streams from the service (`GET /api/updates/desktop/download` resolves the
+release asset from GitHub, with the optional read-only token for private
+repositories), is SHA-256 verified against the digest the service supplies,
+replaces the running bundle (with elevation via the system password prompt
+when `/Applications` is not writable, keeping a `Pharos.app.old` backup), and
+offers a one-click restart. The previous behaviour stays in place exactly
+where self-replacement is not safe or testable: Windows ships a portable
+archive and Linux a tarball, so both keep the release-page handoff. The
+Mozilla updater stays off, and the client still downloads nothing without
+the user pressing the update button.
+
 ## 7. Tokens live in the OS credential store, keys never reach the browser
 
 The desktop client stores its bearer token in the login manager, under its own

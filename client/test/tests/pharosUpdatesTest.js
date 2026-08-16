@@ -188,4 +188,42 @@ describe("Zotero.Pharos.Updates", function () {
 			assert.lengthOf(requests, 0, "no timer may fire a check in tests");
 		});
 	});
+	describe("self-install", function () {
+		var origIsMac;
+		var origLaunchURL;
+		var launched = [];
+
+		before(function () {
+			origIsMac = Zotero.isMac;
+			origLaunchURL = Zotero.launchURL;
+			Zotero.launchURL = function (url) {
+				launched.push(url);
+			};
+		});
+
+		afterEach(function () {
+			launched = [];
+			Zotero.isMac = origIsMac;
+		});
+
+		after(function () {
+			Zotero.launchURL = origLaunchURL;
+		});
+
+		it("should open the release page where self-install is unavailable", async function () {
+			Zotero.isMac = false;
+			await Zotero.Pharos.Updates.downloadAndInstall({
+				status: 'available',
+				version: '9.9.9',
+				url: 'https://example.test/releases',
+			});
+			assert.deepEqual(launched, ['https://example.test/releases'],
+				"portable platforms keep the browser handoff");
+		});
+
+		it("should refuse to restart without an installed state", function () {
+			Zotero.Pharos.Updates.restartAfterInstall();
+			// No throw, no quit: there is nothing installed to restart into.
+		});
+	});
 });

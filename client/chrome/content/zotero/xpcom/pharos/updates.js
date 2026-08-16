@@ -32,10 +32,11 @@
  * backend answers from the newest desktop-v* GitHub release, and the client's
  * job is to notice, tell the user, and hand them the installer.
  *
- * The download itself is deliberate: installing is the user's action. Pharos
- * downloads nothing in the background and never touches the running app --
- * a build that replaces itself mid-session is a support problem, and an
- * unsigned macOS bundle cannot stage an update anyway.
+ * The download itself: macOS builds install in place -- the installer streams
+ * from the service (which resolves the release asset, private repository or
+ * not), is SHA-256 verified, and replaces the running bundle, then offers a
+ * one-click restart. Windows (portable archive) and Linux (tarball) cannot
+ * safely replace a running layout and keep the release-page handoff.
  *
  * The check is anonymous: a signed-out user is the one most likely to be on an
  * old build, and the payload is the same public release page anyone can read.
@@ -285,8 +286,8 @@ Zotero.Pharos.Updates = new function () {
 	/**
 	 * Open the release page for a state.
 	 *
-	 * The one user-facing action this module offers. Everything else -- the
-	 * download, the mount, the install -- is the user's own.
+	 * The fallback for platforms the in-app installer cannot serve, and for a
+	 * user who prefers to install by hand.
 	 *
 	 * @param {Object} state - an available/ignored state with a url
 	 */
@@ -296,4 +297,187 @@ Zotero.Pharos.Updates = new function () {
 		}
 		Zotero.launchURL(state.url);
 	};
+
+	/**
+	 * Whether this build can install an update in place.
+	 *
+	 * macOS: the .app bundle can be swapped while running (the old process
+	 * keeps its files; the next launch uses the new bundle), so the full
+	 * download -> verify -> install -> restart flow is offered. Windows ships
+	 * a portable archive and Linux a tarball; neither can replace a running
+	 * layout safely, and neither can be tested from this repository, so both
+	 * keep the release-page handoff.
+	 *
+	 * @return {Boolean}
+	 */
+	this.canSelfInstall = function () {
+		return Zotero.isMac;
+	};
+
+	/**
+	 * Download the platform installer with progress, then install and restart.
+	 *
+	 * The whole flow lives here so the rail banner and the preferences pane
+	 * share one progress state machine: downloading (percent) -> verifying ->
+	 * installing -> installed (restart required). Every transition publishes
+	 * through TOPIC_CHECKED, which is what keeps the two surfaces in step.
+	 *
+	 * @param {Object} state - an available/ignored update state
+	 * @return {Promise}
+	 */
+	this.downloadAndInstall = async function (state) {
+		if (_installing) {
+			return;
+		}
+		if (!state || !state.version || !this.canSelfInstall()) {
+			this.openRelease(state);
+			return;
+		}
+		_installing = true;
+		let publish = (patch) => {
+			_lastState = { ...(_lastState || state), status: 'downloading', ...patch };
+			_notify(this.TOPIC_CHECKED, _lastState);
+		};
+		try {
+			let target = await _download(state.version, (loaded, total) => {
+				publish({ phase: 'downloading', percent: total ? Math.round(100 * loaded / total) : null });
+			});
+			publish({ phase: 'verifying' });
+			let digest = await _sha256(target.buffer);
+			if (digest !== target.sha256) {
+				throw new Error('checksum mismatch');
+			}
+			publish({ phase: 'installing' });
+			await _installMac(target.file, state.version);
+			_lastState = { ..._lastState, status: 'installed', phase: 'installed' };
+			_notify(this.TOPIC_CHECKED, _lastState);
+		}
+		catch (e) {
+			Zotero.logError(e);
+			_lastState = {
+				..._lastState,
+				status: 'available',
+				phase: null,
+				error: e && e.message ? String(e.message) : 'update failed',
+			};
+			_notify(this.TOPIC_CHECKED, _lastState);
+		}
+		finally {
+			_installing = false;
+		}
+	};
+
+	/**
+	 * Quit this build and start the freshly installed one.
+	 *
+	 * The relauncher is a detached shell: it sleeps long enough for the old
+	 * process to release the library lock, then opens the new bundle. The old
+	 * process quits immediately after spawning it.
+	 */
+	this.restartAfterInstall = function () {
+		if (!_lastState || _lastState.status !== 'installed' || !_appDir) {
+			return;
+		}
+		let appPath = _appDir.path;
+		// Not awaited on purpose: the promise resolves only when the shell
+		// exits, and the shell outlives this process by design.
+		Zotero.Utilities.Internal.exec('/bin/sh', [
+			'-c', `sleep 2 && open -n "${appPath}"`,
+		]).catch(e => Zotero.logError(e));
+		setTimeout(() => {
+			Zotero.Utilities.Internal.quit(true, false);
+		}, 250);
+	};
+
+	let _installing = false;
+	let _appDir = null;
+
+	async function _download(version, onProgress) {
+		let base = Zotero.Pharos.API.getBaseURL();
+		let url = `${base}/api/updates/desktop/download?platform=mac&version=${encodeURIComponent(version)}`;
+		let buffer = await _xhrArrayBuffer(url, onProgress);
+		let targetDir = Zotero.getTempDirectory();
+		targetDir.append('Pharos-update');
+		await IOUtils.makeDirectory(targetDir.path, { ignoreExisting: true });
+		let file = targetDir.clone();
+		file.append(`Pharos-${version}-mac.zip`);
+		await IOUtils.write(file.path, new Uint8Array(buffer));
+		return { buffer, file, sha256: _xhrMeta.sha256 };
+	}
+
+	// XHR response headers are read once, right after load, before the
+	// response is replaced; the download helper stashes them here.
+	let _xhrMeta = { sha256: '' };
+
+	function _xhrArrayBuffer(url, onProgress) {
+		return new Promise((resolve, reject) => {
+			let xhr = new XMLHttpRequest();
+			xhr.open('GET', url);
+			xhr.responseType = 'arraybuffer';
+			xhr.onprogress = (event) => {
+				if (event.lengthComputable) {
+					onProgress(event.loaded, event.total);
+				}
+			};
+			xhr.onload = () => {
+				if (xhr.status !== 200) {
+					reject(new Error(`download failed (HTTP ${xhr.status})`));
+					return;
+				}
+				_xhrMeta.sha256 = xhr.getResponseHeader('X-Pharos-Asset-SHA256') || '';
+				resolve(xhr.response);
+			};
+			xhr.onerror = () => reject(new Error('download failed'));
+			xhr.send();
+		});
+	}
+
+	async function _sha256(buffer) {
+		let digest = await crypto.subtle.digest('SHA-256', buffer);
+		return Array.from(new Uint8Array(digest))
+			.map(byte => byte.toString(16).padStart(2, '0'))
+			.join('');
+	}
+
+	async function _installMac(zipFile, version) {
+		let executable = Services.dirsvc.get('XREExeF', Ci.nsIFile);
+		let appDir = executable.parent.parent; // .../Pharos.app
+		let appsDir = appDir.parent;
+		_appDir = appDir;
+
+		// Extract the fresh bundle beside the current one.
+		let staging = Zotero.getTempDirectory();
+		staging.append('Pharos-update');
+		staging.append(`extract-${version}`);
+		await IOUtils.remove(staging.path, { ignoreAbsent: true, recursive: true });
+		await IOUtils.makeDirectory(staging.path, { ignoreExisting: true });
+		await Zotero.Utilities.Internal.exec('/usr/bin/ditto', ['-x', '-k', zipFile.path, staging.path]);
+		let extracted = staging.clone();
+		extracted.append('Pharos.app');
+		if (!(await IOUtils.exists(extracted.path))) {
+			throw new Error('installer archive is missing Pharos.app');
+		}
+
+		let backup = appsDir.clone();
+		backup.append('Pharos.app.old');
+
+		if (appsDir.isWritable() && appDir.isWritable()) {
+			await IOUtils.remove(backup.path, { ignoreAbsent: true, recursive: true });
+			await IOUtils.move(appDir.path, backup.path);
+			await IOUtils.move(extracted.path, appDir.path);
+			return;
+		}
+
+		// /Applications usually needs elevation; hand the swap to the system
+		// so the user gets one native password prompt.
+		let shell = [
+			`rm -rf "${backup.path}"`,
+			`mv "${appDir.path}" "${backup.path}"`,
+			`mv "${extracted.path}" "${appDir.path}"`,
+			`chown -R "$(stat -f '%Su' "${backup.path}")" "${appDir.path}"`,
+		].join(' && ');
+		let script = `do shell script "${shell.replace(/"/g, '\\"')}" with administrator privileges`;
+		await Zotero.Utilities.Internal.exec('/usr/bin/osascript', ['-e', script]);
+		_appDir = appDir;
+	}
 };

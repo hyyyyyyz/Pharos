@@ -62,6 +62,9 @@
 							<html:span class="pharos-rail-update-version"/>
 						</html:span>
 					</html:div>
+					<html:div class="pharos-rail-update-progress" hidden="true">
+						<html:div class="pharos-rail-update-progress-bar"/>
+					</html:div>
 					<html:div class="pharos-rail-update-actions">
 						<html:button class="pharos-rail-update-download"/>
 						<html:button class="pharos-rail-update-ignore"/>
@@ -286,14 +289,28 @@
 		 */
 		_initUpdateBox() {
 			this._updateBox.addEventListener('click', () => {
-				if (this.railCollapsed) {
-					Zotero.Pharos.Updates.openRelease(this._updateState);
+				if (this.railCollapsed && this._updateState) {
+					if (this._updateState.status == 'installed') {
+						Zotero.Pharos.Updates.restartAfterInstall();
+					}
+					else {
+						Zotero.Pharos.Updates.downloadAndInstall(this._updateState)
+							.catch(e => Zotero.logError(e));
+					}
 				}
 			});
 
 			this._updateBox.querySelector('.pharos-rail-update-download')
 				.addEventListener('click', () => {
-					Zotero.Pharos.Updates.openRelease(this._updateState);
+					if (!this._updateState) {
+						return;
+					}
+					if (this._updateState.status == 'installed') {
+						Zotero.Pharos.Updates.restartAfterInstall();
+						return;
+					}
+					Zotero.Pharos.Updates.downloadAndInstall(this._updateState)
+						.catch(e => Zotero.logError(e));
 				});
 
 			this._updateBox.querySelector('.pharos-rail-update-ignore')
@@ -307,18 +324,20 @@
 		}
 
 		/**
-		 * Paint the update banner for a finished check, or hide it.
+		 * Paint the update banner for the current update state.
 		 *
-		 * Only "available" is ever shown; "ignored", "latest", "unavailable"
-		 * and "error" all hide it, which is what makes the ignore button a
-		 * permanent dismissal rather than a per-window one.
+		 * Available draws the box; downloading/installing repurpose it into a
+		 * progress surface; installed offers the restart. Ignored, latest,
+		 * unavailable and error all hide it, which is what makes the ignore
+		 * button a permanent dismissal rather than a per-window one.
 		 */
 		_renderUpdate(state) {
 			let box = this._updateBox;
 			if (!box) {
 				return;
 			}
-			let show = !!state && state.status == 'available' && !!state.version;
+			let show = !!state && ['available', 'downloading', 'installing', 'installed']
+				.includes(state.status);
 			this._updateState = show ? state : null;
 			box.hidden = !show;
 			if (!show) {
@@ -327,20 +346,44 @@
 
 			let title = box.querySelector('.pharos-rail-update-title');
 			let version = box.querySelector('.pharos-rail-update-version');
-			document.l10n.setAttributes(
-				title, 'pharos-rail-update-title', { version: state.version }
-			);
-			// A version number is data, not a translatable string, so it goes in
-			// as text next to the title rather than through the l10n arguments.
-			version.textContent = state.version;
-			document.l10n.setAttributes(
-				box.querySelector('.pharos-rail-update-download'),
-				'pharos-rail-update-download'
-			);
-			document.l10n.setAttributes(
-				box.querySelector('.pharos-rail-update-ignore'),
-				'pharos-rail-update-ignore'
-			);
+			let download = box.querySelector('.pharos-rail-update-download');
+			let ignore = box.querySelector('.pharos-rail-update-ignore');
+			let progress = box.querySelector('.pharos-rail-update-progress');
+			let progressBar = box.querySelector('.pharos-rail-update-progress-bar');
+
+			if (state.status == 'installed') {
+				document.l10n.setAttributes(title, 'pharos-rail-update-installed');
+				document.l10n.setAttributes(download, 'pharos-rail-update-restart');
+				version.textContent = state.version;
+				ignore.hidden = true;
+				download.hidden = false;
+				progress.hidden = true;
+			}
+			else if (state.status == 'downloading' || state.status == 'installing') {
+				let key = state.status == 'installing'
+					? 'pharos-rail-update-installing'
+					: 'pharos-rail-update-downloading';
+				document.l10n.setAttributes(title, key,
+					{ percent: String(state.percent ?? 0) });
+				version.textContent = state.version;
+				ignore.hidden = true;
+				download.hidden = true;
+				progress.hidden = false;
+				progressBar.style.width = `${Math.min(state.percent ?? 0, 100)}%`;
+			}
+			else {
+				document.l10n.setAttributes(
+					title, 'pharos-rail-update-title', { version: state.version }
+				);
+				// A version number is data, not a translatable string, so it goes in
+				// as text next to the title rather than through the l10n arguments.
+				version.textContent = state.version;
+				document.l10n.setAttributes(download, 'pharos-rail-update-download');
+				document.l10n.setAttributes(ignore, 'pharos-rail-update-ignore');
+				ignore.hidden = false;
+				download.hidden = false;
+				progress.hidden = true;
+			}
 			// The label is hidden when collapsed, so the tooltip is the only
 			// thing naming the box in that state.
 			document.l10n.setAttributes(

@@ -86,9 +86,13 @@ pharos-prefs-checking-updates = Checking for updates…
 pharos-prefs-update-latest = You are on the latest version.
 pharos-prefs-update-none = No new version has been published.
 pharos-prefs-update-failed = Could not check for updates. Please try again.
-pharos-prefs-update-found = A new version has been released. Download the installer and replace the current build.
-pharos-prefs-update-ignored = You dismissed this version. You can still download it below.
-pharos-prefs-update-download = Download v{ $version }
+pharos-prefs-update-found = A new version has been released. Pharos downloads it, verifies it and installs it in place, then restarts.
+pharos-prefs-update-ignored = You dismissed this version. You can still install it below.
+pharos-prefs-update-download = Install v{ $version }
+pharos-prefs-update-downloading = Downloading… { $percent }%
+pharos-prefs-update-installing = Installing…
+pharos-prefs-update-installed = Installed. Restart Pharos to finish.
+pharos-prefs-update-restart = Restart Pharos
 
 ## AI Chat
 
@@ -1355,8 +1359,12 @@ pharos-rail-account-sign-in-tooltip =
 pharos-rail-update-title = New version available: { $version }
 pharos-rail-update-download = Update
 pharos-rail-update-ignore = Dismiss
+pharos-rail-update-downloading = Downloading… { $percent }%
+pharos-rail-update-installing = Installing…
+pharos-rail-update-installed = { $version } installed
+pharos-rail-update-restart = Restart
 pharos-rail-update-tooltip =
-    .title = Pharos { $version } is available — click to download
+    .title = Pharos { $version } is available — click to update
 
 ## The item pane's translation section.
 ##

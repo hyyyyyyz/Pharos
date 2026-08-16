@@ -126,10 +126,20 @@ Zotero_Preferences.Pharos = {
 	},
 
 	/**
-	 * Open the release page for the update the last check found.
+	 * Open the release page for the update the last check found, or start
+	 * the in-app install when this platform supports it.
 	 */
 	openUpdate: function () {
-		Zotero.Pharos.Updates.openRelease(Zotero.Pharos.Updates.getState());
+		let state = Zotero.Pharos.Updates.getState();
+		if (!state) {
+			return;
+		}
+		if (state.status == 'installed') {
+			Zotero.Pharos.Updates.restartAfterInstall();
+			return;
+		}
+		Zotero.Pharos.Updates.downloadAndInstall(state)
+			.catch(e => Zotero.logError(e));
 	},
 
 	_setUpdateMessage(text) {
@@ -140,11 +150,13 @@ Zotero_Preferences.Pharos = {
 	},
 
 	/**
-	 * Paint a finished update check: version found, or the honest alternative.
+	 * Paint the current update state: version found, in progress, or the
+	 * honest alternative.
 	 *
-	 * Only "available" and "ignored" draw the download row; "latest",
-	 * "unavailable" and "error" each say what they are, because a silent
-	 * "check finished" leaves the user guessing whether the button worked.
+	 * Available/ignored draw the download row; downloading/installing show
+	 * progress; installed offers the restart. Latest, unavailable and error
+	 * each say what they are, because a silent "check finished" leaves the
+	 * user guessing whether the button worked.
 	 */
 	_renderUpdate(state) {
 		let row = document.getElementById('pharos-update-available');
@@ -167,6 +179,39 @@ Zotero_Preferences.Pharos = {
 					? 'pharos-prefs-update-ignored'
 					: 'pharos-prefs-update-found'
 			);
+			this._setUpdateMessage('');
+		}
+		else if (status == 'downloading' || status == 'installing') {
+			row.hidden = false;
+			let download = document.getElementById('pharos-update-download');
+			download.textContent = Zotero.ftl.formatValueSync(
+				status == 'installing'
+					? 'pharos-prefs-update-installing'
+					: 'pharos-prefs-update-downloading',
+				{ percent: String(state.percent ?? 0) }
+			);
+			download.disabled = true;
+			this._setUpdateMessage('');
+			// The pane has no observer channel of its own; poll the shared
+			// module state while the install is in flight and stop as soon as
+			// it leaves the progress states.
+			if (!this._updatePoll) {
+				this._updatePoll = setInterval(() => {
+					let current = Zotero.Pharos.Updates.getState();
+					if (!current || !['downloading', 'installing'].includes(current.status)) {
+						clearInterval(this._updatePoll);
+						this._updatePoll = null;
+					}
+					this._renderUpdate(current);
+				}, 400);
+			}
+		}
+		else if (status == 'installed') {
+			row.hidden = false;
+			let download = document.getElementById('pharos-update-download');
+			download.textContent = Zotero.getString('pharos-prefs-update-restart');
+			download.disabled = false;
+			note.textContent = Zotero.getString('pharos-prefs-update-installed');
 			this._setUpdateMessage('');
 		}
 		else {

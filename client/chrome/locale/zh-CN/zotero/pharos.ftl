@@ -83,9 +83,13 @@ pharos-prefs-checking-updates = 正在检查更新…
 pharos-prefs-update-latest = 已是最新版本。
 pharos-prefs-update-none = 服务器暂未发布新版本。
 pharos-prefs-update-failed = 检查更新失败，请稍后重试。
-pharos-prefs-update-found = 新版本已发布。下载安装包并替换当前版本即可。
-pharos-prefs-update-ignored = 你已忽略该版本，仍可从下方下载。
-pharos-prefs-update-download = 下载 v{ $version }
+pharos-prefs-update-found = 新版本已发布。Pharos 会下载、校验并自动安装，随后重启即可。
+pharos-prefs-update-ignored = 你已忽略该版本，仍可从下方安装。
+pharos-prefs-update-download = 安装 v{ $version }
+pharos-prefs-update-downloading = 下载中…{ $percent }%
+pharos-prefs-update-installing = 正在安装…
+pharos-prefs-update-installed = 安装完成，重启 Pharos 后生效。
+pharos-prefs-update-restart = 重启 Pharos
 
 ## AI 对话
 
@@ -1275,8 +1279,12 @@ pharos-rail-account-sign-in-tooltip =
 pharos-rail-update-title = 新版本可用：{ $version }
 pharos-rail-update-download = 立即更新
 pharos-rail-update-ignore = 忽略
+pharos-rail-update-downloading = 下载中…{ $percent }%
+pharos-rail-update-installing = 正在安装…
+pharos-rail-update-installed = { $version } 已安装
+pharos-rail-update-restart = 立即重启
 pharos-rail-update-tooltip =
-    .title = Pharos { $version } 已发布——点击前往下载
+    .title = Pharos { $version } 已发布——点击更新
 
 ## 条目面板的翻译栏。
 ##
