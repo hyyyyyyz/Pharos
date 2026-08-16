@@ -145,19 +145,21 @@ class _GitHubResponse:
 
 
 class _MultiIPHTTPSHandler(urllib.request.HTTPSHandler):
-    """Open an HTTPS request by trying every resolved address in turn."""
+    """Open an HTTPS request by trying every known GitHub API address.
+
+    The container's embedded DNS hands back a single rotated answer, so
+    ``getaddrinfo`` cannot see the address set; GitHub's own ``/meta``
+    endpoint publishes the authoritative IPv4 list, which this handler walks
+    instead.
+    """
 
     def https_open(self, req):  # noqa: ANN001, ANN201
         host = req.host
         port = getattr(req, "port", None) or 443
-        try:
-            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-        except OSError as error:
-            raise urllib.error.URLError(error) from error
+        addresses = _github_api_addresses()
         last_error: Exception | None = None
         last_response = None
-        for address in addresses:
-            ip = address[4][0]
+        for ip in addresses:
             connection = _PinnedHTTPSConnection(
                 host,
                 ip,
@@ -183,6 +185,38 @@ class _MultiIPHTTPSHandler(urllib.request.HTTPSHandler):
             return last_response
         assert last_error is not None
         raise urllib.error.URLError(last_error)
+
+
+#: (ipv4 list, monotonic timestamp) from GitHub's /meta endpoint.
+_api_addresses_cache: tuple[list[str], float] | None = None
+
+
+def _github_api_addresses() -> list[str]:
+    """GitHub's authoritative API IPv4 addresses, refreshed every 10 minutes.
+
+    ``/meta`` is account-level state, stable on every edge, so a plain
+    single-address fetch cannot flap the way repository state can.
+    """
+    global _api_addresses_cache
+    now = time.monotonic()
+    if _api_addresses_cache is not None and now - _api_addresses_cache[1] < 600:
+        return _api_addresses_cache[0]
+    try:
+        request = urllib.request.Request(
+            "https://api.github.com/meta", headers=_headers(get_settings())
+        )
+        with urllib.request.urlopen(request, timeout=_GITHUB_API_TIMEOUT) as response:  # noqa: S310
+            meta = json.loads(response.read(1024 * 1024).decode("utf-8"))
+        addresses = sorted(
+            {str(address) for address in meta.get("api", []) if isinstance(address, str)}
+        )
+        if addresses:
+            _api_addresses_cache = (addresses, now)
+            return addresses
+    except Exception:  # noqa: BLE001 - fall back to the resolver's answer
+        pass
+    infos = socket.getaddrinfo("api.github.com", 443, type=socket.SOCK_STREAM)
+    return sorted({str(info[4][0]) for info in infos if ":" not in str(info[4][0])})
 
 
 def _github_opener() -> urllib.request.OpenerDirector:
