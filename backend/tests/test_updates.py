@@ -1,20 +1,12 @@
-"""The public desktop update advertisement.
-
-The endpoint exists so the desktop client can learn about a new build before
-sign-in. These tests cover the three authorities and the failure posture:
-
-- an operator pin wins and is served verbatim;
-- without a pin the newest ``desktop-v*`` GitHub release is advertised, and
-  non-desktop tags are skipped;
-- a GitHub failure answers "no update advertised" rather than an error;
-- malformed pins and malformed GitHub bodies degrade to the same shape.
-"""
+"""The public desktop update advertisement and installer streaming."""
 
 from __future__ import annotations
 
 import json
 import urllib.error
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pharos.api import updates
 from pharos.config import Settings
 
@@ -23,15 +15,16 @@ def _settings(**overrides) -> Settings:
     base = {
         "desktop_update_repo": "hyyyyyyz/Pharos",
         "desktop_update_version_override": None,
+        "desktop_update_github_token": None,
     }
     base.update(overrides)
     return Settings(**base)
 
 
-def _github_response(releases):
+def _github_response(payload):
     class _Response:
-        def read(self, limit):
-            return json.dumps(releases).encode("utf-8")
+        def read(self, limit=None):
+            return json.dumps(payload).encode("utf-8")
 
         def __enter__(self):
             return self
@@ -42,143 +35,131 @@ def _github_response(releases):
     return _Response()
 
 
-def test_github_token_is_sent_for_private_repos(monkeypatch):
-    """A private repo 404s the anonymous API; the token restores the fallback."""
-    monkeypatch.setattr(updates, "_github_cache", None)
-    seen_headers: dict = {}
-
-    def capture(request, timeout):
-        seen_headers.update(dict(request.headers))
-        return _github_response(
-            [{"tag_name": "desktop-v1.5.1", "html_url": "https://example/three", "body": ""}]
-        )
-
-    monkeypatch.setattr(updates.urllib.request, "urlopen", capture)
-    payload = updates._github_payload(
-        _settings(desktop_update_github_token="ghp_test_token"), now=6000.0
-    )
-    assert payload["version"] == "1.5.1"
-    assert seen_headers.get("Authorization") == "Bearer ghp_test_token"
-    # And without a token, no Authorization header is sent at all.
-    monkeypatch.setattr(updates, "_github_cache", None)
-    seen_headers.clear()
-    updates._github_payload(_settings(), now=7000.0)
-    assert "Authorization" not in seen_headers
-
-
-def test_override_wins_and_is_served_verbatim(monkeypatch):
-    payload = updates._override_payload(_settings(desktop_update_version_override="1.4.0"))
-    assert payload == {
-        "version": "1.4.0",
-        "url": "https://github.com/hyyyyyyz/Pharos/releases/tag/desktop-v1.4.0",
-        "notes": None,
+def _release(tag, assets=()):
+    return {
+        "tag_name": tag,
+        "html_url": f"https://example/releases/{tag}",
+        "body": "",
+        "assets": list(assets),
     }
 
 
-def test_malformed_override_is_silence_not_garbage():
-    for pinned in ("1.4", "v1.4.0", "latest", "1.4.0.SOURCE", ""):
-        assert (
-            updates._override_payload(_settings(desktop_update_version_override=pinned)) is None
-        ), f"{pinned!r} must not be advertised"
+def _asset(name, size=100, digest="", url=""):
+    return {
+        "name": name,
+        "browser_download_url": url or f"https://example/{name}",
+        "size": size,
+        "digest": digest,
+    }
 
 
-def test_github_release_is_advertised(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-    # GitHub lists releases newest first; the endpoint must pick the first
-    # desktop-v* tag it finds, not the newest by numeric comparison.
-    releases = [
-        {
-            "tag_name": "desktop-v1.4.0",
-            "html_url": "https://example/releases/new",
-            "body": "Fix the crash",
-        },
-        {"tag_name": "desktop-v1.3.0", "html_url": "https://example/releases/old", "body": ""},
-    ]
-    monkeypatch.setattr(
-        updates.urllib.request,
-        "urlopen",
-        lambda request, timeout: _github_response(releases),
-    )
-    payload = updates._github_payload(_settings(), now=1000.0)
-    assert payload["version"] == "1.4.0"
-    assert payload["url"] == "https://example/releases/new"
-    assert payload["notes"] == "Fix the crash"
-
-
-def test_github_non_desktop_tags_are_skipped(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-    releases = [
-        {"tag_name": "v2.0.0", "html_url": "https://example/nope", "body": ""},
-        {"tag_name": "desktop-v1.3.2", "html_url": "https://example/yes", "body": ""},
-    ]
-    monkeypatch.setattr(
-        updates.urllib.request,
-        "urlopen",
-        lambda request, timeout: _github_response(releases),
-    )
-    payload = updates._github_payload(_settings(), now=2000.0)
-    assert payload["version"] == "1.3.2"
-
-
-def test_github_failure_is_no_update_not_an_error(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-
-    def boom(request, timeout):
-        raise urllib.error.URLError("unreachable")
-
-    monkeypatch.setattr(updates.urllib.request, "urlopen", boom)
-    payload = updates._github_payload(_settings(), now=3000.0)
-    assert payload == {"version": None, "url": None, "notes": None}
-
-
-def test_github_result_is_cached(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-    calls = []
-
-    def counting(request, timeout):
-        calls.append(request)
-        return _github_response(
-            [{"tag_name": "desktop-v1.4.1", "html_url": "https://example/one", "body": ""}]
-        )
-
-    monkeypatch.setattr(updates.urllib.request, "urlopen", counting)
-    first = updates._github_payload(_settings(), now=4000.0)
-    second = updates._github_payload(_settings(), now=4000.0 + updates._GITHUB_CACHE_TTL - 1)
-    assert first["version"] == "1.4.1"
-    assert second["version"] == "1.4.1"
-    assert len(calls) == 1, "the cached hour must not hit GitHub again"
-    third = updates._github_payload(_settings(), now=4000.0 + updates._GITHUB_CACHE_TTL + 1)
-    assert third["version"] == "1.4.1"
-    assert len(calls) == 2, "an expired cache must re-fetch"
-
-
-def test_malformed_github_body_degrades_to_no_update(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-    monkeypatch.setattr(
-        updates.urllib.request,
-        "urlopen",
-        lambda request, timeout: _github_response({"tag_name": "desktop-v1.4.0"}),
-    )
-    payload = updates._github_payload(_settings(), now=5000.0)
-    assert payload == {"version": None, "url": None, "notes": None}
-
-
-def test_endpoint_answers_without_a_token(monkeypatch):
-    monkeypatch.setattr(updates, "_github_cache", None)
-    monkeypatch.setattr(
-        updates.urllib.request,
-        "urlopen",
-        lambda request, timeout: _github_response(
-            [{"tag_name": "desktop-v1.4.2", "html_url": "https://example/two", "body": ""}]
+def test_asset_map_picks_the_platform_installers():
+    release = _release(
+        "desktop-v1.6.0",
+        assets=(
+            _asset("Pharos-1.6.0-mac.zip", digest="a" * 64),
+            _asset("Pharos-1.6.0.dmg"),
+            _asset("Pharos-1.6.0-win.zip", digest="b" * 64),
+            _asset("Pharos-1.6.0-linux-x86_64.tar.xz", digest="c" * 64),
         ),
     )
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
+    assets = updates._asset_map(release, "1.6.0")
+    assert set(assets) == {"mac", "windows", "linux"}
+    assert assets["mac"]["sha256"] == "a" * 64
+    assert assets["mac"]["name"] == "Pharos-1.6.0-mac.zip"
 
+
+def test_check_payload_carries_assets(monkeypatch):
+    monkeypatch.setattr(updates, "_github_cache", None)
+    monkeypatch.setattr(
+        updates,
+        "_fetch_releases",
+        lambda settings: [_release("desktop-v1.6.0", assets=(_asset("Pharos-1.6.0-mac.zip"),))],
+    )
+    payload = updates._github_payload(_settings(), now=1000.0)
+    assert payload["version"] == "1.6.0"
+    assert payload["assets"]["mac"]["name"] == "Pharos-1.6.0-mac.zip"
+
+
+def test_download_streams_the_asset_with_verification_headers(monkeypatch):
+    monkeypatch.setattr(
+        updates,
+        "_fetch_releases",
+        lambda settings: [
+            _release(
+                "desktop-v1.6.0",
+                assets=(_asset("Pharos-1.6.0-mac.zip", size=7, digest="d" * 64),),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        updates,
+        "_stream_github_asset",
+        lambda settings, asset: iter([b"payload"]),
+    )
     app = FastAPI()
     app.include_router(updates.router)
     client = TestClient(app)
-    response = client.get("/api/updates/desktop/latest")
+    response = client.get("/api/updates/desktop/download?platform=mac")
     assert response.status_code == 200
-    assert set(response.json()) == {"version", "url", "notes"}
-    assert response.json()["version"] == "1.4.2"
+    assert response.content == b"payload"
+    assert response.headers["X-Pharos-Asset-SHA256"] == "d" * 64
+    assert response.headers["Content-Length"] == "7"
+
+
+def test_download_unknown_platform_is_400():
+    app = FastAPI()
+    app.include_router(updates.router)
+    client = TestClient(app)
+    assert client.get("/api/updates/desktop/download?platform=toaster").status_code == 400
+
+
+def test_download_without_a_release_is_404(monkeypatch):
+    monkeypatch.setattr(updates, "_github_cache", None)
+    monkeypatch.setattr(updates, "_fetch_releases", lambda settings: [])
+    monkeypatch.setattr(
+        updates,
+        "desktop_latest",
+        lambda: {"version": None, "url": None, "notes": None},
+    )
+    app = FastAPI()
+    app.include_router(updates.router)
+    client = TestClient(app)
+    assert client.get("/api/updates/desktop/download?platform=mac").status_code == 404
+
+
+def test_download_respects_the_pinned_version(monkeypatch):
+    seen_versions = []
+    original = updates._release_asset
+
+    def spy(settings, platform, version):
+        seen_versions.append(version)
+        return original(settings, platform, version)
+
+    monkeypatch.setattr(
+        updates,
+        "_fetch_releases",
+        lambda settings: [_release("desktop-v1.6.0", assets=(_asset("Pharos-1.6.0-mac.zip"),))],
+    )
+    monkeypatch.setattr(updates, "_release_asset", spy)
+    monkeypatch.setattr(
+        updates,
+        "_stream_github_asset",
+        lambda settings, asset: iter([b""]),
+    )
+    app = FastAPI()
+    app.include_router(updates.router)
+    client = TestClient(app)
+    client.get("/api/updates/desktop/download?platform=mac&version=1.6.0")
+    assert seen_versions == ["1.6.0"], "a named version pins the download target"
+
+
+def test_github_errors_surface_as_502(monkeypatch):
+    def boom(settings):
+        raise urllib.error.URLError("unreachable")
+
+    monkeypatch.setattr(updates, "_fetch_releases", boom)
+    app = FastAPI()
+    app.include_router(updates.router)
+    client = TestClient(app)
+    assert client.get("/api/updates/desktop/download?platform=mac&version=1.6.0").status_code == 502

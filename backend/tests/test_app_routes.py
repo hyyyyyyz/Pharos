@@ -65,8 +65,10 @@ PUBLIC = {
     # browser state and never accepts a user id from the request.
     ("GET", "/api/zotero/oauth/callback"),
     # The desktop client checks for new builds before sign-in; the payload is
-    # the same public release page an anonymous visitor can read on GitHub.
+    # the same public release page an anonymous visitor can read on GitHub,
+    # and the installer stream is the same asset, just proxied.
     ("GET", "/api/updates/desktop/latest"),
+    ("GET", "/api/updates/desktop/download"),
 }
 
 #: Every router the application is supposed to mount. Listing them here rather
