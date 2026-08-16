@@ -97,12 +97,14 @@ def _fetch_releases(settings: Settings) -> list[dict]:
         f"https://api.github.com/repos/{settings.desktop_update_repo}/releases?per_page=30",
         headers=_headers(settings),
     )
-    # GitHub's API round-robins across edges, and right after a visibility
-    # change a stale edge can still answer 404 for a public repository. One
-    # short retry re-resolves DNS and usually lands on a healthy edge; a
-    # persistent failure still propagates and is never cached.
+    # GitHub's replicas can disagree briefly after a visibility change: one
+    # request lands on a stale replica answering 404 for a public repository
+    # while the next lands on a healthy one. Retry across replicas with
+    # growing gaps; a persistent failure still propagates and is never cached.
     last_error: Exception | None = None
-    for attempt in range(2):
+    for delay in (0, 1, 2, 4):
+        if delay:
+            time.sleep(delay)
         try:
             with urllib.request.urlopen(
                 request, timeout=_GITHUB_API_TIMEOUT
@@ -114,7 +116,6 @@ def _fetch_releases(settings: Settings) -> list[dict]:
             return [release for release in releases if isinstance(release, dict)]
         except (urllib.error.URLError, urllib.error.HTTPError, OSError) as error:
             last_error = error
-            time.sleep(1.0)
     raise last_error  # type: ignore[misc]
 
 
