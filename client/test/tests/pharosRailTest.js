@@ -39,6 +39,33 @@ describe("Pharos module rail", function () {
 		assert.notInclude(keys, 'admin');
 	});
 
+	it("should show operators the model console above the admin console", function () {
+		// An operator configures their own AI model like anyone else; the two
+		// entries are one settings surface, models first.
+		var isAdmin = Zotero.Pharos.Admin.isAdmin;
+		Zotero.Pharos.Admin.isAdmin = function () {
+			return true;
+		};
+		try {
+			rail._render();
+			var keys = Array.from(rail.querySelectorAll('.pharos-rail-item'))
+				.map(button => button.dataset.module);
+			assert.deepEqual(
+				keys,
+				['library', 'daily', 'discovery', 'projects', 'models', 'admin']
+			);
+			assert.isAbove(
+				keys.indexOf('admin'),
+				keys.indexOf('models'),
+				"the model console sits above the admin console"
+			);
+		}
+		finally {
+			Zotero.Pharos.Admin.isAdmin = isAdmin;
+			rail._render();
+		}
+	});
+
 	it("should start on the library", function () {
 		// Index 0 rather than any code running: the library panel is the deck's
 		// first child, so it is what shows before anything is clicked.
