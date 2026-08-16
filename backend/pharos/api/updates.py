@@ -95,12 +95,25 @@ def _fetch_releases(settings: Settings) -> list[dict]:
         f"https://api.github.com/repos/{settings.desktop_update_repo}/releases?per_page=30",
         headers=_headers(settings),
     )
-    with urllib.request.urlopen(request, timeout=_GITHUB_API_TIMEOUT) as response:  # noqa: S310
-        raw = response.read(4 * 1024 * 1024)
-    releases = json.loads(raw.decode("utf-8"))
-    if not isinstance(releases, list):
-        releases = []
-    return [release for release in releases if isinstance(release, dict)]
+    # GitHub's API round-robins across edges, and right after a visibility
+    # change a stale edge can still answer 404 for a public repository. One
+    # short retry re-resolves DNS and usually lands on a healthy edge; a
+    # persistent failure still propagates and is never cached.
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(
+                request, timeout=_GITHUB_API_TIMEOUT
+            ) as response:  # noqa: S310
+                raw = response.read(4 * 1024 * 1024)
+            releases = json.loads(raw.decode("utf-8"))
+            if not isinstance(releases, list):
+                releases = []
+            return [release for release in releases if isinstance(release, dict)]
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as error:
+            last_error = error
+            time.sleep(1.0)
+    raise last_error  # type: ignore[misc]
 
 
 def _github_payload(settings: Settings, now: float) -> dict[str, Any] | None:
