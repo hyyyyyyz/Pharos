@@ -59,8 +59,8 @@ def test_asset_map_picks_the_platform_installers():
         assets=(
             _asset("Pharos-1.6.0-mac.zip", digest="a" * 64),
             _asset("Pharos-1.6.0.dmg"),
-            _asset("Pharos-1.6.0-win.zip", digest="b" * 64),
-            _asset("Pharos-1.6.0-linux-x86_64.tar.xz", digest="c" * 64),
+            _asset("Pharos-1.6.0_win-x64.zip", digest="b" * 64),
+            _asset("Pharos-1.6.0_linux-x86_64.tar.xz", digest="c" * 64),
         ),
     )
     assets = updates._asset_map(release, "1.6.0")

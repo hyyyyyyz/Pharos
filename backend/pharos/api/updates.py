@@ -48,11 +48,12 @@ _USER_AGENT = "Pharos/0.1 (desktop update check; +https://github.com/hyyyyyz/Pha
 
 #: The installer asset names the release workflow publishes, per platform.
 #: The macOS zip is the self-install bundle (the .app itself); the dmg is for
-#: manual installs, Windows and Linux stay portable archives.
+#: manual installs. Windows and Linux stay portable archives; the workflow
+#: names them with an underscore between version and platform.
 _ASSET_SUFFIXES = {
     "mac": ("-mac.zip",),
-    "windows": ("-win.zip",),
-    "linux": ("-linux-x86_64.tar.xz",),
+    "windows": ("_win-x64.zip",),
+    "linux": ("_linux-x86_64.tar.xz",),
 }
 
 #: (payload, monotonic timestamp) of the last GitHub lookup. Module-level by
