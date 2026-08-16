@@ -130,8 +130,14 @@ def _github_payload(settings: Settings, now: float) -> dict[str, Any] | None:
     ):
         # GitHub unreachable, rate-limited, or returning an unexpected shape.
         # The endpoint must stay available: answer "no update advertised" rather
-        # than taking the update check down with a dependency.
-        payload = _payload(None, None, None)
+        # than taking the update check down with a dependency. The failure is
+        # deliberately NOT cached: a transient blip must not pin every client
+        # to "no update" for the next hour.
+        return _payload(None, None, None)
+    if payload.get("version") is None:
+        # Nothing found is not a durable answer either -- the next check
+        # retries instead of replaying an empty result for the cache window.
+        return payload
     _github_cache = (payload, now)
     return payload
 
