@@ -27,6 +27,7 @@ import hashlib
 import http.client
 import json
 import re
+import socket
 import threading
 import time
 import urllib.error
@@ -94,6 +95,98 @@ def _headers(settings: Settings) -> dict[str, str]:
     return headers
 
 
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Connect to ``ip`` but present ``host`` in TLS SNI and the Host header.
+
+    GitHub's API resolves to several addresses, and after a visibility change
+    some of them can keep answering 404 for a public repository while others
+    serve it. Trying each address explicitly beats letting the resolver hand
+    us a stale one for the record TTL.
+    """
+
+    def __init__(self, host: str, ip: str, **kwargs) -> None:
+        super().__init__(host, **kwargs)
+        self._ip = ip
+
+    def connect(self) -> None:
+        sock = socket.create_connection(
+            (self._ip, self.port), self.timeout, self.source_address  # type: ignore[attr-defined]
+        )
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
+
+
+class _GitHubResponse:
+    """A urllib-compatible wrapper over a raw http.client response.
+
+    urllib's HTTPErrorProcessor reads ``code`` and ``msg``; addinfourl does
+    not publish them for raw responses, so this small adapter does.
+    """
+
+    def __init__(self, response, url: str) -> None:  # noqa: ANN001
+        self._response = response
+        self.code = response.status
+        self.status = response.status
+        self.msg = response.reason
+        self.url = url
+        self.headers = response.headers
+
+    def __getattr__(self, name: str):
+        return getattr(self._response, name)
+
+    def read(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        return self._response.read(*args, **kwargs)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):  # noqa: ANN002
+        self._response.close()
+        return False
+
+
+class _MultiIPHTTPSHandler(urllib.request.HTTPSHandler):
+    """Open an HTTPS request by trying every resolved address in turn."""
+
+    def https_open(self, req):  # noqa: ANN001, ANN201
+        host = req.host
+        port = getattr(req, "port", None) or 443
+        try:
+            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as error:
+            raise urllib.error.URLError(error) from error
+        last_error: Exception | None = None
+        for address in addresses:
+            ip = address[4][0]
+            connection = _PinnedHTTPSConnection(
+                host,
+                ip,
+                timeout=getattr(req, "timeout", socket._GLOBAL_DEFAULT_TIMEOUT),  # noqa: SLF001
+                context=self._context,
+            )
+            try:
+                connection.request(req.get_method(), req.selector, req.data, req.headers)
+                response = connection.getresponse()
+                return _GitHubResponse(response, req.get_full_url())
+            except (OSError, http.client.HTTPException) as error:
+                last_error = error
+                connection.close()
+        assert last_error is not None
+        raise urllib.error.URLError(last_error)
+
+
+def _github_opener() -> urllib.request.OpenerDirector:
+    """An opener that walks every GitHub API address per request."""
+    opener = urllib.request.build_opener(
+        _MultiIPHTTPSHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    )
+    return opener
+
+
+def _open_github(request: urllib.request.Request, *, timeout: float):  # noqa: ANN201
+    return _github_opener().open(request, timeout=timeout)
+
+
 def _fetch_releases(settings: Settings) -> list[dict]:
     request = urllib.request.Request(
         f"https://api.github.com/repos/{settings.desktop_update_repo}/releases?per_page=30",
@@ -108,9 +201,7 @@ def _fetch_releases(settings: Settings) -> list[dict]:
         if delay:
             time.sleep(delay)
         try:
-            with urllib.request.urlopen(
-                request, timeout=_GITHUB_API_TIMEOUT
-            ) as response:  # noqa: S310
+            with _open_github(request, timeout=_GITHUB_API_TIMEOUT) as response:
                 raw = response.read(4 * 1024 * 1024)
             releases = json.loads(raw.decode("utf-8"))
             if not isinstance(releases, list):
@@ -243,13 +334,12 @@ def _fetch_asset_to_cache(settings: Settings, asset: dict[str, Any]) -> Path:
     for attempt in range(3):
         try:
             request = urllib.request.Request(asset["url"], headers=_headers(settings))
-            with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-                with part.open("wb") as out:
-                    while True:
-                        chunk = response.read(256 * 1024)
-                        if not chunk:
-                            break
-                        out.write(chunk)
+            with _open_github(request, timeout=60) as response, part.open("wb") as out:
+                while True:
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
             digest = hashlib.sha256(part.read_bytes()).hexdigest()
             if asset.get("sha256") and digest != asset["sha256"]:
                 raise ValueError("downloaded installer failed its digest check")
