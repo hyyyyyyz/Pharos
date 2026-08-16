@@ -23,15 +23,17 @@ client treats that as "no update advertised" — an explicit no, not an error.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 
 from pharos.config import Settings, get_settings
 
@@ -211,14 +213,53 @@ def _release_asset(settings: Settings, platform: str, version: str) -> dict[str,
     raise HTTPException(status_code=404, detail="release not found")
 
 
-def _stream_github_asset(settings: Settings, asset: dict[str, Any]):
-    request = urllib.request.Request(asset["url"], headers=_headers(settings))
-    response = urllib.request.urlopen(request, timeout=30)  # noqa: S310
-    while True:
-        chunk = response.read(64 * 1024)
-        if not chunk:
-            break
-        yield chunk
+def _cached_asset_dir(settings: Settings) -> Path:
+    directory = Path(settings.data_dir) / "update-assets"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _cached_asset_path(settings: Settings, asset: dict[str, Any]) -> Path:
+    #: Keyed by the GitHub-published digest, so a new release can never serve
+    #: a stale file and a re-upload of the same bytes reuses the cache.
+    return _cached_asset_dir(settings) / f"{asset['name']}.{asset['sha256'][:16]}"
+
+
+def _fetch_asset_to_cache(settings: Settings, asset: dict[str, Any]) -> Path:
+    """Download one installer into the server-side cache, with retries.
+
+    GitHub's edges can disagree briefly after a visibility change, and a
+    multi-hundred-MB stream cannot start over casually; three attempts with
+    backoff re-resolve each time.
+    """
+    target = _cached_asset_path(settings, asset)
+    if target.exists():
+        return target
+    part = target.with_suffix(target.suffix + ".part")
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(asset["url"], headers=_headers(settings))
+            with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+                with part.open("wb") as out:
+                    while True:
+                        chunk = response.read(256 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+            digest = hashlib.sha256(part.read_bytes()).hexdigest()
+            if asset.get("sha256") and digest != asset["sha256"]:
+                raise ValueError("downloaded installer failed its digest check")
+            part.rename(target)
+            return target
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as error:
+            last_error = error
+            try:
+                part.unlink(missing_ok=True)
+            except OSError:
+                pass
+            time.sleep(2.0 * (attempt + 1))
+    raise last_error  # type: ignore[misc]
 
 
 @router.get("/desktop/latest")
@@ -240,17 +281,26 @@ def desktop_download(platform: str, version: str | None = None):
     landed from silently switching payloads mid-flight.
     """
     settings = get_settings()
+    # Validate the request shape before anything touches the network.
+    if platform not in _ASSET_SUFFIXES:
+        raise HTTPException(status_code=400, detail="unknown platform")
     if version is None:
         advertised = desktop_latest()
         version = advertised.get("version")
     if not version or not _VERSION.fullmatch(str(version)):
         raise HTTPException(status_code=404, detail="no update advertised")
     asset = _release_asset(settings, platform, str(version))
-    return StreamingResponse(
-        _stream_github_asset(settings, asset),
+    # Deterministic: after the first successful upstream fetch the installer
+    # is served from the server-side cache, so GitHub's flaky edges can no
+    # longer interrupt a client mid-update.
+    try:
+        cached = _fetch_asset_to_cache(settings, asset)
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="installer unavailable") from error
+    return FileResponse(
+        cached,
         media_type="application/octet-stream",
         headers={
-            "Content-Length": str(asset["size"]),
             "X-Pharos-Asset-Name": asset["name"],
             "X-Pharos-Asset-SHA256": asset["sha256"],
             "Cache-Control": "no-store",

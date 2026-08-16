@@ -92,10 +92,15 @@ def test_download_streams_the_asset_with_verification_headers(monkeypatch):
             )
         ],
     )
+    import tempfile
+    from pathlib import Path
+
+    cached = Path(tempfile.mkdtemp()) / "installer.bin"
+    cached.write_bytes(b"payload")
     monkeypatch.setattr(
         updates,
-        "_stream_github_asset",
-        lambda settings, asset: iter([b"payload"]),
+        "_fetch_asset_to_cache",
+        lambda settings, asset: cached,
     )
     app = FastAPI()
     app.include_router(updates.router)
@@ -104,10 +109,12 @@ def test_download_streams_the_asset_with_verification_headers(monkeypatch):
     assert response.status_code == 200
     assert response.content == b"payload"
     assert response.headers["X-Pharos-Asset-SHA256"] == "d" * 64
-    assert response.headers["Content-Length"] == "7"
 
 
-def test_download_unknown_platform_is_400():
+def test_download_unknown_platform_is_400(monkeypatch):
+    monkeypatch.setattr(
+        updates, "desktop_latest", lambda: {"version": "1.6.0", "url": None, "notes": None}
+    )
     app = FastAPI()
     app.include_router(updates.router)
     client = TestClient(app)
@@ -121,6 +128,16 @@ def test_download_without_a_release_is_404(monkeypatch):
         updates,
         "desktop_latest",
         lambda: {"version": None, "url": None, "notes": None},
+    )
+    monkeypatch.setattr(
+        updates,
+        "_release_asset",
+        lambda settings, platform, version: {
+            "name": "x",
+            "url": "https://example/x",
+            "size": 0,
+            "sha256": "",
+        },
     )
     app = FastAPI()
     app.include_router(updates.router)
@@ -142,10 +159,15 @@ def test_download_respects_the_pinned_version(monkeypatch):
         lambda settings: [_release("desktop-v1.6.0", assets=(_asset("Pharos-1.6.0-mac.zip"),))],
     )
     monkeypatch.setattr(updates, "_release_asset", spy)
+    import tempfile
+    from pathlib import Path
+
+    cached = Path(tempfile.mkdtemp()) / "installer.bin"
+    cached.write_bytes(b"")
     monkeypatch.setattr(
         updates,
-        "_stream_github_asset",
-        lambda settings, asset: iter([b""]),
+        "_fetch_asset_to_cache",
+        lambda settings, asset: cached,
     )
     app = FastAPI()
     app.include_router(updates.router)
