@@ -43,11 +43,16 @@ from pharos.harness.tables import steps
 from pharos.harness.usage import UsageLedger
 from pharos.harness.workflows.canary import (
     CANARY_KEY,
+    CANARY_V1_IDENTITY,
+    CANARY_V2_IDENTITY,
     canary_capabilities,
+    canary_dsh_workflow,
     canary_roles,
     canary_workflow,
     expand,
+    expand_dsh,
     reduce,
+    resolve_canary_model_profile,
     validate_canary_actor_output,
 )
 
@@ -78,6 +83,7 @@ class HarnessApp:
         for role in roles:
             self.registry.register_role(role)
         self.registry.register(canary_workflow())
+        self.registry.register(canary_dsh_workflow())
         self.registry.compile()
         self.config_service = HarnessConfigService(self.registry)
         self.state = HarnessStateService()
@@ -96,8 +102,8 @@ class HarnessApp:
                     schema_name=role.output_schema.rsplit("@", 1)[0],
                     schema_version=int(role.output_schema.rsplit("@", 1)[1]),
                     prompt_version=role.prompt_template_version,
-                    provider="fake",
-                    model=role.model_profile,
+                    provider=resolve_canary_model_profile(role.model_profile)[0],
+                    model=resolve_canary_model_profile(role.model_profile)[1],
                     validator=validate_canary_actor_output,
                 )
                 for role in roles
@@ -107,8 +113,10 @@ class HarnessApp:
             usage=self.usage,
             events=self.events,
             clock=self.clock,
-            expanders={CANARY_KEY: expand},
-            run_reducers={CANARY_KEY: reduce},
+            # Execution hooks are version identities. A route selecting v2
+            # must never silently run the v1 expander/reducer pair.
+            expanders={CANARY_V1_IDENTITY: expand, CANARY_V2_IDENTITY: expand_dsh},
+            run_reducers={CANARY_V1_IDENTITY: reduce, CANARY_V2_IDENTITY: reduce},
         )
         self.dispatcher = dispatcher or HarnessDispatcher(
             state_service=self.state, config_service=self.config_service

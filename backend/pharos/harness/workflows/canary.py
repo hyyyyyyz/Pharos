@@ -1,4 +1,4 @@
-"""The internal canary workflow: harness.canary@1.
+"""The internal canary workflows: harness.canary@1 and @2.
 
 The canary is the H1 proof vehicle. It never reads real papers, never calls
 the network, never writes legacy domain tables; it exercises the kernel --
@@ -14,6 +14,7 @@ it by construction (the same module owns both).
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Literal
 
 from pharos.harness.contracts import (
@@ -43,6 +44,20 @@ MODES = frozenset(
 )
 
 CANARY_KEY = "harness.canary"
+CANARY_V1_IDENTITY = f"{CANARY_KEY}@1"
+CANARY_V2_IDENTITY = f"{CANARY_KEY}@2"
+CANARY_ACTOR_ROLE = "canary_actor@1"
+CANARY_DSH_ACTOR_ROLE = "canary_dsh_actor@1"
+CANARY_FAKE_PROVIDER = "fake"
+CANARY_FAKE_MODEL = "canary"
+CANARY_DSH_PROVIDER = "pharos-fake"
+CANARY_DSH_MODEL = "pharos-fake-canary"
+CANARY_MODEL_PROFILES = MappingProxyType(
+    {
+        "canary": (CANARY_FAKE_PROVIDER, CANARY_FAKE_MODEL),
+        "pharos-fake-canary@1": (CANARY_DSH_PROVIDER, CANARY_DSH_MODEL),
+    }
+)
 
 
 class CanaryActorOutput(StrictModel):
@@ -56,6 +71,14 @@ class CanaryActorOutput(StrictModel):
 def validate_canary_actor_output(value: Any) -> dict:
     """Validate and normalize one fake Agent result for Artifact storage."""
     return CanaryActorOutput.model_validate(value).model_dump(mode="json")
+
+
+def resolve_canary_model_profile(profile: str) -> tuple[str, str]:
+    """Resolve a trusted role profile to the raw adapter provider/model pair."""
+    try:
+        return CANARY_MODEL_PROFILES[profile]
+    except KeyError as error:
+        raise ValueError(f"unknown canary model profile {profile!r}") from error
 
 
 def canary_capabilities() -> list[CapabilityDefinition]:
@@ -97,20 +120,36 @@ def canary_roles() -> list[RoleDefinition]:
             input_schema="canary.actor_in@1",
             output_schema="canary.actor_out@1",
             model_profile="canary",
+            runtime_kind="in_process_fake",
             capability_allowlist=(),
             max_turns=2,
             max_tool_calls=2,
             token_budget=BudgetSpec(
                 wall_seconds=30, model_calls=2, input_tokens=1000, output_tokens=1000
             ),
-        )
+        ),
+        RoleDefinition(
+            role_key="canary_dsh_actor",
+            version=1,
+            prompt_template_version="canary-actor-zh@1",
+            input_schema="canary.actor_in@1",
+            output_schema="canary.actor_out@1",
+            model_profile="pharos-fake-canary@1",
+            runtime_kind="dsh",
+            capability_allowlist=(),
+            max_turns=2,
+            max_tool_calls=2,
+            token_budget=BudgetSpec(
+                wall_seconds=30, model_calls=2, input_tokens=1000, output_tokens=1000
+            ),
+        ),
     ]
 
 
-def canary_workflow() -> WorkflowDefinition:
+def _canary_workflow(*, version: int, actor_role: str) -> WorkflowDefinition:
     return WorkflowDefinition(
         workflow_key=CANARY_KEY,
-        version=1,
+        version=version,
         input_schema="harness.canary_input@1",
         output_schema="harness.canary_output@1",
         internal_no_legacy_writer=True,
@@ -165,7 +204,7 @@ def canary_workflow() -> WorkflowDefinition:
             StepDefinition(
                 key="actor_turn",
                 kind="agent",
-                role="canary_actor@1",
+                role=actor_role,
                 depends_on=("collect",),
                 optional=True,
                 timeout_seconds=30,
@@ -187,6 +226,16 @@ def canary_workflow() -> WorkflowDefinition:
             ),
         ),
     )
+
+
+def canary_workflow() -> WorkflowDefinition:
+    """The original in-process fake canary, kept byte-for-byte compatible."""
+    return _canary_workflow(version=1, actor_role=CANARY_ACTOR_ROLE)
+
+
+def canary_dsh_workflow() -> WorkflowDefinition:
+    """The inactive DSH-runtime canary route used by the H1.5 gate tests."""
+    return _canary_workflow(version=2, actor_role=CANARY_DSH_ACTOR_ROLE)
 
 
 def _step_entry(key: str, definition: StepDefinition) -> dict:
@@ -241,6 +290,39 @@ def expand(input: dict) -> list[dict]:
     return steps
 
 
+def expand_dsh(input: dict) -> list[dict]:
+    """Expand the v2 canary while retaining the same typed step contract."""
+    # The shape is intentionally shared with v1; only the frozen workflow
+    # version/role identity changes.  This prevents v1/v2 lookup mixing.
+    mode = input.get("mode") or "success"
+    if mode != "agent":
+        raise ValueError("harness.canary@2 only accepts agent mode")
+    workflow = canary_dsh_workflow()
+    steps: list[dict] = []
+    for key in (
+        "start",
+        "flaky" if mode == "retry_then_success" else None,
+        "approval_gate" if mode == "approval" else None,
+        "map_items" if mode == "mapped" else None,
+        "collect",
+        "actor_turn" if mode == "agent" else None,
+        "publish",
+        "finish",
+    ):
+        if key is None:
+            continue
+        definition = workflow.step(key)
+        entry = _step_entry(key, definition)
+        if key == "map_items":
+            entry["instance_key"] = "batch"
+            entry["definition"] = {
+                **entry["definition"],
+                "expand_items": list(input.get("items") or [])[:8],
+            }
+        steps.append(entry)
+    return steps
+
+
 def reduce(run: dict, step_rows: list[dict], now_us: int) -> tuple[RunState, RunOutcome | None]:
     """The deterministic run reduction for the canary.
 
@@ -263,7 +345,10 @@ def reduce(run: dict, step_rows: list[dict], now_us: int) -> tuple[RunState, Run
         return RunState.indeterminate, RunOutcome.incomplete
     if any(row["state"] == StepState.waiting_for_approval.value for row in step_rows):
         return RunState.waiting_for_approval, None
-    if any(row["state"] == StepState.waiting_for_input.value for row in required):
+    # Optional DSH actor steps can still block the run: publish depends on
+    # them, and treating an unavailable runtime as an optional skip would let
+    # the run appear to progress while its required successor waits forever.
+    if any(row["state"] == StepState.waiting_for_input.value for row in step_rows):
         return RunState.waiting_for_input, None
     if any(
         row["state"]

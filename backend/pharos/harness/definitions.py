@@ -128,6 +128,10 @@ class RoleDefinition(StrictModel):
     input_schema: str
     output_schema: str
     model_profile: str
+    # This is a trusted execution route, not a model-controlled hint.  Keep
+    # the vocabulary closed so a malformed/future role cannot accidentally be
+    # treated as the in-process fake runtime.
+    runtime_kind: Literal["in_process_fake", "dsh"]
     capability_allowlist: tuple[str, ...] = ()
     max_turns: int = Field(default=4, ge=1)
     max_tool_calls: int = Field(default=8, ge=1)

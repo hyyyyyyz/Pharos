@@ -279,16 +279,21 @@ def validate_snapshot(snapshot: HarnessConfigSnapshot, registry: Registry) -> li
         # Key-level constraints (e.g. NULL execution_mode) come from any
         # registered version of the workflow.
         known = next(w for w in registry.all_workflows() if w.workflow_key == route.workflow_key)
-        if route.execution_mode in (ExecutionMode.shadow, ExecutionMode.harness):
-            if route.active_version is None:
-                errors.append(
-                    f"route {route.workflow_key} mode {route.execution_mode.value} "
-                    "needs an active_version"
-                )
-            elif registry.workflow(f"{route.workflow_key}@{route.active_version}") is None:
-                errors.append(
-                    f"route {route.workflow_key} names unknown version " f"{route.active_version}"
-                )
+        if (
+            route.active_version is not None
+            and registry.workflow(f"{route.workflow_key}@{route.active_version}") is None
+        ):
+            errors.append(
+                f"route {route.workflow_key} names unknown version {route.active_version}"
+            )
+        if (
+            route.execution_mode in (ExecutionMode.shadow, ExecutionMode.harness)
+            and route.active_version is None
+        ):
+            errors.append(
+                f"route {route.workflow_key} mode {route.execution_mode.value} "
+                "needs an active_version"
+            )
         if route.execution_mode == ExecutionMode.harness and not gates.get(
             "domain_publish_enabled"
         ):

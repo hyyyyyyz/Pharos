@@ -318,6 +318,7 @@ def test_role_tool_outside_workflow_allowlist_rejected() -> None:
             input_schema="reader.in@1",
             output_schema="reader.out@1",
             model_profile="reader",
+            runtime_kind="in_process_fake",
             capability_allowlist=("forbidden.tool@1",),
         )
     )

@@ -244,6 +244,10 @@ class Registry:
             _reject_side_effect_contracts(workflow, self)
             _reject_approval_gaps(workflow)
         for role in self._roles.values():
+            if role.runtime_kind not in ("in_process_fake", "dsh"):
+                raise DefinitionError(
+                    f"{role.identity()}: unknown runtime_kind {role.runtime_kind!r}"
+                )
             if role.max_turns < 1 or role.max_tool_calls < 1:
                 raise DefinitionError(f"{role.identity()}: bounded turns/tool calls required")
             if role.token_budget.wall_seconds <= 0:

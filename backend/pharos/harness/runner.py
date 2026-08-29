@@ -105,10 +105,10 @@ class HarnessRunner:
         step set; the (run_id, definition_step_key, instance_key) unique
         constraint is the second line of defence.
         """
-        workflow_key = run["workflow_key"]
-        expander = self.executor.expanders.get(workflow_key)
+        workflow_identity = f"{run['workflow_key']}@{run['workflow_version']}"
+        expander = self.executor.expanders.get(workflow_identity)
         if expander is None:
-            raise StateError(f"no trusted expander for {workflow_key}")
+            raise StateError(f"no trusted expander for {workflow_identity}")
         input = json.loads(run["input_json"])
         created: list[dict] = []
         for entry in expander(input):
@@ -142,6 +142,9 @@ class HarnessRunner:
             with session_scope() as session:
                 claimed = self.dispatcher.claim_due(session, now_us=now_us, limit=1)
                 if claimed is None:
+                    # Dispatcher claim_due exhausts its FIFO keyset scan;
+                    # None therefore means no currently claimable row remains,
+                    # not that an earlier gated/tampered page hid work.
                     break
                 run = self.run_repository.require(
                     session, scope=_scope_of(claimed), run_id=claimed.run_id
@@ -431,7 +434,10 @@ class HarnessRunner:
                 return
 
         gateway = self.executor.gateway
-        if gateway is None:
+        # The v2 canary is a claim-only DSH seam in this slice.  Do not route
+        # a trusted DSH role through the legacy in-process fake gateway while
+        # the actual sidecar adapter is still intentionally absent.
+        if claimed.runtime_kind == "dsh" or gateway is None:
             with session_scope() as session:
                 if not self._claim_is_active(
                     session,
@@ -465,6 +471,8 @@ class HarnessRunner:
                     target=StepState.waiting_for_input,
                     now_us=now_us,
                     waiting_reason="configuration",
+                    lease_owner=None,
+                    lease_expires_at=None,
                 )
             return
         with session_scope() as session:
@@ -523,6 +531,7 @@ class HarnessRunner:
             typed_output = self._validate_agent_output(
                 result=result,
                 step_def=json.loads(claimed.definition_json),
+                trusted_role=claimed.role,
             )
         except (TypeError, ValueError) as error:
             # Validation happens before ArtifactStore.create.  Consequently a
@@ -556,7 +565,9 @@ class HarnessRunner:
                 now_us=self.executor.clock.utc_epoch_us(),
             )
 
-    def _validate_agent_output(self, *, result: ModelResult, step_def: dict) -> dict:
+    def _validate_agent_output(
+        self, *, result: ModelResult, step_def: dict, trusted_role: str | None = None
+    ) -> dict:
         """Validate the smallest strict output contract available in H1.
 
         The trusted canary role owns a Pydantic ``StrictModel`` contract.  The
@@ -571,9 +582,11 @@ class HarnessRunner:
             raise ValueError("agent completion reported an error")
         if result.finish_reason != "stop":
             raise ValueError("agent completion did not finish normally")
-        role = step_def.get("role")
-        if not isinstance(role, str) or not role:
-            raise ValueError("agent step has no role identity")
+        if not isinstance(trusted_role, str) or not trusted_role:
+            raise ValueError("agent step has no trusted role identity")
+        role = trusted_role
+        if step_def.get("role") != trusted_role:
+            raise ValueError("agent step role does not match its trusted claim")
         # The role definition is the source of the output schema.  The current
         # trusted canary has one role; retaining this check prevents an Agent
         # response from inventing a schema in its payload.
@@ -612,7 +625,13 @@ class HarnessRunner:
         now_us: int,
     ) -> None:
         """Atomically publish the typed output and finish its attempt/step."""
-        role = str(step_def["role"])
+        if not isinstance(claimed.role, str) or not claimed.role:
+            raise ValueError("agent step has no trusted role identity")
+        if claimed.runtime_kind not in ("in_process_fake", "dsh"):
+            raise ValueError("agent step has no trusted runtime identity")
+        role = claimed.role
+        if step_def.get("role") != claimed.role:
+            raise ValueError("agent step role does not match its trusted claim")
         contract = self.executor.agent_output_contracts.get(role)
         if contract is None:
             raise ValueError(f"no validator registered for role {role!r}")
@@ -921,9 +940,10 @@ class HarnessRunner:
         return activated
 
     def _reduce_one(self, session, *, run: dict, scope: Scope, now_us: int) -> None:  # noqa: ANN001
-        reducer = self.executor.run_reducers.get(run["workflow_key"])
+        workflow_identity = f"{run['workflow_key']}@{run['workflow_version']}"
+        reducer = self.executor.run_reducers.get(workflow_identity)
         if reducer is None:
-            raise StateError(f"no trusted reducer for {run['workflow_key']}")
+            raise StateError(f"no trusted reducer for {workflow_identity}")
         step_rows = self.step_repository.for_run(session, scope=scope, run_id=run["id"])
         target, outcome = reducer(run, step_rows, now_us)
         if target.value == run["state"]:

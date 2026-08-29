@@ -15,7 +15,9 @@ from pharos.api import harness as harness_api
 from pharos.api.deps import current_user, get_settings, require_admin
 from pharos.db.models import User
 from pharos.db.session import session_scope
-from pharos.harness.repository import Scope
+from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute
+from pharos.harness.contracts import ActivationState
+from pharos.harness.repository import Scope, now_iso
 from pharos.harness.tables import config_revisions, runs
 from pharos.harness.workflows.canary import canary_input
 from tests.harness.conftest import enable_canary
@@ -68,6 +70,55 @@ def test_workflow_capability_listing(client) -> None:
     assert response.status_code == 200
     keys = {item["workflowKey"] for item in response.json()}
     assert "harness.canary" in keys
+    canaries = [item for item in response.json() if item["workflowKey"] == "harness.canary"]
+    assert {item["version"]: item["activationState"] for item in canaries} == {
+        1: "active",
+        2: "disabled",
+    }
+
+
+def test_workflow_capability_listing_only_marks_selected_version_active(client) -> None:
+    http, app = client
+    with session_scope() as session:
+        head = app.config_service.current(session)
+        assert head is not None
+        snapshot = HarnessConfigSnapshot(
+            gates={
+                "harness_enabled": True,
+                "dispatcher_enabled": True,
+                "canary_enabled": True,
+                "agent_steps_enabled": True,
+                "agent_runtime_enabled": True,
+                "domain_publish_enabled": False,
+                "fulltext_enabled": False,
+                "desktop_bridge_enabled": False,
+                "experiments_enabled": False,
+            },
+            routes=(
+                WorkflowRoute(
+                    workflow_key="harness.canary",
+                    active_version=2,
+                    activation_state=ActivationState.active,
+                ),
+            ),
+        )
+        app.config_service.apply(
+            session,
+            snapshot=snapshot,
+            expected_head_revision=head["current_revision_id"],
+            actor="test-operator",
+            reason="list v2",
+            now=now_iso(),
+        )
+        session.commit()
+    canaries = [
+        item for item in http.get("/api/harness/workflows").json()
+        if item["workflowKey"] == "harness.canary"
+    ]
+    assert {item["version"]: item["activationState"] for item in canaries} == {
+        1: "disabled",
+        2: "active",
+    }
 
 
 def test_create_and_run_canary_over_http(client) -> None:

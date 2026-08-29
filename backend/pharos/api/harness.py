@@ -173,15 +173,25 @@ def list_workflows(
     out = []
     for workflow in harness.registry.all_workflows():
         route = routes.get(workflow.workflow_key)
+        is_active_version = route is not None and route.active_version == workflow.version
         out.append(
             {
                 "workflowKey": workflow.workflow_key,
                 "version": workflow.version,
                 "inputSchema": workflow.input_schema,
                 "outputSchema": workflow.output_schema,
-                "activationState": route.activation_state.value if route else "disabled",
+                # A route selects one version. Other registered immutable
+                # versions remain visible for diagnostics but are never
+                # reported as active by the key-level route projection.
+                "activationState": (
+                    route.activation_state.value
+                    if is_active_version and route is not None
+                    else "disabled"
+                ),
                 "executionMode": (
-                    route.execution_mode.value if route and route.execution_mode else None
+                    route.execution_mode.value
+                    if is_active_version and route and route.execution_mode
+                    else None
                 ),
             }
         )
