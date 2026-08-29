@@ -19,6 +19,7 @@ from pharos.harness.contracts import ActivationState, AttemptState, ExecutionMod
 from pharos.harness.dispatcher import HarnessDispatcher
 from pharos.harness.fakes import FakeClock
 from pharos.harness.repository import now_iso
+from pharos.harness.tables import events as events_table
 from pharos.harness.tables import steps
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
@@ -244,6 +245,53 @@ def test_reaper_uses_state_service_and_events(app, owner):
     assert "step.indeterminate" in event_types
 
 
+def test_heartbeat_renews_step_lease_and_reaper_does_not_kill_it(app, owner):
+    enable_canary(app)
+    worker = HarnessDispatcher(
+        worker_id="worker-heartbeat",
+        lease_seconds=10,
+        heartbeat_seconds=2,
+        state_service=app.state,
+        config_service=app.config_service,
+    )
+    run_id = _seed(app, owner)
+    with session_scope() as session:
+        claimed = worker.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None
+    original_expiry = app.clock.utc_epoch_us() + 10 * 1_000_000
+    renewed_at = app.clock.utc_epoch_us() + 5 * 1_000_000
+    with session_scope() as session:
+        assert worker.heartbeat(session, attempt_id=claimed.attempt_id, now_us=renewed_at)
+    with session_scope() as session:
+        assert worker.reap_expired(session, now_us=original_expiry) == []
+    step = next(
+        row
+        for row in app.steps_for(scope=owner, run_id=run_id)
+        if row["id"] == claimed.step_id
+    )
+    assert step["lease_expires_at"] == renewed_at + 10 * 1_000_000
+
+
+def test_second_reaper_loses_without_duplicate_events(app, owner):
+    enable_canary(app)
+    run_id = _seed(app, owner)
+    with session_scope() as session:
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None
+    expired_at = app.clock.utc_epoch_us() + int(app.dispatcher.lease_seconds * 1_000_000) + 1
+    with session_scope() as session:
+        assert app.dispatcher.reap_expired(session, now_us=expired_at)
+    with session_scope() as session:
+        assert app.dispatcher.reap_expired(session, now_us=expired_at) == []
+        count = session.execute(
+            events_table.select().where(
+                events_table.c.run_id == run_id,
+                events_table.c.event_type.in_(["attempt.abandoned", "step.indeterminate"]),
+            )
+            ).mappings().all()
+    assert len(count) == 2
+
+
 def test_due_retry_uses_state_service_and_events(app, owner):
     """Retry activation is observable and atomic with its state transition."""
     enable_canary(app)
@@ -268,6 +316,8 @@ def test_due_retry_uses_state_service_and_events(app, owner):
 
     with session_scope() as session:
         assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 1
+    with session_scope() as session:
+        assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 0
     retry = next(
         row
         for row in app.steps_for(scope=owner, run_id=run["id"])
@@ -279,3 +329,12 @@ def test_due_retry_uses_state_service_and_events(app, owner):
         for event in app.replay_events(scope=owner, run_id=run["id"], after_seq=0, limit=200)
     }
     assert "step.ready" in event_types
+    with session_scope() as session:
+        ready_events = session.execute(
+            events_table.select().where(
+                events_table.c.run_id == run["id"],
+                events_table.c.step_id == retry["id"],
+                events_table.c.event_type == "step.ready",
+            )
+        ).mappings().all()
+    assert sum('"reason": "retry_due"' in event["payload_json"] for event in ready_events) == 1

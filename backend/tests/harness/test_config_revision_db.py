@@ -12,6 +12,7 @@ import pytest
 from pharos.db.session import session_scope
 from pharos.harness.configrev import (
     EMERGENCY_STOP_ENV,
+    GATE_NAMES,
     HarnessConfigSnapshot,
     WorkflowRoute,
     emergency_stop_active,
@@ -22,6 +23,7 @@ from pharos.harness.contracts import (
     UnavailableError,
 )
 from pharos.harness.repository import now_iso
+from pydantic import ValidationError
 from tests.harness.conftest import enable_canary
 
 
@@ -139,16 +141,12 @@ def test_validator_rejects_invalid_revision_before_persist(app):
             now=now_iso(),
         )
     with session_scope() as session:
-        head = app.config_service.current(session)
         current = app.config_service.current_snapshot(session)
     assert current is not None and current.gates["experiments_enabled"] is False
 
 
 def test_rollback_revision_restores_safe_default(app):
     enable_canary(app)
-    with session_scope() as session:
-        head = app.config_service.current(session)
-        expected = head["current_revision_id"]
     with session_scope() as session:
         revision = app.config_service.rollback(
             session, reason="rollback rehearsal", actor="op", now=now_iso()
@@ -182,3 +180,34 @@ def test_stale_config_cannot_start_runs(app, owner):
         )
     # Existing run remains readable.
     assert app.get_run(scope=owner, run_id=run["id"])["id"] == run["id"]
+
+
+def test_snapshot_rejects_unknown_and_missing_gates():
+    gates = {name: False for name in GATE_NAMES}
+    with pytest.raises(ValidationError, match="unknown gate"):
+        HarnessConfigSnapshot(gates={**gates, "typo_enabled": False}, routes=())
+    with pytest.raises(ValidationError, match="missing gate"):
+        HarnessConfigSnapshot(
+            gates={name: value for name, value in gates.items() if name != GATE_NAMES[0]},
+            routes=(),
+        )
+
+
+def test_snapshot_hash_is_independent_of_route_order():
+    gates = {name: False for name in GATE_NAMES}
+    first = HarnessConfigSnapshot(
+        gates=gates,
+        routes=(
+            WorkflowRoute(workflow_key="z.workflow"),
+            WorkflowRoute(workflow_key="a.workflow"),
+        ),
+    )
+    second = HarnessConfigSnapshot(
+        gates=dict(reversed(tuple(gates.items()))),
+        routes=tuple(reversed(first.routes)),
+    )
+    assert first.snapshot_hash() == second.snapshot_hash()
+    assert [route["workflow_key"] for route in first.canonical()["routes"]] == [
+        "a.workflow",
+        "z.workflow",
+    ]

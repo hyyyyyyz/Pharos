@@ -193,7 +193,16 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
         "/api/harness/operator/config/validate",
         json={
             "snapshot": {
-                "gates": {"harness_enabled": True, "experiments_enabled": True},
+                "gates": {
+                    "harness_enabled": True,
+                    "dispatcher_enabled": True,
+                    "canary_enabled": False,
+                    "agent_steps_enabled": False,
+                    "domain_publish_enabled": False,
+                    "fulltext_enabled": False,
+                    "desktop_bridge_enabled": False,
+                    "experiments_enabled": True,
+                },
                 "routes": [],
             }
         },

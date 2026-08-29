@@ -12,10 +12,9 @@ database; the service methods apply them through a Session.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from pharos.harness.contracts import (
@@ -24,9 +23,12 @@ from pharos.harness.contracts import (
     STEP_TERMINAL_STATES,
     AttemptState,
     RunState,
+    ScopeType,
     StateError,
     StepState,
 )
+from pharos.harness.events import EventStore, encode_event_payload
+from pharos.harness.repository import Scope
 from pharos.harness.tables import attempts, runs, steps
 
 # --------------------------------------------------------------------------
@@ -156,6 +158,11 @@ def _check(current: str, target: str, table: dict, subject: str) -> None:
 class HarnessStateService:
     """Central transition authority; also appends the matching Event."""
 
+    @staticmethod
+    def _validate_payload(payload: dict | None) -> None:
+        """Apply EventStore's serializer/cap before changing state."""
+        encode_event_payload(payload)
+
     def _event(
         self,
         session: Session,
@@ -169,19 +176,15 @@ class HarnessStateService:
         payload: dict | None,
         now_us: int,
     ) -> None:
-        from pharos.harness.tables import events
-
-        session.execute(
-            events.insert().values(
-                run_id=run_id,
-                scope_type=scope_type,
-                scope_id=scope_id,
-                step_id=step_id,
-                attempt_id=attempt_id,
-                event_type=event_type,
-                payload_json=json.dumps(payload or {}, ensure_ascii=False, sort_keys=True),
-                created_at=now_us,
-            )
+        EventStore().append(
+            session,
+            scope=Scope(scope_type=ScopeType(scope_type), scope_id=scope_id),
+            run_id=run_id,
+            event_type=event_type,
+            payload=payload,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            now_us=now_us,
         )
 
     # ------------------------------------------------------------------ Run
@@ -200,6 +203,7 @@ class HarnessStateService:
             raise StateError(f"run {run_id} does not exist")
         current = RunState(row["state"])
         _check(current, target, RUN_TRANSITIONS, f"run {run_id}")
+        self._validate_payload(payload)
         values: dict = {"state": target.value, "updated_at": now_us}
         if target == RunState.running and row["started_at"] is None:
             values["started_at"] = now_us
@@ -259,6 +263,7 @@ class HarnessStateService:
             raise StateError(f"step {step_id} does not exist")
         current = StepState(row["state"])
         _check(current, target, STEP_TRANSITIONS, f"step {step_id}")
+        self._validate_payload(payload)
         values = {"state": target.value, "updated_at": now_us, **values}
         if target in STEP_TERMINAL_STATES:
             values["finished_at"] = now_us
@@ -294,6 +299,7 @@ class HarnessStateService:
             raise StateError(f"attempt {attempt_id} does not exist")
         current = AttemptState(row["state"])
         _check(current, target, ATTEMPT_TRANSITIONS, f"attempt {attempt_id}")
+        self._validate_payload(payload)
         values = {"state": target.value, **values}
         if target in ATTEMPT_TERMINAL_STATES:
             values["finished_at"] = now_us
@@ -313,16 +319,186 @@ class HarnessStateService:
     # ---------------------------------------------------- CAS helper (lease)
 
     def update_attempt_heartbeat_cas(
-        self, session: Session, *, attempt_id: str, lease_owner: str, now_us: int
+        self,
+        session: Session,
+        *,
+        attempt_id: str,
+        lease_owner: str,
+        now_us: int,
+        lease_expires_at: int | None = None,
     ) -> bool:
-        """Only the current lease owner may heartbeat an active attempt."""
+        """Only the current owner may heartbeat and extend an active lease.
+
+        The step predicate is part of the CAS, so a heartbeat racing a reaper
+        cannot revive an expired lease after the reaper has won.  The optional
+        expiry keeps this helper source-compatible for callers that only need
+        to record a heartbeat; the dispatcher always supplies the extension.
+        """
         result: Any = session.execute(
             update(attempts)
             .where(
                 attempts.c.id == attempt_id,
                 attempts.c.lease_owner == lease_owner,
                 attempts.c.state.in_([AttemptState.leased.value, AttemptState.running.value]),
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        steps.c.id == attempts.c.step_id,
+                        steps.c.state.in_([StepState.leased.value, StepState.running.value]),
+                        steps.c.lease_owner == lease_owner,
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
+                    )
+                ),
             )
             .values(heartbeat_at=now_us)
         )
-        return result.rowcount == 1
+        if result.rowcount != 1:
+            return False
+        if lease_expires_at is not None:
+            session.execute(
+                update(steps)
+                .where(
+                    steps.c.id
+                    == select(attempts.c.step_id)
+                    .where(attempts.c.id == attempt_id)
+                    .scalar_subquery(),
+                    steps.c.lease_owner == lease_owner,
+                    steps.c.state.in_([StepState.leased.value, StepState.running.value]),
+                )
+                .values(heartbeat_at=now_us, lease_expires_at=lease_expires_at)
+            )
+        return True
+
+    def activate_retry_cas(self, session: Session, *, step_id: str, now_us: int) -> bool:
+        """Promote one due retry, emitting an event only for the CAS winner."""
+        row = (
+            session.execute(select(steps).where(steps.c.id == step_id))
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return False
+        result: Any = session.execute(
+            update(steps)
+            .where(
+                steps.c.id == step_id,
+                steps.c.state == StepState.retry_scheduled.value,
+                steps.c.ready_at <= now_us,
+            )
+            .values(
+                state=StepState.ready.value,
+                lease_owner=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+                updated_at=now_us,
+            )
+        )
+        if result.rowcount != 1:
+            return False
+        self._event(
+            session,
+            run_id=row["run_id"],
+            scope_type=row["scope_type"],
+            scope_id=row["scope_id"],
+            event_type="step.ready",
+            step_id=step_id,
+            attempt_id=None,
+            payload={"reason": "retry_due"},
+            now_us=now_us,
+        )
+        return True
+
+    def abandon_expired_attempt_cas(
+        self,
+        session: Session,
+        *,
+        attempt_id: str,
+        step_id: str,
+        lease_owner: str,
+        now_us: int,
+    ) -> bool:
+        """Abandon an attempt only while its owner/state/expiry token matches.
+
+        The attempt CAS takes the write lock before either transition event is
+        appended.  A heartbeat or a second reaper therefore loses cleanly and
+        cannot write duplicate or stale abandonment events.
+        """
+        result: Any = session.execute(
+            update(attempts)
+            .where(
+                attempts.c.id == attempt_id,
+                attempts.c.step_id == step_id,
+                attempts.c.lease_owner == lease_owner,
+                attempts.c.state.in_([AttemptState.leased.value, AttemptState.running.value]),
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        steps.c.id == step_id,
+                        steps.c.state.in_([StepState.leased.value, StepState.running.value]),
+                        steps.c.lease_owner == lease_owner,
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at <= now_us,
+                    )
+                ),
+            )
+            .values(state=AttemptState.abandoned.value, finished_at=now_us)
+        )
+        if result.rowcount != 1:
+            return False
+        attempt = (
+            session.execute(select(attempts).where(attempts.c.id == attempt_id))
+            .mappings()
+            .one()
+        )
+        self._event(
+            session,
+            run_id=attempt["run_id"],
+            scope_type=attempt["scope_type"],
+            scope_id=attempt["scope_id"],
+            event_type="attempt.abandoned",
+            step_id=step_id,
+            attempt_id=attempt_id,
+            payload={"reason": "lease_expired"},
+            now_us=now_us,
+        )
+        step_result: Any = session.execute(
+            update(steps)
+            .where(
+                steps.c.id == step_id,
+                steps.c.state.in_([StepState.leased.value, StepState.running.value]),
+                steps.c.lease_owner == lease_owner,
+                steps.c.lease_expires_at.is_not(None),
+                steps.c.lease_expires_at <= now_us,
+            )
+            .values(
+                state=StepState.indeterminate.value,
+                lease_owner=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+                error_code="lease_expired",
+                updated_at=now_us,
+                finished_at=now_us,
+            )
+        )
+        if step_result.rowcount != 1:
+            # Both rows are one recovery decision.  Raising keeps the caller's
+            # transaction from committing an abandoned Attempt while its Step
+            # still looks executable; a healthy FK/state pair cannot reach
+            # this branch once the attempt CAS has acquired SQLite's writer
+            # lock.
+            raise StateError(f"expired lease for attempt {attempt_id} lost its step {step_id}")
+        self._event(
+            session,
+            run_id=attempt["run_id"],
+            scope_type=attempt["scope_type"],
+            scope_id=attempt["scope_id"],
+            event_type="step.indeterminate",
+            step_id=step_id,
+            attempt_id=None,
+            payload={"reason": "lease_expired"},
+            now_us=now_us,
+        )
+        return True

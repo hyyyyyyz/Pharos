@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 
+from pydantic import field_validator
+
 from pharos.harness.contracts import (
     ActivationState,
     ExecutionMode,
@@ -103,10 +105,35 @@ class HarnessConfigSnapshot(StrictModel):
     actor: str = ""
     reason: str = ""
 
+    @field_validator("gates")
+    @classmethod
+    def _validate_gate_names(cls, gates: dict[str, bool]) -> dict[str, bool]:
+        expected = set(GATE_NAMES)
+        actual = set(gates)
+        unknown = sorted(actual - expected)
+        missing = sorted(expected - actual)
+        if unknown or missing:
+            details = []
+            if unknown:
+                details.append("unknown gate(s): " + ", ".join(unknown))
+            if missing:
+                details.append("missing gate(s): " + ", ".join(missing))
+            raise ValueError("invalid HarnessConfigSnapshot gates (" + "; ".join(details) + ")")
+        return gates
+
     def canonical(self) -> dict:
         return {
-            "gates": {name: bool(self.gates.get(name, False)) for name in GATE_NAMES},
-            "routes": [route.canonical() for route in self.routes],
+            "gates": {name: bool(self.gates[name]) for name in GATE_NAMES},
+            "routes": [
+                route.canonical()
+                for route in sorted(
+                    self.routes,
+                    key=lambda route: (
+                        route.workflow_key,
+                        canonical_json(route.canonical()),
+                    ),
+                )
+            ],
             "parent_revision_id": self.parent_revision_id,
             "actor": self.actor,
             "reason": self.reason,

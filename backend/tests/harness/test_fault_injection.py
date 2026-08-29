@@ -20,10 +20,11 @@ from pharos.harness.contracts import (
     AttemptState,
     GatewayError,
     RetryableCapabilityError,
+    StepState,
 )
 from pharos.harness.events import EventStore, EventTooLarge
 from pharos.harness.fakes import FakeModel
-from pharos.harness.tables import attempts
+from pharos.harness.tables import attempts, steps
 from pharos.harness.tables import events as events_table
 from pharos.harness.workflows.canary import canary_input
 from tests.harness.conftest import enable_canary
@@ -91,7 +92,6 @@ def test_crash_after_side_effect_recovers_without_repeating_the_effect(app, owne
             .mappings()
             .all()
         )
-    publish_attempt = [row for row in attempt_rows if "publish" in str(row["step_id"]) or True]
     assert any(row["state"] == AttemptState.failed.value for row in attempt_rows)
 
 
@@ -179,6 +179,37 @@ def test_oversized_event_payload_is_refused(app, owner):
             ).fetchall()
         )
     assert count >= 0
+
+
+def test_state_transition_oversized_event_rolls_back_state(app, owner):
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("success"),
+        idempotency_key="big-state-event-1",
+        initiator="user",
+    )
+    with session_scope() as session:
+        step = session.execute(
+            steps.select().where(
+                steps.c.run_id == run["id"], steps.c.state == StepState.ready.value
+            )
+        ).mappings().first()
+        assert step is not None
+        with pytest.raises(EventTooLarge):
+            app.state.transition_step(
+                session,
+                step_id=step["id"],
+                target=StepState.cancelled,
+                now_us=app.clock.utc_epoch_us(),
+                payload={"blob": "x" * 100_000},
+            )
+    with session_scope() as session:
+        row = session.execute(
+            steps.select().where(steps.c.id == step["id"])
+        ).mappings().one()
+    assert row["state"] == StepState.ready.value
 
 
 def test_prompt_injection_text_cannot_change_the_catalog(app, owner):

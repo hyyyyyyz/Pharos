@@ -300,25 +300,25 @@ class HarnessDispatcher:
             .scalars()
             .all()
         )
+        activated = 0
         for step_id in rows:
-            self.state.transition_step(
-                session,
-                step_id=step_id,
-                target=StepState.ready,
-                now_us=now_us,
-                lease_owner=None,
-                lease_expires_at=None,
-                heartbeat_at=None,
-                payload={"reason": "retry_due"},
-            )
-        return len(rows)
+            # Multiple dispatchers can observe the same due row.  The state
+            # service owns the conditional UPDATE; only its winner emits the
+            # step.ready event.
+            if self.state.activate_retry_cas(session, step_id=step_id, now_us=now_us):
+                activated += 1
+        return activated
 
     # ------------------------------------------------------------ heartbeat
 
     def heartbeat(self, session: Session, *, attempt_id: str, now_us: int) -> bool:
         """Extend the lease; only the current lease owner may."""
         return self.state.update_attempt_heartbeat_cas(
-            session, attempt_id=attempt_id, lease_owner=self.worker_id, now_us=now_us
+            session,
+            attempt_id=attempt_id,
+            lease_owner=self.worker_id,
+            now_us=now_us,
+            lease_expires_at=now_us + int(self.lease_seconds * MICROSECONDS_PER_SECOND),
         )
 
     # ---------------------------------------------------------------- reaper
@@ -347,36 +347,14 @@ class HarnessDispatcher:
         )
         abandoned: list[dict] = []
         for row in expired:
-            step = (
-                session.execute(select(steps).where(steps.c.id == row["step_id"]))
-                .mappings()
-                .first()
-            )
-            if step is None:
-                continue
-            self.state.transition_attempt(
+            if self.state.abandon_expired_attempt_cas(
                 session,
                 attempt_id=row["id"],
-                target=AttemptState.abandoned,
+                step_id=row["step_id"],
+                lease_owner=row["lease_owner"],
                 now_us=now_us,
-                payload={"reason": "lease_expired"},
-            )
-            abandoned.append(dict(row))
-            # The step goes back to ready only when the capability is known
-            # safe to retry; the caller (recovery policy) decides, and until
-            # then the step is failed-indeterminate, never silently re-run.
-            if step["state"] in (StepState.leased.value, StepState.running.value):
-                self.state.transition_step(
-                    session,
-                    step_id=row["step_id"],
-                    target=StepState.indeterminate,
-                    now_us=now_us,
-                    lease_owner=None,
-                    lease_expires_at=None,
-                    heartbeat_at=None,
-                    error_code="lease_expired",
-                    payload={"reason": "lease_expired"},
-                )
+            ):
+                abandoned.append(dict(row))
         return abandoned
 
     def step_scopes(self, session: Session, *, step_id: str) -> Scope | None:
