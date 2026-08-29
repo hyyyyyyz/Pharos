@@ -16,6 +16,7 @@ from typing import Any
 
 mode = os.environ.get("FAKE_MODE", "ok")
 orphan_pid_file = os.environ.get("ORPHAN_PID_FILE")
+prompt_bytes_file = os.environ.get("PROMPT_BYTES_FILE")
 initialize_params: dict[str, Any] = {}
 
 if mode == "early-exit":
@@ -232,6 +233,10 @@ def emit_prompt(request_id: object, frame: dict[str, Any]) -> None:
 
     # The official server acknowledges enqueueing before the model step ends.
     prompt_response(request_id)
+    if mode == "crash-after-receipt":
+        raise SystemExit(17)
+    if mode == "hang-after-receipt":
+        time.sleep(60)
 
     if mode in {"blocked", "aborted", "interrupted"}:
         reason = (
@@ -453,6 +458,9 @@ for line in sys.stdin:
         initialize_params = dict(frame.get("params") or {})
         handle_initialize(request_id)
     elif method == "session/prompt":
+        if prompt_bytes_file:
+            with open(prompt_bytes_file, "w", encoding="ascii") as handle:
+                handle.write(str(len(line.encode("utf-8")) + 1))
         emit_prompt(request_id, frame)
     elif method == "shutdown":
         if mode == "shutdown-notification":

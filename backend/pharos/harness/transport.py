@@ -12,17 +12,20 @@ import hashlib
 import json
 import math
 import os
+import queue
 import select
 import selectors
 import signal
 import subprocess
+import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Protocol, TypeAlias
 
 from pydantic import ValidationError
 
@@ -47,7 +50,7 @@ class HarnessTransportError(RuntimeError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.delivery_state: str | None = None
+        self.delivery_state: DeliveryState | None = None
         self.cleanup_error_type: str | None = None
 
 
@@ -61,6 +64,157 @@ class HarnessTimeoutError(HarnessTransportError, TimeoutError):
 
 class HarnessProcessError(HarnessTransportError):
     """The child exited before a required protocol boundary."""
+
+
+class DeliveryState(StrEnum):
+    """The only values exposed by the Attempt delivery observer.
+
+    ``reconciled`` is included because it is a durable repository state, but
+    this transport never emits it.  In particular, the observer receives no
+    prompt, event, provider response or exception object.
+    """
+
+    NOT_STARTED = "not_started"
+    UNKNOWN = "unknown"
+    SENT = "sent"
+    ACKNOWLEDGED = "acknowledged"
+    RECONCILED = "reconciled"
+
+
+DeliveryObserverResult: TypeAlias = bool | None
+
+
+class DeliveryObserver(Protocol):
+    """A bounded, typed persistence seam for one Attempt's delivery facts."""
+
+    def __call__(self, state: DeliveryState) -> DeliveryObserverResult:
+        """Persist ``state`` and return false/raise if persistence failed."""
+
+
+class HarnessDeliveryError(HarnessTransportError):
+    """A delivery fact could not be durably observed."""
+
+    def __init__(self, phase: DeliveryState) -> None:
+        self.phase = phase
+        self.timed_out = False
+        super().__init__(f"delivery observer failed during {phase.value}")
+
+
+class HarnessDeliveryTimeoutError(HarnessDeliveryError):
+    """The observer did not finish within its independent phase deadline."""
+
+    def __init__(self, phase: DeliveryState) -> None:
+        super().__init__(phase)
+        self.timed_out = True
+        self.args = (f"delivery observer deadline exceeded during {phase.value}",)
+
+
+class HarnessDeliveryCapacityError(HarnessDeliveryError):
+    """The process-level bounded observer executor is saturated."""
+
+    def __init__(self, phase: DeliveryState) -> None:
+        super().__init__(phase)
+        self.capacity_rejected = True
+        self.args = (f"delivery observer capacity exceeded during {phase.value}",)
+
+
+# Explicit aliases make the seam discoverable without creating multiple error
+# implementations for callers that use either the DSH or Attempt vocabulary.
+AttemptDeliveryObserver = DeliveryObserver
+AttemptDeliveryObserverError = HarnessDeliveryError
+AttemptDeliveryObserverTimeoutError = HarnessDeliveryTimeoutError
+AttemptDeliveryObserverCapacityError = HarnessDeliveryCapacityError
+
+_DELIVERY_OBSERVER_PREVIOUS: dict[DeliveryState, DeliveryState] = {
+    DeliveryState.UNKNOWN: DeliveryState.NOT_STARTED,
+    DeliveryState.SENT: DeliveryState.UNKNOWN,
+    DeliveryState.ACKNOWLEDGED: DeliveryState.SENT,
+}
+
+_DELIVERY_OBSERVER_WORKERS = 4
+_DELIVERY_OBSERVER_QUEUE_SIZE = 4
+_MAX_DELIVERY_OBSERVER_TIMEOUT_SECONDS = 5.0
+
+
+@dataclass(slots=True)
+class _ObserverJob:
+    callback: DeliveryObserver
+    state: DeliveryState
+    completed: threading.Event
+    succeeded: list[bool]
+
+
+class _DeliveryObserverPool:
+    """A process-level fixed daemon pool with a hard admission bound.
+
+    A callback is untrusted application code and cannot be force-stopped from
+    Python.  Fixed workers cap the damage from permanently blocked callbacks;
+    the fixed-capacity queue makes saturation an immediate fail-closed result
+    rather than an unbounded accumulation of callback threads or jobs.
+    """
+
+    def __init__(self) -> None:
+        capacity = _DELIVERY_OBSERVER_WORKERS + _DELIVERY_OBSERVER_QUEUE_SIZE
+        self._jobs: queue.Queue[_ObserverJob] = queue.Queue(capacity)
+        self._capacity = threading.BoundedSemaphore(capacity)
+        self._lock = threading.Lock()
+        self._workers_started = False
+
+    def _start_workers(self) -> None:
+        if self._workers_started:
+            return
+        with self._lock:
+            if self._workers_started:
+                return
+            for index in range(_DELIVERY_OBSERVER_WORKERS):
+                worker = threading.Thread(
+                    target=self._run,
+                    name=f"pharos-delivery-observer-{index}",
+                    daemon=True,
+                )
+                worker.start()
+            self._workers_started = True
+
+    def submit(
+        self, callback: DeliveryObserver, state: DeliveryState
+    ) -> tuple[threading.Event, list[bool]]:
+        self._start_workers()
+        if not self._capacity.acquire(blocking=False):
+            raise HarnessDeliveryCapacityError(state)
+        completed = threading.Event()
+        succeeded = [False]
+        job = _ObserverJob(callback, state, completed, succeeded)
+        try:
+            self._jobs.put_nowait(job)
+        except queue.Full:
+            # The semaphore and queue share the same hard outstanding-job
+            # bound.  A Full result should therefore be unreachable, but keep
+            # the release fail-closed if that invariant is ever disturbed.
+            self._capacity.release()
+            raise HarnessDeliveryCapacityError(state) from None
+        return completed, succeeded
+
+    def _run(self) -> None:
+        while True:
+            job = self._jobs.get()
+            try:
+                try:
+                    result = job.callback(job.state)
+                    job.succeeded[0] = result is None or result is True
+                except BaseException:
+                    # Do not retain or expose callback exceptions; they can
+                    # contain provider/database details or secrets.
+                    job.succeeded[0] = False
+            finally:
+                self._jobs.task_done()
+                self._capacity.release()
+                # Signal only after the outstanding-job permit is returned,
+                # so the same Attempt can submit its next phase without a
+                # transient false capacity rejection.
+                job.completed.set()
+
+
+_DELIVERY_OBSERVER_POOL = _DeliveryObserverPool()
 
 
 class HarnessTurnError(HarnessTransportError):
@@ -84,7 +238,7 @@ class HarnessTurnError(HarnessTransportError):
         self.usage = usage
         self.output = tuple(output)
         super().__init__(f"runtime turn ended with reason {self.reason.get('kind', 'unknown')}")
-        self.delivery_state = "acknowledged"
+        self.delivery_state = DeliveryState.ACKNOWLEDGED
 
 
 def _is_finite_positive_number(value: object) -> bool:
@@ -122,6 +276,7 @@ class AttemptTransportConfig:
     max_events: int = 1024
     max_output_bytes: int = 256 * 1024
     max_stderr_bytes: int = 64 * 1024
+    delivery_observer_timeout_seconds: float = 1.0
 
     def __post_init__(self) -> None:
         if os.name != "posix":
@@ -187,12 +342,15 @@ class AttemptTransportConfig:
             self.prompt_timeout_seconds,
             self.idle_timeout_seconds,
             self.shutdown_timeout_seconds,
+            self.delivery_observer_timeout_seconds,
             self.term_timeout_seconds,
             self.kill_timeout_seconds,
             self.reap_timeout_seconds,
         )
         if any(not _is_finite_positive_number(value) for value in positive):
             raise ValueError("deadlines must be positive")
+        if self.delivery_observer_timeout_seconds > _MAX_DELIVERY_OBSERVER_TIMEOUT_SECONDS:
+            raise ValueError("delivery observer deadline exceeds the bounded maximum")
         bounds = (
             self.max_frame_bytes,
             self.max_buffer_bytes,
@@ -221,7 +379,12 @@ class AttemptTransport:
     later deployment gate, not implemented by this transport.
     """
 
-    def __init__(self, config: AttemptTransportConfig) -> None:
+    def __init__(
+        self,
+        config: AttemptTransportConfig,
+        *,
+        delivery_observer: DeliveryObserver | None = None,
+    ) -> None:
         self.config = config
         self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
@@ -239,7 +402,11 @@ class AttemptTransport:
         self._stderr_hash = hashlib.sha256()
         self._pgid: int | None = None
         self._next_event_seq = 0
-        self._delivery_state = "not_started"
+        self._delivery_state = DeliveryState.NOT_STARTED
+        self._delivery_observer = delivery_observer
+        self._observed_delivery_states: set[DeliveryState] = set()
+        self._observer_execution_active = False
+        self._observer_timed_out = False
 
     @property
     def process(self) -> subprocess.Popen[bytes] | None:
@@ -255,8 +422,12 @@ class AttemptTransport:
         return f"bytes={self._stderr_count} sha256={self._stderr_hash.hexdigest()}"
 
     @property
-    def delivery_state(self) -> str:
-        """Return monotonic parent-side evidence for the one prompt delivery."""
+    def delivery_state(self) -> DeliveryState:
+        """Return parent-side evidence, never a claim of durable DB state.
+
+        With no observer this is intentionally only in-memory compatibility
+        evidence; production callers must provide the persistence seam.
+        """
 
         return self._delivery_state
 
@@ -342,14 +513,14 @@ class AttemptTransport:
         request_id = self._new_request_id()
         try:
             # Once a write begins, failure may mean a partial frame reached the
-            # child. The state becomes definite only after the full write or a
-            # validated inbox receipt.
-            self._delivery_state = "unknown"
+            # child. Unknown is persisted before the first byte, and sent is
+            # persisted only after the complete frame write.
+            self._observe_delivery(DeliveryState.UNKNOWN)
             self._write(
                 self._request_frame(request_id, "session/prompt", params.model_dump()),
                 timeout=self.config.prompt_timeout_seconds,
             )
-            self._delivery_state = "sent"
+            self._observe_delivery(DeliveryState.SENT)
             result, events, _output = self._collect_prompt(
                 request_id,
                 self.config.prompt_timeout_seconds,
@@ -430,6 +601,45 @@ class AttemptTransport:
             )
         except ValidationError:
             raise HarnessProtocolError("invalid prompt parameters") from None
+
+    def _observe_delivery(self, state: DeliveryState) -> None:
+        """Record one bounded delivery transition through the optional seam.
+
+        The callback deliberately receives only a closed enum.  State is
+        updated *after* callback success so an unsuccessful durable write
+        cannot be mistaken for evidence already stored in the database.
+        """
+
+        previous = _DELIVERY_OBSERVER_PREVIOUS.get(state)
+        if (
+            previous is None
+            or state in self._observed_delivery_states
+            or self._delivery_state is not previous
+        ):
+            raise HarnessDeliveryError(state)
+        observer = self._delivery_observer
+        if observer is not None:
+            if self._observer_execution_active or self._observer_timed_out:
+                raise HarnessDeliveryError(state)
+            self._observer_execution_active = True
+            try:
+                completed, succeeded = _DELIVERY_OBSERVER_POOL.submit(observer, state)
+            except HarnessDeliveryCapacityError:
+                self._observer_execution_active = False
+                raise
+            observer_timeout = min(
+                self.config.delivery_observer_timeout_seconds,
+                self.config.prompt_timeout_seconds,
+            )
+            if not completed.wait(observer_timeout):
+                self._observer_timed_out = True
+                self._observer_execution_active = False
+                raise HarnessDeliveryTimeoutError(state) from None
+            self._observer_execution_active = False
+            if not succeeded[0]:
+                raise HarnessDeliveryError(state) from None
+        self._observed_delivery_states.add(state)
+        self._delivery_state = state
 
     def shutdown(self) -> None:
         """Use official shutdown, then independently wait/reap the child."""
@@ -580,7 +790,22 @@ class AttemptTransport:
     def _collect_prompt(
         self, request_id: str, prompt_timeout: float, idle_timeout: float, prompt_text: str
     ) -> tuple[dict[str, Any], list[SessionEvent], list[TextBlock]]:
-        return self._collect(request_id, prompt_timeout, idle_timeout, True, prompt_text)
+        def acknowledge_response(result: dict[str, Any], events: list[SessionEvent]) -> None:
+            try:
+                receipt = SessionPromptResult.model_validate(result)
+            except ValidationError:
+                raise HarnessProtocolError("malformed prompt response") from None
+            _validate_prompt_receipt(events, receipt, prompt_text)
+            self._observe_delivery(DeliveryState.ACKNOWLEDGED)
+
+        return self._collect(
+            request_id,
+            prompt_timeout,
+            idle_timeout,
+            True,
+            prompt_text,
+            response_hook=acknowledge_response,
+        )
 
     def _collect(
         self,
@@ -590,6 +815,7 @@ class AttemptTransport:
         allow_notifications: bool = True,
         prompt_text: str | None = None,
         drain_after_response: bool = False,
+        response_hook: Callable[[dict[str, Any], list[SessionEvent]], None] | None = None,
     ) -> tuple[dict[str, Any], list[SessionEvent], list[TextBlock]]:
         response: dict[str, Any] | None = None
         events: list[SessionEvent] = []
@@ -732,6 +958,8 @@ class AttemptTransport:
                                 raise HarnessProtocolError(
                                     "prompt response preceded its inbox receipt"
                                 )
+                            if response_hook is not None:
+                                response_hook(result, events)
                             response = result
                             if drain_after_response:
                                 draining = True
@@ -795,12 +1023,6 @@ class AttemptTransport:
                                         "inbox receipt must be the first prompt event"
                                     )
                                 receipt_seen = True
-                                inserted = (event.data or {}).get("inserted", [])
-                                accepted = inserted[0] if inserted else {}
-                                if accepted.get("content") == [
-                                    {"type": "text", "text": prompt_text}
-                                ]:
-                                    self._delivery_state = "acknowledged"
                             elif event.type == "agent/inbox/spliced":
                                 if not receipt_seen or not turn_start_seen:
                                     raise HarnessProtocolError(
@@ -1246,6 +1468,26 @@ def _is_candidate_receipt(event: SessionEvent) -> bool:
     )
 
 
+def _validate_prompt_receipt(
+    events: Sequence[SessionEvent], receipt: SessionPromptResult, prompt_text: str
+) -> SessionEvent:
+    """Validate the one receipt that can acknowledge a submitted prompt."""
+
+    receipt_events = [event for event in events if _is_candidate_receipt(event)]
+    if len(receipt_events) != 1:
+        raise HarnessProtocolError("prompt must have exactly one matching inbox receipt")
+    receipt_event = receipt_events[0]
+    inserted = (receipt_event.data or {}).get("inserted", [])
+    message = inserted[0] if inserted else {}
+    if message.get("id") != receipt.messageId:
+        raise HarnessProtocolError("inbox receipt message id does not match prompt response")
+    if message.get("role") != "user" or message.get("source") != {"kind": "user"}:
+        raise HarnessProtocolError("inbox receipt is not a direct user message")
+    if message.get("content") != [{"type": "text", "text": prompt_text}]:
+        raise HarnessProtocolError("inbox receipt content does not match submitted prompt")
+    return receipt_event
+
+
 def _sanitize_turn_reason(reason: dict[str, Any]) -> dict[str, Any]:
     """Retain classification/accounting fields without provider-controlled text."""
 
@@ -1275,18 +1517,15 @@ def _validate_prompt_outcome(
     max_tokens: int | None,
     max_output_bytes: int,
 ) -> tuple[TokenUsage | None, list[TextBlock]]:
+    receipt_event = _validate_prompt_receipt(events, receipt, prompt_text)
     receipt_events = [event for event in events if _is_candidate_receipt(event)]
-    if len(receipt_events) != 1:
-        raise HarnessProtocolError("prompt must have exactly one matching inbox receipt")
-    receipt_event = receipt_events[0]
+    # ``_validate_prompt_receipt`` establishes this cardinality.  Keeping the
+    # local list makes the later event-order checks explicit and avoids ever
+    # trusting a transport-side in-memory acknowledgement as validation.
+    assert len(receipt_events) == 1
     inserted = (receipt_event.data or {}).get("inserted", [])
     message = inserted[0]
-    if message.get("id") != receipt.messageId:
-        raise HarnessProtocolError("inbox receipt message id does not match prompt response")
-    if message.get("role") != "user" or message.get("source") != {"kind": "user"}:
-        raise HarnessProtocolError("inbox receipt is not a direct user message")
-    if message.get("content") != [{"type": "text", "text": prompt_text}]:
-        raise HarnessProtocolError("inbox receipt content does not match submitted prompt")
+
     starts = [event for event in events if event.type == "turn/start"]
     ends = [event for event in events if event.type == "turn/end"]
     if len(starts) != 1 or len(ends) != 1:

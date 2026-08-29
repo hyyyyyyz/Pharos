@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -11,10 +12,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from pharos.harness.protocol import SessionEvent, TokenUsage
+from pharos.harness.protocol import PromptOutcome, SessionEvent, TokenUsage
 from pharos.harness.transport import (
     AttemptTransport,
     AttemptTransportConfig,
+    DeliveryState,
+    HarnessDeliveryCapacityError,
+    HarnessDeliveryError,
+    HarnessDeliveryTimeoutError,
     HarnessProcessError,
     HarnessProtocolError,
     HarnessTimeoutError,
@@ -27,7 +32,14 @@ FIXTURE = Path(__file__).with_name("fixtures") / "fake_dsh_runtime.py"
 FAKE_ROUTES = frozenset({("pharos-fake", "fake")})
 
 
-def make_transport(tmp_path: Path, mode: str = "ok", **limits: int | float) -> AttemptTransport:
+def make_transport(
+    tmp_path: Path,
+    mode: str = "ok",
+    *,
+    delivery_observer: Callable[[DeliveryState], bool | None] | None = None,
+    **limits: int | float,
+) -> AttemptTransport:
+    observer_timeout = limits.pop("delivery_observer_timeout_seconds", 0.1)
     env = {"FAKE_MODE": mode}
     allowed = frozenset(env)
     config = AttemptTransportConfig(
@@ -40,12 +52,13 @@ def make_transport(tmp_path: Path, mode: str = "ok", **limits: int | float) -> A
         prompt_timeout_seconds=0.75,
         idle_timeout_seconds=0.75,
         shutdown_timeout_seconds=0.75,
+        delivery_observer_timeout_seconds=observer_timeout,
         term_timeout_seconds=0.75,
         kill_timeout_seconds=0.75,
         reap_timeout_seconds=1.0,
         **limits,
     )
-    return AttemptTransport(config)
+    return AttemptTransport(config, delivery_observer=delivery_observer)
 
 
 def wait_until(predicate: Callable[[], bool], timeout_seconds: float = 2.0) -> bool:
@@ -75,6 +88,222 @@ def test_one_attempt_official_wire_and_shutdown(tmp_path: Path) -> None:
     assert transport.process.stdout is not None and transport.process.stdout.closed
     assert transport.process.stderr is not None and transport.process.stderr.closed
     transport.shutdown()
+
+
+def test_delivery_observer_is_ordered_and_receives_only_typed_state(tmp_path: Path) -> None:
+    observed: list[object] = []
+    transport = make_transport(tmp_path, delivery_observer=observed.append)
+    transport.initialize(provider="pharos-fake", model="fake")
+    assert transport.prompt("session-1", "hello").deliveryState == "acknowledged"
+    assert observed == [
+        DeliveryState.UNKNOWN,
+        DeliveryState.SENT,
+        DeliveryState.ACKNOWLEDGED,
+    ]
+    assert all(isinstance(state, DeliveryState) for state in observed)
+    transport.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("mode", "error_type"),
+    [("crash-after-receipt", HarnessProcessError), ("hang-after-receipt", HarnessTimeoutError)],
+)
+def test_ack_is_observed_at_response_before_late_failure(
+    tmp_path: Path,
+    mode: str,
+    error_type: type[HarnessTransportError],
+) -> None:
+    observed: list[DeliveryState] = []
+    transport = make_transport(tmp_path, mode, delivery_observer=observed.append)
+    transport.initialize(provider="pharos-fake", model="fake")
+    with pytest.raises(error_type):
+        transport.prompt("session-1", "hello")
+    assert observed == [
+        DeliveryState.UNKNOWN,
+        DeliveryState.SENT,
+        DeliveryState.ACKNOWLEDGED,
+    ]
+    assert transport.delivery_state is DeliveryState.ACKNOWLEDGED
+    assert transport.process is not None and transport.process.poll() is not None
+
+
+@pytest.mark.parametrize(
+    ("hang_state", "expected_state"),
+    [
+        (DeliveryState.UNKNOWN, DeliveryState.NOT_STARTED),
+        (DeliveryState.SENT, DeliveryState.UNKNOWN),
+        (DeliveryState.ACKNOWLEDGED, DeliveryState.SENT),
+    ],
+)
+def test_hanging_delivery_observer_is_bounded_and_reaps(
+    tmp_path: Path, hang_state: DeliveryState, expected_state: DeliveryState
+) -> None:
+    entered = threading.Event()
+    unblock = threading.Event()
+    observed: list[DeliveryState] = []
+
+    def observer(state: DeliveryState) -> None:
+        observed.append(state)
+        if state is hang_state:
+            entered.set()
+            unblock.wait()
+
+    transport = make_transport(tmp_path, delivery_observer=observer)
+    transport.initialize(provider="pharos-fake", model="fake")
+    with pytest.raises(HarnessDeliveryTimeoutError):
+        transport.prompt("session-1", "hello")
+    assert entered.is_set()
+    assert transport.delivery_state is expected_state
+    assert transport.process is not None and transport.process.poll() is not None
+    unblock.set()
+
+
+def test_observer_pool_admits_four_concurrent_short_callbacks(tmp_path: Path) -> None:
+    barrier = threading.Barrier(4)
+    observed: list[DeliveryState] = []
+    observed_lock = threading.Lock()
+    results: list[PromptOutcome | BaseException] = []
+    result_lock = threading.Lock()
+
+    def observer(state: DeliveryState) -> None:
+        if state is DeliveryState.UNKNOWN:
+            barrier.wait(timeout=2.0)
+        with observed_lock:
+            observed.append(state)
+
+    def run_attempt() -> None:
+        transport = make_transport(
+            tmp_path,
+            delivery_observer=observer,
+            delivery_observer_timeout_seconds=0.75,
+        )
+        try:
+            transport.initialize(provider="pharos-fake", model="fake")
+            result = transport.prompt("session-1", "hello")
+            with result_lock:
+                results.append(result)
+        except BaseException as error:
+            with result_lock:
+                results.append(error)
+        finally:
+            transport.close()
+
+    workers = [threading.Thread(target=run_attempt) for _ in range(4)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=5.0)
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(results) == 4
+    assert all(isinstance(result, PromptOutcome) for result in results)
+    assert observed.count(DeliveryState.UNKNOWN) == 4
+
+
+def test_observer_pool_saturation_fails_closed_without_thread_accumulation(
+    tmp_path: Path,
+) -> None:
+    entered = threading.Event()
+    unblock = threading.Event()
+    observed: list[DeliveryState] = []
+
+    def never_released(state: DeliveryState) -> None:
+        observed.append(state)
+        entered.set()
+        unblock.wait()
+
+    baseline = sum(
+        thread.name.startswith("pharos-delivery-observer-")
+        for thread in threading.enumerate()
+    )
+    transports: list[AttemptTransport] = []
+    errors: list[HarnessDeliveryError] = []
+    try:
+        for _ in range(12):
+            transport = make_transport(tmp_path, delivery_observer=never_released)
+            transports.append(transport)
+            transport.initialize(provider="pharos-fake", model="fake")
+            with pytest.raises(HarnessDeliveryError) as error:
+                transport.prompt("session-1", "hello")
+            errors.append(error.value)
+
+        assert entered.wait(1.0)
+        assert any(isinstance(error, HarnessDeliveryCapacityError) for error in errors)
+        assert all(
+            transport.process is not None and transport.process.poll() is not None
+            for transport in transports
+        )
+        active = sum(
+            thread.name.startswith("pharos-delivery-observer-")
+            for thread in threading.enumerate()
+        )
+        assert active <= baseline + 4
+    finally:
+        unblock.set()
+        assert wait_until(lambda: len(observed) >= 8)
+        for transport in transports:
+            transport.close()
+
+
+def test_unknown_observer_failure_writes_zero_prompt_bytes_and_reaps(
+    tmp_path: Path,
+) -> None:
+    prompt_bytes = tmp_path / "prompt-bytes"
+
+    def fail_unknown(state: DeliveryState) -> None:
+        assert state is DeliveryState.UNKNOWN
+        raise RuntimeError("secret callback failure")
+
+    transport = make_transport(tmp_path, delivery_observer=fail_unknown)
+    transport.config = replace(
+        transport.config,
+        env={"FAKE_MODE": "ok", "PROMPT_BYTES_FILE": str(prompt_bytes)},
+        env_allowlist=frozenset({"FAKE_MODE", "PROMPT_BYTES_FILE"}),
+    )
+    transport.initialize(provider="pharos-fake", model="fake")
+    with pytest.raises(HarnessDeliveryError, match="delivery observer failed") as error:
+        transport.prompt("session-1", "secret prompt")
+    assert "secret" not in str(error.value)
+    assert transport.delivery_state == DeliveryState.NOT_STARTED
+    assert not prompt_bytes.exists()
+    assert transport.process is not None and transport.process.poll() is not None
+
+
+@pytest.mark.parametrize(
+    ("failed_state", "expected_state"),
+    [
+        (DeliveryState.SENT, DeliveryState.UNKNOWN),
+        (DeliveryState.ACKNOWLEDGED, DeliveryState.SENT),
+    ],
+)
+def test_delivery_observer_failure_preserves_conservative_state_and_reaps(
+    tmp_path: Path, failed_state: DeliveryState, expected_state: DeliveryState
+) -> None:
+    observed: list[DeliveryState] = []
+
+    def fail(state: DeliveryState) -> bool | None:
+        observed.append(state)
+        return False if state is failed_state else None
+
+    transport = make_transport(tmp_path, delivery_observer=fail)
+    transport.initialize(provider="pharos-fake", model="fake")
+    with pytest.raises(HarnessDeliveryError, match="delivery observer failed") as error:
+        transport.prompt("session-1", "hello")
+    assert observed[-1] is failed_state
+    assert transport.delivery_state is expected_state
+    assert error.value.delivery_state is expected_state
+    assert transport.process is not None and transport.process.poll() is not None
+
+
+@pytest.mark.parametrize("mode", ["wrong-receipt-id", "wrong-receipt-content", "duplicate-receipt"])
+def test_invalid_receipt_never_triggers_ack_observer(tmp_path: Path, mode: str) -> None:
+    observed: list[DeliveryState] = []
+    transport = make_transport(tmp_path, mode, delivery_observer=observed.append)
+    transport.initialize(provider="pharos-fake", model="fake")
+    with pytest.raises(HarnessProtocolError):
+        transport.prompt("session-1", "hello")
+    assert observed == [DeliveryState.UNKNOWN, DeliveryState.SENT]
+    assert transport.delivery_state is DeliveryState.SENT
+    assert transport.process is not None and transport.process.poll() is not None
 
 
 @pytest.mark.parametrize(
@@ -168,6 +397,16 @@ def test_timeout_bool_is_rejected(tmp_path: Path) -> None:
             cwd=str(tmp_path),
             allowed_routes=FAKE_ROUTES,
             initialize_timeout_seconds=True,
+        )
+
+
+def test_delivery_observer_timeout_is_strictly_bounded(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="bounded maximum"):
+        AttemptTransportConfig(
+            argv=(sys.executable, "--profile", "sdk"),
+            cwd=str(tmp_path),
+            allowed_routes=FAKE_ROUTES,
+            delivery_observer_timeout_seconds=5.1,
         )
 
 
