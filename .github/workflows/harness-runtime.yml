@@ -8,6 +8,9 @@ on:
       - "scripts/vendor-deepseek-harness.sh"
       - "scripts/check-deepseek-harness-vendor.sh"
       - "harness-runtime/**"
+      - "backend/pharos/harness/protocol.py"
+      - "backend/pharos/harness/transport.py"
+      - "backend/tests/harness/**"
       - ".github/workflows/harness-runtime.yml"
   pull_request:
     paths:
@@ -16,6 +19,9 @@ on:
       - "scripts/vendor-deepseek-harness.sh"
       - "scripts/check-deepseek-harness-vendor.sh"
       - "harness-runtime/**"
+      - "backend/pharos/harness/protocol.py"
+      - "backend/pharos/harness/transport.py"
+      - "backend/tests/harness/**"
       - ".github/workflows/harness-runtime.yml"
   workflow_dispatch: {}
 
@@ -42,6 +48,31 @@ jobs:
           python3 harness-runtime/scripts/check-profile.py
           python3 -m unittest discover -s harness-runtime/tests -v
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the bounded wire test dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          "pydantic>=2.10,<3"
+          "pytest>=8.3,<9"
+          "ruff>=0.8,<1"
+          "mypy>=1.13,<2"
+
+      - name: Verify the bounded official Harness wire
+        working-directory: backend
+        run: |
+          python -m pytest -q tests/harness/test_dsh_transport.py
+          python -m ruff check \
+            pharos/harness/protocol.py \
+            pharos/harness/transport.py \
+            tests/harness/test_dsh_transport.py \
+            tests/harness/fixtures/fake_dsh_runtime.py
+          python -m mypy \
+            pharos/harness/protocol.py \
+            pharos/harness/transport.py
+
       - uses: pnpm/action-setup@v4
         with:
           version: 11.7.0
@@ -65,7 +96,9 @@ jobs:
         run: pnpm run build
 
       - name: Run the real Loader and deterministic Pharos canary
-        run: python3 harness-runtime/scripts/run-fake-canary.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: python3 harness-runtime/scripts/run-fake-canary.py --attempt-transport
 
       - name: Smoke-test bounded SDK shutdown
         run: |

@@ -39,7 +39,11 @@ class RuntimePeer:
             text=True,
             start_new_session=True,
         )
-        if self.process.stdin is None or self.process.stdout is None or self.process.stderr is None:
+        if (
+            self.process.stdin is None
+            or self.process.stdout is None
+            or self.process.stderr is None
+        ):
             raise CanaryFailure("runtime pipes were not created")
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.process.stdout, selectors.EVENT_READ, "stdout")
@@ -128,7 +132,9 @@ def launch(runtime_dir: Path, root: Path, env: dict[str, str]) -> RuntimePeer:
     )
 
 
-def initialize(peer: RuntimePeer, cwd: Path, model: str, request_id: str) -> dict[str, Any]:
+def initialize(
+    peer: RuntimePeer, cwd: Path, model: str, request_id: str
+) -> dict[str, Any]:
     peer.send(
         {
             "jsonrpc": "2.0",
@@ -204,7 +210,11 @@ def verify_prompt(peer: RuntimePeer) -> None:
         raise CanaryFailure("canary did not emit exactly one assistant message")
     assistant = assistants[0]
     assistant_data = assistant.get("data", {})
-    expected_source = {"kind": "model", "provider": CANARY_PROVIDER, "model": CANARY_MODEL}
+    expected_source = {
+        "kind": "model",
+        "provider": CANARY_PROVIDER,
+        "model": CANARY_MODEL,
+    }
     if assistant.get("surfaceOp") != "append":
         raise CanaryFailure("assistant output was not appended to the surface")
     if assistant_data.get("message", {}).get("source") != expected_source:
@@ -225,7 +235,11 @@ def verify_prompt(peer: RuntimePeer) -> None:
     }:
         raise CanaryFailure("request context does not match the fake route")
     headers = [event for event in events if event.get("type") == "request/header"]
-    config = headers[0].get("data", {}).get("header", {}).get("config", {}) if headers else {}
+    config = (
+        headers[0].get("data", {}).get("header", {}).get("config", {})
+        if headers
+        else {}
+    )
     if config.get("provider") != CANARY_PROVIDER or config.get("model") != CANARY_MODEL:
         raise CanaryFailure("request header does not match the fake route")
     if headers[0].get("data", {}).get("header", {}).get("tools") if headers else False:
@@ -239,10 +253,80 @@ def shutil_which(name: str) -> str:
     return resolved
 
 
-def run(root: Path) -> None:
+def verify_with_attempt_transport(
+    runtime_dir: Path,
+    root: Path,
+    env: dict[str, str],
+) -> None:
+    """Exercise the production parent-side wire against the real Loader."""
+
+    try:
+        from pharos.harness.transport import AttemptTransport, AttemptTransportConfig
+
+        config = AttemptTransportConfig(
+            argv=(
+                shutil_which("node"),
+                str(root / "vendor/deepseek-harness/apps/cli/lib/bin.js"),
+                "--profile",
+                "sdk",
+                "--patch",
+                str(root / "harness-runtime/profile/pharos-safe.cordis.patch.yml"),
+            ),
+            cwd=str(runtime_dir / "workspace"),
+            allowed_routes=frozenset({(CANARY_PROVIDER, CANARY_MODEL)}),
+            env=env,
+            env_allowlist=frozenset(env),
+            initialize_timeout_seconds=20.0,
+            prompt_timeout_seconds=30.0,
+            idle_timeout_seconds=30.0,
+            shutdown_timeout_seconds=10.0,
+            term_timeout_seconds=2.0,
+            kill_timeout_seconds=2.0,
+            reap_timeout_seconds=10.0,
+        )
+        transport = AttemptTransport(config)
+        try:
+            initialized = transport.initialize(
+                provider=CANARY_PROVIDER,
+                model=CANARY_MODEL,
+                max_tokens=64,
+            )
+            if initialized.serverInfo.model_dump() != {
+                "name": "deepseek-harness-sdk-runtime",
+                "version": "0.0.1",
+            }:
+                raise CanaryFailure(
+                    "AttemptTransport observed an unexpected SDK identity"
+                )
+            outcome = transport.prompt("pharos-canary", "canary")
+            if [block.model_dump() for block in outcome.output] != [
+                {"type": "text", "text": CANARY_TEXT}
+            ]:
+                raise CanaryFailure("AttemptTransport canary payload changed")
+            if outcome.usage.model_dump(exclude_none=True) != {
+                "inputTokens": 8,
+                "outputTokens": 7,
+            }:
+                raise CanaryFailure("AttemptTransport canary usage changed")
+            transport.shutdown()
+            if transport.process is None or transport.process.returncode != 0:
+                raise CanaryFailure("AttemptTransport did not reap the Loader cleanly")
+        finally:
+            transport.close()
+    except CanaryFailure:
+        raise
+    except Exception as error:
+        raise CanaryFailure(
+            f"AttemptTransport canary failed ({type(error).__name__})"
+        ) from error
+
+
+def run(root: Path, *, attempt_transport: bool = False) -> None:
     cli = root / "vendor/deepseek-harness/apps/cli/lib/bin.js"
     if not cli.is_file():
-        raise CanaryFailure("the pinned Harness snapshot must be built before the canary")
+        raise CanaryFailure(
+            "the pinned Harness snapshot must be built before the canary"
+        )
     with tempfile.TemporaryDirectory(prefix="pharos-dsh-canary-") as directory:
         runtime_dir = Path(directory)
         (runtime_dir / "home").mkdir()
@@ -272,7 +356,9 @@ def run(root: Path) -> None:
             check=False,
         )
         if install.returncode != 0:
-            raise CanaryFailure(f"failed to install fake bundle: {install.stderr[-2000:]}")
+            raise CanaryFailure(
+                f"failed to install fake bundle: {install.stderr[-2000:]}"
+            )
         effective = subprocess.run(
             [
                 shutil_which("node"),
@@ -291,7 +377,9 @@ def run(root: Path) -> None:
             check=False,
         )
         if effective.returncode != 0:
-            raise CanaryFailure(f"failed to compose fake profile: {effective.stderr[-2000:]}")
+            raise CanaryFailure(
+                f"failed to compose fake profile: {effective.stderr[-2000:]}"
+            )
         effective_path = runtime_dir / "effective.yml"
         effective_path.write_text(effective.stdout, encoding="utf-8")
         policy = subprocess.run(
@@ -308,24 +396,33 @@ def run(root: Path) -> None:
             check=False,
         )
         if policy.returncode != 0:
-            raise CanaryFailure(f"effective profile failed policy: {policy.stderr[-2000:]}")
+            raise CanaryFailure(
+                f"effective profile failed policy: {policy.stderr[-2000:]}"
+            )
 
-        peer = launch(runtime_dir, root, env)
-        try:
-            init = initialize(peer, runtime_dir / "workspace", CANARY_MODEL, "initialize")
-            if init.get("result", {}).get("serverInfo") != {
-                "name": "deepseek-harness-sdk-runtime",
-                "version": "0.0.1",
-            }:
-                raise CanaryFailure("SDK server identity changed")
-            verify_prompt(peer)
-            shutdown(peer)
-        finally:
-            peer.close()
+        if attempt_transport:
+            verify_with_attempt_transport(runtime_dir, root, env)
+        else:
+            peer = launch(runtime_dir, root, env)
+            try:
+                init = initialize(
+                    peer, runtime_dir / "workspace", CANARY_MODEL, "initialize"
+                )
+                if init.get("result", {}).get("serverInfo") != {
+                    "name": "deepseek-harness-sdk-runtime",
+                    "version": "0.0.1",
+                }:
+                    raise CanaryFailure("SDK server identity changed")
+                verify_prompt(peer)
+                shutdown(peer)
+            finally:
+                peer.close()
 
         wrong = launch(runtime_dir, root, env)
         try:
-            rejected = initialize(wrong, runtime_dir / "workspace", "not-canary", "wrong-model")
+            rejected = initialize(
+                wrong, runtime_dir / "workspace", "not-canary", "wrong-model"
+            )
             if "error" not in rejected or "result" in rejected:
                 raise CanaryFailure("SDK initialize accepted an unapproved fake model")
             shutdown(wrong)
@@ -335,10 +432,17 @@ def run(root: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument(
+        "--root", type=Path, default=Path(__file__).resolve().parents[2]
+    )
+    parser.add_argument(
+        "--attempt-transport",
+        action="store_true",
+        help="run the canary through the production AttemptTransport boundary",
+    )
     args = parser.parse_args()
     try:
-        run(args.root.resolve())
+        run(args.root.resolve(), attempt_transport=args.attempt_transport)
     except (CanaryFailure, OSError, subprocess.SubprocessError) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
