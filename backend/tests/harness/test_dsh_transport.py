@@ -667,7 +667,7 @@ def test_process_group_cleanup_handles_leader_exit(tmp_path: Path) -> None:
         transport.initialize(provider="pharos-fake", model="fake")
         assert wait_until(pid_file.exists)
         orphan_pid = int(pid_file.read_text())
-        with pytest.raises(HarnessTimeoutError):
+        with pytest.raises(HarnessTimeoutError, match="runtime idle deadline exceeded"):
             transport.shutdown()
         assert not _pid_exists(orphan_pid)
     finally:
@@ -687,14 +687,25 @@ def _pid_exists(pid: int) -> bool:
 
 
 @pytest.mark.parametrize(
-    ("mode", "error"),
+    ("mode", "error", "message"),
     [
-        ("orphan-exit-after-init", HarnessProcessError),
-        ("orphan-clean-stdio", HarnessProcessError),
+        (
+            "orphan-exit-after-init",
+            HarnessProcessError,
+            "runtime exited before the shutdown handshake",
+        ),
+        (
+            "orphan-clean-stdio",
+            HarnessProcessError,
+            "runtime left descendants after shutdown",
+        ),
     ],
 )
 def test_process_group_cleanup_covers_early_leader_and_closed_pipes(
-    tmp_path: Path, mode: str, error: type[HarnessTransportError]
+    tmp_path: Path,
+    mode: str,
+    error: type[HarnessTransportError],
+    message: str,
 ) -> None:
     pid_file = tmp_path / f"{mode}.pid"
     transport = make_transport(tmp_path, mode)
@@ -712,7 +723,7 @@ def test_process_group_cleanup_covers_early_leader_and_closed_pipes(
             assert wait_until(
                 lambda: transport.process is not None and transport.process.poll() is not None
             )
-        with pytest.raises(error):
+        with pytest.raises(error, match=message):
             transport.shutdown()
         assert not _pid_exists(orphan_pid)
     finally:
@@ -779,12 +790,16 @@ def test_cleanup_failure_remains_retryable(tmp_path: Path, monkeypatch: pytest.M
         original()
 
     monkeypatch.setattr(transport, "_terminate_ladder", fail_once)
-    with pytest.raises(HarnessTimeoutError, match="runtime request deadline") as error:
-        transport.initialize(provider="pharos-fake", model="fake")
-    assert error.value.cleanup_error_type == "HarnessTimeoutError"
-    assert transport._closed is False
-    transport.close()
-    assert transport._closed is True
+    try:
+        with pytest.raises(HarnessTimeoutError, match="runtime request deadline") as error:
+            transport.initialize(provider="pharos-fake", model="fake")
+        assert error.value.cleanup_error_type == "HarnessTimeoutError"
+        assert transport._closed is False
+        transport.close()
+        assert transport._closed is True
+    finally:
+        with suppress(HarnessTransportError):
+            transport.close()
 
 
 def test_env_allowlist_is_explicit(tmp_path: Path) -> None:
@@ -822,17 +837,19 @@ def test_stdin_write_timeout_keeps_its_timeout_classification(
 ) -> None:
     transport = make_transport(tmp_path)
     transport._spawn()
-    with monkeypatch.context() as patch:
+    try:
+        with monkeypatch.context() as patch:
 
-        def blocked_write(*_args: object) -> int:
-            raise BlockingIOError
+            def blocked_write(*_args: object) -> int:
+                raise BlockingIOError
 
-        patch.setattr("pharos.harness.transport.os.write", blocked_write)
-        patch.setattr("pharos.harness.transport.select.select", lambda *_args: ([], [], []))
-        with pytest.raises(HarnessTimeoutError, match="stdin write"):
-            transport._write(
-                {"jsonrpc": "2.0", "id": "attempt-1", "method": "shutdown"},
-                timeout=0.01,
-            )
-    transport.kill()
-    transport.reap()
+            patch.setattr("pharos.harness.transport.os.write", blocked_write)
+            patch.setattr("pharos.harness.transport.select.select", lambda *_args: ([], [], []))
+            with pytest.raises(HarnessTimeoutError, match="stdin write"):
+                transport._write(
+                    {"jsonrpc": "2.0", "id": "attempt-1", "method": "shutdown"},
+                    timeout=0.01,
+                )
+    finally:
+        with suppress(HarnessTransportError):
+            transport.close()

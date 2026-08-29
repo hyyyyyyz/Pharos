@@ -40,6 +40,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Verify the vendored boundary
         run: scripts/check-deepseek-harness-vendor.sh
 
@@ -47,10 +51,6 @@ jobs:
         run: |
           python3 harness-runtime/scripts/check-profile.py
           python3 -m unittest discover -s harness-runtime/tests -v
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       - name: Install the bounded wire test dependencies
         run: >-
@@ -63,7 +63,10 @@ jobs:
       - name: Verify the bounded official Harness wire
         working-directory: backend
         run: |
-          python -m pytest -q tests/harness/test_dsh_transport.py
+          # This transport contract is intentionally independent of the durable-kernel
+          # database fixtures in tests/harness/conftest.py. Loading that conftest here
+          # would widen this minimal security test into a full backend installation.
+          python -m pytest --noconftest -q tests/harness/test_dsh_transport.py
           python -m ruff check \
             pharos/harness/protocol.py \
             pharos/harness/transport.py \
@@ -105,7 +108,7 @@ jobs:
           runtime_dir="$(mktemp -d)"
           mkdir -p "$runtime_dir/home"
           printf '%s\n' '{"jsonrpc":"2.0","id":"shutdown-smoke","method":"shutdown","params":{}}' | \
-            timeout 20s env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
+            timeout -k 5s 20s env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
             DSH_TELEMETRY_DISABLED=1 NODE_ENV=production \
             node vendor/deepseek-harness/apps/cli/lib/bin.js \
             --profile sdk \
