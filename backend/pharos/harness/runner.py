@@ -20,10 +20,13 @@ from sqlalchemy.orm import Session
 
 from pharos.db.session import session_scope
 from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
+from pharos.harness.artifacts import ArtifactStore
 from pharos.harness.contracts import (
+    ArtifactSensitivity,
     AttemptErrorClass,
     AttemptState,
     GatewayError,
+    ProducerKind,
     RetryableCapabilityError,
     RunOutcome,
     RunState,
@@ -33,12 +36,12 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import ClaimedStep, HarnessDispatcher
 from pharos.harness.events import EventStore
-from pharos.harness.fakes import FakeClock
+from pharos.harness.fakes import FakeClock, ModelResult
 from pharos.harness.model_gateway import ModelGateway
 from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
 from pharos.harness.state import HarnessStateService
-from pharos.harness.tables import runs, steps
-from pharos.harness.usage import UsageLedger
+from pharos.harness.tables import attempts, runs, steps
+from pharos.harness.usage import LedgerConflict, UsageLedger
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +51,19 @@ MICROSECONDS_PER_SECOND = 1_000_000
 StepExpander = Callable[[dict], list[dict]]
 #: A RunReducer maps (run row, step rows, now_us) -> (target state, outcome).
 RunReducer = Callable[[dict, list[dict], int], tuple[RunState, RunOutcome | None]]
+AgentOutputValidator = Callable[[Any], dict]
+
+
+@dataclass(frozen=True)
+class AgentOutputContract:
+    """Trusted role output validator and immutable provenance metadata."""
+
+    schema_name: str
+    schema_version: int
+    prompt_version: str
+    provider: str
+    model: str
+    validator: AgentOutputValidator
 
 
 @dataclass
@@ -55,6 +71,8 @@ class StepExecutor:
     """What the runner needs to execute claimed steps."""
 
     gateway: ModelGateway | None = None
+    artifacts: ArtifactStore = field(default_factory=ArtifactStore)
+    agent_output_contracts: dict[str, AgentOutputContract] = field(default_factory=dict)
     capabilities: dict[str, Any] = field(default_factory=dict)
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
@@ -400,9 +418,40 @@ class HarnessRunner:
             )
 
     def _run_agent_step(self, *, claimed: ClaimedStep, run: dict, now_us: int) -> None:
+        # A finish may be replayed after the worker has already committed.  Do
+        # this check before reserving usage: the output reference is the
+        # durable idempotency marker for the whole local finish operation.
+        with session_scope() as session:
+            if not self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.leased,
+                step_state=StepState.leased,
+            ):
+                return
+
         gateway = self.executor.gateway
         if gateway is None:
             with session_scope() as session:
+                if not self._claim_is_active(
+                    session,
+                    claimed=claimed,
+                    attempt_state=AttemptState.leased,
+                    step_state=StepState.leased,
+                ):
+                    return
+                self.state.transition_attempt(
+                    session,
+                    attempt_id=claimed.attempt_id,
+                    target=AttemptState.running,
+                    now_us=now_us,
+                )
+                self.state.transition_step(
+                    session,
+                    step_id=claimed.step_id,
+                    target=StepState.running,
+                    now_us=now_us,
+                )
                 self.state.transition_attempt(
                     session,
                     attempt_id=claimed.attempt_id,
@@ -456,18 +505,198 @@ class HarnessRunner:
                     now_us=self.executor.clock.utc_epoch_us(),
                 )
             raise error
+        except Exception:  # noqa: BLE001 -- gateway failures are typed below
+            # A non-Gateway exception is a local bug, but it must not strand a
+            # reservation.  Keep the failure terminal and auditable without
+            # persisting exception text that may echo a prompt or credential.
+            log.exception("agent gateway raised an untyped local error")
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.bug,
+                error_message="model gateway raised an unexpected local error",
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+
+        try:
+            typed_output = self._validate_agent_output(
+                result=result,
+                step_def=json.loads(claimed.definition_json),
+            )
+        except (TypeError, ValueError) as error:
+            # Validation happens before ArtifactStore.create.  Consequently a
+            # malformed model result can never leave a publishable Artifact.
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.validation,
+                error_message=str(error),
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+
+        try:
+            self._finish_agent_success(
+                claimed=claimed,
+                run=run,
+                step_def=json.loads(claimed.definition_json),
+                result=result,
+                typed_output=typed_output,
+                reservation_id=reservation or "",
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+        except Exception:  # noqa: BLE001 -- failed commit is terminal and explicit
+            log.exception("agent Artifact finish transaction failed")
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.bug,
+                error_message="agent finish transaction failed",
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+
+    def _validate_agent_output(self, *, result: ModelResult, step_def: dict) -> dict:
+        """Validate the smallest strict output contract available in H1.
+
+        The trusted canary role owns a Pydantic ``StrictModel`` contract.  The
+        role identity selects that validator; a model response cannot choose
+        its own schema.  Unknown role identities fail closed rather than being
+        guessed.  H1.5 can add more role validators without changing the
+        transaction below.
+        """
+        if not isinstance(result, ModelResult):
+            result = ModelResult.model_validate(result)
+        if result.error is not None:
+            raise ValueError("agent completion reported an error")
+        if result.finish_reason != "stop":
+            raise ValueError("agent completion did not finish normally")
+        role = step_def.get("role")
+        if not isinstance(role, str) or not role:
+            raise ValueError("agent step has no role identity")
+        # The role definition is the source of the output schema.  The current
+        # trusted canary has one role; retaining this check prevents an Agent
+        # response from inventing a schema in its payload.
+        contract = self.executor.agent_output_contracts.get(role)
+        if contract is None:
+            raise ValueError(f"no validator registered for role {role!r}")
+        output: Any = result.output
+        if isinstance(output, str):
+            try:
+                output = json.loads(output)
+            except json.JSONDecodeError as error:
+                raise ValueError("agent output is not valid JSON") from error
+        try:
+            output = contract.validator(output)
+            if not isinstance(output, dict):
+                raise TypeError("agent output validator must return a JSON object")
+            # allow_nan=False closes a subtle non-JSON path even after schema
+            # validation, before the canonical content hash is computed.
+            json.dumps(output, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            # Validation errors may echo the rejected model payload.  That
+            # payload can contain private paper text, so the durable Attempt
+            # stores only this stable classification and never ``str(error)``.
+            raise ValueError("agent output does not match its role schema") from error
+        return output
+
+    def _finish_agent_success(
+        self,
+        *,
+        claimed: ClaimedStep,
+        run: dict,
+        step_def: dict,
+        result: ModelResult,
+        typed_output: dict,
+        reservation_id: str,
+        now_us: int,
+    ) -> None:
+        """Atomically publish the typed output and finish its attempt/step."""
+        role = str(step_def["role"])
+        contract = self.executor.agent_output_contracts.get(role)
+        if contract is None:
+            raise ValueError(f"no validator registered for role {role!r}")
+        input_artifact_ids: list[str] = []
         with session_scope() as session:
+            if not self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.running,
+                step_state=StepState.running,
+            ):
+                self._release_reservation(
+                    session, reservation_id=reservation_id, now_us=now_us
+                )
+                return
+            current_step = (
+                session.execute(steps.select().where(steps.c.id == claimed.step_id))
+                .mappings()
+                .first()
+            )
+            if current_step is None or current_step["output_artifact_id"] is not None:
+                # A prior committed finish won the race.  Never settle a new
+                # reservation or create a second artifact on replay.
+                self._release_reservation(
+                    session, reservation_id=reservation_id, now_us=now_us
+                )
+                return
+            raw_inputs = current_step["input_artifact_ids_json"] or "[]"
+            parsed_inputs = json.loads(raw_inputs)
+            if not (
+                isinstance(parsed_inputs, list)
+                and all(isinstance(item, str) and item for item in parsed_inputs)
+            ):
+                raise ValueError("agent step has malformed input artifact lineage")
+            input_artifact_ids = parsed_inputs
+            scope = _scope_of(claimed)
+            for artifact_id in input_artifact_ids:
+                # A lineage edge may point to an earlier Run, but it may never
+                # cross owner scope or name an invented Artifact.
+                self.executor.artifacts.require(
+                    session,
+                    scope=scope,
+                    artifact_id=artifact_id,
+                )
+
+            artifact = self.executor.artifacts.create(
+                session,
+                scope=scope,
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                artifact_type=f"agent.{role}",
+                schema_name=contract.schema_name,
+                schema_version=contract.schema_version,
+                content=typed_output,
+                producer_kind=ProducerKind.model_inference,
+                now_us=now_us,
+                sensitivity=ArtifactSensitivity.private,
+                workflow_key=run["workflow_key"],
+                workflow_version=run["workflow_version"],
+                role_prompt_version=contract.prompt_version,
+                provider=contract.provider,
+                model=contract.model,
+                input_artifact_ids=input_artifact_ids,
+                input_sha256=run["input_sha256"],
+                quality_status="valid",
+            )
+            # Artifact insertion, usage settlement, and both terminal state
+            # transitions share this session/transaction. Any exception rolls
+            # back all four writes, including the artifact row.
             self.executor.usage.settle(
                 session,
-                reservation_id=reservation or "",
+                reservation_id=reservation_id,
                 actual=result.output_tokens,
-                now_us=self.executor.clock.utc_epoch_us(),
+                now_us=now_us,
             )
             self.state.transition_attempt(
                 session,
                 attempt_id=claimed.attempt_id,
                 target=AttemptState.succeeded,
-                now_us=self.executor.clock.utc_epoch_us(),
+                now_us=now_us,
+                role_or_capability=role,
+                model_prompt_version=contract.prompt_version,
+                input_sha256=run["input_sha256"],
+                output_sha256=artifact["content_sha256"],
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 cost_micros=result.cost_micros,
@@ -477,14 +706,119 @@ class HarnessRunner:
                 session,
                 step_id=claimed.step_id,
                 target=StepState.succeeded,
-                now_us=self.executor.clock.utc_epoch_us(),
+                now_us=now_us,
+                output_artifact_id=artifact["id"],
+                lease_owner=None,
+                lease_expires_at=None,
+            )
+
+    def _finish_agent_failure(
+        self,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str,
+        error_class: AttemptErrorClass,
+        error_message: str,
+        now_us: int,
+    ) -> None:
+        with session_scope() as session:
+            active = self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.running,
+                step_state=StepState.running,
+            )
+            self._release_reservation(
+                session, reservation_id=reservation_id, now_us=now_us
+            )
+            # A late result from an expired/retried Attempt owns only its own
+            # reservation.  It must never fail or complete the newer Attempt.
+            if not active:
+                return
+            self.state.transition_attempt(
+                session,
+                attempt_id=claimed.attempt_id,
+                target=AttemptState.failed,
+                now_us=now_us,
+                error_class=error_class.value,
+                error_message=error_message[:500],
+            )
+            self.state.transition_step(
+                session,
+                step_id=claimed.step_id,
+                target=StepState.failed,
+                now_us=now_us,
+                error_code=error_class.value,
+                error_message=error_message[:500],
+                lease_owner=None,
+                lease_expires_at=None,
+            )
+
+    def _claim_is_active(
+        self,
+        session: Session,
+        *,
+        claimed: ClaimedStep,
+        attempt_state: AttemptState,
+        step_state: StepState,
+    ) -> bool:
+        """Fence a finish to the exact Attempt and lease that produced it."""
+        attempt = (
+            session.execute(attempts.select().where(attempts.c.id == claimed.attempt_id))
+            .mappings()
+            .first()
+        )
+        step = (
+            session.execute(steps.select().where(steps.c.id == claimed.step_id))
+            .mappings()
+            .first()
+        )
+        return bool(
+            attempt is not None
+            and step is not None
+            and attempt["step_id"] == claimed.step_id
+            and attempt["run_id"] == claimed.run_id
+            and attempt["scope_type"] == claimed.scope_type
+            and attempt["scope_id"] == claimed.scope_id
+            and attempt["attempt_no"] == claimed.attempt_no
+            and attempt["state"] == attempt_state.value
+            and attempt["lease_owner"] == claimed.lease_owner
+            and step["run_id"] == claimed.run_id
+            and step["scope_type"] == claimed.scope_type
+            and step["scope_id"] == claimed.scope_id
+            and step["state"] == step_state.value
+            and step["lease_owner"] == claimed.lease_owner
+            and step["attempt_count"] == claimed.attempt_no
+        )
+
+    def _release_reservation(
+        self, session: Session, *, reservation_id: str, now_us: int
+    ) -> None:
+        if not reservation_id:
+            return
+        # Finish callbacks can be replayed after another callback already
+        # settled/released the same reservation.  The ledger remains strict;
+        # only this explicit replay boundary treats an already-spent row as a
+        # no-op.
+        with contextlib.suppress(LedgerConflict):
+            self.executor.usage.release(
+                session,
+                reservation_id=reservation_id,
+                now_us=now_us,
             )
 
     def _classify_gateway_failure(
         self, *, claimed: ClaimedStep, error: GatewayError, now_us: int
     ) -> None:
-        if error.error_class == AttemptErrorClass.indeterminate:
-            with session_scope() as session:
+        with session_scope() as session:
+            if not self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.running,
+                step_state=StepState.running,
+            ):
+                return
+            if error.error_class == AttemptErrorClass.indeterminate:
                 self.state.transition_attempt(
                     session,
                     attempt_id=claimed.attempt_id,
@@ -501,8 +835,7 @@ class HarnessRunner:
                     now_us=now_us,
                     error_code="external_outcome_unknown",
                 )
-            return
-        with session_scope() as session:
+                return
             self.state.transition_attempt(
                 session,
                 attempt_id=claimed.attempt_id,

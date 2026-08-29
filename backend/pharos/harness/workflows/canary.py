@@ -14,6 +14,8 @@ it by construction (the same module owns both).
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from pharos.harness.contracts import (
     ArtifactSensitivity,
     CapabilityRisk,
@@ -21,6 +23,7 @@ from pharos.harness.contracts import (
     RunOutcome,
     RunState,
     StepState,
+    StrictModel,
 )
 from pharos.harness.definitions import (
     BudgetSpec,
@@ -40,6 +43,19 @@ MODES = frozenset(
 )
 
 CANARY_KEY = "harness.canary"
+
+
+class CanaryActorOutput(StrictModel):
+    """The closed typed output contract for the deterministic Agent canary."""
+
+    ok: Literal[True]
+    workflow: Literal["harness.canary"]
+    step: Literal["actor_turn"]
+
+
+def validate_canary_actor_output(value: Any) -> dict:
+    """Validate and normalize one fake Agent result for Artifact storage."""
+    return CanaryActorOutput.model_validate(value).model_dump(mode="json")
 
 
 def canary_capabilities() -> list[CapabilityDefinition]:

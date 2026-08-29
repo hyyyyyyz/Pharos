@@ -37,7 +37,7 @@ from pharos.harness.fakes import FakeClock, FakeModel
 from pharos.harness.model_gateway import FakeModelGateway
 from pharos.harness.registry import Registry
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope, now_iso
-from pharos.harness.runner import HarnessRunner, StepExecutor
+from pharos.harness.runner import AgentOutputContract, HarnessRunner, StepExecutor
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import steps
 from pharos.harness.usage import UsageLedger
@@ -48,6 +48,7 @@ from pharos.harness.workflows.canary import (
     canary_workflow,
     expand,
     reduce,
+    validate_canary_actor_output,
 )
 
 log = logging.getLogger(__name__)
@@ -73,7 +74,8 @@ class HarnessApp:
         self.registry = Registry()
         for capability in canary_capabilities():
             self.registry.register_capability(capability)
-        for role in canary_roles():
+        roles = canary_roles()
+        for role in roles:
             self.registry.register_role(role)
         self.registry.register(canary_workflow())
         self.registry.compile()
@@ -88,6 +90,18 @@ class HarnessApp:
 
         self.executor = StepExecutor(
             gateway=self.gateway,
+            artifacts=self.artifacts,
+            agent_output_contracts={
+                role.identity(): AgentOutputContract(
+                    schema_name=role.output_schema.rsplit("@", 1)[0],
+                    schema_version=int(role.output_schema.rsplit("@", 1)[1]),
+                    prompt_version=role.prompt_template_version,
+                    provider="fake",
+                    model=role.model_profile,
+                    validator=validate_canary_actor_output,
+                )
+                for role in roles
+            },
             capabilities=build_executors(),
             state=self.state,
             usage=self.usage,
