@@ -14,7 +14,13 @@ if [[ -n "${DEEPSEEK_HARNESS_SOURCE_DIR:-}" ]]; then
 	source_dir="$(cd "$DEEPSEEK_HARNESS_SOURCE_DIR" && pwd)"
 else
 	source_dir="$work_dir/upstream"
-	git clone --depth 1 --single-branch --no-tags "$UPSTREAM_URL" "$source_dir"
+	# Fetch the immutable object directly instead of cloning the moving default
+	# branch.  A normal --depth 1 clone stops being reproducible as soon as
+	# upstream advances beyond the revision pinned above.
+	git init --quiet "$source_dir"
+	git -C "$source_dir" remote add origin "$UPSTREAM_URL"
+	git -C "$source_dir" fetch --quiet --depth 1 --no-tags origin "$UPSTREAM_REVISION"
+	git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 fi
 
 if [[ ! -d "$source_dir/.git" ]]; then
