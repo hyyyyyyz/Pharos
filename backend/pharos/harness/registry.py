@@ -12,11 +12,20 @@ from pharos.harness.contracts import DefinitionError, IdempotencyKind
 from pharos.harness.definitions import (
     CapabilityDefinition,
     HarnessDefinitionSet,
+    ModelProfileDefinition,
     RoleDefinition,
     WorkflowDefinition,
+    sha256_hex,
 )
 
 _NO_RETRY_IDEMPOTENCY = {IdempotencyKind.stable_key, IdempotencyKind.inherently_idempotent}
+_LEGACY_CANARY_ROLE_HASH = "ecac38063f393dc3c8561269372c9c485755a0e4ae0870968d4d042cc7b8b7c1"
+_INTERNAL_FAKE_ROUTE = {
+    "provider": "pharos-fake",
+    "model": "pharos-fake-canary",
+    "usage_source": "system_shared",
+    "credential_policy": "none",
+}
 
 
 def _dependency_edges(workflow: WorkflowDefinition) -> list[tuple[str, str]]:
@@ -150,6 +159,64 @@ def _reject_approval_gaps(workflow: WorkflowDefinition) -> None:
             )
 
 
+def _reject_role_profiles(registry: Registry) -> None:
+    """Require versioned profile identity for DSH roles.
+
+    The one historical exception is the H1 in-process canary role.  Keeping
+    that exception keyed by both role identity and exact bare value prevents
+    the old alias from becoming a general-purpose profile escape hatch.
+    """
+    for role in registry._roles.values():  # noqa: SLF001 -- compiler invariant
+        if role.runtime_kind == "dsh":
+            if "@" not in role.model_profile:
+                raise DefinitionError(
+                    f"{role.identity()}: DSH role must reference a versioned model profile"
+                )
+            profile = registry.model_profile(role.model_profile)
+            if profile is None:
+                raise DefinitionError(
+                    f"{role.identity()}: unknown model profile {role.model_profile}"
+                )
+            if not all("dsh" in route.allowed_runtime_kinds for route in profile.routes):
+                raise DefinitionError(
+                    f"{role.identity()}: every route in model profile {profile.identity()} "
+                    "must allow dsh"
+                )
+            continue
+        if role.identity() == "canary_actor@1" and role.model_profile == "canary":
+            if sha256_hex(role.model_dump(mode="json")) != _LEGACY_CANARY_ROLE_HASH:
+                raise DefinitionError(
+                    "canary_actor@1 bare canary role does not match its frozen legacy definition"
+                )
+            continue
+        # Versioned in-process profiles are allowed for future fake-backed
+        # tests, but they must resolve to a route for this runtime too.
+        if "@" not in role.model_profile:
+            raise DefinitionError(
+                f"{role.identity()}: model profile must be a versioned identity"
+            )
+        profile = registry.model_profile(role.model_profile)
+        if profile is None:
+            raise DefinitionError(
+                f"{role.identity()}: unknown model profile {role.model_profile}"
+            )
+        if not all("in_process_fake" in route.allowed_runtime_kinds for route in profile.routes):
+            raise DefinitionError(
+                f"{role.identity()}: every route in model profile {profile.identity()} "
+                "must allow in_process_fake"
+            )
+        if not profile.routes_for_runtime("in_process_fake"):
+            raise DefinitionError(
+                f"{role.identity()}: model profile {profile.identity()} "
+                "has no in_process_fake route"
+            )
+        for route in profile.routes:
+            if any(getattr(route, key) != value for key, value in _INTERNAL_FAKE_ROUTE.items()):
+                raise DefinitionError(
+                    f"{role.identity()}: in_process_fake profiles must use the internal fake route"
+                )
+
+
 class Registry:
     """Trusted code registers; startup compiles; runs resolve versions."""
 
@@ -157,6 +224,7 @@ class Registry:
         self._workflows: dict[str, WorkflowDefinition] = {}
         self._roles: dict[str, RoleDefinition] = {}
         self._capabilities: dict[str, CapabilityDefinition] = {}
+        self._model_profiles: dict[str, ModelProfileDefinition] = {}
 
     # ------------------------------------------------------------- register
 
@@ -175,7 +243,7 @@ class Registry:
         identity = role.identity()
         existing = self._roles.get(identity)
         if existing is not None:
-            if existing.model_dump(mode="json") != role.model_dump(mode="json"):
+            if existing.definition_hash() != role.definition_hash():
                 raise DefinitionError(f"{identity} is already registered with a different role")
             return
         self._roles[identity] = role
@@ -184,12 +252,23 @@ class Registry:
         identity = capability.identity()
         existing = self._capabilities.get(identity)
         if existing is not None:
-            if existing.model_dump(mode="json") != capability.model_dump(mode="json"):
+            if existing.definition_hash() != capability.definition_hash():
                 raise DefinitionError(
                     f"{identity} is already registered with a different capability"
                 )
             return
         self._capabilities[identity] = capability
+
+    def register_model_profile(self, profile: ModelProfileDefinition) -> None:
+        identity = profile.identity()
+        existing = self._model_profiles.get(identity)
+        if existing is not None:
+            if existing.definition_hash() != profile.definition_hash():
+                raise DefinitionError(
+                    f"{identity} is already registered with a different model profile hash"
+                )
+            return
+        self._model_profiles[identity] = profile
 
     # ------------------------------------------------------------- resolve
 
@@ -201,6 +280,14 @@ class Registry:
 
     def capability(self, identity: str) -> CapabilityDefinition | None:
         return self._capabilities.get(identity)
+
+    def model_profile(self, identity: str) -> ModelProfileDefinition | None:
+        """Resolve only an exact ``profile_key@version`` identity."""
+        return self._model_profiles.get(identity)
+
+    def resolve_model_profile(self, identity: str) -> ModelProfileDefinition | None:
+        """Named resolver counterpart to ``require_model_profile``."""
+        return self.model_profile(identity)
 
     def require_capability(self, identity: str) -> CapabilityDefinition:
         capability = self._capabilities.get(identity)
@@ -220,8 +307,17 @@ class Registry:
             raise DefinitionError(f"unknown workflow {identity}")
         return workflow
 
+    def require_model_profile(self, identity: str) -> ModelProfileDefinition:
+        profile = self._model_profiles.get(identity)
+        if profile is None:
+            raise DefinitionError(f"unknown model profile {identity}")
+        return profile
+
     def all_workflows(self) -> list[WorkflowDefinition]:
         return sorted(self._workflows.values(), key=lambda w: w.identity())
+
+    def all_model_profiles(self) -> list[ModelProfileDefinition]:
+        return sorted(self._model_profiles.values(), key=lambda profile: profile.identity())
 
     def snapshot(self) -> HarnessDefinitionSet:
         """The frozen set a config revision pins by hash."""
@@ -252,6 +348,7 @@ class Registry:
                 raise DefinitionError(f"{role.identity()}: bounded turns/tool calls required")
             if role.token_budget.wall_seconds <= 0:
                 raise DefinitionError(f"{role.identity()}: needs a finite time budget")
+        _reject_role_profiles(self)
         for capability in self._capabilities.values():
             if capability.timeout_seconds <= 0 or capability.max_output_chars <= 0:
                 raise DefinitionError(

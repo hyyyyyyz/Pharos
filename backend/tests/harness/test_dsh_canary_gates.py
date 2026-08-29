@@ -345,3 +345,6 @@ def test_claim_keyset_scans_past_eight_bad_ready_rows(
         assert claimed is not None
         assert claimed.step_id == ordered[8]
         assert claimed.role == "canary_actor@1"
+        assert claimed.role_definition_sha256 == app.registry.require_role(
+            "canary_actor@1"
+        ).definition_hash()

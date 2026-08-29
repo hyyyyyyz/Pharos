@@ -47,6 +47,7 @@ from pharos.harness.workflows.canary import (
     CANARY_V2_IDENTITY,
     canary_capabilities,
     canary_dsh_workflow,
+    canary_model_profiles,
     canary_roles,
     canary_workflow,
     expand,
@@ -82,9 +83,20 @@ class HarnessApp:
         roles = canary_roles()
         for role in roles:
             self.registry.register_role(role)
+        for profile in canary_model_profiles():
+            self.registry.register_model_profile(profile)
         self.registry.register(canary_workflow())
         self.registry.register(canary_dsh_workflow())
         self.registry.compile()
+        agent_model_routes: dict[str, tuple[str, str]] = {}
+        for role in roles:
+            if role.identity() == "canary_actor@1" and role.model_profile == "canary":
+                agent_model_routes[role.identity()] = resolve_canary_model_profile("canary")
+                continue
+            route = self.registry.require_model_profile(role.model_profile).resolve_route(
+                role.runtime_kind
+            )
+            agent_model_routes[role.identity()] = (route.provider, route.model)
         self.config_service = HarnessConfigService(self.registry)
         self.state = HarnessStateService()
         self.events = EventStore()
@@ -102,8 +114,8 @@ class HarnessApp:
                     schema_name=role.output_schema.rsplit("@", 1)[0],
                     schema_version=int(role.output_schema.rsplit("@", 1)[1]),
                     prompt_version=role.prompt_template_version,
-                    provider=resolve_canary_model_profile(role.model_profile)[0],
-                    model=resolve_canary_model_profile(role.model_profile)[1],
+                    provider=agent_model_routes[role.identity()][0],
+                    model=agent_model_routes[role.identity()][1],
                     validator=validate_canary_actor_output,
                 )
                 for role in roles

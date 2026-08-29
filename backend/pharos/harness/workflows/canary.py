@@ -14,7 +14,6 @@ it by construction (the same module owns both).
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import Any, Literal
 
 from pharos.harness.contracts import (
@@ -30,6 +29,8 @@ from pharos.harness.definitions import (
     BudgetSpec,
     CapabilityDefinition,
     IdempotencyKind,
+    ModelProfileDefinition,
+    ModelRouteDefinition,
     RetryPolicy,
     RoleDefinition,
     StepDefinition,
@@ -52,11 +53,23 @@ CANARY_FAKE_PROVIDER = "fake"
 CANARY_FAKE_MODEL = "canary"
 CANARY_DSH_PROVIDER = "pharos-fake"
 CANARY_DSH_MODEL = "pharos-fake-canary"
-CANARY_MODEL_PROFILES = MappingProxyType(
-    {
-        "canary": (CANARY_FAKE_PROVIDER, CANARY_FAKE_MODEL),
-        "pharos-fake-canary@1": (CANARY_DSH_PROVIDER, CANARY_DSH_MODEL),
-    }
+CANARY_DSH_MODEL_PROFILE = ModelProfileDefinition(
+    profile_key="pharos-fake-canary",
+    version=1,
+    selection_policy="fixed",
+    routes=(
+        ModelRouteDefinition(
+            route_key="pharos-fake-canary-dsh",
+            priority=1,
+            provider=CANARY_DSH_PROVIDER,
+            model=CANARY_DSH_MODEL,
+            usage_source="system_shared",
+            credential_policy="none",
+            allowed_runtime_kinds=("dsh",),
+            reasoning_effort=None,
+            max_output_tokens=1000,
+        ),
+    ),
 )
 
 
@@ -74,11 +87,18 @@ def validate_canary_actor_output(value: Any) -> dict:
 
 
 def resolve_canary_model_profile(profile: str) -> tuple[str, str]:
-    """Resolve a trusted role profile to the raw adapter provider/model pair."""
-    try:
-        return CANARY_MODEL_PROFILES[profile]
-    except KeyError as error:
-        raise ValueError(f"unknown canary model profile {profile!r}") from error
+    """Legacy compatibility resolver; DSH authority is the Registry profile."""
+    if profile == "canary":
+        return CANARY_FAKE_PROVIDER, CANARY_FAKE_MODEL
+    if profile == CANARY_DSH_MODEL_PROFILE.identity():
+        route = CANARY_DSH_MODEL_PROFILE.resolve_route("dsh")
+        return route.provider, route.model
+    raise ValueError(f"unknown canary model profile {profile!r}")
+
+
+def canary_model_profiles() -> list[ModelProfileDefinition]:
+    """Return trusted model profiles used by the canary routes."""
+    return [CANARY_DSH_MODEL_PROFILE]
 
 
 def canary_capabilities() -> list[CapabilityDefinition]:

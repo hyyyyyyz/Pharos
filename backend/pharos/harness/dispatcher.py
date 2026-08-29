@@ -32,7 +32,6 @@ from pharos.harness.contracts import (
     ScopeType,
     StepState,
 )
-from pharos.harness.definitions import sha256_hex
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import attempts, config_head, runs, steps
@@ -235,7 +234,7 @@ class HarnessDispatcher:
                 runtime_kind = role_definition.runtime_kind
                 if runtime_kind not in ("in_process_fake", "dsh"):
                     return None
-                return role, runtime_kind, sha256_hex(role_definition.model_dump(mode="json"))
+                return role, runtime_kind, role_definition.definition_hash()
             if definition.get("capability") != trusted_step.capability:
                 return None
             return None, None, None
