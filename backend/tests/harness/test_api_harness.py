@@ -194,6 +194,7 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
         "dispatcher_enabled",
         "canary_enabled",
         "agent_steps_enabled",
+        "agent_runtime_enabled",
         "domain_publish_enabled",
         "fulltext_enabled",
         "desktop_bridge_enabled",
@@ -208,6 +209,7 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
                     "dispatcher_enabled": True,
                     "canary_enabled": False,
                     "agent_steps_enabled": False,
+                    "agent_runtime_enabled": False,
                     "domain_publish_enabled": False,
                     "fulltext_enabled": False,
                     "desktop_bridge_enabled": False,
@@ -220,6 +222,32 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
     assert validated.status_code == 200
     assert validated.json()["valid"] is False
     assert any("Decision 9" in error for error in validated.json()["errors"])
+
+    runtime_without_agent_steps = http.post(
+        "/api/harness/operator/config/validate",
+        json={
+            "snapshot": {
+                "gates": {
+                    "harness_enabled": True,
+                    "dispatcher_enabled": True,
+                    "canary_enabled": False,
+                    "agent_steps_enabled": False,
+                    "agent_runtime_enabled": True,
+                    "domain_publish_enabled": False,
+                    "fulltext_enabled": False,
+                    "desktop_bridge_enabled": False,
+                    "experiments_enabled": False,
+                },
+                "routes": [],
+            }
+        },
+    )
+    assert runtime_without_agent_steps.status_code == 200
+    assert runtime_without_agent_steps.json()["valid"] is False
+    assert any(
+        "agent_runtime_enabled" in error
+        for error in runtime_without_agent_steps.json()["errors"]
+    )
 
 
 def test_config_integrity_failure_is_an_opaque_service_error(client) -> None:

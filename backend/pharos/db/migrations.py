@@ -494,6 +494,33 @@ MIGRATIONS: tuple[Migration, ...] = (
         description="Harness approvals, schedules and the usage ledger",
         statements=_harness_ddl()[16:21],
     ),
+    Migration(
+        revision="0008_harness_attempt_runtime_provenance",
+        description="Add auditable, secret-free runtime provenance to Harness attempts",
+        statements=(
+            # These columns are intentionally nullable: existing attempts were
+            # created before the runtime adapter existed and must not be
+            # backfilled with invented process/session evidence.
+            "ALTER TABLE harness_attempts ADD COLUMN runtime_session_id TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN child_pid INTEGER",
+            "ALTER TABLE harness_attempts ADD COLUMN deadline_at INTEGER",
+            "ALTER TABLE harness_attempts ADD COLUMN upstream_commit TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN runtime_hash TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN profile_hash TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN policy_hash TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN protocol_version TEXT",
+            "ALTER TABLE harness_attempts ADD COLUMN delivery_state TEXT CHECK "
+            "(delivery_state IN ('not_started','sent','acknowledged','unknown','reconciled'))",
+            # Recovery/reconciliation scans these independently of the step
+            # queue, so each lookup key has a narrow index.
+            "CREATE UNIQUE INDEX ux_harness_attempts_runtime_session_active "
+            "ON harness_attempts (runtime_session_id) "
+            "WHERE runtime_session_id IS NOT NULL AND state IN ('leased','running')",
+            "CREATE INDEX ix_harness_attempts_child_pid ON harness_attempts (child_pid)",
+            "CREATE INDEX ix_harness_attempts_deadline ON harness_attempts (state, deadline_at)",
+            "CREATE INDEX ix_harness_attempts_delivery ON harness_attempts (delivery_state)",
+        ),
+    ),
 )
 
 

@@ -11,6 +11,7 @@ runtime exception is the deny-only emergency stop.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 
 from pydantic import field_validator
 
@@ -42,6 +43,7 @@ GATE_NAMES = (
     "dispatcher_enabled",
     "canary_enabled",
     "agent_steps_enabled",
+    "agent_runtime_enabled",
     "domain_publish_enabled",
     "fulltext_enabled",
     "desktop_bridge_enabled",
@@ -54,6 +56,7 @@ _ENV_DEFAULTS = {
     "dispatcher_enabled": "PHAROS_HARNESS_DISPATCHER_ENABLED",
     "canary_enabled": "PHAROS_HARNESS_CANARY_ENABLED",
     "agent_steps_enabled": "PHAROS_HARNESS_AGENT_STEPS_ENABLED",
+    "agent_runtime_enabled": "PHAROS_HARNESS_AGENT_RUNTIME_ENABLED",
     "domain_publish_enabled": "PHAROS_HARNESS_DOMAIN_PUBLISH_ENABLED",
     "fulltext_enabled": "PHAROS_HARNESS_FULLTEXT_ENABLED",
     "desktop_bridge_enabled": "PHAROS_HARNESS_DESKTOP_BRIDGE_ENABLED",
@@ -141,6 +144,30 @@ class HarnessConfigSnapshot(StrictModel):
 
     def snapshot_hash(self) -> str:
         return sha256_hex(self.canonical())
+
+
+def decode_snapshot_payload(payload: object) -> HarnessConfigSnapshot:
+    """Decode a persisted snapshot, handling the one additive gate upgrade.
+
+    Revision ``0008`` adds the runtime gate, but configuration revisions are
+    immutable and their stored JSON/hash must not be rewritten.  Therefore an
+    older, already-hashed snapshot that has exactly the pre-runtime gate set
+    is upgraded only in memory.  This helper deliberately does *not* accept a
+    snapshot missing any other gate (or containing an unknown gate); new
+    snapshots continue to go through the strict model validator unchanged.
+
+    The caller must verify the hash of the raw persisted JSON before calling
+    this function.  No compatibility path may turn a tampered payload into a
+    valid one.
+    """
+    if isinstance(payload, Mapping):
+        gates = payload.get("gates")
+        legacy_gates = set(GATE_NAMES) - {"agent_runtime_enabled"}
+        if isinstance(gates, Mapping) and set(gates) == legacy_gates:
+            upgraded = dict(payload)
+            upgraded["gates"] = {**dict(gates), "agent_runtime_enabled": False}
+            payload = upgraded
+    return HarnessConfigSnapshot.model_validate(payload)
 
 
 def bootstrap_snapshot(
@@ -285,6 +312,13 @@ def validate_snapshot(snapshot: HarnessConfigSnapshot, registry: Registry) -> li
     # Agent/publish/full-text gates must be accompanied by their enablers.
     if gates.get("agent_steps_enabled") and not (enabled and gates.get("dispatcher_enabled")):
         errors.append("agent_steps_enabled requires harness_enabled and dispatcher_enabled")
+    if gates.get("agent_runtime_enabled") and not (
+        enabled and gates.get("dispatcher_enabled") and gates.get("agent_steps_enabled")
+    ):
+        errors.append(
+            "agent_runtime_enabled requires harness_enabled, dispatcher_enabled, "
+            "and agent_steps_enabled"
+        )
     if gates.get("canary_enabled") and not (enabled and gates.get("dispatcher_enabled")):
         errors.append("canary_enabled requires harness_enabled and dispatcher_enabled")
     return errors

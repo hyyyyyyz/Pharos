@@ -8,6 +8,9 @@ never blocking the read/export path.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 from pharos.db.session import session_scope
 from pharos.harness.configrev import (
@@ -23,7 +26,9 @@ from pharos.harness.contracts import (
     UnavailableError,
 )
 from pharos.harness.repository import now_iso
+from pharos.harness.tables import config_revisions
 from pydantic import ValidationError
+from sqlalchemy import select
 from tests.harness.conftest import enable_canary
 
 
@@ -33,6 +38,7 @@ def _snapshot(gates=None, routes=None) -> HarnessConfigSnapshot:  # noqa: ANN001
         "dispatcher_enabled": True,
         "canary_enabled": False,
         "agent_steps_enabled": False,
+        "agent_runtime_enabled": False,
         "domain_publish_enabled": False,
         "fulltext_enabled": False,
         "desktop_bridge_enabled": False,
@@ -101,6 +107,34 @@ def test_env_does_not_override_existing_head(app, monkeypatch):
     assert (
         snapshot.gates["harness_enabled"] is False
     ), "env must not override a persisted config head"
+
+
+def test_hashed_pre_runtime_snapshot_is_decoded_without_rewriting(app):
+    """The additive gate must not invalidate immutable pre-0008 revisions."""
+    enable_canary(app)
+    with session_scope() as session:
+        revision_id = app.config_service.current(session)["current_revision_id"]
+        row = session.execute(
+            select(config_revisions).where(config_revisions.c.id == revision_id)
+        ).mappings().one()
+        payload = json.loads(row["snapshot_json"])
+        payload["gates"].pop("agent_runtime_enabled")
+        legacy_raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        legacy_hash = hashlib.sha256(legacy_raw.encode()).hexdigest()
+        session.execute(
+            config_revisions.update()
+            .where(config_revisions.c.id == revision_id)
+            .values(snapshot_json=legacy_raw, snapshot_sha256=legacy_hash)
+        )
+
+    snapshot = app.current_snapshot()
+    assert snapshot is not None and snapshot.gates["agent_runtime_enabled"] is False
+    with session_scope() as session:
+        row = session.execute(
+            select(config_revisions).where(config_revisions.c.id == revision_id)
+        ).mappings().one()
+    assert row["snapshot_json"] == legacy_raw
+    assert row["snapshot_sha256"] == legacy_hash
 
 
 def test_emergency_stop_denies_new_runs_only(monkeypatch):

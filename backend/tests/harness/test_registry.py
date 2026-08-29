@@ -28,6 +28,7 @@ from pharos.harness.configrev import (
     WorkflowRoute,
     bootstrap_snapshot,
     config_hash_stable,
+    decode_snapshot_payload,
     emergency_stop_active,
     validate_snapshot,
 )
@@ -509,6 +510,54 @@ def test_validator_rejects_dependents_without_master(monkeypatch) -> None:
     )
     errors = validate_snapshot(snapshot, registry)
     assert any("harness_enabled=0" in error for error in errors)
+
+
+def test_validator_requires_runtime_gate_to_depend_on_agent_steps() -> None:
+    registry = _full_registry()
+    snapshot = bootstrap_snapshot(registry)
+    snapshot = HarnessConfigSnapshot(
+        gates={
+            **snapshot.gates,
+            "harness_enabled": True,
+            "dispatcher_enabled": True,
+            "agent_runtime_enabled": True,
+        },
+        routes=snapshot.routes,
+    )
+    errors = validate_snapshot(snapshot, registry)
+    assert any(
+        "agent_runtime_enabled requires harness_enabled, dispatcher_enabled, "
+        "and agent_steps_enabled"
+        in error
+        for error in errors
+    )
+
+
+def test_agent_steps_canary_does_not_enable_runtime_gate() -> None:
+    snapshot = bootstrap_snapshot(_full_registry())
+    assert snapshot.gates["agent_steps_enabled"] is False
+    assert snapshot.gates["agent_runtime_enabled"] is False
+
+
+def test_legacy_snapshot_decode_adds_only_runtime_gate_in_memory() -> None:
+    original = bootstrap_snapshot(_full_registry()).canonical()
+    original["gates"].pop("agent_runtime_enabled")
+    decoded = decode_snapshot_payload(original)
+    assert decoded.gates["agent_runtime_enabled"] is False
+    assert "agent_runtime_enabled" not in original["gates"]
+
+
+def test_legacy_snapshot_decode_does_not_relax_other_missing_or_unknown_gates() -> None:
+    original = bootstrap_snapshot(_full_registry()).canonical()
+    original["gates"].pop("agent_runtime_enabled")
+    original["gates"].pop("dispatcher_enabled")
+    with pytest.raises(ValidationError, match="missing gate"):
+        decode_snapshot_payload(original)
+    original = bootstrap_snapshot(_full_registry()).canonical()
+    original["gates"].pop("agent_runtime_enabled")
+    original["gates"]["future_gate"] = False
+    with pytest.raises(ValidationError, match="unknown gate"):
+        decode_snapshot_payload(original)
 
 
 def test_validator_rejects_harness_mode_without_publish_gate(monkeypatch) -> None:

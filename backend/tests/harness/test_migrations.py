@@ -136,6 +136,54 @@ def test_verify_reports_ok_for_intact_ledger(tmp_path: Path) -> None:
     assert {row["revision"] for row in rows} == {m.revision for m in migrations.MIGRATIONS}
 
 
+def test_runtime_provenance_is_an_additive_upgrade(tmp_path: Path, monkeypatch) -> None:
+    """0008 upgrades an already migrated H1 schema without rebuilding attempts."""
+    db = tmp_path / "runtime-upgrade.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    prior = all_migrations[:-1]
+    runtime_migration = all_migrations[-1]
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior)
+    assert run_migrations(db) == [migration.revision for migration in prior]
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior + (runtime_migration,))
+    applied = run_migrations(db)
+    assert applied == ["0008_harness_attempt_runtime_provenance"]
+    with sqlite3.connect(db) as conn:
+        columns = {
+            row[1]: row[2].upper()
+            for row in conn.execute("PRAGMA table_info(harness_attempts)")
+        }
+        indexes = {
+            row[1]
+            for row in conn.execute("PRAGMA index_list(harness_attempts)")
+        }
+        table_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='harness_attempts'"
+        ).fetchone()[0]
+    assert {
+        "runtime_session_id": "TEXT",
+        "child_pid": "INTEGER",
+        "deadline_at": "INTEGER",
+        "upstream_commit": "TEXT",
+        "runtime_hash": "TEXT",
+        "profile_hash": "TEXT",
+        "policy_hash": "TEXT",
+        "protocol_version": "TEXT",
+        "delivery_state": "TEXT",
+    }.items() <= columns.items()
+    assert {
+        "ux_harness_attempts_runtime_session_active",
+        "ix_harness_attempts_child_pid",
+        "ix_harness_attempts_deadline",
+        "ix_harness_attempts_delivery",
+    } <= indexes
+    assert (
+        "delivery_state IN ('not_started','sent','acknowledged','unknown','reconciled')"
+        in table_sql
+    )
+    # Running the new migration twice is a no-op and does not recreate indexes.
+    assert run_migrations(db) == []
+
+
 def test_fixture_generated_from_the_published_schema_upgrades(tmp_path: Path) -> None:
     """The checked-in legacy fixture is a real pre-Harness database.
 

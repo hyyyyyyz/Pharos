@@ -75,6 +75,7 @@ def enable_canary(app: HarnessApp, *, agent_steps: bool = False) -> None:
                 "dispatcher_enabled": True,
                 "canary_enabled": True,
                 "agent_steps_enabled": agent_steps,
+                "agent_runtime_enabled": False,
                 "domain_publish_enabled": False,
                 "fulltext_enabled": False,
                 "desktop_bridge_enabled": False,

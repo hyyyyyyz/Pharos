@@ -69,6 +69,17 @@ ATTEMPT_STATES = (
     "blocked",
     "indeterminate",
 )
+# Runtime delivery is deliberately separate from Attempt state: an Attempt
+# may be indeterminate even when the parent process cannot prove whether the
+# provider accepted the request.  NULL means this pre-runtime Attempt has no
+# runtime delivery record; non-NULL values are the complete audit vocabulary.
+RUNTIME_DELIVERY_STATES = (
+    "not_started",
+    "sent",
+    "acknowledged",
+    "unknown",
+    "reconciled",
+)
 
 workflow_versions = Table(
     "harness_workflow_versions",
@@ -271,10 +282,25 @@ attempts = Table(
     Column("started_at", Integer, nullable=True),
     Column("heartbeat_at", Integer, nullable=True),
     Column("finished_at", Integer, nullable=True),
+    # H1.5 runtime provenance.  These are audit metadata only: no credential,
+    # prompt, response, or other secret-bearing payload is stored here.
+    Column("runtime_session_id", Text, nullable=True),
+    Column("child_pid", Integer, nullable=True),
+    Column("deadline_at", Integer, nullable=True),
+    Column("upstream_commit", Text, nullable=True),
+    Column("runtime_hash", Text, nullable=True),
+    Column("profile_hash", Text, nullable=True),
+    Column("policy_hash", Text, nullable=True),
+    Column("protocol_version", Text, nullable=True),
+    Column("delivery_state", Text, nullable=True),
     CheckConstraint(
         "state IN ('leased','running','succeeded','failed','timed_out','cancelled',"
         "'abandoned','blocked','indeterminate')",
         name="ck_harness_attempts_state",
+    ),
+    CheckConstraint(
+        "delivery_state IN ('not_started','sent','acknowledged','unknown','reconciled')",
+        name="ck_harness_attempts_delivery_state",
     ),
     UniqueConstraint("step_id", "attempt_no", name="uq_harness_attempts_identity"),
     ForeignKeyConstraint(
@@ -503,3 +529,15 @@ Index("ix_harness_artifacts_run", artifacts.c.run_id)
 Index("ix_harness_approvals_state", approvals.c.state, approvals.c.expires_at)
 Index("ix_harness_usage_run", usage_events.c.run_id)
 Index("ix_harness_steps_ready", steps.c.state, steps.c.ready_at)
+Index(
+    "ux_harness_attempts_runtime_session_active",
+    attempts.c.runtime_session_id,
+    unique=True,
+    sqlite_where=(
+        attempts.c.runtime_session_id.is_not(None)
+        & attempts.c.state.in_(["leased", "running"])
+    ),
+)
+Index("ix_harness_attempts_child_pid", attempts.c.child_pid)
+Index("ix_harness_attempts_deadline", attempts.c.state, attempts.c.deadline_at)
+Index("ix_harness_attempts_delivery", attempts.c.delivery_state)

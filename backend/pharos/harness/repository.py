@@ -28,7 +28,12 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute, validate_snapshot
+from pharos.harness.configrev import (
+    HarnessConfigSnapshot,
+    WorkflowRoute,
+    decode_snapshot_payload,
+    validate_snapshot,
+)
 from pharos.harness.contracts import (
     ConfigIntegrityError,
     IdempotencyConflictError,
@@ -197,7 +202,10 @@ class HarnessConfigService:
             raise ConfigIntegrityError(f"config revision {revision_id!r} snapshot hash mismatch")
         try:
             parsed = json.loads(raw)
-            snapshot = HarnessConfigSnapshot.model_validate(parsed)
+            # The raw immutable payload is authenticated above.  Decoding may
+            # only add safe in-memory defaults for explicitly supported
+            # additive schema upgrades; it never rewrites the revision/hash.
+            snapshot = decode_snapshot_payload(parsed)
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ConfigIntegrityError(
                 f"config revision {revision_id!r} snapshot is not valid JSON/schema: {exc}"

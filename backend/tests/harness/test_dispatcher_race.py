@@ -176,6 +176,7 @@ def test_claim_is_fenced_when_route_moves_to_legacy(app, owner):
                 "dispatcher_enabled": True,
                 "canary_enabled": True,
                 "agent_steps_enabled": False,
+                "agent_runtime_enabled": False,
                 "domain_publish_enabled": False,
                 "fulltext_enabled": False,
                 "desktop_bridge_enabled": False,

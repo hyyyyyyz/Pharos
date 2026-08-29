@@ -99,6 +99,33 @@ def test_key_constraints_present(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> None:
+    db = tmp_path / "runtime-schema.sqlite"
+    migrations.run_migrations(db)
+    conn = sqlite3.connect(db)
+    try:
+        table_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='harness_attempts'"
+        ).fetchone()[0]
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(harness_attempts)")}
+    finally:
+        conn.close()
+    assert (
+        "delivery_state IN ('not_started','sent','acknowledged','unknown','reconciled')"
+        in table_sql
+    )
+    assert "not_started" in table_sql
+    assert "acknowledged" in table_sql
+    assert "unknown" in table_sql
+    assert "reconciled" in table_sql
+    assert {
+        "ux_harness_attempts_runtime_session_active",
+        "ix_harness_attempts_child_pid",
+        "ix_harness_attempts_deadline",
+        "ix_harness_attempts_delivery",
+    } <= indexes
+
+
 def test_lease_columns_are_integers(tmp_path: Path) -> None:
     """Lease math is epoch microseconds, never SQLite datetimes."""
     db = tmp_path / "epoch.sqlite"
