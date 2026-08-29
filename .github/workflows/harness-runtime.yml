@@ -1,0 +1,68 @@
+name: Validate Harness runtime source
+
+on:
+  push:
+    paths:
+      - "vendor/deepseek-harness/**"
+      - "vendor/README.md"
+      - "scripts/vendor-deepseek-harness.sh"
+      - "scripts/check-deepseek-harness-vendor.sh"
+      - ".github/workflows/harness-runtime.yml"
+  pull_request:
+    paths:
+      - "vendor/deepseek-harness/**"
+      - "vendor/README.md"
+      - "scripts/vendor-deepseek-harness.sh"
+      - "scripts/check-deepseek-harness-vendor.sh"
+      - ".github/workflows/harness-runtime.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harness-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-source:
+    name: Pinned source, build and SDK contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the vendored boundary
+        run: scripts/check-deepseek-harness-vendor.sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+          cache-dependency-path: vendor/deepseek-harness/pnpm-lock.yaml
+
+      - name: Install without lifecycle scripts
+        working-directory: vendor/deepseek-harness
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the pinned upstream snapshot
+        working-directory: vendor/deepseek-harness
+        env:
+          CI: "1"
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm run build
+
+      - name: Verify the stdio SDK contract
+        working-directory: vendor/deepseek-harness
+        env:
+          CI: "1"
+        run: >-
+          pnpm exec vitest run
+          packages/sdk/protocol/tests
+          packages/sdk/client/tests
+          packages/sdk/server/tests
