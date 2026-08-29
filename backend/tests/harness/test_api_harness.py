@@ -16,7 +16,7 @@ from pharos.api.deps import current_user, get_settings, require_admin
 from pharos.db.models import User
 from pharos.db.session import session_scope
 from pharos.harness.repository import Scope
-from pharos.harness.tables import runs
+from pharos.harness.tables import config_revisions, runs
 from pharos.harness.workflows.canary import canary_input
 from tests.harness.conftest import enable_canary
 
@@ -189,6 +189,16 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
     status = http.get("/api/harness/operator/status")
     assert status.status_code == 200
     assert status.json()["harness_enabled"] is True
+    assert {name for name in status.json() if name.endswith("_enabled")} == {
+        "harness_enabled",
+        "dispatcher_enabled",
+        "canary_enabled",
+        "agent_steps_enabled",
+        "domain_publish_enabled",
+        "fulltext_enabled",
+        "desktop_bridge_enabled",
+        "experiments_enabled",
+    }
     validated = http.post(
         "/api/harness/operator/config/validate",
         json={
@@ -210,6 +220,28 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
     assert validated.status_code == 200
     assert validated.json()["valid"] is False
     assert any("Decision 9" in error for error in validated.json()["errors"])
+
+
+def test_config_integrity_failure_is_an_opaque_service_error(client) -> None:
+    http, app = client
+    with session_scope() as session:
+        revision_id = app.config_service.current(session)["current_revision_id"]
+        session.execute(
+            config_revisions.update()
+            .where(config_revisions.c.id == revision_id)
+            .values(snapshot_sha256="0" * 64)
+        )
+
+    response = http.post(
+        "/api/harness/runs",
+        json={
+            "workflowKey": "harness.canary",
+            "input": canary_input("success"),
+            "idempotencyKey": "corrupt-config",
+        },
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "harness configuration integrity failure"}
 
 
 async def test_sse_stream_replays_events(client) -> None:

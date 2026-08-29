@@ -29,6 +29,7 @@ from pharos.harness.app import HarnessApp
 from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute, validate_snapshot
 from pharos.harness.contracts import (
     ApprovalState,
+    ConfigIntegrityError,
     HarnessError,
     IdempotencyConflictError,
     NotFoundError,
@@ -85,6 +86,8 @@ def _http_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=str(error))
     if isinstance(error, UnavailableError):
         return HTTPException(status_code=503, detail=str(error))
+    if isinstance(error, ConfigIntegrityError):
+        return HTTPException(status_code=503, detail="harness configuration integrity failure")
     if isinstance(error, (StateError, ValueError)):
         return HTTPException(status_code=400, detail=str(error))
     if isinstance(error, HarnessError):

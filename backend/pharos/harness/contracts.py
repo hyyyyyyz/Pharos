@@ -240,6 +240,10 @@ class StaleConfigError(HarnessError):
     """A writer ran against a config revision that is no longer current."""
 
 
+class ConfigIntegrityError(HarnessError):
+    """Persisted configuration is missing, corrupt, or internally invalid."""
+
+
 class UnavailableError(HarnessError):
     """The Harness surface is gated off (flags, emergency stop)."""
 

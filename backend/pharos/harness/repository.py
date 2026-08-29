@@ -18,16 +18,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute, validate_snapshot
 from pharos.harness.contracts import (
+    ConfigIntegrityError,
     IdempotencyConflictError,
     NotFoundError,
     ScopeType,
@@ -135,6 +138,24 @@ class HarnessWorkflowStore:
         return dict(row) if row is not None else None
 
 
+@dataclass(frozen=True)
+class CurrentConfig:
+    """One validated view of the persisted config head and its revision."""
+
+    head: dict
+    revision: dict
+    snapshot: HarnessConfigSnapshot
+
+    @property
+    def revision_id(self) -> str:
+        return self.head["current_revision_id"]
+
+    @property
+    def snapshot_sha256(self) -> str:
+        """The immutable hash stored with this exact revision payload."""
+        return self.revision["snapshot_sha256"]
+
+
 class HarnessConfigService:
     """The only authority for activation, writer mode and gates."""
 
@@ -150,13 +171,85 @@ class HarnessConfigService:
         )
         return dict(row) if row is not None else None
 
-    def current_snapshot(self, session: Session) -> HarnessConfigSnapshot | None:
+    def current_validated(self, session: Session) -> CurrentConfig | None:
+        """Read and validate the complete current configuration atomically.
+
+        A head without a revision, a missing revision row, a tampered snapshot,
+        and a snapshot rejected by the registry are all
+        integrity failures.  Callers must fail closed rather than treating
+        any of those states as the safe default.  Only an entirely absent
+        head means that the database has not been bootstrapped yet.
+        """
         head = self.current(session)
-        if head is None or head["current_revision_id"] is None:
+        if head is None:
             return None
-        revision = self.get_revision(session, head["current_revision_id"])
-        assert revision is not None
-        return HarnessConfigSnapshot.model_validate(json_load(revision["snapshot_json"], {}))
+        revision_id = head["current_revision_id"]
+        if not revision_id:
+            raise ConfigIntegrityError("config head has no current revision")
+        revision = self.get_revision(session, revision_id)
+        if revision is None:
+            raise ConfigIntegrityError(f"config revision {revision_id!r} is missing")
+        raw = revision.get("snapshot_json")
+        stored_hash = revision.get("snapshot_sha256")
+        if not isinstance(raw, str) or not isinstance(stored_hash, str):
+            raise ConfigIntegrityError(f"config revision {revision_id!r} has invalid snapshot data")
+        if sha256_text(raw) != stored_hash:
+            raise ConfigIntegrityError(f"config revision {revision_id!r} snapshot hash mismatch")
+        try:
+            parsed = json.loads(raw)
+            snapshot = HarnessConfigSnapshot.model_validate(parsed)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConfigIntegrityError(
+                f"config revision {revision_id!r} snapshot is not valid JSON/schema: {exc}"
+            ) from exc
+        errors = validate_snapshot(snapshot, self.registry)
+        if errors:
+            raise ConfigIntegrityError(
+                f"config revision {revision_id!r} is invalid: {'; '.join(errors)}"
+            )
+        return CurrentConfig(head=head, revision=revision, snapshot=snapshot)
+
+    def current_snapshot(self, session: Session) -> HarnessConfigSnapshot | None:
+        current = self.current_validated(session)
+        return current.snapshot if current is not None else None
+
+    def fence_current(self, session: Session, *, revision_id: str) -> None:
+        """Acquire the head write fence and verify it did not cut over.
+
+        This deliberately is a conditional UPDATE, even though it writes the
+        same revision id.  On SQLite the UPDATE serializes this transaction
+        with an operator apply; the row-count check makes a committed cutover
+        fail closed before any run rows are inserted.
+        """
+        try:
+            result: Any = session.execute(
+                update(config_head)
+                .where(
+                    config_head.c.head_key == HEAD_KEY,
+                    config_head.c.current_revision_id == revision_id,
+                )
+                .values(current_revision_id=revision_id)
+            )
+        except OperationalError as exc:
+            # SQLite reports SQLITE_BUSY_SNAPSHOT when an apply acquired the
+            # writer lock after this transaction read the old head.  It is a
+            # cutover race from the caller's perspective, so fail closed with
+            # the same typed result as a row-count CAS miss.
+            sqlite_code = getattr(exc.orig, "sqlite_errorcode", None)
+            lock_codes = {
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+                getattr(sqlite3, "SQLITE_BUSY_SNAPSHOT", sqlite3.SQLITE_BUSY),
+            }
+            if sqlite_code in lock_codes:
+                raise StaleConfigError(
+                    f"config head changed while creating run; expected {revision_id!r}"
+                ) from exc
+            raise
+        if result.rowcount != 1:
+            raise StaleConfigError(
+                f"config head changed while creating run; expected {revision_id!r}"
+            )
 
     def get_revision(self, session: Session, revision_id: str) -> dict | None:
         row = (
@@ -193,48 +286,69 @@ class HarnessConfigService:
         errors = validate_snapshot(snapshot, self.registry)
         if errors:
             raise StaleConfigError("; ".join(errors))
-        head = self.current(session)
-        current_id = head["current_revision_id"] if head is not None else None
+        current = self.current_validated(session)
+        current_id = current.revision_id if current is not None else None
         if current_id != expected_head_revision:
             raise StaleConfigError(
                 f"config head is {current_id!r}, expected {expected_head_revision!r}"
             )
-        if head is None:
-            session.execute(
-                config_head.insert().values(
-                    head_key=HEAD_KEY, current_revision_id=None, updated_at=now
-                )
-            )
 
         revision_id = new_id()
         snapshot_json = json_dump(snapshot.canonical())
-        session.execute(
-            config_revisions.insert().values(
-                id=revision_id,
-                parent_revision_id=current_id,
-                snapshot_json=snapshot_json,
-                snapshot_sha256=sha256_text(snapshot_json),
-                gates_json=json_dump(snapshot.gates),
-                actor=actor,
-                reason=reason,
-                created_at=now,
-            )
-        )
-        for route in snapshot.routes:
+        # Keep the candidate revision, its route projection, and the head CAS
+        # inside one savepoint.  A caller that handles a stale CAS and keeps its
+        # outer transaction alive still cannot accidentally commit an orphaned
+        # candidate revision.
+        with session.begin_nested():
             session.execute(
-                config_workflow_routes.insert().values(
-                    revision_id=revision_id,
-                    workflow_key=route.workflow_key,
-                    active_version=route.active_version,
-                    activation_state=route.activation_state.value,
-                    execution_mode=route.execution_mode.value if route.execution_mode else None,
+                config_revisions.insert().values(
+                    id=revision_id,
+                    parent_revision_id=current_id,
+                    snapshot_json=snapshot_json,
+                    snapshot_sha256=sha256_text(snapshot_json),
+                    gates_json=json_dump(snapshot.gates),
+                    actor=actor,
+                    reason=reason,
+                    created_at=now,
                 )
             )
-        session.execute(
-            config_head.update()
-            .where(config_head.c.head_key == HEAD_KEY)
-            .values(current_revision_id=revision_id, updated_at=now)
-        )
+            for route in snapshot.routes:
+                session.execute(
+                    config_workflow_routes.insert().values(
+                        revision_id=revision_id,
+                        workflow_key=route.workflow_key,
+                        active_version=route.active_version,
+                        activation_state=route.activation_state.value,
+                        execution_mode=(
+                            route.execution_mode.value if route.execution_mode else None
+                        ),
+                    )
+                )
+            # The head transition is the actual concurrency control.  A prior
+            # read is useful for diagnostics but cannot authorize an unconditional
+            # overwrite: another operator may have committed after that read.
+            if current is None:
+                try:
+                    session.execute(
+                        config_head.insert().values(
+                            head_key=HEAD_KEY, current_revision_id=revision_id, updated_at=now
+                        )
+                    )
+                except IntegrityError as exc:
+                    raise StaleConfigError("config head was created concurrently") from exc
+            else:
+                result: Any = session.execute(
+                    update(config_head)
+                    .where(
+                        config_head.c.head_key == HEAD_KEY,
+                        config_head.c.current_revision_id == expected_head_revision,
+                    )
+                    .values(current_revision_id=revision_id, updated_at=now)
+                )
+                if result.rowcount != 1:
+                    raise StaleConfigError(
+                        f"config head changed while applying; expected {expected_head_revision!r}"
+                    )
         return revision_id
 
     def rollback(self, session: Session, *, reason: str, actor: str, now: str) -> str | None:

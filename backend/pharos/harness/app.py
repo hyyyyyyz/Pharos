@@ -17,12 +17,14 @@ from pharos.db.session import session_scope
 from pharos.harness.approvals import ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore
 from pharos.harness.configrev import (
+    GATE_NAMES,
     HarnessConfigSnapshot,
     bootstrap_snapshot,
     emergency_stop_active,
 )
 from pharos.harness.contracts import (
     ApprovalState,
+    ConfigIntegrityError,
     ExecutionMode,
     RunState,
     StateError,
@@ -107,11 +109,9 @@ class HarnessApp:
         """Store definitions and apply the safe default when no head exists."""
         with session_scope() as session:
             self._store_definitions(session)
-            head = self.config_service.current(session)
-            if head is not None:
-                snapshot = self.config_service.current_snapshot(session)
-                assert snapshot is not None
-                return snapshot
+            current = self.config_service.current_validated(session)
+            if current is not None:
+                return current.snapshot
             snapshot = bootstrap_snapshot(self.registry)
             self.config_service.apply(
                 session,
@@ -133,15 +133,19 @@ class HarnessApp:
     def current_snapshot(self) -> HarnessConfigSnapshot:
         with session_scope() as session:
             snapshot = self.config_service.current_snapshot(session)
-            assert snapshot is not None
+            if snapshot is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
             return snapshot
 
     def route_for(self, workflow_key: str):
-        snapshot = self.current_snapshot()
-        for route in snapshot.routes:
-            if route.workflow_key == workflow_key:
-                return route
-        return None
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            return next(
+                (route for route in current.snapshot.routes if route.workflow_key == workflow_key),
+                None,
+            )
 
     def start_loop(self) -> asyncio.Task:
         if self._loop_task is not None and not self._loop_task.done():
@@ -222,37 +226,49 @@ class HarnessApp:
     # ----------------------------------------------------------------- gates
 
     def gate_status(self) -> dict:
-        snapshot = self.current_snapshot()
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+        if current is None:
+            return {
+                **{name: False for name in GATE_NAMES},
+                "emergency_stop": emergency_stop_active(),
+                "head_revision_id": None,
+                "head_hash": None,
+            }
+        snapshot = current.snapshot
         return {
-            "harness_enabled": snapshot.gates.get("harness_enabled", False),
-            "dispatcher_enabled": snapshot.gates.get("dispatcher_enabled", False),
-            "canary_enabled": snapshot.gates.get("canary_enabled", False),
-            "agent_steps_enabled": snapshot.gates.get("agent_steps_enabled", False),
-            "domain_publish_enabled": snapshot.gates.get("domain_publish_enabled", False),
+            **{name: snapshot.gates[name] for name in GATE_NAMES},
             "emergency_stop": emergency_stop_active(),
-            "head_revision_id": self._head_revision_id(),
-            "head_hash": self._head_hash(),
+            "head_revision_id": current.revision_id,
+            "head_hash": current.snapshot_sha256,
         }
 
     def _head_revision_id(self) -> str | None:
         with session_scope() as session:
-            head = self.config_service.current(session)
-            return head["current_revision_id"] if head else None
+            current = self.config_service.current_validated(session)
+            return current.revision_id if current else None
 
     def _head_hash(self) -> str | None:
         with session_scope() as session:
-            snapshot = self.config_service.current_snapshot(session)
-            return snapshot.snapshot_hash() if snapshot else None
+            current = self.config_service.current_validated(session)
+            return current.snapshot_sha256 if current else None
 
     def require_start_allowed(self, workflow_key: str) -> None:
         if emergency_stop_active():
             raise UnavailableError("harness is in emergency stop")
-        snapshot = self.current_snapshot()
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            self._check_start_allowed(current.snapshot, workflow_key)
+
+    @staticmethod
+    def _check_start_allowed(snapshot: HarnessConfigSnapshot, workflow_key: str) -> None:
         if not snapshot.gates.get("harness_enabled"):
             raise UnavailableError("harness is disabled")
         if not snapshot.gates.get("dispatcher_enabled"):
             raise UnavailableError("harness dispatcher is disabled; runs would never execute")
-        route = self.route_for(workflow_key)
+        route = next((item for item in snapshot.routes if item.workflow_key == workflow_key), None)
         if route is None or route.activation_state.value != "active":
             raise UnavailableError(f"workflow {workflow_key} is not active")
         if workflow_key in CANARY_EXECUTION_WORKFLOWS and not snapshot.gates.get("canary_enabled"):
@@ -275,19 +291,33 @@ class HarnessApp:
         project_id: str | None = None,
     ) -> dict:
         """Create (or replay) a run under the current config head."""
-        self.require_start_allowed(workflow_key)
-        route = self.route_for(workflow_key)
-        assert route is not None and route.active_version is not None
-        workflow = self.registry.require_workflow(f"{workflow_key}@{route.active_version}")
         now = self.clock.utc_epoch_us()
         with session_scope() as session:
-            revision_id = self._head_revision_id()
-            assert revision_id is not None
+            # Keep validation, route/version selection, gate checks, the
+            # conditional head write fence, and all run/step writes in this
+            # one transaction.  Splitting these reads across sessions lets a
+            # concurrent operator cut over between authorization and insert.
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            snapshot = current.snapshot
+            if emergency_stop_active():
+                raise UnavailableError("harness is in emergency stop")
+            self._check_start_allowed(snapshot, workflow_key)
+            route = next(
+                (item for item in snapshot.routes if item.workflow_key == workflow_key), None
+            )
+            if route is None or route.active_version is None:
+                # _check_start_allowed handles the normal route denial; this
+                # keeps the version lookup fail-closed if the contract grows.
+                raise UnavailableError(f"workflow {workflow_key} is not active")
+            workflow = self.registry.require_workflow(f"{workflow_key}@{route.active_version}")
+            self.config_service.fence_current(session, revision_id=current.revision_id)
             run = HarnessRunRepository().create(
                 session,
                 scope=scope,
                 workflow=workflow,
-                config_revision_id=revision_id,
+                config_revision_id=current.revision_id,
                 input=input,
                 idempotency_key=idempotency_key,
                 initiator=initiator,

@@ -12,7 +12,6 @@ here reads SQLite datetimes for lease math.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -24,13 +23,11 @@ from sqlalchemy.orm import Session
 from pharos.harness.configrev import (
     HarnessConfigSnapshot,
     emergency_stop_active,
-    validate_snapshot,
 )
 from pharos.harness.contracts import AttemptState, RunState, ScopeType, StepState
-from pharos.harness.definitions import sha256_hex
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope
 from pharos.harness.state import HarnessStateService
-from pharos.harness.tables import attempts, config_head, config_revisions, runs, steps
+from pharos.harness.tables import attempts, config_head, runs, steps
 
 log = logging.getLogger(__name__)
 
@@ -92,36 +89,11 @@ class HarnessDispatcher:
         """
         if emergency_stop_active() or self.config_service is None:
             return None
-        head = (
-            session.execute(
-                select(config_head.c.current_revision_id).where(
-                    config_head.c.head_key == "singleton"
-                )
-            )
-            .scalar_one_or_none()
-        )
-        if not head:
+        current = self.config_service.current_validated(session)
+        if current is None:
             return None
-        revision = (
-            session.execute(
-                select(config_revisions.c.snapshot_json, config_revisions.c.snapshot_sha256).where(
-                    config_revisions.c.id == head
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if revision is None:
-            return None
-        raw = revision["snapshot_json"]
-        try:
-            if sha256_hex(json.loads(raw)) != revision["snapshot_sha256"]:
-                return None
-            snapshot = HarnessConfigSnapshot.model_validate(json.loads(raw))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return None
-        if validate_snapshot(snapshot, self.config_service.registry):
-            return None
+        head = current.revision_id
+        snapshot = current.snapshot
         if not snapshot.gates.get("harness_enabled") or not snapshot.gates.get(
             "dispatcher_enabled"
         ):
