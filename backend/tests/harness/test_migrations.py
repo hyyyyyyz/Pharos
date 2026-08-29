@@ -16,6 +16,7 @@ Covers the six code gates the implementation plan names for migrations:
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,64 @@ from pharos.db import migrations
 from pharos.db.migrations import Migration, MigrationError, run_migrations, verify_migrations
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _insert_attempt(
+    conn: sqlite3.Connection,
+    attempt_id: str,
+    *,
+    state: str,
+    runtime_session_id: str | None = None,
+    child_pid: int | None = None,
+) -> None:
+    """Insert the minimum valid run/step/Attempt graph for constraint tests."""
+    # Fresh migration-only databases do not include the legacy users table;
+    # production bootstrap creates it before harness rows are written.
+    conn.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY)")
+    config_id = f"config-{attempt_id}"
+    run_id = f"run-{attempt_id}"
+    step_id = f"step-{attempt_id}"
+    conn.execute(
+        "INSERT INTO harness_config_revisions "
+        "(id, snapshot_json, snapshot_sha256, gates_json, created_at) "
+        "VALUES (?, '{}', ?, '{}', 1)",
+        (config_id, config_id),
+    )
+    conn.execute(
+        "INSERT INTO harness_runs "
+        "(id, scope_type, scope_id, workflow_key, workflow_version, definition_sha256, "
+        "config_revision_id, state, input_json, input_sha256, initiator, idempotency_key, "
+        "created_at, updated_at) "
+        "VALUES (?, 'user', 'constraint-test', 'workflow', 1, ?, ?, 'running', '{}', ?, "
+        "'user', ?, 1, 1)",
+        (run_id, run_id, config_id, run_id, run_id),
+    )
+    conn.execute(
+        "INSERT INTO harness_steps "
+        "(id, run_id, scope_type, scope_id, definition_step_key, instance_key, step_kind, "
+        "definition_json, state, created_at, updated_at) "
+        "VALUES (?, ?, 'user', 'constraint-test', 'step', ?, 'agent', '{}', 'running', 1, 1)",
+        (step_id, run_id, attempt_id),
+    )
+    conn.execute(
+        "INSERT INTO harness_attempts "
+        "(id, step_id, run_id, scope_type, scope_id, attempt_no, state, "
+        "runtime_session_id, child_pid) VALUES (?, ?, ?, 'user', 'constraint-test', 1, ?, ?, ?)",
+        (attempt_id, step_id, run_id, state, runtime_session_id, child_pid),
+    )
+
+
+def _claim_attempt(
+    conn: sqlite3.Connection,
+    attempt_id: str,
+    *,
+    runtime_session_id: str,
+    child_pid: int,
+) -> None:
+    conn.execute(
+        "UPDATE harness_attempts SET runtime_session_id = ?, child_pid = ? WHERE id = ?",
+        (runtime_session_id, child_pid, attempt_id),
+    )
 
 
 def _poisoned_migrations() -> tuple[Migration, ...]:
@@ -137,16 +196,26 @@ def test_verify_reports_ok_for_intact_ledger(tmp_path: Path) -> None:
 
 
 def test_runtime_provenance_is_an_additive_upgrade(tmp_path: Path, monkeypatch) -> None:
-    """0008 upgrades an already migrated H1 schema without rebuilding attempts."""
+    """0008 then 0009 upgrade an existing H1 schema without rebuilding attempts."""
     db = tmp_path / "runtime-upgrade.sqlite"
     all_migrations = migrations.MIGRATIONS
-    prior = all_migrations[:-1]
-    runtime_migration = all_migrations[-1]
+    runtime_index = next(
+        index
+        for index, migration in enumerate(all_migrations)
+        if migration.revision == "0008_harness_attempt_runtime_provenance"
+    )
+    prior = all_migrations[:runtime_index]
+    runtime_migration = all_migrations[runtime_index]
+    identity_migration = all_migrations[runtime_index + 1]
     monkeypatch.setattr(migrations, "MIGRATIONS", prior)
     assert run_migrations(db) == [migration.revision for migration in prior]
     monkeypatch.setattr(migrations, "MIGRATIONS", prior + (runtime_migration,))
+    assert run_migrations(db) == [runtime_migration.revision]
+    monkeypatch.setattr(
+        migrations, "MIGRATIONS", prior + (runtime_migration, identity_migration)
+    )
     applied = run_migrations(db)
-    assert applied == ["0008_harness_attempt_runtime_provenance"]
+    assert applied == [identity_migration.revision]
     with sqlite3.connect(db) as conn:
         columns = {
             row[1]: row[2].upper()
@@ -172,7 +241,9 @@ def test_runtime_provenance_is_an_additive_upgrade(tmp_path: Path, monkeypatch) 
     }.items() <= columns.items()
     assert {
         "ux_harness_attempts_runtime_session_active",
+        "ux_harness_attempts_runtime_session",
         "ix_harness_attempts_child_pid",
+        "ux_harness_attempts_child_pid_active",
         "ix_harness_attempts_deadline",
         "ix_harness_attempts_delivery",
     } <= indexes
@@ -182,6 +253,132 @@ def test_runtime_provenance_is_an_additive_upgrade(tmp_path: Path, monkeypatch) 
     )
     # Running the new migration twice is a no-op and does not recreate indexes.
     assert run_migrations(db) == []
+
+
+def test_runtime_identity_constraints_cover_terminal_and_active_attempts(tmp_path: Path) -> None:
+    """Session ids never repeat; PIDs may repeat only after termination."""
+    db = tmp_path / "runtime-identity.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        _insert_attempt(
+            conn,
+            "active-session",
+            state="running",
+            runtime_session_id="session-once",
+            child_pid=100,
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_attempt(
+                conn,
+                "terminal-session-reuse",
+                state="succeeded",
+                runtime_session_id="session-once",
+                child_pid=101,
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_attempt(
+                conn,
+                "active-session-reuse",
+                state="leased",
+                runtime_session_id="session-once",
+                child_pid=102,
+            )
+
+        _insert_attempt(conn, "terminal-pid", state="succeeded", child_pid=200)
+        _insert_attempt(conn, "terminal-pid-again", state="failed", child_pid=200)
+        _insert_attempt(conn, "active-pid", state="leased", child_pid=200)
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_attempt(conn, "active-pid-reuse", state="running", child_pid=200)
+
+        _insert_attempt(conn, "active-null-pid-1", state="running")
+        _insert_attempt(conn, "active-null-pid-2", state="leased")
+
+
+def test_runtime_identity_upgrade_rolls_back_on_existing_session_conflict(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A pre-existing duplicate fails 0009 without a partial index or ledger row."""
+    db = tmp_path / "runtime-conflict.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    runtime_index = next(
+        index
+        for index, migration in enumerate(all_migrations)
+        if migration.revision == "0008_harness_attempt_runtime_provenance"
+    )
+    through_0008 = all_migrations[: runtime_index + 1]
+    monkeypatch.setattr(migrations, "MIGRATIONS", through_0008)
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        _insert_attempt(
+            conn, "conflicting-terminal-1", state="indeterminate", runtime_session_id="reused"
+        )
+        _insert_attempt(
+            conn, "conflicting-terminal-2", state="indeterminate", runtime_session_id="reused"
+        )
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    with pytest.raises(sqlite3.IntegrityError):
+        run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(harness_attempts)")}
+        revisions = [
+            row[0] for row in conn.execute("SELECT revision FROM pharos_schema_migrations")
+        ]
+    assert "ux_harness_attempts_runtime_session" not in indexes
+    assert "ux_harness_attempts_child_pid_active" not in indexes
+    assert revisions == [migration.revision for migration in through_0008]
+
+
+def test_runtime_identity_race_is_fenced_across_file_connections(tmp_path: Path) -> None:
+    """Two writers racing on a file-backed DB cannot claim one session id."""
+    db = tmp_path / "runtime-race.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        for attempt_id in ("race-a", "race-b"):
+            _insert_attempt(conn, attempt_id, state="running")
+
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def claim(attempt_id: str, child_pid: int) -> None:
+        connection = sqlite3.connect(db, timeout=5, isolation_level=None)
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=5000")
+        try:
+            barrier.wait(timeout=5)
+            connection.execute("BEGIN IMMEDIATE")
+            _claim_attempt(
+                connection,
+                attempt_id,
+                runtime_session_id="racing-session",
+                child_pid=child_pid,
+            )
+            connection.execute("COMMIT")
+            outcomes.append("committed")
+        except sqlite3.IntegrityError:
+            connection.execute("ROLLBACK")
+            outcomes.append("rejected")
+        finally:
+            connection.close()
+
+    threads = [
+        threading.Thread(target=claim, args=("race-a-claim", 301)),
+        threading.Thread(target=claim, args=("race-b-claim", 302)),
+    ]
+    # The parent graph for each attempted row must exist before either writer
+    # opens its transaction; add it in one committed setup connection.
+    with sqlite3.connect(db) as conn:
+        for attempt_id in ("race-a-claim", "race-b-claim"):
+            _insert_attempt(conn, attempt_id, state="running")
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "race writer did not finish"
+    assert sorted(outcomes) == ["committed", "rejected"]
 
 
 def test_fixture_generated_from_the_published_schema_upgrades(tmp_path: Path) -> None:

@@ -521,6 +521,26 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX ix_harness_attempts_delivery ON harness_attempts (delivery_state)",
         ),
     ),
+    Migration(
+        revision="0009_harness_attempt_runtime_identity",
+        description="Enforce durable runtime session identity and active child PID ownership",
+        statements=(
+            # A runtime session is a one-time identity, including after an
+            # Attempt reaches a terminal or indeterminate state.  Keeping
+            # this index global prevents an unknown terminal Attempt from
+            # being mistaken for a later runtime after a crash.
+            "CREATE UNIQUE INDEX ux_harness_attempts_runtime_session "
+            "ON harness_attempts (runtime_session_id) "
+            "WHERE runtime_session_id IS NOT NULL",
+            # OS PIDs may be reused only after the prior runtime is no longer
+            # active.  The existing nonunique PID index remains useful for
+            # reconciliation lookups; this partial unique index is the
+            # ownership fence for leased/running Attempts.
+            "CREATE UNIQUE INDEX ux_harness_attempts_child_pid_active "
+            "ON harness_attempts (child_pid) "
+            "WHERE child_pid IS NOT NULL AND state IN ('leased','running')",
+        ),
+    ),
 )
 
 

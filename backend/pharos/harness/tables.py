@@ -538,6 +538,24 @@ Index(
         & attempts.c.state.in_(["leased", "running"])
     ),
 )
+# 0009 identity fences.  Runtime sessions are globally unique whenever
+# recorded, including terminal/indeterminate Attempts; PIDs are unique only
+# while their owning Attempt is leased or running because the OS may reuse a
+# PID after a process exits.
+Index(
+    "ux_harness_attempts_runtime_session",
+    attempts.c.runtime_session_id,
+    unique=True,
+    sqlite_where=attempts.c.runtime_session_id.is_not(None),
+)
 Index("ix_harness_attempts_child_pid", attempts.c.child_pid)
+Index(
+    "ux_harness_attempts_child_pid_active",
+    attempts.c.child_pid,
+    unique=True,
+    sqlite_where=(
+        attempts.c.child_pid.is_not(None) & attempts.c.state.in_(["leased", "running"])
+    ),
+)
 Index("ix_harness_attempts_deadline", attempts.c.state, attempts.c.deadline_at)
 Index("ix_harness_attempts_delivery", attempts.c.delivery_state)

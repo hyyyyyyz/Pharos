@@ -120,10 +120,18 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
     assert "reconciled" in table_sql
     assert {
         "ux_harness_attempts_runtime_session_active",
+        "ux_harness_attempts_runtime_session",
         "ix_harness_attempts_child_pid",
+        "ux_harness_attempts_child_pid_active",
         "ix_harness_attempts_deadline",
         "ix_harness_attempts_delivery",
     } <= indexes
+
+    metadata_indexes = {index.name for index in metadata.tables["harness_attempts"].indexes}
+    assert {
+        "ux_harness_attempts_runtime_session",
+        "ux_harness_attempts_child_pid_active",
+    } <= metadata_indexes
 
 
 def test_lease_columns_are_integers(tmp_path: Path) -> None:
