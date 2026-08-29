@@ -7,6 +7,7 @@ on:
       - "vendor/README.md"
       - "scripts/vendor-deepseek-harness.sh"
       - "scripts/check-deepseek-harness-vendor.sh"
+      - "harness-runtime/**"
       - ".github/workflows/harness-runtime.yml"
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - "vendor/README.md"
       - "scripts/vendor-deepseek-harness.sh"
       - "scripts/check-deepseek-harness-vendor.sh"
+      - "harness-runtime/**"
       - ".github/workflows/harness-runtime.yml"
   workflow_dispatch: {}
 
@@ -34,6 +36,11 @@ jobs:
 
       - name: Verify the vendored boundary
         run: scripts/check-deepseek-harness-vendor.sh
+
+      - name: Verify the Pharos safe-profile policy
+        run: |
+          python3 harness-runtime/scripts/check-profile.py
+          python3 -m unittest discover -s harness-runtime/tests -v
 
       - uses: pnpm/action-setup@v4
         with:
@@ -56,6 +63,42 @@ jobs:
           CI: "1"
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run build
+
+      - name: Verify the effective safe profile
+        run: |
+          runtime_dir="$(mktemp -d)"
+          mkdir -p "$runtime_dir/home"
+          env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
+            DSH_TELEMETRY_DISABLED=1 NODE_ENV=production \
+            node vendor/deepseek-harness/apps/cli/lib/bin.js \
+            --profile sdk \
+            --patch "$GITHUB_WORKSPACE/harness-runtime/profile/pharos-safe.cordis.patch.yml" \
+            --dump-config > "$runtime_dir/effective.yml"
+          python3 harness-runtime/scripts/check-profile.py \
+            --effective-config "$runtime_dir/effective.yml"
+
+      - name: Smoke-test bounded SDK shutdown
+        run: |
+          runtime_dir="$(mktemp -d)"
+          mkdir -p "$runtime_dir/home"
+          printf '%s\n' '{"jsonrpc":"2.0","id":"shutdown-smoke","method":"shutdown","params":{}}' | \
+            timeout 20s env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
+            DSH_TELEMETRY_DISABLED=1 NODE_ENV=production \
+            node vendor/deepseek-harness/apps/cli/lib/bin.js \
+            --profile sdk \
+            --patch "$GITHUB_WORKSPACE/harness-runtime/profile/pharos-safe.cordis.patch.yml" \
+            > "$runtime_dir/response.jsonl"
+          python3 - "$runtime_dir/response.jsonl" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          assert any(
+              frame.get("id") == "shutdown-smoke" and frame.get("result") == {}
+              for frame in frames
+          ), frames
+          PY
 
       - name: Verify the stdio SDK contract
         working-directory: vendor/deepseek-harness

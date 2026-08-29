@@ -45,6 +45,8 @@ frontend/       React web companion. The browser/remote writing surface and admi
 client/         Primary desktop client, built from Zotero source. The local research surface.
 site/           Three.js/Vite marketing site (GitHub Pages)
 zotero-connector/ Zotero 7/8 extension transport preview
+harness-runtime/ Audited overlays and checks for the vendored DeepSeek Harness runtime
+vendor/         Pinned third-party source snapshots; never edit them casually
 docs/           Architecture, research workflow, roadmap, decisions
 ```
 
@@ -59,6 +61,10 @@ in `frontend/`; anything that needs a model, a key, or a database belongs in
 Each component is independent. Run the tests for what you touched.
 
 ```bash
+# Harness runtime policy (the effective-profile smoke runs in CI after the vendor build)
+python3 harness-runtime/scripts/check-profile.py
+python3 -m unittest discover -s harness-runtime/tests -v
+
 # Backend
 cd backend && .venv/bin/pytest
 
