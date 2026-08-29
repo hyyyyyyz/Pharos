@@ -1,0 +1,25 @@
+{
+  "name": "pharos-fake-dsh",
+  "version": "0.1.0",
+  "description": "Deterministic DeepSeek Harness adapter used only by Pharos CI and local canaries",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/index.ts",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.1"
+  }
+}

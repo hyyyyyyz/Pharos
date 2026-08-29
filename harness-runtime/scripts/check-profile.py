@@ -213,6 +213,17 @@ def check_effective(root: Path, effective_path: Path, policy_path: Path | None =
     known = {entry["id"] for entry in policy["allow"]} | {
         entry["id"] for entry in policy["deny"]
     }
+    bundle_rows = {
+        row_id
+        for bundle in policy.get("bundles", [])
+        for row_id in bundle.get("allowed_rows", [])
+    }
+    bundle_names = {
+        row_id: bundle.get("name")
+        for bundle in policy.get("bundles", [])
+        for row_id in bundle.get("allowed_rows", [])
+    }
+    known |= bundle_rows
     for row_id in sorted(set(by_id) - known):
         fail(errors, f'effective sdk profile contains unreviewed row "{row_id}"')
 
@@ -248,6 +259,156 @@ def check_effective(root: Path, effective_path: Path, policy_path: Path | None =
             fail(errors, f'effective sdk profile is missing required runtime row "{row_id}"')
         elif row.get("disabled") == "true":
             fail(errors, f'effective sdk profile disables required runtime row "{row_id}"')
+    for row_id in sorted(bundle_rows):
+        row = by_id.get(row_id)
+        if row is None:
+            fail(errors, f'effective sdk profile is missing allowlisted bundle row "{row_id}"')
+        elif row.get("disabled") == "true":
+            fail(errors, f'effective sdk profile disables allowlisted bundle row "{row_id}"')
+        elif row.get("name") != bundle_names[row_id]:
+            fail(errors, f'effective sdk profile changes allowlisted bundle row "{row_id}"')
+    return errors
+
+
+def check_fake_bundles(root: Path, policy_path: Path | None = None) -> list[str]:
+    """Audit the out-of-tree deterministic adapter bundles separately.
+
+    Bundle rows are not upstream profile rows, so they intentionally do not
+    participate in the source hash/deny-list loop above.  They still need an
+    explicit policy entry: the checker verifies their manifest, patch layer,
+    route/model and checked-in runtime artifact without importing JavaScript.
+    """
+    policy_path = policy_path or root / "harness-runtime/security-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    errors: list[str] = []
+    bundles = policy.get("bundles")
+    if not isinstance(bundles, list) or not bundles:
+        return ["policy must declare at least one audited out-of-tree bundle"]
+    for bundle in bundles:
+        if not isinstance(bundle, dict):
+            fail(errors, "bundle policy entry must be an object")
+            continue
+        required = {
+            "name",
+            "root",
+            "manifest",
+            "patch",
+            "entry",
+            "allowed_rows",
+            "provider",
+            "model",
+            "source_sha256",
+        }
+        missing = required - bundle.keys()
+        if missing:
+            fail(errors, f"bundle policy missing required fields: {', '.join(sorted(missing))}")
+            continue
+        root_dir = root / bundle["root"]
+        manifest_path = root / bundle["manifest"]
+        patch_path = root / bundle["patch"]
+        entry_path = root / bundle["entry"]
+        for path, label in ((manifest_path, "manifest"), (patch_path, "patch"), (entry_path, "entry")):
+            if not path.is_file():
+                fail(errors, f"fake bundle {label} is missing: {path.relative_to(root)}")
+        if not manifest_path.is_file() or not patch_path.is_file() or not entry_path.is_file():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            fail(errors, f"fake bundle manifest is not valid JSON: {exc}")
+            continue
+        if manifest.get("name") != bundle["name"]:
+            fail(errors, "fake bundle manifest name does not match policy")
+        allowed_manifest_keys = {
+            "name",
+            "version",
+            "description",
+            "type",
+            "main",
+            "types",
+            "files",
+            "license",
+            "dsh",
+            "peerDependencies",
+        }
+        if set(manifest) != allowed_manifest_keys:
+            fail(errors, "fake bundle manifest contains an unreviewed field")
+        if manifest.get("type") != "module" or manifest.get("main") != "index.js":
+            fail(errors, "fake bundle must use the checked-in ESM index.js entry")
+        if manifest.get("dsh", {}).get("bundle", {}).get("patch") != "./cordis.patch.yml":
+            fail(errors, "fake bundle must declare dsh.bundle.patch as ./cordis.patch.yml")
+        expected_files = {
+            "README.md",
+            "cordis.patch.yml",
+            "index.d.ts",
+            "index.js",
+            "package.json",
+            "src/index.ts",
+        }
+        declared_files = set(manifest.get("files", [])) | {"package.json"}
+        if declared_files != expected_files:
+            fail(errors, "fake bundle manifest files are not the exact reviewed set")
+        peers = manifest.get("peerDependencies", {})
+        if set(peers) != {"@deepseek-ai/cordis", "@deepseek-ai/dsh-llm"}:
+            fail(errors, "fake bundle peer dependencies must be limited to Cordis and dsh-llm")
+        if peers != {
+            "@deepseek-ai/cordis": "4.0.1",
+            "@deepseek-ai/dsh-llm": "0.1.2-alpha.1",
+        }:
+            fail(errors, "fake bundle peer dependencies must pin the audited DSH version")
+        hashes = bundle.get("source_sha256")
+        if not isinstance(hashes, dict) or set(hashes) != expected_files:
+            fail(errors, "fake bundle hashes must cover the exact reviewed file set")
+        else:
+            actual_files = {
+                str(path.relative_to(root_dir))
+                for path in root_dir.rglob("*")
+                if path.is_file()
+            }
+            if actual_files != expected_files:
+                fail(errors, "fake bundle directory contains an unreviewed file")
+            for relative_path, expected_hash in hashes.items():
+                path = root_dir / relative_path
+                if not re.fullmatch(r"[0-9a-f]{64}", str(expected_hash)):
+                    fail(errors, f"fake bundle hash is invalid: {relative_path}")
+                elif path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                    fail(errors, f"fake bundle reviewed content changed: {relative_path}")
+        patch_rows = read_rows(patch_path)
+        allowed = set(bundle["allowed_rows"])
+        if {row["id"] for row in patch_rows} != allowed:
+            fail(errors, "fake bundle patch rows do not match its explicit policy allowlist")
+        for row in patch_rows:
+            if row["fields"] != {"name"} or row.get("name") != bundle["name"]:
+                fail(errors, f'fake bundle row "{row["id"]}" must only name its package')
+        if not root_dir.is_dir():
+            fail(errors, "fake bundle policy root is missing")
+        source_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (root_dir / "src/index.ts", entry_path)
+            if path.is_file()
+        )
+        forbidden = re.compile(
+            r"(?:node:|@deepseek-ai/dsh-(?:fs|subprocess)|child_process|process\.env|"
+            r"(?:fetch|WebSocket|net|http|https)\s*\(|(?:Date|Math\.random|crypto)\b|"
+            r"(?:readFile|writeFile|readdir|setTimeout|setInterval)\s*\()",
+            re.IGNORECASE,
+        )
+        match = forbidden.search(source_text)
+        if match:
+            fail(errors, f"fake bundle contains a forbidden runtime API: {match.group(0)!r}")
+        for required_text, label in (
+            ("extends LlmAdapter", "LlmAdapter implementation"),
+            ("registerAdapter([PHAROS_FAKE_PROVIDER]", "single fake provider registration"),
+            ("block-start", "block-start stream chunk"),
+            ("text-delta", "text-delta stream chunk"),
+            ("block-end", "block-end stream chunk"),
+            ("type: 'usage'", "usage stream chunk"),
+            ("type: 'finish'", "finish stream chunk"),
+        ):
+            if required_text not in source_text:
+                fail(errors, f"fake bundle is missing {label}")
+        if bundle.get("provider") != "pharos-fake" or bundle.get("model") != "pharos-fake-canary":
+            fail(errors, "fake bundle policy route/model is not the reviewed canary")
     return errors
 
 
@@ -262,6 +423,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     errors = check(args.root.resolve(), args.policy.resolve() if args.policy else None)
+    errors.extend(check_fake_bundles(args.root.resolve(), args.policy.resolve() if args.policy else None))
     if args.effective_config is not None:
         errors.extend(
             check_effective(

@@ -1,0 +1,6 @@
+# Out-of-tree Pharos canary layer.  It is intentionally only an adapter row;
+# the Pharos safe overlay remains the final patch and disables every upstream
+# provider/tool surface.
+- insert:
+    - id: llm-pharos-fake
+      name: pharos-fake-dsh

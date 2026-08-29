@@ -27,6 +27,15 @@ JSONL and bounded runtime persistence remain available. The first executable
 profile must register only the deterministic `pharos-fake` adapter; a later
 provider adapter is a separate reviewed overlay and deployment policy.
 
+The canary adapter lives in `bundles/pharos-fake`. It is an out-of-tree DSH
+bundle rather than a patch to the pinned vendor snapshot. Its manifest forbids
+install hooks and unreviewed package fields; every shipped bundle file is
+content-addressed in `security-policy.json`; and its only admitted route is
+`pharos-fake/pharos-fake-canary`. The executable canary installs that bundle
+into a disposable profile, audits the effective Cordis tree, performs the real
+SDK initialize/prompt/shutdown exchange, and proves that a different model is
+rejected during initialize.
+
 The upstream SDK server can dynamically mount its DeepSeek fallback when its
 trusted parent sends `initialize(provider="deepseek-official")`. A profile
 overlay cannot remove that code path. The Pharos parent must therefore reject
@@ -52,17 +61,14 @@ Never inherit an arbitrary parent environment. Construct an allowlist such as
 model test, and keep credentials out of patches, logs, and the workspace.
 
 The static checker is dependency-free and does not evaluate YAML `!!js`
-expressions. After building the vendored runtime, also audit the exact output of
-`dsh --dump-config`:
+expressions. After building the vendored runtime, run the real Loader canary;
+it also audits the exact output of `dsh --dump-config` after installing the
+allowlisted bundle:
 
 ```sh
 python3 harness-runtime/scripts/check-profile.py
 python3 -m unittest discover -s harness-runtime/tests -v
-node vendor/deepseek-harness/apps/cli/lib/bin.js --profile sdk \
-  --patch "$PWD/harness-runtime/profile/pharos-safe.cordis.patch.yml" \
-  --dump-config > /tmp/pharos-dsh-effective.yml
-python3 harness-runtime/scripts/check-profile.py \
-  --effective-config /tmp/pharos-dsh-effective.yml
+python3 harness-runtime/scripts/run-fake-canary.py
 ```
 
 Before changing either upstream bundle, update the policy's pinned vendor

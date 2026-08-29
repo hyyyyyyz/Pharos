@@ -64,18 +64,8 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run build
 
-      - name: Verify the effective safe profile
-        run: |
-          runtime_dir="$(mktemp -d)"
-          mkdir -p "$runtime_dir/home"
-          env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
-            DSH_TELEMETRY_DISABLED=1 NODE_ENV=production \
-            node vendor/deepseek-harness/apps/cli/lib/bin.js \
-            --profile sdk \
-            --patch "$GITHUB_WORKSPACE/harness-runtime/profile/pharos-safe.cordis.patch.yml" \
-            --dump-config > "$runtime_dir/effective.yml"
-          python3 harness-runtime/scripts/check-profile.py \
-            --effective-config "$runtime_dir/effective.yml"
+      - name: Run the real Loader and deterministic Pharos canary
+        run: python3 harness-runtime/scripts/run-fake-canary.py
 
       - name: Smoke-test bounded SDK shutdown
         run: |

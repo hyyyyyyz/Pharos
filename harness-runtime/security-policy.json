@@ -7,6 +7,27 @@
   },
   "profile": "sdk",
   "patch": "profile/pharos-safe.cordis.patch.yml",
+  "bundles": [
+    {
+      "name": "pharos-fake-dsh",
+      "root": "harness-runtime/bundles/pharos-fake",
+      "manifest": "harness-runtime/bundles/pharos-fake/package.json",
+      "patch": "harness-runtime/bundles/pharos-fake/cordis.patch.yml",
+      "entry": "harness-runtime/bundles/pharos-fake/index.js",
+      "allowed_rows": ["llm-pharos-fake"],
+      "provider": "pharos-fake",
+      "model": "pharos-fake-canary",
+      "purpose": "CI and local deterministic canary only",
+      "source_sha256": {
+        "README.md": "d7a632106a1c41e61d0984e27b2fb1c512eda9a3e21b313b65b0496016f24115",
+        "cordis.patch.yml": "a43246c9d2d5b18b167570f0fdfae134e801f64e3c1596558046b018e69efdb9",
+        "index.d.ts": "4140aa93290badfe4af309ac1a0159029f0b49f4b05d2dd77c0393ac60e0a01f",
+        "index.js": "aaffd9acfe05f08c862c9deac9d9ef3751f43dd6e42e881fdb774d9d81d06a07",
+        "package.json": "8eabd6fdf508f8c76e09596abaa232361aeb6a73f3434e608ac8f2ca5cf4c35a",
+        "src/index.ts": "9a7ba1182e58253073a20b41997ae632e709740cc4b295c4dbbf053bd0bb8f7f"
+      }
+    }
+  ],
   "sources": [
     "vendor/deepseek-harness/packages/bundle/base/cordis.patch.yml",
     "vendor/deepseek-harness/packages/bundle/sdk-app/cordis.patch.yml",

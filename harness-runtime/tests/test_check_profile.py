@@ -101,6 +101,9 @@ class CheckProfileTests(unittest.TestCase):
                     rows.append(f'- id: {entry["id"]}\n  disabled: true')
             for entry in policy["allow"]:
                 rows.append(f'- id: {entry["id"]}')
+            for bundle in policy["bundles"]:
+                for row_id in bundle["allowed_rows"]:
+                    rows.append(f'- id: {row_id}\n  name: {bundle["name"]}')
             effective.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
             self.assertEqual(CHECKER.check_effective(ROOT, effective), [])
@@ -114,6 +117,49 @@ class CheckProfileTests(unittest.TestCase):
             )
             errors = CHECKER.check_effective(ROOT, effective)
             self.assertTrue(any('leaves denied row "tool-web" active' in error for error in errors), errors)
+
+    def test_effective_profile_accepts_only_the_allowlisted_fake_row(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pharos-effective-fake-") as directory:
+            effective = Path(directory) / "effective.yml"
+            policy = json.loads(
+                (ROOT / "harness-runtime/security-policy.json").read_text(encoding="utf-8")
+            )
+            rows = [
+                *(f'- id: {entry["id"]}\n  disabled: true' for entry in policy["deny"] if entry.get("patch_required", True)),
+                *(f'- id: {entry["id"]}' for entry in policy["allow"]),
+                "- id: llm-pharos-fake\n  name: pharos-fake-dsh",
+            ]
+            effective.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            self.assertEqual(CHECKER.check_effective(ROOT, effective), [])
+            effective.write_text(
+                effective.read_text(encoding="utf-8").replace(
+                    "- id: llm-pharos-fake\n  name: pharos-fake-dsh",
+                    "- id: llm-pharos-fake\n  name: pharos-fake-dsh\n  disabled: true",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            errors = CHECKER.check_effective(ROOT, effective)
+            self.assertTrue(any("disables allowlisted bundle row" in error for error in errors), errors)
+
+    def test_effective_profile_rejects_provider_name_substitution(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pharos-effective-provider-") as directory:
+            effective = Path(directory) / "effective.yml"
+            policy = json.loads(
+                (ROOT / "harness-runtime/security-policy.json").read_text(encoding="utf-8")
+            )
+            rows = [
+                *(
+                    f'- id: {entry["id"]}\n  disabled: true'
+                    for entry in policy["deny"]
+                    if entry.get("patch_required", True)
+                ),
+                *(f'- id: {entry["id"]}' for entry in policy["allow"]),
+                "- id: llm-pharos-fake\n  name: @deepseek-ai/dsh-llm-deepseek",
+            ]
+            effective.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            errors = CHECKER.check_effective(ROOT, effective)
+            self.assertTrue(any("changes allowlisted bundle row" in error for error in errors), errors)
 
 
 if __name__ == "__main__":
