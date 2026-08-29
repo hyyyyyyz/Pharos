@@ -94,7 +94,9 @@ class HarnessApp:
             expanders={CANARY_KEY: expand},
             run_reducers={CANARY_KEY: reduce},
         )
-        self.dispatcher = dispatcher or HarnessDispatcher(state_service=self.state)
+        self.dispatcher = dispatcher or HarnessDispatcher(
+            state_service=self.state, config_service=self.config_service
+        )
         self.runner = HarnessRunner(self.dispatcher, self.executor)
         self._loop_task: asyncio.Task | None = None
         self._stopping = False

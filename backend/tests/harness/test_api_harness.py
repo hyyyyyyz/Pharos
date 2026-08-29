@@ -14,7 +14,9 @@ from fastapi.testclient import TestClient
 from pharos.api import harness as harness_api
 from pharos.api.deps import current_user, get_settings, require_admin
 from pharos.db.models import User
+from pharos.db.session import session_scope
 from pharos.harness.repository import Scope
+from pharos.harness.tables import runs
 from pharos.harness.workflows.canary import canary_input
 from tests.harness.conftest import enable_canary
 
@@ -150,6 +152,31 @@ def test_cancel_and_events_surface(client) -> None:
         if step["definitionStepKey"] == "approval_gate"
     ][0]
     assert gate["state"] == "skipped"
+
+
+def test_resume_clears_pause_request_and_releases_a_claim(client) -> None:
+    """The HTTP route must use HarnessApp.resume's complete lifecycle path."""
+    http, app = client
+    run = http.post(
+        "/api/harness/runs",
+        json={
+            "workflowKey": "harness.canary",
+            "input": canary_input("success"),
+            "idempotencyKey": "http-resume-1",
+        },
+    ).json()
+    paused = http.post(f"/api/harness/runs/{run['id']}/pause")
+    assert paused.status_code == 200
+    _drive_to(app, run["id"], "paused")
+
+    resumed = http.post(f"/api/harness/runs/{run['id']}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["state"] == "queued"
+    with session_scope() as session:
+        row = session.execute(runs.select().where(runs.c.id == run["id"])).mappings().one()
+        assert row["pause_requested_at"] is None
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None and claimed.run_id == run["id"]
 
 
 def test_operator_status_and_validation_are_admin_only(client) -> None:

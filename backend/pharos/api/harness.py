@@ -254,22 +254,11 @@ def resume_run(
     run_id: str,
     user: Annotated[User, Depends(current_user)],
     request: Request,
-    session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     harness = _harness(request)
     try:
-        run = harness.get_run(scope=_scope(user), run_id=run_id)
-        if run["state"] != "paused":
-            raise StateError("run is not paused")
-        from pharos.harness.contracts import RunState
-
-        harness.state.transition_run(
-            session, run_id=run_id, target=RunState.queued, now_us=harness.clock.utc_epoch_us()
-        )
-        session.commit()
-        return _run_out(harness.get_run(scope=_scope(user), run_id=run_id))
+        return _run_out(harness.resume(scope=_scope(user), run_id=run_id))
     except Exception as error:
-        session.rollback()
         raise _http_error(error) from error
 
 
