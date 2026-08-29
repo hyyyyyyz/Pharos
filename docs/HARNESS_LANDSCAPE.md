@@ -1,6 +1,6 @@
 # Open-source Agent Harness landscape and Pharos decisions
 
-> 调研快照：2026-08-15。Agent 框架变化很快，本文记录的是架构取样与设计理由，
+> 调研快照：2026-08-15；DeepSeek Harness vendor 状态补充于 2026-08-30。Agent 框架变化很快，本文记录的是架构取样与设计理由，
 > 不是依赖选型排行榜。实施前应重新核对目标版本、许可证和稳定性。
 
 本文回答一个具体问题：Pharos 应该从 pi、OpenCode 等开源 Harness 学什么，又必须拒绝什么？
@@ -11,7 +11,8 @@
 
 总体架构见 [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md)，具体工作流见
 [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)，阶段计划见
-[`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
+[`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。已 vendor 的 DeepSeek Harness
+集成边界、协议草案和安全 denylist 见 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。
 
 ## 1. 评估维度
 
@@ -40,9 +41,10 @@
 | [CrewAI](https://github.com/crewAIInc/crewAI) | [MIT](https://github.com/crewAIInc/crewAI/blob/main/LICENSE) | Flow 管确定性、Crew 只负责局部自治；运行轮数/时间限制 | Role/Goal/Backstory 容易退化为角色扮演；自由 Crew 协作难复现 | 采用 “workflow first, pockets of agency”；拒绝群聊 |
 | [AutoGen](https://github.com/microsoft/autogen) | [Code: MIT](https://github.com/microsoft/autogen/blob/main/LICENSE-CODE)；[docs: CC-BY-4.0](https://github.com/microsoft/autogen/blob/main/LICENSE) | Core/AgentChat/Extensions 分层、termination、保存 Team state、OTel | 官方仓库已提示 maintenance mode；GroupChat/speaker 选择成本高且不确定 | 只吸收分层与显式终止，不作为新依赖 |
 | [OpenAI Codex CLI](https://github.com/openai/codex) | [Apache-2.0](https://github.com/openai/codex/blob/main/LICENSE) | Thread/Turn/Item、app-server、审批作用域、sandbox、fork/resume、背压 | 面向代码执行，shell/filesystem 能力过重；本地 rollout 不适合作云端业务库 | 借鉴协议、事件与审批；映射为 Run/Step/Artifact |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（vendor 固定 commit） | MIT（上游 developer preview） | Cordis 插件组合、Session event log、Agent turn、checkpoint、typed tool seam、stdio/SDK 边界 | 上游默认能力可触及代码/命令、网络、进程、凭据、文件和第三方插件；Session/workflow 不是 Pharos 业务真相，且未安全审计 | **采用**为受限 Agent Attempt 执行内核；Node stdio JSON-RPC sidecar；不采用 DSH workflow，不开放高风险能力 |
 
-这些许可证是 2026-08-15 对官方仓库的逐项快照，不替代依赖采用时对目标 commit、子目录、附带资产和
-传递依赖的复核。许可证宽松也不等于架构适配。Pharos 的客户端仍受
+除 DeepSeek Harness（2026-08-30 vendor commit）外，这些许可证是 2026-08-15 对官方仓库的逐项快照，
+不替代依赖采用时对目标 commit、子目录、附带资产和传递依赖的复核。许可证宽松也不等于架构适配。Pharos 的客户端仍受
 AGPL-3.0-or-later 与 Zotero 衍生边界约束，依赖采用还要单独通过许可证与供应链检查。
 
 ## 3. Pi Agent Harness
@@ -82,6 +84,27 @@ Pi 官方明确说明它没有内建的文件系统、进程、网络或凭据�
 [Permissions & Containerization](https://github.com/earendil-works/pi#permissions--containerization)
 不适合作为官方多租户科研服务的默认安全模型。Pharos 也不加载项目目录中的任意 TypeScript
 Extension，不用 tmux/子进程拼出生产多 Agent，不把 bash/read/write 当研究 Agent 的通用能力。
+
+## DeepSeek Harness（已 vendor 的上游快照）
+
+Pharos 固定 vendor 官方 DeepSeek Harness commit
+`cd5ef8148158c3a752a658978873241fdf8e2bbc`（版本 `0.1.2-alpha.1`，MIT，快照日 2026-08-30）。
+上游 README 将其标为 developer preview；上游 SAFETY 明确它未经安全审计且不是 production-ready，
+并警告模型生成代码/命令、第三方插件、网络、进程、凭据和文件访问可能造成破坏。许可证许可不等于
+Pharos 采用了这些能力，也不等于 Pharos 已生产就绪。
+
+DSH 值得吸收的是小型 Agent turn、Session event/replay、checkpoint 和可替换的 model/tool seam；
+但它的 everything-is-a-plugin 组合模型与 Pharos 的“受信代码注册、DB configuration head、单一
+durable 控制面”不同。Pharos 不把 DSH Session 作为 Run/Step/Attempt 的第二真相，不把 DSH 的 workflow、
+goal、schedule、job 或 subagent 用作业务流程，也不加载用户 profile、patch、plugin、MCP server 或
+executable bundle。
+
+采用形态固定为一个 per-Attempt Node sidecar，通过无公网端口的 stdio JSON-RPC 与 Pharos Runner 通信。
+Pharos 保留 Run/Step/Attempt/Event/Artifact/Approval/Usage、policy、lease、retry、publication 和
+owner scope 的唯一所有权；DSH Session 只记录该 Attempt 的内部模型 turn 和受限 tool 交互。首个纵切
+必须是 deterministic fake-model canary；在协议、资源、隐私和 negative security tests 通过前不接真实
+provider。完整 allowlist、denylist、v1 协议和回滚门槛以 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)
+为准。
 
 ## 4. OpenCode
 

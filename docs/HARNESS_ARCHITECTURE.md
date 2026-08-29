@@ -1,7 +1,9 @@
 # Pharos Research Harness — architecture
 
-> 状态：**目标架构，尚未实现。** 本文是 Harness 的 source of truth。任何代码提交不得把本文中的
-> Planned 能力描述成已上线能力；分阶段落实顺序与验收门槛见
+> 状态：**目标架构；H1 durable kernel 已完成 code gate，H1.5 safe-profile code gate 已完成，生产
+> operational gate 与 DSH adapter 尚未完成。** 本文是
+> Pharos Harness 的 source of truth。H2–H7 业务能力仍是 Planned；任何代码提交不得把 Planned 能力描述成
+> 已上线能力；分阶段落实顺序与验收门槛见
 > [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
 
 Pharos Research Harness 是一层**可持久化、可恢复、可审计、受策略约束的科研任务执行层**。
@@ -13,7 +15,9 @@ Pharos Research Harness 是一层**可持久化、可恢复、可审计、受策
 
 外部项目取样和 Adopt / Adapt / Reject 决策见
 [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)，三条业务工作流见
-[`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)。
+[`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)。DeepSeek Harness 已确定为受限 Agent Attempt 执行内核，
+集成协议与 denylist 见 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)；源码已固定，
+sidecar 运行路径仍在实现且生产 gate 关闭。
 
 ## 1. 目标与成功标准
 
@@ -55,7 +59,8 @@ Translation `JobManager` 抽象成万能队列，也不会第一天迁移翻译�
 
 当前生产形态是单 Uvicorn worker，Pharos 容器受限为约 2 CPU / 1800 MB，数据库是 SQLite WAL。
 H1 因而采用**数据库为真相、进程内受限 worker 为执行器**的方案，不引入 Redis、Celery、Temporal
-或第二个控制平面。这个决定可在真实并发指标出现后复审。
+或第二个控制平面。DSH 只作为 Agent Attempt 的 stdio sidecar，不拥有 durable 状态或公网端口；
+是否启用某个 workflow/账户仍须通过本文及集成文档的阶段门。扩容/依赖决定可在真实并发指标出现后复审。
 
 ## 3. 不可破坏的架构原则
 
@@ -202,6 +207,8 @@ Harness 新 Run、claim、Run/Step control/write 与 publication，但不自动�
 - Agent Runner：受限的模型/tool loop；
 - Model Gateway：统一 personal BYOK 与 official entitlement；
 - Future Sandbox / Local Bridge：独立 executor，不与 API 宿主权限混用。
+- DSH Agent sidecar：每个 active Agent Attempt 最多一个、仅 stdio JSON-RPC、固定 profile；不持有 Run/Step/
+  Attempt/Artifact/Approval/Usage 控制权，当前处于适配实现阶段、尚未部署。
 
 ### 4.4 Artifact and domain plane
 
@@ -362,6 +369,23 @@ load immutable Step input Artifact IDs
 角色之间通过 Artifact contract 协作：Scout 输出 `SearchBatch`，Reader 消费其 item，Critic 消费
 `TrickCard[]`。父 Agent 不把一段自然语言“告诉”子 Agent，也不能等待一个未持久化的子进程。需要子任务时
 创建 child Run，并以 Artifact link 连接输入输出。
+
+### 7.4 DeepSeek Harness adapter（已选型，接入中）
+
+已 vendor 的官方 DeepSeek Harness 是 Agent Step 的执行内核，通过无公网端口的
+Node stdio JSON-RPC sidecar 接入。DSH Session 记录该 Attempt 内部的 prompt projection、model turn
+和受限 tool 事件；Pharos 仍独占 Run/Step/Attempt/Event/Artifact/Approval/Usage、policy、lease、
+retry、publication 与 owner scope。DSH Session ID、cursor 和 hash 只作为 Attempt provenance/恢复
+辅助，不能成为第二个 durable 控制平面。
+
+生产 profile 必须由 Pharos 固定 allowlist 编译，禁止用户 profile/patch/plugin/MCP；v1 默认零 model-facing
+tool，未来 capability 也只能是经过 Pharos policy、approval、validator 和 idempotency contract 的
+typed Action/Observation。shell、terminal、subprocess、sandbox、E2B、code runtime、general filesystem、
+非 provider allowlist 的 network、动态插件、自修改和 DSH workflow 全部 deny。首个集成纵切只能是 deterministic fake-model
+canary，当前 H1 仍使用 `FakeModelGateway`，没有真实 DSH sidecar。
+
+完整来源、所有权矩阵、stdio JSON-RPC v1 草案、资源/隐私/回滚门槛见
+[`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。
 
 ## 8. Capability contract
 
@@ -1001,6 +1025,10 @@ backend/tests/harness/
 frontend/src/components/HarnessRunCenter.*
 client/chrome/content/zotero/xpcom/pharos/harness.js   # later phase only
 ```
+
+DeepSeek Harness sidecar 的 adapter/protocol 不属于当前 H1 kernel 交付；实现过程中必须保持为独立的
+Node stdio transport seam，并按 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md) 的
+allowlist、denylist 和阶段门接入，不能把 vendor 源码直接挂进 API 进程或把 DSH Session 当业务状态。
 
 不要建立一个 3000 行 `harness.py`，不要让 workflow 文件复制 Provider/DB/HTTP 逻辑。
 

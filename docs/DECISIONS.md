@@ -408,3 +408,35 @@ The source of truth for this decision is
 [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md); implementation order and
 release gates are in
 [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md).
+
+## 17. 采用 DeepSeek Harness 作为受限 Agent Attempt 执行内核
+
+Pharos vendor 官方 DeepSeek Harness 固定 commit
+`cd5ef8148158c3a752a658978873241fdf8e2bbc`（MIT，版本 `0.1.2-alpha.1`），但不把上游的默认运行
+能力当作 Pharos 能力。DSH 是 developer-preview、未经安全审计的源码输入；它的 Session 只记录一个
+Agent Attempt 内部的 prompt projection、模型 turn 和受限 tool 事件。
+
+Pharos DB 的 `Run/Step/Attempt/Event/Artifact/Approval/Usage` 以及 policy、lease、retry、publication
+和 owner scope 是唯一 durable 控制真相。DSH Session 不得成为第二个业务状态库，不得使用 DSH workflow
+作为 Daily、Discovery 或 Project 的业务工作流，不得自行创建 child Run、权限或工具。
+
+这一采用决策已经生效，但运行路径仍在实现中，生产 gate 保持关闭。集成只能由 Pharos Runner 为单个
+Attempt 启动一个无公网端口的 stdio JSON-RPC sidecar；固定 profile 只接受 Pharos 下发的 allowlisted
+Context Pack/typed capability。shell、terminal、
+subprocess、sandbox、E2B、code-runtime、general filesystem、除批准模型出口外的网络、MCP、动态/不可信 plugin、
+self-modification 和本地 Zotero/PDF 访问均 deny。首个纵切必须是 deterministic fake-model canary；
+当前 H1 code gate 不包含 DSH sidecar，生产 operator canary、72 小时 soak、生产恢复演练仍未完成。
+
+**Why:** DSH 的插件化 Session/Agent loop 对单 Attempt 执行日志有复用价值，但其上游能力面与 Pharos
+的多租户、无实验执行和本地数据隔离边界不兼容。stdio sidecar 消除了公网协议端口；清理后的环境与独立
+runtime container 才负责限制权限继承和网络出口。数据库真相
+与 typed protocol 则避免聊天/session 日志变成不可恢复的业务状态。
+
+上游当前 wire 只提供 `initialize`、`session/prompt`、`shutdown` 以及 Session/Status 通知；第一版适配器
+先在 Pharos 父进程对这组官方方法增加 Attempt、预算、schema、deadline 和 provenance 约束。文档中的
+`pharos/*` 方法属于后续自定义扩展草案，不得被写成上游已经支持。
+
+完整协议、所有权矩阵、allowlist/denylist、隐私 retention、测试、阶段门和回滚见
+[`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。本决策不宣称 DSH 已接入或 Pharos
+已生产就绪；任何真实 provider、额外 capability、sidecar 版本升级或实验执行都需要独立审查，实验执行
+仍受 Decision 9 的正式 supersede 条件约束。

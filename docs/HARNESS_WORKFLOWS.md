@@ -1,9 +1,10 @@
 # Pharos Research Harness — 三条工作流规范
 
-> 状态：**目标工作流，尚未实现。** 本文定义 Daily Papers、Literature Discovery 与 Project
-> Research 三条工作流族的业务 contract。执行内核、状态机、权限、预算和持久化的 source of truth 是
+> 状态：**目标业务工作流，尚未迁移。** Pharos H1 durable kernel 已通过 code gate，但 Daily、Discovery
+> 与 Project Research 仍未 cut over。本文定义三条工作流族的业务 contract。执行内核、状态机、权限、预算和持久化的 source of truth 是
 > [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md)；竞品取舍见
-> [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)。本文不得被产品文案解释成已经上线的自动化能力。
+> [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)；DeepSeek Harness sidecar 的集成边界见
+> [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。本文不得被产品文案解释成已经上线的自动化能力。
 
 ![Pharos Harness 三条工作流族](../figures/pharos-harness-workflow-family.png)
 
@@ -57,6 +58,11 @@ Daily Vault v1 的便携格式与 merge 语义继续以
 [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md) 和 [`PHASE-EVIDENCE.md`](PHASE-EVIDENCE.md) 为准。
 Harness 不能直接把当前 `DailySweeper`、同步 Discovery handler 或 Project CRUD 包一层“Agent”就宣称完成；
 必须先把执行状态移入 durable Run/Step/Attempt。
+
+业务 Workflow 不由 DeepSeek Harness 定义；通过阶段门的 `agent` Step 以 DSH 为执行内核，也只能在
+Pharos 已创建的 Attempt 内启动一个无公网端口的 Node stdio JSON-RPC sidecar；DSH Session 仅是该 Attempt 的内部执行日志，
+不拥有业务状态、publication、approval、usage 或权限。当前 H1 canary 使用 deterministic fake model，
+没有 DSH sidecar 或真实模型路径。
 
 ## 2. 三条工作流共用的执行契约
 

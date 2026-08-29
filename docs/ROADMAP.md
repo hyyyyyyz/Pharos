@@ -103,16 +103,22 @@ In rough order. Each is a workstream, not a ticket.
    selections retain rectangles, while ambiguous or cross-page selections safely
    degrade to quote-only evidence. Grounded Q&A and claim-level bindings remain
    downstream work.
-5. **Build the Pharos Research Harness.** **Planned, not implemented.** H0 freezes
-   contracts and migrations; H1 delivers a restart-safe kernel and canary; H2
-   migrates Literature Discovery; H3 migrates Daily Papers; H4 adds Project
-   suggestions with human approval; H5 adds selected full-text reading plus an
-   outbound, user-approved desktop capability bridge; H6 hardens eval,
-   observability, quotas, and scale. H0-H6 do
-   not execute experiments or expose shell access. See
+5. **Build the Pharos Research Harness.** **In progress.** H0/H1 code gates now
+   provide explicit migrations, a restart-safe DB kernel, owner-scoped API,
+   Run Center and deterministic fake canary; production restore/operator canary/
+   72-hour soak are still open, so H1 is not Done. H1.5 has imported and built a
+   pinned DeepSeek Harness source snapshot and completed the no-tool safe-profile
+   code gate; the strict official-wire parent adapter and real-process fake
+   canary are in progress. H2 migrates Literature Discovery;
+   H3 migrates Daily Papers; H4 adds Project suggestions with human approval;
+   H5 adds selected full-text reading plus an outbound, user-approved desktop
+   capability bridge; H6 hardens eval, observability, quotas, and scale. H0-H6
+   do not execute experiments or expose shell access. See
    [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md),
    [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md), and
-   [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md).
+   [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md); the DSH
+   ownership and security boundary is in
+   [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md).
 6. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
 7. **Evidence-aware idea workflow** — proposing directions that carry the
