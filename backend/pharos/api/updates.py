@@ -202,7 +202,9 @@ def _github_api_addresses() -> list[str]:
     if _api_addresses_cache is not None and now - _api_addresses_cache[1] < 600:
         return _api_addresses_cache[0]
     try:
-        request = urllib.request.Request("https://api.github.com/meta", headers=_headers(get_settings()))
+        request = urllib.request.Request(
+            "https://api.github.com/meta", headers=_headers(get_settings())
+        )
         with urllib.request.urlopen(request, timeout=_GITHUB_API_TIMEOUT) as response:  # noqa: S310
             meta = json.loads(response.read(1024 * 1024).decode("utf-8"))
         addresses = sorted(
@@ -214,7 +216,7 @@ def _github_api_addresses() -> list[str]:
     except Exception:  # noqa: BLE001 - fall back to the resolver's answer
         pass
     infos = socket.getaddrinfo("api.github.com", 443, type=socket.SOCK_STREAM)
-    return sorted({info[4][0] for info in infos if ":" not in info[4][0]})
+    return sorted({str(info[4][0]) for info in infos if ":" not in str(info[4][0])})
 
 
 def _github_opener() -> urllib.request.OpenerDirector:
