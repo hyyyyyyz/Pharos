@@ -71,6 +71,67 @@ def test_route_runtime_order_is_canonical_and_hash_self_verifying() -> None:
     assert first.definition_hash() == expected
 
 
+def test_route_binding_is_a_profile_scoped_canonical_envelope() -> None:
+    profile = _profile()
+    binding = profile.route_binding("primary")
+    assert binding == {
+        "schema_version": 1,
+        "profile_key": "reader",
+        "profile_version": 1,
+        "profile_definition_hash": profile.definition_hash(),
+        "route_key": "primary",
+        "route_definition": _route().canonical(),
+    }
+    assert profile.route_hash("primary") == hashlib.sha256(
+        canonical_json(binding).encode("utf-8")
+    ).hexdigest()
+    assert profile.route_hash("primary") == (
+        "29b888b207a82398bb1b13c865aff41a93aa15e29f48fda9710bb7d94f6b5999"
+    )
+    assert profile.route_hash("primary") == profile.route_hash("primary")
+
+
+def test_route_binding_changes_when_profile_identity_changes() -> None:
+    route = _route()
+    first = _profile(route, profile_key="reader")
+    second = _profile(route, profile_key="writer")
+    assert first.route_binding("primary")["route_definition"] == second.route_binding(
+        "primary"
+    )["route_definition"]
+    assert first.route_hash("primary") != second.route_hash("primary")
+    assert first.route_binding("primary")["profile_definition_hash"] != second.route_binding(
+        "primary"
+    )["profile_definition_hash"]
+
+
+def test_route_binding_reorders_routes_stably_and_tracks_route_tampering() -> None:
+    first = _profile(_route(route_key="backup", priority=2), _route(route_key="primary"))
+    second = _profile(_route(route_key="primary"), _route(route_key="backup", priority=2))
+    assert first.route_hash("primary") == second.route_hash("primary")
+    tampered = first.model_copy(
+        update={
+            "routes": tuple(
+                route.model_copy(update={"max_output_tokens": 999})
+                if route.route_key == "primary"
+                else route
+                for route in first.routes
+            )
+        }
+    )
+    assert tampered.route_binding("primary")["route_definition"] != first.route_binding(
+        "primary"
+    )["route_definition"]
+    assert tampered.route_hash("primary") != first.route_hash("primary")
+
+
+def test_route_binding_unknown_route_fails_closed() -> None:
+    profile = _profile()
+    with pytest.raises(ValueError, match="has no route"):
+        profile.route_binding("missing")
+    with pytest.raises(ValueError, match="has no route"):
+        profile.route_hash("missing")
+
+
 def test_ordered_profile_requires_explicit_availability_and_uses_priority() -> None:
     profile = _profile(
         _route(route_key="backup", priority=2), _route(route_key="primary", priority=1)

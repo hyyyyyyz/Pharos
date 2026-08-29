@@ -204,6 +204,7 @@ _MAX_MODEL_PROVIDER = 64
 _MAX_MODEL_NAME = 128
 _MAX_MODEL_ROUTES = 16
 _MAX_MODEL_TOKENS = 1_000_000
+_MODEL_ROUTE_BINDING_SCHEMA_VERSION = 1
 
 
 def _model_identifier(value: str, *, field_name: str, max_length: int) -> str:
@@ -329,6 +330,32 @@ class ModelProfileDefinition(StrictModel):
 
     def definition_hash(self) -> str:
         return sha256_hex(self.canonical())
+
+    def route_binding(self, route_key: str) -> dict[str, Any]:
+        """Return the immutable binding envelope for one profile route.
+
+        A route hash is a binding, rather than merely a hash of the route
+        itself: the same route definition can be safely reused by two
+        profiles while remaining distinguishable in an Attempt provenance
+        record.  Keep this envelope deliberately free of credentials and
+        endpoints; those are not fields in a ``ModelRouteDefinition`` and are
+        resolved separately at execution time.
+        """
+        route = next((item for item in self.routes if item.route_key == route_key), None)
+        if route is None:
+            raise ValueError(f"model profile {self.identity()} has no route {route_key!r}")
+        return {
+            "schema_version": _MODEL_ROUTE_BINDING_SCHEMA_VERSION,
+            "profile_key": self.profile_key,
+            "profile_version": self.version,
+            "profile_definition_hash": self.definition_hash(),
+            "route_key": route.route_key,
+            "route_definition": route.canonical(),
+        }
+
+    def route_hash(self, route_key: str) -> str:
+        """Hash the canonical profile-scoped binding for ``route_key``."""
+        return sha256_hex(self.route_binding(route_key))
 
     def routes_for_runtime(
         self, runtime_kind: ModelRuntimeKind
