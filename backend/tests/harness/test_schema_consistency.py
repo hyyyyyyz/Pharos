@@ -14,6 +14,8 @@ from pathlib import Path
 
 from pharos.db import migrations
 from pharos.harness.tables import metadata
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+from sqlalchemy.schema import CreateIndex
 
 
 def _ddl_columns(conn: sqlite3.Connection, table: str) -> dict[str, str]:
@@ -127,11 +129,26 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         "ix_harness_attempts_delivery",
     } <= indexes
 
-    metadata_indexes = {index.name for index in metadata.tables["harness_attempts"].indexes}
-    assert {
-        "ux_harness_attempts_runtime_session",
-        "ux_harness_attempts_child_pid_active",
-    } <= metadata_indexes
+    metadata_indexes = metadata.tables["harness_attempts"].indexes
+    runtime_session_index = next(
+        index for index in metadata_indexes if index.name == "ux_harness_attempts_runtime_session"
+    )
+    child_pid_index = next(
+        index for index in metadata_indexes if index.name == "ux_harness_attempts_child_pid_active"
+    )
+    assert runtime_session_index.unique is True
+    assert child_pid_index.unique is True
+    runtime_sql = str(CreateIndex(runtime_session_index).compile(dialect=sqlite_dialect()))
+    child_pid_sql = str(CreateIndex(child_pid_index).compile(dialect=sqlite_dialect()))
+    assert (
+        "ON harness_attempts (runtime_session_id) WHERE runtime_session_id IS NOT NULL"
+        in runtime_sql
+    )
+    assert (
+        "ON harness_attempts (child_pid) WHERE child_pid IS NOT NULL "
+        "AND state IN ('leased', 'running')"
+        in child_pid_sql
+    )
 
 
 def test_lease_columns_are_integers(tmp_path: Path) -> None:

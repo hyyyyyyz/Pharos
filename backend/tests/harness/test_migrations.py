@@ -295,10 +295,10 @@ def test_runtime_identity_constraints_cover_terminal_and_active_attempts(tmp_pat
         _insert_attempt(conn, "active-null-pid-2", state="leased")
 
 
-def test_runtime_identity_upgrade_rolls_back_on_existing_session_conflict(
+def test_runtime_identity_upgrade_rolls_back_on_existing_active_pid_conflict(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """A pre-existing duplicate fails 0009 without a partial index or ledger row."""
+    """0009 rolls back its first index when the second index finds a conflict."""
     db = tmp_path / "runtime-conflict.sqlite"
     all_migrations = migrations.MIGRATIONS
     runtime_index = next(
@@ -312,10 +312,18 @@ def test_runtime_identity_upgrade_rolls_back_on_existing_session_conflict(
     with sqlite3.connect(db) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
         _insert_attempt(
-            conn, "conflicting-terminal-1", state="indeterminate", runtime_session_id="reused"
+            conn,
+            "conflicting-active-1",
+            state="running",
+            runtime_session_id="session-one",
+            child_pid=400,
         )
         _insert_attempt(
-            conn, "conflicting-terminal-2", state="indeterminate", runtime_session_id="reused"
+            conn,
+            "conflicting-active-2",
+            state="leased",
+            runtime_session_id="session-two",
+            child_pid=400,
         )
 
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
@@ -332,13 +340,9 @@ def test_runtime_identity_upgrade_rolls_back_on_existing_session_conflict(
 
 
 def test_runtime_identity_race_is_fenced_across_file_connections(tmp_path: Path) -> None:
-    """Two writers racing on a file-backed DB cannot claim one session id."""
+    """Two writers racing on a file-backed DB cannot claim one active PID."""
     db = tmp_path / "runtime-race.sqlite"
     run_migrations(db)
-    with sqlite3.connect(db) as conn:
-        conn.execute("PRAGMA foreign_keys=ON")
-        for attempt_id in ("race-a", "race-b"):
-            _insert_attempt(conn, attempt_id, state="running")
 
     barrier = threading.Barrier(2)
     outcomes: list[str] = []
@@ -353,7 +357,7 @@ def test_runtime_identity_race_is_fenced_across_file_connections(tmp_path: Path)
             _claim_attempt(
                 connection,
                 attempt_id,
-                runtime_session_id="racing-session",
+                runtime_session_id=f"session-{attempt_id}",
                 child_pid=child_pid,
             )
             connection.execute("COMMIT")
@@ -366,7 +370,7 @@ def test_runtime_identity_race_is_fenced_across_file_connections(tmp_path: Path)
 
     threads = [
         threading.Thread(target=claim, args=("race-a-claim", 301)),
-        threading.Thread(target=claim, args=("race-b-claim", 302)),
+        threading.Thread(target=claim, args=("race-b-claim", 301)),
     ]
     # The parent graph for each attempted row must exist before either writer
     # opens its transaction; add it in one committed setup connection.
@@ -379,6 +383,14 @@ def test_runtime_identity_race_is_fenced_across_file_connections(tmp_path: Path)
         thread.join(timeout=10)
         assert not thread.is_alive(), "race writer did not finish"
     assert sorted(outcomes) == ["committed", "rejected"]
+    with sqlite3.connect(db) as conn:
+        claimed = conn.execute(
+            "SELECT runtime_session_id, child_pid FROM harness_attempts "
+            "WHERE id IN ('race-a-claim', 'race-b-claim') AND child_pid IS NOT NULL"
+        ).fetchall()
+    assert len(claimed) == 1
+    assert claimed[0][0] in {"session-race-a-claim", "session-race-b-claim"}
+    assert claimed[0][1] == 301
 
 
 def test_fixture_generated_from_the_published_schema_upgrades(tmp_path: Path) -> None:
