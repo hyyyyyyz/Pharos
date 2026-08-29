@@ -1,7 +1,7 @@
 # Pharos Research Harness — architecture
 
-> 状态：**目标架构；H1 durable kernel 已完成 code gate，H1.5 safe-profile code gate 已完成，生产
-> operational gate 与 DSH adapter 尚未完成。** 本文是
+> 状态：**目标架构；H1 durable kernel 与 H1.5 safe-profile/official-wire code gate 已完成，生产
+> operational gate、per-Attempt DSH adapter 与恢复语义尚未完成。** 本文是
 > Pharos Harness 的 source of truth。H2–H7 业务能力仍是 Planned；任何代码提交不得把 Planned 能力描述成
 > 已上线能力；分阶段落实顺序与验收门槛见
 > [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
@@ -17,7 +17,8 @@ Pharos Research Harness 是一层**可持久化、可恢复、可审计、受策
 [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)，三条业务工作流见
 [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)。DeepSeek Harness 已确定为受限 Agent Attempt 执行内核，
 集成协议与 denylist 见 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)；源码已固定，
-sidecar 运行路径仍在实现且生产 gate 关闭。
+wire/Loader code gate 证据见 [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)；per-Attempt
+product adapter 仍在实现且生产 gate 关闭。
 
 ## 1. 目标与成功标准
 
@@ -146,12 +147,13 @@ revision；进程内 cache 只能提速，不能授权 claim、start 或 publish
 
 | Gate / mode | 前置条件 | 关闭或不满足时 |
 | --- | --- | --- |
-| `HARNESS_ENABLED` | 无；总开关 | Harness start/control/write API 不可用，dispatcher 不启动；已存数据仍可由授权只读 API 导出 |
-| dispatcher / canary | `HARNESS_ENABLED` | 配置冲突时启动失败，不静默退回 legacy |
-| agent execution | enabled + dispatcher + Model Gateway ready | Agent Step 不认领，进入 typed waiting/configuration |
-| domain publish | enabled + dispatcher + 对应 domain capability | 不认领 publish Step，不允许假成功 |
-| full-text / Desktop Bridge | enabled + 对应阶段 gate + device capability | 等待设备/授权或走定义中的降级分支 |
-| experiment sandbox | enabled + **正式 supersede Decision 9** + 独立 sandbox gate | H0–H6 永远 deny |
+| `harness_enabled` | 无；总开关 | Harness start/control/write API 不可用，dispatcher 不启动；已存数据仍可由授权只读 API 导出 |
+| `dispatcher_enabled` / `canary_enabled` | `harness_enabled`；canary 还要求 dispatcher | 配置冲突时启动失败，不静默退回 legacy |
+| `agent_steps_enabled` | `harness_enabled` + `dispatcher_enabled` + Model Gateway ready | Agent Step 不认领，进入 typed waiting/configuration |
+| `agent_runtime_enabled` | `harness_enabled` + `dispatcher_enabled` + `agent_steps_enabled` | DSH route 不得 claim/open；当前 gate 已存在但尚未在 product DSH factory 消费 |
+| `domain_publish_enabled` | `harness_enabled` + `dispatcher_enabled` + 对应 domain capability | 不认领 publish Step，不允许假成功 |
+| `fulltext_enabled` / `desktop_bridge_enabled` | `harness_enabled` + 对应阶段 gate + device capability | 等待设备/授权或走定义中的降级分支 |
+| `experiments_enabled` | `harness_enabled` + **正式 supersede Decision 9** + 独立 sandbox gate | H0–H6 永远 deny |
 
 每条业务入口只有一个 writer mode：`legacy | shadow | harness`，不允许多个 writer boolean 同时为真。
 `shadow` 与 `harness` 都要求 enabled + dispatcher；只有 `harness` 且 domain-publish gate 开启时 Harness
@@ -381,8 +383,9 @@ retry、publication 与 owner scope。DSH Session ID、cursor 和 hash 只作为
 生产 profile 必须由 Pharos 固定 allowlist 编译，禁止用户 profile/patch/plugin/MCP；v1 默认零 model-facing
 tool，未来 capability 也只能是经过 Pharos policy、approval、validator 和 idempotency contract 的
 typed Action/Observation。shell、terminal、subprocess、sandbox、E2B、code runtime、general filesystem、
-非 provider allowlist 的 network、动态插件、自修改和 DSH workflow 全部 deny。首个集成纵切只能是 deterministic fake-model
-canary，当前 H1 仍使用 `FakeModelGateway`，没有真实 DSH sidecar。
+非 provider allowlist 的 network、动态插件、自修改和 DSH workflow 全部 deny。首个纵切已通过
+deterministic fake-model + 真实 DSH sidecar 的本地与远端 CI code gate；当前产品执行路径仍使用 `FakeModelGateway`，尚未从 Harness
+Attempt 打开 sidecar。
 
 完整来源、所有权矩阵、stdio JSON-RPC v1 草案、资源/隐私/回滚门槛见
 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。
@@ -631,10 +634,16 @@ Unique `(scope_type, scope_id, workflow_key, idempotency_key)`，避免 SQLite �
 - input/output token、cost micros、duration、request count；
 - retryable、error class/code/message；
 - started/heartbeat/finished；
+- H1.5 additive runtime 槽位：`runtime_session_id`, `child_pid`, `deadline_at`, `upstream_commit`,
+  `runtime_hash`, `profile_hash`, `policy_hash`, `protocol_version`, `delivery_state`；
 - unique `(step_id, attempt_no)`。
 
 活跃更新必须带 `(step_id, attempt_no, lease_owner, expected_state)` CAS；终态 row 有数据库/repository 双层保护，
 禁止普通 update。retry 只允许 insert 新 attempt。
+
+上述 runtime 字段在旧 Attempt 和尚未接 DSH 的路径中为 `NULL`，表示**没有 H1.5 runtime 证据**，不是
+`not_started`。有证据时 `delivery_state` 只允许 `not_started | sent | acknowledged | unknown | reconciled`；
+这些字段目前是 provenance/deadline/recovery 的 schema 槽位，尚未由 DSH product handle 写入。
 
 ### 11.5 `harness_events`
 
@@ -1026,8 +1035,9 @@ frontend/src/components/HarnessRunCenter.*
 client/chrome/content/zotero/xpcom/pharos/harness.js   # later phase only
 ```
 
-DeepSeek Harness sidecar 的 adapter/protocol 不属于当前 H1 kernel 交付；实现过程中必须保持为独立的
-Node stdio transport seam，并按 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md) 的
+DeepSeek Harness sidecar 的 protocol transport 已作为独立 H1.5 seam 实现，但仍不属于 H1 kernel 产品路径；
+后续每 Attempt adapter 必须继续保持独立的 Node stdio boundary，并按
+[`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md) 的
 allowlist、denylist 和阶段门接入，不能把 vendor 源码直接挂进 API 进程或把 DSH Session 当业务状态。
 
 不要建立一个 3000 行 `harness.py`，不要让 workflow 文件复制 Provider/DB/HTTP 逻辑。

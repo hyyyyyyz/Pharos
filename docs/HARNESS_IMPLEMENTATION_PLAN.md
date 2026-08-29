@@ -3,10 +3,11 @@
 > 状态：**H0 code gate 通过；H1 代码完成，等待生产 canary / 72 小时 soak / 回滚演练。**
 > H0 尚未标 Done（缺 operator 生产副本恢复证据）；H1 状态为
 > `H1_CODE_COMPLETE_AWAITING_CANARY`，不是 `H1_GATE_PASSED`。H2–H7 全部 Planned。
-> 阶段状态与证据见 [`PHASE-HARNESS-KERNEL.md`](PHASE-HARNESS-KERNEL.md)。
+> 阶段状态与证据见 [`PHASE-HARNESS-KERNEL.md`](PHASE-HARNESS-KERNEL.md) 与
+> [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)。
 > DeepSeek Harness 已完成固定来源导入与上游 build/SDK contract 验证，并确定为 Agent Attempt 执行内核；
-> no-tool 安全 profile、机器可读 policy、effective-config 审计与 shutdown smoke 已完成；严格 stdio adapter
-> 与真实 DSH fake canary 正在 H1.5 实现，尚未改变当前 fake-model canary 或任何生产状态。
+> no-tool 安全 profile、机器可读 policy、严格 stdio transport 与真实 Loader fake canary 已完成 code gate；
+> per-Attempt gateway/cancel/recovery 正在 H1.5 实现，尚未改变当前 fake-model 产品路径或任何生产状态。
 > 它不是“预计完成”清单；只有通过本阶段全部退出门槛，阶段状态才可以改成 Done。
 
 本文必须与以下文档一起阅读：
@@ -17,6 +18,8 @@
   Adopt / Adapt / Reject 结论；
 - [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)：固定 DeepSeek Harness 快照的
   sidecar 协议、所有权、安全 allowlist/denylist、隐私、测试与回滚门槛；
+- [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)：官方 wire transport、真实 Loader canary
+  与尚未完成的 product-integration gate 证据；
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md)：当前研究实体、证据强度和人工 checkpoint；
 - [`ARCHITECTURE.md`](ARCHITECTURE.md)、[`DECISIONS.md`](DECISIONS.md) 与
   [`CLIENT_DATA_ARCHITECTURE.md`](CLIENT_DATA_ARCHITECTURE.md)：产品边界、Zotero 本地数据和不可逆决策；
@@ -91,6 +94,7 @@ harness_enabled=0|1
 dispatcher_enabled=0|1
 canary_enabled=0|1
 agent_steps_enabled=0|1
+agent_runtime_enabled=0|1
 domain_publish_enabled=0|1
 fulltext_enabled=0|1
 
@@ -106,6 +110,7 @@ experiments_enabled=0|1
 
 兼容名称 `PHAROS_HARNESS_ENABLED`、`PHAROS_HARNESS_DISPATCHER_ENABLED`、
 `PHAROS_HARNESS_CANARY_ENABLED`、`PHAROS_HARNESS_AGENT_STEPS_ENABLED`、
+`PHAROS_HARNESS_AGENT_RUNTIME_ENABLED`、
 `PHAROS_HARNESS_DOMAIN_PUBLISH_ENABLED`、`PHAROS_HARNESS_FULLTEXT_ENABLED`、
 `PHAROS_DISCOVERY_EXECUTION`、`PHAROS_DAILY_EXECUTION`、`PHAROS_PROJECT_RESEARCH_EXECUTION`、
 `PHAROS_HARNESS_DESKTOP_BRIDGE_ENABLED` 与 `PHAROS_HARNESS_EXPERIMENTS_ENABLED` 只在 config head 尚不存在的
@@ -540,7 +545,7 @@ retention floor 的 `resync_required`，通过 DB cursor 补齐；限制每 owne
 - operator queue/reaper/flag runbook；
 - canary 故障注入手册；
 - DeepSeek Harness 固定快照、所有权、安全 allowlist/denylist、隐私和回滚文档，以及已生效的 safe-profile
-  policy/effective-config 证据；official-wire runtime adapter 仍未接入；
+  policy/effective-config 证据；official-wire transport 已通过 code gate，但 per-Attempt product adapter 仍未接入；
 - `pharos/*` 扩展协议仅保留为未来 draft，不得描述成当前上游或当前实现的能力；
 - 更新 `ROADMAP.md`：kernel 已实现不等于三个业务 workflow 已迁移。
 
@@ -625,9 +630,9 @@ operator 执行；未取得其证据时不得把 H1 标为 Done。
 
 ## 5A. H1.5 — DeepSeek Agent execution adapter
 
-> 状态：**In progress，非生产。** 固定源码与许可证已进入仓库，上游全量 build 及 SDK 聚焦测试已在
-> 隔离环境通过；安全 profile 的 code gate 已通过，Pharos adapter、真实 DSH canary、部署资源证据和
-> 回滚演练尚未完成。
+> 状态：**In progress，非生产。** 固定源码、安全 profile、严格官方 wire transport 与真实 Loader +
+> deterministic fake adapter canary 已通过 code gate；transport 尚未接入每个 Harness Attempt，主动取消、
+> deadline/unknown-delivery/recovery、部署资源证据和回滚演练尚未完成。
 
 ### 5A.1 Goal
 
@@ -642,7 +647,7 @@ Pharos reducer 决定 Run 终态。
 - [x] 上游来源、commit、版本、MIT/third-party notices 和同步脚本已固定；
 - [x] 上游源码可在无用户 HOME/无 API key 环境完成 build，SDK protocol/client/server 测试通过；
 - [x] `harness-runtime/` no-tool overlay、机器可读 deny policy、实际组合配置审计与无模型 shutdown smoke 已由 CI 固化；
-- [ ] H1.5 只在开发/CI 与 operator fake canary 中运行；H1 operational gate 未完成时生产 route 保持关闭；
+- [x] H1.5 fake canary 已通过本地与远端 CI code gate；独立 runtime gate 默认关闭且产品尚无 DSH route；
 - [ ] `DEEPSEEK_HARNESS_INTEGRATION.md` 的所有权、隐私、denylist 和回滚条款已由实现测试固化。
 
 ### 5A.3 Official wire first
@@ -719,8 +724,8 @@ protocol version；不得先发明一套方法再把它描述成已经落地的 
 
 ### 5A.6 Activation and rollback
 
-接入 adapter 前必须新增独立 `agent_runtime_enabled`/runtime route gate，默认关闭；当前 schema 尚无该 gate，
-不得用现有 `agent_steps_enabled` 偷渡生产启用。启用顺序固定为：协议 fake → 真实 DSH
+独立 `agent_runtime_enabled` gate 与 Attempt provenance schema 已新增且默认关闭；后续 DSH route 必须在
+每次 claim/open 再验证该 gate，不得用 `agent_steps_enabled` 偷渡生产启用。启用顺序固定为：协议 fake → 真实 DSH
 fake adapter → operator 单账户/单并发 → 受控真实 provider canary。任何安全 profile hash、runtime hash、
 protocol、orphan、usage conservation、RSS 或 `indeterminate` 指标越界，立即用 DB config revision 停止新 claim；
 deny-only emergency stop 只作配置通道失效时的最后手段。回滚保留 Run/Event/Artifact/Usage，不删除 schema，
@@ -728,7 +733,8 @@ deny-only emergency stop 只作配置通道失效时的最后手段。回滚保�
 
 ### 5A.7 Exit gate
 
-- [ ] 官方 wire adapter 与 safe profile 均由机器可读 policy 和 negative tests 固化；
+- [x] safe profile 已由机器可读 policy、effective-config 与 negative tests 固化；官方 wire 已由严格
+  schema/golden/negative tests 固化；二者由真实 Loader fake canary 联合验证；
 - [ ] 真实 DSH fake-model canary 从 claim 到 immutable Artifact/usage/run reduction 完整通过；
 - [ ] crash/cancel/restart/unknown-delivery/duplicate-event 全部有可重复测试且无孤儿进程；
 - [ ] runtime build 可复现，Linux amd64 镜像 smoke、SBOM/license、hash provenance 通过；
@@ -739,10 +745,10 @@ deny-only emergency stop 只作配置通道失效时的最后手段。回滚保�
 
 1. [x] `Vendor and continuously verify the pinned DSH source`；
 2. [x] `Freeze the no-tool Pharos runtime profile`；
-3. `Add the strict official-wire stdio client and fake runtime`；
-4. `Persist Agent runtime provenance without changing business routes`；
-5. `Write validated Agent output as immutable Harness artifacts`；
-6. `Run the canary through a real DSH process and deterministic adapter`；
+3. [x] `Add the strict official-wire stdio client and fake runtime`；
+4. [x] `Persist Agent runtime provenance without changing business routes`（仅 additive schema 槽位，DSH 尚未写入）；
+5. [x] `Write validated Agent output as immutable Harness artifacts`（当前只接进程内 `FakeModelGateway` 路径）；
+6. [x] `Run the canary through a real DSH process and deterministic adapter`（仅 transport code gate，尚未接入 claim/reducer）；
 7. `Package the bounded runtime into the production image`；
 8. `Exercise operator canary, resource ceiling and rollback`。
 
