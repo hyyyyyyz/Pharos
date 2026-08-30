@@ -125,6 +125,41 @@ def test_delivery_state_is_conservative_on_delegate_failure() -> None:
     handle.close()
 
 
+def test_handle_preserves_delegate_phase_and_separates_call_from_close_errors() -> None:
+    delegate = PhasedGateway(
+        call_error=GatewayError("call failed"),
+        close_error=CleanupError("close failed"),
+    )
+    handle = LegacyGatewayFactory(gateway_factory=lambda: delegate).open(context("attempt-1"))
+
+    with pytest.raises(GatewayError, match="call failed") as call:
+        handle.complete({})
+    assert handle.delivery_state is DeliveryState.UNKNOWN
+    assert handle.call_error is call.value  # type: ignore[attr-defined]
+
+    with pytest.raises(CleanupError, match="close failed") as close:
+        handle.close()
+    assert handle.close_error is close.value  # type: ignore[attr-defined]
+    assert handle.call_error is call.value  # type: ignore[attr-defined]
+    with pytest.raises(CleanupError, match="close failed"):
+        handle.close()
+    assert delegate.close_calls == 1
+
+
+def test_handle_syncs_delegate_phase_after_cancel_and_late_return() -> None:
+    delegate = PhasedGateway(cancel_phase=DeliveryState.UNKNOWN)
+    handle = LegacyGatewayFactory(gateway_factory=lambda: delegate).open(context("attempt-1"))
+    handle.cancel()
+    assert handle.delivery_state is DeliveryState.UNKNOWN
+    handle.close()
+
+    late = PhasedGateway(return_phase=DeliveryState.ACKNOWLEDGED)
+    late_handle = LegacyGatewayFactory(gateway_factory=lambda: late).open(context("attempt-2"))
+    late_handle.complete({})
+    assert late_handle.delivery_state is DeliveryState.ACKNOWLEDGED
+    late_handle.close()
+
+
 def test_delivery_state_is_visible_during_blocking_completion_and_after_cancel() -> None:
     delegate = BlockingGateway()
     handle = LegacyGatewayFactory(gateway_factory=lambda: delegate).open(context("attempt-1"))
@@ -434,6 +469,39 @@ class KeyboardInterruptGateway:
 
 class CleanupError(RuntimeError):
     pass
+
+
+class PhasedGateway:
+    def __init__(
+        self,
+        *,
+        call_error: BaseException | None = None,
+        close_error: BaseException | None = None,
+        cancel_phase: DeliveryState | None = None,
+        return_phase: DeliveryState | None = None,
+    ) -> None:
+        self.delivery_state = DeliveryState.NOT_STARTED
+        self._call_error = call_error
+        self._close_error = close_error
+        self._cancel_phase = cancel_phase
+        self._return_phase = return_phase
+        self.close_calls = 0
+
+    def complete(self, payload: dict) -> ModelResult:
+        self.delivery_state = self._return_phase or DeliveryState.SENT
+        if self._call_error is not None:
+            self.delivery_state = DeliveryState.UNKNOWN
+            raise self._call_error
+        return ModelResult(output={"ok": True})
+
+    def cancel(self) -> None:
+        if self._cancel_phase is not None:
+            self.delivery_state = self._cancel_phase
+
+    def close(self) -> None:
+        self.close_calls += 1
+        if self._close_error is not None:
+            raise self._close_error
 
 
 class CallbackCloseGateway(FakeModelGatewayForTest):

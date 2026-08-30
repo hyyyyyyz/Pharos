@@ -224,6 +224,10 @@ class _AttemptHandle:
         self._active_operations = 0
         self._close_finished = False
         self._close_error: BaseException | None = None
+        # Keep call and cleanup outcomes separately.  A failed cleanup must
+        # never replace (or reclassify) the model-call outcome, and recovery
+        # code needs to know whether it is retrying cleanup or the Attempt.
+        self._call_error: BaseException | None = None
         self._delivery_state = DeliveryState.NOT_STARTED
 
     @property
@@ -241,6 +245,53 @@ class _AttemptHandle:
         """A lock-protected, read-only delivery observation."""
         with self._condition:
             return self._delivery_state
+
+    @property
+    def call_error(self) -> BaseException | None:
+        """The delegate call failure, if any, without exposing a mutable slot."""
+        with self._condition:
+            return self._call_error
+
+    @property
+    def close_error(self) -> BaseException | None:
+        """The last delegate cleanup failure, if any."""
+        with self._condition:
+            return self._close_error
+
+    def _sync_delegate_delivery(
+        self,
+        *,
+        result: object | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        """Copy typed delivery evidence exposed by a delegate or its error.
+
+        Legacy delegates do not expose delivery facts, so the wrapper retains
+        its conservative SENT/ACKNOWLEDGED fallback.  A transport-backed
+        delegate can expose NOT_STARTED, UNKNOWN, or SENT on a failed call;
+        those exact phases must win over the fallback and remain observable.
+        """
+        candidates: list[object] = []
+
+        def read(obj: object, name: str) -> object | None:
+            try:
+                return getattr(obj, name, None)
+            except BaseException:
+                # Delivery is an optional observability seam.  A broken
+                # property must not hide the original call or cleanup error.
+                return None
+
+        if result is not None:
+            candidates.append(read(result, "delivery_state"))
+            candidates.append(read(result, "deliveryState"))
+        if error is not None:
+            candidates.append(read(error, "delivery_state"))
+        candidates.append(read(self._delegate, "delivery_state"))
+        for candidate in candidates:
+            if isinstance(candidate, DeliveryState):
+                with self._condition:
+                    self._delivery_state = candidate
+                return
 
     def _require_open(self, operation: str) -> None:
         if self._state is not _HandleState.OPEN:
@@ -260,16 +311,21 @@ class _AttemptHandle:
             self._active_operations += 1
         try:
             result = self._delegate.complete(payload)
-        except Exception:
+        except Exception as error:
             # A new Attempt is required for retry: reusing this handle could
             # duplicate delivery after a provider-side failure.
             with self._condition:
                 self._active_operations -= 1
                 if self._state is _HandleState.COMPLETING:
                     self._state = _HandleState.FAILED
+                self._call_error = error
                 self._condition.notify_all()
+            # Some delegates attach the exact transport phase to the raised
+            # error or expose it as a property.  Preserve it after marking
+            # the handle failed; never downgrade it to the SENT fallback.
+            self._sync_delegate_delivery(error=error)
             raise
-        except BaseException:
+        except BaseException as error:
             # Release the in-flight slot even for process-control exceptions;
             # unlike ordinary exceptions, mark the handle terminally failed
             # without wrapping KeyboardInterrupt/SystemExit as a provider
@@ -278,17 +334,26 @@ class _AttemptHandle:
                 self._active_operations -= 1
                 if self._state is _HandleState.COMPLETING:
                     self._state = _HandleState.FAILED
+                self._call_error = error
                 self._condition.notify_all()
+            self._sync_delegate_delivery(error=error)
             raise
+        self._sync_delegate_delivery(result=result)
         with self._condition:
             self._active_operations -= 1
             if self._state is not _HandleState.COMPLETING:
                 self._condition.notify_all()
-                raise GatewayLifecycleError(
+                lifecycle_error = GatewayLifecycleError(
                     f"complete returned after handle became {self._state.value}"
                 )
+                self._call_error = lifecycle_error
+                raise lifecycle_error
             self._state = _HandleState.COMPLETED
-            self._delivery_state = DeliveryState.ACKNOWLEDGED
+            # A delegate that does not expose a phase is the legacy success
+            # case and is conservatively treated as acknowledged.  Typed
+            # transport delegates retain their exact phase instead.
+            if self._delivery_state is DeliveryState.SENT:
+                self._delivery_state = DeliveryState.ACKNOWLEDGED
             self._condition.notify_all()
             return result
 
@@ -309,6 +374,12 @@ class _AttemptHandle:
             # A shared legacy delegate has no Attempt identity. Isolated
             # delegates can receive cancel without affecting siblings.
             self._delegate.cancel()
+            self._sync_delegate_delivery()
+        except BaseException as error:
+            with self._condition:
+                self._call_error = error
+            self._sync_delegate_delivery(error=error)
+            raise
         finally:
             with self._condition:
                 self._active_operations -= 1
@@ -351,6 +422,7 @@ class _AttemptHandle:
         except BaseException as exc:
             error = exc
         finally:
+            self._sync_delegate_delivery(error=error)
             with self._condition:
                 self._close_error = error
                 self._close_finished = True
@@ -389,6 +461,7 @@ class _AttemptHandle:
         except BaseException as exc:
             error = exc
         finally:
+            self._sync_delegate_delivery(error=error)
             with self._condition:
                 self._close_error = error
                 self._close_finished = True

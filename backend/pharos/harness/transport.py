@@ -53,7 +53,7 @@ class HarnessTransportError(RuntimeError):
         self.cleanup_error_type: str | None = None
         # The cleanup exception itself is retained only in memory so callers
         # can make a typed safety decision.  Its text is never persisted.
-        self.cleanup_error: HarnessTransportError | None = None
+        self.cleanup_error: BaseException | None = None
         # ``_write`` fills this with the number of frame bytes accepted by the
         # OS before an error.  Zero means definitely unsent.
         self.bytes_written = 0
@@ -386,7 +386,11 @@ class AttemptTransport:
         self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
         self._failed: HarnessTransportError | None = None
-        self._cleanup_error: HarnessTransportError | None = None
+        self._cleanup_error: BaseException | None = None
+        # Serialize close ownership.  A caller may use both a worker finally
+        # block and a recovery path; only one path may run shutdown/TERM/KILL
+        # and pipe reaping at a time.
+        self._close_lock = threading.Lock()
         self._request_number = 0
         self._seen_response_ids: set[str | int] = set()
         self._initialized = False
@@ -447,12 +451,19 @@ class AttemptTransport:
         self._work_timeout(self.config.initialize_timeout_seconds)
         if self._process is not None:
             raise HarnessProtocolError("Attempt child already exists")
-        self._spawn()
+        try:
+            self._spawn()
+        except HarnessTransportError as error:
+            # A failed exec is terminal for this Attempt even though no child
+            # exists to reap.  Keep the typed zero-delivery evidence attached
+            # to the failure and prevent an accidental second launch.
+            self._fail(error)
+            raise
         process = self._require_process()
         if process.pid <= 0:  # pragma: no cover - subprocess guarantees this
-            error = HarnessProcessError("runtime returned an invalid child pid")
-            self._fail(error)
-            raise error
+            invalid_pid_error = HarnessProcessError("runtime returned an invalid child pid")
+            self._fail(invalid_pid_error)
+            raise invalid_pid_error
         return process.pid
 
     def initialize(
@@ -752,42 +763,44 @@ class AttemptTransport:
         cleanup succeeds: the operation's caller already owns that error.  If
         the cleanup itself cannot be completed, its typed error is raised.
         """
-        if self._closed:
-            return
-        if self._process is None:
-            self._closed = True
-            return
-        if self._failed is not None:
-            cleanup_error = self._cleanup_after_failure()
-            if cleanup_error is not None:
-                self._failed.cleanup_error = cleanup_error
-                self._failed.cleanup_error_type = type(cleanup_error).__name__
-                raise cleanup_error from self._failed
-            return
-        try:
-            self.shutdown()
-        except HarnessTransportError as error:
-            if not self._closed:
+        with self._close_lock:
+            if self._closed:
+                return
+            if self._process is None:
+                self._closed = True
+                return
+            if self._failed is not None:
                 cleanup_error = self._cleanup_after_failure()
                 if cleanup_error is not None:
-                    error.cleanup_error = cleanup_error
-                    error.cleanup_error_type = type(cleanup_error).__name__
-                    raise cleanup_error from error
-            # This close initiated shutdown. Even when bounded fallback cleanup
-            # succeeds, the failed shutdown/reap boundary must remain visible:
-            # a caller holding a completed model result may not publish it as
-            # though the Attempt closed cleanly.
-            raise
+                    self._failed.cleanup_error = cleanup_error
+                    self._failed.cleanup_error_type = type(cleanup_error).__name__
+                    raise cleanup_error from self._failed
+                return
+            try:
+                self.shutdown()
+            except HarnessTransportError as error:
+                if not self._closed:
+                    cleanup_error = self._cleanup_after_failure()
+                    if cleanup_error is not None:
+                        error.cleanup_error = cleanup_error
+                        error.cleanup_error_type = type(cleanup_error).__name__
+                        raise cleanup_error from error
+                # This close initiated shutdown. Even when bounded fallback
+                # cleanup succeeds, the failed shutdown/reap boundary must
+                # remain visible: a caller holding a completed model result
+                # may not publish it as though the Attempt closed cleanly.
+                raise
 
-    def _cleanup_after_failure(self) -> HarnessTransportError | None:
+    def _cleanup_after_failure(self) -> BaseException | None:
         """Run the bounded TERM/KILL/reap ladder and retain any failure."""
         if self._process is None:
             self._closed = True
             return None
         try:
             self._terminate_ladder()
-        except HarnessTransportError as error:
-            error.delivery_state = self._delivery_state
+        except BaseException as error:
+            if isinstance(error, HarnessTransportError):
+                error.delivery_state = self._delivery_state
             self._cleanup_error = error
             return error
         self._closed = True
@@ -1393,20 +1406,27 @@ class AttemptTransport:
         zero count is a hard proof that no prompt byte was sent; any positive
         count is conservative UNKNOWN evidence until a full frame completes.
         """
-        process = self._require_process()
-        if process.stdin is None:
-            raise HarnessProcessError("runtime stdin is unavailable")
+        # Serialize before touching the child.  This makes serialization a
+        # proof of zero delivery even when the child has not been spawned (or
+        # has already disappeared), and keeps all write failures on one typed
+        # path with an explicit byte count and delivery phase.
+        offset = 0
         try:
             payload = (json.dumps(frame, separators=(",", ":"), ensure_ascii=False) + "\n").encode(
                 "utf-8"
             )
         except (TypeError, ValueError, UnicodeEncodeError, RecursionError) as error:
-            raise HarnessProtocolError("outbound frame is not valid UTF-8 JSON") from error
-        if len(payload) - 1 > self.config.max_frame_bytes:
-            raise HarnessProtocolError("outbound JSON frame limit exceeded")
-        end = time.monotonic() + self._work_timeout(timeout)
-        offset = 0
+            wrapped = HarnessProtocolError("outbound frame is not valid UTF-8 JSON")
+            wrapped.bytes_written = 0
+            wrapped.delivery_state = self._delivery_state
+            raise wrapped from error
         try:
+            if len(payload) - 1 > self.config.max_frame_bytes:
+                raise HarnessProtocolError("outbound JSON frame limit exceeded")
+            process = self._require_process()
+            if process.stdin is None:
+                raise HarnessProcessError("runtime stdin is unavailable")
+            end = time.monotonic() + self._work_timeout(timeout)
             # ``fileno`` itself fails when a sibling cleanup path closed the
             # pipe. Keep it inside the typed boundary so a zero-byte failure
             # remains definitely NOT_STARTED and still reaches the cleanup
@@ -1429,11 +1449,21 @@ class AttemptTransport:
                         raise HarnessTimeoutError("runtime stdin write deadline exceeded") from None
         except HarnessTransportError as error:
             error.bytes_written = offset
+            error.delivery_state = (
+                DeliveryState.UNKNOWN
+                if offset and self._delivery_state is DeliveryState.NOT_STARTED
+                else self._delivery_state
+            )
             raise
         except (BrokenPipeError, OSError, ValueError) as error:
-            wrapped = HarnessProcessError("failed to write runtime stdin")
-            wrapped.bytes_written = offset
-            raise wrapped from error
+            process_error = HarnessProcessError("failed to write runtime stdin")
+            process_error.bytes_written = offset
+            process_error.delivery_state = (
+                DeliveryState.UNKNOWN
+                if offset and self._delivery_state is DeliveryState.NOT_STARTED
+                else self._delivery_state
+            )
+            raise process_error from error
         return offset
 
     def _consume_stderr(self, chunk: bytes) -> None:
@@ -1550,6 +1580,12 @@ class AttemptTransport:
         self._close_pipes()
 
     def _fail(self, error: HarnessTransportError) -> None:
+        # Every escaped transport error carries the best physical delivery
+        # evidence, including failures which occur before the first frame
+        # write.  Callers can therefore distinguish a definitely-unsent
+        # Attempt from one requiring reconciliation without inspecting the
+        # transport internals.
+        error.delivery_state = self._delivery_state
         self._failed = error
         if self._closed:
             return
