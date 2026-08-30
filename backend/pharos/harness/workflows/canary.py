@@ -53,6 +53,24 @@ CANARY_FAKE_PROVIDER = "fake"
 CANARY_FAKE_MODEL = "canary"
 CANARY_DSH_PROVIDER = "pharos-fake"
 CANARY_DSH_MODEL = "pharos-fake-canary"
+CANARY_LEGACY_MODEL_PROFILE = ModelProfileDefinition(
+    profile_key="canary",
+    version=1,
+    selection_policy="fixed",
+    routes=(
+        ModelRouteDefinition(
+            route_key="legacy-in-process-canary",
+            priority=1,
+            provider=CANARY_FAKE_PROVIDER,
+            model=CANARY_FAKE_MODEL,
+            usage_source="system_shared",
+            credential_policy="none",
+            allowed_runtime_kinds=("in_process_fake",),
+            reasoning_effort=None,
+            max_output_tokens=1000,
+        ),
+    ),
+)
 CANARY_DSH_MODEL_PROFILE = ModelProfileDefinition(
     profile_key="pharos-fake-canary",
     version=1,
@@ -89,7 +107,8 @@ def validate_canary_actor_output(value: Any) -> dict:
 def resolve_canary_model_profile(profile: str) -> tuple[str, str]:
     """Legacy compatibility resolver; DSH authority is the Registry profile."""
     if profile == "canary":
-        return CANARY_FAKE_PROVIDER, CANARY_FAKE_MODEL
+        route = CANARY_LEGACY_MODEL_PROFILE.resolve_route("in_process_fake")
+        return route.provider, route.model
     if profile == CANARY_DSH_MODEL_PROFILE.identity():
         route = CANARY_DSH_MODEL_PROFILE.resolve_route("dsh")
         return route.provider, route.model
@@ -98,7 +117,7 @@ def resolve_canary_model_profile(profile: str) -> tuple[str, str]:
 
 def canary_model_profiles() -> list[ModelProfileDefinition]:
     """Return trusted model profiles used by the canary routes."""
-    return [CANARY_DSH_MODEL_PROFILE]
+    return [CANARY_LEGACY_MODEL_PROFILE, CANARY_DSH_MODEL_PROFILE]
 
 
 def canary_capabilities() -> list[CapabilityDefinition]:

@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import case, delete, exists, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -38,20 +39,36 @@ from pharos.harness.configrev import (
 from pharos.harness.contracts import (
     AttemptState,
     ConfigIntegrityError,
+    DefinitionError,
     IdempotencyConflictError,
     NotFoundError,
     ScopeType,
     StaleConfigError,
 )
-from pharos.harness.definitions import WorkflowDefinition
-from pharos.harness.registry import Registry
+from pharos.harness.definitions import (
+    CapabilityDefinition,
+    ModelProfileDefinition,
+    RoleDefinition,
+    WorkflowDefinition,
+    canonical_json,
+)
+from pharos.harness.registry import (
+    CompiledWorkflowBinding,
+    Registry,
+    _validate_binding_payload,
+    validate_role_model_profile,
+)
 from pharos.harness.tables import (
     attempts,
+    capability_versions,
     config_head,
     config_revisions,
     config_workflow_routes,
+    model_profile_versions,
+    role_versions,
     runs,
     steps,
+    workflow_definition_bindings,
     workflow_versions,
 )
 
@@ -96,6 +113,19 @@ def json_load(raw: str | None, default: Any) -> Any:
 
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _split_identity(identity: str, label: str) -> tuple[str, int]:
+    if not isinstance(identity, str) or identity.count("@") != 1:
+        raise DefinitionError(f"invalid {label} identity")
+    key, raw_version = identity.rsplit("@", 1)
+    try:
+        version = int(raw_version)
+    except (TypeError, ValueError) as exc:
+        raise DefinitionError(f"invalid {label} identity") from exc
+    if not key or version < 1:
+        raise DefinitionError(f"invalid {label} identity")
+    return key, version
 
 
 class HarnessWorkflowStore:
@@ -145,6 +175,622 @@ class HarnessWorkflowStore:
             .first()
         )
         return dict(row) if row is not None else None
+
+
+class HarnessDefinitionRepository:
+    """Persist and read immutable definition closures.
+
+    Definitions are content addressed by their exact key/version/hash tuple.
+    A second write of the same value is idempotent; a write that attempts to
+    reuse a key/version with different content is rejected.  The repository
+    does not update or delete definition rows -- SQLite immutability triggers
+    provide the final database-level fence.
+    """
+
+    @classmethod
+    def _check_existing(
+        cls,
+        row: dict,
+        *,
+        raw: str,
+        digest: str,
+        identity: str,
+        definition_type: Any,
+    ) -> str:
+        row = cls._checked_row(row, identity=identity, definition_type=definition_type)
+        if row["definition_sha256"] != digest or row["definition_json"] != raw:
+            raise StaleConfigError(f"{identity} is already stored with a different definition")
+        return row["id"]
+
+    @staticmethod
+    def _checked_row(row: dict, *, identity: str, definition_type: Any = None) -> dict:
+        """Verify canonical JSON, typed shape and denormalized metadata."""
+        raw = row.get("definition_json")
+        digest = row.get("definition_sha256")
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else None
+            valid = isinstance(raw, str) and canonical_json(payload) == raw
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConfigIntegrityError(f"{identity} stored definition is not valid JSON") from exc
+        if (
+            not valid
+            or not isinstance(raw, str)
+            or not isinstance(digest, str)
+            or sha256_text(raw) != digest
+        ):
+            raise ConfigIntegrityError(f"{identity} stored definition hash mismatch")
+        if definition_type is not None:
+            try:
+                parsed = definition_type.model_validate(payload)
+            except (TypeError, ValueError) as exc:
+                raise ConfigIntegrityError(
+                    f"{identity} stored definition has invalid shape"
+                ) from exc
+            expected = (
+                parsed.canonical()
+                if hasattr(parsed, "canonical")
+                else parsed.model_dump(mode="json")
+            )
+            if canonical_json(expected) != raw or parsed.definition_hash() != digest:
+                raise ConfigIntegrityError(f"{identity} stored definition does not match its hash")
+            metadata = {
+                "workflow_key": getattr(parsed, "workflow_key", None),
+                "profile_key": getattr(parsed, "profile_key", None),
+                "capability_key": getattr(parsed, "capability_key", None),
+                "role_key": getattr(parsed, "role_key", None),
+                "version": getattr(parsed, "version", None),
+            }
+            for key, expected_value in metadata.items():
+                if expected_value is not None and row.get(key) != expected_value:
+                    raise ConfigIntegrityError(f"{identity} stored metadata is inconsistent")
+            if isinstance(parsed, WorkflowDefinition) and (
+                row.get("input_schema"), row.get("output_schema")
+            ) != (parsed.input_schema, parsed.output_schema):
+                raise ConfigIntegrityError(f"{identity} stored schema metadata is inconsistent")
+            if isinstance(parsed, RoleDefinition):
+                if row.get("runtime_kind") != parsed.runtime_kind:
+                    raise ConfigIntegrityError(
+                        f"{identity} stored runtime metadata is inconsistent"
+                    )
+                if "@" not in parsed.model_profile:
+                    # Frozen legacy canary is resolved to canary@1 by the
+                    # repository.  Keep the full identity exact: accepting a
+                    # later canary version here would silently rebind the
+                    # already-hashed legacy role.
+                    if (
+                        row.get("model_profile_key"),
+                        row.get("model_profile_version"),
+                    ) != ("canary", 1):
+                        raise ConfigIntegrityError(
+                            f"{identity} stored legacy profile is inconsistent"
+                        )
+                else:
+                    profile_key, profile_version = _split_identity(
+                        parsed.model_profile, "model profile"
+                    )
+                    if (row.get("model_profile_key"), row.get("model_profile_version")) != (
+                        profile_key,
+                        profile_version,
+                    ):
+                        raise ConfigIntegrityError(
+                            f"{identity} stored profile metadata is inconsistent"
+                        )
+        return row
+
+    @staticmethod
+    def _insert_ignore(
+        session: Session, table, values: dict[str, Any], conflict_columns: list[str]
+    ) -> None:  # noqa: ANN001
+        """Insert once; only the declared uniqueness race is ignored.
+
+        SQLite's conflict target is intentionally explicit.  Foreign-key,
+        CHECK and NOT NULL failures still propagate to the caller instead of
+        being mistaken for a concurrent idempotent write.
+        """
+        if session.get_bind().dialect.name != "sqlite":
+            raise RuntimeError("Harness definition persistence currently requires SQLite")
+        session.execute(
+            sqlite_insert(table)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=conflict_columns)
+        )
+
+    def upsert_workflow(self, session: Session, workflow: WorkflowDefinition, now: str) -> str:
+        raw = canonical_json(workflow.model_dump(mode="json"))
+        digest = workflow.definition_hash()
+        row_id = new_id()
+        self._insert_ignore(
+            session,
+            workflow_versions,
+            dict(
+                id=row_id,
+                workflow_key=workflow.workflow_key,
+                version=workflow.version,
+                definition_json=raw,
+                definition_sha256=digest,
+                input_schema=workflow.input_schema,
+                output_schema=workflow.output_schema,
+                created_at=now,
+            ),
+            ["workflow_key", "version"],
+        )
+        row = (
+            session.execute(
+                select(workflow_versions).where(
+                    workflow_versions.c.workflow_key == workflow.workflow_key,
+                    workflow_versions.c.version == workflow.version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise ConfigIntegrityError(f"failed to persist {workflow.identity()}")
+        return self._check_existing(
+            dict(row),
+            raw=raw,
+            digest=digest,
+            identity=workflow.identity(),
+            definition_type=WorkflowDefinition,
+        )
+
+    def upsert_model_profile(
+        self, session: Session, profile: ModelProfileDefinition, now: str
+    ) -> str:
+        raw = canonical_json(profile.canonical())
+        digest = profile.definition_hash()
+        row_id = new_id()
+        self._insert_ignore(
+            session,
+            model_profile_versions,
+            dict(
+                id=row_id,
+                profile_key=profile.profile_key,
+                version=profile.version,
+                definition_json=raw,
+                definition_sha256=digest,
+                created_at=now,
+            ),
+            ["profile_key", "version"],
+        )
+        row = (
+            session.execute(
+                select(model_profile_versions).where(
+                    model_profile_versions.c.profile_key == profile.profile_key,
+                    model_profile_versions.c.version == profile.version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise ConfigIntegrityError(f"failed to persist {profile.identity()}")
+        return self._check_existing(
+            dict(row),
+            raw=raw,
+            digest=digest,
+            identity=profile.identity(),
+            definition_type=ModelProfileDefinition,
+        )
+
+    def upsert_capability(
+        self, session: Session, capability: CapabilityDefinition, now: str
+    ) -> str:
+        raw = canonical_json(capability.canonical())
+        digest = capability.definition_hash()
+        row_id = new_id()
+        self._insert_ignore(
+            session,
+            capability_versions,
+            dict(
+                id=row_id,
+                capability_key=capability.capability_key,
+                version=capability.version,
+                definition_json=raw,
+                definition_sha256=digest,
+                created_at=now,
+            ),
+            ["capability_key", "version"],
+        )
+        row = (
+            session.execute(
+                select(capability_versions).where(
+                    capability_versions.c.capability_key == capability.capability_key,
+                    capability_versions.c.version == capability.version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise ConfigIntegrityError(f"failed to persist {capability.identity()}")
+        return self._check_existing(
+            dict(row),
+            raw=raw,
+            digest=digest,
+            identity=capability.identity(),
+            definition_type=CapabilityDefinition,
+        )
+
+    def upsert_role(
+        self,
+        session: Session,
+        role: RoleDefinition,
+        now: str,
+        *,
+        resolved_profile: ModelProfileDefinition | None = None,
+    ) -> str:
+        if resolved_profile is None:
+            if "@" not in role.model_profile:
+                raise DefinitionError(f"{role.identity()}: role model profile must be versioned")
+            profile_key, profile_version = _split_identity(role.model_profile, "model profile")
+        else:
+            profile_key = resolved_profile.profile_key
+            profile_version = resolved_profile.version
+        profile_row = (
+            session.execute(
+                select(model_profile_versions).where(
+                    model_profile_versions.c.profile_key == profile_key,
+                    model_profile_versions.c.version == profile_version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if profile_row is None:
+            raise DefinitionError(
+                f"{role.identity()}: model profile {role.model_profile} not stored"
+            )
+        profile = self._checked_row(
+            dict(profile_row),
+            identity=f"{profile_key}@{profile_version}",
+            definition_type=ModelProfileDefinition,
+        )
+        if resolved_profile is not None and profile["definition_sha256"] != (
+            resolved_profile.definition_hash()
+        ):
+            raise ConfigIntegrityError(
+                f"{role.identity()}: stored model profile hash does not match the registry"
+            )
+        stored_profile = ModelProfileDefinition.model_validate(
+            json.loads(profile["definition_json"])
+        )
+        validate_role_model_profile(role, stored_profile)
+        raw = canonical_json(role.canonical())
+        digest = role.definition_hash()
+        values = dict(
+            id=new_id(),
+            role_key=role.role_key,
+            version=role.version,
+            definition_json=raw,
+            definition_sha256=digest,
+            runtime_kind=role.runtime_kind,
+            model_profile_key=profile_key,
+            model_profile_version=profile_version,
+            model_profile_sha256=profile["definition_sha256"],
+            created_at=now,
+        )
+        self._insert_ignore(session, role_versions, values, ["role_key", "version"])
+        row = (
+            session.execute(
+                select(role_versions).where(
+                    role_versions.c.role_key == role.role_key,
+                    role_versions.c.version == role.version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise ConfigIntegrityError(f"failed to persist {role.identity()}")
+        existing = self._checked_row(
+            dict(row), identity=role.identity(), definition_type=RoleDefinition
+        )
+        if (
+            existing["model_profile_key"],
+            existing["model_profile_version"],
+            existing["model_profile_sha256"],
+        ) != (profile_key, profile_version, profile["definition_sha256"]):
+            raise StaleConfigError(f"{role.identity()} model profile binding changed")
+        return existing["id"]
+
+    def upsert_binding(self, session: Session, binding: CompiledWorkflowBinding, now: str) -> str:
+        raw = binding.canonical_json()
+        value = json.loads(raw)
+        if sha256_text(raw) != binding.binding_sha256:
+            raise ConfigIntegrityError("compiled workflow binding hash mismatch")
+        _validate_binding_payload(value)
+        workflow = value["workflow"]
+        self._verify_binding_rows(session, value)
+        values = dict(
+            binding_sha256=binding.binding_sha256,
+            schema_version=value.get("schema_version"),
+            workflow_key=workflow.get("workflow_key"),
+            workflow_version=workflow.get("version"),
+            workflow_definition_sha256=workflow.get("definition_sha256"),
+            binding_json=raw,
+            created_at=now,
+        )
+        self._insert_ignore(
+            session,
+            workflow_definition_bindings,
+            values,
+            ["workflow_key", "workflow_version"],
+        )
+        row = (
+            session.execute(
+                select(workflow_definition_bindings).where(
+                    workflow_definition_bindings.c.workflow_key == workflow["workflow_key"],
+                    workflow_definition_bindings.c.workflow_version == workflow["version"],
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise ConfigIntegrityError("failed to persist workflow binding")
+        existing = dict(row)
+        if existing["binding_sha256"] != binding.binding_sha256:
+            raise StaleConfigError(
+                f"{workflow['identity']} is already stored with a different binding"
+            )
+        if existing["binding_json"] != raw:
+            raise ConfigIntegrityError("stored workflow binding content does not match its hash")
+        if existing["workflow_definition_sha256"] != workflow["definition_sha256"]:
+            raise ConfigIntegrityError("stored workflow binding metadata is inconsistent")
+        return existing["binding_sha256"]
+
+    def _verify_binding_rows(self, session: Session, value: dict[str, Any]) -> None:
+        """Cross-check every persisted row in a binding's transitive closure."""
+        workflow_record = value["workflow"]
+        workflow_key = workflow_record["workflow_key"]
+        workflow_version = workflow_record["version"]
+        workflow_row = (
+            session.execute(
+                select(workflow_versions).where(
+                    workflow_versions.c.workflow_key == workflow_key,
+                    workflow_versions.c.version == workflow_version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if workflow_row is None:
+            raise DefinitionError(
+                f"binding references an unstored workflow {workflow_record['identity']}"
+            )
+        checked_workflow = self._checked_row(
+            dict(workflow_row),
+            identity=workflow_record["identity"],
+            definition_type=WorkflowDefinition,
+        )
+        if checked_workflow["definition_sha256"] != workflow_record["definition_sha256"]:
+            raise ConfigIntegrityError("binding workflow hash does not match stored definition")
+
+        for record in value["capabilities"]:
+            key, version = _split_identity(record["identity"], "capability")
+            row = (
+                session.execute(
+                    select(capability_versions).where(
+                        capability_versions.c.capability_key == key,
+                        capability_versions.c.version == version,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise DefinitionError(
+                    f"binding references an unstored capability {record['identity']}"
+                )
+            checked = self._checked_row(
+                dict(row), identity=record["identity"], definition_type=CapabilityDefinition
+            )
+            if checked["definition_sha256"] != record["definition_sha256"]:
+                raise ConfigIntegrityError(f"binding capability {record['identity']} hash mismatch")
+
+        for record in value["roles"]:
+            key, version = _split_identity(record["identity"], "role")
+            row = (
+                session.execute(
+                    select(role_versions).where(
+                        role_versions.c.role_key == key,
+                        role_versions.c.version == version,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise DefinitionError(f"binding references an unstored role {record['identity']}")
+            checked_role = self._checked_row(
+                dict(row), identity=record["identity"], definition_type=RoleDefinition
+            )
+            if checked_role["definition_sha256"] != record["definition_sha256"]:
+                raise ConfigIntegrityError(f"binding role {record['identity']} hash mismatch")
+            profile_record = record["model_profile"]
+            profile_key, profile_version = _split_identity(
+                profile_record["identity"], "model profile"
+            )
+            if (
+                checked_role["model_profile_key"],
+                checked_role["model_profile_version"],
+                checked_role["model_profile_sha256"],
+            ) != (
+                profile_key,
+                profile_version,
+                profile_record["definition_sha256"],
+            ):
+                raise ConfigIntegrityError(
+                    f"binding role {record['identity']} profile binding mismatch"
+                )
+            profile_row = (
+                session.execute(
+                    select(model_profile_versions).where(
+                        model_profile_versions.c.profile_key == profile_key,
+                        model_profile_versions.c.version == profile_version,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if profile_row is None:
+                raise DefinitionError(
+                    f"binding references an unstored model profile {profile_record['identity']}"
+                )
+            checked_profile = self._checked_row(
+                dict(profile_row),
+                identity=profile_record["identity"],
+                definition_type=ModelProfileDefinition,
+            )
+            if checked_profile["definition_sha256"] != profile_record["definition_sha256"]:
+                raise ConfigIntegrityError(
+                    f"binding model profile {profile_record['identity']} hash mismatch"
+                )
+
+    def persist_workflow_binding(
+        self, session: Session, *, registry: Registry, workflow: WorkflowDefinition, now: str
+    ) -> CompiledWorkflowBinding:
+        """Compile and atomically persist one complete transitive closure."""
+        binding = registry.compile_workflow_binding(workflow.identity())
+        self.upsert_workflow(session, workflow, now)
+        profiles: dict[str, ModelProfileDefinition] = {}
+        for role_record in binding.roles:
+            profile_record = role_record["model_profile"]
+            profile_payload = profile_record["definition"]
+            profile = ModelProfileDefinition.model_validate(profile_payload)
+            profiles[profile.identity()] = profile
+            self.upsert_model_profile(session, profile, now)
+        for capability_record in binding.capabilities:
+            capability = CapabilityDefinition.model_validate(capability_record["definition"])
+            self.upsert_capability(session, capability, now)
+        for role_record in binding.roles:
+            role = RoleDefinition.model_validate(role_record["definition"])
+            profile_identity = role_record["model_profile"]["identity"]
+            if profile_identity not in profiles:
+                raise DefinitionError(f"{role.identity()}: binding profile closure is incomplete")
+            self.upsert_role(session, role, now, resolved_profile=profiles[profile_identity])
+        self.upsert_binding(session, binding, now)
+        return binding
+
+    # Exact read APIs intentionally return copies, not mutable SQLAlchemy Row
+    # objects.  Callers can independently verify the stored canonical JSON.
+    def get_binding(self, session: Session, binding_sha256: str) -> dict | None:
+        row = (
+            session.execute(
+                select(workflow_definition_bindings).where(
+                    workflow_definition_bindings.c.binding_sha256 == binding_sha256
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        result = dict(row)
+        raw = result["binding_json"]
+        try:
+            value = json.loads(raw)
+            if canonical_json(value) != raw or sha256_text(raw) != binding_sha256:
+                raise ConfigIntegrityError("stored workflow binding is not canonical or hash-valid")
+            _validate_binding_payload(value)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConfigIntegrityError("stored workflow binding is not valid JSON") from exc
+        workflow = value["workflow"]
+        if (
+            result["schema_version"] != value["schema_version"]
+            or result["workflow_key"] != workflow["workflow_key"]
+            or result["workflow_version"] != workflow["version"]
+            or result["workflow_definition_sha256"] != workflow["definition_sha256"]
+        ):
+            raise ConfigIntegrityError("stored workflow binding metadata is inconsistent")
+        self._verify_binding_rows(session, value)
+        return result
+
+    def get_workflow(self, session: Session, workflow_key: str, version: int) -> dict | None:
+        row = (
+            session.execute(
+                select(workflow_versions).where(
+                    workflow_versions.c.workflow_key == workflow_key,
+                    workflow_versions.c.version == version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            self._checked_row(
+                dict(row), identity=f"{workflow_key}@{version}", definition_type=WorkflowDefinition
+            )
+            if row
+            else None
+        )
+
+    def get_role(self, session: Session, role_key: str, version: int) -> dict | None:
+        row = (
+            session.execute(
+                select(role_versions).where(
+                    role_versions.c.role_key == role_key,
+                    role_versions.c.version == version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            self._checked_row(
+                dict(row), identity=f"{role_key}@{version}", definition_type=RoleDefinition
+            )
+            if row
+            else None
+        )
+
+    def get_capability(self, session: Session, capability_key: str, version: int) -> dict | None:
+        row = (
+            session.execute(
+                select(capability_versions).where(
+                    capability_versions.c.capability_key == capability_key,
+                    capability_versions.c.version == version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            self._checked_row(
+                dict(row),
+                identity=f"{capability_key}@{version}",
+                definition_type=CapabilityDefinition,
+            )
+            if row
+            else None
+        )
+
+    def get_model_profile(self, session: Session, profile_key: str, version: int) -> dict | None:
+        row = (
+            session.execute(
+                select(model_profile_versions).where(
+                    model_profile_versions.c.profile_key == profile_key,
+                    model_profile_versions.c.version == version,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            self._checked_row(
+                dict(row),
+                identity=f"{profile_key}@{version}",
+                definition_type=ModelProfileDefinition,
+            )
+            if row
+            else None
+        )
+
+
+# Keep the shorter name available to integration code while the repository
+# name remains explicit in stack traces and documentation.
+HarnessDefinitionStore = HarnessDefinitionRepository
 
 
 @dataclass(frozen=True)
@@ -610,12 +1256,8 @@ class AttemptRuntimeError(ValueError):
     """A runtime binding or delivery update violates its immutable contract."""
 
 
-_ATTEMPT_ACTIVE_STATES = frozenset(
-    {AttemptState.leased.value, AttemptState.running.value}
-)
-_DELIVERY_STATES = frozenset(
-    {"not_started", "sent", "acknowledged", "unknown", "reconciled"}
-)
+_ATTEMPT_ACTIVE_STATES = frozenset({AttemptState.leased.value, AttemptState.running.value})
+_DELIVERY_STATES = frozenset({"not_started", "sent", "acknowledged", "unknown", "reconciled"})
 _DELIVERY_TRANSITIONS: dict[str, frozenset[str]] = {
     # Delivery evidence is strictly monotonic.  The observer records unknown
     # before the first byte, sent after a complete frame, and acknowledged only
@@ -880,9 +1522,11 @@ class HarnessAttemptRepository:
         current = session.execute(select(attempts).where(*predicates)).mappings().first()
         if current is None:
             return None
-        if any(current.get(field) is not None for field in _LAUNCH_COLUMNS) or current.get(
-            "child_pid"
-        ) is not None or current.get("delivery_state") is not None:
+        if (
+            any(current.get(field) is not None for field in _LAUNCH_COLUMNS)
+            or current.get("child_pid") is not None
+            or current.get("delivery_state") is not None
+        ):
             raise AttemptRuntimeError("runtime launch is already bound or partially present")
         duplicate = session.execute(
             select(attempts.c.id)
@@ -902,10 +1546,7 @@ class HarnessAttemptRepository:
                     update(attempts)
                     .where(
                         *predicates,
-                        *[
-                            getattr(attempts.c, field).is_(None)
-                            for field in _LAUNCH_COLUMNS
-                        ],
+                        *[getattr(attempts.c, field).is_(None) for field in _LAUNCH_COLUMNS],
                     )
                     .where(attempts.c.child_pid.is_(None), attempts.c.delivery_state.is_(None))
                     .values(**values)
@@ -947,9 +1588,10 @@ class HarnessAttemptRepository:
         current = session.execute(select(attempts).where(*predicates)).mappings().first()
         if current is None:
             return False
-        if any(current.get(field) is None for field in _LAUNCH_COLUMNS) or current.get(
-            "delivery_state"
-        ) is None:
+        if (
+            any(current.get(field) is None for field in _LAUNCH_COLUMNS)
+            or current.get("delivery_state") is None
+        ):
             raise AttemptRuntimeError("child attach requires a complete launch reservation")
         if current.get("child_pid") is not None:
             raise AttemptRuntimeError("child_pid is already attached")
@@ -1013,9 +1655,11 @@ class HarnessAttemptRepository:
         current = session.execute(select(attempts).where(*predicates)).mappings().first()
         if current is None:
             return False
-        if any(current.get(field) is None for field in _LAUNCH_COLUMNS) or current.get(
-            "delivery_state"
-        ) is None or current.get("child_pid") is None:
+        if (
+            any(current.get(field) is None for field in _LAUNCH_COLUMNS)
+            or current.get("delivery_state") is None
+            or current.get("child_pid") is None
+        ):
             raise AttemptRuntimeError("delivery requires launch reservation and child attachment")
         current_delivery = current["delivery_state"]
         if current_delivery not in _DELIVERY_STATES:
@@ -1095,9 +1739,7 @@ class HarnessAttemptRepository:
         ).mappings()
         return [dict(row) for row in rows]
 
-    def list_reconciliation_candidates(
-        self, session: Session, *, scope: Scope
-    ) -> list[dict]:
+    def list_reconciliation_candidates(self, session: Session, *, scope: Scope) -> list[dict]:
         """Read-only terminal ``indeterminate + unknown`` candidates.
 
         Reconciliation writes belong to a later service that records an

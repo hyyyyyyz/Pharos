@@ -21,6 +21,7 @@ from pharos.harness.definitions import (
 from pharos.harness.registry import Registry
 from pharos.harness.workflows.canary import (
     CANARY_DSH_MODEL_PROFILE,
+    CANARY_LEGACY_MODEL_PROFILE,
     canary_dsh_workflow,
     canary_workflow,
 )
@@ -232,6 +233,23 @@ def test_valid_usage_and_credential_policy_combinations() -> None:
     assert _route(provider="pharos-fake", credential_policy="none")
     with pytest.raises(ValidationError):
         _route(provider="other-fake", credential_policy="none")
+
+
+def test_legacy_credentialless_canary_route_is_in_process_only() -> None:
+    values = {
+        "route_key": "legacy-canary",
+        "priority": 1,
+        "provider": "fake",
+        "model": "canary",
+        "usage_source": "system_shared",
+        "credential_policy": "none",
+        "allowed_runtime_kinds": ("in_process_fake",),
+    }
+    assert ModelRouteDefinition.model_validate(values).provider == "fake"
+    with pytest.raises(ValidationError):
+        ModelRouteDefinition.model_validate(
+            {**values, "allowed_runtime_kinds": ("dsh",)}
+        )
 
 
 @pytest.mark.parametrize("field", ["profile_key", "route_key", "provider"])
@@ -460,9 +478,11 @@ def test_legacy_canary_alias_is_bound_to_the_complete_frozen_role() -> None:
             output_tokens=1000,
         ),
     )
+    registry.register_model_profile(CANARY_LEGACY_MODEL_PROFILE)
     registry.register_role(role)
     registry.compile()
     registry = Registry()
+    registry.register_model_profile(CANARY_LEGACY_MODEL_PROFILE)
     registry.register_role(role.model_copy(update={"prompt_template_version": "changed@1"}))
     with pytest.raises(DefinitionError, match="frozen legacy definition"):
         registry.compile()
@@ -497,6 +517,7 @@ def test_in_process_profile_rejects_real_provider_routes() -> None:
 
 def test_canary_profile_is_registered_but_not_in_definition_snapshot() -> None:
     app = HarnessApp()
+    assert app.registry.require_model_profile("canary@1") == CANARY_LEGACY_MODEL_PROFILE
     assert app.registry.require_model_profile("pharos-fake-canary@1") == CANARY_DSH_MODEL_PROFILE
     snapshot_json = app.registry.snapshot().model_dump_json()
     assert '"model_profiles"' not in snapshot_json

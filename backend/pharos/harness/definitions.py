@@ -206,6 +206,17 @@ _MAX_MODEL_ROUTES = 16
 _MAX_MODEL_TOKENS = 1_000_000
 _MODEL_ROUTE_BINDING_SCHEMA_VERSION = 1
 
+# Credential-free routes are reserved for the two deterministic canary
+# adapters shipped with Pharos.  This is an exact pair allowlist, not a
+# convention based on a provider name containing ``fake``: a future route
+# cannot avoid credential policy merely by choosing a suggestive identifier.
+_CREDENTIALLESS_CANARY_ROUTES = frozenset(
+    {
+        ("fake", "canary"),
+        ("pharos-fake", "pharos-fake-canary"),
+    }
+)
+
 
 def _model_identifier(value: str, *, field_name: str, max_length: int) -> str:
     """Validate provider/model identifiers without accepting endpoint data."""
@@ -225,6 +236,11 @@ def _model_identifier(value: str, *, field_name: str, max_length: int) -> str:
         raise ValueError(f"{field_name} must be a non-whitespace printable identifier")
     if len(value) > max_length:
         raise ValueError(f"{field_name} is too long")
+    if field_name == "model" and (
+        not value[0].isalnum()
+        or any(not (char.isalnum() or char in "._-/+:") for char in value)
+    ):
+        raise ValueError("model must use the closed model-identifier character set")
     # A route is metadata, never a raw endpoint.  Model names may contain '/'
     # (for example, provider/model), so only URL delimiters are forbidden.
     if "://" in value or ":/" in value:
@@ -268,11 +284,15 @@ class ModelRouteDefinition(StrictModel):
                 raise ValueError(
                     f"{self.usage_source} usage_source cannot use user_byok credentials"
                 )
-            if self.credential_policy == "none" and not (
+            credentialless_canary = (
                 self.usage_source == "system_shared"
-                and self.provider == "pharos-fake"
-                and self.model == "pharos-fake-canary"
-            ):
+                and (self.provider, self.model) in _CREDENTIALLESS_CANARY_ROUTES
+                and (
+                    (self.provider, self.model) != ("fake", "canary")
+                    or set(self.allowed_runtime_kinds) == {"in_process_fake"}
+                )
+            )
+            if self.credential_policy == "none" and not credentialless_canary:
                 raise ValueError(
                     f"{self.usage_source} usage_source requires system_managed credentials"
                 )
