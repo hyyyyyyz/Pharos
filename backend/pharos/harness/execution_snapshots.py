@@ -198,7 +198,10 @@ def _require_row(session: Session, table: Any, *, where: Any, label: str) -> dic
 def _policy(value: RunPolicySnapshot | dict[str, Any] | str) -> tuple[RunPolicySnapshot, str, str]:
     try:
         if isinstance(value, RunPolicySnapshot):
-            parsed = value
+            # ``model_copy(update=...)`` skips Pydantic validation.  Rebuild
+            # from plain data so the object returned to execution callers is
+            # the same authenticated instance whose canonical bytes we hash.
+            parsed = RunPolicySnapshot.model_validate(value.model_dump(mode="python"))
             raw = parsed.canonical_json()
         elif isinstance(value, str):
             parsed = RunPolicySnapshot.from_canonical_json(value)

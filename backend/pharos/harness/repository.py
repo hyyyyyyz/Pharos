@@ -203,6 +203,20 @@ class HarnessDefinitionRepository:
         return row["id"]
 
     @staticmethod
+    def _revalidate_definition(definition: Any, definition_type: Any, label: str) -> Any:
+        """Re-run Pydantic validation on objects supplied by a public writer.
+
+        ``BaseModel.model_copy(update=...)`` intentionally skips validation.
+        Treating such an object as trusted would let an invalid runtime kind or
+        route field reach the JSON/SQLite insert path before typed checks see it.
+        """
+        try:
+            payload = definition.model_dump(mode="python")
+            return definition_type.model_validate(payload)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DefinitionError(f"{label} is not a valid typed definition") from exc
+
+    @staticmethod
     def _checked_row(row: dict, *, identity: str, definition_type: Any = None) -> dict:
         """Verify canonical JSON, typed shape and denormalized metadata."""
         raw = row.get("definition_json")
@@ -296,6 +310,7 @@ class HarnessDefinitionRepository:
         )
 
     def upsert_workflow(self, session: Session, workflow: WorkflowDefinition, now: str) -> str:
+        workflow = self._revalidate_definition(workflow, WorkflowDefinition, "workflow")
         raw = canonical_json(workflow.model_dump(mode="json"))
         digest = workflow.definition_hash()
         row_id = new_id()
@@ -337,6 +352,9 @@ class HarnessDefinitionRepository:
     def upsert_model_profile(
         self, session: Session, profile: ModelProfileDefinition, now: str
     ) -> str:
+        profile = self._revalidate_definition(
+            profile, ModelProfileDefinition, "model profile"
+        )
         raw = canonical_json(profile.canonical())
         digest = profile.definition_hash()
         row_id = new_id()
@@ -376,6 +394,9 @@ class HarnessDefinitionRepository:
     def upsert_capability(
         self, session: Session, capability: CapabilityDefinition, now: str
     ) -> str:
+        capability = self._revalidate_definition(
+            capability, CapabilityDefinition, "capability"
+        )
         raw = canonical_json(capability.canonical())
         digest = capability.definition_hash()
         row_id = new_id()
@@ -420,6 +441,11 @@ class HarnessDefinitionRepository:
         *,
         resolved_profile: ModelProfileDefinition | None = None,
     ) -> str:
+        role = self._revalidate_definition(role, RoleDefinition, "role")
+        if resolved_profile is not None:
+            resolved_profile = self._revalidate_definition(
+                resolved_profile, ModelProfileDefinition, "model profile"
+            )
         if resolved_profile is None:
             if "@" not in role.model_profile:
                 raise DefinitionError(f"{role.identity()}: role model profile must be versioned")
@@ -486,6 +512,11 @@ class HarnessDefinitionRepository:
         existing = self._checked_row(
             dict(row), identity=role.identity(), definition_type=RoleDefinition
         )
+        existing_role = RoleDefinition.model_validate(json.loads(existing["definition_json"]))
+        # Re-check the stored role on the idempotent path too.  Runtime/profile
+        # compatibility is a policy invariant, not merely denormalized row
+        # metadata, and must not depend on a live Registry.
+        validate_role_model_profile(existing_role, stored_profile)
         if (
             existing["model_profile_key"],
             existing["model_profile_version"],
@@ -530,6 +561,7 @@ class HarnessDefinitionRepository:
         if row is None:
             raise ConfigIntegrityError("failed to persist workflow binding")
         existing = dict(row)
+        self._checked_binding_row(existing)
         if existing["binding_sha256"] != binding.binding_sha256:
             raise StaleConfigError(
                 f"{workflow['identity']} is already stored with a different binding"
@@ -539,6 +571,36 @@ class HarnessDefinitionRepository:
         if existing["workflow_definition_sha256"] != workflow["definition_sha256"]:
             raise ConfigIntegrityError("stored workflow binding metadata is inconsistent")
         return existing["binding_sha256"]
+
+    @staticmethod
+    def _checked_binding_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Authenticate and independently type-check an existing binding row."""
+        raw = row.get("binding_json")
+        digest = row.get("binding_sha256")
+        if not isinstance(raw, str) or not isinstance(digest, str):
+            raise ConfigIntegrityError("stored workflow binding metadata is invalid")
+        try:
+            value = json.loads(raw)
+            if not isinstance(value, dict) or canonical_json(value) != raw:
+                raise ConfigIntegrityError("stored workflow binding is not canonical JSON")
+            if sha256_text(raw) != digest:
+                raise ConfigIntegrityError("stored workflow binding hash mismatch")
+            _validate_binding_payload(value)
+        except DefinitionError as exc:
+            raise ConfigIntegrityError("stored workflow binding definition is invalid") from exc
+        except ConfigIntegrityError:
+            raise
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConfigIntegrityError("stored workflow binding is not valid JSON") from exc
+        workflow = value.get("workflow")
+        if not isinstance(workflow, dict) or (
+            row.get("schema_version") != value.get("schema_version")
+            or row.get("workflow_key") != workflow.get("workflow_key")
+            or row.get("workflow_version") != workflow.get("version")
+            or row.get("workflow_definition_sha256") != workflow.get("definition_sha256")
+        ):
+            raise ConfigIntegrityError("stored workflow binding metadata is inconsistent")
+        return value
 
     def _verify_binding_rows(self, session: Session, value: dict[str, Any]) -> None:
         """Cross-check every persisted row in a binding's transitive closure."""
@@ -688,23 +750,16 @@ class HarnessDefinitionRepository:
         if row is None:
             return None
         result = dict(row)
-        raw = result["binding_json"]
+        value = self._checked_binding_row(result)
         try:
-            value = json.loads(raw)
-            if canonical_json(value) != raw or sha256_text(raw) != binding_sha256:
-                raise ConfigIntegrityError("stored workflow binding is not canonical or hash-valid")
-            _validate_binding_payload(value)
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise ConfigIntegrityError("stored workflow binding is not valid JSON") from exc
-        workflow = value["workflow"]
-        if (
-            result["schema_version"] != value["schema_version"]
-            or result["workflow_key"] != workflow["workflow_key"]
-            or result["workflow_version"] != workflow["version"]
-            or result["workflow_definition_sha256"] != workflow["definition_sha256"]
-        ):
-            raise ConfigIntegrityError("stored workflow binding metadata is inconsistent")
-        self._verify_binding_rows(session, value)
+            self._verify_binding_rows(session, value)
+        except DefinitionError as exc:
+            # At this read boundary the caller supplied only a content hash;
+            # a missing or incompatible closure row is persisted-state
+            # corruption, not a new definition error from the caller.
+            raise ConfigIntegrityError(
+                "stored workflow binding closure is invalid"
+            ) from exc
         return result
 
     def get_workflow(self, session: Session, workflow_key: str, version: int) -> dict | None:

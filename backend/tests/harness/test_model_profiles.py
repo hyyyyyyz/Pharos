@@ -198,6 +198,10 @@ def test_profile_has_no_raw_endpoint_or_secret_fields() -> None:
         "https:/provider.invalid/model",
         "sk-secret-model",
         "Bearer secret-model",
+        "secret=abc",
+        "api_key=abc",
+        "token:abc",
+        "provider?token=abc",
         "模型",
     ):
         with pytest.raises(ValidationError):

@@ -177,6 +177,18 @@ class AgentRoleBinding(StrictModel):
 
     @model_validator(mode="after")
     def _validate_definition_binding(self) -> AgentRoleBinding:
+        # Pydantic intentionally does not revalidate an already-created model
+        # instance.  Revalidate the full dumps here so ``model_copy(update=…)``
+        # cannot smuggle an untyped runtime/profile/route value into a policy.
+        try:
+            role = RoleDefinition.model_validate(self.role_definition.model_dump(mode="python"))
+            profile = ModelProfileDefinition.model_validate(
+                self.model_profile_definition.model_dump(mode="python")
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("embedded role/profile definition is not canonically typed") from exc
+        object.__setattr__(self, "role_definition", role)
+        object.__setattr__(self, "model_profile_definition", profile)
         if (
             self.role_identity != self.role_definition.identity()
             or self.role_definition_sha256 != self.role_definition.definition_hash()
@@ -385,6 +397,16 @@ class RunPolicySnapshot(StrictModel):
 
     def canonical(self) -> dict[str, Any]:
         """Return the only representation permitted for persistence/hash."""
+        # ``model_copy(update=...)`` deliberately skips validation.  A copied
+        # snapshot must not be able to mint a new policy hash from unchecked
+        # nested gates, limits, or role bindings, so canonicalization always
+        # authenticates a fresh typed instance first.  The private helper
+        # below avoids recursively calling ``canonical`` during that check.
+        validated = type(self).model_validate(self.model_dump(mode="python"))
+        return validated._canonical_unchecked()
+
+    def _canonical_unchecked(self) -> dict[str, Any]:
+        """Canonical projection after ``model_validate`` has completed."""
         value = self.model_dump(mode="json")
         value["execution_mode"] = (
             self.execution_mode.value if self.execution_mode is not None else "internal"

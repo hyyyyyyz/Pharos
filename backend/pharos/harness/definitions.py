@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import unicodedata
 from typing import Any, Literal
 
@@ -206,6 +207,17 @@ _MAX_MODEL_ROUTES = 16
 _MAX_MODEL_TOKENS = 1_000_000
 _MODEL_ROUTE_BINDING_SCHEMA_VERSION = 1
 
+# Provider/model values are identifiers, not arbitrary labels.  In
+# particular, accepting a value such as ``api_key=...`` or ``token:...`` in
+# an otherwise credential-free policy would make the canonical snapshot a
+# convenient place to smuggle credentials.  Keep the check boundary-aware so
+# legitimate names such as ``tokenizer-v3`` are not rejected accidentally.
+_CREDENTIAL_LIKE_METADATA = re.compile(
+    r"(?:^|[^a-z0-9])(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|"
+    r"credential|password|private[_-]?key|secret|token|key)(?:\s*[:=]|$)",
+    re.IGNORECASE,
+)
+
 # Credential-free routes are reserved for the two deterministic canary
 # adapters shipped with Pharos.  This is an exact pair allowlist, not a
 # convention based on a provider name containing ``fake``: a future route
@@ -247,6 +259,8 @@ def _model_identifier(value: str, *, field_name: str, max_length: int) -> str:
         raise ValueError(f"{field_name} must not contain an endpoint")
     if value.lower().startswith(("sk-", "bearer ")):
         raise ValueError(f"{field_name} must not contain credential material")
+    if _CREDENTIAL_LIKE_METADATA.search(value):
+        raise ValueError(f"{field_name} must not contain credential-like metadata")
     return value
 
 

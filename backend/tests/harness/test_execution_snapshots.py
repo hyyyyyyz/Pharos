@@ -184,6 +184,26 @@ def test_forged_policy_hash_is_rejected(app, owner):
         )
 
 
+def test_unvalidated_policy_model_copy_is_rejected(app, owner):
+    run, binding = _run(app, owner)
+    policy = _policy(app, run, binding)
+    forged_gates = policy.creation_gates.model_copy(update={"experiments_enabled": True})
+    forged = policy.model_copy(update={"creation_gates": forged_gates})
+    with session_scope() as session, pytest.raises(
+        SnapshotIntegrityError, match="invalid RunPolicySnapshot"
+    ):
+        ExecutionSnapshotStore().write_run(
+            session,
+            scope=owner,
+            run_id=run["id"],
+            workflow_key="harness.canary",
+            workflow_version=1,
+            workflow_definition_sha256=policy.workflow_definition_sha256,
+            definition_binding_sha256=binding.binding_sha256,
+            policy_snapshot=forged,
+        )
+
+
 def test_capability_attempt_shape_is_strict_and_legacy_attempt_fails_closed(app, owner):
     run, binding = _run(app, owner)
     policy = _policy(app, run, binding)

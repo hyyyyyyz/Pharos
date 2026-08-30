@@ -161,6 +161,33 @@ def test_deterministic_capability_must_be_in_workflow_allowlist() -> None:
         registry.compile_workflow_binding("bad.deterministic@1")
 
 
+def test_mapped_capability_must_be_in_workflow_allowlist() -> None:
+    registry = Registry()
+    registry.register_capability(_capability("test.read"))
+    registry.register(
+        WorkflowDefinition(
+            workflow_key="bad.mapped",
+            version=1,
+            input_schema="test.input@1",
+            output_schema="test.output@1",
+            internal_no_legacy_writer=True,
+            allowed_capabilities=(),
+            steps=(
+                StepDefinition(
+                    key="fanout",
+                    kind="mapped",
+                    capability="test.read@1",
+                    max_fanout=2,
+                ),
+            ),
+        )
+    )
+    with pytest.raises(DefinitionError, match="outside the workflow allowlist"):
+        registry.compile()
+    with pytest.raises(DefinitionError, match="outside the workflow allowlist"):
+        registry.compile_workflow_binding("bad.mapped@1")
+
+
 def test_repository_persists_idempotently_and_rejects_conflict(db) -> None:
     registry = _registry()
     workflow = registry.require_workflow("test.workflow@1")
@@ -304,6 +331,66 @@ def test_repository_rejects_forged_binding_before_database_write(db) -> None:
         HarnessDefinitionRepository().upsert_binding(session, forged, now_iso())
 
 
+def test_repository_rejects_forged_binding_with_credential_like_model(db) -> None:
+    registry = _registry()
+    binding = registry.compile_workflow_binding("test.workflow@1")
+    value = json.loads(binding.canonical_json())
+    profile_record = value["roles"][0]["model_profile"]
+    profile = profile_record["definition"]
+    profile["routes"][0]["model"] = "secret=exfiltration"
+    # Recompute every attacker-controlled envelope hash.  The independent
+    # binding validator must still reject the route metadata itself.
+    profile_record["definition_sha256"] = hashlib.sha256(
+        canonical_json(profile).encode()
+    ).hexdigest()
+    forged = CompiledWorkflowBinding.__new__(CompiledWorkflowBinding)
+    object.__setattr__(forged, "value", value)
+    object.__setattr__(
+        forged, "binding_sha256", hashlib.sha256(canonical_json(value).encode()).hexdigest()
+    )
+    with session_scope() as session, pytest.raises(DefinitionError):
+        HarnessDefinitionRepository().upsert_binding(session, forged, now_iso())
+
+
+def test_existing_binding_payload_definition_errors_map_to_integrity_error() -> None:
+    registry = _registry()
+    binding = registry.compile_workflow_binding("test.workflow@1")
+    value = json.loads(binding.canonical_json())
+    value["roles"][0]["capability_allowlist"] = []
+    raw = canonical_json(value)
+    row = {
+        "binding_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+        "binding_json": raw,
+        "schema_version": 1,
+        "workflow_key": "test.workflow",
+        "workflow_version": 1,
+        "workflow_definition_sha256": value["workflow"]["definition_sha256"],
+    }
+    with pytest.raises(ConfigIntegrityError, match="definition is invalid"):
+        HarnessDefinitionRepository._checked_binding_row(row)  # noqa: SLF001
+
+
+def test_get_binding_maps_broken_persisted_closure_to_integrity_error(
+    db, monkeypatch
+) -> None:
+    registry = _registry()
+    repository = HarnessDefinitionRepository()
+    with session_scope() as session:
+        binding = repository.persist_workflow_binding(
+            session,
+            registry=registry,
+            workflow=registry.require_workflow("test.workflow@1"),
+            now=now_iso(),
+        )
+
+        def broken_closure(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise DefinitionError("missing persisted capability")
+
+        monkeypatch.setattr(repository, "_verify_binding_rows", broken_closure)
+        with pytest.raises(ConfigIntegrityError, match="closure is invalid"):
+            repository.get_binding(session, binding.binding_sha256)
+
+
 def test_repository_direct_role_write_revalidates_runtime_profile(db) -> None:
     repository = HarnessDefinitionRepository()
     profile = _profile()
@@ -320,6 +407,35 @@ def test_repository_direct_role_write_revalidates_runtime_profile(db) -> None:
         repository.upsert_model_profile(session, profile, now_iso())
         with pytest.raises(DefinitionError, match="must allow dsh"):
             repository.upsert_role(session, incompatible_role, now_iso())
+
+
+def test_repository_revalidates_untrusted_model_copies_before_insert(db) -> None:
+    repository = HarnessDefinitionRepository()
+    profile = _profile()
+    role = RoleDefinition(
+        role_key="reader",
+        version=1,
+        prompt_template_version="test.prompt@1",
+        input_schema="test.input@1",
+        output_schema="test.output@1",
+        model_profile=profile.identity(),
+        runtime_kind="in_process_fake",
+    )
+    with session_scope() as session:
+        repository.upsert_model_profile(session, profile, now_iso())
+        forged_role = role.model_copy(update={"runtime_kind": "not-a-runtime"})
+        with pytest.raises(DefinitionError, match="valid typed definition"):
+            repository.upsert_role(session, forged_role, now_iso())
+
+        forged_profile = profile.model_copy(
+            update={
+                "routes": (
+                    profile.routes[0].model_copy(update={"model": "api_key=secret"}),
+                )
+            }
+        )
+        with pytest.raises(DefinitionError, match="valid typed definition"):
+            repository.upsert_model_profile(session, forged_profile, now_iso())
 
 
 def test_concurrent_persistence_is_idempotent(db) -> None:

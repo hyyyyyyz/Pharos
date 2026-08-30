@@ -176,6 +176,39 @@ def test_canonical_json_and_hash_are_stable_across_input_mapping_order() -> None
     assert json.loads(first.canonical_json()) == first.canonical()
 
 
+def test_model_copy_cannot_mint_a_policy_hash_without_revalidation() -> None:
+    snapshot = _snapshot()
+    forged_gates = snapshot.creation_gates.model_copy(update={"experiments_enabled": True})
+    forged = snapshot.model_copy(update={"creation_gates": forged_gates})
+    with pytest.raises(ValidationError, match="experiments_enabled"):
+        forged.canonical()
+    with pytest.raises(ValidationError, match="experiments_enabled"):
+        forged.policy_hash()
+
+    role = {
+        "role_identity": "reader@1",
+        "max_turns": 3,
+        "max_tool_calls": 1,
+        "max_input_chars": 200,
+        "max_output_tokens": 20,
+    }
+    bound = _snapshot(role_limits=(role,), role_bindings=(_role_binding(),))
+    forged_binding = bound.role_bindings[0].model_copy(
+        update={"model_route_identity": "untrusted-route"}
+    )
+    forged = bound.model_copy(update={"role_bindings": (forged_binding,)})
+    with pytest.raises(ValidationError, match="route identity/hash"):
+        forged.canonical()
+
+
+def test_schema_v1_canonical_hash_is_stable() -> None:
+    # Historical v1 fixture: adding fail-closed revalidation must not alter
+    # the canonical field set or its digest.
+    assert _snapshot().snapshot_sha256() == (
+        "90c4929fa60181165da7f66d7d02346fd1c4a2bf6d9aad1c398fe62783b526ca"
+    )
+
+
 def test_snapshot_can_round_trip_only_through_canonical_shape() -> None:
     snapshot = _snapshot()
     restored = RunPolicySnapshot.from_canonical_json(snapshot.canonical_json())
@@ -394,6 +427,25 @@ def test_role_route_hash_is_cryptographically_bound_to_embedded_definition() -> 
     binding["model_route_sha256"] = HASH_B
     with pytest.raises(ValidationError, match="route identity/hash"):
         _snapshot(role_limits=(role,), role_bindings=(binding,))
+
+
+def test_nested_model_copies_are_revalidated_before_policy_binding() -> None:
+    binding = _role_binding()
+    parsed = AgentRoleBinding.model_validate(binding)
+    forged_role = parsed.role_definition.model_copy(update={"runtime_kind": "evil"})
+    forged_profile = parsed.model_profile_definition.model_copy(
+        update={
+            "routes": (
+                parsed.model_profile_definition.routes[0].model_copy(
+                    update={"model": "secret=credential"}
+                ),
+            )
+        }
+    )
+    with pytest.raises(ValidationError, match="embedded role/profile"):
+        AgentRoleBinding.model_validate({**binding, "role_definition": forged_role})
+    with pytest.raises(ValidationError, match="embedded role/profile"):
+        AgentRoleBinding.model_validate({**binding, "model_profile_definition": forged_profile})
 
 
 def test_duplicate_role_limits_fail_closed() -> None:
