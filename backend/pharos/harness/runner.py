@@ -120,6 +120,40 @@ class _LeaseHeartbeat:
     execution_kind: str
 
 
+def _delivery_evidence(value: object) -> DeliveryState | None:
+    """Read an optional delivery phase without trusting delegate exceptions.
+
+    Transport errors carry their phase as an attribute, while old gateway
+    implementations expose it only on the handle.  The runner accepts both
+    forms, but a malformed property is merely missing evidence: it must never
+    turn a definitely unsent call into a fabricated success.
+    """
+    try:
+        candidate = getattr(value, "delivery_state", None)
+    except BaseException:  # noqa: BLE001 -- optional diagnostic seam
+        return None
+    return candidate if isinstance(candidate, DeliveryState) else None
+
+
+def _merge_delivery_evidence(
+    current: DeliveryState, candidate: DeliveryState | None
+) -> DeliveryState:
+    """Keep the most progressed phase observed by any lifecycle boundary."""
+    if candidate is None:
+        return current
+    rank = {
+        DeliveryState.NOT_STARTED: 0,
+        DeliveryState.UNKNOWN: 1,
+        DeliveryState.SENT: 2,
+        DeliveryState.ACKNOWLEDGED: 3,
+        # Reconciled is not valid as live gateway evidence, but retaining it
+        # here lets the terminal classifier fail closed if a custom adapter
+        # leaks a post-reconciliation phase.
+        DeliveryState.RECONCILED: 4,
+    }
+    return candidate if rank[candidate] > rank[current] else current
+
+
 @dataclass
 class StepExecutor:
     """What the runner needs to execute claimed steps."""
@@ -1827,6 +1861,15 @@ class HarnessRunner:
                         if call_error is None:
                             call_error = error
 
+                    # A transport-backed handle normally mirrors this phase
+                    # already.  Keep the error attribute as a compatibility
+                    # seam for adapters which expose delivery only on the
+                    # raised exception (and for cleanup errors that discover
+                    # a phase while closing).
+                    delivery_state = _merge_delivery_evidence(
+                        delivery_state, _delivery_evidence(call_error)
+                    )
+
             close_error: BaseException | None = None
             if handle is not None:
                 try:
@@ -1835,14 +1878,49 @@ class HarnessRunner:
                     handle.close()
                 except BaseException as error:
                     close_error = error
+                    delivery_state = _merge_delivery_evidence(
+                        delivery_state, _delivery_evidence(error)
+                    )
+                    # Cleanup may be the boundary at which a transport
+                    # reports its final phase (for example, a late receipt
+                    # observed while draining the child).  Sample the handle
+                    # after close as well as before it.
+                    delivery_state = _merge_delivery_evidence(
+                        delivery_state, _delivery_evidence(handle)
+                    )
                     # A failed close is not proof that a subprocess/process
                     # group is gone. Keep the exact handle visible and fence
                     # out a successor until cleanup is proved or reconciled.
                     self._mark_cleanup_failed(claimed.attempt_id, handle)
                 else:
+                    delivery_state = _merge_delivery_evidence(
+                        delivery_state, _delivery_evidence(handle)
+                    )
                     # Remove only after successful cleanup; identity fencing
                     # prevents a late callback unregistering a successor.
                     self._unregister_handle(claimed.attempt_id, handle)
+            # The handle keeps both lifecycle failures in memory.  Read them
+            # after close as well so custom gateways cannot hide a call error
+            # behind cleanup or lose delivery evidence attached by cleanup.
+            if handle is not None:
+                try:
+                    retained_call_error = getattr(handle, "call_error", None)
+                except BaseException:  # noqa: BLE001 -- optional seam
+                    retained_call_error = None
+                try:
+                    retained_close_error = getattr(handle, "close_error", None)
+                except BaseException:  # noqa: BLE001 -- optional seam
+                    retained_close_error = None
+                if call_error is None and isinstance(retained_call_error, BaseException):
+                    call_error = retained_call_error
+                if close_error is None and isinstance(retained_close_error, BaseException):
+                    close_error = retained_close_error
+                delivery_state = _merge_delivery_evidence(
+                    delivery_state, _delivery_evidence(retained_call_error)
+                )
+                delivery_state = _merge_delivery_evidence(
+                    delivery_state, _delivery_evidence(retained_close_error)
+                )
         finally:
             # The guard spans factory.open, complete and close, including all
             # typed failures and process-control exceptions. Renew once more
@@ -1951,6 +2029,8 @@ class HarnessRunner:
             typed_class = (
                 call_error.error_class
                 if isinstance(call_error, GatewayError)
+                else AttemptErrorClass.timeout
+                if isinstance(call_error, TimeoutError)
                 else AttemptErrorClass.bug
             )
             delivery_unknown = (
@@ -1960,23 +2040,40 @@ class HarnessRunner:
                 or typed_class is AttemptErrorClass.indeterminate
             )
             if delivery_unknown:
-                # The request may have crossed the provider boundary.  Do not
-                # release or settle the reservation: reconciliation owns it.
-                self._finish_gateway_indeterminate(
-                    claimed=claimed,
-                    delivery_state=(
-                        delivery_state
-                        if delivery_state
-                        in {
-                            DeliveryState.UNKNOWN,
-                            DeliveryState.SENT,
-                            DeliveryState.ACKNOWLEDGED,
-                        }
-                        else DeliveryState.UNKNOWN
-                    ),
-                    child_reaped=cleanup_proved_reap,
-                    now_us=now,
-                )
+                # The request may have crossed the provider boundary. Usually
+                # do not release or settle the reservation: reconciliation
+                # owns it. The one exception is a typed NOT_STARTED phase
+                # paired with a failed local close (handled below).
+                if (
+                    close_error is not None
+                    and delivery_state is DeliveryState.NOT_STARTED
+                    and not completion_succeeded
+                ):
+                    # A typed NOT_STARTED phase safely releases provider
+                    # spend, but a failed close cannot prove the local child
+                    # is gone.  Keep the Attempt/Step indeterminate and leave
+                    # any child PID intact for cleanup reconciliation.
+                    self._finish_gateway_unsent_cleanup_failure(
+                        claimed=claimed,
+                        reservation_id=reservation or "",
+                        now_us=now,
+                    )
+                else:
+                    self._finish_gateway_indeterminate(
+                        claimed=claimed,
+                        delivery_state=(
+                            delivery_state
+                            if delivery_state
+                            in {
+                                DeliveryState.UNKNOWN,
+                                DeliveryState.SENT,
+                                DeliveryState.ACKNOWLEDGED,
+                            }
+                            else DeliveryState.UNKNOWN
+                        ),
+                        child_reaped=cleanup_proved_reap,
+                        now_us=now,
+                    )
             else:
                 self._finish_agent_failure(
                     claimed=claimed,
@@ -2578,6 +2675,48 @@ class HarnessRunner:
                     **({"child_pid": None} if child_reaped else {}),
                 },
                 step_values={"error_code": "external_outcome_unknown"},
+            )
+
+    def _finish_gateway_unsent_cleanup_failure(
+        self,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str,
+        now_us: int,
+    ) -> None:
+        """Release a proven-unsent reserve while retaining a cleanup fence.
+
+        ``NOT_STARTED`` is enough evidence that no provider spend occurred,
+        but a failed close is not evidence that a child process was reaped.
+        Keep the durable outcome indeterminate (and any child PID untouched)
+        so cleanup reconciliation cannot be mistaken for a normal failure.
+        """
+        with session_scope() as session:
+            self._release_reservation(
+                session,
+                claimed=claimed,
+                reservation_id=reservation_id,
+                now_us=now_us,
+            )
+            self.state.finish_attempt_cas(
+                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.indeterminate,
+                now_us=now_us,
+                attempt_values={
+                    "delivery_state": DeliveryState.NOT_STARTED.value,
+                    "external_outcome": "runtime_cleanup_required",
+                    "error_class": AttemptErrorClass.indeterminate.value,
+                    "error_message": "runtime cleanup requires operator reconciliation",
+                },
+                step_values={"error_code": "runtime_cleanup_required"},
             )
 
     def _finish_gateway_indeterminate_with_usage(

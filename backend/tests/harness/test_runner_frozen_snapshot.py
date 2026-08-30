@@ -997,6 +997,156 @@ def test_factory_open_failure_releases_usage_without_registering_a_handle(app, o
     assert totals["released_reservations"] == totals["reserved_reservations"]
 
 
+def test_call_error_delivery_phase_is_authoritative_over_stale_handle_phase(app, owner) -> None:
+    """An adapter may expose delivery evidence only on its raised error."""
+    run, claimed = _claim_agent(app, owner, "error-only-delivery-phase")
+
+    class ErrorOnlyPhaseHandle:
+        # This intentionally remains at the default phase.  The raised
+        # transport error is the only delivery evidence available to the
+        # runner, as in older adapter implementations.
+        delivery_state = DeliveryState.NOT_STARTED
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            error = GatewayError("provider outcome is unknown")
+            error.delivery_state = DeliveryState.UNKNOWN
+            raise error
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class ErrorOnlyPhaseFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return ErrorOnlyPhaseHandle(context)
+
+    app.executor.gateway_factory = ErrorOnlyPhaseFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
+def test_cleanup_error_delivery_phase_is_retained_when_call_was_unsent(app, owner) -> None:
+    """Cleanup can discover that an apparently unsent call crossed delivery."""
+    run, claimed = _claim_agent(app, owner, "cleanup-only-delivery-phase")
+
+    class CleanupPhaseError(RuntimeError):
+        delivery_state = DeliveryState.UNKNOWN
+
+    class CleanupOnlyPhaseHandle:
+        delivery_state = DeliveryState.NOT_STARTED
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            raise GatewayError("provider failed before delivery")
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise CleanupPhaseError("cleanup could not prove delivery boundary")
+
+    class CleanupOnlyPhaseFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return CleanupOnlyPhaseHandle(context)
+
+    app.executor.gateway_factory = CleanupOnlyPhaseFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+    assert app.runner.cleanup_failed_attempt_ids == (claimed.attempt_id,)
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
+def test_unsent_call_releases_usage_but_cleanup_failure_stays_indeterminate(app, owner) -> None:
+    """NOT_STARTED avoids spend, while failed cleanup retains reconciliation."""
+    run, claimed = _claim_agent(app, owner, "unsent-cleanup-failure")
+
+    class UnsentCleanupFailureHandle:
+        delivery_state = DeliveryState.NOT_STARTED
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            raise GatewayError("provider was not invoked")
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise RuntimeError("private directory cleanup failed")
+
+    class UnsentCleanupFailureFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return UnsentCleanupFailureHandle(context)
+
+    app.executor.gateway_factory = UnsentCleanupFailureFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.NOT_STARTED.value
+    assert attempt["external_outcome"] == "runtime_cleanup_required"
+    assert app.runner.cleanup_failed_attempt_ids == (claimed.attempt_id,)
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == totals["reserved_reservations"]
+    assert totals["pending_reservations"] == 0
+
+
+def test_delivery_phase_discovered_by_clean_close_is_not_lost(app, owner) -> None:
+    """Some transports publish their final delivery observation while closing."""
+    run, claimed = _claim_agent(app, owner, "close-discovers-delivery")
+
+    class CloseDiscoversPhaseHandle:
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+            self.delivery_state = DeliveryState.NOT_STARTED
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            raise GatewayError("provider outcome is unknown")
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.delivery_state = DeliveryState.UNKNOWN
+
+    class CloseDiscoversPhaseFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return CloseDiscoversPhaseHandle(context)
+
+    app.executor.gateway_factory = CloseDiscoversPhaseFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
 def test_explicit_none_result_is_indeterminate_without_losing_usage(app, owner) -> None:
     app.fake_model.script = [None]
     run, claimed = _claim_agent(app, owner, "explicit-none-result")
