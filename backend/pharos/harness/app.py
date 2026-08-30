@@ -36,7 +36,13 @@ from pharos.harness.events import EventStore
 from pharos.harness.fakes import FakeClock, FakeModel
 from pharos.harness.model_gateway import FakeModelGateway
 from pharos.harness.registry import Registry
-from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope, now_iso
+from pharos.harness.repository import (
+    HarnessConfigService,
+    HarnessDefinitionRepository,
+    HarnessRunRepository,
+    Scope,
+    now_iso,
+)
 from pharos.harness.runner import AgentOutputContract, HarnessRunner, StepExecutor
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import steps
@@ -88,6 +94,7 @@ class HarnessApp:
         self.registry.register(canary_workflow())
         self.registry.register(canary_dsh_workflow())
         self.registry.compile()
+        self.definition_repository = HarnessDefinitionRepository()
         agent_model_routes: dict[str, tuple[str, str]] = {}
         for role in roles:
             if role.identity() == "canary_actor@1" and role.model_profile == "canary":
@@ -158,11 +165,14 @@ class HarnessApp:
             return snapshot
 
     def _store_definitions(self, session) -> None:  # noqa: ANN001
-        from pharos.harness.repository import HarnessWorkflowStore, now_iso
-
-        store = HarnessWorkflowStore()
+        created_at = now_iso()
         for workflow in self.registry.all_workflows():
-            store.upsert(session, workflow, now_iso())
+            self.definition_repository.persist_workflow_binding(
+                session,
+                registry=self.registry,
+                workflow=workflow,
+                now=created_at,
+            )
 
     def current_snapshot(self) -> HarnessConfigSnapshot:
         with session_scope() as session:

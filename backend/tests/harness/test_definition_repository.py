@@ -10,6 +10,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 from pharos.db.session import session_scope
+from pharos.harness.app import HarnessApp
 from pharos.harness.contracts import ConfigIntegrityError, DefinitionError, StaleConfigError
 from pharos.harness.definitions import (
     CapabilityDefinition,
@@ -22,6 +23,14 @@ from pharos.harness.definitions import (
 )
 from pharos.harness.registry import CompiledWorkflowBinding, Registry
 from pharos.harness.repository import HarnessDefinitionRepository, now_iso
+from pharos.harness.tables import (
+    capability_versions,
+    model_profile_versions,
+    role_versions,
+    workflow_definition_bindings,
+    workflow_versions,
+)
+from sqlalchemy import func, select
 
 
 def _capability(key: str) -> CapabilityDefinition:
@@ -171,6 +180,37 @@ def test_repository_persists_idempotently_and_rejects_conflict(db) -> None:
         changed = workflow.model_copy(update={"max_parallel_steps": 8})
         with pytest.raises(StaleConfigError):
             repository.upsert_workflow(session, changed, now_iso())
+
+
+def test_bootstrap_persists_every_registered_definition_binding(db) -> None:
+    app = HarnessApp()
+    app.ensure_bootstrapped()
+    app.ensure_bootstrapped()
+
+    with session_scope() as session:
+        for workflow in app.registry.all_workflows():
+            binding = app.registry.compile_workflow_binding(workflow.identity())
+            assert app.definition_repository.get_binding(
+                session, binding.binding_sha256
+            ) is not None
+
+        counts = {
+            table.name: session.execute(select(func.count()).select_from(table)).scalar_one()
+            for table in (
+                workflow_versions,
+                workflow_definition_bindings,
+                model_profile_versions,
+                role_versions,
+                capability_versions,
+            )
+        }
+    assert counts == {
+        "harness_workflow_versions": 2,
+        "harness_workflow_definition_bindings": 2,
+        "harness_model_profile_versions": 2,
+        "harness_role_versions": 2,
+        "harness_capability_versions": 3,
+    }
 
 
 def test_canonical_json_rejects_non_finite_numbers() -> None:
