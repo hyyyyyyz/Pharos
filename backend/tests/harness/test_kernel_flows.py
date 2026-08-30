@@ -19,6 +19,7 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import ClaimedStep
 from pharos.harness.fakes import FakeModel, ModelResult
+from pharos.harness.model_gateway import FakeGatewayFactory
 from pharos.harness.repository import Scope
 from pharos.harness.tables import artifacts, attempts
 from pharos.harness.usage import UsageLedger
@@ -312,21 +313,20 @@ def test_agent_indeterminate_gateway_marks_run_indeterminate(app, owner):
 
 def test_agent_invalid_typed_output_fails_without_artifact(app, owner):
     enable_canary(app, agent_steps=True)
-    app.gateway = app.gateway.__class__(
-        FakeModel(
-            clock=app.clock,
-            script=[
-                ModelResult(
-                    output={
-                        "ok": False,
-                        "workflow": "harness.canary",
-                        "step": "actor_turn",
-                    }
-                )
-            ],
-        )
+    app.fake_model = FakeModel(
+        clock=app.clock,
+        script=[
+            ModelResult(
+                output={
+                    "ok": False,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                }
+            )
+        ],
     )
-    app.executor.gateway = app.gateway
+    app.gateway_factory = FakeGatewayFactory(app.fake_model)
+    app.executor.gateway_factory = app.gateway_factory
     run = app.create_run(
         scope=owner,
         workflow_key="harness.canary",
@@ -356,23 +356,22 @@ def test_agent_invalid_typed_output_fails_without_artifact(app, owner):
 def test_agent_nonterminal_finish_is_rejected_without_persisting_payload(app, owner):
     enable_canary(app, agent_steps=True)
     private_marker = "PRIVATE-PAPER-TEXT-MUST-NOT-ENTER-ERRORS"
-    app.gateway = app.gateway.__class__(
-        FakeModel(
-            clock=app.clock,
-            script=[
-                ModelResult(
-                    finish_reason="max-tokens",
-                    output={
-                        "ok": True,
-                        "workflow": "harness.canary",
-                        "step": "actor_turn",
-                        "unexpected": private_marker,
-                    },
-                )
-            ],
-        )
+    app.fake_model = FakeModel(
+        clock=app.clock,
+        script=[
+            ModelResult(
+                finish_reason="max-tokens",
+                output={
+                    "ok": True,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                    "unexpected": private_marker,
+                },
+            )
+        ],
     )
-    app.executor.gateway = app.gateway
+    app.gateway_factory = FakeGatewayFactory(app.fake_model)
+    app.executor.gateway_factory = app.gateway_factory
     run = app.create_run(
         scope=owner,
         workflow_key="harness.canary",

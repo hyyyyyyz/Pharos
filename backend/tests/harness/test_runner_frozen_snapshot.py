@@ -13,10 +13,11 @@ from typing import Any
 
 import pytest
 from pharos.db.session import session_scope
-from pharos.harness.contracts import AttemptState, StepState
+from pharos.harness.contracts import AttemptState, GatewayError, StepState
 from pharos.harness.definitions import RetryPolicy
 from pharos.harness.execution_snapshots import MissingExecutionSnapshotError
 from pharos.harness.fakes import ModelResult
+from pharos.harness.model_gateway import FakeGatewayFactory, LegacyGatewayFactory
 from pharos.harness.repository import Scope
 from pharos.harness.tables import artifacts, attempts, steps, usage_events
 from pharos.harness.workflows.canary import canary_input
@@ -124,10 +125,10 @@ def test_missing_attempt_snapshot_fails_closed_without_side_effects(
     # of disabling those guards in a test.
     monkeypatch.setattr(app.dispatcher.execution_snapshots, "read_attempt", missing_snapshot)
 
-    gateway_calls = len(app.gateway._model.calls)  # noqa: SLF001
+    gateway_calls = len(app.fake_model.calls)
     app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
     assert capability.actions == []
-    assert len(app.gateway._model.calls) == gateway_calls  # noqa: SLF001
+    assert len(app.fake_model.calls) == gateway_calls
     with session_scope() as session:
         attempt = session.execute(
             select(attempts).where(attempts.c.id == claimed.attempt_id)
@@ -172,6 +173,224 @@ def _claim_agent(app, owner: Scope, key: str):
     return run, _claim_target(app, owner, run["id"], "actor_turn")
 
 
+class SpyHandle:
+    def __init__(self, inner) -> None:  # noqa: ANN001 - protocol spy
+        self.inner = inner
+        self.context = inner.context
+        self.complete_calls = 0
+        self.cancel_calls = 0
+        self.close_calls = 0
+
+    def complete(self, payload):  # noqa: ANN001 - protocol spy
+        self.complete_calls += 1
+        return self.inner.complete(payload)
+
+    def cancel(self) -> None:
+        self.cancel_calls += 1
+        self.inner.cancel()
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self.inner.close()
+
+
+class SpyFactory:
+    def __init__(self, source) -> None:  # noqa: ANN001 - protocol spy
+        self.inner = FakeGatewayFactory(source)
+        self.handles: list[SpyHandle] = []
+
+    def open(self, context):  # noqa: ANN001 - protocol spy
+        handle = SpyHandle(self.inner.open(context))
+        self.handles.append(handle)
+        return handle
+
+
+def test_agent_opens_one_scoped_handle_with_frozen_context_and_closes_once(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "per-attempt-context")
+    factory = SpyFactory(app.fake_model)
+    app.executor.gateway_factory = factory
+
+    start = app.clock.utc_epoch_us()
+    app.runner._execute_one(claimed=claimed, now_us=start)  # noqa: SLF001
+
+    assert len(factory.handles) == 1
+    handle = factory.handles[0]
+    context = handle.context
+    assert context.run_id == run["id"]
+    assert context.step_id == claimed.step_id
+    assert context.attempt_id == claimed.attempt_id
+    assert context.attempt_no == claimed.attempt_no
+    assert context.scope_type == owner.scope_type.value
+    assert context.scope_id == owner.scope_id
+    assert context.lease_owner == claimed.lease_owner
+    assert context.workflow_key == "harness.canary"
+    assert context.workflow_version == 1
+    assert (
+        context.workflow_definition_sha256
+        == claimed.attempt_snapshot.policy_snapshot.workflow_definition_sha256
+    )
+    assert context.definition_binding_sha256 == claimed.attempt_snapshot.definition_binding_sha256
+    assert context.run_policy_sha256 == claimed.attempt_snapshot.run_policy_sha256
+    assert context.runtime_kind == claimed.attempt_snapshot.runtime_kind
+    assert (
+        context.role_definition_sha256
+        == claimed.attempt_snapshot.executor_role_definition_sha256
+    )
+    assert context.model_profile_identity == claimed.attempt_snapshot.model_profile_identity
+    assert context.model_profile_sha256 == claimed.attempt_snapshot.model_profile_sha256
+    assert context.model_route_key == claimed.attempt_snapshot.model_route_key
+    assert context.model_route_sha256 == claimed.attempt_snapshot.model_route_sha256
+    assert context.usage_source == claimed.attempt_snapshot.usage_source
+    assert context.input_sha256 == run["input_sha256"]
+    assert context.role == claimed.attempt_snapshot.executor_identity
+    assert context.provider == claimed.attempt_snapshot.provider
+    assert context.model == claimed.attempt_snapshot.model
+    assert context.deadline_at_us == start + 30 * 1_000_000
+    assert handle.complete_calls == 1
+    assert handle.close_calls == 1
+    assert app.runner.active_attempt_count == 0
+
+
+def test_runner_cancel_active_attempt_targets_only_exact_handle(app) -> None:
+    factory = SpyFactory(app.fake_model)
+    first = SpyHandle(factory.inner.open(_context_for_test("attempt-a")))
+    second = SpyHandle(factory.inner.open(_context_for_test("attempt-b")))
+    app.runner._register_handle("attempt-a", first)  # noqa: SLF001
+    app.runner._register_handle("attempt-b", second)  # noqa: SLF001
+
+    assert app.runner.cancel_active_attempt("attempt-a") is True
+    assert first.cancel_calls == 1
+    assert second.cancel_calls == 0
+    assert app.runner.active_attempt_ids == ("attempt-a", "attempt-b")
+    assert app.runner.cancel_active_attempt("missing") is False
+    app.runner._unregister_handle("attempt-a", first)  # noqa: SLF001
+    app.runner._unregister_handle("attempt-b", second)  # noqa: SLF001
+    first.close()
+    second.close()
+
+
+def test_runner_cleans_up_when_complete_and_close_both_fail(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "per-attempt-double-failure")
+
+    class CompleteAndCloseFailure:
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            raise GatewayError("provider unavailable")
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise RuntimeError("reap failed")
+
+    app.executor.gateway_factory = LegacyGatewayFactory(
+        gateway_factory=CompleteAndCloseFailure
+    )
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    assert app.runner.active_attempt_count == 0
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == totals["reserved_reservations"]
+
+
+def test_cleanup_failure_after_a_result_blocks_artifact_publication(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "per-attempt-cleanup-before-publish")
+
+    class ResultThenCloseFailure:
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            return ModelResult(
+                output={
+                    "ok": True,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                }
+            )
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise RuntimeError("reap failed")
+
+    app.executor.gateway_factory = LegacyGatewayFactory(
+        gateway_factory=ResultThenCloseFailure
+    )
+    app.runner._execute_one(  # noqa: SLF001 -- cleanup/publication boundary test
+        claimed=claimed,
+        now_us=app.clock.utc_epoch_us(),
+    )
+
+    assert app.runner.active_attempt_count == 0
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
+    with session_scope() as session:
+        assert (
+            session.execute(
+                select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
+            ).all()
+            == []
+        )
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == totals["reserved_reservations"]
+
+
+def test_factory_open_failure_releases_usage_without_registering_a_handle(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "per-attempt-open-failure")
+
+    class OpenFailure:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            raise RuntimeError("runtime did not start")
+
+    app.executor.gateway_factory = OpenFailure()
+    app.runner._execute_one(  # noqa: SLF001 -- factory failure boundary test
+        claimed=claimed,
+        now_us=app.clock.utc_epoch_us(),
+    )
+
+    assert app.runner.active_attempt_count == 0
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
+    with session_scope() as session:
+        assert (
+            session.execute(
+                select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
+            ).all()
+            == []
+        )
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == totals["reserved_reservations"]
+
+
+def _context_for_test(attempt_id: str):
+    from pharos.harness.model_gateway import AttemptContext
+
+    return AttemptContext(
+        run_id="run-test",
+        step_id="step-test",
+        attempt_id=attempt_id,
+        attempt_no=1,
+        scope_type="user",
+        scope_id="owner-test",
+        lease_owner="worker-test",
+        workflow_key="harness.canary",
+        workflow_version=1,
+        workflow_definition_sha256="a" * 64,
+        definition_binding_sha256="b" * 64,
+        run_policy_sha256="c" * 64,
+        role="canary_actor@1",
+        runtime_kind="in_process_fake",
+        role_definition_sha256="d" * 64,
+        model_profile_identity="canary_profile@1",
+        model_profile_sha256="e" * 64,
+        model_route_key="default",
+        model_route_sha256="f" * 64,
+        usage_source="system_shared",
+        input_sha256="1" * 64,
+        deadline_at_us=1_700_000_001_000_000,
+        provider="fake",
+        model="canary",
+    )
+
+
 @pytest.mark.parametrize(
     "field,value",
     [("schema_name", "forged.schema"), ("prompt_version", "forged-prompt@9")],
@@ -186,9 +405,9 @@ def test_agent_contract_mismatch_fails_before_usage_or_gateway(
     )
     original = app.executor.agent_output_contracts[key]
     app.executor.agent_output_contracts[key] = replace(original, **{field: value})
-    calls_before = len(app.gateway._model.calls)  # noqa: SLF001
+    calls_before = len(app.fake_model.calls)
     app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
-    assert len(app.gateway._model.calls) == calls_before  # noqa: SLF001
+    assert len(app.fake_model.calls) == calls_before
     assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
     with session_scope() as session:
         assert (
@@ -208,9 +427,9 @@ def test_agent_contract_key_is_role_hash_bound_and_route_provenance_is_frozen(
     original = app.executor.agent_output_contracts[correct_key]
     app.executor.agent_output_contracts.pop(correct_key)
     app.executor.agent_output_contracts[(snapshot.executor_identity, "0" * 64)] = original
-    calls_before = len(app.gateway._model.calls)  # noqa: SLF001
+    calls_before = len(app.fake_model.calls)
     app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
-    assert len(app.gateway._model.calls) == calls_before  # noqa: SLF001
+    assert len(app.fake_model.calls) == calls_before
     assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
     app.executor.agent_output_contracts.pop((snapshot.executor_identity, "0" * 64))
     app.executor.agent_output_contracts[correct_key] = original
@@ -341,7 +560,7 @@ def test_dsh_snapshot_never_falls_back_to_fake_gateway(app, owner: Scope) -> Non
         if row["definition_step_key"] == "actor_turn"
     )
     assert actor["state"] == StepState.waiting_for_input.value
-    assert len(app.gateway._model.calls) == 0  # noqa: SLF001
+    assert len(app.fake_model.calls) == 0
 
 
 def test_frozen_step_view_returns_copies_not_mutable_policy_authority(app, owner: Scope) -> None:

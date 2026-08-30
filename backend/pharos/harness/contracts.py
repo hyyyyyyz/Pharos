@@ -89,6 +89,16 @@ class AttemptState(StrEnum):
     indeterminate = "indeterminate"
 
 
+class DeliveryState(StrEnum):
+    """Durable evidence for one Attempt's provider-delivery boundary."""
+
+    NOT_STARTED = "not_started"
+    UNKNOWN = "unknown"
+    SENT = "sent"
+    ACKNOWLEDGED = "acknowledged"
+    RECONCILED = "reconciled"
+
+
 ATTEMPT_TERMINAL_STATES = frozenset(
     {
         AttemptState.succeeded,

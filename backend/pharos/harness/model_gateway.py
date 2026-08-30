@@ -1,21 +1,24 @@
 """Provider-neutral model access and the per-Attempt gateway seam.
 
-The H1 runner still consumes :class:`ModelGateway` directly. The factory and
-handle types below are an additive seam for the next execution path: opening a
-handle binds it to one immutable Attempt and gives that Attempt an independent
-lifecycle. In particular, a fake handle must not share the fake model's
-``cancelled`` bit with another Attempt.
+The runner opens one handle for each Attempt.  A handle owns cancellation and
+completion state while a factory may share only deterministic fake-script
+cursor/observability state; no model call is ever routed through a process-wide
+cancel flag.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from threading import Condition, Lock
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
+from pharos.harness.contracts import DeliveryState, GatewayError
 from pharos.harness.fakes import FakeModel, ModelResult
+
+_MISSING_SCRIPT_ENTRY = object()
 
 
 class ModelGateway(Protocol):
@@ -55,7 +58,19 @@ class AttemptContext:
     scope_id: str
     lease_owner: str
     workflow_key: str
+    workflow_version: int
+    workflow_definition_sha256: str
+    definition_binding_sha256: str
+    run_policy_sha256: str
     role: str
+    runtime_kind: str
+    role_definition_sha256: str
+    model_profile_identity: str
+    model_profile_sha256: str
+    model_route_key: str
+    model_route_sha256: str
+    usage_source: str
+    input_sha256: str
     deadline_at_us: int
     provider: str
     model: str
@@ -69,6 +84,8 @@ class AttemptContext:
             "lease_owner",
             "workflow_key",
             "role",
+            "model_profile_identity",
+            "model_route_key",
             "provider",
             "model",
         ):
@@ -79,8 +96,26 @@ class AttemptContext:
             raise ValueError("scope_type must be user or system")
         if type(self.attempt_no) is not int or self.attempt_no < 1:
             raise ValueError("attempt_no must be a positive integer")
+        if type(self.workflow_version) is not int or self.workflow_version < 1:
+            raise ValueError("workflow_version must be a positive integer")
         if type(self.deadline_at_us) is not int or self.deadline_at_us <= 0:
             raise ValueError("deadline_at_us must be a positive epoch microsecond integer")
+        for name in (
+            "workflow_definition_sha256",
+            "definition_binding_sha256",
+            "run_policy_sha256",
+            "role_definition_sha256",
+            "model_profile_sha256",
+            "model_route_sha256",
+            "input_sha256",
+        ):
+            value = getattr(self, name)
+            if type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+        if self.runtime_kind not in {"in_process_fake", "dsh"}:
+            raise ValueError("runtime_kind is not supported")
+        if self.usage_source not in {"official", "byok", "system_shared"}:
+            raise ValueError("usage_source is not supported")
 
 
 @runtime_checkable
@@ -93,6 +128,9 @@ class GatewayHandle(Protocol):
     """
 
     context: AttemptContext
+
+    @property
+    def delivery_state(self) -> DeliveryState: ...
 
     def complete(self, payload: dict) -> ModelResult: ...
     def cancel(self) -> None: ...
@@ -138,6 +176,7 @@ class _AttemptHandle:
         self._active_operations = 0
         self._close_finished = False
         self._close_error: BaseException | None = None
+        self._delivery_state = DeliveryState.NOT_STARTED
 
     @property
     def state(self) -> str:
@@ -148,6 +187,12 @@ class _AttemptHandle:
     def close_count(self) -> int:
         with self._condition:
             return self._close_count
+
+    @property
+    def delivery_state(self) -> DeliveryState:
+        """A lock-protected, read-only delivery observation."""
+        with self._condition:
+            return self._delivery_state
 
     def _require_open(self, operation: str) -> None:
         if self._state is not _HandleState.OPEN:
@@ -161,6 +206,9 @@ class _AttemptHandle:
         with self._condition:
             self._require_open("complete")
             self._state = _HandleState.COMPLETING
+            # Cross the delivery boundary before entering delegate code.  A
+            # raised error therefore cannot be misread as definitely unsent.
+            self._delivery_state = DeliveryState.SENT
             self._active_operations += 1
         try:
             result = self._delegate.complete(payload)
@@ -192,6 +240,7 @@ class _AttemptHandle:
                     f"complete returned after handle became {self._state.value}"
                 )
             self._state = _HandleState.COMPLETED
+            self._delivery_state = DeliveryState.ACKNOWLEDGED
             self._condition.notify_all()
             return result
 
@@ -265,9 +314,9 @@ class _AttemptHandle:
 class FakeGatewayFactory:
     """Offline factory adapting the current :class:`FakeModelGateway`.
 
-    Each ``open`` clones the deterministic script and clock but owns a new
-    ``cancelled`` flag and call cursor, so a cancelled Attempt cannot poison a
-    sibling.
+    Each ``open`` owns a new ``cancelled`` flag.  The script cursor remains
+    shared and locked so opening a second handle does not replay script entry
+    zero; calls remain visible on the source ``FakeModel`` for existing tests.
     """
 
     def __init__(self, gateway: FakeModel | ModelGateway) -> None:
@@ -280,6 +329,7 @@ class FakeGatewayFactory:
         self._source_model = source_model
         self._open_count = 0
         self._open_count_lock = Lock()
+        self._script_lock = Lock()
 
     @property
     def open_count(self) -> int:
@@ -288,14 +338,64 @@ class FakeGatewayFactory:
 
     def open(self, context: AttemptContext) -> GatewayHandle:
         _validate_context(context)
-        model = FakeModel(clock=self._source_model.clock, script=self._source_model.script)
         with self._open_count_lock:
             self._open_count += 1
         return _AttemptHandle(
             context,
-            FakeModelGateway(model),
+            _FactoryFakeDelegate(self._source_model, self._script_lock),
             isolated_delegate=True,
         )
+
+
+class _FactoryFakeDelegate:
+    """One independently cancellable view over a shared deterministic model.
+
+    ``FakeModel.complete`` intentionally keeps its old public behaviour.  The
+    factory cannot call it directly because its global ``cancelled`` field is
+    exactly the sibling-cancellation bug this seam is meant to remove.  This
+    small delegate reproduces its offline script semantics while serialising
+    script index allocation and recording aggregate calls on the source model.
+    """
+
+    def __init__(self, source: FakeModel, lock: Lock) -> None:
+        self._source = source
+        self._lock = lock
+        self._state_lock = Lock()
+        self.cancelled = False
+
+    def complete(self, payload: dict) -> ModelResult:
+        with self._state_lock:
+            if self.cancelled:
+                raise GatewayError("cancelled")
+        with self._lock:
+            index = len(self._source.calls)
+            self._source.calls.append(payload)
+            script = self._source.script
+            entry = (
+                script[index]
+                if not callable(script) and index < len(script)
+                else _MISSING_SCRIPT_ENTRY
+            )
+            callback = script if callable(script) else None
+        if callback is not None:
+            entry = callback(index, payload)
+        elif entry is _MISSING_SCRIPT_ENTRY:
+            entry = ModelResult(
+                output={
+                    "ok": True,
+                    "workflow": payload.get("workflow"),
+                    "step": payload.get("step"),
+                }
+            )
+        if isinstance(entry, GatewayError):
+            raise entry
+        if isinstance(entry, dict):
+            return ModelResult(**entry)
+        return cast(ModelResult, entry)
+
+    def cancel(self) -> None:
+        with self._state_lock:
+            self.cancelled = True
 
 
 class LegacyGatewayFactory:
@@ -330,6 +430,10 @@ class LegacyGatewayFactory:
         self._gateway_factory = gateway_factory
         self._open_count = 0
         self._open_count_lock = Lock()
+        # Keep references as well as ids.  Retaining the delegate prevents a
+        # later Python object from reusing an id and being mistaken for the
+        # already-open delegate.
+        self._isolated_delegates: dict[int, object] = {}
 
     @property
     def open_count(self) -> int:
@@ -348,6 +452,12 @@ class LegacyGatewayFactory:
             delegate, "cancel"
         ):
             raise TypeError("legacy gateway must implement complete and cancel")
+        if isolated:
+            with self._open_count_lock:
+                delegate_id = id(delegate)
+                if delegate_id in self._isolated_delegates:
+                    raise TypeError("isolated gateway factory reused the same delegate")
+                self._isolated_delegates[delegate_id] = delegate
         with self._open_count_lock:
             self._open_count += 1
         return _AttemptHandle(context, delegate, isolated_delegate=isolated)

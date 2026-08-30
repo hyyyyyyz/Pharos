@@ -35,7 +35,7 @@ from pharos.harness.dispatcher import HarnessDispatcher
 from pharos.harness.events import EventStore
 from pharos.harness.execution_snapshots import ExecutionSnapshotStore
 from pharos.harness.fakes import FakeClock, FakeModel
-from pharos.harness.model_gateway import FakeModelGateway
+from pharos.harness.model_gateway import FakeGatewayFactory
 from pharos.harness.policy_builder import build_run_policy
 from pharos.harness.policy_snapshot import AgentLimits
 from pharos.harness.registry import CompiledWorkflowBinding, Registry
@@ -115,11 +115,14 @@ class HarnessApp:
         self.artifacts = ArtifactStore()
         self.execution_snapshots = ExecutionSnapshotStore()
         self.approvals = ApprovalRepository()
-        self.gateway = FakeModelGateway(fake_model or FakeModel(clock=self.clock))
+        # The fake model is retained as an observable aggregate for offline
+        # tests, while execution receives only a fresh per-Attempt factory.
+        self.fake_model = fake_model or FakeModel(clock=self.clock)
+        self.gateway_factory = FakeGatewayFactory(self.fake_model)
         from pharos.harness.workflows.canary import build_executors
 
         self.executor = StepExecutor(
-            gateway=self.gateway,
+            gateway_factory=self.gateway_factory,
             artifacts=self.artifacts,
             agent_output_contracts={
                 (role.identity(), role.definition_hash()): AgentOutputContract(

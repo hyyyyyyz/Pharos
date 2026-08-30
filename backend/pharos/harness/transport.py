@@ -22,13 +22,13 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol, TypeAlias
 
 from pydantic import ValidationError
 
+from .contracts import DeliveryState
 from .protocol import (
     NOTIFICATION_MODELS,
     REQUEST_METHODS,
@@ -64,21 +64,6 @@ class HarnessTimeoutError(HarnessTransportError, TimeoutError):
 
 class HarnessProcessError(HarnessTransportError):
     """The child exited before a required protocol boundary."""
-
-
-class DeliveryState(StrEnum):
-    """The only values exposed by the Attempt delivery observer.
-
-    ``reconciled`` is included because it is a durable repository state, but
-    this transport never emits it.  In particular, the observer receives no
-    prompt, event, provider response or exception object.
-    """
-
-    NOT_STARTED = "not_started"
-    UNKNOWN = "unknown"
-    SENT = "sent"
-    ACKNOWLEDGED = "acknowledged"
-    RECONCILED = "reconciled"
 
 
 DeliveryObserverResult: TypeAlias = bool | None

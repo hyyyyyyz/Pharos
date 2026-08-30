@@ -11,17 +11,11 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from pharos.harness.contracts import ScopeType
-from pharos.harness.fakes import ModelResult
 
 
 class Clock(Protocol):
     def utc_epoch_us(self) -> int: ...
     def utc_epoch_seconds(self) -> float: ...
-
-
-class ModelGateway(Protocol):
-    def complete(self, payload: dict) -> ModelResult: ...
-    def cancel(self, request_id: str | None) -> None: ...
 
 
 class CapabilityExecutor(Protocol):

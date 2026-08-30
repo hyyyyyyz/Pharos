@@ -12,8 +12,10 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -43,7 +45,7 @@ from pharos.harness.execution_snapshots import (
     SnapshotIntegrityError,
 )
 from pharos.harness.fakes import FakeClock, ModelResult
-from pharos.harness.model_gateway import ModelGateway
+from pharos.harness.model_gateway import AttemptContext, GatewayFactory, GatewayHandle
 from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import attempts, runs, steps
@@ -74,7 +76,7 @@ class AgentOutputContract:
 class StepExecutor:
     """What the runner needs to execute claimed steps."""
 
-    gateway: ModelGateway | None = None
+    gateway_factory: GatewayFactory | None = None
     artifacts: ArtifactStore = field(default_factory=ArtifactStore)
     agent_output_contracts: dict[tuple[str, str], AgentOutputContract] = field(
         default_factory=dict
@@ -101,6 +103,52 @@ class HarnessRunner:
         self.state = executor.state
         self.run_repository = HarnessRunRepository()
         self.step_repository = HarnessStepRepository()
+        # A handle is registered only after ``open`` succeeds and before the
+        # first completion byte is sent.  The registry is intentionally
+        # attempt-scoped: cancellation must never reach a sibling handle.
+        self._active_handles: dict[str, GatewayHandle] = {}
+        self._active_handles_lock = RLock()
+
+    @property
+    def active_attempt_ids(self) -> tuple[str, ...]:
+        """A stable, read-only view for the future cancel coordinator."""
+        with self._active_handles_lock:
+            return tuple(sorted(self._active_handles))
+
+    @property
+    def active_attempt_count(self) -> int:
+        with self._active_handles_lock:
+            return len(self._active_handles)
+
+    def cancel_active_attempt(self, attempt_id: str) -> bool:
+        """Cancel exactly one currently registered Attempt handle.
+
+        The potentially blocking delegate call is made outside the registry
+        lock.  The handle itself serialises cancel versus complete, while the
+        registry lock only protects lookup and sibling isolation.
+        """
+        with self._active_handles_lock:
+            handle = self._active_handles.get(attempt_id)
+        if handle is None:
+            return False
+        try:
+            handle.cancel()
+        except Exception:  # noqa: BLE001 -- terminal/late cancellation is safe
+            return False
+        return True
+
+    def _register_handle(self, attempt_id: str, handle: GatewayHandle) -> None:
+        with self._active_handles_lock:
+            if attempt_id in self._active_handles:
+                raise StateError(f"Attempt {attempt_id} already has an active gateway handle")
+            self._active_handles[attempt_id] = handle
+
+    def _unregister_handle(self, attempt_id: str, handle: GatewayHandle) -> None:
+        with self._active_handles_lock:
+            # Identity comparison is deliberate: a late callback cannot
+            # unregister a successor handle that reused the same Attempt key.
+            if self._active_handles.get(attempt_id) is handle:
+                del self._active_handles[attempt_id]
 
     # ------------------------------------------------------------- activation
 
@@ -603,11 +651,11 @@ class HarnessRunner:
             ):
                 return
 
-        gateway = self.executor.gateway
         # The v2 canary is a claim-only DSH seam in this slice.  Do not route
         # a trusted DSH role through the legacy in-process fake gateway while
         # the actual sidecar adapter is still intentionally absent.
-        if snapshot.runtime_kind == "dsh" or gateway is None:
+        factory = self.executor.gateway_factory
+        if snapshot.runtime_kind == "dsh" or factory is None:
             with session_scope() as session:
                 if not self._claim_is_active(
                     session,
@@ -667,32 +715,86 @@ class HarnessRunner:
                 cost_micros=0,
                 now_us=now_us,
             )
+        handle: GatewayHandle | None = None
+        call_error: BaseException | None = None
         try:
-            result = gateway.complete(
+            context = self._attempt_context(
+                snapshot=snapshot,
+                claimed=claimed,
+                workflow_key=run["workflow_key"],
+                input_sha256=run["input_sha256"],
+                now_us=now_us,
+            )
+            # Opening happens only after the lease/running transition and
+            # reservation.  Registration is immediate, before complete, so a
+            # concurrent cancel coordinator can address this exact Attempt.
+            handle = factory.open(context)
+            if handle.context != context:
+                raise StateError("gateway factory returned a mismatched Attempt context")
+            self._register_handle(claimed.attempt_id, handle)
+            result = handle.complete(
                 {
                     "workflow": run["workflow_key"],
                     "step": claimed.definition_step_key,
                     "input": input,
                 }
             )
-        except GatewayError as error:
-            with session_scope() as session:
-                self.executor.usage.release(
-                    session,
-                    reservation_id=reservation or "",
-                    now_us=self.executor.clock.utc_epoch_us(),
-                )
-            raise error
-        except Exception:  # noqa: BLE001 -- gateway failures are typed below
-            # A non-Gateway exception is a local bug, but it must not strand a
-            # reservation.  Keep the failure terminal and auditable without
-            # persisting exception text that may echo a prompt or credential.
-            log.exception("agent gateway raised an untyped local error")
+        except BaseException as error:
+            # Defer classification until cleanup has completed.  In
+            # particular, cleanup must not hide a typed gateway error.
+            call_error = error
+
+        close_error: BaseException | None = None
+        if handle is not None:
+            try:
+                # Reap/cleanup is part of the Attempt boundary and precedes
+                # validation and Artifact publication.
+                handle.close()
+            except BaseException as error:
+                close_error = error
+            finally:
+                # Remove only after cleanup; identity fencing prevents a late
+                # callback from unregistering a successor handle.
+                self._unregister_handle(claimed.attempt_id, handle)
+
+        if close_error is not None:
+            # Never persist the exception text: a delegate may embed paths,
+            # provider payloads, or credentials.  Cleanup failure still blocks
+            # publication below even when a typed call error takes precedence.
+            log.error(
+                "agent gateway handle cleanup failed for %s (%s)",
+                claimed.attempt_id,
+                type(close_error).__name__,
+            )
+        if call_error is not None:
+            if isinstance(call_error, GatewayError):
+                with session_scope() as session:
+                    self.executor.usage.release(
+                        session,
+                        reservation_id=reservation or "",
+                        now_us=self.executor.clock.utc_epoch_us(),
+                    )
+                raise call_error
+            if not isinstance(call_error, Exception):
+                raise call_error
+            log.error(
+                "agent gateway raised an untyped local error (%s)",
+                type(call_error).__name__,
+            )
             self._finish_agent_failure(
                 claimed=claimed,
                 reservation_id=reservation or "",
                 error_class=AttemptErrorClass.bug,
                 error_message="model gateway raised an unexpected local error",
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+        if close_error is not None:
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.bug,
+                error_message="model gateway handle cleanup failed",
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
@@ -731,6 +833,59 @@ class HarnessRunner:
                 error_message="agent finish transaction failed",
                 now_us=self.executor.clock.utc_epoch_us(),
             )
+
+    def _attempt_context(
+        self,
+        *,
+        snapshot: AttemptDefinitionSnapshot,
+        claimed: ClaimedStep,
+        workflow_key: str,
+        input_sha256: str,
+        now_us: int,
+    ) -> AttemptContext:
+        """Build a strict per-Attempt route/deadline from authenticated data."""
+        if type(now_us) is not int or now_us <= 0:
+            raise SnapshotIntegrityError("agent clock must be a positive epoch microsecond")
+        seconds = snapshot.timeout_seconds
+        if seconds is None:
+            seconds = snapshot.step_definition.budget.wall_seconds
+        if type(seconds) not in (int, float) or isinstance(seconds, bool):
+            raise SnapshotIntegrityError("agent timeout must be a finite positive number")
+        if not math.isfinite(float(seconds)) or float(seconds) <= 0:
+            raise SnapshotIntegrityError("agent timeout must be a finite positive number")
+        duration_us = int(float(seconds) * MICROSECONDS_PER_SECOND)
+        if duration_us < 1:
+            raise SnapshotIntegrityError("agent timeout is below clock precision")
+        deadline_at_us = now_us + duration_us
+        try:
+            return AttemptContext(
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                scope_type=claimed.scope_type,
+                scope_id=claimed.scope_id,
+                lease_owner=claimed.lease_owner,
+                workflow_key=workflow_key,
+                workflow_version=int(snapshot.policy_snapshot.workflow_identity.rsplit("@", 1)[1]),
+                workflow_definition_sha256=snapshot.policy_snapshot.workflow_definition_sha256,
+                definition_binding_sha256=snapshot.definition_binding_sha256,
+                run_policy_sha256=snapshot.run_policy_sha256,
+                role=snapshot.executor_identity,
+                runtime_kind=snapshot.runtime_kind,
+                role_definition_sha256=snapshot.executor_role_definition_sha256 or "",
+                model_profile_identity=snapshot.model_profile_identity or "",
+                model_profile_sha256=snapshot.model_profile_sha256 or "",
+                model_route_key=snapshot.model_route_key or "",
+                model_route_sha256=snapshot.model_route_sha256 or "",
+                usage_source=snapshot.usage_source or "",
+                input_sha256=input_sha256,
+                deadline_at_us=deadline_at_us,
+                provider=snapshot.provider or "",
+                model=snapshot.model or "",
+            )
+        except (TypeError, ValueError) as error:
+            raise SnapshotIntegrityError("agent Attempt context is invalid") from error
 
     def _agent_contract(
         self, snapshot: AttemptDefinitionSnapshot

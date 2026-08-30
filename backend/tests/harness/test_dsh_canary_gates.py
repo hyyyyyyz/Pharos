@@ -81,7 +81,7 @@ def test_v1_fake_role_executes_without_runtime_gate(app: HarnessApp, owner: Scop
     )
     # The broad tick reaches the actor and uses the existing fake gateway.
     assert actor["state"] == StepState.succeeded.value
-    assert len(app.gateway._model.calls) == 1  # noqa: SLF001 -- fake contract assertion
+    assert len(app.fake_model.calls) == 1
 
 
 def test_v2_dsh_role_requires_runtime_gate_at_creation(
@@ -130,7 +130,7 @@ def test_v2_claim_is_allowed_after_gate_but_does_not_use_fake_gateway(
     assert actor["lease_owner"] is None
     assert actor["lease_expires_at"] is None
     assert app.get_run(scope=owner, run_id=run["id"])["state"] == "waiting_for_input"
-    assert len(app.gateway._model.calls) == 0  # noqa: SLF001 -- no DSH fallback
+    assert len(app.fake_model.calls) == 0
     with session_scope() as session:
         attempt = session.execute(
             attempts.select().where(attempts.c.step_id == actor["id"])
