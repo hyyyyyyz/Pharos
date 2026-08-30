@@ -743,6 +743,143 @@ class HarnessStateService:
         )
         return True
 
+    def acquire_capability_publication_cas(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run_id: str,
+        step_id: str,
+        attempt_id: str,
+        attempt_no: int,
+        lease_owner: str,
+        input_sha256: str,
+        output_sha256: str,
+        external_outcome: str,
+        now_us: int,
+    ) -> bool:
+        """Fence one typed capability result before its Artifact is inserted.
+
+        This is the deterministic counterpart of :meth:`publish_attempt_cas`.
+        It changes only the Attempt and intentionally leaves its Step running:
+        the caller must insert the immutable Artifact and finish the Step in the
+        *same* transaction.  If either later write fails, the transaction rolls
+        back this CAS and its Event as well.
+
+        A capability has already crossed its local execution boundary when this
+        method is called, so a concurrent Run cancellation does not erase the
+        observed result.  The parent Run is still the first writer fence, which
+        prevents cancellation/reduction from observing a half-published
+        Artifact.  Domain publication remains a separate, policy-gated Step.
+        """
+        for label, value in {
+            "input_sha256": input_sha256,
+            "output_sha256": output_sha256,
+        }.items():
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise StateError(f"capability publication {label} must be a lowercase SHA-256")
+        if external_outcome not in {"succeeded", "partial", "empty_success"}:
+            raise StateError("capability publication outcome is not a successful typed result")
+
+        # This no-op is deliberately the first write.  It serialises Run
+        # cancellation/reduction against the complete publication transaction
+        # without rewriting a real, already observed capability result.
+        run_fence: Any = session.execute(
+            update(runs)
+            .where(
+                scope.where(runs),
+                runs.c.id == run_id,
+                runs.c.state.not_in(tuple(state.value for state in RUN_TERMINAL_STATES)),
+                exists(
+                    select(1)
+                    .select_from(attempts)
+                    .where(
+                        scope.where(attempts),
+                        attempts.c.id == attempt_id,
+                        attempts.c.run_id == run_id,
+                        attempts.c.step_id == step_id,
+                        attempts.c.attempt_no == attempt_no,
+                        attempts.c.lease_owner == lease_owner,
+                        attempts.c.state == AttemptState.running.value,
+                        exists(
+                            select(1)
+                            .select_from(steps)
+                            .where(
+                                scope.where(steps),
+                                steps.c.id == step_id,
+                                steps.c.run_id == run_id,
+                                steps.c.attempt_count == attempt_no,
+                                steps.c.step_kind.in_(("deterministic", "mapped")),
+                                steps.c.state == StepState.running.value,
+                                steps.c.lease_owner == lease_owner,
+                                steps.c.output_artifact_id.is_(None),
+                                steps.c.lease_expires_at.is_not(None),
+                                steps.c.lease_expires_at > now_us,
+                            )
+                        ),
+                    )
+                ),
+            )
+            .values(updated_at=runs.c.updated_at)
+        )
+        if run_fence.rowcount != 1:
+            return False
+
+        result: Any = session.execute(
+            update(attempts)
+            .where(
+                scope.where(attempts),
+                attempts.c.id == attempt_id,
+                attempts.c.run_id == run_id,
+                attempts.c.step_id == step_id,
+                attempts.c.attempt_no == attempt_no,
+                attempts.c.lease_owner == lease_owner,
+                attempts.c.state == AttemptState.running.value,
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        scope.where(steps),
+                        steps.c.id == step_id,
+                        steps.c.run_id == run_id,
+                        steps.c.attempt_count == attempt_no,
+                        steps.c.step_kind.in_(("deterministic", "mapped")),
+                        steps.c.state == StepState.running.value,
+                        steps.c.lease_owner == lease_owner,
+                        steps.c.output_artifact_id.is_(None),
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
+                    )
+                ),
+            )
+            .values(
+                state=AttemptState.succeeded.value,
+                input_sha256=input_sha256,
+                output_sha256=output_sha256,
+                external_outcome=external_outcome,
+                lease_owner=None,
+                finished_at=now_us,
+            )
+        )
+        if result.rowcount != 1:
+            return False
+        self._event(
+            session,
+            run_id=run_id,
+            scope_type=scope.scope_type.value,
+            scope_id=scope.scope_id,
+            event_type="attempt.succeeded",
+            step_id=step_id,
+            attempt_id=attempt_id,
+            payload={"outcome": external_outcome},
+            now_us=now_us,
+        )
+        return True
+
     def schedule_capability_retry_cas(
         self,
         session: Session,

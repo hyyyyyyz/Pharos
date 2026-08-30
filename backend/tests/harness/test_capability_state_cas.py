@@ -304,6 +304,96 @@ def test_repeated_finish_is_idempotent_no_op(app) -> None:
         ]
 
 
+def test_capability_publication_fences_attempt_before_artifact_step_finish(app) -> None:
+    ids = _seed(app)
+    with session_scope() as session:
+        assert app.state.acquire_capability_publication_cas(
+            session,
+            scope=Scope.user("owner"),
+            run_id=ids["run_id"],
+            step_id=ids["step_id"],
+            attempt_id=ids["attempt_id"],
+            attempt_no=1,
+            lease_owner="worker-a",
+            input_sha256="a" * 64,
+            output_sha256="b" * 64,
+            external_outcome="succeeded",
+            now_us=2,
+        )
+        run, step, attempt = _rows(session)
+        assert run["state"] == RunState.running.value
+        # The Artifact writer owns the second half of this transaction.  A
+        # standalone committed Step success would make a missing Artifact look
+        # published, so the CAS deliberately leaves it running.
+        assert step["state"] == StepState.running.value
+        assert step["output_artifact_id"] is None
+        assert attempt["state"] == AttemptState.succeeded.value
+        assert attempt["input_sha256"] == "a" * 64
+        assert attempt["output_sha256"] == "b" * 64
+        assert attempt["external_outcome"] == "succeeded"
+        assert session.execute(select(events.c.event_type)).scalars().all() == [
+            "attempt.succeeded"
+        ]
+
+
+def test_started_capability_publication_preserves_result_after_cancel_request(app) -> None:
+    ids = _seed(app)
+    with session_scope() as session:
+        session.execute(
+            runs.update().where(runs.c.id == ids["run_id"]).values(cancel_requested_at=2)
+        )
+        assert app.state.acquire_capability_publication_cas(
+            session,
+            scope=Scope.user("owner"),
+            run_id=ids["run_id"],
+            step_id=ids["step_id"],
+            attempt_id=ids["attempt_id"],
+            attempt_no=1,
+            lease_owner="worker-a",
+            input_sha256="a" * 64,
+            output_sha256="b" * 64,
+            external_outcome="partial",
+            now_us=3,
+        )
+        _, step, attempt = _rows(session)
+        assert step["state"] == StepState.running.value
+        assert attempt["state"] == AttemptState.succeeded.value
+        assert attempt["external_outcome"] == "partial"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("input_sha256", "A" * 64),
+        ("input_sha256", "a" * 63),
+        ("output_sha256", True),
+        ("external_outcome", "failed"),
+    ],
+)
+def test_capability_publication_rejects_untyped_identity(app, field, value) -> None:  # noqa: ANN001
+    ids = _seed(app)
+    kwargs = {
+        "scope": Scope.user("owner"),
+        "run_id": ids["run_id"],
+        "step_id": ids["step_id"],
+        "attempt_id": ids["attempt_id"],
+        "attempt_no": 1,
+        "lease_owner": "worker-a",
+        "input_sha256": "a" * 64,
+        "output_sha256": "b" * 64,
+        "external_outcome": "empty_success",
+        "now_us": 2,
+    }
+    kwargs[field] = value
+    with session_scope() as session, pytest.raises(StateError, match="capability publication"):
+        app.state.acquire_capability_publication_cas(session, **kwargs)
+    with session_scope() as session:
+        _, step, attempt = _rows(session)
+        assert step["state"] == StepState.running.value
+        assert attempt["state"] == AttemptState.running.value
+        assert session.execute(select(events)).all() == []
+
+
 def test_reserved_finish_values_fail_closed(app) -> None:
     ids = _seed(app)
     with session_scope() as session:

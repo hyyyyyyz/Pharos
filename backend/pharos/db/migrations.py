@@ -1291,6 +1291,268 @@ MIGRATIONS: tuple[Migration, ...] = (
             "WHERE reservation_id IS NOT NULL AND op IN ('settle', 'release')",
         ),
     ),
+    Migration(
+        revision="0015_harness_capability_artifact_provenance",
+        description=(
+            "Bind deterministic capability artifacts without forged model runtime provenance"
+        ),
+        statements=(
+            # 0013 deliberately admitted only DSH-produced artifacts.  Keep
+            # every historical column and row intact, but replace the trigger
+            # boundary with two mutually exclusive provenance branches:
+            # role/DSH artifacts retain the complete runtime contract while a
+            # deterministic capability artifact binds only the immutable
+            # definition/policy envelope from its producer Attempt snapshot.
+            "DROP TRIGGER ck_harness_artifacts_provenance_scope_insert",
+            "DROP TRIGGER ck_harness_artifacts_provenance_required_insert",
+            "DROP TRIGGER ck_harness_artifacts_provenance_source_insert",
+            "DROP TRIGGER ck_harness_artifacts_provenance_required_update",
+            "DROP TRIGGER ck_harness_artifacts_provenance_scope_update",
+            "DROP TRIGGER ck_harness_artifacts_provenance_immutable",
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_scope_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM harness_attempts a
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer Attempt scope mismatch');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_required_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN (NEW.producer_attempt_id IS NULL AND (
+                NEW.upstream_commit IS NOT NULL OR NEW.runtime_session_id IS NOT NULL OR
+                NEW.runtime_hash IS NOT NULL OR NEW.profile_hash IS NOT NULL OR
+                NEW.policy_hash IS NOT NULL OR NEW.protocol_version IS NOT NULL OR
+                NEW.route_key IS NOT NULL OR NEW.route_sha256 IS NOT NULL OR
+                NEW.definition_binding_sha256 IS NOT NULL OR
+                NEW.run_policy_sha256 IS NOT NULL OR
+                NEW.provenance_sha256 IS NOT NULL
+            )) OR (NEW.producer_attempt_id IS NOT NULL AND (
+                NEW.step_id IS NULL OR NEW.definition_binding_sha256 IS NULL OR
+                NEW.run_policy_sha256 IS NULL OR NEW.provenance_sha256 IS NULL OR
+                NEW.workflow_key IS NULL OR NEW.workflow_version IS NULL OR
+                NEW.input_sha256 IS NULL OR
+                NOT (
+                    (NEW.upstream_commit IS NOT NULL AND
+                     NEW.runtime_session_id IS NOT NULL AND NEW.runtime_hash IS NOT NULL AND
+                     NEW.profile_hash IS NOT NULL AND NEW.policy_hash IS NOT NULL AND
+                     NEW.protocol_version IS NOT NULL AND NEW.route_key IS NOT NULL AND
+                     NEW.route_sha256 IS NOT NULL AND NEW.provider IS NOT NULL AND
+                     NEW.model IS NOT NULL AND NEW.role_prompt_version IS NOT NULL AND
+                     NEW.producer_kind = 'model_inference') OR
+                    (NEW.upstream_commit IS NULL AND NEW.runtime_session_id IS NULL AND
+                     NEW.runtime_hash IS NULL AND NEW.profile_hash IS NULL AND
+                     NEW.policy_hash IS NULL AND NEW.protocol_version IS NULL AND
+                     NEW.route_key IS NULL AND NEW.route_sha256 IS NULL AND
+                     NEW.provider IS NULL AND NEW.model IS NULL AND
+                     NEW.role_prompt_version IS NULL AND
+                     NEW.producer_kind = 'deterministic')
+                )
+            ))
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer provenance is incomplete or mixed');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_source_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1
+                FROM harness_attempts a
+                JOIN harness_attempt_definition_snapshots s
+                  ON s.attempt_id = a.id
+                 AND s.run_id = a.run_id
+                 AND s.scope_type = a.scope_type
+                 AND s.scope_id = a.scope_id
+                 AND s.step_id = a.step_id
+                 AND s.attempt_no = a.attempt_no
+                JOIN harness_run_definition_snapshots r
+                  ON r.run_id = s.run_id
+                 AND r.scope_type = s.scope_type
+                 AND r.scope_id = s.scope_id
+                 AND r.definition_binding_sha256 = s.definition_binding_sha256
+                 AND r.policy_snapshot_sha256 = s.run_policy_sha256
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+                  AND a.state = 'succeeded'
+                  AND a.input_sha256 = NEW.input_sha256
+                  AND a.output_sha256 = NEW.content_sha256
+                  AND s.definition_binding_sha256 = NEW.definition_binding_sha256
+                  AND s.run_policy_sha256 = NEW.run_policy_sha256
+                  AND r.workflow_key = NEW.workflow_key
+                  AND r.workflow_version = NEW.workflow_version
+                  AND (
+                    (s.executor_kind = 'role'
+                     AND NEW.producer_kind = 'model_inference'
+                     AND s.executor_role_definition_sha256 IS NOT NULL
+                     AND s.executor_capability_definition_sha256 IS NULL
+                     AND EXISTS (
+                         SELECT 1
+                         FROM harness_role_versions d
+                         WHERE d.role_key = s.executor_role_key
+                           AND d.version = s.executor_role_version
+                           AND d.definition_sha256 = s.executor_role_definition_sha256
+                           AND json_extract(d.definition_json, '$.prompt_template_version') =
+                               NEW.role_prompt_version
+                           AND json_extract(d.definition_json, '$.output_schema') =
+                               NEW.schema_name || '@' || NEW.schema_version
+                     )
+                     AND a.upstream_commit = NEW.upstream_commit
+                     AND a.runtime_session_id = NEW.runtime_session_id
+                     AND a.runtime_hash = NEW.runtime_hash
+                     AND a.profile_hash = NEW.profile_hash
+                     AND a.policy_hash = NEW.policy_hash
+                     AND a.protocol_version = NEW.protocol_version
+                     AND s.model_route_key = NEW.route_key
+                     AND s.model_route_sha256 = NEW.route_sha256
+                     AND s.provider = NEW.provider
+                     AND s.model = NEW.model)
+                    OR
+                    (s.executor_kind = 'capability'
+                     AND NEW.producer_kind = 'deterministic'
+                     AND s.executor_capability_definition_sha256 IS NOT NULL
+                     AND s.executor_role_definition_sha256 IS NULL
+                     AND EXISTS (
+                         SELECT 1
+                         FROM harness_capability_versions d
+                         WHERE d.capability_key = s.executor_capability_key
+                           AND d.version = s.executor_capability_version
+                           AND d.definition_sha256 =
+                               s.executor_capability_definition_sha256
+                           AND json_extract(d.definition_json, '$.observation_schema') =
+                               NEW.schema_name || '@' || NEW.schema_version
+                     )
+                     AND s.model_route_key IS NULL
+                     AND s.model_route_sha256 IS NULL
+                     AND s.provider IS NULL
+                     AND s.model IS NULL
+                     AND NEW.role_prompt_version IS NULL
+                     AND NEW.upstream_commit IS NULL
+                     AND NEW.runtime_session_id IS NULL
+                     AND NEW.runtime_hash IS NULL
+                     AND NEW.profile_hash IS NULL
+                     AND NEW.policy_hash IS NULL
+                     AND NEW.protocol_version IS NULL
+                     AND NEW.route_key IS NULL
+                     AND NEW.route_sha256 IS NULL
+                     AND NEW.provider IS NULL
+                     AND NEW.model IS NULL
+                     AND a.upstream_commit IS NULL
+                     AND a.runtime_session_id IS NULL
+                     AND a.runtime_message_id IS NULL
+                     AND a.child_pid IS NULL
+                     AND a.runtime_hash IS NULL
+                     AND a.profile_hash IS NULL
+                     AND a.policy_hash IS NULL
+                     AND a.protocol_version IS NULL)
+                  )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact provenance does not match producer snapshot');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_required_update
+            BEFORE UPDATE ON harness_artifacts
+            WHEN (NEW.producer_attempt_id IS NULL AND (
+                NEW.upstream_commit IS NOT NULL OR NEW.runtime_session_id IS NOT NULL OR
+                NEW.runtime_hash IS NOT NULL OR NEW.profile_hash IS NOT NULL OR
+                NEW.policy_hash IS NOT NULL OR NEW.protocol_version IS NOT NULL OR
+                NEW.route_key IS NOT NULL OR NEW.route_sha256 IS NOT NULL OR
+                NEW.definition_binding_sha256 IS NOT NULL OR
+                NEW.run_policy_sha256 IS NOT NULL OR
+                NEW.provenance_sha256 IS NOT NULL
+            ))
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer provenance is incomplete or mixed');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_scope_update
+            BEFORE UPDATE ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM harness_attempts a
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer Attempt scope mismatch');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_immutable
+            BEFORE UPDATE ON harness_artifacts
+            WHEN (OLD.producer_attempt_id IS NOT NULL OR NEW.producer_attempt_id IS NOT NULL)
+            AND (OLD.id IS NOT NEW.id OR
+                 OLD.scope_type IS NOT NEW.scope_type OR
+                 OLD.scope_id IS NOT NEW.scope_id OR
+                 OLD.user_id IS NOT NEW.user_id OR
+                 OLD.run_id IS NOT NEW.run_id OR
+                 OLD.step_id IS NOT NEW.step_id OR
+                 OLD.producer_attempt_id IS NOT NEW.producer_attempt_id OR
+                 OLD.artifact_type IS NOT NEW.artifact_type OR
+                 OLD.schema_name IS NOT NEW.schema_name OR
+                 OLD.schema_version IS NOT NEW.schema_version OR
+                 OLD.mime IS NOT NEW.mime OR
+                 OLD.blob_sha256 IS NOT NEW.blob_sha256 OR
+                 OLD.content_sha256 IS NOT NEW.content_sha256 OR
+                 OLD.size_bytes IS NOT NEW.size_bytes OR
+                 OLD.sensitivity IS NOT NEW.sensitivity OR
+                 OLD.producer_kind IS NOT NEW.producer_kind OR
+                 OLD.workflow_key IS NOT NEW.workflow_key OR
+                 OLD.workflow_version IS NOT NEW.workflow_version OR
+                 OLD.role_prompt_version IS NOT NEW.role_prompt_version OR
+                 OLD.upstream_commit IS NOT NEW.upstream_commit OR
+                 OLD.runtime_session_id IS NOT NEW.runtime_session_id OR
+                 OLD.runtime_hash IS NOT NEW.runtime_hash OR
+                 OLD.profile_hash IS NOT NEW.profile_hash OR
+                 OLD.policy_hash IS NOT NEW.policy_hash OR
+                 OLD.protocol_version IS NOT NEW.protocol_version OR
+                 OLD.route_key IS NOT NEW.route_key OR
+                 OLD.route_sha256 IS NOT NEW.route_sha256 OR
+                 OLD.definition_binding_sha256 IS NOT NEW.definition_binding_sha256 OR
+                 OLD.run_policy_sha256 IS NOT NEW.run_policy_sha256 OR
+                 OLD.provenance_sha256 IS NOT NEW.provenance_sha256 OR
+                 OLD.provider IS NOT NEW.provider OR
+                 OLD.model IS NOT NEW.model OR
+                 OLD.input_artifact_ids_json IS NOT NEW.input_artifact_ids_json OR
+                 OLD.input_sha256 IS NOT NEW.input_sha256 OR
+                 OLD.source_refs_json IS NOT NEW.source_refs_json OR
+                 OLD.quality_status IS NOT NEW.quality_status OR
+                 OLD.evidence_level IS NOT NEW.evidence_level OR
+                 OLD.created_at IS NOT NEW.created_at OR
+                 NOT (
+                    (OLD.content_json IS NEW.content_json AND
+                     OLD.deleted_at IS NEW.deleted_at AND
+                     OLD.deletion_reason IS NEW.deletion_reason) OR
+                    (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL AND
+                     NEW.content_json IS NULL AND NEW.deletion_reason IS NOT NULL)
+                 ))
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer provenance is immutable');
+            END
+            """,
+            # One terminal Attempt publishes at most one immutable Artifact.
+            # Detached legacy artifacts remain outside this identity boundary.
+            "CREATE UNIQUE INDEX ux_harness_artifacts_producer_attempt "
+            "ON harness_artifacts (producer_attempt_id) "
+            "WHERE producer_attempt_id IS NOT NULL",
+        ),
+    ),
 )
 
 

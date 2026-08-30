@@ -813,13 +813,21 @@ artifacts = Table(
         name="ck_harness_artifacts_provenance_detached",
     ),
     CheckConstraint(
-        "producer_attempt_id IS NULL OR (step_id IS NOT NULL AND upstream_commit IS NOT NULL "
+        "producer_attempt_id IS NULL OR (step_id IS NOT NULL "
+        "AND workflow_key IS NOT NULL AND workflow_version IS NOT NULL "
+        "AND input_sha256 IS NOT NULL "
+        "AND definition_binding_sha256 IS NOT NULL AND run_policy_sha256 IS NOT NULL "
+        "AND provenance_sha256 IS NOT NULL AND ((upstream_commit IS NOT NULL "
         "AND runtime_session_id IS NOT NULL AND runtime_hash IS NOT NULL "
         "AND profile_hash IS NOT NULL AND policy_hash IS NOT NULL "
         "AND protocol_version IS NOT NULL AND route_key IS NOT NULL "
         "AND route_sha256 IS NOT NULL AND provider IS NOT NULL AND model IS NOT NULL "
-        "AND definition_binding_sha256 IS NOT NULL AND run_policy_sha256 IS NOT NULL "
-        "AND provenance_sha256 IS NOT NULL)",
+        "AND role_prompt_version IS NOT NULL AND producer_kind = 'model_inference') "
+        "OR (upstream_commit IS NULL AND runtime_session_id IS NULL "
+        "AND runtime_hash IS NULL AND profile_hash IS NULL AND policy_hash IS NULL "
+        "AND protocol_version IS NULL AND route_key IS NULL AND route_sha256 IS NULL "
+        "AND provider IS NULL AND model IS NULL AND role_prompt_version IS NULL "
+        "AND producer_kind = 'deterministic')))",
         name="ck_harness_artifacts_provenance_complete",
     ),
     UniqueConstraint("id", "scope_type", "scope_id", name="uq_harness_artifacts_scope"),
@@ -982,6 +990,12 @@ usage_events = Table(
 Index("ix_harness_events_run_seq", events.c.run_id, events.c.seq)
 Index("ix_harness_events_scope_seq", events.c.scope_type, events.c.scope_id, events.c.seq)
 Index("ix_harness_artifacts_run", artifacts.c.run_id)
+Index(
+    "ux_harness_artifacts_producer_attempt",
+    artifacts.c.producer_attempt_id,
+    unique=True,
+    sqlite_where=artifacts.c.producer_attempt_id.is_not(None),
+)
 Index("ix_harness_approvals_state", approvals.c.state, approvals.c.expires_at)
 Index("ix_harness_usage_run", usage_events.c.run_id)
 Index(

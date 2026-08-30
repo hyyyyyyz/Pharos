@@ -44,6 +44,7 @@ from pharos.harness.tables import (
 MAX_INLINE_CONTENT_CHARS = 1_000_000
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+_CAPABILITY_PROVENANCE_SCHEMA = "pharos.harness.capability-artifact-provenance@1"
 
 
 def artifact_provenance_hash(
@@ -81,7 +82,7 @@ def artifact_provenance_hash(
     provider: str,
     model: str,
 ) -> str:
-    """Hash the complete immutable producer/runtime identity envelope."""
+    """Hash the original DSH producer/runtime envelope without changing its bytes."""
     return sha256_hex(
         {
             "artifact_type": artifact_type,
@@ -116,6 +117,59 @@ def artifact_provenance_hash(
             "run_policy_sha256": run_policy_sha256,
             "provider": provider,
             "model": model,
+        }
+    )
+
+
+def capability_artifact_provenance_hash(
+    *,
+    artifact_type: str,
+    schema_name: str,
+    schema_version: int,
+    producer_kind: str,
+    producer_attempt_id: str,
+    run_id: str,
+    step_id: str,
+    scope_type: str,
+    scope_id: str,
+    workflow_key: str,
+    workflow_version: int,
+    workflow_definition_sha256: str,
+    executor_identity: str,
+    executor_capability_definition_sha256: str,
+    definition_binding_sha256: str,
+    run_policy_sha256: str,
+) -> str:
+    """Hash one deterministic Observation's frozen execution identity.
+
+    The DSH envelope above predates an explicit schema discriminator and is
+    deliberately unchanged: existing hashes are durable audit evidence.  A
+    capability has no model route or child-runtime identity, so its envelope
+    is a separate, versioned contract rather than a set of invented runtime
+    values.
+    """
+    return sha256_hex(
+        {
+            "provenance_schema": _CAPABILITY_PROVENANCE_SCHEMA,
+            "artifact_type": artifact_type,
+            "schema_name": schema_name,
+            "schema_version": schema_version,
+            "producer_kind": producer_kind,
+            "producer_attempt_id": producer_attempt_id,
+            "run_id": run_id,
+            "step_id": step_id,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "workflow_key": workflow_key,
+            "workflow_version": workflow_version,
+            "workflow_definition_sha256": workflow_definition_sha256,
+            "executor_kind": "capability",
+            "executor_identity": executor_identity,
+            "executor_capability_definition_sha256": (
+                executor_capability_definition_sha256
+            ),
+            "definition_binding_sha256": definition_binding_sha256,
+            "run_policy_sha256": run_policy_sha256,
         }
     )
 
@@ -164,6 +218,10 @@ class ArtifactStore:
         run_policy_sha256: str | None = None,
         provenance_sha256: str | None = None,
     ) -> dict:
+        content_json = json_dump(content)
+        if len(content_json) > MAX_INLINE_CONTENT_CHARS:
+            raise ValueError("artifact content exceeds the inline cap")
+        content_sha256 = content_hash(content)
         provenance = self._prepare_provenance(
             session,
             scope=scope,
@@ -179,6 +237,8 @@ class ArtifactStore:
             role_prompt_version=role_prompt_version,
             provider=provider,
             model=model,
+            artifact_input_sha256=input_sha256,
+            artifact_content_sha256=content_sha256,
             caller_values={
                 "upstream_commit": upstream_commit,
                 "runtime_session_id": runtime_session_id,
@@ -193,9 +253,6 @@ class ArtifactStore:
                 "provenance_sha256": provenance_sha256,
             },
         )
-        content_json = json_dump(content)
-        if len(content_json) > MAX_INLINE_CONTENT_CHARS:
-            raise ValueError("artifact content exceeds the inline cap")
         artifact_id = new_id()
         session.execute(
             artifacts.insert().values(
@@ -210,7 +267,7 @@ class ArtifactStore:
                 schema_name=schema_name,
                 schema_version=schema_version,
                 content_json=content_json,
-                content_sha256=content_hash(content),
+                content_sha256=content_sha256,
                 size_bytes=len(content_json.encode("utf-8")),
                 sensitivity=sensitivity.value,
                 producer_kind=producer_kind.value,
@@ -259,6 +316,8 @@ class ArtifactStore:
         role_prompt_version: str | None,
         provider: str | None,
         model: str | None,
+        artifact_input_sha256: str | None,
+        artifact_content_sha256: str,
         caller_values: dict[str, str | None],
     ) -> dict[str, Any]:
         if producer_attempt_id is None:
@@ -272,6 +331,10 @@ class ArtifactStore:
             step_id=step_id,
             producer_attempt_id=producer_attempt_id,
         )
+        if artifact_input_sha256 != trusted["attempt_input_sha256"]:
+            raise ValueError("artifact input hash does not match producer Attempt")
+        if artifact_content_sha256 != trusted["attempt_output_sha256"]:
+            raise ValueError("artifact content hash does not match producer Attempt")
         assert step_id is not None
         for name, supplied in {
             "workflow_key": workflow_key,
@@ -292,7 +355,7 @@ class ArtifactStore:
                 raise ValueError("caller provenance_sha256 is not accepted")
             if supplied is not None and supplied != trusted[name]:
                 raise ValueError(f"caller {name} does not match frozen Attempt provenance")
-        expected = artifact_provenance_hash(
+        expected = ArtifactStore._provenance_hash(
             artifact_type=artifact_type,
             schema_name=schema_name,
             schema_version=schema_version,
@@ -331,6 +394,79 @@ class ArtifactStore:
         return {**trusted, "provenance_sha256": expected}
 
     @staticmethod
+    def _provenance_hash(
+        *,
+        artifact_type: str,
+        schema_name: str,
+        schema_version: int,
+        producer_kind: str,
+        producer_attempt_id: str,
+        run_id: str,
+        step_id: str,
+        scope_type: str,
+        scope_id: str,
+        **trusted: Any,
+    ) -> str:
+        """Select the immutable envelope for the authenticated executor."""
+        if trusted["executor_kind"] == "capability":
+            capability_sha256 = trusted["executor_capability_definition_sha256"]
+            assert isinstance(capability_sha256, str)
+            return capability_artifact_provenance_hash(
+                artifact_type=artifact_type,
+                schema_name=schema_name,
+                schema_version=schema_version,
+                producer_kind=producer_kind,
+                producer_attempt_id=producer_attempt_id,
+                run_id=run_id,
+                step_id=step_id,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                workflow_key=trusted["workflow_key"],
+                workflow_version=trusted["workflow_version"],
+                workflow_definition_sha256=trusted["workflow_definition_sha256"],
+                executor_identity=trusted["executor_identity"],
+                executor_capability_definition_sha256=capability_sha256,
+                definition_binding_sha256=trusted["definition_binding_sha256"],
+                run_policy_sha256=trusted["run_policy_sha256"],
+            )
+        return artifact_provenance_hash(
+            artifact_type=artifact_type,
+            schema_name=schema_name,
+            schema_version=schema_version,
+            producer_kind=producer_kind,
+            producer_attempt_id=producer_attempt_id,
+            run_id=run_id,
+            step_id=step_id,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            workflow_key=trusted["workflow_key"],
+            workflow_version=trusted["workflow_version"],
+            workflow_definition_sha256=trusted["workflow_definition_sha256"],
+            executor_kind=trusted["executor_kind"],
+            executor_identity=trusted["executor_identity"],
+            executor_role_definition_sha256=trusted["executor_role_definition_sha256"],
+            executor_capability_definition_sha256=trusted[
+                "executor_capability_definition_sha256"
+            ],
+            role_prompt_version=trusted["role_prompt_version"],
+            model_profile_identity=trusted["model_profile_identity"],
+            model_profile_sha256=trusted["model_profile_sha256"],
+            usage_source=trusted["usage_source"],
+            upstream_commit=trusted["upstream_commit"],
+            runtime_session_id=trusted["runtime_session_id"],
+            runtime_hash=trusted["runtime_hash"],
+            profile_hash=trusted["profile_hash"],
+            policy_hash=trusted["policy_hash"],
+            protocol_version=trusted["protocol_version"],
+            route_key=trusted["route_key"],
+            route_sha256=trusted["route_sha256"],
+            definition_binding_sha256=trusted["definition_binding_sha256"],
+            run_policy_sha256=trusted["run_policy_sha256"],
+            provider=trusted["provider"],
+            model=trusted["model"],
+        )
+
+    @staticmethod
     def _trusted_provenance(
         session: Session,
         *,
@@ -339,7 +475,7 @@ class ArtifactStore:
         step_id: str | None,
         producer_attempt_id: str,
     ) -> dict[str, Any]:
-        """Read the only trusted provenance sources for an agent artifact."""
+        """Read the only trusted provenance sources for an Attempt artifact."""
         attempt = (
             session.execute(
                 select(attempts).where(
@@ -396,16 +532,22 @@ class ArtifactStore:
         )
         frozen_schema_name: str | None = None
         frozen_schema_version: int | None = None
+        schema_identity: str | None = None
+        schema_label: str | None = None
         if frozen.role_definition is not None:
+            schema_identity = frozen.role_definition.output_schema
+            schema_label = "role output"
+        elif frozen.capability_definition is not None:
+            schema_identity = frozen.capability_definition.observation_schema
+            schema_label = "capability observation"
+        if schema_identity is not None:
             try:
-                frozen_schema_name, frozen_schema_version_text = (
-                    frozen.role_definition.output_schema.rsplit("@", 1)
-                )
+                frozen_schema_name, frozen_schema_version_text = schema_identity.rsplit("@", 1)
                 if not frozen_schema_name or not frozen_schema_version_text.isdigit():
                     raise ValueError
                 frozen_schema_version = int(frozen_schema_version_text)
             except (ValueError, TypeError):
-                raise ValueError("frozen Attempt role output schema is invalid") from None
+                raise ValueError(f"frozen Attempt {schema_label} schema is invalid") from None
         producer_kind = (
             ProducerKind.model_inference.value
             if frozen.executor_kind == "role"
@@ -426,6 +568,8 @@ class ArtifactStore:
             "model_profile_sha256": frozen.model_profile_sha256,
             "usage_source": frozen.usage_source,
             "producer_kind": producer_kind,
+            "attempt_input_sha256": attempt["input_sha256"],
+            "attempt_output_sha256": attempt["output_sha256"],
             "upstream_commit": attempt["upstream_commit"],
             "runtime_session_id": attempt["runtime_session_id"],
             "runtime_hash": attempt["runtime_hash"],
@@ -439,44 +583,73 @@ class ArtifactStore:
             "provider": snapshot["provider"],
             "model": snapshot["model"],
         }
-        required_names = (
+        common_required_names = (
             "workflow_key",
             "workflow_version",
             "workflow_definition_sha256",
             "executor_kind",
             "executor_identity",
             "producer_kind",
-            "upstream_commit",
-            "runtime_session_id",
-            "runtime_hash",
-            "profile_hash",
-            "policy_hash",
-            "protocol_version",
-            "route_key",
-            "route_sha256",
             "definition_binding_sha256",
             "run_policy_sha256",
-            "provider",
-            "model",
         )
-        if any(values[name] is None for name in required_names):
+        if any(values[name] is None for name in common_required_names):
             raise ValueError("frozen Attempt provenance is incomplete")
-        if frozen.executor_kind == "role" and any(
-            values[name] is None
-            for name in (
+        if attempt["state"] != "succeeded":
+            raise ValueError("artifact producer Attempt is not succeeded")
+        for name in ("attempt_input_sha256", "attempt_output_sha256"):
+            value = values[name]
+            if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+                raise ValueError(f"artifact producer {name} is not a lowercase SHA-256")
+        if frozen.executor_kind == "role":
+            role_required_names = (
                 "executor_role_definition_sha256",
                 "role_prompt_version",
                 "model_profile_identity",
                 "model_profile_sha256",
                 "usage_source",
+                "upstream_commit",
+                "runtime_session_id",
+                "runtime_hash",
+                "profile_hash",
+                "policy_hash",
+                "protocol_version",
+                "route_key",
+                "route_sha256",
+                "provider",
+                "model",
             )
-        ):
-            raise ValueError("frozen Attempt role identity is incomplete")
-        if frozen.executor_kind == "capability" and values[
-            "executor_capability_definition_sha256"
-        ] is None:
-            raise ValueError("frozen Attempt capability identity is incomplete")
+            if any(values[name] is None for name in role_required_names):
+                raise ValueError("frozen Attempt role identity is incomplete")
+        elif frozen.executor_kind == "capability":
+            if values["executor_capability_definition_sha256"] is None:
+                raise ValueError("frozen Attempt capability identity is incomplete")
+            capability_null_names = (
+                "executor_role_definition_sha256",
+                "role_prompt_version",
+                "model_profile_identity",
+                "model_profile_sha256",
+                "usage_source",
+                "upstream_commit",
+                "runtime_session_id",
+                "runtime_hash",
+                "profile_hash",
+                "policy_hash",
+                "protocol_version",
+                "route_key",
+                "route_sha256",
+                "provider",
+                "model",
+            )
+            if any(values[name] is not None for name in capability_null_names):
+                raise ValueError("frozen capability Attempt contains model/runtime provenance")
+        else:
+            raise ValueError("frozen Attempt executor kind is invalid")
         for name in (
+            "workflow_definition_sha256",
+            "executor_role_definition_sha256",
+            "executor_capability_definition_sha256",
+            "model_profile_sha256",
             "runtime_hash",
             "profile_hash",
             "policy_hash",
@@ -485,33 +658,37 @@ class ArtifactStore:
             "run_policy_sha256",
         ):
             value = values[name]
-            assert value is not None
-            if _SHA256.fullmatch(value) is None:
+            if value is not None and _SHA256.fullmatch(value) is None:
                 raise ValueError(f"frozen Attempt {name} is not a lowercase SHA-256")
-        upstream_commit = values["upstream_commit"]
-        if upstream_commit is None or _GIT_COMMIT.fullmatch(upstream_commit) is None:
-            raise ValueError("frozen Attempt upstream_commit is not a lowercase full git SHA-1")
-        runtime_session_id = values["runtime_session_id"]
-        if (
-            runtime_session_id is None
-            or len(runtime_session_id) > 256
-            or any(character.isspace() for character in runtime_session_id)
-        ):
-            raise ValueError("frozen Attempt runtime_session_id is invalid")
+        if frozen.executor_kind == "role":
+            upstream_commit = values["upstream_commit"]
+            if upstream_commit is None or _GIT_COMMIT.fullmatch(upstream_commit) is None:
+                raise ValueError(
+                    "frozen Attempt upstream_commit is not a lowercase full git SHA-1"
+                )
+            runtime_session_id = values["runtime_session_id"]
+            if (
+                runtime_session_id is None
+                or len(runtime_session_id) > 256
+                or any(character.isspace() for character in runtime_session_id)
+            ):
+                raise ValueError("frozen Attempt runtime_session_id is invalid")
         for name in (
             "workflow_key",
             "executor_kind",
             "executor_identity",
             "producer_kind",
-            "protocol_version",
-            "route_key",
-            "provider",
-            "model",
         ):
             value = values[name]
             assert value is not None
             if not value:
                 raise ValueError(f"frozen Attempt {name} is empty")
+        if frozen.executor_kind == "role":
+            for name in ("protocol_version", "route_key", "provider", "model"):
+                value = values[name]
+                assert value is not None
+                if not value:
+                    raise ValueError(f"frozen Attempt {name} is empty")
         return values
 
     @staticmethod
@@ -534,17 +711,59 @@ class ArtifactStore:
             if any(row.get(name) is not None for name in names):
                 raise ValueError("artifact contains detached runtime provenance")
             return
-        required = [
-            *names,
+        trusted = ArtifactStore._trusted_provenance(
+            session,
+            scope=scope,
+            run_id=row["run_id"],
+            step_id=row["step_id"],
+            producer_attempt_id=producer_attempt_id,
+        )
+        if row.get("input_sha256") != trusted["attempt_input_sha256"]:
+            raise ValueError("artifact input hash does not match producer Attempt")
+        if row.get("content_sha256") != trusted["attempt_output_sha256"]:
+            raise ValueError("artifact content hash does not match producer Attempt")
+        common_required = (
             "step_id",
-            "provider",
-            "model",
             "workflow_key",
             "workflow_version",
             "producer_kind",
-        ]
-        if any(row.get(name) is None for name in required):
-            raise ValueError("artifact runtime provenance is incomplete")
+            "definition_binding_sha256",
+            "run_policy_sha256",
+            "provenance_sha256",
+        )
+        if any(row.get(name) is None for name in common_required):
+            raise ValueError("artifact Attempt provenance is incomplete")
+        if trusted["executor_kind"] == "role":
+            role_required = (
+                "upstream_commit",
+                "runtime_session_id",
+                "runtime_hash",
+                "profile_hash",
+                "policy_hash",
+                "protocol_version",
+                "route_key",
+                "route_sha256",
+                "provider",
+                "model",
+            )
+            if any(row.get(name) is None for name in role_required):
+                raise ValueError("artifact runtime provenance is incomplete")
+        else:
+            capability_null_names = (
+                "role_prompt_version",
+                "provider",
+                "model",
+                "upstream_commit",
+                "runtime_session_id",
+                "runtime_hash",
+                "profile_hash",
+                "policy_hash",
+                "protocol_version",
+                "route_key",
+                "route_sha256",
+            )
+            if any(row.get(name) is not None for name in capability_null_names):
+                raise ValueError("capability artifact contains model/runtime provenance")
         for name in (
             "runtime_hash",
             "profile_hash",
@@ -554,24 +773,19 @@ class ArtifactStore:
             "run_policy_sha256",
             "provenance_sha256",
         ):
-            if _SHA256.fullmatch(row[name]) is None:
+            value = row.get(name)
+            if value is not None and _SHA256.fullmatch(value) is None:
                 raise ValueError(f"artifact provenance {name} is invalid")
-        if _GIT_COMMIT.fullmatch(row["upstream_commit"]) is None:
+        upstream_commit = row.get("upstream_commit")
+        if upstream_commit is not None and _GIT_COMMIT.fullmatch(upstream_commit) is None:
             raise ValueError("artifact provenance upstream_commit is invalid")
-        runtime_session_id = row["runtime_session_id"]
-        if (
+        runtime_session_id = row.get("runtime_session_id")
+        if runtime_session_id is not None and (
             not runtime_session_id
             or len(runtime_session_id) > 256
             or any(character.isspace() for character in runtime_session_id)
         ):
             raise ValueError("artifact provenance runtime_session_id is invalid")
-        trusted = ArtifactStore._trusted_provenance(
-            session,
-            scope=scope,
-            run_id=row["run_id"],
-            step_id=row["step_id"],
-            producer_attempt_id=producer_attempt_id,
-        )
         for name in (
             *names,
             "provider",
@@ -588,7 +802,7 @@ class ArtifactStore:
             row["schema_version"],
         ) != (trusted["frozen_schema_name"], trusted["frozen_schema_version"]):
             raise ValueError("artifact schema name/version does not match frozen Attempt identity")
-        expected = artifact_provenance_hash(
+        expected = ArtifactStore._provenance_hash(
             artifact_type=row["artifact_type"],
             schema_name=row["schema_name"],
             schema_version=row["schema_version"],

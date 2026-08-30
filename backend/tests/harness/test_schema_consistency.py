@@ -130,6 +130,14 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
             "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
             "AND name = 'ck_harness_attempt_launch_identity_immutable'"
         ).fetchone()[0]
+        artifact_source_trigger_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+            "AND name = 'ck_harness_artifacts_provenance_source_insert'"
+        ).fetchone()[0]
+        artifact_immutable_trigger_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+            "AND name = 'ck_harness_artifacts_provenance_immutable'"
+        ).fetchone()[0]
     finally:
         conn.close()
     assert (
@@ -163,7 +171,10 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         "ix_harness_attempts_deadline",
         "ix_harness_attempts_delivery",
     } <= indexes
-    assert "ix_harness_artifacts_producer_attempt" in artifact_indexes
+    assert {
+        "ix_harness_artifacts_producer_attempt",
+        "ux_harness_artifacts_producer_attempt",
+    } <= artifact_indexes
     for column in (
         "upstream_commit",
         "runtime_hash",
@@ -176,6 +187,75 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         assert f"OLD.{column}" in launch_trigger_sql
     for mutable_column in ("child_pid", "delivery_state", "runtime_message_id"):
         assert mutable_column not in launch_trigger_sql
+    assert "s.executor_kind = 'role'" in artifact_source_trigger_sql
+    assert "s.executor_kind = 'capability'" in artifact_source_trigger_sql
+    assert "NEW.producer_kind = 'model_inference'" in artifact_source_trigger_sql
+    assert "NEW.producer_kind = 'deterministic'" in artifact_source_trigger_sql
+    assert "JOIN harness_run_definition_snapshots r" in artifact_source_trigger_sql
+    assert "a.state = 'succeeded'" in artifact_source_trigger_sql
+    assert "a.input_sha256 = NEW.input_sha256" in artifact_source_trigger_sql
+    assert "a.output_sha256 = NEW.content_sha256" in artifact_source_trigger_sql
+    assert "r.workflow_key = NEW.workflow_key" in artifact_source_trigger_sql
+    assert "r.workflow_version = NEW.workflow_version" in artifact_source_trigger_sql
+    assert "json_extract(d.definition_json, '$.output_schema')" in artifact_source_trigger_sql
+    assert (
+        "json_extract(d.definition_json, '$.observation_schema')"
+        in artifact_source_trigger_sql
+    )
+    for forbidden_capability_runtime in (
+        "NEW.upstream_commit IS NULL",
+        "NEW.runtime_session_id IS NULL",
+        "NEW.provider IS NULL",
+        "NEW.model IS NULL",
+    ):
+        assert forbidden_capability_runtime in artifact_source_trigger_sql
+    for immutable_column in (
+        "id",
+        "scope_type",
+        "scope_id",
+        "user_id",
+        "run_id",
+        "step_id",
+        "producer_attempt_id",
+        "artifact_type",
+        "content_json",
+        "blob_sha256",
+        "content_sha256",
+        "schema_name",
+        "schema_version",
+        "mime",
+        "size_bytes",
+        "sensitivity",
+        "producer_kind",
+        "workflow_key",
+        "workflow_version",
+        "role_prompt_version",
+        "provider",
+        "model",
+        "input_artifact_ids_json",
+        "input_sha256",
+        "source_refs_json",
+        "quality_status",
+        "evidence_level",
+        "created_at",
+    ):
+        assert f"OLD.{immutable_column}" in artifact_immutable_trigger_sql
+    assert "NEW.deleted_at IS NOT NULL" in artifact_immutable_trigger_sql
+    assert "NEW.content_json IS NULL" in artifact_immutable_trigger_sql
+
+    artifact_metadata_sql = str(
+        CreateTable(metadata.tables["harness_artifacts"]).compile(dialect=sqlite_dialect())
+    )
+    for mirrored_requirement in (
+        "workflow_key IS NOT NULL",
+        "workflow_version IS NOT NULL",
+        "input_sha256 IS NOT NULL",
+        "producer_kind = 'model_inference'",
+        "producer_kind = 'deterministic'",
+        "role_prompt_version IS NOT NULL",
+        "role_prompt_version IS NULL",
+    ):
+        assert mirrored_requirement in artifact_metadata_sql
 
     metadata_indexes = metadata.tables["harness_attempts"].indexes
     runtime_session_index = next(
@@ -186,8 +266,17 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
     )
     assert runtime_session_index.unique is True
     assert child_pid_index.unique is True
+    producer_attempt_index = next(
+        index
+        for index in metadata.tables["harness_artifacts"].indexes
+        if index.name == "ux_harness_artifacts_producer_attempt"
+    )
+    assert producer_attempt_index.unique is True
     runtime_sql = str(CreateIndex(runtime_session_index).compile(dialect=sqlite_dialect()))
     child_pid_sql = str(CreateIndex(child_pid_index).compile(dialect=sqlite_dialect()))
+    producer_attempt_sql = str(
+        CreateIndex(producer_attempt_index).compile(dialect=sqlite_dialect())
+    )
     assert (
         "ON harness_attempts (runtime_session_id) WHERE runtime_session_id IS NOT NULL"
         in runtime_sql
@@ -196,6 +285,11 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         "ON harness_attempts (child_pid) WHERE child_pid IS NOT NULL "
         "AND state IN ('leased', 'running')"
         in child_pid_sql
+    )
+    assert (
+        "ON harness_artifacts (producer_attempt_id) "
+        "WHERE producer_attempt_id IS NOT NULL"
+        in producer_attempt_sql
     )
 
 
