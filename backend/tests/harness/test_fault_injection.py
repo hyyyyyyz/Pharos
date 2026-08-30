@@ -4,7 +4,7 @@
 - crash after the side effect but before commit: the retry reuses the
   provider-side idempotent result rather than repeating the effect;
 - external call sent but outcome unknown: attempt and step indeterminate,
-  reservation released, nothing auto-retried;
+  reservation pending reconciliation, nothing auto-retried;
 - duplicate publication never duplicates a publication key;
 - oversized events are refused, not truncated silently;
 - prompt-injection-shaped input cannot change the capability catalog.
@@ -24,6 +24,7 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.events import EventStore, EventTooLarge
 from pharos.harness.fakes import FakeModel
+from pharos.harness.repository import HarnessAttemptRepository
 from pharos.harness.tables import attempts, steps
 from pharos.harness.tables import events as events_table
 from pharos.harness.workflows.canary import canary_input
@@ -68,9 +69,7 @@ def test_crash_after_side_effect_recovers_without_repeating_the_effect(app, owne
     """
     enable_canary(app)
     executor = CrashAfterEffect()
-    publish_key = next(
-        key for key in app.executor.capabilities if key[0] == "canary.publish@1"
-    )
+    publish_key = next(key for key in app.executor.capabilities if key[0] == "canary.publish@1")
     app.executor.capabilities[publish_key] = executor
     run = app.create_run(
         scope=owner,
@@ -115,9 +114,7 @@ def test_retryable_crash_before_effect_never_records_a_result(app, owner):
             return {"ok": True, "key": key}
 
     executor = CrashBefore()
-    flaky_key = next(
-        key for key in app.executor.capabilities if key[0] == "canary.flaky@1"
-    )
+    flaky_key = next(key for key in app.executor.capabilities if key[0] == "canary.flaky@1")
     app.executor.capabilities[flaky_key] = executor
     run = app.create_run(
         scope=owner,
@@ -132,7 +129,7 @@ def test_retryable_crash_before_effect_never_records_a_result(app, owner):
     assert len(executor.results) == 1
 
 
-def test_gateway_sent_unknown_outcome_is_indeterminate_and_released(app, owner):
+def test_gateway_sent_unknown_outcome_is_indeterminate_and_pending(app, owner):
     error = GatewayError("timeout after send")
     error.error_class = AttemptErrorClass.indeterminate
     harness = HarnessApp(clock=app.clock, fake_model=FakeModel(clock=app.clock, script=[error]))
@@ -154,9 +151,13 @@ def test_gateway_sent_unknown_outcome_is_indeterminate_and_released(app, owner):
             .mappings()
             .all()
         )
-    assert usage["released_reservations"] == usage["reserved_reservations"]
+        candidates = HarnessAttemptRepository().list_reconciliation_candidates(session, scope=owner)
+    assert usage["released_reservations"] == 0
+    assert usage["settled_reservations"] == 0
+    assert usage["pending_reservations"] == usage["reserved_reservations"]
     indeterminate_attempts = [row for row in rows if row["external_outcome"] == "indeterminate"]
     assert len(indeterminate_attempts) == 1, "the agent attempt records its unknown outcome"
+    assert [row["id"] for row in candidates] == [indeterminate_attempts[0]["id"]]
 
 
 def test_oversized_event_payload_is_refused(app, owner):
@@ -197,11 +198,15 @@ def test_state_transition_oversized_event_rolls_back_state(app, owner):
         initiator="user",
     )
     with session_scope() as session:
-        step = session.execute(
-            steps.select().where(
-                steps.c.run_id == run["id"], steps.c.state == StepState.ready.value
+        step = (
+            session.execute(
+                steps.select().where(
+                    steps.c.run_id == run["id"], steps.c.state == StepState.ready.value
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         assert step is not None
         with pytest.raises(EventTooLarge):
             app.state.transition_step(
@@ -212,9 +217,7 @@ def test_state_transition_oversized_event_rolls_back_state(app, owner):
                 payload={"blob": "x" * 100_000},
             )
     with session_scope() as session:
-        row = session.execute(
-            steps.select().where(steps.c.id == step["id"])
-        ).mappings().one()
+        row = session.execute(steps.select().where(steps.c.id == step["id"])).mappings().one()
     assert row["state"] == StepState.ready.value
 
 
@@ -234,6 +237,6 @@ def test_prompt_injection_text_cannot_change_the_catalog(app, owner):
     )
     state = run_until(app, owner, run["id"], {"succeeded", "failed"})
     assert state == "succeeded"
-    assert (
-        set(app.executor.capabilities) == before
-    ), "untrusted input must never alter the capability catalog"
+    assert set(app.executor.capabilities) == before, (
+        "untrusted input must never alter the capability catalog"
+    )

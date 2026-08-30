@@ -135,6 +135,7 @@ class GatewayHandle(Protocol):
     def complete(self, payload: dict) -> ModelResult: ...
     def cancel(self) -> None: ...
     def close(self) -> None: ...
+    def retry_cleanup(self) -> None: ...
 
 
 @runtime_checkable
@@ -310,6 +311,44 @@ class _AttemptHandle:
         if error is not None:
             raise error
 
+    def retry_cleanup(self) -> None:
+        """Explicitly retry delegate cleanup after a failed ``close``.
+
+        Ordinary ``close`` remains idempotent and replays one cleanup result to
+        concurrent/duplicate callers. Recovery code must opt into a fresh
+        bounded cleanup attempt through this method; otherwise a transient
+        TERM/KILL/reap failure would be cached forever by the wrapper.
+        """
+        with self._condition:
+            if self._state is not _HandleState.CLOSED:
+                first_close = True
+            else:
+                first_close = False
+                while not self._close_finished:
+                    self._condition.wait()
+                if self._close_error is None:
+                    return
+                self._close_finished = False
+                self._close_error = None
+                self._close_count += 1
+        if first_close:
+            self.close()
+            return
+        error: BaseException | None = None
+        close = getattr(self._delegate, "close", None)
+        try:
+            if self._isolated_delegate and callable(close):
+                close()
+        except BaseException as exc:
+            error = exc
+        finally:
+            with self._condition:
+                self._close_error = error
+                self._close_finished = True
+                self._condition.notify_all()
+        if error is not None:
+            raise error
+
 
 class FakeGatewayFactory:
     """Offline factory adapting the current :class:`FakeModelGateway`.
@@ -444,13 +483,9 @@ class LegacyGatewayFactory:
         _validate_context(context)
         isolated = self._gateway_factory is not None
         delegate = (
-            self._gateway_factory()
-            if self._gateway_factory is not None
-            else self._shared_gateway
+            self._gateway_factory() if self._gateway_factory is not None else self._shared_gateway
         )
-        if delegate is None or not hasattr(delegate, "complete") or not hasattr(
-            delegate, "cancel"
-        ):
+        if delegate is None or not hasattr(delegate, "complete") or not hasattr(delegate, "cancel"):
             raise TypeError("legacy gateway must implement complete and cancel")
         if isolated:
             with self._open_count_lock:

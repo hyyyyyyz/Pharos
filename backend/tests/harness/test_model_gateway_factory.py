@@ -337,6 +337,37 @@ def test_close_calls_delegate_outside_lock_and_replays_cleanup_error() -> None:
     with pytest.raises(CleanupError, match="cleanup failed"):
         handle.close()
     assert delegate.close_calls == 1
+    with pytest.raises(CleanupError, match="cleanup failed"):
+        handle.retry_cleanup()
+    assert delegate.close_calls == 2
+
+
+def test_explicit_cleanup_retry_can_recover_from_a_transient_delegate_failure() -> None:
+    class TransientCleanupGateway(FakeModelGatewayForTest):
+        def __init__(self) -> None:
+            super().__init__()
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+            if self.close_calls == 1:
+                raise CleanupError("cleanup failed once")
+
+    delegate = TransientCleanupGateway()
+    handle = LegacyGatewayFactory(gateway_factory=lambda: delegate).open(context("attempt-1"))
+    with pytest.raises(CleanupError, match="failed once"):
+        handle.close()
+    # Duplicate close observes the cached result and does not silently run a
+    # second cleanup attempt.
+    with pytest.raises(CleanupError, match="failed once"):
+        handle.close()
+    assert delegate.close_calls == 1
+
+    handle.retry_cleanup()
+    assert delegate.close_calls == 2
+    assert handle.close_count == 2  # type: ignore[attr-defined]
+    handle.close()
+    assert delegate.close_calls == 2
 
 
 def test_legacy_factory_requires_an_explicit_delegate_mode() -> None:

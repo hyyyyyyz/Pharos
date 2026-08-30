@@ -18,15 +18,17 @@ from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
 
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from pharos.db.session import session_scope
 from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
-from pharos.harness.artifacts import ArtifactStore
+from pharos.harness.artifacts import ArtifactStore, content_hash
 from pharos.harness.contracts import (
     ArtifactSensitivity,
     AttemptErrorClass,
     AttemptState,
+    DeliveryState,
     GatewayError,
     NotFoundError,
     ProducerKind,
@@ -45,10 +47,15 @@ from pharos.harness.execution_snapshots import (
     SnapshotIntegrityError,
 )
 from pharos.harness.fakes import FakeClock, ModelResult
-from pharos.harness.model_gateway import AttemptContext, GatewayFactory, GatewayHandle
+from pharos.harness.model_gateway import (
+    AttemptContext,
+    GatewayFactory,
+    GatewayHandle,
+    GatewayLifecycleError,
+)
 from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
 from pharos.harness.state import HarnessStateService
-from pharos.harness.tables import attempts, runs, steps
+from pharos.harness.tables import attempts, runs, steps, usage_events
 from pharos.harness.usage import LedgerConflict, UsageLedger
 
 log = logging.getLogger(__name__)
@@ -78,9 +85,7 @@ class StepExecutor:
 
     gateway_factory: GatewayFactory | None = None
     artifacts: ArtifactStore = field(default_factory=ArtifactStore)
-    agent_output_contracts: dict[tuple[str, str], AgentOutputContract] = field(
-        default_factory=dict
-    )
+    agent_output_contracts: dict[tuple[str, str], AgentOutputContract] = field(default_factory=dict)
     capabilities: dict[tuple[str, str], Any] = field(default_factory=dict)
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
@@ -92,6 +97,20 @@ class StepExecutor:
 
 def _scope_of(claimed: ClaimedStep) -> Scope:
     return Scope(scope_type=ScopeType(claimed.scope_type), scope_id=claimed.scope_id)
+
+
+def _durable_error_message(error_class: AttemptErrorClass) -> str:
+    """Return a fixed public diagnostic; never persist delegate exception text."""
+    return {
+        AttemptErrorClass.validation: "agent output does not match its role schema",
+        AttemptErrorClass.configuration: "agent execution configuration is invalid",
+        AttemptErrorClass.provider: "model gateway failed",
+        AttemptErrorClass.budget: "agent budget was exceeded",
+        AttemptErrorClass.timeout: "agent execution timed out",
+        AttemptErrorClass.cancelled: "run cancellation requested",
+        AttemptErrorClass.indeterminate: "model delivery outcome requires reconciliation",
+        AttemptErrorClass.bug: "agent execution failed",
+    }.get(error_class, "agent execution failed")
 
 
 class HarnessRunner:
@@ -107,6 +126,7 @@ class HarnessRunner:
         # first completion byte is sent.  The registry is intentionally
         # attempt-scoped: cancellation must never reach a sibling handle.
         self._active_handles: dict[str, GatewayHandle] = {}
+        self._cleanup_failed_handles: dict[str, GatewayHandle] = {}
         self._active_handles_lock = RLock()
 
     @property
@@ -119,6 +139,17 @@ class HarnessRunner:
     def active_attempt_count(self) -> int:
         with self._active_handles_lock:
             return len(self._active_handles)
+
+    @property
+    def cleanup_failed_attempt_ids(self) -> tuple[str, ...]:
+        """Attempts whose bounded handle cleanup did not prove completion."""
+        with self._active_handles_lock:
+            return tuple(sorted(self._cleanup_failed_handles))
+
+    @property
+    def cleanup_failed_attempt_count(self) -> int:
+        with self._active_handles_lock:
+            return len(self._cleanup_failed_handles)
 
     def cancel_active_attempt(self, attempt_id: str) -> bool:
         """Cancel exactly one currently registered Attempt handle.
@@ -139,8 +170,8 @@ class HarnessRunner:
 
     def _register_handle(self, attempt_id: str, handle: GatewayHandle) -> None:
         with self._active_handles_lock:
-            if attempt_id in self._active_handles:
-                raise StateError(f"Attempt {attempt_id} already has an active gateway handle")
+            if attempt_id in self._active_handles or attempt_id in self._cleanup_failed_handles:
+                raise StateError(f"Attempt {attempt_id} already has a managed gateway handle")
             self._active_handles[attempt_id] = handle
 
     def _unregister_handle(self, attempt_id: str, handle: GatewayHandle) -> None:
@@ -149,6 +180,52 @@ class HarnessRunner:
             # unregister a successor handle that reused the same Attempt key.
             if self._active_handles.get(attempt_id) is handle:
                 del self._active_handles[attempt_id]
+
+    def _mark_cleanup_failed(self, attempt_id: str, handle: GatewayHandle) -> None:
+        """Move one exact handle out of active execution without losing it."""
+        with self._active_handles_lock:
+            if self._active_handles.get(attempt_id) is handle:
+                del self._active_handles[attempt_id]
+            existing = self._cleanup_failed_handles.get(attempt_id)
+            if existing is not None and existing is not handle:
+                raise StateError(f"Attempt {attempt_id} already has a different cleanup handle")
+            self._cleanup_failed_handles[attempt_id] = handle
+
+    def retry_failed_cleanup(self, attempt_id: str) -> bool:
+        """Retry cleanup for a tracked handle and remove it only on success."""
+        with self._active_handles_lock:
+            handle = self._cleanup_failed_handles.get(attempt_id)
+        if handle is None:
+            return False
+        try:
+            handle.retry_cleanup()
+        except BaseException:  # cleanup remains visible for operator recovery
+            return False
+        with self._active_handles_lock:
+            if self._cleanup_failed_handles.get(attempt_id) is handle:
+                del self._cleanup_failed_handles[attempt_id]
+        return True
+
+    def cancel_run_handles(self, *, scope: Scope, run_id: str) -> tuple[str, ...]:
+        """Signal every active handle for exactly one owner-scoped Run."""
+        with self._active_handles_lock:
+            selected: list[tuple[str, GatewayHandle]] = []
+            for registry in (self._active_handles, self._cleanup_failed_handles):
+                selected.extend(
+                    (attempt_id, handle)
+                    for attempt_id, handle in registry.items()
+                    if handle.context.run_id == run_id
+                    and handle.context.scope_type == scope.scope_type.value
+                    and handle.context.scope_id == scope.scope_id
+                )
+        signalled: list[str] = []
+        for attempt_id, handle in selected:
+            try:
+                handle.cancel()
+            except Exception:  # terminal/late handle; its runner owns cleanup
+                continue
+            signalled.append(attempt_id)
+        return tuple(sorted(signalled))
 
     # ------------------------------------------------------------- activation
 
@@ -233,6 +310,21 @@ class HarnessRunner:
                 attempt_state=AttemptState.leased,
                 step_state=StepState.leased,
             ):
+                return
+            if self._run_cancel_requested(session, claimed=claimed):
+                self.state.cancel_attempt_cas(
+                    session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    attempt_state=AttemptState.leased,
+                    step_state=StepState.leased,
+                    now_us=now_us,
+                    error_class=AttemptErrorClass.cancelled.value,
+                )
                 return
         step_definition = attempt_snapshot.step_definition
         try:
@@ -378,7 +470,6 @@ class HarnessRunner:
         self,
         *,
         claimed: ClaimedStep,
-        error: RetryableCapabilityError,
         snapshot: AttemptDefinitionSnapshot,
         now_us: int,
     ) -> None:
@@ -400,7 +491,7 @@ class HarnessRunner:
                     target=AttemptState.failed,
                     now_us=now_us,
                     error_class=AttemptErrorClass.provider.value,
-                    error_message=str(error)[:500],
+                    error_message="retryable capability failure",
                     retryable=1,
                 )
                 self.state.transition_step(
@@ -419,7 +510,7 @@ class HarnessRunner:
                     target=AttemptState.failed,
                     now_us=now_us,
                     error_class=AttemptErrorClass.provider.value,
-                    error_message=str(error)[:500],
+                    error_message="capability retries exhausted",
                 )
                 self.state.transition_step(
                     session,
@@ -460,9 +551,7 @@ class HarnessRunner:
             return
         snapshot, run = authenticated
         if snapshot.step_definition.kind not in ("deterministic", "mapped"):
-            raise SnapshotIntegrityError(
-                "deterministic entry does not match the frozen step"
-            )
+            raise SnapshotIntegrityError("deterministic entry does not match the frozen step")
         capability_key = snapshot.executor_identity
         capability_hash = snapshot.executor_capability_definition_sha256
         capability = (
@@ -506,15 +595,14 @@ class HarnessRunner:
         }
         try:
             capability.execute(action)
-        except RetryableCapabilityError as error:
+        except RetryableCapabilityError:
             self._schedule_retry_or_fail(
                 claimed=claimed,
-                error=error,
                 snapshot=snapshot,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
-        except Exception as error:  # noqa: BLE001 -- capability outcome is typed in the DB
+        except Exception:  # noqa: BLE001 -- capability outcome is typed in the DB
             with session_scope() as session:
                 self.state.transition_attempt(
                     session,
@@ -522,7 +610,7 @@ class HarnessRunner:
                     target=AttemptState.failed,
                     now_us=self.executor.clock.utc_epoch_us(),
                     error_class=AttemptErrorClass.bug.value,
-                    error_message=str(error)[:500],
+                    error_message="capability executor failed",
                 )
                 self.state.transition_step(
                     session,
@@ -530,7 +618,7 @@ class HarnessRunner:
                     target=StepState.failed,
                     now_us=self.executor.clock.utc_epoch_us(),
                     error_code="capability_error",
-                    error_message=str(error)[:500],
+                    error_message="capability executor failed",
                 )
             return
         with session_scope() as session:
@@ -601,10 +689,7 @@ class HarnessRunner:
         provider = snapshot.provider
         model = snapshot.model
         usage_source = snapshot.usage_source
-        if not all(
-            isinstance(value, str) and value
-            for value in (provider, model, usage_source)
-        ):
+        if not all(isinstance(value, str) and value for value in (provider, model, usage_source)):
             raise SnapshotIntegrityError("agent snapshot has incomplete model route metadata")
         assert isinstance(usage_source, str)
         contract = self._agent_contract(snapshot)
@@ -613,24 +698,7 @@ class HarnessRunner:
             # is absent, keyed by the wrong role hash, or disagrees with the
             # authenticated role definition.
             with session_scope() as session:
-                if self._claim_is_active(
-                    session,
-                    claimed=claimed,
-                    attempt_state=AttemptState.leased,
-                    step_state=StepState.leased,
-                ):
-                    self.state.transition_attempt(
-                        session,
-                        attempt_id=claimed.attempt_id,
-                        target=AttemptState.running,
-                        now_us=now_us,
-                    )
-                    self.state.transition_step(
-                        session,
-                        step_id=claimed.step_id,
-                        target=StepState.running,
-                        now_us=now_us,
-                    )
+                self._start_agent_attempt(session, claimed=claimed, now_us=now_us)
             self._finish_agent_failure(
                 claimed=claimed,
                 reservation_id="",
@@ -657,25 +725,8 @@ class HarnessRunner:
         factory = self.executor.gateway_factory
         if snapshot.runtime_kind == "dsh" or factory is None:
             with session_scope() as session:
-                if not self._claim_is_active(
-                    session,
-                    claimed=claimed,
-                    attempt_state=AttemptState.leased,
-                    step_state=StepState.leased,
-                ):
+                if not self._start_agent_attempt(session, claimed=claimed, now_us=now_us):
                     return
-                self.state.transition_attempt(
-                    session,
-                    attempt_id=claimed.attempt_id,
-                    target=AttemptState.running,
-                    now_us=now_us,
-                )
-                self.state.transition_step(
-                    session,
-                    step_id=claimed.step_id,
-                    target=StepState.running,
-                    now_us=now_us,
-                )
                 self.state.transition_attempt(
                     session,
                     attempt_id=claimed.attempt_id,
@@ -693,16 +744,14 @@ class HarnessRunner:
                     lease_expires_at=None,
                 )
             return
-        with session_scope() as session:
-            self.state.transition_attempt(
-                session, attempt_id=claimed.attempt_id, target=AttemptState.running, now_us=now_us
-            )
-            self.state.transition_step(
-                session, step_id=claimed.step_id, target=StepState.running, now_us=now_us
-            )
         input = json.loads(run["input_json"])
         reservation: str | None = None
         with session_scope() as session:
+            # Parent Run lock, leased->running CAS, and usage reserve share
+            # one transaction.  The route values come only from this frozen
+            # snapshot, never from a live config projection.
+            if not self._start_agent_attempt(session, claimed=claimed, now_us=now_us):
+                return
             reservation = self.executor.usage.reserve(
                 session,
                 scope=_scope_of(claimed),
@@ -714,9 +763,38 @@ class HarnessRunner:
                 amount=10,
                 cost_micros=0,
                 now_us=now_us,
+                provider=provider,
+                model=model,
             )
+        # The reservation transaction ends before opening the gateway.  Recheck
+        # the persisted parent fence so a cancel committed in that gap cannot
+        # even invoke ``factory.open`` (and therefore cannot create a runtime
+        # handle or send anything externally).
+        with session_scope() as session:
+            if self._run_cancel_requested(session, claimed=claimed):
+                self._release_reservation(session, reservation_id=reservation, now_us=now_us)
+                self.state.finish_attempt_cas(
+                    session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    expected_attempt_state=AttemptState.running,
+                    expected_step_state=StepState.running,
+                    target=AttemptState.failed,
+                    now_us=now_us,
+                    attempt_values={"error_class": AttemptErrorClass.cancelled.value},
+                    step_values={"error_code": AttemptErrorClass.cancelled.value},
+                    cancel_on_request=True,
+                )
+                return
         handle: GatewayHandle | None = None
         call_error: BaseException | None = None
+        delivery_state = DeliveryState.NOT_STARTED
+        completion_invoked = False
+        completion_succeeded = False
         try:
             context = self._attempt_context(
                 snapshot=snapshot,
@@ -732,6 +810,12 @@ class HarnessRunner:
             if handle.context != context:
                 raise StateError("gateway factory returned a mismatched Attempt context")
             self._register_handle(claimed.attempt_id, handle)
+            with session_scope() as session:
+                cancel_after_open = self._run_cancel_requested(session, claimed=claimed)
+            if cancel_after_open:
+                handle.cancel()
+                raise GatewayLifecycleError("run cancelled before model delivery")
+            completion_invoked = True
             result = handle.complete(
                 {
                     "workflow": run["workflow_key"],
@@ -739,10 +823,26 @@ class HarnessRunner:
                     "input": input,
                 }
             )
+            completion_succeeded = True
         except BaseException as error:
             # Defer classification until cleanup has completed.  In
             # particular, cleanup must not hide a typed gateway error.
             call_error = error
+        finally:
+            if handle is not None:
+                try:
+                    observed_delivery = handle.delivery_state
+                    if not isinstance(observed_delivery, DeliveryState):
+                        raise TypeError("gateway delivery state is not typed")
+                    delivery_state = observed_delivery
+                except Exception:  # noqa: BLE001 -- malformed factory seam
+                    delivery_state = (
+                        DeliveryState.UNKNOWN if completion_invoked else DeliveryState.NOT_STARTED
+                    )
+                    if call_error is None:
+                        call_error = GatewayLifecycleError(
+                            "gateway handle did not expose a typed delivery state"
+                        )
 
         close_error: BaseException | None = None
         if handle is not None:
@@ -752,9 +852,13 @@ class HarnessRunner:
                 handle.close()
             except BaseException as error:
                 close_error = error
-            finally:
-                # Remove only after cleanup; identity fencing prevents a late
-                # callback from unregistering a successor handle.
+                # A failed close is not proof that a subprocess/process group
+                # is gone. Keep the exact handle visible and fence out a
+                # successor until cleanup can be proved or reconciled.
+                self._mark_cleanup_failed(claimed.attempt_id, handle)
+            else:
+                # Remove only after successful cleanup; identity fencing
+                # prevents a late callback from unregistering a successor.
                 self._unregister_handle(claimed.attempt_id, handle)
 
         if close_error is not None:
@@ -766,35 +870,81 @@ class HarnessRunner:
                 claimed.attempt_id,
                 type(close_error).__name__,
             )
-        if call_error is not None:
-            if isinstance(call_error, GatewayError):
-                with session_scope() as session:
-                    self.executor.usage.release(
-                        session,
-                        reservation_id=reservation or "",
-                        now_us=self.executor.clock.utc_epoch_us(),
-                    )
-                raise call_error
-            if not isinstance(call_error, Exception):
-                raise call_error
-            log.error(
-                "agent gateway raised an untyped local error (%s)",
-                type(call_error).__name__,
+        if call_error is not None or close_error is not None:
+            now = self.executor.clock.utc_epoch_us()
+            typed_class = (
+                call_error.error_class
+                if isinstance(call_error, GatewayError)
+                else AttemptErrorClass.bug
             )
-            self._finish_agent_failure(
+            delivery_unknown = (
+                completion_succeeded
+                or close_error is not None
+                or delivery_state is not DeliveryState.NOT_STARTED
+                or typed_class is AttemptErrorClass.indeterminate
+            )
+            if delivery_unknown:
+                # The request may have crossed the provider boundary.  Do not
+                # release or settle the reservation: reconciliation owns it.
+                self._finish_gateway_indeterminate(
+                    claimed=claimed,
+                    delivery_state=(
+                        delivery_state
+                        if delivery_state
+                        in {
+                            DeliveryState.UNKNOWN,
+                            DeliveryState.SENT,
+                            DeliveryState.ACKNOWLEDGED,
+                        }
+                        else DeliveryState.UNKNOWN
+                    ),
+                    now_us=now,
+                )
+            else:
+                self._finish_agent_failure(
+                    claimed=claimed,
+                    reservation_id=reservation or "",
+                    error_class=typed_class,
+                    error_message=(
+                        "model gateway handle cleanup failed"
+                        if close_error is not None
+                        else "model gateway failed before delivery"
+                    ),
+                    now_us=now,
+                )
+            if call_error is not None and not isinstance(call_error, Exception):
+                # Process-control exceptions still stop the worker, but only
+                # after the Attempt and usage reservation have a durable,
+                # delivery-aware outcome.
+                raise call_error
+            return
+
+        if delivery_state is not DeliveryState.ACKNOWLEDGED:
+            # A result object alone is not a provider receipt. A malformed or
+            # custom handle may return early; publishing it would fabricate
+            # ACK evidence and could hide a replay/double-spend window.
+            self._finish_gateway_indeterminate(
                 claimed=claimed,
-                reservation_id=reservation or "",
-                error_class=AttemptErrorClass.bug,
-                error_message="model gateway raised an unexpected local error",
+                delivery_state=(
+                    delivery_state
+                    if delivery_state
+                    in {
+                        DeliveryState.UNKNOWN,
+                        DeliveryState.SENT,
+                        DeliveryState.ACKNOWLEDGED,
+                    }
+                    else DeliveryState.UNKNOWN
+                ),
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
-        if close_error is not None:
-            self._finish_agent_failure(
+
+        if not isinstance(result, ModelResult):
+            # ACK proves delivery, but without a typed usage/result envelope
+            # the accounting outcome is unresolved and must be reconcilable.
+            self._finish_gateway_indeterminate(
                 claimed=claimed,
-                reservation_id=reservation or "",
-                error_class=AttemptErrorClass.bug,
-                error_message="model gateway handle cleanup failed",
+                delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
@@ -808,11 +958,13 @@ class HarnessRunner:
         except (TypeError, ValueError) as error:
             # Validation happens before ArtifactStore.create.  Consequently a
             # malformed model result can never leave a publishable Artifact.
-            self._finish_agent_failure(
+            self._finish_agent_failure_with_usage(
                 claimed=claimed,
                 reservation_id=reservation or "",
                 error_class=AttemptErrorClass.validation,
                 error_message=str(error),
+                actual_tokens=result.output_tokens,
+                delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
@@ -826,13 +978,28 @@ class HarnessRunner:
             )
         except Exception:  # noqa: BLE001 -- failed commit is terminal and explicit
             log.exception("agent Artifact finish transaction failed")
-            self._finish_agent_failure(
+            self._finish_agent_failure_with_usage(
                 claimed=claimed,
                 reservation_id=reservation or "",
                 error_class=AttemptErrorClass.bug,
                 error_message="agent finish transaction failed",
+                actual_tokens=result.output_tokens,
+                delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
+
+    def _start_agent_attempt(self, session: Session, *, claimed: ClaimedStep, now_us: int) -> bool:
+        """Start exactly one leased generation under the persisted Run fence."""
+        return self.state.start_attempt_cas(
+            session,
+            scope=_scope_of(claimed),
+            run_id=claimed.run_id,
+            step_id=claimed.step_id,
+            attempt_id=claimed.attempt_id,
+            attempt_no=claimed.attempt_no,
+            lease_owner=claimed.lease_owner,
+            now_us=now_us,
+        )
 
     def _attempt_context(
         self,
@@ -887,9 +1054,7 @@ class HarnessRunner:
         except (TypeError, ValueError) as error:
             raise SnapshotIntegrityError("agent Attempt context is invalid") from error
 
-    def _agent_contract(
-        self, snapshot: AttemptDefinitionSnapshot
-    ) -> AgentOutputContract | None:
+    def _agent_contract(self, snapshot: AttemptDefinitionSnapshot) -> AgentOutputContract | None:
         role = snapshot.executor_identity
         role_hash = snapshot.executor_role_definition_sha256
         role_definition = snapshot.role_definition
@@ -967,10 +1132,18 @@ class HarnessRunner:
         """Atomically publish the typed output and finish its attempt/step."""
         authenticated = self._read_execution_snapshot(claimed)
         if authenticated is None:
-            with session_scope() as session:
-                self._release_reservation(
-                    session, reservation_id=reservation_id, now_us=now_us
-                )
+            # A valid result proves provider execution even if the frozen
+            # snapshot becomes unavailable before publication. Settle its
+            # trusted usage and terminalise the exact active generation.
+            self._finish_agent_failure_with_usage(
+                claimed=claimed,
+                reservation_id=reservation_id,
+                delivery_state=DeliveryState.ACKNOWLEDGED,
+                actual_tokens=result.output_tokens,
+                error_class=AttemptErrorClass.bug,
+                error_message="execution snapshot unavailable at publication",
+                now_us=now_us,
+            )
             return
         snapshot, run = authenticated
         contract = self._agent_contract(snapshot)
@@ -996,9 +1169,17 @@ class HarnessRunner:
                 attempt_state=AttemptState.running,
                 step_state=StepState.running,
             ):
-                self._release_reservation(
-                    session, reservation_id=reservation_id, now_us=now_us
-                )
+                # The exact Attempt generation lost its terminal CAS, but its
+                # completed provider result still carries real usage. Settle
+                # that reservation without allowing the late result to mutate
+                # the successor Step or publish an Artifact.
+                with contextlib.suppress(LedgerConflict):
+                    self.executor.usage.settle(
+                        session,
+                        reservation_id=reservation_id,
+                        actual=result.output_tokens,
+                        now_us=now_us,
+                    )
                 return
             current_step = (
                 session.execute(steps.select().where(steps.c.id == claimed.step_id))
@@ -1008,9 +1189,7 @@ class HarnessRunner:
             if current_step is None or current_step["output_artifact_id"] is not None:
                 # A prior committed finish won the race.  Never settle a new
                 # reservation or create a second artifact on replay.
-                self._release_reservation(
-                    session, reservation_id=reservation_id, now_us=now_us
-                )
+                self._release_reservation(session, reservation_id=reservation_id, now_us=now_us)
                 return
             raw_inputs = current_step["input_artifact_ids_json"] or "[]"
             parsed_inputs = json.loads(raw_inputs)
@@ -1029,6 +1208,61 @@ class HarnessRunner:
                     scope=scope,
                     artifact_id=artifact_id,
                 )
+
+            # This CAS is the publication fence.  It must be the first write
+            # in this transaction and includes the run's cancel predicate;
+            # SQLite therefore serialises a winning cancel commit against all
+            # subsequent Artifact/usage/terminal writes.
+            publication_fenced = self.state.publish_attempt_cas(
+                session,
+                scope=scope,
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                now_us=now_us,
+                delivery_state=DeliveryState.ACKNOWLEDGED.value,
+                role_or_capability=role,
+                model_prompt_version=contract.prompt_version,
+                input_sha256=run["input_sha256"],
+                output_sha256=content_hash(typed_output),
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                cost_micros=result.cost_micros,
+                provider_request_id=result.provider_request_id,
+            )
+            if not publication_fenced:
+                # A cancel CAS may have won before this publication fence. In
+                # that case the provider result is real and must be settled,
+                # but it is never user-visible. A different terminal winner
+                # owns the reservation and this replay becomes a no-op.
+                with contextlib.suppress(LedgerConflict):
+                    self.executor.usage.settle(
+                        session,
+                        reservation_id=reservation_id,
+                        actual=result.output_tokens,
+                        now_us=now_us,
+                    )
+                self.state.cancel_attempt_cas(
+                    session,
+                    scope=scope,
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    attempt_state=AttemptState.running,
+                    step_state=StepState.running,
+                    now_us=now_us,
+                    delivery_state=DeliveryState.ACKNOWLEDGED.value,
+                    error_class=AttemptErrorClass.cancelled.value,
+                    input_tokens=result.input_tokens,
+                    output_tokens=result.output_tokens,
+                    cost_micros=result.cost_micros,
+                    provider_request_id=result.provider_request_id,
+                )
+                return
 
             artifact = self.executor.artifacts.create(
                 session,
@@ -1062,20 +1296,6 @@ class HarnessRunner:
                 actual=result.output_tokens,
                 now_us=now_us,
             )
-            self.state.transition_attempt(
-                session,
-                attempt_id=claimed.attempt_id,
-                target=AttemptState.succeeded,
-                now_us=now_us,
-                role_or_capability=role,
-                model_prompt_version=contract.prompt_version,
-                input_sha256=run["input_sha256"],
-                output_sha256=artifact["content_sha256"],
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                cost_micros=result.cost_micros,
-                provider_request_id=result.provider_request_id,
-            )
             self.state.transition_step(
                 session,
                 step_id=claimed.step_id,
@@ -1096,36 +1316,144 @@ class HarnessRunner:
         now_us: int,
     ) -> None:
         with session_scope() as session:
-            active = self._claim_is_active(
+            self._release_reservation(session, reservation_id=reservation_id, now_us=now_us)
+            # The terminal CAS rechecks owner, generation, parent state and
+            # cancellation.  A stale callback can settle/release only its own
+            # reservation and cannot mutate a successor Attempt.
+            self.state.finish_attempt_cas(
                 session,
-                claimed=claimed,
-                attempt_state=AttemptState.running,
-                step_state=StepState.running,
-            )
-            self._release_reservation(
-                session, reservation_id=reservation_id, now_us=now_us
-            )
-            # A late result from an expired/retried Attempt owns only its own
-            # reservation.  It must never fail or complete the newer Attempt.
-            if not active:
-                return
-            self.state.transition_attempt(
-                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
                 attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
                 target=AttemptState.failed,
                 now_us=now_us,
-                error_class=error_class.value,
-                error_message=error_message[:500],
+                attempt_values={
+                    "error_class": error_class.value,
+                    "error_message": _durable_error_message(error_class),
+                },
+                step_values={
+                    "error_code": error_class.value,
+                    "error_message": _durable_error_message(error_class),
+                    "skip_reason": (
+                        "run_cancelled" if error_class is AttemptErrorClass.cancelled else None
+                    ),
+                },
+                cancel_on_request=True,
             )
-            self.state.transition_step(
+
+    def _finish_gateway_indeterminate(
+        self,
+        *,
+        claimed: ClaimedStep,
+        delivery_state: DeliveryState,
+        now_us: int,
+    ) -> None:
+        """Terminalise an unknown external outcome without spending its reserve."""
+        if delivery_state in {DeliveryState.NOT_STARTED, DeliveryState.RECONCILED}:
+            raise StateError("indeterminate gateway outcome requires delivery evidence")
+        with session_scope() as session:
+            self.state.finish_attempt_cas(
                 session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
                 step_id=claimed.step_id,
-                target=StepState.failed,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.indeterminate,
                 now_us=now_us,
-                error_code=error_class.value,
-                error_message=error_message[:500],
-                lease_owner=None,
-                lease_expires_at=None,
+                attempt_values={
+                    "delivery_state": delivery_state.value,
+                    "external_outcome": "indeterminate",
+                    "error_class": AttemptErrorClass.indeterminate.value,
+                    "error_message": "model delivery outcome requires reconciliation",
+                },
+                step_values={"error_code": "external_outcome_unknown"},
+            )
+
+    def _finish_agent_failure_with_usage(
+        self,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str,
+        delivery_state: DeliveryState,
+        actual_tokens: int,
+        error_class: AttemptErrorClass,
+        error_message: str,
+        now_us: int,
+    ) -> None:
+        """Fail a known response and settle its trusted token usage atomically."""
+        if delivery_state is not DeliveryState.ACKNOWLEDGED:
+            raise StateError("trusted model usage requires an acknowledged response")
+        with session_scope() as session:
+            settled = False
+            try:
+                with session.begin_nested():
+                    self.executor.usage.settle(
+                        session,
+                        reservation_id=reservation_id,
+                        actual=actual_tokens,
+                        now_us=now_us,
+                    )
+                settled = True
+            except Exception:  # noqa: BLE001 -- unresolved reserve is safer than release
+                log.error(
+                    "agent failure usage settlement remains unresolved for %s",
+                    claimed.attempt_id,
+                )
+            if not settled:
+                self.state.finish_attempt_cas(
+                    session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    expected_attempt_state=AttemptState.running,
+                    expected_step_state=StepState.running,
+                    target=AttemptState.indeterminate,
+                    now_us=now_us,
+                    attempt_values={
+                        "delivery_state": delivery_state.value,
+                        "external_outcome": "usage_reconciliation_required",
+                        "error_class": AttemptErrorClass.indeterminate.value,
+                        "error_message": "model usage requires reconciliation",
+                        "output_tokens": actual_tokens,
+                    },
+                    step_values={"error_code": "usage_reconciliation_required"},
+                )
+                return
+            self.state.finish_attempt_cas(
+                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.failed,
+                now_us=now_us,
+                attempt_values={
+                    "delivery_state": delivery_state.value,
+                    "error_class": error_class.value,
+                    "error_message": _durable_error_message(error_class),
+                    "output_tokens": actual_tokens,
+                },
+                step_values={
+                    "error_code": error_class.value,
+                    "error_message": _durable_error_message(error_class),
+                },
+                cancel_on_request=True,
             )
 
     def _claim_is_active(
@@ -1143,9 +1471,7 @@ class HarnessRunner:
             .first()
         )
         step = (
-            session.execute(steps.select().where(steps.c.id == claimed.step_id))
-            .mappings()
-            .first()
+            session.execute(steps.select().where(steps.c.id == claimed.step_id)).mappings().first()
         )
         return bool(
             attempt is not None
@@ -1165,8 +1491,20 @@ class HarnessRunner:
             and step["attempt_count"] == claimed.attempt_no
         )
 
+    def _run_cancel_requested(self, session: Session, *, claimed: ClaimedStep) -> bool:
+        requested_at = session.execute(
+            runs.select()
+            .with_only_columns(runs.c.cancel_requested_at)
+            .where(
+                runs.c.id == claimed.run_id,
+                runs.c.scope_type == claimed.scope_type,
+                runs.c.scope_id == claimed.scope_id,
+            )
+        ).scalar_one_or_none()
+        return requested_at is not None
+
     def _release_reservation(
-        self, session: Session, *, reservation_id: str, now_us: int
+        self, session: Session, *, reservation_id: str | None, now_us: int
     ) -> None:
         if not reservation_id:
             return
@@ -1185,46 +1523,48 @@ class HarnessRunner:
         self, *, claimed: ClaimedStep, error: GatewayError, now_us: int
     ) -> None:
         with session_scope() as session:
-            if not self._claim_is_active(
-                session,
-                claimed=claimed,
-                attempt_state=AttemptState.running,
-                step_state=StepState.running,
-            ):
-                return
             if error.error_class == AttemptErrorClass.indeterminate:
-                self.state.transition_attempt(
+                self.state.finish_attempt_cas(
                     session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
                     attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    expected_attempt_state=AttemptState.running,
+                    expected_step_state=StepState.running,
                     target=AttemptState.indeterminate,
                     now_us=now_us,
-                    external_outcome="indeterminate",
-                    error_class=AttemptErrorClass.indeterminate.value,
-                    error_message=str(error)[:500],
-                )
-                self.state.transition_step(
-                    session,
-                    step_id=claimed.step_id,
-                    target=StepState.indeterminate,
-                    now_us=now_us,
-                    error_code="external_outcome_unknown",
+                    attempt_values={
+                        "external_outcome": "indeterminate",
+                        "error_class": AttemptErrorClass.indeterminate.value,
+                        "error_message": "model delivery outcome requires reconciliation",
+                    },
+                    step_values={"error_code": "external_outcome_unknown"},
                 )
                 return
-            self.state.transition_attempt(
+            self.state.finish_attempt_cas(
                 session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
                 attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
                 target=AttemptState.failed,
                 now_us=now_us,
-                error_class=error.error_class.value,
-                error_message=str(error)[:500],
-            )
-            self.state.transition_step(
-                session,
-                step_id=claimed.step_id,
-                target=StepState.failed,
-                now_us=now_us,
-                error_code=error.error_class.value,
-                error_message=str(error)[:500],
+                attempt_values={
+                    "error_class": error.error_class.value,
+                    "error_message": "model gateway failed",
+                },
+                step_values={
+                    "error_code": error.error_class.value,
+                    "error_message": "model gateway failed",
+                },
+                cancel_on_request=True,
             )
 
     # ------------------------------------------------------------- reduction
@@ -1309,46 +1649,229 @@ class HarnessRunner:
             RunState.cancelled,
             RunState.indeterminate,
         ):
-            self.state.reduce_run(
+            self.state.reduce_run_cas(
                 session,
+                scope=scope,
                 run_id=run["id"],
+                expected_state=RunState(run["state"]),
                 target=target,
                 outcome=outcome.value if outcome else None,
                 now_us=now_us,
             )
         else:
-            self.state.transition_run(session, run_id=run["id"], target=target, now_us=now_us)
+            self.state.reduce_run_cas(
+                session,
+                scope=scope,
+                run_id=run["id"],
+                expected_state=RunState(run["state"]),
+                target=target,
+                outcome=None,
+                now_us=now_us,
+            )
 
     # ---------------------------------------------------------------- control
+
+    def _has_registered_handle(self, attempt_id: str) -> bool:
+        """Check both live and cleanup-failed registries without doing I/O."""
+        with self._active_handles_lock:
+            return attempt_id in self._active_handles or attempt_id in self._cleanup_failed_handles
+
+    @staticmethod
+    def _attempt_has_pending_usage(session: Session, attempt_id: str) -> bool:
+        reserve = usage_events.alias("cancel_reserve")
+        spent = usage_events.alias("cancel_spent")
+        return (
+            session.execute(
+                select(reserve.c.id)
+                .where(
+                    reserve.c.attempt_id == attempt_id,
+                    reserve.c.op == "reserve",
+                    ~exists(
+                        select(1)
+                        .select_from(spent)
+                        .where(
+                            spent.c.reservation_id == reserve.c.reservation_id,
+                            spent.c.run_id == reserve.c.run_id,
+                            spent.c.step_id == reserve.c.step_id,
+                            spent.c.attempt_id == reserve.c.attempt_id,
+                            spent.c.scope_type == reserve.c.scope_type,
+                            spent.c.scope_id == reserve.c.scope_id,
+                            spent.c.op.in_(["settle", "release"]),
+                        )
+                    ),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            is not None
+        )
 
     def apply_pending_control(self, *, now_us: int) -> int:
         """Turn persistent pause/cancel requests into states."""
         changed = 0
-        # Cancel: requests win over every other state.
+        # Cancel: requests win unless an external outcome is indeterminate.
         with session_scope() as session:
-            rows = (
-                session.execute(
-                    runs.select().where(
-                        runs.c.cancel_requested_at.is_not(None),
-                        runs.c.state.in_(
-                            [
-                                "queued",
-                                "running",
-                                "waiting_for_approval",
-                                "waiting_for_input",
-                                "paused",
-                            ]
-                        ),
+            requested = [
+                dict(row)
+                for row in (
+                    session.execute(
+                        runs.select().where(
+                            runs.c.cancel_requested_at.is_not(None),
+                            runs.c.state.in_(
+                                [
+                                    "queued",
+                                    "running",
+                                    "waiting_for_approval",
+                                    "waiting_for_input",
+                                    "paused",
+                                ]
+                            ),
+                        )
                     )
+                    .mappings()
+                    .all()
                 )
-                .mappings()
-                .all()
+            ]
+        # Runtime cancellation is deliberately outside a database transaction.
+        # A blocked provider/child cannot hold SQLite's writer lock.
+        for requested_row in requested:
+            scope = Scope(
+                scope_type=ScopeType(requested_row["scope_type"]),
+                scope_id=requested_row["scope_id"],
             )
-            for run in rows:
-                scope = Scope(scope_type=ScopeType(run["scope_type"]), scope_id=run["scope_id"])
+            self.cancel_run_handles(scope=scope, run_id=requested_row["id"])
+
+        with session_scope() as session:
+            for requested_run in requested:
+                current_run = (
+                    session.execute(
+                        runs.select().where(
+                            runs.c.id == requested_run["id"],
+                            runs.c.scope_type == requested_run["scope_type"],
+                            runs.c.scope_id == requested_run["scope_id"],
+                            runs.c.cancel_requested_at.is_not(None),
+                            runs.c.state.in_(
+                                [
+                                    "queued",
+                                    "running",
+                                    "waiting_for_approval",
+                                    "waiting_for_input",
+                                    "paused",
+                                ]
+                            ),
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if current_run is None:
+                    continue
+                scope = Scope(
+                    scope_type=ScopeType(current_run["scope_type"]),
+                    scope_id=current_run["scope_id"],
+                )
+                run_steps = self.step_repository.for_run(
+                    session, scope=scope, run_id=current_run["id"]
+                )
+                # The in-memory handle registry is only an optimisation for
+                # signalling. Recovery must inspect the durable current
+                # generation, including Attempts created by another worker or
+                # before a restart.  The owner and attempt number below are
+                # all part of each terminal CAS fence.
+                active_attempts = (
+                    session.execute(
+                        attempts.select()
+                        .add_columns(
+                            steps.c.state.label("current_step_state"),
+                            steps.c.lease_owner.label("current_step_lease_owner"),
+                        )
+                        .where(
+                            attempts.c.run_id == current_run["id"],
+                            attempts.c.scope_type == current_run["scope_type"],
+                            attempts.c.scope_id == current_run["scope_id"],
+                            attempts.c.state.in_(["leased", "running"]),
+                            attempts.c.attempt_no == steps.c.attempt_count,
+                            steps.c.id == attempts.c.step_id,
+                            steps.c.run_id == attempts.c.run_id,
+                            steps.c.scope_type == attempts.c.scope_type,
+                            steps.c.scope_id == attempts.c.scope_id,
+                            steps.c.state.in_(["leased", "running"]),
+                            steps.c.lease_owner == attempts.c.lease_owner,
+                        )
+                        .order_by(attempts.c.attempt_no, attempts.c.id)
+                    )
+                    .mappings()
+                    .all()
+                )
+                for active_attempt in active_attempts:
+                    attempt_id = active_attempt["id"]
+                    # A local handle owns its callback/cleanup boundary. The
+                    # cancellation signal was sent above; changing its DB
+                    # state here would race delivery classification.
+                    if self._has_registered_handle(attempt_id):
+                        continue
+                    owner = active_attempt["lease_owner"]
+                    step_state = StepState(active_attempt["current_step_state"])
+                    attempt_state = AttemptState(active_attempt["state"])
+                    delivery = active_attempt["delivery_state"]
+                    pending_usage = self._attempt_has_pending_usage(session, attempt_id)
+                    # Without a local handle, a leased Attempt is cancellable
+                    # only when both delivery and usage show no provider
+                    # boundary. Running, any delivery evidence, or a pending
+                    # reservation is deliberately indeterminate.
+                    definitely_unsent = (
+                        attempt_state is AttemptState.leased
+                        and delivery in (None, DeliveryState.NOT_STARTED.value)
+                        and not pending_usage
+                        and active_attempt["runtime_session_id"] is None
+                        and active_attempt["child_pid"] is None
+                    )
+                    if not isinstance(owner, str) or not owner:
+                        definitely_unsent = False
+                    if definitely_unsent:
+                        self.state.cancel_attempt_cas(
+                            session,
+                            scope=scope,
+                            run_id=current_run["id"],
+                            step_id=active_attempt["step_id"],
+                            attempt_id=attempt_id,
+                            attempt_no=active_attempt["attempt_no"],
+                            lease_owner=owner,
+                            attempt_state=attempt_state,
+                            step_state=step_state,
+                            now_us=now_us,
+                        )
+                    else:
+                        self.state.indeterminate_attempt_cas(
+                            session,
+                            scope=scope,
+                            run_id=current_run["id"],
+                            step_id=active_attempt["step_id"],
+                            attempt_id=attempt_id,
+                            attempt_no=active_attempt["attempt_no"],
+                            lease_owner=owner,
+                            attempt_state=attempt_state,
+                            step_state=step_state,
+                            delivery_state=(
+                                delivery
+                                if delivery
+                                in {
+                                    DeliveryState.SENT.value,
+                                    DeliveryState.ACKNOWLEDGED.value,
+                                    DeliveryState.UNKNOWN.value,
+                                }
+                                else DeliveryState.UNKNOWN.value
+                            ),
+                            now_us=now_us,
+                        )
+                # Refresh after the current-generation CAS decisions. Stale
+                # attempts and late terminal callbacks must not keep a Run
+                # from reducing, and must never be mistaken for a successor.
+                run_steps = self.step_repository.for_run(
+                    session, scope=scope, run_id=current_run["id"]
+                )
                 pending_steps = [
                     row
-                    for row in self.step_repository.for_run(session, scope=scope, run_id=run["id"])
+                    for row in run_steps
                     if row["state"]
                     in (
                         "pending",
@@ -1366,14 +1889,35 @@ class HarnessRunner:
                         now_us=now_us,
                         skip_reason="run_cancelled",
                     )
-                self.state.reduce_run(
+                # A running/leased Attempt owns its terminal delivery and
+                # usage decision. Do not cancel the Run over it: the handle
+                # callback will choose cancelled (definitely unsent) or
+                # indeterminate (possibly delivered), then the next pass can
+                # reduce the Run safely.
+                if any(row["state"] in ("leased", "running") for row in run_steps):
+                    continue
+                if any(row["state"] == StepState.indeterminate.value for row in run_steps):
+                    reduced = self.state.reduce_run_cas(
+                        session,
+                        scope=scope,
+                        run_id=current_run["id"],
+                        target=RunState.indeterminate,
+                        expected_state=RunState(current_run["state"]),
+                        outcome=RunOutcome.incomplete.value,
+                        now_us=now_us,
+                    )
+                    changed += int(reduced)
+                    continue
+                reduced = self.state.reduce_run_cas(
                     session,
-                    run_id=run["id"],
+                    scope=scope,
+                    run_id=current_run["id"],
                     target=RunState.cancelled,
+                    expected_state=RunState(current_run["state"]),
                     outcome=RunOutcome.incomplete.value,
                     now_us=now_us,
                 )
-                changed += 1
+                changed += int(reduced)
         # Pause: only when the run has no active step left; the dispatcher
         # never claims new steps for a paused run, so this is a safe boundary.
         with session_scope() as session:
@@ -1397,8 +1941,14 @@ class HarnessRunner:
                 ]
                 if active:
                     continue
-                self.state.transition_run(
-                    session, run_id=run["id"], target=RunState.paused, now_us=now_us
+                paused = self.state.reduce_run_cas(
+                    session,
+                    scope=scope,
+                    run_id=run["id"],
+                    expected_state=RunState(run["state"]),
+                    target=RunState.paused,
+                    outcome=None,
+                    now_us=now_us,
                 )
-                changed += 1
+                changed += int(paused)
         return changed

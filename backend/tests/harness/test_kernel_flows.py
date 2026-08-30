@@ -15,6 +15,9 @@ from pharos.harness.contracts import (
     AttemptErrorClass,
     AttemptState,
     GatewayError,
+    RunOutcome,
+    RunState,
+    StateError,
     StepState,
 )
 from pharos.harness.dispatcher import ClaimedStep
@@ -261,7 +264,8 @@ def test_agent_step_runs_through_the_fake_gateway(app, owner):
     assert usage["settled_reservations"] >= 1, "the agent turn must settle reserved usage"
 
     agent_step = next(
-        step for step in app.steps_for(scope=owner, run_id=run["id"])
+        step
+        for step in app.steps_for(scope=owner, run_id=run["id"])
         if step["definition_step_key"] == "actor_turn"
     )
     assert agent_step["output_artifact_id"] is not None
@@ -306,9 +310,9 @@ def test_agent_indeterminate_gateway_marks_run_indeterminate(app, owner):
     assert run["state"] == "indeterminate", "unknown external outcome must not become failed"
     with session_scope() as session:
         usage = app.usage.totals(session, run_id=run["id"])
-    assert (
-        usage["released_reservations"] >= 1
-    ), "unknown outcome reserves stay un-settled, not double-charged"
+    assert usage["released_reservations"] == 0
+    assert usage["settled_reservations"] == 0
+    assert usage["pending_reservations"] >= 1
 
 
 def test_agent_invalid_typed_output_fails_without_artifact(app, owner):
@@ -337,7 +341,8 @@ def test_agent_invalid_typed_output_fails_without_artifact(app, owner):
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "succeeded"
     actor_step = next(
-        step for step in app.steps_for(scope=owner, run_id=run["id"])
+        step
+        for step in app.steps_for(scope=owner, run_id=run["id"])
         if step["definition_step_key"] == "actor_turn"
     )
     assert actor_step["state"] == "failed"
@@ -350,7 +355,9 @@ def test_agent_invalid_typed_output_fails_without_artifact(app, owner):
             == []
         )
         usage = app.usage.totals(session, run_id=run["id"])
-    assert usage["released_reservations"] == usage["reserved_reservations"]
+    assert usage["settled_reservations"] == usage["reserved_reservations"]
+    assert usage["released_reservations"] == 0
+    assert usage["pending_reservations"] == 0
 
 
 def test_agent_nonterminal_finish_is_rejected_without_persisting_payload(app, owner):
@@ -421,7 +428,8 @@ def test_agent_finish_artifact_failure_rolls_back_artifact_and_settlement(app, o
     )
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     actor_step = next(
-        step for step in app.steps_for(scope=owner, run_id=run["id"])
+        step
+        for step in app.steps_for(scope=owner, run_id=run["id"])
         if step["definition_step_key"] == "actor_turn"
     )
     assert actor_step["state"] == "failed"
@@ -434,11 +442,12 @@ def test_agent_finish_artifact_failure_rolls_back_artifact_and_settlement(app, o
             == []
         )
         usage = app.usage.totals(session, run_id=run["id"])
-    assert usage["settled_reservations"] == 0
-    assert usage["released_reservations"] == usage["reserved_reservations"]
+    assert usage["settled_reservations"] == usage["reserved_reservations"]
+    assert usage["released_reservations"] == 0
+    assert usage["pending_reservations"] == 0
 
 
-def test_agent_finish_usage_failure_rolls_back_artifact_and_releases(app, owner):
+def test_agent_finish_usage_failure_requires_reconciliation(app, owner):
     enable_canary(app, agent_steps=True)
 
     class FailingUsageLedger(UsageLedger):
@@ -454,11 +463,13 @@ def test_agent_finish_usage_failure_rolls_back_artifact_and_releases(app, owner)
         initiator="user",
     )
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
+    assert run["state"] == "indeterminate"
     actor_step = next(
-        step for step in app.steps_for(scope=owner, run_id=run["id"])
+        step
+        for step in app.steps_for(scope=owner, run_id=run["id"])
         if step["definition_step_key"] == "actor_turn"
     )
-    assert actor_step["state"] == "failed"
+    assert actor_step["state"] == "indeterminate"
     assert actor_step["output_artifact_id"] is None
     with session_scope() as session:
         assert (
@@ -469,7 +480,8 @@ def test_agent_finish_usage_failure_rolls_back_artifact_and_releases(app, owner)
         )
         usage = app.executor.usage.totals(session, run_id=run["id"])
     assert usage["settled_reservations"] == 0
-    assert usage["released_reservations"] == usage["reserved_reservations"]
+    assert usage["released_reservations"] == 0
+    assert usage["pending_reservations"] == usage["reserved_reservations"]
 
 
 def test_replaying_agent_finish_does_not_duplicate_artifact_or_usage(app, owner):
@@ -483,14 +495,13 @@ def test_replaying_agent_finish_does_not_duplicate_artifact_or_usage(app, owner)
     )
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     actor_step = next(
-        step for step in app.steps_for(scope=owner, run_id=run["id"])
+        step
+        for step in app.steps_for(scope=owner, run_id=run["id"])
         if step["definition_step_key"] == "actor_turn"
     )
     with session_scope() as session:
         attempt = (
-            session.execute(
-                attempts.select().where(attempts.c.step_id == actor_step["id"])
-            )
+            session.execute(attempts.select().where(attempts.c.step_id == actor_step["id"]))
             .mappings()
             .first()
         )
@@ -596,9 +607,7 @@ def test_late_agent_finish_cannot_mutate_a_newer_attempt(app, owner):
             now_us=app.clock.utc_epoch_us(),
         )
 
-    result = ModelResult(
-        output={"ok": True, "workflow": "harness.canary", "step": "actor_turn"}
-    )
+    result = ModelResult(output={"ok": True, "workflow": "harness.canary", "step": "actor_turn"})
     app.runner._finish_agent_success(  # noqa: SLF001 -- inject stale callback
         claimed=stale,
         result=result,
@@ -613,8 +622,7 @@ def test_late_agent_finish_cannot_mutate_a_newer_attempt(app, owner):
         now_us=app.clock.utc_epoch_us(),
     )
     step = next(
-        row for row in app.steps_for(scope=owner, run_id=run["id"])
-        if row["id"] == current.step_id
+        row for row in app.steps_for(scope=owner, run_id=run["id"]) if row["id"] == current.step_id
     )
     with session_scope() as session:
         current_attempt = (
@@ -627,7 +635,9 @@ def test_late_agent_finish_cannot_mutate_a_newer_attempt(app, owner):
     assert step["output_artifact_id"] is None
     assert current_attempt["state"] == "running"
     assert app.artifacts_for(scope=owner, run_id=run["id"]) == []
-    assert usage["released_reservations"] == 1
+    assert usage["settled_reservations"] == 1
+    assert usage["released_reservations"] == 0
+    assert usage["pending_reservations"] == 0
 
 
 def test_pause_and_resume(app, owner):
@@ -646,6 +656,54 @@ def test_pause_and_resume(app, owner):
     app.resume(scope=owner, run_id=run["id"])
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "succeeded"
+
+
+def test_pause_after_claim_lets_owned_step_reach_its_safe_boundary(app, owner):
+    """Pause fences new claims, but does not strand a lease already granted."""
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("success"),
+        idempotency_key="pause-after-claim",
+        initiator="user",
+    )
+    with session_scope() as session:
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us(), limit=1)
+    assert claimed is not None
+
+    app.pause(scope=owner, run_id=run["id"])
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+    with session_scope() as session:
+        attempt = (
+            session.execute(attempts.select().where(attempts.c.id == claimed.attempt_id))
+            .mappings()
+            .one()
+        )
+    assert attempt["state"] == AttemptState.succeeded.value
+
+    assert app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us()) == 1
+    assert app.get_run(scope=owner, run_id=run["id"])["state"] == RunState.paused.value
+
+
+def test_cancelled_paused_run_cannot_be_revived(app, owner):
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("success"),
+        idempotency_key="resume-cancel-race",
+        initiator="user",
+    )
+    app.pause(scope=owner, run_id=run["id"])
+    app.cycle()
+    assert app.get_run(scope=owner, run_id=run["id"])["state"] == RunState.paused.value
+
+    app.cancel(scope=owner, run_id=run["id"])
+    with pytest.raises(StateError, match="changed while it was being resumed"):
+        app.resume(scope=owner, run_id=run["id"])
+    run = run_until_terminal(app, owner=owner, run_id=run["id"])
+    assert run["state"] == RunState.cancelled.value
 
 
 def test_cancel_is_persistent_and_wins(app, owner):
@@ -745,9 +803,38 @@ def test_usage_conservation(app, owner):
     with session_scope() as session:
         totals = app.usage.totals(session, run_id=run["id"])
     assert (
-        totals["settled_reservations"] + totals["released_reservations"]
+        totals["settled_reservations"]
+        + totals["released_reservations"]
+        + totals["pending_reservations"]
         == totals["reserved_reservations"]
-    ), "every reservation is settled or released exactly once"
+    ), "every reservation is settled, released, or pending reconciliation"
+
+
+def test_run_reducer_waits_for_sibling_before_terminal_indeterminate():
+    from pharos.harness.workflows.canary import reduce
+
+    run = {"cancel_requested_at": 1}
+    target, outcome = reduce(
+        run,
+        [
+            {"definition_step_key": "actor_turn", "state": "indeterminate"},
+            {"definition_step_key": "start", "state": "running"},
+        ],
+        1,
+    )
+    assert target is RunState.running
+    assert outcome is None
+
+    target, outcome = reduce(
+        run,
+        [
+            {"definition_step_key": "actor_turn", "state": "indeterminate"},
+            {"definition_step_key": "start", "state": "succeeded"},
+        ],
+        1,
+    )
+    assert target is RunState.indeterminate
+    assert outcome is RunOutcome.incomplete
 
 
 def test_start_refused_when_gates_off(app, owner):

@@ -365,23 +365,26 @@ def expand_dsh(input: dict) -> list[dict]:
 def reduce(run: dict, step_rows: list[dict], now_us: int) -> tuple[RunState, RunOutcome | None]:
     """The deterministic run reduction for the canary.
 
-    Follows the architecture's reduction order: cancel wins; any indeterminate
-    step makes the run indeterminate (an unknown external outcome is never
-    silently downgraded); waiting states surface before running; required
-    failure fails; everything terminal succeeds, with partial outcome when an
-    optional branch failed or was skipped.
+    Follows the architecture's safety order: every leased/running Attempt must
+    first resolve its delivery boundary; then an indeterminate external outcome
+    wins over a later cancel request. Otherwise cancel/wait/failure/terminal
+    work reduces normally.
     """
-    if run.get("cancel_requested_at") is not None:
-        return RunState.cancelled, RunOutcome.incomplete
     states = [StepState(row["state"]) for row in step_rows]
     if not states:
+        if run.get("cancel_requested_at") is not None:
+            return RunState.cancelled, RunOutcome.incomplete
         return RunState.queued, None
     required_keys = {"start", "collect", "publish", "finish"}
     required = [row for row in step_rows if row["definition_step_key"] in required_keys]
     optional = [row for row in step_rows if row["definition_step_key"] not in required_keys]
 
+    if any(row["state"] in (StepState.leased.value, StepState.running.value) for row in step_rows):
+        return RunState.running, None
     if any(StepState(row["state"]) == StepState.indeterminate for row in step_rows):
         return RunState.indeterminate, RunOutcome.incomplete
+    if run.get("cancel_requested_at") is not None:
+        return RunState.cancelled, RunOutcome.incomplete
     if any(row["state"] == StepState.waiting_for_approval.value for row in step_rows):
         return RunState.waiting_for_approval, None
     # Optional DSH actor steps can still block the run: publish depends on
@@ -389,15 +392,7 @@ def reduce(run: dict, step_rows: list[dict], now_us: int) -> tuple[RunState, Run
     # the run appear to progress while its required successor waits forever.
     if any(row["state"] == StepState.waiting_for_input.value for row in step_rows):
         return RunState.waiting_for_input, None
-    if any(
-        row["state"]
-        in (
-            StepState.leased.value,
-            StepState.running.value,
-            StepState.retry_scheduled.value,
-        )
-        for row in step_rows
-    ):
+    if any(row["state"] in (StepState.retry_scheduled.value,) for row in step_rows):
         return RunState.running, None
     for row in required:
         if row["state"] == StepState.failed.value:

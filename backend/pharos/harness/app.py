@@ -477,38 +477,41 @@ class HarnessApp:
     def pause(self, *, scope: Scope, run_id: str) -> dict:
         with session_scope() as session:
             HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_pause(session, run_id=run_id, now_us=self.clock.utc_epoch_us())
+            self.state.request_pause(
+                session, scope=scope, run_id=run_id, now_us=self.clock.utc_epoch_us()
+            )
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             return dict(run)
 
     def cancel(self, *, scope: Scope, run_id: str) -> dict:
         with session_scope() as session:
             HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_cancel(session, run_id=run_id, now_us=self.clock.utc_epoch_us())
+            self.state.request_cancel(
+                session, scope=scope, run_id=run_id, now_us=self.clock.utc_epoch_us()
+            )
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            return dict(run)
+            result = dict(run)
+        # Never call a potentially blocking runtime while holding the DB
+        # transaction. The persisted request wins even if no local worker owns
+        # the Attempt; a local owner receives an immediate attempt-scoped
+        # cancellation signal.
+        self.runner.cancel_run_handles(scope=scope, run_id=run_id)
+        return result
 
     def resume(self, *, scope: Scope, run_id: str) -> dict:
         """Clear the pause request and put a paused run back in the queue."""
-        from sqlalchemy import update
-
-        from pharos.harness.tables import runs as runs_table
-
         with session_scope() as session:
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             if run["state"] != RunState.paused.value:
                 raise StateError("run is not paused")
-            session.execute(
-                update(runs_table)
-                .where(scope.where(runs_table), runs_table.c.id == run_id)
-                .values(pause_requested_at=None)
-            )
-            self.state.transition_run(
+            resumed = self.state.resume_run_cas(
                 session,
+                scope=scope,
                 run_id=run_id,
-                target=RunState.queued,
                 now_us=self.clock.utc_epoch_us(),
             )
+            if not resumed:
+                raise StateError("run changed while it was being resumed")
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             return dict(run)
 

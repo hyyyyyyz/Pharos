@@ -16,6 +16,7 @@ from pharos.harness.repository import (
     Scope,
 )
 from pharos.harness.tables import attempts, config_head, runs, steps
+from pharos.harness.usage import UsageLedger
 
 HASHES = {
     "runtime_hash": "a" * 64,
@@ -152,6 +153,20 @@ def _transition(repo, session, scope, attempt_id, delivery_state, **overrides):
     return repo.transition_delivery(session, **values)
 
 
+def _record_reaped(repo, session, scope, *, attempt_id="attempt-1", **overrides):
+    values = {
+        "scope": scope,
+        "run_id": overrides.pop("run_id", "run-1"),
+        "attempt_id": attempt_id,
+        "step_id": overrides.pop("step_id", "step-1"),
+        "attempt_no": overrides.pop("attempt_no", 1),
+        "runtime_session_id": overrides.pop("runtime_session_id", "session-1"),
+        "child_pid": overrides.pop("child_pid", 1234),
+        **overrides,
+    }
+    return repo.record_child_reaped(session, **values)
+
+
 def test_bind_is_complete_immutable_and_delivery_is_monotonic(app):
     repo = HarnessAttemptRepository()
     with session_scope() as session:
@@ -159,7 +174,6 @@ def test_bind_is_complete_immutable_and_delivery_is_monotonic(app):
         row = _bind(repo, session, scope, attempt_id=attempt_id)
         assert row is not None and row["delivery_state"] == "not_started"
         assert _attach(repo, session, scope, attempt_id=attempt_id)
-        assert _transition(repo, session, scope, attempt_id, "unknown")
         assert _transition(repo, session, scope, attempt_id, "sent")
         assert _transition(repo, session, scope, attempt_id, "acknowledged")
         with pytest.raises(AttemptRuntimeError, match="illegal delivery"):
@@ -170,7 +184,7 @@ def test_bind_is_complete_immutable_and_delivery_is_monotonic(app):
             _transition(repo, session, scope, attempt_id, "sent")
 
 
-def test_delivery_observer_order_allows_unknown_then_complete_frame(app):
+def test_partial_write_cannot_be_promoted_by_the_live_worker(app):
     repo = HarnessAttemptRepository()
     with session_scope() as session:
         scope, attempt_id = _seed_attempt(session)
@@ -179,6 +193,16 @@ def test_delivery_observer_order_allows_unknown_then_complete_frame(app):
         with pytest.raises(AttemptRuntimeError, match="illegal delivery"):
             _transition(repo, session, scope, attempt_id, "acknowledged")
         assert _transition(repo, session, scope, attempt_id, "unknown")
+        with pytest.raises(AttemptRuntimeError, match="illegal delivery"):
+            _transition(repo, session, scope, attempt_id, "sent")
+
+
+def test_delivery_observer_allows_complete_frame_without_partial_write(app):
+    repo = HarnessAttemptRepository()
+    with session_scope() as session:
+        scope, attempt_id = _seed_attempt(session)
+        _bind(repo, session, scope, attempt_id=attempt_id)
+        _attach(repo, session, scope, attempt_id=attempt_id)
         assert _transition(repo, session, scope, attempt_id, "sent")
         assert _transition(repo, session, scope, attempt_id, "acknowledged")
 
@@ -334,9 +358,7 @@ def test_attach_integrity_conflict_uses_savepoint(monkeypatch, app):
                 # Simulate another writer winning the child-PID uniqueness
                 # race after this repository's advisory preflight.
                 real_execute(
-                    attempts.update()
-                    .where(attempts.c.id == first_id)
-                    .values(child_pid=4321)
+                    attempts.update().where(attempts.c.id == first_id).values(child_pid=4321)
                 )
             return real_execute(statement, *args, **kwargs)
 
@@ -449,9 +471,7 @@ def test_generation_rollover_and_step_state_mismatch_hide_old_launch(app):
 
         # A same-worker reclaim with a new attempt generation must not attach
         # to the old reservation, even when the owner string is unchanged.
-        session.execute(
-            attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=2)
-        )
+        session.execute(attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=2))
         assert not _attach(repo, session, scope, attempt_id=attempt_id, attempt_no=1)
         rows = repo.list_launch_recovery_candidates(session, scope=scope, now_us=2)
         assert len(rows) == 1
@@ -460,9 +480,7 @@ def test_generation_rollover_and_step_state_mismatch_hide_old_launch(app):
 
         # The row remains auditable when the correlated Step no longer agrees
         # with the Attempt state, while the live-lease diagnostic is false.
-        session.execute(
-            attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=1)
-        )
+        session.execute(attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=1))
         session.execute(steps.update().where(steps.c.id == "step-1").values(state="succeeded"))
         rows = repo.list_launch_recovery_candidates(session, scope=scope, now_us=2)
         assert len(rows) == 1
@@ -488,18 +506,165 @@ def test_launch_recovery_scans_attached_expired_and_stale_rows(app):
         assert len(rows) == 1
         assert rows[0]["current_generation"] is True
         assert rows[0]["live_lease"] is False
+        session.execute(
+            attempts.update()
+            .where(attempts.c.id == attempt_id)
+            .values(state=AttemptState.indeterminate.value)
+        )
+        session.execute(steps.update().where(steps.c.id == "step-1").values(state="indeterminate"))
+        rows = repo.list_launch_recovery_candidates(session, scope=scope, now_us=2)
+        assert [row["id"] for row in rows] == [attempt_id]
+        assert rows[0]["child_pid"] == 1234
 
 
-def test_indeterminate_unknown_reconciliation_is_terminal_and_scoped(app):
+@pytest.mark.parametrize(
+    "terminal_state",
+    [AttemptState.succeeded, AttemptState.failed, AttemptState.indeterminate],
+)
+def test_proven_reap_clears_pid_and_normal_terminal_is_not_recovered(app, terminal_state):
+    repo = HarnessAttemptRepository()
+    with session_scope() as session:
+        scope, attempt_id = _seed_attempt(session)
+        _bind(repo, session, scope, attempt_id=attempt_id)
+        _attach(repo, session, scope, attempt_id=attempt_id)
+
+        # A PID alone is not a durable process identity.  Cleanup records its
+        # proof against the immutable runtime session before restart scans may
+        # stop treating the child as unresolved.  An active worker must first
+        # commit its terminal Attempt state, otherwise clearing the PID would
+        # hide a still-running child and release the PID uniqueness fence.
+        assert not _record_reaped(repo, session, scope, attempt_id=attempt_id)
+        assert not _record_reaped(
+            repo,
+            session,
+            Scope.user("stranger"),
+            attempt_id=attempt_id,
+        )
+        assert not _record_reaped(
+            repo,
+            session,
+            scope,
+            attempt_id=attempt_id,
+            runtime_session_id="wrong-session",
+        )
+        assert not _record_reaped(
+            repo,
+            session,
+            scope,
+            attempt_id=attempt_id,
+            child_pid=4321,
+        )
+        session.execute(
+            attempts.update().where(attempts.c.id == attempt_id).values(state=terminal_state.value)
+        )
+        session.execute(
+            steps.update().where(steps.c.id == "step-1").values(state=terminal_state.value)
+        )
+        assert _record_reaped(repo, session, scope, attempt_id=attempt_id)
+        row = session.execute(attempts.select().where(attempts.c.id == attempt_id)).mappings().one()
+        assert row["child_pid"] is None
+        assert repo.list_launch_recovery_candidates(session, scope=scope, now_us=2) == []
+        assert not _record_reaped(repo, session, scope, attempt_id=attempt_id)
+
+
+def test_recovery_surfaces_partial_launch_with_attached_child(app):
+    repo = HarnessAttemptRepository()
+    with session_scope() as session:
+        scope, attempt_id = _seed_attempt(session)
+        # Model the narrow crash window after spawn/PID persistence but before
+        # the complete provenance/delivery transaction.  Nullable legacy or
+        # interrupted rows are malformed, not safe to hide from recovery.
+        session.execute(
+            attempts.update()
+            .where(attempts.c.id == attempt_id)
+            .values(
+                state=AttemptState.indeterminate.value,
+                runtime_session_id="partial-session",
+                child_pid=4321,
+            )
+        )
+        session.execute(steps.update().where(steps.c.id == "step-1").values(state="indeterminate"))
+        rows = repo.list_launch_recovery_candidates(session, scope=scope, now_us=2)
+        assert [row["id"] for row in rows] == [attempt_id]
+        assert rows[0]["child_pid"] == 4321
+        assert rows[0]["runtime_hash"] is None
+        assert rows[0]["live_lease"] is False
+        assert _record_reaped(
+            repo,
+            session,
+            scope,
+            attempt_id=attempt_id,
+            runtime_session_id="partial-session",
+            child_pid=4321,
+        )
+        assert repo.list_launch_recovery_candidates(session, scope=scope, now_us=2) == []
+
+
+@pytest.mark.parametrize(
+    ("attempt_state", "step_state"),
+    [
+        (AttemptState.abandoned, "retry_scheduled"),
+        (AttemptState.blocked, "waiting_for_input"),
+        (AttemptState.timed_out, "running"),
+    ],
+)
+def test_reap_proof_is_bound_to_terminal_attempt_not_current_step_state(
+    app, attempt_state, step_state
+):
     repo = HarnessAttemptRepository()
     with session_scope() as session:
         scope, attempt_id = _seed_attempt(session)
         _bind(repo, session, scope, attempt_id=attempt_id)
         _attach(repo, session, scope, attempt_id=attempt_id)
         session.execute(
+            attempts.update().where(attempts.c.id == attempt_id).values(state=attempt_state.value)
+        )
+        session.execute(
+            steps.update()
+            .where(steps.c.id == "step-1")
+            .values(
+                state=step_state,
+                attempt_count=2,
+                lease_owner="worker-b" if step_state == "running" else None,
+            )
+        )
+        assert _record_reaped(repo, session, scope, attempt_id=attempt_id)
+        row = session.execute(attempts.select().where(attempts.c.id == attempt_id)).mappings().one()
+        assert row["child_pid"] is None
+
+
+@pytest.mark.parametrize("delivery_state", ["unknown", "sent", "acknowledged"])
+@pytest.mark.parametrize(
+    "terminal_state",
+    [AttemptState.indeterminate, AttemptState.abandoned, AttemptState.failed],
+)
+def test_pending_delivery_reconciliation_is_terminal_and_scoped(
+    app, delivery_state, terminal_state
+):
+    repo = HarnessAttemptRepository()
+    with session_scope() as session:
+        scope, attempt_id = _seed_attempt(session)
+        _bind(repo, session, scope, attempt_id=attempt_id)
+        _attach(repo, session, scope, attempt_id=attempt_id)
+        UsageLedger().reserve(
+            session,
+            scope=scope,
+            run_id="run-1",
+            step_id="step-1",
+            attempt_id=attempt_id,
+            kind="model_tokens",
+            source="system_shared",
+            amount=10,
+            cost_micros=0,
+            now_us=2,
+        )
+        session.execute(
             attempts.update()
             .where(attempts.c.id == attempt_id)
-            .values(state=AttemptState.indeterminate.value, delivery_state="unknown")
+            .values(
+                state=terminal_state.value,
+                delivery_state=delivery_state,
+            )
         )
         assert [row["id"] for row in repo.list_reconciliation_candidates(session, scope=scope)] == [
             attempt_id
@@ -509,12 +674,12 @@ def test_indeterminate_unknown_reconciliation_is_terminal_and_scoped(app):
         _seed_attempt(session, suffix="2")
         _seed_attempt(session, scope_id="other", suffix="3")
 
-        # A terminal Attempt must still prove its Step/run/generation lineage;
-        # scope alone is not sufficient for a restart reconciliation scan.
-        session.execute(
-            attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=2)
-        )
-        assert repo.list_reconciliation_candidates(session, scope=scope) == []
+        # A retried old generation still owns real provider usage and remains
+        # reconcilable; parent Step/Run owner lineage is the safety fence.
+        session.execute(attempts.update().where(attempts.c.id == attempt_id).values(attempt_no=2))
+        assert [row["id"] for row in repo.list_reconciliation_candidates(session, scope=scope)] == [
+            attempt_id
+        ]
         session.execute(
             attempts.update()
             .where(attempts.c.id == attempt_id)
@@ -527,6 +692,42 @@ def test_indeterminate_unknown_reconciliation_is_terminal_and_scoped(app):
             .values(run_id="run-3", scope_id="other")
         )
         assert repo.list_reconciliation_candidates(session, scope=Scope.user("other")) == []
+
+
+@pytest.mark.parametrize("delivery_state", [None, "unknown", "sent", "acknowledged"])
+def test_pending_usage_is_discoverable_without_runtime_launch_metadata(app, delivery_state):
+    repo = HarnessAttemptRepository()
+    with session_scope() as session:
+        scope, attempt_id = _seed_attempt(session)
+        reservation_id = UsageLedger().reserve(
+            session,
+            scope=scope,
+            run_id="run-1",
+            step_id="step-1",
+            attempt_id=attempt_id,
+            kind="model_tokens",
+            source="system_shared",
+            amount=10,
+            cost_micros=0,
+            now_us=2,
+        )
+        session.execute(
+            attempts.update()
+            .where(attempts.c.id == attempt_id)
+            .values(
+                state=AttemptState.indeterminate.value,
+                delivery_state=delivery_state,
+            )
+        )
+        session.execute(steps.update().where(steps.c.id == "step-1").values(state="indeterminate"))
+        assert [row["id"] for row in repo.list_reconciliation_candidates(session, scope=scope)] == [
+            attempt_id
+        ]
+
+        # Once the exact reservation is spent, no delivery/provenance shape
+        # may keep this Attempt in the reconciliation queue.
+        UsageLedger().release(session, reservation_id=reservation_id, now_us=3)
+        assert repo.list_reconciliation_candidates(session, scope=scope) == []
 
 
 def test_scope_owner_lease_and_terminal_late_updates_are_fenced(app):
@@ -552,9 +753,9 @@ def test_active_and_restart_queries_are_scope_filtered(app):
         scope, attempt_id = _seed_attempt(session)
         _bind(repo, session, scope, attempt_id=attempt_id)
         _attach(repo, session, scope, attempt_id=attempt_id)
-        assert [row["id"] for row in repo.list_active_runtime(
-            session, scope=scope, now_us=2
-        )] == [attempt_id]
+        assert [row["id"] for row in repo.list_active_runtime(session, scope=scope, now_us=2)] == [
+            attempt_id
+        ]
         assert repo.list_reconciliation_candidates(session, scope=scope) == []
         assert repo.list_active_runtime(session, scope=Scope.user("stranger"), now_us=2) == []
         assert (

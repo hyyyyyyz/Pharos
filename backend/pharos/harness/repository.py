@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import case, delete, exists, select, update
+from sqlalchemy import case, delete, exists, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
@@ -37,6 +37,7 @@ from pharos.harness.configrev import (
     validate_snapshot,
 )
 from pharos.harness.contracts import (
+    ATTEMPT_TERMINAL_STATES,
     AttemptState,
     ConfigIntegrityError,
     DefinitionError,
@@ -68,6 +69,7 @@ from pharos.harness.tables import (
     role_versions,
     runs,
     steps,
+    usage_events,
     workflow_definition_bindings,
     workflow_versions,
 )
@@ -258,7 +260,8 @@ class HarnessDefinitionRepository:
                 if expected_value is not None and row.get(key) != expected_value:
                     raise ConfigIntegrityError(f"{identity} stored metadata is inconsistent")
             if isinstance(parsed, WorkflowDefinition) and (
-                row.get("input_schema"), row.get("output_schema")
+                row.get("input_schema"),
+                row.get("output_schema"),
             ) != (parsed.input_schema, parsed.output_schema):
                 raise ConfigIntegrityError(f"{identity} stored schema metadata is inconsistent")
             if isinstance(parsed, RoleDefinition):
@@ -352,9 +355,7 @@ class HarnessDefinitionRepository:
     def upsert_model_profile(
         self, session: Session, profile: ModelProfileDefinition, now: str
     ) -> str:
-        profile = self._revalidate_definition(
-            profile, ModelProfileDefinition, "model profile"
-        )
+        profile = self._revalidate_definition(profile, ModelProfileDefinition, "model profile")
         raw = canonical_json(profile.canonical())
         digest = profile.definition_hash()
         row_id = new_id()
@@ -394,9 +395,7 @@ class HarnessDefinitionRepository:
     def upsert_capability(
         self, session: Session, capability: CapabilityDefinition, now: str
     ) -> str:
-        capability = self._revalidate_definition(
-            capability, CapabilityDefinition, "capability"
-        )
+        capability = self._revalidate_definition(capability, CapabilityDefinition, "capability")
         raw = canonical_json(capability.canonical())
         digest = capability.definition_hash()
         row_id = new_id()
@@ -757,9 +756,7 @@ class HarnessDefinitionRepository:
             # At this read boundary the caller supplied only a content hash;
             # a missing or incompatible closure row is persisted-state
             # corruption, not a new definition error from the caller.
-            raise ConfigIntegrityError(
-                "stored workflow binding closure is invalid"
-            ) from exc
+            raise ConfigIntegrityError("stored workflow binding closure is invalid") from exc
         return result
 
     def get_workflow(self, session: Session, workflow_key: str, version: int) -> dict | None:
@@ -1107,13 +1104,11 @@ class HarnessRunRepository:
         return input_json, sha256_text(input_json)
 
     @staticmethod
-    def _validate_replay_input(
-        winner: dict, *, input_json: str, input_hash: str
-    ) -> None:
+    def _validate_replay_input(winner: dict, *, input_json: str, input_hash: str) -> None:
         try:
-            stored_input_is_canonical = json_dump(json.loads(winner["input_json"])) == winner[
-                "input_json"
-            ]
+            stored_input_is_canonical = (
+                json_dump(json.loads(winner["input_json"])) == winner["input_json"]
+            )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ConfigIntegrityError("Run idempotency winner has invalid input JSON") from exc
         if (
@@ -1404,14 +1399,16 @@ class AttemptRuntimeError(ValueError):
 _ATTEMPT_ACTIVE_STATES = frozenset({AttemptState.leased.value, AttemptState.running.value})
 _DELIVERY_STATES = frozenset({"not_started", "sent", "acknowledged", "unknown", "reconciled"})
 _DELIVERY_TRANSITIONS: dict[str, frozenset[str]] = {
-    # Delivery evidence is strictly monotonic.  The observer records unknown
-    # before the first byte, sent after a complete frame, and acknowledged only
-    # after its receipt; a later observation cannot erase stronger evidence.
-    "not_started": frozenset({"unknown"}),
+    # Delivery evidence is strictly monotonic. A partial write is unknown; a
+    # complete frame is sent (including the common direct transition from no
+    # bytes to the complete frame); only the matching receipt acknowledges it.
+    "not_started": frozenset({"unknown", "sent"}),
     "sent": frozenset({"acknowledged"}),
-    # ``unknown -> reconciled`` is a restart/reconciliation operation and is
-    # deliberately not available to the leased worker delivery writer.
-    "unknown": frozenset({"sent"}),
+    # A partial write cannot be promoted by the live worker: it must stop and
+    # await external reconciliation rather than resend a possibly delivered
+    # prompt. ``unknown -> reconciled`` belongs to that later service and is
+    # deliberately unavailable here.
+    "unknown": frozenset(),
     "acknowledged": frozenset(),
     "reconciled": frozenset(),
 }
@@ -1769,6 +1766,73 @@ class HarnessAttemptRepository:
             raise AttemptRuntimeError("runtime identity conflict") from exc
         return result.rowcount == 1
 
+    def record_child_reaped(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run_id: str,
+        step_id: str,
+        attempt_id: str,
+        attempt_no: int,
+        runtime_session_id: str,
+        child_pid: int,
+    ) -> bool:
+        """Clear an exact child identity only after its supervisor proved reap.
+
+        This mutation deliberately does not require a live lease: bounded
+        cleanup may finish after the Attempt became terminal, and a recovery
+        coordinator must still be able to record that proof.  Conversely, a
+        bare PID is never sufficient because operating systems may reuse it;
+        the immutable runtime session and full owner/parent identity are part
+        of the CAS.  Callers must perform the actual wait/cgroup verification
+        before invoking this method.
+        """
+        run = _nonempty_identifier(run_id, "run_id")
+        step = _nonempty_identifier(step_id, "step_id")
+        attempt = _nonempty_identifier(attempt_id, "attempt_id")
+        number = _positive_integer(attempt_no, "attempt_no")
+        runtime_session = _nonempty_identifier(runtime_session_id, "runtime_session_id")
+        if len(runtime_session) > 256 or any(character.isspace() for character in runtime_session):
+            raise AttemptRuntimeError(
+                "runtime_session_id must be bounded and contain no whitespace"
+            )
+        pid = _positive_integer(child_pid, "child_pid")
+        result: Any = session.execute(
+            update(attempts)
+            .where(
+                scope.where(attempts),
+                attempts.c.state.in_(tuple(state.value for state in ATTEMPT_TERMINAL_STATES)),
+                attempts.c.run_id == run,
+                attempts.c.step_id == step,
+                attempts.c.id == attempt,
+                attempts.c.attempt_no == number,
+                attempts.c.runtime_session_id == runtime_session,
+                attempts.c.child_pid == pid,
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        steps.c.id == attempts.c.step_id,
+                        steps.c.run_id == attempts.c.run_id,
+                        steps.c.scope_type == attempts.c.scope_type,
+                        steps.c.scope_id == attempts.c.scope_id,
+                    )
+                ),
+                exists(
+                    select(1)
+                    .select_from(runs)
+                    .where(
+                        runs.c.id == attempts.c.run_id,
+                        runs.c.scope_type == attempts.c.scope_type,
+                        runs.c.scope_id == attempts.c.scope_id,
+                    )
+                ),
+            )
+            .values(child_pid=None)
+        )
+        return result.rowcount == 1
+
     def transition_delivery(
         self,
         session: Session,
@@ -1859,16 +1923,23 @@ class HarnessAttemptRepository:
     def list_launch_recovery_candidates(
         self, session: Session, *, scope: Scope, now_us: int
     ) -> list[dict]:
-        """Scan all active launch reservations after a process/API restart.
+        """Scan active launches and children whose cleanup is not yet proven.
 
-        This deliberately includes attached and unattached children, expired
-        leases, and stale Attempt generations.  ``current_generation`` and
-        ``live_lease`` are diagnostics for a coordinator; neither authorizes
-        killing a PID.  PID identity does not survive a restart, so orphan
-        termination still requires trusted supervisor/cgroup evidence.
+        This deliberately includes attached and unattached active launches,
+        expired leases, stale Attempt generations, and terminal rows whose
+        ``child_pid`` was not cleared by :meth:`record_child_reaped`.
+        ``current_generation`` and ``live_lease`` are diagnostics only;
+        neither authorizes killing a PID. PID identity does not survive a
+        restart, so orphan termination still requires trusted supervisor or
+        cgroup evidence matching the immutable runtime session.
         """
         current_generation = HarnessAttemptRepository._current_generation()
         live_lease = HarnessAttemptRepository._live_lease(now_us=now_us)
+        launch_evidence = or_(
+            attempts.c.child_pid.is_not(None),
+            attempts.c.delivery_state.is_not(None),
+            *[getattr(attempts.c, field).is_not(None) for field in _LAUNCH_COLUMNS],
+        )
         rows = session.execute(
             select(
                 attempts,
@@ -1877,29 +1948,74 @@ class HarnessAttemptRepository:
             )
             .where(
                 scope.where(attempts),
-                attempts.c.state.in_(_ATTEMPT_ACTIVE_STATES),
-                *HarnessAttemptRepository._launch_complete(),
+                launch_evidence,
+                (attempts.c.state.in_(_ATTEMPT_ACTIVE_STATES) | attempts.c.child_pid.is_not(None)),
             )
             .order_by(attempts.c.started_at, attempts.c.id)
         ).mappings()
         return [dict(row) for row in rows]
 
     def list_reconciliation_candidates(self, session: Session, *, scope: Scope) -> list[dict]:
-        """Read-only terminal ``indeterminate + unknown`` candidates.
+        """Read-only terminal Attempts with an unresolved usage reservation.
 
         Reconciliation writes belong to a later service that records an
         append-only receipt, usage fact, actor/evidence/outcome and Event in
         one transaction.  This repository intentionally provides no terminal
-        delivery mutation.
+        delivery mutation. Runtime provenance and delivery evidence may be
+        absent when the worker crashed after reserving usage but before it
+        durably bound/spawned a runtime. The pending reservation is itself the
+        conservative reconciliation fact; such rows must remain discoverable
+        rather than being guessed as zero-cost or silently released.
         """
+        reservation = usage_events.alias("pending_reservation")
+        spent = usage_events.alias("spent_reservation")
+        pending_usage = exists(
+            select(1)
+            .select_from(reservation)
+            .where(
+                reservation.c.attempt_id == attempts.c.id,
+                reservation.c.op == "reserve",
+                ~exists(
+                    select(1)
+                    .select_from(spent)
+                    .where(
+                        spent.c.reservation_id == reservation.c.reservation_id,
+                        spent.c.run_id == reservation.c.run_id,
+                        spent.c.step_id == reservation.c.step_id,
+                        spent.c.attempt_id == reservation.c.attempt_id,
+                        spent.c.scope_type == reservation.c.scope_type,
+                        spent.c.scope_id == reservation.c.scope_id,
+                        spent.c.op.in_(("settle", "release")),
+                    )
+                ),
+            )
+        )
+        terminal_states = tuple(state.value for state in ATTEMPT_TERMINAL_STATES)
+        parent_lineage = exists(
+            select(1)
+            .select_from(steps)
+            .where(
+                steps.c.id == attempts.c.step_id,
+                steps.c.run_id == attempts.c.run_id,
+                steps.c.scope_type == attempts.c.scope_type,
+                steps.c.scope_id == attempts.c.scope_id,
+            )
+        ) & exists(
+            select(1)
+            .select_from(runs)
+            .where(
+                runs.c.id == attempts.c.run_id,
+                runs.c.scope_type == attempts.c.scope_type,
+                runs.c.scope_id == attempts.c.scope_id,
+            )
+        )
         rows = session.execute(
             select(attempts)
             .where(
                 scope.where(attempts),
-                attempts.c.state == AttemptState.indeterminate.value,
-                attempts.c.delivery_state == "unknown",
-                *HarnessAttemptRepository._launch_complete(),
-                HarnessAttemptRepository._current_generation(),
+                attempts.c.state.in_(terminal_states),
+                parent_lineage,
+                pending_usage,
             )
             .order_by(attempts.c.started_at, attempts.c.id)
         ).mappings()

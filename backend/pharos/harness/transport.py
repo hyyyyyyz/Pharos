@@ -20,7 +20,6 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -52,6 +51,12 @@ class HarnessTransportError(RuntimeError):
         super().__init__(message)
         self.delivery_state: DeliveryState | None = None
         self.cleanup_error_type: str | None = None
+        # The cleanup exception itself is retained only in memory so callers
+        # can make a typed safety decision.  Its text is never persisted.
+        self.cleanup_error: HarnessTransportError | None = None
+        # ``_write`` fills this with the number of frame bytes accepted by the
+        # OS before an error.  Zero means definitely unsent.
+        self.bytes_written = 0
 
 
 class HarnessProtocolError(HarnessTransportError):
@@ -112,7 +117,9 @@ AttemptDeliveryObserverCapacityError = HarnessDeliveryCapacityError
 
 _DELIVERY_OBSERVER_PREVIOUS: dict[DeliveryState, DeliveryState] = {
     DeliveryState.UNKNOWN: DeliveryState.NOT_STARTED,
-    DeliveryState.SENT: DeliveryState.UNKNOWN,
+    # A complete write is a direct NOT_STARTED -> SENT transition.  UNKNOWN
+    # is reserved for a write which began but did not complete.
+    DeliveryState.SENT: DeliveryState.NOT_STARTED,
     DeliveryState.ACKNOWLEDGED: DeliveryState.SENT,
 }
 
@@ -374,6 +381,7 @@ class AttemptTransport:
         self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
         self._failed: HarnessTransportError | None = None
+        self._cleanup_error: HarnessTransportError | None = None
         self._request_number = 0
         self._seen_response_ids: set[str | int] = set()
         self._initialized = False
@@ -497,14 +505,18 @@ class AttemptTransport:
         self._prompted = True
         request_id = self._new_request_id()
         try:
-            # Once a write begins, failure may mean a partial frame reached the
-            # child. Unknown is persisted before the first byte, and sent is
-            # persisted only after the complete frame write.
-            self._observe_delivery(DeliveryState.UNKNOWN)
-            self._write(
-                self._request_frame(request_id, "session/prompt", params.model_dump()),
-                timeout=self.config.prompt_timeout_seconds,
-            )
+            # A prompt is definitely unsent until serialization and the first
+            # successful write byte.  Only a partial write becomes UNKNOWN;
+            # the full frame becomes SENT.
+            try:
+                self._write(
+                    self._request_frame(request_id, "session/prompt", params.model_dump()),
+                    timeout=self.config.prompt_timeout_seconds,
+                )
+            except HarnessTransportError as error:
+                if error.bytes_written:
+                    self._observe_delivery(DeliveryState.UNKNOWN)
+                raise
             self._observe_delivery(DeliveryState.SENT)
             result, events, _output = self._collect_prompt(
                 request_id,
@@ -590,9 +602,11 @@ class AttemptTransport:
     def _observe_delivery(self, state: DeliveryState) -> None:
         """Record one bounded delivery transition through the optional seam.
 
-        The callback deliberately receives only a closed enum.  State is
-        updated *after* callback success so an unsuccessful durable write
-        cannot be mistaken for evidence already stored in the database.
+        The callback deliberately receives only a closed enum.  The in-memory
+        state records physical delivery even when durable observation fails;
+        this prevents a fully written prompt from being released as though it
+        was never sent.  The failed observer remains visible through the typed
+        exception and forces reconciliation upstream.
         """
 
         previous = _DELIVERY_OBSERVER_PREVIOUS.get(state)
@@ -602,6 +616,10 @@ class AttemptTransport:
             or self._delivery_state is not previous
         ):
             raise HarnessDeliveryError(state)
+        # This is physical evidence, not confirmation that the observer's
+        # database write succeeded.  Advance it before invoking untrusted
+        # observer code so observer failure cannot downgrade accounting.
+        self._delivery_state = state
         observer = self._delivery_observer
         if observer is not None:
             if self._observer_execution_active or self._observer_timed_out:
@@ -624,7 +642,6 @@ class AttemptTransport:
             if not succeeded[0]:
                 raise HarnessDeliveryError(state) from None
         self._observed_delivery_states.add(state)
-        self._delivery_state = state
 
     def shutdown(self) -> None:
         """Use official shutdown, then independently wait/reap the child."""
@@ -661,9 +678,12 @@ class AttemptTransport:
             self._pgid = None
             self._close_pipes()
             self._closed = True
-        except HarnessTransportError:
-            self._terminate_ladder()
-            self._closed = True
+        except HarnessTransportError as error:
+            self._failed = error
+            cleanup_error = self._cleanup_after_failure()
+            if cleanup_error is not None:
+                error.cleanup_error = cleanup_error
+                error.cleanup_error_type = type(cleanup_error).__name__
             raise
 
     def terminate(self) -> None:
@@ -689,20 +709,57 @@ class AttemptTransport:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired as error:
             raise HarnessTimeoutError("runtime reap deadline exceeded") from error
+        except OSError as error:
+            raise HarnessProcessError("runtime could not be reaped") from error
 
     def close(self) -> None:
-        """Best-effort bounded cleanup for context-manager use."""
+        """Perform bounded cleanup, exposing a cleanup failure to the caller.
+
+        A shutdown/protocol error is intentionally suppressed once the retry
+        cleanup succeeds: the operation's caller already owns that error.  If
+        the cleanup itself cannot be completed, its typed error is raised.
+        """
         if self._closed:
             return
         if self._process is None:
             self._closed = True
             return
+        if self._failed is not None:
+            cleanup_error = self._cleanup_after_failure()
+            if cleanup_error is not None:
+                self._failed.cleanup_error = cleanup_error
+                self._failed.cleanup_error_type = type(cleanup_error).__name__
+                raise cleanup_error from self._failed
+            return
         try:
             self.shutdown()
-        except HarnessTransportError:
+        except HarnessTransportError as error:
             if not self._closed:
-                self._terminate_ladder()
-                self._closed = True
+                cleanup_error = self._cleanup_after_failure()
+                if cleanup_error is not None:
+                    error.cleanup_error = cleanup_error
+                    error.cleanup_error_type = type(cleanup_error).__name__
+                    raise cleanup_error from error
+            # This close initiated shutdown. Even when bounded fallback cleanup
+            # succeeds, the failed shutdown/reap boundary must remain visible:
+            # a caller holding a completed model result may not publish it as
+            # though the Attempt closed cleanly.
+            raise
+
+    def _cleanup_after_failure(self) -> HarnessTransportError | None:
+        """Run the bounded TERM/KILL/reap ladder and retain any failure."""
+        if self._process is None:
+            self._closed = True
+            return None
+        try:
+            self._terminate_ladder()
+        except HarnessTransportError as error:
+            error.delivery_state = self._delivery_state
+            self._cleanup_error = error
+            return error
+        self._closed = True
+        self._cleanup_error = None
+        return None
 
     def __enter__(self) -> AttemptTransport:
         return self
@@ -1291,7 +1348,13 @@ class AttemptTransport:
             raise HarnessProtocolError("malformed JSON-RPC error")
         return value
 
-    def _write(self, frame: dict[str, Any], *, timeout: float) -> None:
+    def _write(self, frame: dict[str, Any], *, timeout: float) -> int:
+        """Write one frame and return the number of bytes accepted by the OS.
+
+        Every transport error carries that count as ``bytes_written``.  A
+        zero count is a hard proof that no prompt byte was sent; any positive
+        count is conservative UNKNOWN evidence until a full frame completes.
+        """
         process = self._require_process()
         if process.stdin is None:
             raise HarnessProcessError("runtime stdin is unavailable")
@@ -1304,13 +1367,20 @@ class AttemptTransport:
         if len(payload) - 1 > self.config.max_frame_bytes:
             raise HarnessProtocolError("outbound JSON frame limit exceeded")
         end = time.monotonic() + timeout
-        fd = process.stdin.fileno()
         offset = 0
         try:
+            # ``fileno`` itself fails when a sibling cleanup path closed the
+            # pipe. Keep it inside the typed boundary so a zero-byte failure
+            # remains definitely NOT_STARTED and still reaches the cleanup
+            # ladder instead of escaping as a raw ValueError/OSError.
+            fd = process.stdin.fileno()
             os.set_blocking(fd, False)
             while offset < len(payload):
                 try:
-                    offset += os.write(fd, payload[offset:])
+                    written = os.write(fd, payload[offset:])
+                    if written <= 0:
+                        raise HarnessProcessError("runtime stdin accepted no bytes")
+                    offset += written
                     continue
                 except BlockingIOError:
                     remaining = end - time.monotonic()
@@ -1319,10 +1389,14 @@ class AttemptTransport:
                     _, writable, _ = select.select([], [fd], [], remaining)
                     if not writable:
                         raise HarnessTimeoutError("runtime stdin write deadline exceeded") from None
-        except HarnessTransportError:
+        except HarnessTransportError as error:
+            error.bytes_written = offset
             raise
-        except (BrokenPipeError, OSError) as error:
-            raise HarnessProcessError("failed to write runtime stdin") from error
+        except (BrokenPipeError, OSError, ValueError) as error:
+            wrapped = HarnessProcessError("failed to write runtime stdin")
+            wrapped.bytes_written = offset
+            raise wrapped from error
+        return offset
 
     def _consume_stderr(self, chunk: bytes) -> None:
         if self._stderr_count + len(chunk) > self.config.max_stderr_bytes:
@@ -1333,8 +1407,10 @@ class AttemptTransport:
     def _close_stdin(self) -> None:
         process = self._process
         if process is not None and process.stdin is not None:
-            with suppress(OSError):
+            try:
                 process.stdin.close()
+            except OSError as error:
+                raise HarnessProcessError("runtime stdin could not be closed") from error
 
     def _close_pipes(self) -> None:
         """Close reaped child pipes exactly once; never retain per-Attempt FDs."""
@@ -1343,9 +1419,12 @@ class AttemptTransport:
         if process is None:
             return
         for pipe in (process.stdin, process.stdout, process.stderr):
-            if pipe is not None and not pipe.closed:
-                with suppress(OSError):
-                    pipe.close()
+            if pipe is None or pipe.closed:
+                continue
+            try:
+                pipe.close()
+            except OSError as error:
+                raise HarnessProcessError("runtime pipe could not be closed") from error
 
     def _wait(self, timeout: float, phase: str) -> None:
         process = self._require_process()
@@ -1406,10 +1485,11 @@ class AttemptTransport:
         self.terminate()
         try:
             self._wait_process_group(self.config.term_timeout_seconds, "TERM")
+        except (HarnessTimeoutError, HarnessProcessError):
+            pass
+        else:
             self._close_pipes()
             return
-        except HarnessTimeoutError:
-            pass
         self.kill()
         self._wait_process_group(self.config.kill_timeout_seconds, "KILL")
         self.reap(self.config.reap_timeout_seconds)
@@ -1417,15 +1497,15 @@ class AttemptTransport:
 
     def _fail(self, error: HarnessTransportError) -> None:
         self._failed = error
-        try:
-            self._terminate_ladder()
-        except HarnessTransportError as cleanup_error:
+        if self._closed:
+            return
+        cleanup_error = self._cleanup_after_failure()
+        if cleanup_error is not None:
             # Preserve the provider/delivery/accounting classification.  The
             # handle can inspect the sanitized cleanup type and retry close;
             # cleanup failure must not replace the original Attempt outcome.
+            error.cleanup_error = cleanup_error
             error.cleanup_error_type = type(cleanup_error).__name__
-            return
-        self._closed = True
 
     def _require_process(self) -> subprocess.Popen[bytes]:
         if self._process is None:

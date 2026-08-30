@@ -123,6 +123,10 @@ class UsageLedger:
             "reserved_reservations": reserved_count,
             "settled_reservations": settled_count,
             "released_reservations": released_count,
+            # An unresolved reservation is intentional when delivery may have
+            # crossed the provider boundary but no trusted usage receipt is
+            # available yet. Reconciliation, never a guessed zero, closes it.
+            "pending_reservations": (reserved_count - settled_count - released_count),
         }
 
     def _require_reservation(self, session: Session, reservation_id: str) -> dict:

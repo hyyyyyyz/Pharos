@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from threading import Event, Thread
 from typing import Any
 
 import pytest
 from pharos.db.session import session_scope
-from pharos.harness.contracts import AttemptState, GatewayError, StepState
+from pharos.harness.contracts import AttemptState, DeliveryState, GatewayError, StepState
 from pharos.harness.definitions import RetryPolicy
 from pharos.harness.execution_snapshots import MissingExecutionSnapshotError
 from pharos.harness.fakes import ModelResult
@@ -67,15 +68,11 @@ def _claim_target(app, owner: Scope, run_id: str, target: str):
 
 def _attempt_row(attempt_id: str) -> dict[str, Any]:
     with session_scope() as session:
-        row = session.execute(
-            select(attempts).where(attempts.c.id == attempt_id)
-        ).mappings().one()
+        row = session.execute(select(attempts).where(attempts.c.id == attempt_id)).mappings().one()
     return dict(row)
 
 
-def test_forged_claim_projection_cannot_choose_executor_or_cross_owner(
-    app, owner: Scope
-) -> None:
+def test_forged_claim_projection_cannot_choose_executor_or_cross_owner(app, owner: Scope) -> None:
     """Only the fresh DB snapshot can select a capability and its identity."""
     enable_canary(app)
     capability = RecordingCapability()
@@ -117,6 +114,7 @@ def test_missing_attempt_snapshot_fails_closed_without_side_effects(
     claimed = _claim_target(app, owner, run["id"], "start")
     digest = claimed.attempt_snapshot.executor_capability_definition_sha256
     app.executor.capabilities[("canary.noop@1", digest)] = capability
+
     def missing_snapshot(*args, **kwargs):  # noqa: ANN002, ANN003
         raise MissingExecutionSnapshotError("test missing Attempt snapshot")
 
@@ -130,9 +128,11 @@ def test_missing_attempt_snapshot_fails_closed_without_side_effects(
     assert capability.actions == []
     assert len(app.fake_model.calls) == gateway_calls
     with session_scope() as session:
-        attempt = session.execute(
-            select(attempts).where(attempts.c.id == claimed.attempt_id)
-        ).mappings().one()
+        attempt = (
+            session.execute(select(attempts).where(attempts.c.id == claimed.attempt_id))
+            .mappings()
+            .one()
+        )
         artifact_rows = session.execute(
             select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
         ).all()
@@ -167,6 +167,25 @@ def test_capability_executor_requires_the_frozen_definition_hash(app, owner: Sco
     assert len(exact.actions) == 1
 
 
+def test_cancel_request_after_claim_prevents_executor_dispatch(app, owner: Scope) -> None:
+    enable_canary(app)
+    capability = RecordingCapability()
+    run = _create_run(app, owner, mode="success", key="cancel-after-claim")
+    claimed = _claim_target(app, owner, run["id"], "start")
+    digest = claimed.attempt_snapshot.executor_capability_definition_sha256
+    app.executor.capabilities[("canary.noop@1", digest)] = capability
+
+    app.cancel(scope=owner, run_id=run["id"])
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    assert capability.actions == []
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.cancelled.value
+    step = next(
+        row for row in app.steps_for(scope=owner, run_id=run["id"]) if row["id"] == claimed.step_id
+    )
+    assert step["state"] == StepState.cancelled.value
+
+
 def _claim_agent(app, owner: Scope, key: str):
     enable_canary(app, agent_steps=True)
     run = _create_run(app, owner, mode="agent", key=key)
@@ -181,6 +200,10 @@ class SpyHandle:
         self.cancel_calls = 0
         self.close_calls = 0
 
+    @property
+    def delivery_state(self):  # noqa: ANN201 - protocol spy
+        return self.inner.delivery_state
+
     def complete(self, payload):  # noqa: ANN001 - protocol spy
         self.complete_calls += 1
         return self.inner.complete(payload)
@@ -192,6 +215,10 @@ class SpyHandle:
     def close(self) -> None:
         self.close_calls += 1
         self.inner.close()
+
+    def retry_cleanup(self) -> None:
+        self.close_calls += 1
+        self.inner.retry_cleanup()
 
 
 class SpyFactory:
@@ -233,8 +260,7 @@ def test_agent_opens_one_scoped_handle_with_frozen_context_and_closes_once(app, 
     assert context.run_policy_sha256 == claimed.attempt_snapshot.run_policy_sha256
     assert context.runtime_kind == claimed.attempt_snapshot.runtime_kind
     assert (
-        context.role_definition_sha256
-        == claimed.attempt_snapshot.executor_role_definition_sha256
+        context.role_definition_sha256 == claimed.attempt_snapshot.executor_role_definition_sha256
     )
     assert context.model_profile_identity == claimed.attempt_snapshot.model_profile_identity
     assert context.model_profile_sha256 == claimed.attempt_snapshot.model_profile_sha256
@@ -269,6 +295,24 @@ def test_runner_cancel_active_attempt_targets_only_exact_handle(app) -> None:
     second.close()
 
 
+def test_runner_cancel_run_handles_reaches_cleanup_failed_handle_without_locking(app) -> None:
+    factory = SpyFactory(app.fake_model)
+    cleanup = SpyHandle(factory.inner.open(_context_for_test("attempt-cleanup")))
+    sibling = SpyHandle(factory.inner.open(_context_for_test("attempt-sibling")))
+    app.runner._register_handle("attempt-cleanup", cleanup)  # noqa: SLF001
+    app.runner._register_handle("attempt-sibling", sibling)  # noqa: SLF001
+    app.runner._mark_cleanup_failed("attempt-cleanup", cleanup)  # noqa: SLF001
+
+    signalled = app.runner.cancel_run_handles(scope=Scope.user("owner-test"), run_id="run-test")
+
+    assert signalled == ("attempt-cleanup", "attempt-sibling")
+    assert cleanup.cancel_calls == 1
+    assert sibling.cancel_calls == 1
+    assert app.runner.retry_failed_cleanup("attempt-cleanup") is True
+    app.runner._unregister_handle("attempt-sibling", sibling)  # noqa: SLF001
+    sibling.close()
+
+
 def test_runner_cleans_up_when_complete_and_close_both_fail(app, owner) -> None:
     run, claimed = _claim_agent(app, owner, "per-attempt-double-failure")
 
@@ -282,16 +326,18 @@ def test_runner_cleans_up_when_complete_and_close_both_fail(app, owner) -> None:
         def close(self) -> None:
             raise RuntimeError("reap failed")
 
-    app.executor.gateway_factory = LegacyGatewayFactory(
-        gateway_factory=CompleteAndCloseFailure
-    )
+    app.executor.gateway_factory = LegacyGatewayFactory(gateway_factory=CompleteAndCloseFailure)
     app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
 
     assert app.runner.active_attempt_count == 0
-    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
+    assert app.runner.cleanup_failed_attempt_ids == (claimed.attempt_id,)
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.SENT.value
     with session_scope() as session:
         totals = app.usage.totals(session, run_id=run["id"])
-    assert totals["released_reservations"] == totals["reserved_reservations"]
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
 
 
 def test_cleanup_failure_after_a_result_blocks_artifact_publication(app, owner) -> None:
@@ -313,25 +359,25 @@ def test_cleanup_failure_after_a_result_blocks_artifact_publication(app, owner) 
         def close(self) -> None:
             raise RuntimeError("reap failed")
 
-    app.executor.gateway_factory = LegacyGatewayFactory(
-        gateway_factory=ResultThenCloseFailure
-    )
+    app.executor.gateway_factory = LegacyGatewayFactory(gateway_factory=ResultThenCloseFailure)
     app.runner._execute_one(  # noqa: SLF001 -- cleanup/publication boundary test
         claimed=claimed,
         now_us=app.clock.utc_epoch_us(),
     )
 
     assert app.runner.active_attempt_count == 0
-    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
+    assert app.runner.cleanup_failed_attempt_ids == (claimed.attempt_id,)
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.ACKNOWLEDGED.value
     with session_scope() as session:
         assert (
-            session.execute(
-                select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
-            ).all()
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
             == []
         )
         totals = app.usage.totals(session, run_id=run["id"])
-    assert totals["released_reservations"] == totals["reserved_reservations"]
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
 
 
 def test_factory_open_failure_releases_usage_without_registering_a_handle(app, owner) -> None:
@@ -351,13 +397,343 @@ def test_factory_open_failure_releases_usage_without_registering_a_handle(app, o
     assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
     with session_scope() as session:
         assert (
-            session.execute(
-                select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
-            ).all()
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
             == []
         )
         totals = app.usage.totals(session, run_id=run["id"])
     assert totals["released_reservations"] == totals["reserved_reservations"]
+
+
+def test_explicit_none_result_is_indeterminate_without_losing_usage(app, owner) -> None:
+    app.fake_model.script = [None]
+    run, claimed = _claim_agent(app, owner, "explicit-none-result")
+
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["error_class"] == "indeterminate"
+    assert attempt["delivery_state"] == DeliveryState.ACKNOWLEDGED.value
+    with session_scope() as session:
+        assert (
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
+            == []
+        )
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["settled_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
+def test_result_without_acknowledged_delivery_cannot_publish(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "result-without-ack")
+
+    class PrematureHandle:
+        delivery_state = DeliveryState.SENT
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            return ModelResult(
+                output={
+                    "ok": True,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                }
+            )
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class PrematureFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return PrematureHandle(context)
+
+    app.executor.gateway_factory = PrematureFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.SENT.value
+    with session_scope() as session:
+        assert (
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
+            == []
+        )
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
+def test_successful_call_with_untrusted_phase_and_close_failure_is_unknown(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "untrusted-phase-close-failure")
+
+    class BadCloseHandle:
+        delivery_state = DeliveryState.NOT_STARTED
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            return ModelResult(output={"ok": True})
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise RuntimeError("cleanup proof unavailable")
+
+    class BadCloseFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return BadCloseHandle(context)
+
+    app.executor.gateway_factory = BadCloseFactory()
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+    assert app.runner.cleanup_failed_attempt_ids == (claimed.attempt_id,)
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+
+def test_cancel_before_delivery_cancels_attempt_and_releases_usage(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "cancel-before-delivery")
+    entered = Event()
+    released = Event()
+
+    class PreSendHandle:
+        context = None
+        delivery_state = DeliveryState.NOT_STARTED
+
+        def __init__(self, context) -> None:  # noqa: ANN001 - protocol spy
+            self.context = context
+            self.cancelled = False
+
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            entered.set()
+            assert released.wait(2)
+            raise RuntimeError("cancelled before provider dispatch")
+
+        def cancel(self) -> None:
+            self.cancelled = True
+            released.set()
+
+        def close(self) -> None:
+            return None
+
+    class PreSendFactory:
+        def open(self, context):  # noqa: ANN001 - protocol spy
+            return PreSendHandle(context)
+
+    app.executor.gateway_factory = PreSendFactory()
+    worker = Thread(
+        target=app.runner._execute_one,  # noqa: SLF001 - concurrency boundary test
+        kwargs={"claimed": claimed, "now_us": app.clock.utc_epoch_us()},
+    )
+    worker.start()
+    assert entered.wait(2)
+    app.cancel(scope=owner, run_id=run["id"])
+    worker.join(2)
+    assert not worker.is_alive()
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.cancelled.value
+    assert app.runner.active_attempt_count == 0
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == totals["reserved_reservations"]
+    assert totals["pending_reservations"] == 0
+
+
+def test_cancel_after_delivery_is_indeterminate_and_keeps_usage_pending(app, owner) -> None:
+    run, claimed = _claim_agent(app, owner, "cancel-after-delivery")
+    entered = Event()
+    cancelled = Event()
+    released = Event()
+
+    class BlockingDelegate:
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            entered.set()
+            assert released.wait(2)
+            return ModelResult(
+                output={
+                    "ok": True,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                }
+            )
+
+        def cancel(self) -> None:
+            cancelled.set()
+
+        def close(self) -> None:
+            return None
+
+    app.executor.gateway_factory = LegacyGatewayFactory(gateway_factory=BlockingDelegate)
+    worker = Thread(
+        target=app.runner._execute_one,  # noqa: SLF001 - concurrency boundary test
+        kwargs={"claimed": claimed, "now_us": app.clock.utc_epoch_us()},
+    )
+    worker.start()
+    assert entered.wait(2)
+    app.cancel(scope=owner, run_id=run["id"])
+    assert cancelled.wait(2)
+    app.runner.reduce_all(now_us=app.clock.utc_epoch_us())
+    assert app.get_run(scope=owner, run_id=run["id"])["state"] == "running"
+    released.set()
+    worker.join(2)
+    assert not worker.is_alive()
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.SENT.value
+    assert app.runner.active_attempt_count == 0
+    with session_scope() as session:
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["released_reservations"] == 0
+    assert totals["settled_reservations"] == 0
+    assert totals["pending_reservations"] == totals["reserved_reservations"]
+
+    app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us())
+    terminal = app.get_run(scope=owner, run_id=run["id"])
+    assert terminal["state"] == "indeterminate"
+
+
+def test_cancel_after_result_before_publication_suppresses_artifact_and_settles_usage(
+    app, owner
+) -> None:
+    run, claimed = _claim_agent(app, owner, "cancel-before-publication")
+    close_entered = Event()
+    release_close = Event()
+
+    class CloseBarrierDelegate:
+        def complete(self, payload):  # noqa: ANN001 - protocol spy
+            return ModelResult(
+                output={
+                    "ok": True,
+                    "workflow": "harness.canary",
+                    "step": "actor_turn",
+                }
+            )
+
+        def cancel(self) -> None:
+            return None
+
+        def close(self) -> None:
+            close_entered.set()
+            assert release_close.wait(2)
+
+    app.executor.gateway_factory = LegacyGatewayFactory(gateway_factory=CloseBarrierDelegate)
+    worker = Thread(
+        target=app.runner._execute_one,  # noqa: SLF001 - publication race test
+        kwargs={"claimed": claimed, "now_us": app.clock.utc_epoch_us()},
+    )
+    worker.start()
+    assert close_entered.wait(2)
+    app.cancel(scope=owner, run_id=run["id"])
+    release_close.set()
+    worker.join(2)
+    assert not worker.is_alive()
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.cancelled.value
+    assert attempt["delivery_state"] == DeliveryState.ACKNOWLEDGED.value
+    with session_scope() as session:
+        assert (
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
+            == []
+        )
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert totals["settled_reservations"] == totals["reserved_reservations"]
+    assert totals["released_reservations"] == 0
+    assert totals["pending_reservations"] == 0
+
+
+def test_pending_cancel_recovers_no_local_leased_generation(app, owner: Scope) -> None:
+    """A restart can cancel an untouched current Attempt without a handle."""
+    run, claimed = _claim_agent(app, owner, "cancel-no-local-leased")
+
+    app.cancel(scope=owner, run_id=run["id"])
+    app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us())
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.cancelled.value
+    step = next(
+        row for row in app.steps_for(scope=owner, run_id=run["id"]) if row["id"] == claimed.step_id
+    )
+    assert step["state"] == StepState.cancelled.value
+
+
+def test_pending_cancel_does_not_guess_a_reserved_runtime_is_unsent(app, owner: Scope) -> None:
+    """A launch reservation is external evidence even before PID attachment."""
+    run, claimed = _claim_agent(app, owner, "cancel-no-local-leased-runtime")
+    with session_scope() as session:
+        session.execute(
+            attempts.update()
+            .where(attempts.c.id == claimed.attempt_id)
+            .values(runtime_session_id="reserved-runtime", delivery_state="not_started")
+        )
+
+    app.cancel(scope=owner, run_id=run["id"])
+    app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us())
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+
+
+def test_pending_cancel_marks_no_local_running_generation_indeterminate(app, owner: Scope) -> None:
+    """A running Attempt without delivery proof must retain a reconciliation boundary."""
+    run, claimed = _claim_agent(app, owner, "cancel-no-local-running")
+    with session_scope() as session:
+        app.state.transition_attempt(
+            session,
+            attempt_id=claimed.attempt_id,
+            target=AttemptState.running,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        app.state.transition_step(
+            session,
+            step_id=claimed.step_id,
+            target=StepState.running,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        reservation_id = app.usage.reserve(
+            session,
+            scope=owner,
+            run_id=run["id"],
+            step_id=claimed.step_id,
+            attempt_id=claimed.attempt_id,
+            kind="model_tokens",
+            source="system_shared",
+            amount=10,
+            cost_micros=0,
+            now_us=app.clock.utc_epoch_us(),
+        )
+
+    app.cancel(scope=owner, run_id=run["id"])
+    app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us())
+
+    attempt = _attempt_row(claimed.attempt_id)
+    assert attempt["state"] == AttemptState.indeterminate.value
+    assert attempt["delivery_state"] == DeliveryState.UNKNOWN.value
+    with session_scope() as session:
+        pending = session.execute(
+            select(usage_events.c.id).where(
+                usage_events.c.reservation_id == reservation_id,
+                usage_events.c.op == "reserve",
+            )
+        ).all()
+        totals = app.usage.totals(session, run_id=run["id"])
+    assert len(pending) == 1
+    assert totals["pending_reservations"] == 1
 
 
 def _context_for_test(attempt_id: str):
@@ -411,9 +787,7 @@ def test_agent_contract_mismatch_fails_before_usage_or_gateway(
     assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.failed.value
     with session_scope() as session:
         assert (
-            session.execute(
-                select(artifacts.c.id).where(artifacts.c.run_id == run["id"])
-            ).all()
+            session.execute(select(artifacts.c.id).where(artifacts.c.run_id == run["id"])).all()
             == []
         )
 
@@ -452,9 +826,11 @@ def test_agent_contract_key_is_role_hash_bound_and_route_provenance_is_frozen(
         claimed=forged_claim, now_us=app.clock.utc_epoch_us()
     )
     with session_scope() as session:
-        artifact = session.execute(
-            select(artifacts).where(artifacts.c.run_id == run2["id"])
-        ).mappings().one()
+        artifact = (
+            session.execute(select(artifacts).where(artifacts.c.run_id == run2["id"]))
+            .mappings()
+            .one()
+        )
     assert artifact["provider"] == snapshot2.provider
     assert artifact["model"] == snapshot2.model
 
@@ -513,17 +889,17 @@ def test_finish_callback_reauthenticates_snapshot_and_contract(app, owner: Scope
         now_us=now_us,
     )
     with session_scope() as session:
-        artifact = session.execute(
-            select(artifacts).where(artifacts.c.run_id == run["id"])
-        ).mappings().one()
+        artifact = (
+            session.execute(select(artifacts).where(artifacts.c.run_id == run["id"]))
+            .mappings()
+            .one()
+        )
     assert artifact["artifact_type"] == f"agent.{snapshot.executor_identity}"
     assert artifact["provider"] == snapshot.provider
     assert artifact["model"] == snapshot.model
 
 
-def test_retry_policy_comes_from_frozen_db_snapshot_not_claim_projection(
-    app, owner: Scope
-) -> None:
+def test_retry_policy_comes_from_frozen_db_snapshot_not_claim_projection(app, owner: Scope) -> None:
     enable_canary(app)
     run = _create_run(app, owner, mode="retry_then_success", key="frozen-retry-policy")
     claimed = _claim_target(app, owner, run["id"], "flaky")
@@ -538,9 +914,7 @@ def test_retry_policy_comes_from_frozen_db_snapshot_not_claim_projection(
     now_us = app.clock.utc_epoch_us()
     app.runner._execute_one(claimed=forged, now_us=now_us)  # noqa: SLF001
     with session_scope() as session:
-        step = session.execute(
-            select(steps).where(steps.c.id == claimed.step_id)
-        ).mappings().one()
+        step = session.execute(select(steps).where(steps.c.id == claimed.step_id)).mappings().one()
     assert step["state"] == StepState.retry_scheduled.value
     assert step["ready_at"] == now_us
 
