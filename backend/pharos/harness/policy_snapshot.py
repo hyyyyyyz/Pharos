@@ -197,7 +197,11 @@ class AgentRoleBinding(StrictModel):
             for route in self.model_profile_definition.routes
             if route.route_key == self.model_route_identity
         ]
-        if len(routes) != 1 or routes[0].definition_hash() != self.model_route_sha256:
+        if (
+            len(routes) != 1
+            or self.model_profile_definition.route_hash(self.model_route_identity)
+            != self.model_route_sha256
+        ):
             raise ValueError("model route identity/hash does not match the selected profile route")
         return self
 

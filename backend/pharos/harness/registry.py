@@ -26,6 +26,12 @@ from pharos.harness.definitions import (
 
 _NO_RETRY_IDEMPOTENCY = {IdempotencyKind.stable_key, IdempotencyKind.inherently_idempotent}
 _LEGACY_CANARY_ROLE_HASH = "ecac38063f393dc3c8561269372c9c485755a0e4ae0870968d4d042cc7b8b7c1"
+# Compiled bindings embed RoleDefinition.canonical(), which normalizes the
+# two order-insensitive tuple fields before they are revalidated.  Keep the
+# historical raw hash above while accepting that exact canonical projection.
+_LEGACY_CANARY_ROLE_CANONICAL_HASH = (
+    "94192408f57dd1494a66181887b89cb033c2e95a8f6f5d6016e6372c60bb7df5"
+)
 _INTERNAL_FAKE_ROUTE_PAIRS = frozenset(
     {
         ("pharos-fake", "pharos-fake-canary"),
@@ -396,7 +402,10 @@ def validate_role_model_profile(
     """
     legacy_canary = role.identity() == "canary_actor@1" and role.model_profile == "canary"
     if legacy_canary:
-        if sha256_hex(role.model_dump(mode="json")) != _LEGACY_CANARY_ROLE_HASH:
+        if sha256_hex(role.model_dump(mode="json")) not in (
+            _LEGACY_CANARY_ROLE_HASH,
+            _LEGACY_CANARY_ROLE_CANONICAL_HASH,
+        ) and role.definition_hash() != _LEGACY_CANARY_ROLE_CANONICAL_HASH:
             raise DefinitionError(
                 "canary_actor@1 bare canary role does not match its frozen legacy definition"
             )

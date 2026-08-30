@@ -68,7 +68,7 @@ def _role_binding(
         "model_profile_sha256": profile.definition_hash(),
         "model_profile_definition": profile.canonical(),
         "model_route_identity": route.route_key,
-        "model_route_sha256": route.definition_hash(),
+        "model_route_sha256": profile.route_hash(route.route_key),
     }
 
 
