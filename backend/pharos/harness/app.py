@@ -16,6 +16,7 @@ import logging
 from pharos.db.session import session_scope
 from pharos.harness.approvals import ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore
+from pharos.harness.clock import SystemClock
 from pharos.harness.configrev import (
     GATE_NAMES,
     HarnessConfigSnapshot,
@@ -32,10 +33,15 @@ from pharos.harness.contracts import (
     UnavailableError,
 )
 from pharos.harness.dispatcher import HarnessDispatcher
+from pharos.harness.dsh_gateway import DshGatewayFactory
 from pharos.harness.events import EventStore
 from pharos.harness.execution_snapshots import ExecutionSnapshotStore
-from pharos.harness.fakes import FakeClock, FakeModel
-from pharos.harness.model_gateway import FakeGatewayFactory
+from pharos.harness.fakes import FakeModel
+from pharos.harness.model_gateway import (
+    FakeGatewayFactory,
+    GatewayFactory,
+    RuntimeGatewayFactory,
+)
 from pharos.harness.policy_builder import build_run_policy
 from pharos.harness.policy_snapshot import AgentLimits
 from pharos.harness.registry import CompiledWorkflowBinding, Registry
@@ -48,6 +54,7 @@ from pharos.harness.repository import (
     now_iso,
 )
 from pharos.harness.runner import AgentOutputContract, HarnessRunner, StepExecutor
+from pharos.harness.seams import Clock
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import steps
 from pharos.harness.usage import UsageLedger
@@ -91,11 +98,12 @@ class HarnessApp:
     def __init__(
         self,
         *,
-        clock: FakeClock | None = None,
+        clock: Clock | None = None,
         fake_model: FakeModel | None = None,
         dispatcher: HarnessDispatcher | None = None,
+        dsh_gateway_factory: DshGatewayFactory | None = None,
     ) -> None:
-        self.clock = clock or FakeClock()
+        self.clock = clock if clock is not None else SystemClock()
         self.registry = Registry()
         for capability in canary_capabilities():
             self.registry.register_capability(capability)
@@ -118,7 +126,17 @@ class HarnessApp:
         # The fake model is retained as an observable aggregate for offline
         # tests, while execution receives only a fresh per-Attempt factory.
         self.fake_model = fake_model or FakeModel(clock=self.clock)
-        self.gateway_factory = FakeGatewayFactory(self.fake_model)
+        self.fake_gateway_factory = FakeGatewayFactory(self.fake_model)
+        self.gateway_factory: GatewayFactory = (
+            RuntimeGatewayFactory(
+                {
+                    "in_process_fake": self.fake_gateway_factory,
+                    "dsh": dsh_gateway_factory,
+                }
+            )
+            if dsh_gateway_factory is not None
+            else self.fake_gateway_factory
+        )
         from pharos.harness.workflows.canary import build_executors
 
         self.executor = StepExecutor(
@@ -144,7 +162,9 @@ class HarnessApp:
             run_reducers={CANARY_V1_IDENTITY: reduce, CANARY_V2_IDENTITY: reduce},
         )
         self.dispatcher = dispatcher or HarnessDispatcher(
-            state_service=self.state, config_service=self.config_service
+            state_service=self.state,
+            config_service=self.config_service,
+            usage_ledger=self.usage,
         )
         self.runner = HarnessRunner(self.dispatcher, self.executor)
         self._loop_task: asyncio.Task | None = None

@@ -269,6 +269,7 @@ class AttemptTransportConfig:
     max_output_bytes: int = 256 * 1024
     max_stderr_bytes: int = 64 * 1024
     delivery_observer_timeout_seconds: float = 1.0
+    attempt_timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if os.name != "posix":
@@ -341,6 +342,10 @@ class AttemptTransportConfig:
         )
         if any(not _is_finite_positive_number(value) for value in positive):
             raise ValueError("deadlines must be positive")
+        if self.attempt_timeout_seconds is not None and not _is_finite_positive_number(
+            self.attempt_timeout_seconds
+        ):
+            raise ValueError("attempt_timeout_seconds must be positive")
         if self.delivery_observer_timeout_seconds > _MAX_DELIVERY_OBSERVER_TIMEOUT_SECONDS:
             raise ValueError("delivery observer deadline exceeds the bounded maximum")
         bounds = (
@@ -400,6 +405,11 @@ class AttemptTransport:
         self._observed_delivery_states: set[DeliveryState] = set()
         self._observer_execution_active = False
         self._observer_timed_out = False
+        self._attempt_deadline = (
+            time.monotonic() + config.attempt_timeout_seconds
+            if config.attempt_timeout_seconds is not None
+            else None
+        )
 
     @property
     def process(self) -> subprocess.Popen[bytes] | None:
@@ -423,6 +433,27 @@ class AttemptTransport:
         """
 
         return self._delivery_state
+
+    def start(self) -> int:
+        """Spawn the one-Attempt child without writing any protocol bytes.
+
+        The durable adapter uses this narrow phase boundary to persist the
+        child PID after the immutable launch provenance is reserved and before
+        ``initialize`` can write to stdin.  Calling :meth:`initialize`
+        directly remains supported; it starts the child through this method.
+        """
+
+        self._ensure_not_terminal()
+        self._work_timeout(self.config.initialize_timeout_seconds)
+        if self._process is not None:
+            raise HarnessProtocolError("Attempt child already exists")
+        self._spawn()
+        process = self._require_process()
+        if process.pid <= 0:  # pragma: no cover - subprocess guarantees this
+            error = HarnessProcessError("runtime returned an invalid child pid")
+            self._fail(error)
+            raise error
+        return process.pid
 
     def initialize(
         self,
@@ -458,7 +489,8 @@ class AttemptTransport:
             )
         except ValidationError:
             raise HarnessProtocolError("invalid initialize parameters") from None
-        self._spawn()
+        if self._process is None:
+            self.start()
         try:
             result = self._request(
                 "initialize",
@@ -634,6 +666,7 @@ class AttemptTransport:
                 self.config.delivery_observer_timeout_seconds,
                 self.config.prompt_timeout_seconds,
             )
+            observer_timeout = self._work_timeout(observer_timeout)
             if not completed.wait(observer_timeout):
                 self._observer_timed_out = True
                 self._observer_execution_active = False
@@ -657,7 +690,7 @@ class AttemptTransport:
             request_id = self._new_request_id()
             self._write(
                 self._request_frame(request_id, "shutdown"),
-                timeout=self.config.shutdown_timeout_seconds,
+                timeout=self._work_timeout(self.config.shutdown_timeout_seconds),
             )
             _result = self._collect_response(
                 request_id,
@@ -669,7 +702,7 @@ class AttemptTransport:
                 raise HarnessProtocolError("shutdown result must be an empty object")
             self._close_stdin()
             self._wait(self.config.shutdown_timeout_seconds, "shutdown")
-            self.reap(self.config.reap_timeout_seconds)
+            self.reap(self._work_timeout(self.config.reap_timeout_seconds))
             if self._require_process().returncode != 0:
                 raise HarnessProcessError("runtime exited nonzero after shutdown")
             if self._process_group_exists():
@@ -808,6 +841,7 @@ class AttemptTransport:
         return frame
 
     def _request(self, method: str, params: dict[str, Any], timeout: float) -> dict[str, Any]:
+        timeout = self._work_timeout(timeout)
         request_id = self._new_request_id()
         self._write(self._request_frame(request_id, method, params), timeout=timeout)
         return self._collect_response(request_id, timeout, allow_notifications=False)
@@ -881,6 +915,7 @@ class AttemptTransport:
         event_count = 0
         total_event_bytes = 0
         output_bytes = 0
+        first_timeout = self._work_timeout(first_timeout)
         deadline = time.monotonic() + first_timeout
         idle_deadline: float | None = None
         stdout_buffer = bytearray()
@@ -1006,11 +1041,14 @@ class AttemptTransport:
                             if drain_after_response:
                                 draining = True
                                 idle_deadline = (
-                                    time.monotonic() + self.config.shutdown_timeout_seconds
+                                    time.monotonic()
+                                    + self._work_timeout(
+                                        self.config.shutdown_timeout_seconds
+                                    )
                                 )
                                 continue
                             if idle_timeout is not None and not saw_idle:
-                                idle_deadline = time.monotonic() + idle_timeout
+                                idle_deadline = time.monotonic() + self._work_timeout(idle_timeout)
                             continue
                         method = frame["method"]
                         if method not in NOTIFICATION_MODELS:
@@ -1366,7 +1404,7 @@ class AttemptTransport:
             raise HarnessProtocolError("outbound frame is not valid UTF-8 JSON") from error
         if len(payload) - 1 > self.config.max_frame_bytes:
             raise HarnessProtocolError("outbound JSON frame limit exceeded")
-        end = time.monotonic() + timeout
+        end = time.monotonic() + self._work_timeout(timeout)
         offset = 0
         try:
             # ``fileno`` itself fails when a sibling cleanup path closed the
@@ -1429,9 +1467,25 @@ class AttemptTransport:
     def _wait(self, timeout: float, phase: str) -> None:
         process = self._require_process()
         try:
-            process.wait(timeout=timeout)
+            process.wait(timeout=self._work_timeout(timeout))
         except subprocess.TimeoutExpired as error:
             raise HarnessTimeoutError(f"runtime {phase} deadline exceeded") from error
+
+    def _work_timeout(self, requested: float) -> float:
+        """Intersect one protocol wait with the Attempt-wide wall deadline.
+
+        The TERM/KILL cleanup ladder deliberately does not use this helper: it
+        remains available after the work deadline so an expired Attempt cannot
+        leave a child behind.
+        """
+
+        deadline = self._attempt_deadline
+        if deadline is None:
+            return requested
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise HarnessTimeoutError("runtime Attempt wall deadline exceeded")
+        return min(requested, remaining)
 
     def _signal_group(self, signal_number: int) -> None:
         if self._pgid is None:

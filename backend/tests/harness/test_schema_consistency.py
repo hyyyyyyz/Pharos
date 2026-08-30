@@ -97,6 +97,13 @@ def test_key_constraints_present(tmp_path: Path) -> None:
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='harness_events'"
         ).fetchone()[0]
         assert "AUTOINCREMENT" in events_seq
+        usage_indexes = {
+            row[1] for row in conn.execute("PRAGMA index_list(harness_usage_events)")
+        }
+        assert {
+            "ux_harness_usage_reservation_reserve",
+            "ux_harness_usage_reservation_outcome",
+        } <= usage_indexes
     finally:
         conn.close()
 
@@ -109,7 +116,20 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         table_sql = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='harness_attempts'"
         ).fetchone()[0]
+        attempt_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_attempts)")
+        }
         indexes = {row[1] for row in conn.execute("PRAGMA index_list(harness_attempts)")}
+        artifact_indexes = {
+            row[1] for row in conn.execute("PRAGMA index_list(harness_artifacts)")
+        }
+        artifact_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_artifacts)")
+        }
+        launch_trigger_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+            "AND name = 'ck_harness_attempt_launch_identity_immutable'"
+        ).fetchone()[0]
     finally:
         conn.close()
     assert (
@@ -120,6 +140,21 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
     assert "acknowledged" in table_sql
     assert "unknown" in table_sql
     assert "reconciled" in table_sql
+    assert "runtime_message_id" in attempt_columns
+    assert {
+        "producer_attempt_id",
+        "upstream_commit",
+        "runtime_session_id",
+        "runtime_hash",
+        "profile_hash",
+        "policy_hash",
+        "protocol_version",
+        "route_key",
+        "route_sha256",
+        "definition_binding_sha256",
+        "run_policy_sha256",
+        "provenance_sha256",
+    } <= artifact_columns
     assert {
         "ux_harness_attempts_runtime_session_active",
         "ux_harness_attempts_runtime_session",
@@ -128,6 +163,19 @@ def test_runtime_provenance_constraints_and_indexes_present(tmp_path: Path) -> N
         "ix_harness_attempts_deadline",
         "ix_harness_attempts_delivery",
     } <= indexes
+    assert "ix_harness_artifacts_producer_attempt" in artifact_indexes
+    for column in (
+        "upstream_commit",
+        "runtime_hash",
+        "profile_hash",
+        "policy_hash",
+        "protocol_version",
+        "runtime_session_id",
+        "deadline_at",
+    ):
+        assert f"OLD.{column}" in launch_trigger_sql
+    for mutable_column in ("child_pid", "delivery_state", "runtime_message_id"):
+        assert mutable_column not in launch_trigger_sql
 
     metadata_indexes = metadata.tables["harness_attempts"].indexes
     runtime_session_index = next(
@@ -181,6 +229,8 @@ def test_definition_binding_schema_contract_is_bidirectionally_pinned(tmp_path: 
         "ix_harness_run_definition_snapshots_binding",
         "ix_harness_attempt_definition_snapshots_run",
         "ix_harness_attempt_definition_snapshots_profile",
+        "ux_harness_usage_reservation_reserve",
+        "ux_harness_usage_reservation_outcome",
     }
     conn = sqlite3.connect(db)
     try:
@@ -194,6 +244,7 @@ def test_definition_binding_schema_contract_is_bidirectionally_pinned(tmp_path: 
                 "harness_role_versions",
                 "harness_run_definition_snapshots",
                 "harness_attempt_definition_snapshots",
+                "harness_usage_events",
             )
             for row in conn.execute(f"PRAGMA index_list({table})")
         }
@@ -222,12 +273,19 @@ def test_definition_binding_schema_contract_is_bidirectionally_pinned(tmp_path: 
             "ck_harness_attempt_snapshot_immutable_delete",
             "ck_harness_run_parent_snapshot_update",
             "ck_harness_run_parent_snapshot_delete",
-                "ck_harness_attempt_parent_snapshot_update",
-                "ck_harness_attempt_parent_snapshot_delete",
-                "ck_harness_run_snapshot_creation_parent",
-                "ck_harness_run_snapshot_execution_identity_update",
-                "ck_harness_step_attempt_snapshot_update",
-            }
+            "ck_harness_attempt_parent_snapshot_update",
+            "ck_harness_attempt_parent_snapshot_delete",
+            "ck_harness_run_snapshot_creation_parent",
+            "ck_harness_run_snapshot_execution_identity_update",
+            "ck_harness_step_attempt_snapshot_update",
+            "ck_harness_attempt_launch_identity_immutable",
+            "ck_harness_artifacts_provenance_scope_insert",
+            "ck_harness_artifacts_provenance_required_insert",
+            "ck_harness_artifacts_provenance_source_insert",
+            "ck_harness_artifacts_provenance_required_update",
+            "ck_harness_artifacts_provenance_scope_update",
+            "ck_harness_artifacts_provenance_immutable",
+        }
         assert trigger_names == expected_triggers
         for table in (
             "harness_model_profile_versions",

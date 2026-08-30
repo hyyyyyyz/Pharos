@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import Field
 
 from pharos.harness.contracts import AttemptErrorClass, GatewayError, StrictModel
+from pharos.harness.seams import Clock
 
 MICROSECONDS_PER_SECOND = 1_000_000
 
@@ -56,7 +57,18 @@ class ModelResult(StrictModel):
     input_tokens: int = Field(default=10, ge=0)
     output_tokens: int = Field(default=20, ge=0)
     cost_micros: int = Field(default=0, ge=0)
-    provider_request_id: str = "fake-req-1"
+    provider_request_id: str | None = Field(
+        default="fake-req-1",
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+    )
+    runtime_message_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+    )
     error: str | None = None
 
 
@@ -70,7 +82,7 @@ class FakeModel:
     call with usage, exactly like a real provider might.
     """
 
-    clock: FakeClock
+    clock: Clock
     script: list[Any] | Callable[[int, dict], Any] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     cancelled: bool = False

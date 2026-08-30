@@ -336,6 +336,8 @@ def test_0010_is_independently_valid_before_snapshot_upgrade(
     assert run_migrations(db) == [
         "0011_harness_definition_snapshots",
         "0012_harness_snapshot_parent_guards",
+        "0013_harness_artifact_runtime_provenance",
+        "0014_harness_usage_reservation_uniqueness",
     ]
 
 
@@ -476,6 +478,337 @@ def test_runtime_provenance_is_an_additive_upgrade(tmp_path: Path, monkeypatch) 
     )
     # Running the new migration twice is a no-op and does not recreate indexes.
     assert run_migrations(db) == []
+
+
+def test_artifact_provenance_and_runtime_message_are_additive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = tmp_path / "artifact-provenance-upgrade.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    migration = next(
+        item
+        for item in all_migrations
+        if item.revision == "0013_harness_artifact_runtime_provenance"
+    )
+    prior = all_migrations[: all_migrations.index(migration)]
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior)
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        _insert_attempt(conn, "legacy-artifact", state="succeeded")
+        conn.execute(
+            "INSERT INTO harness_artifacts "
+            "(id, scope_type, scope_id, run_id, step_id, artifact_type, schema_name, "
+            "schema_version, content_json, content_sha256, size_bytes, sensitivity, "
+            "producer_kind, provider, model, input_artifact_ids_json, input_sha256, "
+            "source_refs_json, quality_status, evidence_level, created_at) "
+            "VALUES ('legacy-artifact', 'user', 'constraint-test', "
+            "'run-legacy-artifact', 'step-legacy-artifact', 'legacy.note', 'legacy', 1, "
+            "'{\"answer\":\"preserved\"}', ?, 22, 'private', 'model_inference', "
+            "'legacy-provider', 'legacy-model', '[\"input-1\"]', ?, '[\"source-1\"]', "
+            "'valid', 'page', 123)",
+            ("a" * 64, "b" * 64),
+        )
+        legacy_columns = [
+            row[1] for row in conn.execute("PRAGMA table_info(harness_artifacts)")
+        ]
+        legacy_row = conn.execute(
+            f"SELECT {', '.join(legacy_columns)} FROM harness_artifacts "
+            "WHERE id = 'legacy-artifact'"
+        ).fetchone()
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    assert run_migrations(db) == [migration.revision, "0014_harness_usage_reservation_uniqueness"]
+    with sqlite3.connect(db) as conn:
+        attempt_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_attempts)")
+        }
+        artifact_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_artifacts)")
+        }
+        artifact_indexes = {
+            row[1] for row in conn.execute("PRAGMA index_list(harness_artifacts)")
+        }
+        upgraded_legacy_row = conn.execute(
+            f"SELECT {', '.join(legacy_columns)} FROM harness_artifacts "
+            "WHERE id = 'legacy-artifact'"
+        ).fetchone()
+        legacy_provenance = conn.execute(
+            "SELECT producer_attempt_id, upstream_commit, runtime_session_id, runtime_hash, "
+            "profile_hash, policy_hash, protocol_version, route_key, route_sha256, "
+            "definition_binding_sha256, run_policy_sha256, provenance_sha256 "
+            "FROM harness_artifacts WHERE id = 'legacy-artifact'"
+        ).fetchone()
+    assert "runtime_message_id" in attempt_columns
+    assert {
+        "producer_attempt_id",
+        "upstream_commit",
+        "runtime_session_id",
+        "runtime_hash",
+        "profile_hash",
+        "policy_hash",
+        "protocol_version",
+        "route_key",
+        "route_sha256",
+        "definition_binding_sha256",
+        "run_policy_sha256",
+        "provenance_sha256",
+    } <= artifact_columns
+    assert upgraded_legacy_row == legacy_row
+    assert legacy_provenance == (None,) * 12
+    assert "ix_harness_artifacts_producer_attempt" in artifact_indexes
+    assert run_migrations(db) == []
+
+
+def test_artifact_provenance_migration_rolls_back_atomically(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = tmp_path / "artifact-provenance-rollback.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    migration = next(
+        item
+        for item in all_migrations
+        if item.revision == "0013_harness_artifact_runtime_provenance"
+    )
+    prior = all_migrations[: all_migrations.index(migration)]
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior)
+    run_migrations(db)
+    broken = Migration(
+        migration.revision,
+        migration.description,
+        migration.statements + ("SELECT nonexistent_column FROM harness_artifacts",),
+    )
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior + (broken,))
+    with pytest.raises(sqlite3.OperationalError, match="nonexistent_column"):
+        run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        attempt_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_attempts)")
+        }
+        artifact_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(harness_artifacts)")
+        }
+        triggers = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+        }
+        revisions = {
+            row[0] for row in conn.execute("SELECT revision FROM pharos_schema_migrations")
+        }
+    assert "runtime_message_id" not in attempt_columns
+    assert "producer_attempt_id" not in artifact_columns
+    assert "ck_harness_attempt_launch_identity_immutable" not in triggers
+    assert migration.revision not in revisions
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    assert run_migrations(db) == [migration.revision, "0014_harness_usage_reservation_uniqueness"]
+
+
+def test_usage_reservation_uniqueness_upgrade_repeat_and_rollback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = tmp_path / "usage-reservation-upgrade.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    migration = next(
+        item
+        for item in all_migrations
+        if item.revision == "0014_harness_usage_reservation_uniqueness"
+    )
+    prior = all_migrations[: all_migrations.index(migration)]
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior)
+    run_migrations(db)
+
+    broken = Migration(
+        migration.revision,
+        migration.description,
+        migration.statements + ("SELECT nonexistent_column FROM harness_usage_events",),
+    )
+    monkeypatch.setattr(migrations, "MIGRATIONS", prior + (broken,))
+    with pytest.raises(sqlite3.OperationalError, match="nonexistent_column"):
+        run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(harness_usage_events)")}
+        revisions = {
+            row[0] for row in conn.execute("SELECT revision FROM pharos_schema_migrations")
+        }
+    assert "ux_harness_usage_reservation_reserve" not in indexes
+    assert "ux_harness_usage_reservation_outcome" not in indexes
+    assert migration.revision not in revisions
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    assert run_migrations(db) == [migration.revision]
+    assert run_migrations(db) == []
+    with sqlite3.connect(db) as conn:
+        values = (
+            "reserve-unique",
+            "run-unique",
+            None,
+            None,
+            "user",
+            "scope-unique",
+            "official",
+            "model_tokens",
+            "reservation-unique",
+            "reserve",
+            5,
+            0,
+            "provider",
+            "model",
+            1,
+        )
+        conn.execute(
+            "INSERT INTO harness_usage_events "
+            "(id, run_id, step_id, attempt_id, scope_type, scope_id, source, kind, "
+            "reservation_id, op, amount, cost_micros, provider, model, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO harness_usage_events "
+                "(id, run_id, scope_type, scope_id, source, kind, reservation_id, op, "
+                "amount, cost_micros, created_at) "
+                "VALUES ('reserve-duplicate', 'run-unique', 'user', 'scope-unique', "
+                "'official', 'model_tokens', 'reservation-unique', 'reserve', 5, 0, 2)"
+            )
+        conn.execute(
+            "INSERT INTO harness_usage_events "
+            "(id, run_id, scope_type, scope_id, source, kind, reservation_id, op, "
+            "amount, cost_micros, created_at) VALUES "
+            "('settle-unique', 'run-unique', 'user', 'scope-unique', 'official', "
+            "'model_tokens', 'reservation-unique', 'settle', 5, 0, 3)"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO harness_usage_events "
+                "(id, run_id, scope_type, scope_id, source, kind, reservation_id, op, "
+                "amount, cost_micros, created_at) VALUES "
+                "('release-duplicate', 'run-unique', 'user', 'scope-unique', 'official', "
+                "'model_tokens', 'reservation-unique', 'release', 5, 0, 4)"
+            )
+
+
+def test_usage_reservation_unique_indexes_are_safe_across_two_sessions(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "usage-reservation-concurrency.sqlite"
+    migrations.run_migrations(db)
+
+    def insert_race(op: str, event_id: str, barrier: threading.Barrier) -> str:
+        conn = sqlite3.connect(str(db), timeout=5, isolation_level=None)
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            barrier.wait(timeout=5)
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "INSERT INTO harness_usage_events "
+                "(id, run_id, scope_type, scope_id, source, kind, reservation_id, op, "
+                "amount, cost_micros, created_at) VALUES (?, 'run-race', 'user', "
+                "'scope-race', 'official', 'model_tokens', 'reservation-race', ?, 5, 0, 1)",
+                (event_id, op),
+            )
+            conn.commit()
+            return "won"
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return "conflict"
+        except sqlite3.OperationalError:
+            conn.rollback()
+            return "locked"
+        finally:
+            conn.close()
+
+    for op, prefix in (("reserve", "reserve-race"), ("settle", "settle-race")):
+        barrier = threading.Barrier(2)
+        results = ["", ""]
+
+        def run_race(
+            index: int, *, op=op, prefix=prefix, barrier=barrier, results=results
+        ) -> None:
+            results[index] = insert_race(op, f"{prefix}-{index}", barrier)
+
+        threads = [
+            threading.Thread(target=run_race, args=(index,)) for index in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+            assert not thread.is_alive()
+        assert results.count("won") == 1
+        assert results.count("conflict") + results.count("locked") == 1
+
+    with sqlite3.connect(db) as conn:
+        reserve_count = conn.execute(
+            "SELECT COUNT(*) FROM harness_usage_events "
+            "WHERE reservation_id = 'reservation-race' AND op = 'reserve'"
+        ).fetchone()[0]
+        outcome_count = conn.execute(
+            "SELECT COUNT(*) FROM harness_usage_events "
+            "WHERE reservation_id = 'reservation-race' AND op IN ('settle', 'release')"
+        ).fetchone()[0]
+    assert reserve_count == 1
+    assert outcome_count == 1
+
+
+def test_attempt_launch_identity_is_write_once_but_lifecycle_fields_are_mutable(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "attempt-launch-identity.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        _insert_attempt(conn, "launch-identity", state="running")
+        conn.execute(
+            "UPDATE harness_attempts SET upstream_commit = ?, runtime_hash = ?, "
+            "profile_hash = ?, policy_hash = ?, protocol_version = ?, "
+            "runtime_session_id = ?, deadline_at = ?, child_pid = ?, "
+            "delivery_state = ?, runtime_message_id = ? WHERE id = ?",
+            (
+                "a" * 40,
+                "b" * 64,
+                "c" * 64,
+                "d" * 64,
+                "pharos.dsh.stdio@1",
+                "runtime-session-once",
+                1_700_000_000_000_000,
+                901,
+                "sent",
+                "runtime-message-1",
+                "launch-identity",
+            ),
+        )
+
+        replacements = {
+            "upstream_commit": "e" * 40,
+            "runtime_hash": "e" * 64,
+            "profile_hash": "f" * 64,
+            "policy_hash": "0" * 64,
+            "protocol_version": "pharos.dsh.stdio@2",
+            "runtime_session_id": "different-runtime-session",
+            "deadline_at": 1_800_000_000_000_000,
+        }
+        for column, replacement in replacements.items():
+            for value in (replacement, None):
+                with pytest.raises(sqlite3.IntegrityError, match="launch identity"):
+                    conn.execute(
+                        f"UPDATE harness_attempts SET {column} = ? WHERE id = ?",
+                        (value, "launch-identity"),
+                    )
+
+        # These are mutable lifecycle/observation fields, not launch identity.
+        conn.execute(
+            "UPDATE harness_attempts SET child_pid = ?, delivery_state = ?, "
+            "runtime_message_id = ? WHERE id = ?",
+            (902, "acknowledged", "runtime-message-2", "launch-identity"),
+        )
+        row = conn.execute(
+            "SELECT child_pid, delivery_state, runtime_message_id "
+            "FROM harness_attempts WHERE id = 'launch-identity'"
+        ).fetchone()
+        assert row == (902, "acknowledged", "runtime-message-2")
+        conn.execute(
+            "UPDATE harness_attempts SET child_pid = NULL, delivery_state = 'unknown', "
+            "runtime_message_id = NULL WHERE id = 'launch-identity'"
+        )
 
 
 def test_runtime_identity_constraints_cover_terminal_and_active_attempts(tmp_path: Path) -> None:
@@ -660,7 +993,12 @@ def test_definition_binding_upgrade_keeps_old_rows_unbound(
     """0010/0011 add no columns to legacy Run/Attempt rows and do not backfill."""
     db = tmp_path / "definition-binding-upgrade.sqlite"
     all_migrations = migrations.MIGRATIONS
-    prior = all_migrations[:-2]
+    binding_migration = next(
+        migration
+        for migration in all_migrations
+        if migration.revision == "0010_harness_definition_bindings"
+    )
+    prior = all_migrations[: all_migrations.index(binding_migration)]
     monkeypatch.setattr(migrations, "MIGRATIONS", prior)
     run_migrations(db)
     with sqlite3.connect(db) as conn:
@@ -677,7 +1015,7 @@ def test_definition_binding_upgrade_keeps_old_rows_unbound(
         ).fetchone()
 
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
-    assert run_migrations(db) == [m.revision for m in all_migrations[-2:]]
+    assert run_migrations(db) == [m.revision for m in all_migrations[len(prior) :]]
     with sqlite3.connect(db) as conn:
         assert conn.execute(
             "SELECT state, workflow_key, workflow_version, definition_sha256, "
@@ -707,7 +1045,6 @@ def test_definition_snapshot_migration_is_atomic(
     """A late 0011 failure removes its tables and ledger row atomically."""
     db = tmp_path / "definition-binding-rollback.sqlite"
     all_migrations = migrations.MIGRATIONS
-    prior = all_migrations[:-1]
     migration = next(
         migration
         for migration in all_migrations
@@ -754,6 +1091,8 @@ def test_definition_snapshot_migration_is_atomic(
     assert run_migrations(db) == [
         "0011_harness_definition_snapshots",
         "0012_harness_snapshot_parent_guards",
+        "0013_harness_artifact_runtime_provenance",
+        "0014_harness_usage_reservation_uniqueness",
     ]
     assert run_migrations(db) == []
 
@@ -762,9 +1101,13 @@ def test_snapshot_parent_guards_upgrade_and_repeat(tmp_path: Path, monkeypatch) 
     """0012 is additive, preserves 0011 rows, and is repeat-safe."""
     db = tmp_path / "snapshot-parent-guards.sqlite"
     all_migrations = migrations.MIGRATIONS
-    guard = all_migrations[-1]
+    guard = next(
+        migration
+        for migration in all_migrations
+        if migration.revision == "0012_harness_snapshot_parent_guards"
+    )
     assert guard.revision == "0012_harness_snapshot_parent_guards"
-    through_0011 = all_migrations[:-1]
+    through_0011 = all_migrations[: all_migrations.index(guard)]
     monkeypatch.setattr(migrations, "MIGRATIONS", through_0011)
     run_migrations(db)
     with sqlite3.connect(db) as conn:
@@ -774,7 +1117,11 @@ def test_snapshot_parent_guards_upgrade_and_repeat(tmp_path: Path, monkeypatch) 
             "SELECT COUNT(*) FROM harness_run_definition_snapshots"
         ).fetchone()[0]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
-    assert run_migrations(db) == [guard.revision]
+    assert run_migrations(db) == [
+        guard.revision,
+        "0013_harness_artifact_runtime_provenance",
+        "0014_harness_usage_reservation_uniqueness",
+    ]
     with sqlite3.connect(db) as conn:
         assert conn.execute(
             "SELECT COUNT(*) FROM harness_run_definition_snapshots"
@@ -904,10 +1251,17 @@ def test_definition_binding_constraints_reject_invalid_values_and_fks(
 ) -> None:
     db = tmp_path / "definition-binding-constraints.sqlite"
     all_migrations = migrations.MIGRATIONS
-    # This is specifically the 0011 table-constraint contract.  The 0012
+    # This is specifically the 0011 table-constraint contract. The 0012
     # parent guard is exercised above with creation-valid graphs; keeping this
     # fixture on 0011 lets it continue testing arbitrary FK/check violations.
-    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:-1])
+    snapshot_migration = next(
+        migration
+        for migration in all_migrations
+        if migration.revision == "0011_harness_definition_snapshots"
+    )
+    monkeypatch.setattr(
+        migrations, "MIGRATIONS", all_migrations[: all_migrations.index(snapshot_migration) + 1]
+    )
     run_migrations(db)
     profile_hash = "a" * 64
     workflow_hash = "b" * 64

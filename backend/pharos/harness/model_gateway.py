@@ -9,13 +9,14 @@ cancel flag.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from threading import Condition, Lock
+from types import MappingProxyType
 from typing import Protocol, cast, runtime_checkable
 
-from pharos.harness.contracts import DeliveryState, GatewayError
+from pharos.harness.contracts import AttemptErrorClass, DeliveryState, GatewayError
 from pharos.harness.fakes import FakeModel, ModelResult
 
 _MISSING_SCRIPT_ENTRY = object()
@@ -74,6 +75,9 @@ class AttemptContext:
     deadline_at_us: int
     provider: str
     model: str
+    reasoning_effort: str | None = None
+    max_output_tokens: int | None = None
+    max_input_tokens: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -116,6 +120,20 @@ class AttemptContext:
             raise ValueError("runtime_kind is not supported")
         if self.usage_source not in {"official", "byok", "system_shared"}:
             raise ValueError("usage_source is not supported")
+        if self.reasoning_effort is not None and (
+            type(self.reasoning_effort) is not str
+            or not self.reasoning_effort
+            or "\x00" in self.reasoning_effort
+        ):
+            raise ValueError("reasoning_effort must be a non-empty safe string")
+        if self.max_output_tokens is not None and (
+            type(self.max_output_tokens) is not int or self.max_output_tokens <= 0
+        ):
+            raise ValueError("max_output_tokens must be a positive integer")
+        if self.max_input_tokens is not None and (
+            type(self.max_input_tokens) is not int or self.max_input_tokens <= 0
+        ):
+            raise ValueError("max_input_tokens must be a positive integer")
 
 
 @runtime_checkable
@@ -147,6 +165,35 @@ class GatewayFactory(Protocol):
 
 class GatewayLifecycleError(RuntimeError):
     """An operation was attempted after a handle's lifecycle boundary."""
+
+
+class GatewayKnownFailure(GatewayError):
+    """A delivered model turn failed with authenticated token usage.
+
+    This is distinct from an ordinary :class:`GatewayError`: the provider
+    receipt and usage are known, so the runner must settle the reservation
+    even though no Artifact may be published.  Runtime adapters expose only a
+    typed ``ModelResult`` here; provider payloads and exception text never
+    cross the durable boundary.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_class: AttemptErrorClass,
+        result: ModelResult,
+    ) -> None:
+        if (
+            not isinstance(error_class, AttemptErrorClass)
+            or error_class is AttemptErrorClass.indeterminate
+        ):
+            raise TypeError("known gateway failure requires a determinate error class")
+        if not isinstance(result, ModelResult):
+            raise TypeError("known gateway failure requires a typed ModelResult")
+        super().__init__(message)
+        self.error_class = error_class
+        self.result = result
 
 
 class _HandleState(Enum):
@@ -358,6 +405,9 @@ class FakeGatewayFactory:
     zero; calls remain visible on the source ``FakeModel`` for existing tests.
     """
 
+    supported_runtime_kinds = frozenset({"in_process_fake"})
+    durable_runtime = False
+
     def __init__(self, gateway: FakeModel | ModelGateway) -> None:
         if isinstance(gateway, FakeModel):
             source_model = gateway
@@ -451,6 +501,9 @@ class LegacyGatewayFactory:
     TERM/KILL/reap guarantees instead of relying on this compatibility seam.
     """
 
+    supported_runtime_kinds = frozenset({"in_process_fake"})
+    durable_runtime = False
+
     def __init__(
         self,
         *,
@@ -501,3 +554,58 @@ class LegacyGatewayFactory:
 def _validate_context(context: AttemptContext) -> None:
     if not isinstance(context, AttemptContext):
         raise TypeError("gateway factory context must be an AttemptContext")
+
+
+class RuntimeGatewayFactory:
+    """Route a frozen Attempt to exactly one runtime-specific factory.
+
+    The mapping is process configuration, never Run input.  In particular, a
+    DSH entry is admitted only when its concrete factory declares both the
+    ``dsh`` runtime kind and a durable persistence/provenance boundary.
+    """
+
+    def __init__(self, factories: Mapping[str, GatewayFactory]) -> None:
+        mapping = dict(factories)
+        if not mapping or set(mapping) - {"in_process_fake", "dsh"}:
+            raise ValueError("runtime gateway mapping contains an unsupported runtime kind")
+        for runtime_kind, factory in mapping.items():
+            supported: object = getattr(factory, "supported_runtime_kinds", frozenset())
+            if not isinstance(supported, frozenset) or runtime_kind not in supported:
+                raise TypeError("runtime factory does not advertise its configured runtime kind")
+            if runtime_kind == "dsh":
+                # A duck-typed marker is not an execution boundary: arbitrary
+                # application objects could otherwise claim durable PID,
+                # delivery and cleanup semantics. Import lazily to avoid the
+                # gateway module's dependency on this neutral protocol layer.
+                from pharos.harness.dsh_gateway import DshGatewayFactory
+
+                if type(factory) is not DshGatewayFactory:
+                    raise TypeError("DSH runtime requires the concrete sealed factory")
+                if factory.durable_runtime is not True:
+                    raise TypeError("DSH runtime factory is not durably configured")
+        self._factories = MappingProxyType(mapping)
+        self.supported_runtime_kinds = frozenset(mapping)
+
+    @property
+    def durable_runtime(self) -> bool:
+        """Compatibility marker recomputed from the live sealed assembly."""
+        return self.has_durable_dsh_runtime
+
+    @property
+    def has_durable_dsh_runtime(self) -> bool:
+        """Whether the validated mapping contains the concrete DSH factory."""
+        factory = self._factories.get("dsh")
+        if factory is None:
+            return False
+        from pharos.harness.dsh_gateway import DshGatewayFactory
+
+        return type(factory) is DshGatewayFactory and factory.durable_runtime is True
+
+    def open(self, context: AttemptContext) -> GatewayHandle:
+        _validate_context(context)
+        factory = self._factories.get(context.runtime_kind)
+        if factory is None:
+            raise ValueError("no gateway factory is configured for the Attempt runtime kind")
+        if context.runtime_kind == "dsh" and not self.has_durable_dsh_runtime:
+            raise TypeError("DSH runtime factory is no longer durably configured")
+        return factory.open(context)

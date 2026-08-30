@@ -726,7 +726,15 @@ def test_pending_usage_is_discoverable_without_runtime_launch_metadata(app, deli
 
         # Once the exact reservation is spent, no delivery/provenance shape
         # may keep this Attempt in the reconciliation queue.
-        UsageLedger().release(session, reservation_id=reservation_id, now_us=3)
+        UsageLedger().release(
+            session,
+            reservation_id=reservation_id,
+            scope=scope,
+            run_id="run-1",
+            step_id="step-1",
+            attempt_id=attempt_id,
+            now_us=3,
+        )
         assert repo.list_reconciliation_candidates(session, scope=scope) == []
 
 

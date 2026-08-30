@@ -217,6 +217,82 @@ def test_terminal_run_has_no_effect_or_event(app) -> None:
         assert session.execute(select(events)).all() == []
 
 
+def test_expired_worker_lease_cannot_start_attempt(app) -> None:
+    ids = _seed(app)
+    with session_scope() as session:
+        session.execute(
+            attempts.update()
+            .where(attempts.c.id == ids["attempt_id"])
+            .values(state=AttemptState.leased.value)
+        )
+        session.execute(
+            steps.update()
+            .where(steps.c.id == ids["step_id"])
+            .values(state=StepState.leased.value)
+        )
+        assert not app.state.start_attempt_cas(
+            session,
+            scope=Scope.user("owner"),
+            run_id=ids["run_id"],
+            step_id=ids["step_id"],
+            attempt_id=ids["attempt_id"],
+            attempt_no=1,
+            lease_owner="worker-a",
+            now_us=10_000,
+        )
+        _, step, attempt = _rows(session)
+        assert step["state"] == StepState.leased.value
+        assert attempt["state"] == AttemptState.leased.value
+        assert session.execute(select(events)).all() == []
+
+
+def test_expired_worker_lease_cannot_finish_publish_or_retry(app) -> None:
+    ids = _seed(app)
+    with session_scope() as session:
+        assert not _call(app.state, session, ids, now_us=10_000)
+        assert not app.state.schedule_capability_retry_cas(
+            session,
+            scope=Scope.user("owner"),
+            run_id=ids["run_id"],
+            step_id=ids["step_id"],
+            attempt_id=ids["attempt_id"],
+            attempt_no=1,
+            lease_owner="worker-a",
+            ready_at=10_001,
+            now_us=10_000,
+        )
+        assert (
+            app.state.finish_attempt_cas(
+                session,
+                scope=Scope.user("owner"),
+                run_id=ids["run_id"],
+                step_id=ids["step_id"],
+                attempt_id=ids["attempt_id"],
+                attempt_no=1,
+                lease_owner="worker-a",
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.failed,
+                now_us=10_000,
+            )
+            is None
+        )
+        assert not app.state.publish_attempt_cas(
+            session,
+            scope=Scope.user("owner"),
+            run_id=ids["run_id"],
+            step_id=ids["step_id"],
+            attempt_id=ids["attempt_id"],
+            attempt_no=1,
+            lease_owner="worker-a",
+            now_us=10_000,
+        )
+        _, step, attempt = _rows(session)
+        assert step["state"] == StepState.running.value
+        assert attempt["state"] == AttemptState.running.value
+        assert session.execute(select(events)).all() == []
+
+
 def test_repeated_finish_is_idempotent_no_op(app) -> None:
     ids = _seed(app)
     with session_scope() as session:

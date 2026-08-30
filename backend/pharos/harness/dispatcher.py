@@ -28,6 +28,7 @@ from pharos.harness.contracts import (
     AttemptState,
     ConfigIntegrityError,
     NotFoundError,
+    RetryClass,
     RunState,
     ScopeType,
     StepState,
@@ -40,7 +41,8 @@ from pharos.harness.execution_snapshots import (
 )
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope
 from pharos.harness.state import HarnessStateService
-from pharos.harness.tables import attempts, config_head, runs, steps
+from pharos.harness.tables import attempts, config_head, runs, steps, usage_events
+from pharos.harness.usage import LedgerConflict, UsageLedger
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +90,7 @@ class HarnessDispatcher:
         claim_batch: int = DEFAULT_CLAIM_BATCH,
         state_service: HarnessStateService | None = None,
         config_service: HarnessConfigService | None = None,
+        usage_ledger: UsageLedger | None = None,
     ) -> None:
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:12]}"
         if heartbeat_seconds >= lease_seconds / 3:
@@ -97,6 +100,7 @@ class HarnessDispatcher:
         self.claim_batch = claim_batch
         self.state = state_service or HarnessStateService()
         self.config_service = config_service
+        self.usage = usage_ledger or UsageLedger()
         self.execution_snapshots = ExecutionSnapshotStore()
 
     # ------------------------------------------------------------- claiming
@@ -536,7 +540,19 @@ class HarnessDispatcher:
         """
         expired = (
             session.execute(
-                select(attempts.c.id, attempts.c.step_id, attempts.c.lease_owner)
+                select(
+                    attempts.c.id,
+                    attempts.c.step_id,
+                    attempts.c.lease_owner,
+                    attempts.c.attempt_no,
+                    attempts.c.run_id,
+                    attempts.c.scope_type,
+                    attempts.c.scope_id,
+                    attempts.c.state,
+                    attempts.c.delivery_state,
+                    attempts.c.runtime_session_id,
+                    attempts.c.child_pid,
+                )
                 .join(steps, steps.c.id == attempts.c.step_id)
                 .where(
                     attempts.c.state.in_([AttemptState.leased.value, AttemptState.running.value]),
@@ -550,15 +566,91 @@ class HarnessDispatcher:
         )
         abandoned: list[dict] = []
         for row in expired:
+            recovery = self._expired_recovery(session, row=dict(row), now_us=now_us)
+            scope = Scope(ScopeType(row["scope_type"]), row["scope_id"])
             if self.state.abandon_expired_attempt_cas(
                 session,
+                scope=scope,
+                run_id=row["run_id"],
                 attempt_id=row["id"],
                 step_id=row["step_id"],
+                attempt_no=row["attempt_no"],
                 lease_owner=row["lease_owner"],
                 now_us=now_us,
+                recovery_step_state=recovery[0],
+                retry_ready_at=recovery[1],
             ):
+                if recovery[2]:
+                    self._release_expired_reservations(session, row=dict(row), now_us=now_us)
                 abandoned.append(dict(row))
         return abandoned
+
+    def _expired_recovery(
+        self, session: Session, *, row: dict, now_us: int
+    ) -> tuple[StepState, int | None, bool]:
+        """Choose expiry recovery from durable evidence and frozen policy only.
+
+        A leased Attempt with no launch/delivery evidence has not crossed an
+        executor boundary. Running Attempts are always conservative: the
+        spawn-to-PID attach interval cannot be proven unsent from this schema.
+        """
+        evidence = row.get("delivery_state") not in (None, "not_started") or any(
+            row.get(field) is not None for field in ("runtime_session_id", "child_pid")
+        )
+        if row.get("state") != AttemptState.leased.value or evidence:
+            return StepState.indeterminate, None, False
+        try:
+            snapshot = self.execution_snapshots.read_attempt(
+                session,
+                scope=row["scope_type"],
+                scope_id=row["scope_id"],
+                attempt_id=row["id"],
+                require_for_execution=True,
+            )
+        except (MissingExecutionSnapshotError, SnapshotIntegrityError, NotFoundError):
+            return StepState.indeterminate, None, False
+        if snapshot is None:
+            return StepState.indeterminate, None, False
+        policy = snapshot.retry_policy
+        if policy is None or row["attempt_no"] >= snapshot.max_attempts:
+            return StepState.failed, None, True
+        if RetryClass.connect_timeout_unsent not in policy.retry_classes:
+            return StepState.failed, None, True
+        backoff = float(
+            policy.backoff_seconds * (float(policy.backoff_factor) ** (row["attempt_no"] - 1))
+        )
+        return StepState.retry_scheduled, now_us + int(backoff * MICROSECONDS_PER_SECOND), True
+
+    def _release_expired_reservations(self, session: Session, *, row: dict, now_us: int) -> None:
+        """Release only open base reservations for a proven-unsent Attempt."""
+        scope = Scope(ScopeType(row["scope_type"]), row["scope_id"])
+        reserves = session.execute(
+            select(usage_events.c.reservation_id).where(
+                usage_events.c.scope_type == scope.scope_type.value,
+                usage_events.c.scope_id == scope.scope_id,
+                usage_events.c.run_id == row["run_id"],
+                usage_events.c.step_id == row["step_id"],
+                usage_events.c.attempt_id == row["id"],
+                usage_events.c.op == "reserve",
+                usage_events.c.reservation_id.is_not(None),
+                ~usage_events.c.reservation_id.like("%:input"),
+            )
+        ).scalars().all()
+        for reservation_id in reserves:
+            try:
+                self.usage.release(
+                    session,
+                    reservation_id=reservation_id,
+                    scope=scope,
+                    run_id=row["run_id"],
+                    step_id=row["step_id"],
+                    attempt_id=row["id"],
+                    now_us=now_us,
+                )
+            except LedgerConflict:
+                # A prior worker may have closed the reservation; the unique
+                # outcome index makes that replay a harmless no-op.
+                continue
 
     def step_scopes(self, session: Session, *, step_id: str) -> Scope | None:
         row = session.execute(select(steps).where(steps.c.id == step_id)).mappings().first()

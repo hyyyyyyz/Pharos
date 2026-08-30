@@ -90,6 +90,55 @@ def test_one_attempt_official_wire_and_shutdown(tmp_path: Path) -> None:
     transport.shutdown()
 
 
+def test_start_exposes_pid_before_any_wire_write_and_initialize_reuses_child(
+    tmp_path: Path,
+) -> None:
+    transport = make_transport(tmp_path)
+    pid = transport.start()
+    assert pid > 0
+    assert transport.pid == pid
+    assert transport.delivery_state is DeliveryState.NOT_STARTED
+    assert transport.process is not None and transport.process.poll() is None
+
+    initialized = transport.initialize(provider="pharos-fake", model="fake")
+    assert initialized.serverInfo.name == "deepseek-harness-sdk-runtime"
+    assert transport.pid == pid
+    assert transport.delivery_state is DeliveryState.NOT_STARTED
+    transport.close()
+
+
+def test_start_is_single_use_and_close_reaps_an_uninitialized_child(tmp_path: Path) -> None:
+    transport = make_transport(tmp_path)
+    transport.start()
+    with pytest.raises(HarnessProtocolError, match="already exists"):
+        transport.start()
+    transport.close()
+    assert transport.process is not None and transport.process.poll() is not None
+
+
+def test_attempt_deadline_intersects_a_longer_initialize_phase(tmp_path: Path) -> None:
+    transport = make_transport(
+        tmp_path,
+        "hang-init",
+        attempt_timeout_seconds=0.1,
+    )
+    started = time.monotonic()
+    with pytest.raises(HarnessTimeoutError, match="deadline"):
+        transport.initialize(provider="pharos-fake", model="fake")
+    assert time.monotonic() - started < 0.6
+    assert transport.process is not None and transport.process.poll() is not None
+
+
+def test_attempt_deadline_is_not_reset_between_initialize_and_prompt(tmp_path: Path) -> None:
+    transport = make_transport(tmp_path, attempt_timeout_seconds=0.3)
+    transport.initialize(provider="pharos-fake", model="fake")
+    time.sleep(0.35)
+    with pytest.raises(HarnessTimeoutError, match="Attempt wall deadline"):
+        transport.prompt("session-1", "hello")
+    assert transport.delivery_state is DeliveryState.NOT_STARTED
+    assert transport.process is not None and transport.process.poll() is not None
+
+
 def test_delivery_observer_is_ordered_and_receives_only_typed_state(tmp_path: Path) -> None:
     observed: list[object] = []
     transport = make_transport(tmp_path, delivery_observer=observed.append)

@@ -80,7 +80,13 @@ STEP_TRANSITIONS: dict[StepState, frozenset[StepState]] = {
     StepState.pending: frozenset({StepState.ready, StepState.skipped, StepState.cancelled}),
     StepState.ready: frozenset({StepState.leased, StepState.cancelled, StepState.skipped}),
     StepState.leased: frozenset(
-        {StepState.running, StepState.cancelled, StepState.failed, StepState.indeterminate}
+        {
+            StepState.running,
+            StepState.cancelled,
+            StepState.failed,
+            StepState.indeterminate,
+            StepState.retry_scheduled,
+        }
     ),
     StepState.running: frozenset(
         {
@@ -544,6 +550,8 @@ class HarnessStateService:
                         steps.c.attempt_count == attempt_no,
                         steps.c.state == StepState.leased.value,
                         steps.c.lease_owner == lease_owner,
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
                     )
                 ),
             )
@@ -560,6 +568,8 @@ class HarnessStateService:
                 steps.c.attempt_count == attempt_no,
                 steps.c.state == StepState.leased.value,
                 steps.c.lease_owner == lease_owner,
+                steps.c.lease_expires_at.is_not(None),
+                steps.c.lease_expires_at > now_us,
             )
             .values(state=StepState.running.value, updated_at=now_us)
         )
@@ -668,6 +678,8 @@ class HarnessStateService:
                         steps.c.step_kind.in_(("deterministic", "mapped")),
                         steps.c.state == StepState.running.value,
                         steps.c.lease_owner == lease_owner,
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
                     )
                 ),
             )
@@ -691,6 +703,8 @@ class HarnessStateService:
                 steps.c.step_kind.in_(("deterministic", "mapped")),
                 steps.c.state == StepState.running.value,
                 steps.c.lease_owner == lease_owner,
+                steps.c.lease_expires_at.is_not(None),
+                steps.c.lease_expires_at > now_us,
             )
             .values(
                 state=step_target.value,
@@ -800,6 +814,8 @@ class HarnessStateService:
                         steps.c.step_kind.in_(("deterministic", "mapped")),
                         steps.c.state == StepState.running.value,
                         steps.c.lease_owner == lease_owner,
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
                     )
                 ),
             )
@@ -824,6 +840,8 @@ class HarnessStateService:
                 steps.c.step_kind.in_(("deterministic", "mapped")),
                 steps.c.state == StepState.running.value,
                 steps.c.lease_owner == lease_owner,
+                steps.c.lease_expires_at.is_not(None),
+                steps.c.lease_expires_at > now_us,
             )
             .values(
                 state=StepState.retry_scheduled.value,
@@ -887,8 +905,14 @@ class HarnessStateService:
         indeterminate path deliberately remains indeterminate so provider
         reconciliation is never hidden by a control request.
         """
-        if target not in {AttemptState.failed, AttemptState.indeterminate}:
-            raise StateError("failure Attempt CAS requires failed or indeterminate target")
+        if target not in {
+            AttemptState.failed,
+            AttemptState.timed_out,
+            AttemptState.indeterminate,
+        }:
+            raise StateError(
+                "failure Attempt CAS requires failed, timed_out or indeterminate target"
+            )
         if expected_attempt_state not in {AttemptState.leased, AttemptState.running}:
             raise StateError("terminal Attempt CAS requires an active Attempt source")
         if expected_step_state not in {StepState.leased, StepState.running}:
@@ -937,6 +961,8 @@ class HarnessStateService:
                     steps.c.attempt_count == attempt_no,
                     steps.c.state == expected_step_state.value,
                     steps.c.lease_owner == lease_owner,
+                    steps.c.lease_expires_at.is_not(None),
+                    steps.c.lease_expires_at > now_us,
                 )
             ),
         ]
@@ -954,6 +980,7 @@ class HarnessStateService:
         terminal_step = {
             AttemptState.cancelled: StepState.cancelled,
             AttemptState.failed: StepState.failed,
+            AttemptState.timed_out: StepState.failed,
             AttemptState.indeterminate: StepState.indeterminate,
         }[effective]
         _check(expected_step_state, terminal_step, STEP_TRANSITIONS, f"step {step_id}")
@@ -966,6 +993,8 @@ class HarnessStateService:
                 steps.c.attempt_count == attempt_no,
                 steps.c.state == expected_step_state.value,
                 steps.c.lease_owner == lease_owner,
+                steps.c.lease_expires_at.is_not(None),
+                steps.c.lease_expires_at > now_us,
             )
             .values(
                 state=terminal_step.value,
@@ -1131,6 +1160,8 @@ class HarnessStateService:
                                 steps.c.state == StepState.running.value,
                                 steps.c.lease_owner == lease_owner,
                                 steps.c.output_artifact_id.is_(None),
+                                steps.c.lease_expires_at.is_not(None),
+                                steps.c.lease_expires_at > now_us,
                             )
                         ),
                     )
@@ -1163,6 +1194,8 @@ class HarnessStateService:
                         steps.c.state == StepState.running.value,
                         steps.c.lease_owner == lease_owner,
                         steps.c.output_artifact_id.is_(None),
+                        steps.c.lease_expires_at.is_not(None),
+                        steps.c.lease_expires_at > now_us,
                     )
                 ),
                 exists(
@@ -1551,10 +1584,15 @@ class HarnessStateService:
         self,
         session: Session,
         *,
+        scope: Scope,
+        run_id: str,
         attempt_id: str,
         step_id: str,
+        attempt_no: int,
         lease_owner: str,
         now_us: int,
+        recovery_step_state: StepState = StepState.indeterminate,
+        retry_ready_at: int | None = None,
     ) -> bool:
         """Abandon an attempt only while its owner/state/expiry token matches.
 
@@ -1562,11 +1600,39 @@ class HarnessStateService:
         appended.  A heartbeat or a second reaper therefore loses cleanly and
         cannot write duplicate or stale abandonment events.
         """
+        if recovery_step_state not in {
+            StepState.retry_scheduled,
+            StepState.failed,
+            StepState.indeterminate,
+        }:
+            raise StateError("expired lease recovery requires a terminal or retry Step state")
+        if recovery_step_state is StepState.retry_scheduled and (
+            type(retry_ready_at) is not int or retry_ready_at < now_us
+        ):
+            raise StateError("retry recovery requires ready_at at or after now_us")
+        attempt_values: dict[str, Any] = {
+            "retryable": int(recovery_step_state is StepState.retry_scheduled),
+            "error_class": (
+                "timeout"
+                if recovery_step_state is not StepState.indeterminate
+                else AttemptState.indeterminate.value
+            ),
+            "error_message": (
+                "expired lease is scheduled for a safe retry"
+                if recovery_step_state is StepState.retry_scheduled
+                else "expired lease outcome requires reconciliation"
+                if recovery_step_state is StepState.indeterminate
+                else "expired lease retries exhausted"
+            ),
+        }
         result: Any = session.execute(
             update(attempts)
             .where(
+                scope.where(attempts),
                 attempts.c.id == attempt_id,
                 attempts.c.step_id == step_id,
+                attempts.c.run_id == run_id,
+                attempts.c.attempt_no == attempt_no,
                 attempts.c.lease_owner == lease_owner,
                 attempts.c.state.in_([AttemptState.leased.value, AttemptState.running.value]),
                 exists(
@@ -1574,6 +1640,9 @@ class HarnessStateService:
                     .select_from(steps)
                     .where(
                         steps.c.id == step_id,
+                        steps.c.run_id == run_id,
+                        scope.where(steps),
+                        steps.c.attempt_count == attempt_no,
                         steps.c.state.in_([StepState.leased.value, StepState.running.value]),
                         steps.c.lease_owner == lease_owner,
                         steps.c.lease_expires_at.is_not(None),
@@ -1581,12 +1650,20 @@ class HarnessStateService:
                     )
                 ),
             )
-            .values(state=AttemptState.abandoned.value, finished_at=now_us)
+            .values(state=AttemptState.abandoned.value, finished_at=now_us, **attempt_values)
         )
         if result.rowcount != 1:
             return False
         attempt = (
-            session.execute(select(attempts).where(attempts.c.id == attempt_id)).mappings().one()
+            session.execute(
+                select(attempts).where(
+                    scope.where(attempts),
+                    attempts.c.id == attempt_id,
+                    attempts.c.run_id == run_id,
+                )
+            )
+            .mappings()
+            .one()
         )
         self._event(
             session,
@@ -1599,24 +1676,35 @@ class HarnessStateService:
             payload={"reason": "lease_expired"},
             now_us=now_us,
         )
+        step_values: dict[str, Any] = {
+            "state": recovery_step_state.value,
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "heartbeat_at": None,
+            "error_code": (
+                "lease_expired_retry"
+                if recovery_step_state is StepState.retry_scheduled
+                else "lease_expired"
+            ),
+            "updated_at": now_us,
+        }
+        if recovery_step_state is StepState.retry_scheduled:
+            step_values["ready_at"] = retry_ready_at
+        else:
+            step_values["finished_at"] = now_us
         step_result: Any = session.execute(
             update(steps)
             .where(
+                scope.where(steps),
                 steps.c.id == step_id,
+                steps.c.run_id == run_id,
+                steps.c.attempt_count == attempt_no,
                 steps.c.state.in_([StepState.leased.value, StepState.running.value]),
                 steps.c.lease_owner == lease_owner,
                 steps.c.lease_expires_at.is_not(None),
                 steps.c.lease_expires_at <= now_us,
             )
-            .values(
-                state=StepState.indeterminate.value,
-                lease_owner=None,
-                lease_expires_at=None,
-                heartbeat_at=None,
-                error_code="lease_expired",
-                updated_at=now_us,
-                finished_at=now_us,
-            )
+            .values(**step_values)
         )
         if step_result.rowcount != 1:
             # Both rows are one recovery decision.  Raising keeps the caller's
@@ -1630,10 +1718,17 @@ class HarnessStateService:
             run_id=attempt["run_id"],
             scope_type=attempt["scope_type"],
             scope_id=attempt["scope_id"],
-            event_type="step.indeterminate",
+            event_type=f"step.{recovery_step_state.value}",
             step_id=step_id,
             attempt_id=None,
-            payload={"reason": "lease_expired"},
+            payload={
+                "reason": "lease_expired",
+                **(
+                    {"recovery": "retry"}
+                    if recovery_step_state is StepState.retry_scheduled
+                    else {}
+                ),
+            },
             now_us=now_us,
         )
         return True

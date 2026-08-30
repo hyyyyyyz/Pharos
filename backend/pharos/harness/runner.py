@@ -14,7 +14,7 @@ import json
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from threading import Event, RLock, Thread
 from typing import Any
 
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from pharos.db.session import session_scope
 from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore, content_hash
+from pharos.harness.clock import SystemClock
 from pharos.harness.contracts import (
     ApprovalConflictError,
     ArtifactSensitivity,
@@ -47,14 +48,23 @@ from pharos.harness.execution_snapshots import (
     MissingExecutionSnapshotError,
     SnapshotIntegrityError,
 )
-from pharos.harness.fakes import FakeClock, ModelResult
+from pharos.harness.fakes import ModelResult
 from pharos.harness.model_gateway import (
     AttemptContext,
     GatewayFactory,
     GatewayHandle,
+    GatewayKnownFailure,
     GatewayLifecycleError,
+    RuntimeGatewayFactory,
 )
-from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
+from pharos.harness.repository import (
+    HarnessAttemptRepository,
+    HarnessRunRepository,
+    HarnessStepRepository,
+    Scope,
+    json_dump,
+)
+from pharos.harness.seams import Clock
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import attempts, runs, steps, usage_events
 from pharos.harness.usage import LedgerConflict, UsageLedger
@@ -90,6 +100,16 @@ class _LocalExecutionIdentity:
     scope_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class _LeaseHeartbeat:
+    """One bounded heartbeat thread owned by an executing Attempt."""
+
+    stop: Event
+    lease_lost: Event
+    thread: Thread
+    execution_kind: str
+
+
 @dataclass
 class StepExecutor:
     """What the runner needs to execute claimed steps."""
@@ -101,7 +121,7 @@ class StepExecutor:
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
     events: EventStore = field(default_factory=EventStore)
-    clock: FakeClock = field(default_factory=FakeClock)
+    clock: Clock = field(default_factory=SystemClock)
     expanders: dict[str, StepExpander] = field(default_factory=dict)
     run_reducers: dict[str, RunReducer] = field(default_factory=dict)
 
@@ -259,13 +279,11 @@ class HarnessRunner:
         started; a later loss is left to the exact terminal CAS/reconciliation
         fence because the side effect may already have happened.
         """
-        with session_scope() as session:
-            owns_lease = self.dispatcher.heartbeat(
-                session,
-                attempt_id=claimed.attempt_id,
-                now_us=self.executor.clock.utc_epoch_us(),
-            )
-        if not owns_lease:
+        heartbeat = self._start_lease_heartbeat(
+            claimed=claimed,
+            execution_kind="capability",
+        )
+        if heartbeat is None:
             self._finish_capability(
                 claimed=claimed,
                 target=AttemptState.failed,
@@ -277,6 +295,44 @@ class HarnessRunner:
                 step_values={"error_code": "lease_lost_before_execution"},
             )
             return
+
+        try:
+            self._execute_started_capability(claimed=claimed, snapshot=snapshot, run=run)
+        finally:
+            self._stop_lease_heartbeat(claimed=claimed, heartbeat=heartbeat)
+
+    def _start_lease_heartbeat(
+        self,
+        *,
+        claimed: ClaimedStep,
+        execution_kind: str,
+    ) -> _LeaseHeartbeat | None:
+        """Prove lease ownership, then renew it until the caller stops the guard.
+
+        Returning ``None`` is a hard pre-execution fence: the caller must not
+        invoke any capability or model runtime. A later renewal loss is only
+        an observation; exact terminal/reaper CAS operations still decide the
+        durable winner.
+        """
+
+        if execution_kind not in {"agent", "capability"}:
+            raise ValueError("unsupported heartbeat execution kind")
+        try:
+            with session_scope() as session:
+                owns_lease = self.dispatcher.heartbeat(
+                    session,
+                    attempt_id=claimed.attempt_id,
+                    now_us=self.executor.clock.utc_epoch_us(),
+                )
+        except Exception:  # noqa: BLE001 -- no durable proof means no execution
+            log.exception(
+                "%s initial heartbeat failed for Attempt %s",
+                execution_kind,
+                claimed.attempt_id,
+            )
+            return None
+        if not owns_lease:
+            return None
 
         stop = Event()
         lease_lost = Event()
@@ -291,7 +347,11 @@ class HarnessRunner:
                             now_us=self.executor.clock.utc_epoch_us(),
                         )
                 except Exception:  # noqa: BLE001 -- retry until the durable lease decides
-                    log.exception("capability heartbeat failed for Attempt %s", claimed.attempt_id)
+                    log.exception(
+                        "%s heartbeat failed for Attempt %s",
+                        execution_kind,
+                        claimed.attempt_id,
+                    )
                     continue
                 if not renewed:
                     lease_lost.set()
@@ -302,21 +362,77 @@ class HarnessRunner:
             name=f"pharos-heartbeat-{claimed.attempt_id[:12]}",
             daemon=True,
         )
-        heartbeat.start()
         try:
-            self._execute_started_capability(claimed=claimed, snapshot=snapshot, run=run)
-        finally:
+            heartbeat.start()
+        except Exception:  # noqa: BLE001 -- no renewal loop means no execution
             stop.set()
-            # A SQLite writer can be inside its bounded busy timeout.  Do not
-            # let cleanup wait forever, and never let a heartbeat thread keep
-            # the process alive after shutdown.
-            heartbeat.join(timeout=6.0)
-            if heartbeat.is_alive():
-                log.error("capability heartbeat did not stop promptly for %s", claimed.attempt_id)
-            elif lease_lost.is_set():
-                log.warning(
-                    "capability lease was lost before its finish for %s", claimed.attempt_id
+            log.exception(
+                "%s heartbeat could not start for Attempt %s",
+                execution_kind,
+                claimed.attempt_id,
+            )
+            return None
+        return _LeaseHeartbeat(
+            stop=stop,
+            lease_lost=lease_lost,
+            thread=heartbeat,
+            execution_kind=execution_kind,
+        )
+
+    def _stop_lease_heartbeat(
+        self,
+        *,
+        claimed: ClaimedStep,
+        heartbeat: _LeaseHeartbeat,
+    ) -> None:
+        heartbeat.stop.set()
+        # A SQLite writer can be inside its bounded busy timeout. Do not let
+        # cleanup wait forever, and never let a heartbeat thread keep the
+        # process alive after shutdown.
+        heartbeat.thread.join(timeout=6.0)
+        if heartbeat.thread.is_alive():
+            log.error(
+                "%s heartbeat did not stop promptly for %s",
+                heartbeat.execution_kind,
+                claimed.attempt_id,
+            )
+        elif heartbeat.lease_lost.is_set():
+            log.warning(
+                "%s lease was lost before its finish for %s",
+                heartbeat.execution_kind,
+                claimed.attempt_id,
+            )
+
+    def _renew_lease_for_finish(
+        self,
+        *,
+        claimed: ClaimedStep,
+        heartbeat: _LeaseHeartbeat,
+    ) -> bool:
+        """Take one synchronous lease fence before terminal DB classification.
+
+        The background guard covers model execution and bounded cleanup.  This
+        final renewal gives validation, Artifact publication and accounting a
+        full lease interval after the guard stops; exact terminal CAS remains
+        the authoritative fallback if a reaper or cancellation already won.
+        """
+
+        if heartbeat.lease_lost.is_set():
+            return False
+        try:
+            with session_scope() as session:
+                renewed = self.dispatcher.heartbeat(
+                    session,
+                    attempt_id=claimed.attempt_id,
+                    now_us=self.executor.clock.utc_epoch_us(),
                 )
+        except Exception:  # noqa: BLE001 -- terminal CAS still fences every write
+            log.exception("agent final heartbeat failed for Attempt %s", claimed.attempt_id)
+            heartbeat.lease_lost.set()
+            return False
+        if not renewed:
+            heartbeat.lease_lost.set()
+        return bool(renewed)
 
     def retry_failed_cleanup(self, attempt_id: str) -> bool:
         """Retry cleanup for a tracked handle and remove it only on success."""
@@ -328,10 +444,61 @@ class HarnessRunner:
             handle.retry_cleanup()
         except BaseException:  # cleanup remains visible for operator recovery
             return False
+        reaped_pid = self._reaped_child_pid(handle)
+        if reaped_pid is not None:
+            context = handle.context
+            try:
+                scope = Scope(ScopeType(context.scope_type), context.scope_id)
+                with session_scope() as session:
+                    recorded = HarnessAttemptRepository().record_child_reaped(
+                        session,
+                        scope=scope,
+                        run_id=context.run_id,
+                        step_id=context.step_id,
+                        attempt_id=context.attempt_id,
+                        attempt_no=context.attempt_no,
+                        runtime_session_id=context.attempt_id,
+                        child_pid=reaped_pid,
+                    )
+                    if not recorded:
+                        row = (
+                            session.execute(
+                                select(
+                                    attempts.c.runtime_session_id,
+                                    attempts.c.child_pid,
+                                ).where(
+                                    scope.where(attempts),
+                                    attempts.c.id == context.attempt_id,
+                                    attempts.c.run_id == context.run_id,
+                                    attempts.c.step_id == context.step_id,
+                                    attempts.c.attempt_no == context.attempt_no,
+                                )
+                            )
+                            .mappings()
+                            .first()
+                        )
+                        if (
+                            row is None
+                            or row["runtime_session_id"] != context.attempt_id
+                            or row["child_pid"] is not None
+                        ):
+                            return False
+            except Exception:  # DB proof remains retryable and the handle stays visible
+                log.exception("failed to persist child reap proof for %s", attempt_id)
+                return False
         with self._active_handles_lock:
             if self._cleanup_failed_handles.get(attempt_id) is handle:
                 del self._cleanup_failed_handles[attempt_id]
         return True
+
+    @staticmethod
+    def _reaped_child_pid(handle: GatewayHandle | None) -> int | None:
+        """Read optional cleanup proof without widening the generic gateway seam."""
+
+        if handle is None:
+            return None
+        value = getattr(handle, "reaped_child_pid", None)
+        return value if type(value) is int and value > 0 else None
 
     def cancel_run_handles(self, *, scope: Scope, run_id: str) -> tuple[str, ...]:
         """Signal every active handle for exactly one owner-scoped Run."""
@@ -969,11 +1136,24 @@ class HarnessRunner:
             ):
                 return
 
-        # The v2 canary is a claim-only DSH seam in this slice.  Do not route
-        # a trusted DSH role through the legacy in-process fake gateway while
-        # the actual sidecar adapter is still intentionally absent.
+        # A DSH role may cross the execution boundary only through a factory
+        # that explicitly advertises that runtime kind, and only while the
+        # live gate/route still permits it.  Unmarked legacy factories remain
+        # compatible with the in-process fake but can never receive a DSH
+        # Attempt by accident.
         factory = self.executor.gateway_factory
-        if snapshot.runtime_kind == "dsh" or factory is None:
+        dsh_factory_admitted = (
+            snapshot.runtime_kind != "dsh"
+            or (
+                isinstance(factory, RuntimeGatewayFactory)
+                and factory.has_durable_dsh_runtime
+            )
+        )
+        live_runtime_admitted = snapshot.runtime_kind != "dsh" or self._dsh_open_allowed(
+            snapshot=snapshot,
+            run=run,
+        )
+        if factory is None or not dsh_factory_admitted or not live_runtime_admitted:
             with session_scope() as session:
                 if not self._start_agent_attempt(session, claimed=claimed, now_us=now_us):
                     return
@@ -983,6 +1163,7 @@ class HarnessRunner:
                     target=AttemptState.blocked,
                     now_us=now_us,
                     error_class=AttemptErrorClass.configuration.value,
+                    lease_owner=None,
                 )
                 self.state.transition_step(
                     session,
@@ -995,13 +1176,90 @@ class HarnessRunner:
                 )
             return
         input = json.loads(run["input_json"])
+        context = self._attempt_context(
+            snapshot=snapshot,
+            claimed=claimed,
+            workflow_key=run["workflow_key"],
+            input_sha256=run["input_sha256"],
+            now_us=now_us,
+        )
+        if context.max_output_tokens is None or context.max_input_tokens is None:
+            raise SnapshotIntegrityError("agent token limits are not frozen")
         reservation: str | None = None
+        reservation_amount = 0
+        reservation_input_amount = 0
+        reservation_cost_micros = 0
         with session_scope() as session:
             # Parent Run lock, leased->running CAS, and usage reserve share
             # one transaction.  The route values come only from this frozen
             # snapshot, never from a live config projection.
             if not self._start_agent_attempt(session, claimed=claimed, now_us=now_us):
                 return
+            budget = snapshot.policy_snapshot.effective_budget
+            status = self.executor.usage.budget_status(
+                session,
+                run_id=claimed.run_id,
+                kind="model_tokens",
+                scope=_scope_of(claimed),
+            )
+            remaining_output = budget.output_tokens - status.committed - status.pending
+            remaining_input = budget.input_tokens - status.input_committed - status.input_pending
+            remaining_cost = budget.cost_micros - status.cost_committed - status.cost_pending
+            if (
+                status.consumed_calls >= budget.model_calls
+                or remaining_output <= 0
+                or remaining_input <= 0
+                or remaining_cost < 0
+                or (budget.cost_micros > 0 and remaining_cost == 0)
+            ):
+                self.state.transition_attempt(
+                    session,
+                    attempt_id=claimed.attempt_id,
+                    target=AttemptState.blocked,
+                    now_us=now_us,
+                    error_class=AttemptErrorClass.budget.value,
+                    lease_owner=None,
+                )
+                self.state.transition_step(
+                    session,
+                    step_id=claimed.step_id,
+                    target=StepState.waiting_for_input,
+                    now_us=now_us,
+                    waiting_reason="budget",
+                    lease_owner=None,
+                    lease_expires_at=None,
+                )
+                return
+            reservation_amount = min(context.max_output_tokens, remaining_output)
+            reservation_input_amount = min(context.max_input_tokens, remaining_input)
+            reservation_cost_micros = remaining_cost
+            if reservation_amount <= 0 or reservation_input_amount <= 0:
+                self.state.transition_attempt(
+                    session,
+                    attempt_id=claimed.attempt_id,
+                    target=AttemptState.blocked,
+                    now_us=now_us,
+                    error_class=AttemptErrorClass.budget.value,
+                    lease_owner=None,
+                )
+                self.state.transition_step(
+                    session,
+                    step_id=claimed.step_id,
+                    target=StepState.waiting_for_input,
+                    now_us=now_us,
+                    waiting_reason="budget",
+                    lease_owner=None,
+                    lease_expires_at=None,
+                )
+                return
+            # Admission may have less output/input budget left than the
+            # frozen route.  DSH receives this reduced context so its
+            # initialize(maxTokens) cannot exceed the remaining reservation.
+            context = replace(
+                context,
+                max_output_tokens=reservation_amount,
+                max_input_tokens=reservation_input_amount,
+            )
             reservation = self.executor.usage.reserve(
                 session,
                 scope=_scope_of(claimed),
@@ -1010,9 +1268,10 @@ class HarnessRunner:
                 attempt_id=claimed.attempt_id,
                 kind="model_tokens",
                 source=usage_source,
-                amount=10,
-                cost_micros=0,
+                amount=reservation_amount,
+                cost_micros=reservation_cost_micros,
                 now_us=now_us,
+                input_tokens=reservation_input_amount,
                 provider=provider,
                 model=model,
             )
@@ -1022,7 +1281,9 @@ class HarnessRunner:
         # handle or send anything externally).
         with session_scope() as session:
             if self._run_cancel_requested(session, claimed=claimed):
-                self._release_reservation(session, reservation_id=reservation, now_us=now_us)
+                self._release_reservation(
+                    session, claimed=claimed, reservation_id=reservation, now_us=now_us
+                )
                 self.state.finish_attempt_cas(
                     session,
                     scope=_scope_of(claimed),
@@ -1040,76 +1301,99 @@ class HarnessRunner:
                     cancel_on_request=True,
                 )
                 return
+
+        heartbeat = self._start_lease_heartbeat(
+            claimed=claimed,
+            execution_kind="agent",
+        )
+        if heartbeat is None:
+            # The Attempt is running but no external call has started. Release
+            # the reservation and fail the exact generation; a reaper/cancel
+            # that already won simply makes the terminal CAS a no-op.
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.timeout,
+                error_message="agent lease expired before gateway execution",
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+
         handle: GatewayHandle | None = None
         call_error: BaseException | None = None
         delivery_state = DeliveryState.NOT_STARTED
         completion_invoked = False
         completion_succeeded = False
+        finish_lease_renewed = False
         try:
-            context = self._attempt_context(
-                snapshot=snapshot,
-                claimed=claimed,
-                workflow_key=run["workflow_key"],
-                input_sha256=run["input_sha256"],
-                now_us=now_us,
-            )
-            # Opening happens only after the lease/running transition and
-            # reservation.  Registration is immediate, before complete, so a
-            # concurrent cancel coordinator can address this exact Attempt.
-            handle = factory.open(context)
-            if handle.context != context:
-                raise StateError("gateway factory returned a mismatched Attempt context")
-            self._register_handle(claimed.attempt_id, handle)
-            with session_scope() as session:
-                cancel_after_open = self._run_cancel_requested(session, claimed=claimed)
-            if cancel_after_open:
-                handle.cancel()
-                raise GatewayLifecycleError("run cancelled before model delivery")
-            completion_invoked = True
-            result = handle.complete(
-                {
-                    "workflow": run["workflow_key"],
-                    "step": claimed.definition_step_key,
-                    "input": input,
-                }
-            )
-            completion_succeeded = True
-        except BaseException as error:
-            # Defer classification until cleanup has completed.  In
-            # particular, cleanup must not hide a typed gateway error.
-            call_error = error
-        finally:
+            try:
+                # Opening happens only after the lease/running transition and
+                # reservation. Registration is immediate, before complete, so
+                # a concurrent cancel coordinator can address this Attempt.
+                handle = factory.open(context)
+                if handle.context != context:
+                    raise StateError("gateway factory returned a mismatched Attempt context")
+                self._register_handle(claimed.attempt_id, handle)
+                with session_scope() as session:
+                    cancel_after_open = self._run_cancel_requested(session, claimed=claimed)
+                if cancel_after_open:
+                    handle.cancel()
+                    raise GatewayLifecycleError("run cancelled before model delivery")
+                completion_invoked = True
+                result = handle.complete(
+                    {
+                        "workflow": run["workflow_key"],
+                        "step": claimed.definition_step_key,
+                        "input": input,
+                    }
+                )
+                completion_succeeded = True
+            except BaseException as error:
+                # Defer classification until cleanup has completed. In
+                # particular, cleanup must not hide a typed gateway error.
+                call_error = error
+            finally:
+                if handle is not None:
+                    try:
+                        observed_delivery = handle.delivery_state
+                        if not isinstance(observed_delivery, DeliveryState):
+                            raise TypeError("gateway delivery state is not typed")
+                        delivery_state = observed_delivery
+                    except BaseException as error:  # malformed factory seam
+                        delivery_state = (
+                            DeliveryState.UNKNOWN
+                            if completion_invoked
+                            else DeliveryState.NOT_STARTED
+                        )
+                        if call_error is None:
+                            call_error = error
+
+            close_error: BaseException | None = None
             if handle is not None:
                 try:
-                    observed_delivery = handle.delivery_state
-                    if not isinstance(observed_delivery, DeliveryState):
-                        raise TypeError("gateway delivery state is not typed")
-                    delivery_state = observed_delivery
-                except Exception:  # noqa: BLE001 -- malformed factory seam
-                    delivery_state = (
-                        DeliveryState.UNKNOWN if completion_invoked else DeliveryState.NOT_STARTED
-                    )
-                    if call_error is None:
-                        call_error = GatewayLifecycleError(
-                            "gateway handle did not expose a typed delivery state"
-                        )
-
-        close_error: BaseException | None = None
-        if handle is not None:
-            try:
-                # Reap/cleanup is part of the Attempt boundary and precedes
-                # validation and Artifact publication.
-                handle.close()
-            except BaseException as error:
-                close_error = error
-                # A failed close is not proof that a subprocess/process group
-                # is gone. Keep the exact handle visible and fence out a
-                # successor until cleanup can be proved or reconciled.
-                self._mark_cleanup_failed(claimed.attempt_id, handle)
-            else:
-                # Remove only after successful cleanup; identity fencing
-                # prevents a late callback from unregistering a successor.
-                self._unregister_handle(claimed.attempt_id, handle)
+                    # Reap/cleanup is part of the Attempt boundary and precedes
+                    # validation and Artifact publication.
+                    handle.close()
+                except BaseException as error:
+                    close_error = error
+                    # A failed close is not proof that a subprocess/process
+                    # group is gone. Keep the exact handle visible and fence
+                    # out a successor until cleanup is proved or reconciled.
+                    self._mark_cleanup_failed(claimed.attempt_id, handle)
+                else:
+                    # Remove only after successful cleanup; identity fencing
+                    # prevents a late callback unregistering a successor.
+                    self._unregister_handle(claimed.attempt_id, handle)
+        finally:
+            # The guard spans factory.open, complete and close, including all
+            # typed failures and process-control exceptions. Renew once more
+            # before stopping it so terminal validation/publication gets a
+            # complete lease interval rather than inheriting a near-expiry.
+            finish_lease_renewed = self._renew_lease_for_finish(
+                claimed=claimed,
+                heartbeat=heartbeat,
+            )
+            self._stop_lease_heartbeat(claimed=claimed, heartbeat=heartbeat)
 
         if close_error is not None:
             # Never persist the exception text: a delegate may embed paths,
@@ -1120,6 +1404,89 @@ class HarnessRunner:
                 claimed.attempt_id,
                 type(close_error).__name__,
             )
+        cleanup_proved_reap = close_error is None or self._reaped_child_pid(handle) is not None
+        known_result = (
+            call_error.result
+            if isinstance(call_error, GatewayKnownFailure)
+            else result
+            if completion_succeeded and isinstance(result, ModelResult)
+            else None
+        )
+        if not finish_lease_renewed:
+            # Lease expiry is an execution-authority boundary even when the
+            # reaper has not committed yet.  A trusted ACK still carries real
+            # usage and may close its own reservation exactly once, but the
+            # stale worker may not publish an Artifact or choose the Attempt's
+            # terminal state.  Unknown delivery stays pending for
+            # reconciliation; a definitely-unsent clean failure may release.
+            lost_lease_now = self.executor.clock.utc_epoch_us()
+            if delivery_state is DeliveryState.ACKNOWLEDGED and known_result is not None:
+                self._settle_known_usage_after_lease_loss(
+                    claimed=claimed,
+                    reservation_id=reservation or "",
+                    model_result=known_result,
+                    now_us=lost_lease_now,
+                )
+            elif (
+                call_error is not None
+                and close_error is None
+                and delivery_state is DeliveryState.NOT_STARTED
+                and not completion_succeeded
+            ):
+                with session_scope() as session:
+                    self._release_reservation(
+                        session,
+                        claimed=claimed,
+                        reservation_id=reservation,
+                        now_us=lost_lease_now,
+                    )
+            if call_error is not None and not isinstance(call_error, Exception):
+                raise call_error
+            return
+        if (
+            close_error is not None
+            and delivery_state is DeliveryState.ACKNOWLEDGED
+            and known_result is not None
+        ):
+            # Provider accounting and local process cleanup are independent
+            # facts. A failed reap/private-directory cleanup still blocks the
+            # Artifact, but it must not erase an authenticated usage receipt
+            # or leave spend falsely pending.
+            self._finish_gateway_indeterminate_with_usage(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                delivery_state=delivery_state,
+                model_result=known_result,
+                child_reaped=cleanup_proved_reap,
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+        if (
+            isinstance(call_error, GatewayKnownFailure)
+            and close_error is None
+            and delivery_state is DeliveryState.ACKNOWLEDGED
+        ):
+            # A strict runtime receipt and typed usage make this a determinate
+            # provider outcome.  Settle it even though no Artifact is valid;
+            # treating it as unknown would strand known spend indefinitely.
+            known_error_class = (
+                AttemptErrorClass.budget
+                if call_error.result.output_tokens > reservation_amount
+                or call_error.result.input_tokens > reservation_input_amount
+                or call_error.result.cost_micros > reservation_cost_micros
+                else call_error.error_class
+            )
+            self._finish_agent_failure_with_usage(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=known_error_class,
+                error_message="model gateway returned a known terminal failure",
+                actual_tokens=call_error.result.output_tokens,
+                model_result=call_error.result,
+                delivery_state=delivery_state,
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
         if call_error is not None or close_error is not None:
             now = self.executor.clock.utc_epoch_us()
             typed_class = (
@@ -1148,6 +1515,7 @@ class HarnessRunner:
                         }
                         else DeliveryState.UNKNOWN
                     ),
+                    child_reaped=cleanup_proved_reap,
                     now_us=now,
                 )
             else:
@@ -1185,6 +1553,7 @@ class HarnessRunner:
                     }
                     else DeliveryState.UNKNOWN
                 ),
+                child_reaped=True,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
             return
@@ -1194,6 +1563,27 @@ class HarnessRunner:
             # the accounting outcome is unresolved and must be reconcilable.
             self._finish_gateway_indeterminate(
                 claimed=claimed,
+                delivery_state=delivery_state,
+                child_reaped=True,
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+
+        if (
+            result.output_tokens > reservation_amount
+            or result.input_tokens > reservation_input_amount
+            or result.cost_micros > reservation_cost_micros
+        ):
+            # Usage is authenticated and must be settled even when the model
+            # exceeded a frozen limit. A budget violation can never publish an
+            # Artifact or be rewritten as zero-cost failure.
+            self._finish_agent_failure_with_usage(
+                claimed=claimed,
+                reservation_id=reservation or "",
+                error_class=AttemptErrorClass.budget,
+                error_message="model usage exceeded its frozen budget",
+                actual_tokens=result.output_tokens,
+                model_result=result,
                 delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
@@ -1214,6 +1604,7 @@ class HarnessRunner:
                 error_class=AttemptErrorClass.validation,
                 error_message=str(error),
                 actual_tokens=result.output_tokens,
+                model_result=result,
                 delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
@@ -1234,6 +1625,7 @@ class HarnessRunner:
                 error_class=AttemptErrorClass.bug,
                 error_message="agent finish transaction failed",
                 actual_tokens=result.output_tokens,
+                model_result=result,
                 delivery_state=delivery_state,
                 now_us=self.executor.clock.utc_epoch_us(),
             )
@@ -1250,6 +1642,32 @@ class HarnessRunner:
             lease_owner=claimed.lease_owner,
             now_us=now_us,
         )
+
+    def _dsh_open_allowed(self, *, snapshot: AttemptDefinitionSnapshot, run: dict) -> bool:
+        """Recheck the live DSH gate immediately before reserving execution.
+
+        Claim-time authorization is necessary but not sufficient: an operator
+        may close the runtime gate after a Step was leased.  The DB-bound DSH
+        factory repeats this fence in the launch-reservation transaction; this
+        runner-side check prevents usage reservation and factory invocation in
+        the ordinary gate-cut path.
+        """
+
+        try:
+            with session_scope() as session:
+                fence = self.dispatcher._execution_fence(session)  # noqa: SLF001
+                if fence is None:
+                    return False
+                _, config, _ = fence
+                return self.dispatcher._route_allows_claim(  # noqa: SLF001
+                    config,
+                    workflow_key=str(run["workflow_key"]),
+                    workflow_version=int(run["workflow_version"]),
+                    step_kind=snapshot.step_definition.kind,
+                    runtime_kind=snapshot.runtime_kind,
+                )
+        except (KeyError, TypeError, ValueError):
+            return False
 
     def _attempt_context(
         self,
@@ -1274,6 +1692,33 @@ class HarnessRunner:
         if duration_us < 1:
             raise SnapshotIntegrityError("agent timeout is below clock precision")
         deadline_at_us = now_us + duration_us
+        role_bindings = [
+            binding
+            for binding in snapshot.policy_snapshot.role_bindings
+            if binding.role_identity == snapshot.executor_identity
+        ]
+        role_limits = [
+            limits
+            for limits in snapshot.policy_snapshot.role_limits
+            if limits.role_identity == snapshot.executor_identity
+        ]
+        if len(role_bindings) != 1 or len(role_limits) != 1:
+            raise SnapshotIntegrityError("agent route limits are not uniquely frozen")
+        route = role_bindings[0].route
+        max_output_tokens = min(
+            route.max_output_tokens
+            or role_bindings[0].role_definition.token_budget.output_tokens,
+            role_bindings[0].role_definition.token_budget.output_tokens,
+            snapshot.step_definition.budget.output_tokens,
+            snapshot.policy_snapshot.effective_budget.output_tokens,
+            role_limits[0].max_output_tokens,
+            snapshot.policy_snapshot.agent_limits.max_output_tokens,
+        )
+        max_input_tokens = min(
+            role_bindings[0].role_definition.token_budget.input_tokens,
+            snapshot.step_definition.budget.input_tokens,
+            snapshot.policy_snapshot.effective_budget.input_tokens,
+        )
         try:
             return AttemptContext(
                 run_id=claimed.run_id,
@@ -1300,6 +1745,9 @@ class HarnessRunner:
                 deadline_at_us=deadline_at_us,
                 provider=snapshot.provider or "",
                 model=snapshot.model or "",
+                reasoning_effort=route.reasoning_effort,
+                max_output_tokens=max_output_tokens,
+                max_input_tokens=max_input_tokens,
             )
         except (TypeError, ValueError) as error:
             raise SnapshotIntegrityError("agent Attempt context is invalid") from error
@@ -1390,6 +1838,7 @@ class HarnessRunner:
                 reservation_id=reservation_id,
                 delivery_state=DeliveryState.ACKNOWLEDGED,
                 actual_tokens=result.output_tokens,
+                model_result=result,
                 error_class=AttemptErrorClass.bug,
                 error_message="execution snapshot unavailable at publication",
                 now_us=now_us,
@@ -1427,7 +1876,13 @@ class HarnessRunner:
                     self.executor.usage.settle(
                         session,
                         reservation_id=reservation_id,
+                        scope=_scope_of(claimed),
+                        run_id=claimed.run_id,
+                        step_id=claimed.step_id,
+                        attempt_id=claimed.attempt_id,
                         actual=result.output_tokens,
+                        actual_input=result.input_tokens,
+                        actual_cost_micros=result.cost_micros,
                         now_us=now_us,
                     )
                 return
@@ -1439,7 +1894,9 @@ class HarnessRunner:
             if current_step is None or current_step["output_artifact_id"] is not None:
                 # A prior committed finish won the race.  Never settle a new
                 # reservation or create a second artifact on replay.
-                self._release_reservation(session, reservation_id=reservation_id, now_us=now_us)
+                self._release_reservation(
+                    session, claimed=claimed, reservation_id=reservation_id, now_us=now_us
+                )
                 return
             raw_inputs = current_step["input_artifact_ids_json"] or "[]"
             parsed_inputs = json.loads(raw_inputs)
@@ -1481,6 +1938,8 @@ class HarnessRunner:
                 output_tokens=result.output_tokens,
                 cost_micros=result.cost_micros,
                 provider_request_id=result.provider_request_id,
+                runtime_message_id=result.runtime_message_id,
+                child_pid=None,
             )
             if not publication_fenced:
                 # A cancel CAS may have won before this publication fence. In
@@ -1491,7 +1950,13 @@ class HarnessRunner:
                     self.executor.usage.settle(
                         session,
                         reservation_id=reservation_id,
+                        scope=_scope_of(claimed),
+                        run_id=claimed.run_id,
+                        step_id=claimed.step_id,
+                        attempt_id=claimed.attempt_id,
                         actual=result.output_tokens,
+                        actual_input=result.input_tokens,
+                        actual_cost_micros=result.cost_micros,
                         now_us=now_us,
                     )
                 self.state.cancel_attempt_cas(
@@ -1511,6 +1976,8 @@ class HarnessRunner:
                     output_tokens=result.output_tokens,
                     cost_micros=result.cost_micros,
                     provider_request_id=result.provider_request_id,
+                    runtime_message_id=result.runtime_message_id,
+                    child_pid=None,
                 )
                 return
 
@@ -1536,6 +2003,9 @@ class HarnessRunner:
                 input_artifact_ids=input_artifact_ids,
                 input_sha256=run["input_sha256"],
                 quality_status="valid",
+                producer_attempt_id=(
+                    claimed.attempt_id if snapshot.runtime_kind == "dsh" else None
+                ),
             )
             # Artifact insertion, usage settlement, and both terminal state
             # transitions share this session/transaction. Any exception rolls
@@ -1543,7 +2013,13 @@ class HarnessRunner:
             self.executor.usage.settle(
                 session,
                 reservation_id=reservation_id,
+                scope=scope,
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
                 actual=result.output_tokens,
+                actual_input=result.input_tokens,
+                actual_cost_micros=result.cost_micros,
                 now_us=now_us,
             )
             self.state.transition_step(
@@ -1565,8 +2041,19 @@ class HarnessRunner:
         error_message: str,
         now_us: int,
     ) -> None:
+        # A timeout before the handle crosses delivery is a definitive local
+        # timeout: the reservation can be released and the Attempt retains
+        # the stronger timed_out state.  Once delivery is possible, callers
+        # use the indeterminate path and leave every usage dimension pending.
+        target = (
+            AttemptState.timed_out
+            if error_class is AttemptErrorClass.timeout
+            else AttemptState.failed
+        )
         with session_scope() as session:
-            self._release_reservation(session, reservation_id=reservation_id, now_us=now_us)
+            self._release_reservation(
+                session, claimed=claimed, reservation_id=reservation_id, now_us=now_us
+            )
             # The terminal CAS rechecks owner, generation, parent state and
             # cancellation.  A stale callback can settle/release only its own
             # reservation and cannot mutate a successor Attempt.
@@ -1580,11 +2067,15 @@ class HarnessRunner:
                 lease_owner=claimed.lease_owner,
                 expected_attempt_state=AttemptState.running,
                 expected_step_state=StepState.running,
-                target=AttemptState.failed,
+                target=target,
                 now_us=now_us,
                 attempt_values={
                     "error_class": error_class.value,
                     "error_message": _durable_error_message(error_class),
+                    # Reaching this helper means the handle either never
+                    # spawned or closed cleanly. Clear a previously attached
+                    # PID in the same terminal CAS that records the result.
+                    "child_pid": None,
                 },
                 step_values={
                     "error_code": error_class.value,
@@ -1601,6 +2092,7 @@ class HarnessRunner:
         *,
         claimed: ClaimedStep,
         delivery_state: DeliveryState,
+        child_reaped: bool = False,
         now_us: int,
     ) -> None:
         """Terminalise an unknown external outcome without spending its reserve."""
@@ -1624,8 +2116,79 @@ class HarnessRunner:
                     "external_outcome": "indeterminate",
                     "error_class": AttemptErrorClass.indeterminate.value,
                     "error_message": "model delivery outcome requires reconciliation",
+                    **({"child_pid": None} if child_reaped else {}),
                 },
                 step_values={"error_code": "external_outcome_unknown"},
+            )
+
+    def _finish_gateway_indeterminate_with_usage(
+        self,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str,
+        delivery_state: DeliveryState,
+        model_result: ModelResult,
+        child_reaped: bool,
+        now_us: int,
+    ) -> None:
+        """Settle trusted provider usage while retaining a local cleanup fence."""
+
+        if delivery_state is not DeliveryState.ACKNOWLEDGED:
+            raise StateError("trusted cleanup-failure usage requires an acknowledged response")
+        accounting_values = {
+            "input_tokens": model_result.input_tokens,
+            "output_tokens": model_result.output_tokens,
+            "cost_micros": model_result.cost_micros,
+            "provider_request_id": model_result.provider_request_id,
+            "runtime_message_id": model_result.runtime_message_id,
+        }
+        with session_scope() as session:
+            settled = False
+            try:
+                with session.begin_nested():
+                    self.executor.usage.settle(
+                        session,
+                        reservation_id=reservation_id,
+                        scope=_scope_of(claimed),
+                        run_id=claimed.run_id,
+                        step_id=claimed.step_id,
+                        attempt_id=claimed.attempt_id,
+                        actual=model_result.output_tokens,
+                        actual_input=model_result.input_tokens,
+                        actual_cost_micros=model_result.cost_micros,
+                        now_us=now_us,
+                    )
+                settled = True
+            except Exception:  # noqa: BLE001 -- reconciliation retains the reserve
+                log.error(
+                    "cleanup-failure usage settlement remains unresolved for %s",
+                    claimed.attempt_id,
+                )
+            self.state.finish_attempt_cas(
+                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.indeterminate,
+                now_us=now_us,
+                attempt_values={
+                    "delivery_state": delivery_state.value,
+                    "external_outcome": (
+                        "runtime_cleanup_required"
+                        if settled
+                        else "usage_and_runtime_cleanup_required"
+                    ),
+                    "error_class": AttemptErrorClass.indeterminate.value,
+                    "error_message": "runtime cleanup requires operator reconciliation",
+                    **accounting_values,
+                    **({"child_pid": None} if child_reaped else {}),
+                },
+                step_values={"error_code": "runtime_cleanup_required"},
             )
 
     def _finish_agent_failure_with_usage(
@@ -1638,10 +2201,22 @@ class HarnessRunner:
         error_class: AttemptErrorClass,
         error_message: str,
         now_us: int,
+        model_result: ModelResult | None = None,
     ) -> None:
         """Fail a known response and settle its trusted token usage atomically."""
         if delivery_state is not DeliveryState.ACKNOWLEDGED:
             raise StateError("trusted model usage requires an acknowledged response")
+        if model_result is None:
+            raise StateError("trusted model usage requires a typed model result")
+        if model_result.output_tokens != actual_tokens:
+            raise StateError("known model result disagrees with settlement amount")
+        accounting_values = {
+            "input_tokens": model_result.input_tokens,
+            "output_tokens": model_result.output_tokens,
+            "cost_micros": model_result.cost_micros,
+            "provider_request_id": model_result.provider_request_id,
+            "runtime_message_id": model_result.runtime_message_id,
+        }
         with session_scope() as session:
             settled = False
             try:
@@ -1649,7 +2224,13 @@ class HarnessRunner:
                     self.executor.usage.settle(
                         session,
                         reservation_id=reservation_id,
+                        scope=_scope_of(claimed),
+                        run_id=claimed.run_id,
+                        step_id=claimed.step_id,
+                        attempt_id=claimed.attempt_id,
                         actual=actual_tokens,
+                        actual_input=model_result.input_tokens,
+                        actual_cost_micros=model_result.cost_micros,
                         now_us=now_us,
                     )
                 settled = True
@@ -1676,7 +2257,8 @@ class HarnessRunner:
                         "external_outcome": "usage_reconciliation_required",
                         "error_class": AttemptErrorClass.indeterminate.value,
                         "error_message": "model usage requires reconciliation",
-                        "output_tokens": actual_tokens,
+                        **accounting_values,
+                        "child_pid": None,
                     },
                     step_values={"error_code": "usage_reconciliation_required"},
                 )
@@ -1697,7 +2279,8 @@ class HarnessRunner:
                     "delivery_state": delivery_state.value,
                     "error_class": error_class.value,
                     "error_message": _durable_error_message(error_class),
-                    "output_tokens": actual_tokens,
+                    **accounting_values,
+                    "child_pid": None,
                 },
                 step_values={
                     "error_code": error_class.value,
@@ -1715,6 +2298,7 @@ class HarnessRunner:
         step_state: StepState,
     ) -> bool:
         """Fence a finish to the exact Attempt and lease that produced it."""
+        now_us = self.executor.clock.utc_epoch_us()
         attempt = (
             session.execute(attempts.select().where(attempts.c.id == claimed.attempt_id))
             .mappings()
@@ -1739,7 +2323,41 @@ class HarnessRunner:
             and step["state"] == step_state.value
             and step["lease_owner"] == claimed.lease_owner
             and step["attempt_count"] == claimed.attempt_no
+            and type(step["lease_expires_at"]) is int
+            and step["lease_expires_at"] > now_us
         )
+
+    def _settle_known_usage_after_lease_loss(
+        self,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str,
+        model_result: ModelResult,
+        now_us: int,
+    ) -> None:
+        """Settle an ACK receipt without granting a stale worker publication authority."""
+
+        if not reservation_id:
+            return
+        try:
+            with session_scope() as session, contextlib.suppress(LedgerConflict):
+                self.executor.usage.settle(
+                    session,
+                    reservation_id=reservation_id,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    actual=model_result.output_tokens,
+                    actual_input=model_result.input_tokens,
+                    actual_cost_micros=model_result.cost_micros,
+                    now_us=now_us,
+                )
+        except Exception:  # noqa: BLE001 -- unresolved usage remains pending
+            log.error(
+                "late acknowledged usage remains unresolved for %s",
+                claimed.attempt_id,
+            )
 
     def _run_cancel_requested(self, session: Session, *, claimed: ClaimedStep) -> bool:
         requested_at = session.execute(
@@ -1754,7 +2372,12 @@ class HarnessRunner:
         return requested_at is not None
 
     def _release_reservation(
-        self, session: Session, *, reservation_id: str | None, now_us: int
+        self,
+        session: Session,
+        *,
+        claimed: ClaimedStep,
+        reservation_id: str | None,
+        now_us: int,
     ) -> None:
         if not reservation_id:
             return
@@ -1766,6 +2389,10 @@ class HarnessRunner:
             self.executor.usage.release(
                 session,
                 reservation_id=reservation_id,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
                 now_us=now_us,
             )
 

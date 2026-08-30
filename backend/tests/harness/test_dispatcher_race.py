@@ -450,10 +450,59 @@ def test_second_reaper_loses_without_duplicate_events(app, owner):
         count = session.execute(
             events_table.select().where(
                 events_table.c.run_id == run_id,
-                events_table.c.event_type.in_(["attempt.abandoned", "step.indeterminate"]),
+                events_table.c.event_type.in_(["attempt.abandoned", "step.failed"]),
             )
             ).mappings().all()
     assert len(count) == 2
+
+
+def test_expired_leased_attempt_retries_from_frozen_policy_and_releases_reserve(app, owner):
+    enable_canary(app)
+    run_id = _seed(app, owner, mode="retry_then_success")
+    with session_scope() as session:
+        first = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert first is not None
+    app.runner._execute_one(claimed=first, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+    app.runner.reduce_all(now_us=app.clock.utc_epoch_us())
+    with session_scope() as session:
+        # Other independent canary branches can also be ready.  Make this
+        # test's frozen-retry target deterministically first without relying
+        # on generated UUID ordering.
+        session.execute(
+            steps.update()
+            .where(
+                steps.c.run_id == run_id,
+                steps.c.definition_step_key == "flaky",
+                steps.c.state == StepState.ready.value,
+            )
+            .values(ready_at=app.clock.utc_epoch_us() - 1)
+        )
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+        assert claimed is not None and claimed.definition_step_key == "flaky"
+        reservation = app.usage.reserve(
+            session,
+            scope=owner,
+            run_id=run_id,
+            step_id=claimed.step_id,
+            attempt_id=claimed.attempt_id,
+            kind="model_tokens",
+            source="system_shared",
+            amount=10,
+            cost_micros=0,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        expired_at = app.clock.utc_epoch_us() + int(app.dispatcher.lease_seconds * 1_000_000) + 1
+        assert app.dispatcher.reap_expired(session, now_us=expired_at)
+        row = session.execute(steps.select().where(steps.c.id == claimed.step_id)).mappings().one()
+        attempt = session.execute(
+            attempts.select().where(attempts.c.id == claimed.attempt_id)
+        ).mappings().one()
+        assert row["state"] == StepState.retry_scheduled.value
+        assert row["finished_at"] is None
+        assert attempt["state"] == AttemptState.abandoned.value
+        assert attempt["retryable"] == 1
+        assert app.usage.totals(session, run_id=run_id)["released_reservations"] == 1
+        assert reservation
 
 
 def test_due_retry_uses_state_service_and_events(app, owner):

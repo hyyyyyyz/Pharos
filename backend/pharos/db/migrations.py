@@ -1079,6 +1079,218 @@ MIGRATIONS: tuple[Migration, ...] = (
             """,
         ),
     ),
+    Migration(
+        revision="0013_harness_artifact_runtime_provenance",
+        description="Bind artifact producers to immutable Attempt runtime provenance",
+        statements=(
+            # DSH inbox receipt/message identity is separate from a provider
+            # request id: it identifies the durable runtime message observed
+            # by the parent wire.
+            "ALTER TABLE harness_attempts ADD COLUMN runtime_message_id TEXT",
+            # Launch identity becomes historical evidence as soon as each
+            # value is written.  Process ownership and delivery observations
+            # remain mutable lifecycle facts and are deliberately absent.
+            """
+            CREATE TRIGGER ck_harness_attempt_launch_identity_immutable
+            BEFORE UPDATE ON harness_attempts
+            WHEN (OLD.upstream_commit IS NOT NULL AND
+                  OLD.upstream_commit IS NOT NEW.upstream_commit) OR
+                 (OLD.runtime_hash IS NOT NULL AND
+                  OLD.runtime_hash IS NOT NEW.runtime_hash) OR
+                 (OLD.profile_hash IS NOT NULL AND
+                  OLD.profile_hash IS NOT NEW.profile_hash) OR
+                 (OLD.policy_hash IS NOT NULL AND
+                  OLD.policy_hash IS NOT NEW.policy_hash) OR
+                 (OLD.protocol_version IS NOT NULL AND
+                  OLD.protocol_version IS NOT NEW.protocol_version) OR
+                 (OLD.runtime_session_id IS NOT NULL AND
+                  OLD.runtime_session_id IS NOT NEW.runtime_session_id) OR
+                 (OLD.deadline_at IS NOT NULL AND
+                  OLD.deadline_at IS NOT NEW.deadline_at)
+            BEGIN
+                SELECT RAISE(ABORT, 'attempt launch identity is immutable once bound');
+            END
+            """,
+            # Nullable columns preserve all pre-provenance artifacts exactly;
+            # new agent artifacts opt into the complete provenance contract.
+            "ALTER TABLE harness_artifacts ADD COLUMN producer_attempt_id TEXT "
+            "REFERENCES harness_attempts(id)",
+            "ALTER TABLE harness_artifacts ADD COLUMN upstream_commit TEXT CHECK "
+            "(upstream_commit IS NULL OR (length(upstream_commit) = 40 AND "
+            "upstream_commit NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN runtime_session_id TEXT CHECK "
+            "(runtime_session_id IS NULL OR "
+            "length(runtime_session_id) BETWEEN 1 AND 256)",
+            "ALTER TABLE harness_artifacts ADD COLUMN runtime_hash TEXT CHECK "
+            "(runtime_hash IS NULL OR (length(runtime_hash) = 64 AND "
+            "runtime_hash NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN profile_hash TEXT CHECK "
+            "(profile_hash IS NULL OR (length(profile_hash) = 64 AND "
+            "profile_hash NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN policy_hash TEXT CHECK "
+            "(policy_hash IS NULL OR (length(policy_hash) = 64 AND "
+            "policy_hash NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN protocol_version TEXT",
+            "ALTER TABLE harness_artifacts ADD COLUMN route_key TEXT",
+            "ALTER TABLE harness_artifacts ADD COLUMN route_sha256 TEXT CHECK "
+            "(route_sha256 IS NULL OR (length(route_sha256) = 64 AND "
+            "route_sha256 NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN definition_binding_sha256 TEXT CHECK "
+            "(definition_binding_sha256 IS NULL OR "
+            "(length(definition_binding_sha256) = 64 AND "
+            "definition_binding_sha256 NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN run_policy_sha256 TEXT CHECK "
+            "(run_policy_sha256 IS NULL OR (length(run_policy_sha256) = 64 AND "
+            "run_policy_sha256 NOT GLOB '*[^0-9a-f]*'))",
+            "ALTER TABLE harness_artifacts ADD COLUMN provenance_sha256 TEXT CHECK "
+            "(provenance_sha256 IS NULL OR (length(provenance_sha256) = 64 AND "
+            "provenance_sha256 NOT GLOB '*[^0-9a-f]*'))",
+            "CREATE INDEX ix_harness_artifacts_producer_attempt "
+            "ON harness_artifacts (producer_attempt_id)",
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_scope_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM harness_attempts a
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer Attempt scope mismatch');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_required_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN (NEW.producer_attempt_id IS NULL AND (
+                NEW.upstream_commit IS NOT NULL OR NEW.runtime_session_id IS NOT NULL OR
+                NEW.runtime_hash IS NOT NULL OR NEW.profile_hash IS NOT NULL OR
+                NEW.policy_hash IS NOT NULL OR NEW.protocol_version IS NOT NULL OR
+                NEW.route_key IS NOT NULL OR NEW.route_sha256 IS NOT NULL OR
+                NEW.definition_binding_sha256 IS NOT NULL OR
+                NEW.run_policy_sha256 IS NOT NULL OR
+                NEW.provenance_sha256 IS NOT NULL
+            )) OR (NEW.producer_attempt_id IS NOT NULL AND (
+                NEW.step_id IS NULL OR NEW.upstream_commit IS NULL OR
+                NEW.runtime_session_id IS NULL OR NEW.runtime_hash IS NULL OR
+                NEW.profile_hash IS NULL OR
+                NEW.policy_hash IS NULL OR NEW.protocol_version IS NULL OR NEW.route_key IS NULL OR
+                NEW.route_sha256 IS NULL OR NEW.provider IS NULL OR NEW.model IS NULL OR
+                NEW.definition_binding_sha256 IS NULL OR NEW.run_policy_sha256 IS NULL OR
+                NEW.provenance_sha256 IS NULL
+            ))
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact runtime provenance is incomplete');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_source_insert
+            BEFORE INSERT ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1
+                FROM harness_attempts a
+                JOIN harness_attempt_definition_snapshots s
+                  ON s.attempt_id = a.id
+                 AND s.run_id = a.run_id
+                 AND s.scope_type = a.scope_type
+                 AND s.scope_id = a.scope_id
+                 AND s.step_id = a.step_id
+                 AND s.attempt_no = a.attempt_no
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+                  AND a.upstream_commit = NEW.upstream_commit
+                  AND a.runtime_session_id = NEW.runtime_session_id
+                  AND a.runtime_hash = NEW.runtime_hash
+                  AND a.profile_hash = NEW.profile_hash
+                  AND a.policy_hash = NEW.policy_hash
+                  AND a.protocol_version = NEW.protocol_version
+                  AND s.model_route_key = NEW.route_key
+                  AND s.model_route_sha256 = NEW.route_sha256
+                  AND s.provider = NEW.provider
+                  AND s.model = NEW.model
+                  AND s.definition_binding_sha256 = NEW.definition_binding_sha256
+                  AND s.run_policy_sha256 = NEW.run_policy_sha256
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact provenance does not match producer snapshot');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_required_update
+            BEFORE UPDATE ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NULL AND (
+                NEW.upstream_commit IS NOT NULL OR NEW.runtime_session_id IS NOT NULL OR
+                NEW.runtime_hash IS NOT NULL OR NEW.profile_hash IS NOT NULL OR
+                NEW.policy_hash IS NOT NULL OR NEW.protocol_version IS NOT NULL OR
+                NEW.route_key IS NOT NULL OR NEW.route_sha256 IS NOT NULL OR
+                NEW.definition_binding_sha256 IS NOT NULL OR
+                NEW.run_policy_sha256 IS NOT NULL OR
+                NEW.provenance_sha256 IS NOT NULL
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact runtime provenance is incomplete');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_scope_update
+            BEFORE UPDATE ON harness_artifacts
+            WHEN NEW.producer_attempt_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM harness_attempts a
+                WHERE a.id = NEW.producer_attempt_id
+                  AND a.run_id = NEW.run_id
+                  AND a.scope_type = NEW.scope_type
+                  AND a.scope_id = NEW.scope_id
+                  AND a.step_id = NEW.step_id
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact producer Attempt scope mismatch');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_artifacts_provenance_immutable
+            BEFORE UPDATE ON harness_artifacts
+            WHEN (OLD.producer_attempt_id IS NOT NULL OR NEW.producer_attempt_id IS NOT NULL)
+            AND (OLD.producer_attempt_id IS NOT NEW.producer_attempt_id OR
+                 OLD.upstream_commit IS NOT NEW.upstream_commit OR
+                 OLD.runtime_session_id IS NOT NEW.runtime_session_id OR
+                 OLD.runtime_hash IS NOT NEW.runtime_hash OR
+                 OLD.profile_hash IS NOT NEW.profile_hash OR
+                 OLD.policy_hash IS NOT NEW.policy_hash OR
+                 OLD.protocol_version IS NOT NEW.protocol_version OR
+                 OLD.route_key IS NOT NEW.route_key OR
+                 OLD.route_sha256 IS NOT NEW.route_sha256 OR
+                 OLD.definition_binding_sha256 IS NOT NEW.definition_binding_sha256 OR
+                 OLD.run_policy_sha256 IS NOT NEW.run_policy_sha256 OR
+                 OLD.provenance_sha256 IS NOT NEW.provenance_sha256 OR
+                 OLD.provider IS NOT NEW.provider OR OLD.model IS NOT NEW.model)
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact runtime provenance is immutable');
+            END
+            """,
+        ),
+    ),
+    Migration(
+        revision="0014_harness_usage_reservation_uniqueness",
+        description="Prevent duplicate Harness usage reservation outcomes",
+        statements=(
+            # A reservation is a single logical admission decision.  The
+            # partial predicates intentionally leave legacy rows without a
+            # reservation id untouched while making reserve/settle/release
+            # idempotency durable at the database boundary.
+            "CREATE UNIQUE INDEX ux_harness_usage_reservation_reserve "
+            "ON harness_usage_events (reservation_id) "
+            "WHERE reservation_id IS NOT NULL AND op = 'reserve'",
+            "CREATE UNIQUE INDEX ux_harness_usage_reservation_outcome "
+            "ON harness_usage_events (reservation_id) "
+            "WHERE reservation_id IS NOT NULL AND op IN ('settle', 'release')",
+        ),
+    ),
 )
 
 

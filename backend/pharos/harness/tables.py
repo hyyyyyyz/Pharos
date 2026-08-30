@@ -691,6 +691,7 @@ attempts = Table(
     # H1.5 runtime provenance.  These are audit metadata only: no credential,
     # prompt, response, or other secret-bearing payload is stored here.
     Column("runtime_session_id", Text, nullable=True),
+    Column("runtime_message_id", Text, nullable=True),
     Column("child_pid", Integer, nullable=True),
     Column("deadline_at", Integer, nullable=True),
     Column("upstream_commit", Text, nullable=True),
@@ -740,6 +741,7 @@ artifacts = Table(
     Column("user_id", Text, ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
     Column("run_id", Text, nullable=False),
     Column("step_id", Text, nullable=True),
+    Column("producer_attempt_id", Text, ForeignKey("harness_attempts.id"), nullable=True),
     Column("artifact_type", Text, nullable=False),
     Column("schema_name", Text, nullable=False),
     Column("schema_version", Integer, nullable=False),
@@ -755,6 +757,17 @@ artifacts = Table(
     Column("role_prompt_version", Text, nullable=True),
     Column("provider", Text, nullable=True),
     Column("model", Text, nullable=True),
+    Column("upstream_commit", Text, nullable=True),
+    Column("runtime_session_id", Text, nullable=True),
+    Column("runtime_hash", Text, nullable=True),
+    Column("profile_hash", Text, nullable=True),
+    Column("policy_hash", Text, nullable=True),
+    Column("protocol_version", Text, nullable=True),
+    Column("route_key", Text, nullable=True),
+    Column("route_sha256", Text, nullable=True),
+    Column("definition_binding_sha256", Text, nullable=True),
+    Column("run_policy_sha256", Text, nullable=True),
+    Column("provenance_sha256", Text, nullable=True),
     Column("input_artifact_ids_json", Text, nullable=False, default="[]"),
     Column("input_sha256", Text, nullable=True),
     Column("source_refs_json", Text, nullable=False, default="[]"),
@@ -771,6 +784,43 @@ artifacts = Table(
         "producer_kind IN ('rule_summary','model_inference','human_note','quote',"
         "'deterministic')",
         name="ck_harness_artifacts_producer",
+    ),
+    _nullable_sha256_check("runtime_hash", "ck_harness_artifacts_runtime_hash"),
+    _nullable_sha256_check("profile_hash", "ck_harness_artifacts_profile_hash"),
+    _nullable_sha256_check("policy_hash", "ck_harness_artifacts_policy_hash"),
+    _nullable_sha256_check("route_sha256", "ck_harness_artifacts_route_sha256"),
+    _nullable_sha256_check(
+        "definition_binding_sha256",
+        "ck_harness_artifacts_definition_binding_sha256",
+    ),
+    _nullable_sha256_check("run_policy_sha256", "ck_harness_artifacts_run_policy_sha256"),
+    _nullable_sha256_check("provenance_sha256", "ck_harness_artifacts_provenance_sha256"),
+    CheckConstraint(
+        "upstream_commit IS NULL OR (length(upstream_commit) = 40 AND "
+        "upstream_commit NOT GLOB '*[^0-9a-f]*')",
+        name="ck_harness_artifacts_upstream_commit",
+    ),
+    CheckConstraint(
+        "runtime_session_id IS NULL OR length(runtime_session_id) BETWEEN 1 AND 256",
+        name="ck_harness_artifacts_runtime_session_id",
+    ),
+    CheckConstraint(
+        "producer_attempt_id IS NOT NULL OR (upstream_commit IS NULL "
+        "AND runtime_session_id IS NULL AND runtime_hash IS NULL AND profile_hash IS NULL "
+        "AND policy_hash IS NULL AND protocol_version IS NULL AND route_key IS NULL "
+        "AND route_sha256 IS NULL AND definition_binding_sha256 IS NULL "
+        "AND run_policy_sha256 IS NULL AND provenance_sha256 IS NULL)",
+        name="ck_harness_artifacts_provenance_detached",
+    ),
+    CheckConstraint(
+        "producer_attempt_id IS NULL OR (step_id IS NOT NULL AND upstream_commit IS NOT NULL "
+        "AND runtime_session_id IS NOT NULL AND runtime_hash IS NOT NULL "
+        "AND profile_hash IS NOT NULL AND policy_hash IS NOT NULL "
+        "AND protocol_version IS NOT NULL AND route_key IS NOT NULL "
+        "AND route_sha256 IS NOT NULL AND provider IS NOT NULL AND model IS NOT NULL "
+        "AND definition_binding_sha256 IS NOT NULL AND run_policy_sha256 IS NOT NULL "
+        "AND provenance_sha256 IS NOT NULL)",
+        name="ck_harness_artifacts_provenance_complete",
     ),
     UniqueConstraint("id", "scope_type", "scope_id", name="uq_harness_artifacts_scope"),
     ForeignKeyConstraint(
@@ -934,6 +984,23 @@ Index("ix_harness_events_scope_seq", events.c.scope_type, events.c.scope_id, eve
 Index("ix_harness_artifacts_run", artifacts.c.run_id)
 Index("ix_harness_approvals_state", approvals.c.state, approvals.c.expires_at)
 Index("ix_harness_usage_run", usage_events.c.run_id)
+Index(
+    "ux_harness_usage_reservation_reserve",
+    usage_events.c.reservation_id,
+    unique=True,
+    sqlite_where=(
+        usage_events.c.reservation_id.is_not(None) & (usage_events.c.op == "reserve")
+    ),
+)
+Index(
+    "ux_harness_usage_reservation_outcome",
+    usage_events.c.reservation_id,
+    unique=True,
+    sqlite_where=(
+        usage_events.c.reservation_id.is_not(None)
+        & usage_events.c.op.in_(["settle", "release"])
+    ),
+)
 Index("ix_harness_steps_ready", steps.c.state, steps.c.ready_at)
 Index(
     "ux_harness_workflow_versions_key_version_hash",
