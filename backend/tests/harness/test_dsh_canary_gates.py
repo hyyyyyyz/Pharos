@@ -13,11 +13,12 @@ import pytest
 from pharos.db.session import session_scope
 from pharos.harness.app import HarnessApp
 from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute, validate_snapshot
-from pharos.harness.contracts import ActivationState, StepState
+from pharos.harness.contracts import ActivationState, PolicyDeniedError, StepState
 from pharos.harness.definitions import RoleDefinition
 from pharos.harness.repository import Scope, now_iso
 from pharos.harness.tables import attempts, runs, steps
 from pharos.harness.workflows.canary import resolve_canary_model_profile
+from sqlalchemy.exc import IntegrityError
 from tests.harness.conftest import enable_canary
 
 
@@ -83,11 +84,20 @@ def test_v1_fake_role_executes_without_runtime_gate(app: HarnessApp, owner: Scop
     assert len(app.gateway._model.calls) == 1  # noqa: SLF001 -- fake contract assertion
 
 
-def test_v2_dsh_role_does_not_claim_when_runtime_gate_is_off(
+def test_v2_dsh_role_requires_runtime_gate_at_creation(
     app: HarnessApp, owner: Scope
 ) -> None:
     _activate(app, version=2, runtime=False)
+    with pytest.raises(PolicyDeniedError, match="agent_runtime_enabled"):
+        _agent_run(app, owner, "dsh-gate-v2-create-off")
+
+
+def test_v2_dsh_role_does_not_claim_after_runtime_gate_is_cut(
+    app: HarnessApp, owner: Scope
+) -> None:
+    _activate(app, version=2, runtime=True)
     run = _agent_run(app, owner, "dsh-gate-v2-off")
+    _activate(app, version=2, runtime=False)
     app.dispatcher.claim_batch = 2
     app.runner.tick(now_us=app.clock.utc_epoch_us())
     actor = next(
@@ -218,24 +228,17 @@ def test_claim_rejects_any_security_contract_mutation(
         ).mappings().all() == []
 
 
-def test_claim_rejects_run_definition_hash_mismatch(app: HarnessApp, owner: Scope) -> None:
+def test_run_snapshot_freezes_the_definition_hash(app: HarnessApp, owner: Scope) -> None:
     enable_canary(app, agent_steps=True)
     run = _agent_run(app, owner, "dsh-run-hash-mismatch")
-    app.dispatcher.claim_batch = 2
-    app.runner.tick(now_us=app.clock.utc_epoch_us())
-    actor = next(
-        row
-        for row in app.steps_for(scope=owner, run_id=run["id"])
-        if row["definition_step_key"] == "actor_turn"
-    )
-    with session_scope() as session:
+    with pytest.raises(
+        IntegrityError, match="identity or policy is frozen"
+    ), session_scope() as session:
         session.execute(
-            runs.update().where(runs.c.id == run["id"]).values(definition_sha256="0" * 64)
+            runs.update()
+            .where(runs.c.id == run["id"])
+            .values(definition_sha256="0" * 64)
         )
-        assert app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us(), limit=1) is None
-        assert session.execute(
-            attempts.select().where(attempts.c.step_id == actor["id"])
-        ).mappings().all() == []
 
 
 def test_canary_hooks_are_version_identity_keyed(app: HarnessApp) -> None:

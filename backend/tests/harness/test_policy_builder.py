@@ -38,7 +38,7 @@ def _gates() -> dict[str, bool]:
     }
 
 
-def _registry(*, selection_policy: str = "fixed") -> Registry:
+def _registry(*, selection_policy: str = "fixed", optional_agent: bool = False) -> Registry:
     registry = Registry()
     routes: tuple[ModelRouteDefinition, ...] = (
         ModelRouteDefinition(
@@ -94,7 +94,11 @@ def _registry(*, selection_policy: str = "fixed") -> Registry:
             input_schema="test.input@1",
             output_schema="test.output@1",
             internal_no_legacy_writer=True,
-            steps=(StepDefinition(key="run", kind="agent", role="actor@1"),),
+            steps=(
+                StepDefinition(
+                    key="run", kind="agent", role="actor@1", optional=optional_agent
+                ),
+            ),
         )
     )
     registry.compile()
@@ -192,6 +196,29 @@ def test_builder_requires_master_and_agent_runtime_gates() -> None:
     runtime_off["agent_runtime_enabled"] = False
     with pytest.raises(PolicyDeniedError, match="agent_runtime_enabled"):
         _build(_registry(), _config(gates=runtime_off))
+
+
+def test_selected_optional_steps_scope_agent_and_runtime_gates() -> None:
+    registry = _registry(optional_agent=True)
+    gates = _gates()
+    gates["agent_steps_enabled"] = False
+    gates["agent_runtime_enabled"] = False
+    policy = _build(registry, _config(gates=gates), selected_step_keys=())
+    assert policy.creation_gates.agent_steps_enabled is False
+    assert policy.role_bindings[0].role_identity == "actor@1"
+
+    with pytest.raises(PolicyDeniedError, match="agent workflows"):
+        _build(registry, _config(gates=gates), selected_step_keys=("run",))
+
+
+def test_selected_step_keys_are_exact_and_cannot_omit_required_work() -> None:
+    registry = _registry()
+    with pytest.raises(DefinitionError, match="required"):
+        _build(registry, selected_step_keys=())
+    with pytest.raises(DefinitionError, match="outside"):
+        _build(registry, selected_step_keys=("unknown",))
+    with pytest.raises(DefinitionError, match="duplicates"):
+        _build(registry, selected_step_keys=("run", "run"))
 
 
 def test_ordered_fallback_requires_explicit_availability_and_is_deterministic() -> None:

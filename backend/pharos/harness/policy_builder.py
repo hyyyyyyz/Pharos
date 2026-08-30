@@ -310,6 +310,7 @@ def build_run_policy(
     effective_budget: EffectiveBudget | BudgetSpec | Mapping[str, Any] | None = None,
     available_route_keys: AvailabilityInput | None = None,
     entitlement: EntitlementSnapshot | Mapping[str, Any] | None = None,
+    selected_step_keys: Sequence[str] | None = None,
 ) -> RunPolicySnapshot:
     """Materialise one deterministic, canonical policy for a new run.
 
@@ -321,6 +322,23 @@ def build_run_policy(
     workflow = _workflow_from_binding(authenticated)
     if workflow_identity is not None and workflow_identity != workflow.identity():
         raise DefinitionError("workflow identity does not match compiled binding")
+    if selected_step_keys is None:
+        selected_keys = tuple(step.key for step in workflow.steps)
+    else:
+        if isinstance(selected_step_keys, (str, bytes)):
+            raise DefinitionError("selected_step_keys must be a sequence of exact step keys")
+        selected_keys = tuple(selected_step_keys)
+        if any(not isinstance(key, str) or not key for key in selected_keys):
+            raise DefinitionError("selected_step_keys contains an invalid step key")
+        if len(selected_keys) != len(set(selected_keys)):
+            raise DefinitionError("selected_step_keys contains duplicates")
+    workflow_steps = {step.key: step for step in workflow.steps}
+    if not set(selected_keys) <= set(workflow_steps):
+        raise DefinitionError("selected_step_keys contains a step outside the workflow")
+    required_steps = {step.key for step in workflow.steps if not step.optional}
+    if not required_steps <= set(selected_keys):
+        raise DefinitionError("selected_step_keys omits a required workflow step")
+    selected_steps = tuple(workflow_steps[key] for key in selected_keys)
 
     try:
         config = HarnessConfigSnapshot.model_validate(
@@ -391,11 +409,20 @@ def build_run_policy(
             )
         )
     role_bindings.sort(key=lambda item: item[0].role_identity)
-    if role_bindings and not gates.agent_steps_enabled:
+    selected_roles = {
+        step.role
+        for step in selected_steps
+        if step.kind in ("agent", "mapped_agent") and step.role is not None
+    }
+    if selected_roles and not gates.agent_steps_enabled:
         raise _deny("agent workflows require agent_steps_enabled")
-    if any(role.runtime_kind == "dsh" for _, role, _ in role_bindings) and not (
-        gates.agent_runtime_enabled
-    ):
+    selected_role_definitions = {
+        binding.role_identity: role for binding, role, _ in role_bindings
+    }
+    if any(
+        selected_role_definitions[identity].runtime_kind == "dsh"
+        for identity in selected_roles
+    ) and not gates.agent_runtime_enabled:
         raise _deny("DSH roles require agent_runtime_enabled")
     limits = _role_limits(role_bindings, effective_agent_limits, role_limits)
 

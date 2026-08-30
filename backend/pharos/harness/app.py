@@ -33,10 +33,14 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import HarnessDispatcher
 from pharos.harness.events import EventStore
+from pharos.harness.execution_snapshots import ExecutionSnapshotStore
 from pharos.harness.fakes import FakeClock, FakeModel
 from pharos.harness.model_gateway import FakeModelGateway
-from pharos.harness.registry import Registry
+from pharos.harness.policy_builder import build_run_policy
+from pharos.harness.policy_snapshot import AgentLimits
+from pharos.harness.registry import CompiledWorkflowBinding, Registry
 from pharos.harness.repository import (
+    MAX_RUN_INPUT_CHARS,
     HarnessConfigService,
     HarnessDefinitionRepository,
     HarnessRunRepository,
@@ -70,6 +74,16 @@ CANARY_EXECUTION_WORKFLOWS = frozenset({CANARY_KEY})
 #: The background loop's idle poll interval (seconds). The DB is the truth;
 #: this only bounds wake-up latency, never correctness.
 POLL_SECONDS = 0.5
+
+# This is deliberately explicit rather than inferred from a mutable model or
+# provider configuration.  The workflow/role definitions apply the tighter
+# per-role bounds when the immutable Run policy is assembled.
+RUN_AGENT_LIMITS = AgentLimits(
+    max_turns=16,
+    max_tool_calls=0,
+    max_input_chars=MAX_RUN_INPUT_CHARS,
+    max_output_tokens=60_000,
+)
 
 
 class HarnessApp:
@@ -109,6 +123,7 @@ class HarnessApp:
         self.events = EventStore()
         self.usage = UsageLedger()
         self.artifacts = ArtifactStore()
+        self.execution_snapshots = ExecutionSnapshotStore()
         self.approvals = ApprovalRepository()
         self.gateway = FakeModelGateway(fake_model or FakeModel(clock=self.clock))
         from pharos.harness.workflows.canary import build_executors
@@ -337,6 +352,18 @@ class HarnessApp:
         """Create (or replay) a run under the current config head."""
         now = self.clock.utc_epoch_us()
         with session_scope() as session:
+            run_repository = HarnessRunRepository()
+            replay = run_repository.find_replay(
+                session,
+                scope=scope,
+                workflow_key=workflow_key,
+                input=input,
+                idempotency_key=idempotency_key,
+            )
+            if replay is not None:
+                # A retry is a read of an already-authorized request, not a
+                # request for today's route/gates to authorize new work.
+                return dict(replay)
             # Keep validation, route/version selection, gate checks, the
             # conditional head write fence, and all run/step writes in this
             # one transaction.  Splitting these reads across sessions lets a
@@ -357,7 +384,45 @@ class HarnessApp:
                 raise UnavailableError(f"workflow {workflow_key} is not active")
             workflow = self.registry.require_workflow(f"{workflow_key}@{route.active_version}")
             self.config_service.fence_current(session, revision_id=current.revision_id)
-            run = HarnessRunRepository().create(
+            # Startup persists every complete definition closure.  Re-read the
+            # exact persisted binding here so a Run is never bound directly to
+            # a live Registry object or to a partially persisted closure.
+            live_binding = self.registry.compile_workflow_binding(workflow.identity())
+            stored_binding = self.definition_repository.get_binding(
+                session, live_binding.binding_sha256
+            )
+            if stored_binding is None:
+                raise ConfigIntegrityError(
+                    f"workflow binding {live_binding.binding_sha256} is not persisted"
+                )
+            binding = CompiledWorkflowBinding(
+                value=json.loads(stored_binding["binding_json"]),
+                binding_sha256=stored_binding["binding_sha256"],
+            )
+            expander = self.executor.expanders.get(workflow.identity())
+            if expander is None:
+                raise StateError(f"no trusted expander for {workflow.identity()}")
+            # Expansion is a pure, trusted preflight.  It lets the policy
+            # freeze the agent gates that this concrete input actually uses;
+            # optional agent branches must not disable deterministic canary
+            # runs merely because their workflow closure contains a role.
+            expanded_preview = expander(input)
+            preview_step_keys: list[str] = []
+            for entry in expanded_preview:
+                key = entry.get("definition_step_key")
+                if not isinstance(key, str) or not key:
+                    raise StateError("trusted expander returned an invalid step identity")
+                preview_step_keys.append(key)
+            selected_step_keys = tuple(sorted(set(preview_step_keys)))
+            policy = build_run_policy(
+                binding,
+                snapshot,
+                config_revision_id=current.revision_id,
+                config_revision_sha256=current.snapshot_sha256,
+                agent_limits=RUN_AGENT_LIMITS,
+                selected_step_keys=selected_step_keys,
+            )
+            run, created_run = run_repository.create_once(
                 session,
                 scope=scope,
                 workflow=workflow,
@@ -368,8 +433,29 @@ class HarnessApp:
                 now_us=now,
                 project_id=project_id,
             )
+            if not created_run:
+                # Idempotent replay is read-only.  In particular, a legacy
+                # Run created before immutable snapshots were introduced must
+                # remain legacy and must never be activated or backfilled.
+                return dict(run)
+            self.execution_snapshots.write_run(
+                session,
+                scope=scope,
+                run_id=run["id"],
+                workflow_key=workflow.workflow_key,
+                workflow_version=workflow.version,
+                workflow_definition_sha256=workflow.definition_hash(),
+                definition_binding_sha256=binding.binding_sha256,
+                policy_snapshot=policy,
+            )
             if run["state"] == "queued":
-                created_steps = self.runner.activate_run(session, scope=scope, run=run, now_us=now)
+                created_steps = self.runner.activate_run(
+                    session,
+                    scope=scope,
+                    run=run,
+                    now_us=now,
+                    expanded_steps=expanded_preview,
+                )
                 for step in created_steps:
                     if step["state"] != "pending":
                         continue
@@ -385,8 +471,8 @@ class HarnessApp:
                         now_us=now,
                         ready_at=now,
                     )
-                created = HarnessRunRepository().require(session, scope=scope, run_id=run["id"])
-                return dict(created)
+                final_run = run_repository.require(session, scope=scope, run_id=run["id"])
+                return dict(final_run)
             return dict(run)
 
     def get_run(self, *, scope: Scope, run_id: str) -> dict:

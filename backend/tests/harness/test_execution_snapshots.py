@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from pharos.db.session import session_scope
-from pharos.harness.configrev import decode_snapshot_payload
-from pharos.harness.contracts import NotFoundError, StepState
+from pharos.harness.configrev import bootstrap_snapshot, decode_snapshot_payload
+from pharos.harness.contracts import IdempotencyConflictError, NotFoundError, StepState
 from pharos.harness.execution_snapshots import (
     ExecutionSnapshotStore,
     MissingExecutionSnapshotError,
@@ -18,8 +20,12 @@ from pharos.harness.execution_snapshots import (
 from pharos.harness.policy_builder import build_run_policy
 from pharos.harness.policy_snapshot import AgentLimits, RunPolicySnapshot
 from pharos.harness.registry import CompiledWorkflowBinding
-from pharos.harness.repository import HarnessDefinitionRepository, HarnessRunRepository
-from pharos.harness.tables import attempts, steps
+from pharos.harness.repository import (
+    HarnessDefinitionRepository,
+    HarnessRunRepository,
+    now_iso,
+)
+from pharos.harness.tables import attempts, runs, steps
 from sqlalchemy import select
 from tests.harness.conftest import enable_canary
 
@@ -389,3 +395,224 @@ def test_terminal_attempt_cannot_receive_a_late_snapshot(app, owner):
                 executor_capability_version=cap.version,
                 executor_capability_definition_sha256=cap.definition_hash(),
             )
+
+
+def test_create_run_persists_snapshot_and_replays_without_reactivation(app, owner):
+    enable_canary(app, agent_steps=True)
+    first = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "success", "note": "app transaction"},
+        idempotency_key="app-snapshot-1",
+        initiator="user",
+    )
+    with session_scope() as session:
+        snapshot = ExecutionSnapshotStore().read_run(
+            session, scope=owner, run_id=first["id"], require_for_execution=True
+        )
+        assert snapshot is not None
+        step_count = session.execute(
+            select(steps.c.id).where(steps.c.run_id == first["id"])
+        ).fetchall()
+    replay = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "success", "note": "app transaction"},
+        idempotency_key="app-snapshot-1",
+        initiator="user",
+    )
+    assert replay["id"] == first["id"]
+    with session_scope() as session:
+        assert len(
+            session.execute(select(steps.c.id).where(steps.c.run_id == first["id"])).fetchall()
+        ) == len(step_count)
+
+
+def test_create_run_uses_one_expansion_for_policy_and_persistence(app, owner):
+    enable_canary(app, agent_steps=True)
+    identity = "harness.canary@1"
+    original = app.executor.expanders[identity]
+    calls = 0
+
+    def counted(input: dict) -> list[dict]:
+        nonlocal calls
+        calls += 1
+        return original(input)
+
+    app.executor.expanders[identity] = counted
+    app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "success", "note": "single expansion"},
+        idempotency_key="single-expansion",
+        initiator="user",
+    )
+    assert calls == 1
+
+
+def test_create_run_conflicting_input_is_rejected_by_atomic_insert(app, owner):
+    enable_canary(app, agent_steps=True)
+    app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "success", "note": "first"},
+        idempotency_key="app-conflict-1",
+        initiator="user",
+    )
+    with pytest.raises(IdempotencyConflictError):
+        app.create_run(
+            scope=owner,
+            workflow_key="harness.canary",
+            input={"mode": "success", "note": "different"},
+            idempotency_key="app-conflict-1",
+            initiator="user",
+        )
+
+
+def test_idempotent_replay_does_not_require_the_current_route_to_remain_active(app, owner):
+    enable_canary(app, agent_steps=True)
+    request = {
+        "scope": owner,
+        "workflow_key": "harness.canary",
+        "input": {"mode": "success", "note": "replay after disable"},
+        "idempotency_key": "replay-after-disable",
+        "initiator": "user",
+    }
+    first = app.create_run(**request)
+    with session_scope() as session:
+        head = app.config_service.current_validated(session)
+        assert head is not None
+        app.config_service.apply(
+            session,
+            snapshot=bootstrap_snapshot(
+                app.registry, actor="test-operator", reason="disable before replay"
+            ),
+            expected_head_revision=head.revision_id,
+            actor="test-operator",
+            reason="disable before replay",
+            now=now_iso(),
+        )
+    assert app.create_run(**request)["id"] == first["id"]
+    with pytest.raises(IdempotencyConflictError):
+        app.create_run(**{**request, "input": {"mode": "success", "note": "changed"}})
+
+
+def test_legacy_idempotent_replay_is_not_backfilled_or_activated(app, owner):
+    enable_canary(app, agent_steps=True)
+    workflow = app.registry.require_workflow("harness.canary@1")
+    with session_scope() as session:
+        current = app.config_service.current_validated(session)
+        assert current is not None
+        legacy = HarnessRunRepository().create(
+            session,
+            scope=owner,
+            workflow=workflow,
+            config_revision_id=current.revision_id,
+            input={"mode": "success", "note": "legacy"},
+            idempotency_key="legacy-replay-1",
+            initiator="user",
+            now_us=app.clock.utc_epoch_us(),
+        )
+    replay = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "success", "note": "legacy"},
+        idempotency_key="legacy-replay-1",
+        initiator="user",
+    )
+    assert replay["id"] == legacy["id"]
+    with session_scope() as session:
+        assert ExecutionSnapshotStore().read_run(
+            session, scope=owner, run_id=legacy["id"]
+        ) is None
+        assert (
+            session.execute(select(steps.c.id).where(steps.c.run_id == legacy["id"])).first()
+            is None
+        )
+
+
+def test_create_run_snapshot_failure_rolls_back_run_and_steps(app, owner, monkeypatch):
+    enable_canary(app, agent_steps=True)
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise SnapshotIntegrityError("test snapshot failure")
+
+    monkeypatch.setattr(app.execution_snapshots, "write_run", fail)
+    with pytest.raises(SnapshotIntegrityError, match="test snapshot failure"):
+        app.create_run(
+            scope=owner,
+            workflow_key="harness.canary",
+            input={"mode": "success", "note": "rollback"},
+            idempotency_key="snapshot-rollback-1",
+            initiator="user",
+        )
+    with session_scope() as session:
+        assert session.execute(
+            select(runs.c.id).where(
+                runs.c.scope_type == owner.scope_type.value,
+                runs.c.scope_id == owner.scope_id,
+                runs.c.idempotency_key == "snapshot-rollback-1",
+            )
+        ).first() is None
+        assert session.execute(
+            select(steps.c.id).where(steps.c.definition_step_key == "start")
+        ).first() is None
+
+
+def test_create_once_has_one_idempotency_winner_under_concurrency(app, owner):
+    enable_canary(app, agent_steps=True)
+    workflow = app.registry.require_workflow("harness.canary@1")
+    with session_scope() as session:
+        current = app.config_service.current_validated(session)
+        assert current is not None
+        revision_id = current.revision_id
+    barrier = threading.Barrier(2)
+
+    def create() -> tuple[str, bool]:
+        barrier.wait()
+        with session_scope() as session:
+            row, created = HarnessRunRepository().create_once(
+                session,
+                scope=owner,
+                workflow=workflow,
+                config_revision_id=revision_id,
+                input={"mode": "success", "note": "race"},
+                idempotency_key="concurrent-create-once",
+                initiator="user",
+                now_us=app.clock.utc_epoch_us(),
+            )
+            return row["id"], created
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: create(), range(2)))
+    assert {run_id for run_id, _ in results} == {results[0][0]}
+    assert sorted(created for _, created in results) == [False, True]
+
+
+def test_create_run_concurrency_returns_one_fully_snapshotted_run(app, owner):
+    enable_canary(app, agent_steps=True)
+    barrier = threading.Barrier(2)
+
+    def create() -> dict:
+        barrier.wait(timeout=5)
+        return app.create_run(
+            scope=owner,
+            workflow_key="harness.canary",
+            input={"mode": "success", "note": "full transaction race"},
+            idempotency_key="concurrent-create-run",
+            initiator="user",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: create(), range(2)))
+    assert {run["id"] for run in results} == {results[0]["id"]}
+    with session_scope() as session:
+        snapshot = ExecutionSnapshotStore().read_run(
+            session, scope=owner, run_id=results[0]["id"], require_for_execution=True
+        )
+        assert snapshot is not None
+        assert len(
+            session.execute(
+                select(steps.c.id).where(steps.c.run_id == results[0]["id"])
+            ).fetchall()
+        ) == 4

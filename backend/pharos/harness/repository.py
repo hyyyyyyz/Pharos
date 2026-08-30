@@ -1044,6 +1044,122 @@ def _route_from_row(row) -> WorkflowRoute:  # noqa: ANN001
 class HarnessRunRepository:
     """Owner-scoped run creation, lookup and listing."""
 
+    @staticmethod
+    def _input_identity(input: dict) -> tuple[str, str]:
+        input_json = json_dump(input)
+        if len(input_json) > MAX_RUN_INPUT_CHARS:
+            raise ValueError("run input too large")
+        return input_json, sha256_text(input_json)
+
+    @staticmethod
+    def _validate_replay_input(
+        winner: dict, *, input_json: str, input_hash: str
+    ) -> None:
+        try:
+            stored_input_is_canonical = json_dump(json.loads(winner["input_json"])) == winner[
+                "input_json"
+            ]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConfigIntegrityError("Run idempotency winner has invalid input JSON") from exc
+        if (
+            not stored_input_is_canonical
+            or sha256_text(winner["input_json"]) != winner["input_sha256"]
+        ):
+            raise ConfigIntegrityError("Run idempotency winner input hash is invalid")
+        if winner["input_sha256"] != input_hash or winner["input_json"] != input_json:
+            raise IdempotencyConflictError(
+                "the same idempotency key was already used with different input"
+            )
+
+    def find_replay(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        workflow_key: str,
+        input: dict,
+        idempotency_key: str,
+    ) -> dict | None:
+        """Return an authenticated existing request without consulting live gates."""
+        input_json, input_hash = self._input_identity(input)
+        winner = self.find_by_key(
+            session,
+            scope=scope,
+            workflow_key=workflow_key,
+            key=idempotency_key,
+        )
+        if winner is None:
+            return None
+        self._validate_replay_input(winner, input_json=input_json, input_hash=input_hash)
+        return winner
+
+    def create_once(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        workflow: WorkflowDefinition,
+        config_revision_id: str,
+        input: dict,
+        idempotency_key: str,
+        initiator: str,
+        now_us: int,
+        parent_run_id: str | None = None,
+        project_id: str | None = None,
+    ) -> tuple[dict, bool]:
+        """Insert one Run and report whether this caller won its idempotency key.
+
+        The unique idempotency constraint is the concurrency authority.  A
+        pre-read is useful for the common replay path, but cannot decide the
+        winner: two sessions can observe no row before either inserts.  The
+        SQLite conflict target therefore performs the insert atomically and
+        the winning row is read back before comparing the authenticated input.
+        """
+        input_json, input_hash = self._input_identity(input)
+        run_id = new_id()
+        result = session.execute(
+            sqlite_insert(runs)
+            .values(
+                id=run_id,
+                scope_type=scope.scope_type.value,
+                scope_id=scope.scope_id,
+                user_id=scope.scope_id if scope.scope_type == ScopeType.user else None,
+                workflow_key=workflow.workflow_key,
+                workflow_version=workflow.version,
+                definition_sha256=workflow.definition_hash(),
+                config_revision_id=config_revision_id,
+                state="queued",
+                outcome=None,
+                input_json=input_json,
+                input_sha256=input_hash,
+                budget_json=json_dump(workflow.default_budget.model_dump(mode="json")),
+                initiator=initiator,
+                idempotency_key=idempotency_key,
+                parent_run_id=parent_run_id,
+                project_id=project_id,
+                created_at=now_us,
+                updated_at=now_us,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    "scope_type",
+                    "scope_id",
+                    "workflow_key",
+                    "idempotency_key",
+                ]
+            )
+        )
+        created = bool(getattr(result, "rowcount", 0) == 1)
+        winner = self.find_by_key(
+            session, scope=scope, workflow_key=workflow.workflow_key, key=idempotency_key
+        )
+        if winner is None:
+            # This should be impossible after a successful INSERT or a
+            # conflict, but fail closed instead of returning an unbound Run.
+            raise ConfigIntegrityError("Run idempotency winner disappeared")
+        self._validate_replay_input(winner, input_json=input_json, input_hash=input_hash)
+        return winner, created
+
     def create(
         self,
         session: Session,
@@ -1058,45 +1174,19 @@ class HarnessRunRepository:
         parent_run_id: str | None = None,
         project_id: str | None = None,
     ) -> dict:
-        input_json = json_dump(input)
-        if len(input_json) > MAX_RUN_INPUT_CHARS:
-            raise ValueError("run input too large")
-        existing = self.find_by_key(
-            session, scope=scope, workflow_key=workflow.workflow_key, key=idempotency_key
+        row, _ = self.create_once(
+            session,
+            scope=scope,
+            workflow=workflow,
+            config_revision_id=config_revision_id,
+            input=input,
+            idempotency_key=idempotency_key,
+            initiator=initiator,
+            now_us=now_us,
+            parent_run_id=parent_run_id,
+            project_id=project_id,
         )
-        if existing is not None:
-            if existing["input_sha256"] != sha256_text(input_json):
-                raise IdempotencyConflictError(
-                    "the same idempotency key was already used with different input"
-                )
-            return existing
-        run_id = new_id()
-        session.execute(
-            runs.insert().values(
-                id=run_id,
-                scope_type=scope.scope_type.value,
-                scope_id=scope.scope_id,
-                user_id=scope.scope_id if scope.scope_type == ScopeType.user else None,
-                workflow_key=workflow.workflow_key,
-                workflow_version=workflow.version,
-                definition_sha256=workflow.definition_hash(),
-                config_revision_id=config_revision_id,
-                state="queued",
-                outcome=None,
-                input_json=input_json,
-                input_sha256=sha256_text(input_json),
-                budget_json=json_dump(workflow.default_budget.model_dump(mode="json")),
-                initiator=initiator,
-                idempotency_key=idempotency_key,
-                parent_run_id=parent_run_id,
-                project_id=project_id,
-                created_at=now_us,
-                updated_at=now_us,
-            )
-        )
-        created = self.get(session, scope=scope, run_id=run_id)
-        assert created is not None
-        return created
+        return row
 
     def find_by_key(
         self, session: Session, *, scope: Scope, workflow_key: str, key: str

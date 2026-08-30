@@ -98,7 +98,15 @@ class HarnessRunner:
 
     # ------------------------------------------------------------- activation
 
-    def activate_run(self, session: Session, *, scope: Scope, run: dict, now_us: int) -> list[dict]:
+    def activate_run(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run: dict,
+        now_us: int,
+        expanded_steps: list[dict] | None = None,
+    ) -> list[dict]:
         """Expand the run's physical steps from the trusted expander.
 
         Idempotent: re-activation for the same run and input yields the same
@@ -110,8 +118,9 @@ class HarnessRunner:
         if expander is None:
             raise StateError(f"no trusted expander for {workflow_identity}")
         input = json.loads(run["input_json"])
+        expansion = expanded_steps if expanded_steps is not None else expander(input)
         created: list[dict] = []
-        for entry in expander(input):
+        for entry in expansion:
             row = self.step_repository.expand(
                 session,
                 scope=scope,
