@@ -650,9 +650,11 @@ def test_pause_and_resume(app, owner):
         initiator="user",
     )
     app.pause(scope=owner, run_id=run["id"])
+    app.pause(scope=owner, run_id=run["id"])
     app.cycle()
     run = app.get_run(scope=owner, run_id=run["id"])
     assert run["state"] == "paused", "pause takes effect at a safe boundary"
+    assert app.pause(scope=owner, run_id=run["id"])["state"] == RunState.paused.value
     app.resume(scope=owner, run_id=run["id"])
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "succeeded"
@@ -686,6 +688,62 @@ def test_pause_after_claim_lets_owned_step_reach_its_safe_boundary(app, owner):
     assert app.get_run(scope=owner, run_id=run["id"])["state"] == RunState.paused.value
 
 
+def test_pause_can_settle_over_a_scheduled_retry_and_resume_it(app, owner):
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("retry_then_success"),
+        idempotency_key="pause-scheduled-retry",
+        initiator="user",
+    )
+    app.dispatcher.claim_batch = 1
+    claimed = None
+    for _ in range(20):
+        with session_scope() as session:
+            candidate = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us(), limit=1)
+        assert candidate is not None
+        if candidate.definition_step_key == "flaky":
+            claimed = candidate
+            break
+        app.runner._execute_one(  # noqa: SLF001 -- drive prerequisites to the retry step
+            claimed=candidate,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        app.runner.reduce_all(now_us=app.clock.utc_epoch_us())
+    assert claimed is not None
+    app.runner._execute_one(claimed=claimed, now_us=app.clock.utc_epoch_us())  # noqa: SLF001
+    step = next(
+        row for row in app.steps_for(scope=owner, run_id=run["id"]) if row["id"] == claimed.step_id
+    )
+    assert step["state"] == StepState.retry_scheduled.value
+
+    app.pause(scope=owner, run_id=run["id"])
+    assert app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us()) == 1
+    assert app.get_run(scope=owner, run_id=run["id"])["state"] == RunState.paused.value
+    assert (
+        next(
+            row
+            for row in app.steps_for(scope=owner, run_id=run["id"])
+            if row["id"] == claimed.step_id
+        )["state"]
+        == StepState.retry_scheduled.value
+    )
+
+    app.resume(scope=owner, run_id=run["id"])
+    app.clock.advance(10)
+    with session_scope() as session:
+        assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 1
+    assert (
+        next(
+            row
+            for row in app.steps_for(scope=owner, run_id=run["id"])
+            if row["id"] == claimed.step_id
+        )["state"]
+        == StepState.ready.value
+    )
+
+
 def test_cancelled_paused_run_cannot_be_revived(app, owner):
     enable_canary(app)
     run = app.create_run(
@@ -717,9 +775,31 @@ def test_cancel_is_persistent_and_wins(app, owner):
     )
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "waiting_for_approval"
+    assert len(app.pending_approvals(scope=owner, run_id=run["id"])) == 1
     app.cancel(scope=owner, run_id=run["id"])
+    assert app.pending_approvals(scope=owner, run_id=run["id"]) == []
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "cancelled"
+
+
+def test_waiting_approval_rejects_pause_without_stranding_a_request(app, owner):
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("approval"),
+        idempotency_key="pause-waiting-approval",
+        initiator="user",
+    )
+    run = run_until_terminal(app, owner=owner, run_id=run["id"])
+    assert run["state"] == RunState.waiting_for_approval.value
+
+    with pytest.raises(StateError, match="cannot be paused"):
+        app.pause(scope=owner, run_id=run["id"])
+
+    unchanged = app.get_run(scope=owner, run_id=run["id"])
+    assert unchanged["state"] == RunState.waiting_for_approval.value
+    assert unchanged["pause_requested_at"] is None
 
 
 def test_restart_recovers_from_the_database(app, owner):

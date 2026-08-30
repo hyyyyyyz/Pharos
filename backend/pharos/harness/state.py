@@ -152,6 +152,65 @@ ATTEMPT_TRANSITIONS: dict[AttemptState, frozenset[AttemptState]] = {
 }
 
 
+_CAPABILITY_ATTEMPT_RESERVED = frozenset(
+    {
+        "id",
+        "step_id",
+        "run_id",
+        "scope_type",
+        "scope_id",
+        "attempt_no",
+        "worker_id",
+        "state",
+        "role_or_capability",
+        "model_prompt_version",
+        "input_sha256",
+        "lease_owner",
+        "started_at",
+        "heartbeat_at",
+        "finished_at",
+        "runtime_session_id",
+        "child_pid",
+        "deadline_at",
+        "upstream_commit",
+        "runtime_hash",
+        "profile_hash",
+        "policy_hash",
+        "protocol_version",
+    }
+)
+
+_CAPABILITY_STEP_RESERVED = frozenset(
+    {
+        "id",
+        "run_id",
+        "scope_type",
+        "scope_id",
+        "definition_step_key",
+        "instance_key",
+        "step_kind",
+        "definition_json",
+        "depends_on_json",
+        "fan_in",
+        "min_success_count",
+        "input_artifact_ids_json",
+        "output_artifact_id",
+        "state",
+        "attempt_count",
+        "max_attempts",
+        "ready_at",
+        "timeout_seconds",
+        "retry_policy_json",
+        "lease_owner",
+        "lease_expires_at",
+        "heartbeat_at",
+        "created_at",
+        "updated_at",
+        "finished_at",
+    }
+)
+
+
 def _check(current: str, target: str, table: dict, subject: str) -> None:
     try:
         allowed = table[current]
@@ -168,6 +227,27 @@ class HarnessStateService:
     def _validate_payload(payload: dict | None) -> None:
         """Apply EventStore's serializer/cap before changing state."""
         encode_event_payload(payload)
+
+    @staticmethod
+    def _capability_values(
+        values: dict[str, Any] | None,
+        *,
+        reserved: frozenset[str],
+        subject: str,
+    ) -> dict[str, Any]:
+        """Return caller metadata without allowing a CAS fence override.
+
+        Capability finishers accept diagnostic/output columns because those
+        are part of the result they persist.  Identity, lease and state
+        columns remain owned by this method; rejecting an attempted override
+        is safer than silently accepting a value that the caller did not
+        actually win by CAS.
+        """
+        result = dict(values or {})
+        forbidden = sorted(reserved.intersection(result))
+        if forbidden:
+            raise StateError(f"{subject}: reserved values cannot be supplied: {forbidden}")
+        return result
 
     def _event(
         self,
@@ -317,6 +397,22 @@ class HarnessStateService:
             where.append(runs.c.cancel_requested_at.is_(None))
         elif target is RunState.cancelled:
             where.append(runs.c.cancel_requested_at.is_not(None))
+        if target in RUN_TERMINAL_STATES:
+            # A reducer must not close a Run while a local capability/model
+            # still owns an active Step.  This is deliberately a database
+            # fence (rather than a caller-side inspection), so a concurrent
+            # finisher and reducer have one writer winner.
+            where.append(
+                ~exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        scope.where(steps),
+                        steps.c.run_id == run_id,
+                        steps.c.state.in_((StepState.leased.value, StepState.running.value)),
+                    )
+                )
+            )
         # An indeterminate delivery/reconciliation result is allowed to win a
         # cancellation race.  Its exact Attempt fence decides whether it is
         # still valid; this Run CAS must not erase that evidence.
@@ -489,6 +585,279 @@ class HarnessStateService:
             step_id=step_id,
             attempt_id=None,
             payload=None,
+            now_us=now_us,
+        )
+        return True
+
+    def finish_capability_cas(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run_id: str,
+        step_id: str,
+        attempt_id: str,
+        attempt_no: int,
+        lease_owner: str,
+        target: AttemptState,
+        now_us: int,
+        attempt_values: dict[str, Any] | None = None,
+        step_values: dict[str, Any] | None = None,
+        payload: dict | None = None,
+    ) -> bool:
+        """Finish a deterministic/mapped capability at its exact safe boundary.
+
+        This is intentionally narrower than :meth:`finish_attempt_cas`:
+        capability execution has started, so a persisted Run cancellation may
+        not rewrite the real success/failure result to ``cancelled``.  The
+        parent Run is fenced first and both child rows are then updated under
+        the same owner, scope, generation and lease predicates.  A losing or
+        repeated call returns ``False`` and emits no event.
+        """
+        if not isinstance(target, AttemptState) or target not in {
+            AttemptState.succeeded,
+            AttemptState.failed,
+        }:
+            raise StateError("capability finish requires succeeded or failed target")
+
+        attempt_values = self._capability_values(
+            attempt_values,
+            reserved=_CAPABILITY_ATTEMPT_RESERVED,
+            subject=f"attempt {attempt_id}",
+        )
+        step_values = self._capability_values(
+            step_values,
+            reserved=_CAPABILITY_STEP_RESERVED,
+            subject=f"step {step_id}",
+        )
+        self._validate_payload(payload)
+
+        # Acquire the parent writer fence without checking cancellation: a
+        # started side effect must report its observed result truthfully.
+        run_fence: Any = session.execute(
+            update(runs)
+            .where(
+                scope.where(runs),
+                runs.c.id == run_id,
+                runs.c.state.not_in(tuple(state.value for state in RUN_TERMINAL_STATES)),
+            )
+            .values(updated_at=runs.c.updated_at)
+        )
+        if run_fence.rowcount != 1:
+            return False
+
+        step_target = StepState.succeeded if target is AttemptState.succeeded else StepState.failed
+        result: Any = session.execute(
+            update(attempts)
+            .where(
+                scope.where(attempts),
+                attempts.c.id == attempt_id,
+                attempts.c.run_id == run_id,
+                attempts.c.step_id == step_id,
+                attempts.c.attempt_no == attempt_no,
+                attempts.c.lease_owner == lease_owner,
+                attempts.c.state == AttemptState.running.value,
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        scope.where(steps),
+                        steps.c.id == step_id,
+                        steps.c.run_id == run_id,
+                        steps.c.attempt_count == attempt_no,
+                        steps.c.step_kind.in_(("deterministic", "mapped")),
+                        steps.c.state == StepState.running.value,
+                        steps.c.lease_owner == lease_owner,
+                    )
+                ),
+            )
+            .values(
+                state=target.value,
+                lease_owner=None,
+                finished_at=now_us,
+                **attempt_values,
+            )
+        )
+        if result.rowcount != 1:
+            return False
+
+        result = session.execute(
+            update(steps)
+            .where(
+                scope.where(steps),
+                steps.c.id == step_id,
+                steps.c.run_id == run_id,
+                steps.c.attempt_count == attempt_no,
+                steps.c.step_kind.in_(("deterministic", "mapped")),
+                steps.c.state == StepState.running.value,
+                steps.c.lease_owner == lease_owner,
+            )
+            .values(
+                state=step_target.value,
+                lease_owner=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+                updated_at=now_us,
+                finished_at=now_us,
+                **step_values,
+            )
+        )
+        if result.rowcount != 1:
+            raise StateError(f"finished Attempt {attempt_id} lost its Step fence")
+
+        self._event(
+            session,
+            run_id=run_id,
+            scope_type=scope.scope_type.value,
+            scope_id=scope.scope_id,
+            event_type=f"attempt.{target.value}",
+            step_id=step_id,
+            attempt_id=attempt_id,
+            payload=payload,
+            now_us=now_us,
+        )
+        self._event(
+            session,
+            run_id=run_id,
+            scope_type=scope.scope_type.value,
+            scope_id=scope.scope_id,
+            event_type=f"step.{step_target.value}",
+            step_id=step_id,
+            attempt_id=None,
+            payload=payload,
+            now_us=now_us,
+        )
+        return True
+
+    def schedule_capability_retry_cas(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run_id: str,
+        step_id: str,
+        attempt_id: str,
+        attempt_no: int,
+        lease_owner: str,
+        ready_at: int,
+        now_us: int,
+        attempt_values: dict[str, Any] | None = None,
+        step_values: dict[str, Any] | None = None,
+        payload: dict | None = None,
+    ) -> bool:
+        """Fail one capability Attempt and schedule its exact Step retry.
+
+        Cancellation is part of the parent predicate and therefore wins over
+        retry scheduling.  A pause request is intentionally not a blocker: it
+        may let this already-running capability reach a safe retry boundary;
+        the Run pause reducer handles the request afterwards.
+        """
+        if isinstance(ready_at, bool) or not isinstance(ready_at, int) or ready_at < now_us:
+            raise StateError("capability retry ready_at must be an integer at or after now_us")
+        attempt_values = self._capability_values(
+            attempt_values,
+            reserved=_CAPABILITY_ATTEMPT_RESERVED | {"retryable"},
+            subject=f"attempt {attempt_id}",
+        )
+        step_values = self._capability_values(
+            step_values,
+            reserved=_CAPABILITY_STEP_RESERVED,
+            subject=f"step {step_id}",
+        )
+        self._validate_payload(payload)
+
+        run_fence: Any = session.execute(
+            update(runs)
+            .where(
+                scope.where(runs),
+                runs.c.id == run_id,
+                runs.c.state.not_in(tuple(state.value for state in RUN_TERMINAL_STATES)),
+                runs.c.cancel_requested_at.is_(None),
+            )
+            .values(updated_at=runs.c.updated_at)
+        )
+        if run_fence.rowcount != 1:
+            return False
+
+        result: Any = session.execute(
+            update(attempts)
+            .where(
+                scope.where(attempts),
+                attempts.c.id == attempt_id,
+                attempts.c.run_id == run_id,
+                attempts.c.step_id == step_id,
+                attempts.c.attempt_no == attempt_no,
+                attempts.c.lease_owner == lease_owner,
+                attempts.c.state == AttemptState.running.value,
+                exists(
+                    select(1)
+                    .select_from(steps)
+                    .where(
+                        scope.where(steps),
+                        steps.c.id == step_id,
+                        steps.c.run_id == run_id,
+                        steps.c.attempt_count == attempt_no,
+                        steps.c.step_kind.in_(("deterministic", "mapped")),
+                        steps.c.state == StepState.running.value,
+                        steps.c.lease_owner == lease_owner,
+                    )
+                ),
+            )
+            .values(
+                state=AttemptState.failed.value,
+                lease_owner=None,
+                finished_at=now_us,
+                retryable=1,
+                **attempt_values,
+            )
+        )
+        if result.rowcount != 1:
+            return False
+
+        result = session.execute(
+            update(steps)
+            .where(
+                scope.where(steps),
+                steps.c.id == step_id,
+                steps.c.run_id == run_id,
+                steps.c.attempt_count == attempt_no,
+                steps.c.step_kind.in_(("deterministic", "mapped")),
+                steps.c.state == StepState.running.value,
+                steps.c.lease_owner == lease_owner,
+            )
+            .values(
+                state=StepState.retry_scheduled.value,
+                ready_at=ready_at,
+                lease_owner=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+                updated_at=now_us,
+                **step_values,
+            )
+        )
+        if result.rowcount != 1:
+            raise StateError(f"retry-scheduled Attempt {attempt_id} lost its Step fence")
+
+        self._event(
+            session,
+            run_id=run_id,
+            scope_type=scope.scope_type.value,
+            scope_id=scope.scope_id,
+            event_type="attempt.failed",
+            step_id=step_id,
+            attempt_id=attempt_id,
+            payload=payload,
+            now_us=now_us,
+        )
+        self._event(
+            session,
+            run_id=run_id,
+            scope_type=scope.scope_type.value,
+            scope_id=scope.scope_id,
+            event_type="step.retry_scheduled",
+            step_id=step_id,
+            attempt_id=None,
+            payload=payload,
             now_us=now_us,
         )
         return True

@@ -247,6 +247,7 @@ class HarnessApp:
                     & (approvals_table.c.state == ApprovalState.expired.value),
                 )
                 .where(steps.c.state == StepState.waiting_for_approval.value)
+                .distinct()
             )
             .mappings()
             .all()
@@ -476,18 +477,38 @@ class HarnessApp:
 
     def pause(self, *, scope: Scope, run_id: str) -> dict:
         with session_scope() as session:
-            HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_pause(
+            run_repository = HarnessRunRepository()
+            run = run_repository.require(session, scope=scope, run_id=run_id)
+            if run["state"] == RunState.paused.value or (
+                run["state"] in (RunState.queued.value, RunState.running.value)
+                and run["pause_requested_at"] is not None
+            ):
+                return dict(run)
+            if run["state"] not in (RunState.queued.value, RunState.running.value):
+                raise StateError("run cannot be paused from its current state")
+            requested = self.state.request_pause(
                 session, scope=scope, run_id=run_id, now_us=self.clock.utc_epoch_us()
             )
-            run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
+            if not requested:
+                run = run_repository.require(session, scope=scope, run_id=run_id)
+                if run["state"] == RunState.paused.value or run["pause_requested_at"] is not None:
+                    return dict(run)
+                raise StateError("run cannot be paused from its current state")
+            run = run_repository.require(session, scope=scope, run_id=run_id)
             return dict(run)
 
     def cancel(self, *, scope: Scope, run_id: str) -> dict:
+        now = self.clock.utc_epoch_us()
         with session_scope() as session:
             HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_cancel(
-                session, scope=scope, run_id=run_id, now_us=self.clock.utc_epoch_us()
+            self.state.request_cancel(session, scope=scope, run_id=run_id, now_us=now)
+            # A cancelled Run must not continue advertising an actionable
+            # approval. This repair is idempotent for repeated cancel calls.
+            self.approvals.cancel_unconsumed_for_run(
+                session,
+                scope=scope,
+                run_id=run_id,
+                now_us=now,
             )
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             result = dict(run)
@@ -545,36 +566,51 @@ class HarnessApp:
             step_id = approval["step_id"]
             if step_id is None:
                 return dict(approval)
-            step = session.execute(steps.select().where(steps.c.id == step_id)).mappings().first()
-            if step is not None and step["state"] == StepState.waiting_for_approval.value:
-                definition = json.loads(step["definition_json"])
-                if decision == ApprovalState.approved:
+            step = (
+                session.execute(
+                    steps.select().where(
+                        steps.c.id == step_id,
+                        steps.c.run_id == approval["run_id"],
+                        steps.c.scope_type == scope.scope_type.value,
+                        steps.c.scope_id == scope.scope_id,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if step is None or step["state"] != StepState.waiting_for_approval.value:
+                # Raising rolls the approval decision back with this same
+                # transaction; a stale UI action cannot create a detached
+                # approved grant.
+                raise StateError("approval step is no longer waiting")
+            definition = json.loads(step["definition_json"])
+            if decision == ApprovalState.approved:
+                self.state.transition_step(
+                    session,
+                    step_id=step_id,
+                    target=StepState.ready,
+                    now_us=now,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                )
+            else:
+                on_reject = definition.get("approval_on_reject", "fail")
+                if on_reject == "skip":
                     self.state.transition_step(
                         session,
                         step_id=step_id,
-                        target=StepState.ready,
+                        target=StepState.skipped,
                         now_us=now,
-                        lease_owner=None,
-                        lease_expires_at=None,
+                        skip_reason=f"approval_{decision.value}",
                     )
                 else:
-                    on_reject = definition.get("approval_on_reject", "fail")
-                    if on_reject == "skip":
-                        self.state.transition_step(
-                            session,
-                            step_id=step_id,
-                            target=StepState.skipped,
-                            now_us=now,
-                            skip_reason=f"approval_{decision.value}",
-                        )
-                    else:
-                        self.state.transition_step(
-                            session,
-                            step_id=step_id,
-                            target=StepState.failed,
-                            now_us=now,
-                            error_code=f"approval_{decision.value}",
-                        )
+                    self.state.transition_step(
+                        session,
+                        step_id=step_id,
+                        target=StepState.failed,
+                        now_us=now,
+                        error_code=f"approval_{decision.value}",
+                    )
             return dict(approval)
 
     def pending_approvals(self, *, scope: Scope, run_id: str) -> list[dict]:

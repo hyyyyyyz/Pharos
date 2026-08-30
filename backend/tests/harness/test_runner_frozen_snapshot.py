@@ -10,11 +10,19 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from threading import Event, Thread
+from time import monotonic, sleep
 from typing import Any
 
 import pytest
 from pharos.db.session import session_scope
-from pharos.harness.contracts import AttemptState, DeliveryState, GatewayError, StepState
+from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
+from pharos.harness.contracts import (
+    ApprovalState,
+    AttemptState,
+    DeliveryState,
+    GatewayError,
+    StepState,
+)
 from pharos.harness.definitions import RetryPolicy
 from pharos.harness.execution_snapshots import MissingExecutionSnapshotError
 from pharos.harness.fakes import ModelResult
@@ -105,6 +113,29 @@ def test_forged_claim_projection_cannot_choose_executor_or_cross_owner(app, owne
     assert len(capability.actions) == 1
 
 
+def test_runner_rejects_a_valid_claim_owned_by_another_worker(app, owner: Scope) -> None:
+    enable_canary(app)
+    capability = RecordingCapability()
+    run = _create_run(app, owner, mode="success", key="foreign-worker-claim")
+    claimed = _claim_target(app, owner, run["id"], "start")
+    digest = claimed.attempt_snapshot.executor_capability_definition_sha256
+    assert digest is not None
+    app.executor.capabilities[(claimed.attempt_snapshot.executor_identity, digest)] = capability
+
+    original_worker = app.dispatcher.worker_id
+    app.dispatcher.worker_id = "different-worker"
+    try:
+        app.runner._execute_one(  # noqa: SLF001 -- explicit ownership boundary
+            claimed=claimed,
+            now_us=app.clock.utc_epoch_us(),
+        )
+    finally:
+        app.dispatcher.worker_id = original_worker
+
+    assert capability.actions == []
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.leased.value
+
+
 def test_missing_attempt_snapshot_fails_closed_without_side_effects(
     app, owner: Scope, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -184,6 +215,188 @@ def test_cancel_request_after_claim_prevents_executor_dispatch(app, owner: Scope
         row for row in app.steps_for(scope=owner, run_id=run["id"]) if row["id"] == claimed.step_id
     )
     assert step["state"] == StepState.cancelled.value
+
+
+def test_cancel_during_started_capability_waits_for_its_local_safe_boundary(
+    app, owner: Scope
+) -> None:
+    """A started local side effect finishes truthfully before Run cancellation."""
+    enable_canary(app)
+    run = _create_run(app, owner, mode="success", key="cancel-running-capability")
+    claimed = _claim_target(app, owner, run["id"], "start")
+    started = Event()
+    release = Event()
+    errors: list[BaseException] = []
+
+    class BlockingCapability:
+        def execute(self, action):  # noqa: ANN001, ANN201 - test seam
+            started.set()
+            assert release.wait(timeout=2)
+            return {"ok": True}
+
+    digest = claimed.attempt_snapshot.executor_capability_definition_sha256
+    assert digest is not None
+    app.executor.capabilities[(claimed.attempt_snapshot.executor_identity, digest)] = (
+        BlockingCapability()
+    )
+
+    def execute() -> None:
+        try:
+            app.runner._execute_one(  # noqa: SLF001 -- exercise the worker boundary
+                claimed=claimed,
+                now_us=app.clock.utc_epoch_us(),
+            )
+        except BaseException as error:  # pragma: no cover - asserted below
+            errors.append(error)
+
+    worker = Thread(target=execute)
+    worker.start()
+    assert started.wait(timeout=2)
+    assert app.runner.active_local_attempt_ids == (claimed.attempt_id,)
+
+    app.cancel(scope=owner, run_id=run["id"])
+    assert app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us()) == 0
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.running.value
+
+    release.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert errors == []
+    assert app.runner.active_local_attempt_count == 0
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.succeeded.value
+
+    assert app.runner.apply_pending_control(now_us=app.clock.utc_epoch_us()) == 1
+    assert app.get_run(scope=owner, run_id=run["id"])["state"] == "cancelled"
+
+
+def test_blocking_capability_heartbeats_past_its_original_lease(app, owner: Scope) -> None:
+    """Another worker's reaper cannot erase a live synchronous side effect."""
+    enable_canary(app)
+    app.dispatcher.lease_seconds = 0.3
+    app.dispatcher.heartbeat_seconds = 0.02
+    run = _create_run(app, owner, mode="success", key="heartbeat-running-capability")
+    claimed = _claim_target(app, owner, run["id"], "start")
+    started = Event()
+    release = Event()
+    errors: list[BaseException] = []
+
+    class BlockingCapability:
+        def execute(self, action):  # noqa: ANN001, ANN201 - test seam
+            started.set()
+            assert release.wait(timeout=3)
+            return {"ok": True}
+
+    digest = claimed.attempt_snapshot.executor_capability_definition_sha256
+    assert digest is not None
+    app.executor.capabilities[(claimed.attempt_snapshot.executor_identity, digest)] = (
+        BlockingCapability()
+    )
+
+    def execute() -> None:
+        try:
+            app.runner._execute_one(  # noqa: SLF001 -- exercise the worker boundary
+                claimed=claimed,
+                now_us=app.clock.utc_epoch_us(),
+            )
+        except BaseException as error:  # pragma: no cover - asserted below
+            errors.append(error)
+
+    worker = Thread(target=execute)
+    worker.start()
+    assert started.wait(timeout=2)
+
+    original_expiry = None
+    with session_scope() as session:
+        original_expiry = session.execute(
+            select(steps.c.lease_expires_at).where(steps.c.id == claimed.step_id)
+        ).scalar_one()
+    assert original_expiry is not None
+
+    # Move deterministic time beyond the original lease in small increments;
+    # after each move, wait only until the real heartbeat thread has renewed
+    # the durable expiry at that clock value.
+    while app.clock.utc_epoch_us() <= original_expiry + 300_000:
+        app.clock.advance(0.12)
+        deadline = monotonic() + 1.0
+        while True:
+            with session_scope() as session:
+                lease_expires_at = session.execute(
+                    select(steps.c.lease_expires_at).where(steps.c.id == claimed.step_id)
+                ).scalar_one()
+            if (
+                lease_expires_at is not None
+                and lease_expires_at >= app.clock.utc_epoch_us() + 290_000
+            ):
+                break
+            assert monotonic() < deadline, "heartbeat did not renew the local capability lease"
+            sleep(0.005)
+
+    with session_scope() as session:
+        assert app.dispatcher.reap_expired(session, now_us=app.clock.utc_epoch_us()) == []
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.running.value
+
+    release.set()
+    worker.join(timeout=3)
+    assert not worker.is_alive()
+    assert errors == []
+    assert _attempt_row(claimed.attempt_id)["state"] == AttemptState.succeeded.value
+    assert app.runner.active_local_attempt_count == 0
+
+
+def test_grant_expiring_between_lookup_and_consume_reopens_before_side_effect(
+    app, owner: Scope, monkeypatch
+) -> None:  # noqa: ANN001
+    enable_canary(app)
+    run = _create_run(app, owner, mode="approval", key="approval-consume-rollback")
+    first = _claim_target(app, owner, run["id"], "approval_gate")
+    app.runner._execute_one(  # noqa: SLF001 -- open the real approval boundary
+        claimed=first,
+        now_us=app.clock.utc_epoch_us(),
+    )
+    app.runner.reduce_all(now_us=app.clock.utc_epoch_us())
+    pending = app.pending_approvals(scope=owner, run_id=run["id"])
+    assert len(pending) == 1
+    app.decide_approval(
+        scope=owner,
+        approval_id=pending[0]["id"],
+        decision=ApprovalState.approved,
+        resolver_user_id=owner.scope_id,
+        reason="test rollback",
+    )
+    app.runner.reduce_all(now_us=app.clock.utc_epoch_us())
+    successor = _claim_target(app, owner, run["id"], "approval_gate")
+    capability = RecordingCapability()
+    digest = successor.attempt_snapshot.executor_capability_definition_sha256
+    assert digest is not None
+    app.executor.capabilities[(successor.attempt_snapshot.executor_identity, digest)] = capability
+
+    original_lookup = ApprovalRepository.approved_for_step
+
+    def expire_after_lookup(self, session, **kwargs):  # noqa: ANN001, ANN003
+        rows = original_lookup(self, session, **kwargs)
+        app.clock.advance(DEFAULT_EXPIRY_SECONDS + 1)
+        return rows
+
+    monkeypatch.setattr(ApprovalRepository, "approved_for_step", expire_after_lookup)
+    app.runner._execute_one(  # noqa: SLF001 -- verify the transactional boundary
+        claimed=successor,
+        now_us=app.clock.utc_epoch_us(),
+    )
+
+    assert capability.actions == []
+    with session_scope() as session:
+        attempt = (
+            session.execute(attempts.select().where(attempts.c.id == successor.attempt_id))
+            .mappings()
+            .one()
+        )
+        step = (
+            session.execute(steps.select().where(steps.c.id == successor.step_id)).mappings().one()
+        )
+    assert attempt["state"] == AttemptState.blocked.value
+    assert step["state"] == StepState.waiting_for_approval.value
+    assert len(app.pending_approvals(scope=owner, run_id=run["id"])) == 1
+    assert app.runner.active_local_attempt_count == 0
 
 
 def _claim_agent(app, owner: Scope, key: str):

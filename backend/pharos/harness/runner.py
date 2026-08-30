@@ -15,7 +15,7 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from threading import RLock
+from threading import Event, RLock, Thread
 from typing import Any
 
 from sqlalchemy import exists, select
@@ -25,6 +25,7 @@ from pharos.db.session import session_scope
 from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore, content_hash
 from pharos.harness.contracts import (
+    ApprovalConflictError,
     ArtifactSensitivity,
     AttemptErrorClass,
     AttemptState,
@@ -79,6 +80,16 @@ class AgentOutputContract:
     validator: AgentOutputValidator
 
 
+@dataclass(frozen=True, slots=True)
+class _LocalExecutionIdentity:
+    """In-process capability ownership, never a substitute for durable state."""
+
+    attempt_id: str
+    run_id: str
+    scope_type: str
+    scope_id: str
+
+
 @dataclass
 class StepExecutor:
     """What the runner needs to execute claimed steps."""
@@ -127,6 +138,11 @@ class HarnessRunner:
         # attempt-scoped: cancellation must never reach a sibling handle.
         self._active_handles: dict[str, GatewayHandle] = {}
         self._cleanup_failed_handles: dict[str, GatewayHandle] = {}
+        # Synchronous deterministic capabilities have no cancellable gateway
+        # handle, but a concurrent control pass must still know that this
+        # process owns their safe-boundary callback. After a restart this map is
+        # empty and durable recovery correctly falls back to indeterminate.
+        self._active_local_executions: dict[str, _LocalExecutionIdentity] = {}
         self._active_handles_lock = RLock()
 
     @property
@@ -151,6 +167,16 @@ class HarnessRunner:
         with self._active_handles_lock:
             return len(self._cleanup_failed_handles)
 
+    @property
+    def active_local_attempt_ids(self) -> tuple[str, ...]:
+        with self._active_handles_lock:
+            return tuple(sorted(self._active_local_executions))
+
+    @property
+    def active_local_attempt_count(self) -> int:
+        with self._active_handles_lock:
+            return len(self._active_local_executions)
+
     def cancel_active_attempt(self, attempt_id: str) -> bool:
         """Cancel exactly one currently registered Attempt handle.
 
@@ -170,7 +196,11 @@ class HarnessRunner:
 
     def _register_handle(self, attempt_id: str, handle: GatewayHandle) -> None:
         with self._active_handles_lock:
-            if attempt_id in self._active_handles or attempt_id in self._cleanup_failed_handles:
+            if (
+                attempt_id in self._active_handles
+                or attempt_id in self._cleanup_failed_handles
+                or attempt_id in self._active_local_executions
+            ):
                 raise StateError(f"Attempt {attempt_id} already has a managed gateway handle")
             self._active_handles[attempt_id] = handle
 
@@ -190,6 +220,103 @@ class HarnessRunner:
             if existing is not None and existing is not handle:
                 raise StateError(f"Attempt {attempt_id} already has a different cleanup handle")
             self._cleanup_failed_handles[attempt_id] = handle
+
+    def _register_local_execution(self, claimed: ClaimedStep) -> _LocalExecutionIdentity:
+        identity = _LocalExecutionIdentity(
+            attempt_id=claimed.attempt_id,
+            run_id=claimed.run_id,
+            scope_type=claimed.scope_type,
+            scope_id=claimed.scope_id,
+        )
+        with self._active_handles_lock:
+            if (
+                claimed.attempt_id in self._active_handles
+                or claimed.attempt_id in self._cleanup_failed_handles
+                or claimed.attempt_id in self._active_local_executions
+            ):
+                raise StateError(f"Attempt {claimed.attempt_id} already has a managed execution")
+            self._active_local_executions[claimed.attempt_id] = identity
+        return identity
+
+    def _unregister_local_execution(self, identity: _LocalExecutionIdentity) -> None:
+        with self._active_handles_lock:
+            if self._active_local_executions.get(identity.attempt_id) is identity:
+                del self._active_local_executions[identity.attempt_id]
+
+    def _execute_started_with_heartbeat(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        run: dict,
+    ) -> None:
+        """Keep a synchronous capability's exact lease alive until its finish CAS.
+
+        A process-local registry protects cancellation coordination, but a
+        different worker's reaper can only see the durable lease.  Renew once
+        before the side effect and then periodically in a bounded daemon
+        thread.  Losing the initial renewal proves the capability has not
+        started; a later loss is left to the exact terminal CAS/reconciliation
+        fence because the side effect may already have happened.
+        """
+        with session_scope() as session:
+            owns_lease = self.dispatcher.heartbeat(
+                session,
+                attempt_id=claimed.attempt_id,
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+        if not owns_lease:
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
+                now_us=self.executor.clock.utc_epoch_us(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.timeout.value,
+                    "error_message": "capability lease expired before execution",
+                },
+                step_values={"error_code": "lease_lost_before_execution"},
+            )
+            return
+
+        stop = Event()
+        lease_lost = Event()
+
+        def renew() -> None:
+            while not stop.wait(self.dispatcher.heartbeat_seconds):
+                try:
+                    with session_scope() as session:
+                        renewed = self.dispatcher.heartbeat(
+                            session,
+                            attempt_id=claimed.attempt_id,
+                            now_us=self.executor.clock.utc_epoch_us(),
+                        )
+                except Exception:  # noqa: BLE001 -- retry until the durable lease decides
+                    log.exception("capability heartbeat failed for Attempt %s", claimed.attempt_id)
+                    continue
+                if not renewed:
+                    lease_lost.set()
+                    return
+
+        heartbeat = Thread(
+            target=renew,
+            name=f"pharos-heartbeat-{claimed.attempt_id[:12]}",
+            daemon=True,
+        )
+        heartbeat.start()
+        try:
+            self._execute_started_capability(claimed=claimed, snapshot=snapshot, run=run)
+        finally:
+            stop.set()
+            # A SQLite writer can be inside its bounded busy timeout.  Do not
+            # let cleanup wait forever, and never let a heartbeat thread keep
+            # the process alive after shutdown.
+            heartbeat.join(timeout=6.0)
+            if heartbeat.is_alive():
+                log.error("capability heartbeat did not stop promptly for %s", claimed.attempt_id)
+            elif lease_lost.is_set():
+                log.warning(
+                    "capability lease was lost before its finish for %s", claimed.attempt_id
+                )
 
     def retry_failed_cleanup(self, attempt_id: str) -> bool:
         """Retry cleanup for a tracked handle and remove it only on success."""
@@ -293,6 +420,17 @@ class HarnessRunner:
         return executed
 
     def _execute_one(self, *, claimed: ClaimedStep, now_us: int) -> None:
+        if claimed.lease_owner != self.dispatcher.worker_id:
+            # A claim is not transferable between workers. The database may
+            # still truthfully name the old owner, but this runner must never
+            # execute or terminalize work it cannot heartbeat itself.
+            log.warning(
+                "Attempt %s belongs to worker %s, not %s",
+                claimed.attempt_id,
+                claimed.lease_owner,
+                self.dispatcher.worker_id,
+            )
+            return
         authenticated = self._read_execution_snapshot(claimed)
         if authenticated is None:
             # A claim is not an execution authority.  Legacy, corrupt, or
@@ -331,7 +469,6 @@ class HarnessRunner:
             if step_definition.approval_required:
                 self._execute_approved_or_request(
                     claimed=claimed,
-                    now_us=now_us,
                 )
             elif step_definition.kind in ("deterministic", "mapped"):
                 self._run_deterministic(
@@ -342,7 +479,7 @@ class HarnessRunner:
                 self._run_agent_step(claimed=claimed, now_us=now_us)
         except GatewayError as error:
             self._classify_gateway_failure(claimed=claimed, error=error, now_us=now_us)
-        except StateError:
+        except (ApprovalConflictError, StateError):
             log.warning("step %s is no longer in a claimable state; skipping", claimed.step_id)
         except Exception:  # noqa: BLE001 -- nothing may escape the worker loop
             log.exception("step %s crashed", claimed.step_id)
@@ -416,7 +553,6 @@ class HarnessRunner:
         self,
         *,
         claimed: ClaimedStep,
-        now_us: int,
     ) -> None:
         """Consume an existing approved grant, or open a new approval request.
 
@@ -441,29 +577,73 @@ class HarnessRunner:
             {key: approval_request[key] for key in ("action", "resource", "request")}
         )
         scope = _scope_of(claimed)
+        lookup_now_us = self.executor.clock.utc_epoch_us()
         with session_scope() as session:
             grants = ApprovalRepository().approved_for_step(
                 session, scope=scope, step_id=claimed.step_id
             )
-            matching = [grant for grant in grants if grant["request_hash"] == request_hash]
+            matching = [
+                grant
+                for grant in grants
+                if grant["request_hash"] == request_hash and grant["expires_at"] > lookup_now_us
+            ]
         if matching:
-            with session_scope() as session:
-                ApprovalRepository().consume(
-                    session,
-                    scope=scope,
-                    approval_id=matching[0]["id"],
-                    step_id=claimed.step_id,
-                    request_hash=request_hash,
-                    consuming_attempt_id=claimed.attempt_id,
-                    now_us=now_us,
+            local = self._register_local_execution(claimed)
+            consume_conflict = False
+            try:
+                consume_now_us = self.executor.clock.utc_epoch_us()
+                try:
+                    with session_scope() as session:
+                        if not self.state.start_attempt_cas(
+                            session,
+                            scope=scope,
+                            run_id=claimed.run_id,
+                            step_id=claimed.step_id,
+                            attempt_id=claimed.attempt_id,
+                            attempt_no=claimed.attempt_no,
+                            lease_owner=claimed.lease_owner,
+                            now_us=consume_now_us,
+                        ):
+                            return
+                        ApprovalRepository().consume_for_attempt(
+                            session,
+                            scope=scope,
+                            approval_id=matching[0]["id"],
+                            run_id=claimed.run_id,
+                            step_id=claimed.step_id,
+                            attempt_id=claimed.attempt_id,
+                            attempt_no=claimed.attempt_no,
+                            lease_owner=claimed.lease_owner,
+                            request_hash=request_hash,
+                            now_us=consume_now_us,
+                        )
+                except ApprovalConflictError:
+                    # The grant may cross its exclusive expiry between lookup
+                    # and consumption. start+consume rolled back together, so
+                    # it is safe to open a fresh approval without executing.
+                    consume_conflict = True
+                else:
+                    self._execute_started_with_heartbeat(
+                        claimed=claimed,
+                        snapshot=snapshot,
+                        run=run,
+                    )
+                    return
+            finally:
+                self._unregister_local_execution(local)
+            if consume_conflict:
+                self._open_approval(
+                    claimed=claimed,
+                    run=run,
+                    approval_request=approval_request,
+                    now_us=self.executor.clock.utc_epoch_us(),
                 )
-            self._run_deterministic(
-                claimed=claimed,
-                now_us=now_us,
-            )
             return
         self._open_approval(
-            claimed=claimed, run=run, approval_request=approval_request, now_us=now_us
+            claimed=claimed,
+            run=run,
+            approval_request=approval_request,
+            now_us=self.executor.clock.utc_epoch_us(),
         )
 
     def _schedule_retry_or_fail(
@@ -474,70 +654,112 @@ class HarnessRunner:
         now_us: int,
     ) -> None:
         """Retry only within policy: attempts and backoff, never blind re-runs."""
-        with session_scope() as session:
-            # Retry policy is authenticated in the Attempt snapshot.  The
-            # physical Step columns are duplicated expansion metadata, not a
-            # source of execution policy.
-            policy = snapshot.retry_policy
-            max_attempts = snapshot.max_attempts
-            if policy and claimed.attempt_no < max_attempts:
-                backoff = float(
-                    policy.backoff_seconds
-                    * (float(policy.backoff_factor) ** (claimed.attempt_no - 1))
-                )
-                self.state.transition_attempt(
+        # Retry policy is authenticated in the Attempt snapshot. The physical
+        # Step columns are duplicated expansion metadata, not policy authority.
+        policy = snapshot.retry_policy
+        max_attempts = snapshot.max_attempts
+        retry_available = bool(policy and claimed.attempt_no < max_attempts)
+        retry_suppressed = False
+        if retry_available:
+            assert policy is not None
+            backoff = float(
+                policy.backoff_seconds * (float(policy.backoff_factor) ** (claimed.attempt_no - 1))
+            )
+            with session_scope() as session:
+                scheduled = self.state.schedule_capability_retry_cas(
                     session,
-                    attempt_id=claimed.attempt_id,
-                    target=AttemptState.failed,
-                    now_us=now_us,
-                    error_class=AttemptErrorClass.provider.value,
-                    error_message="retryable capability failure",
-                    retryable=1,
-                )
-                self.state.transition_step(
-                    session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
                     step_id=claimed.step_id,
-                    target=StepState.retry_scheduled,
-                    now_us=now_us,
-                    error_code="retryable_failure",
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
                     ready_at=now_us + int(backoff * MICROSECONDS_PER_SECOND),
-                    lease_owner=None,
-                )
-            else:
-                self.state.transition_attempt(
-                    session,
-                    attempt_id=claimed.attempt_id,
-                    target=AttemptState.failed,
                     now_us=now_us,
-                    error_class=AttemptErrorClass.provider.value,
-                    error_message="capability retries exhausted",
+                    attempt_values={
+                        "error_class": AttemptErrorClass.provider.value,
+                        "error_message": "retryable capability failure",
+                    },
+                    step_values={"error_code": "retryable_failure"},
                 )
-                self.state.transition_step(
-                    session,
-                    step_id=claimed.step_id,
-                    target=StepState.failed,
-                    now_us=now_us,
-                    error_code="retries_exhausted",
-                )
+            if scheduled:
+                return
+            # A concurrent cancellation may have won the retry fence after the
+            # capability returned. Preserve the real failed Attempt without
+            # scheduling another side effect.
+            retry_suppressed = True
+        self._finish_capability(
+            claimed=claimed,
+            target=AttemptState.failed,
+            now_us=now_us,
+            attempt_values={
+                "error_class": AttemptErrorClass.provider.value,
+                "error_message": (
+                    "capability retry suppressed by concurrent control"
+                    if retry_suppressed
+                    else "capability retries exhausted"
+                ),
+            },
+            step_values={
+                "error_code": "retry_suppressed" if retry_suppressed else "retries_exhausted"
+            },
+        )
 
     def _mark_crashed(self, *, claimed: ClaimedStep, now_us: int) -> None:
         with session_scope() as session:
-            with contextlib.suppress(StateError):
-                self.state.transition_attempt(
+            if self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.leased,
+                step_state=StepState.leased,
+            ):
+                self.state.finish_attempt_cas(
                     session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
                     attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    expected_attempt_state=AttemptState.leased,
+                    expected_step_state=StepState.leased,
                     target=AttemptState.failed,
                     now_us=now_us,
-                    error_class=AttemptErrorClass.bug.value,
-                    error_message="runner crash",
+                    attempt_values={
+                        "error_class": AttemptErrorClass.bug.value,
+                        "error_message": "runner failed before execution",
+                    },
+                    step_values={"error_code": "runner_crash"},
+                    cancel_on_request=True,
                 )
-            with contextlib.suppress(StateError):
-                self.state.transition_step(
+                return
+            if self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.running,
+                step_state=StepState.running,
+            ):
+                # An untyped crash after an executor crossed its start fence may
+                # have produced an external side effect. Never guess failed or
+                # retry it automatically.
+                self.state.finish_attempt_cas(
                     session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
                     step_id=claimed.step_id,
-                    target=StepState.failed,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    expected_attempt_state=AttemptState.running,
+                    expected_step_state=StepState.running,
+                    target=AttemptState.indeterminate,
                     now_us=now_us,
-                    error_code="runner_crash",
+                    attempt_values={
+                        "external_outcome": "indeterminate",
+                        "error_class": AttemptErrorClass.indeterminate.value,
+                        "error_message": "capability outcome requires reconciliation",
+                    },
+                    step_values={"error_code": "external_outcome_unknown"},
                 )
 
     def _run_deterministic(
@@ -552,6 +774,32 @@ class HarnessRunner:
         snapshot, run = authenticated
         if snapshot.step_definition.kind not in ("deterministic", "mapped"):
             raise SnapshotIntegrityError("deterministic entry does not match the frozen step")
+        local = self._register_local_execution(claimed)
+        try:
+            with session_scope() as session:
+                if not self.state.start_attempt_cas(
+                    session,
+                    scope=_scope_of(claimed),
+                    run_id=claimed.run_id,
+                    step_id=claimed.step_id,
+                    attempt_id=claimed.attempt_id,
+                    attempt_no=claimed.attempt_no,
+                    lease_owner=claimed.lease_owner,
+                    now_us=now_us,
+                ):
+                    return
+            self._execute_started_with_heartbeat(claimed=claimed, snapshot=snapshot, run=run)
+        finally:
+            self._unregister_local_execution(local)
+
+    def _execute_started_capability(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        run: dict,
+    ) -> None:
+        """Execute one capability after its exact leased->running CAS won."""
         capability_key = snapshot.executor_identity
         capability_hash = snapshot.executor_capability_definition_sha256
         capability = (
@@ -560,30 +808,17 @@ class HarnessRunner:
             else None
         )
         if capability is None:
-            with session_scope() as session:
-                self.state.transition_attempt(
-                    session,
-                    attempt_id=claimed.attempt_id,
-                    target=AttemptState.failed,
-                    now_us=now_us,
-                    error_class=AttemptErrorClass.configuration.value,
-                    error_message=f"unknown capability {capability_key}",
-                )
-                self.state.transition_step(
-                    session,
-                    step_id=claimed.step_id,
-                    target=StepState.failed,
-                    now_us=now_us,
-                    error_code="unknown_capability",
-                )
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
+                now_us=self.executor.clock.utc_epoch_us(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.configuration.value,
+                    "error_message": "capability definition is unavailable",
+                },
+                step_values={"error_code": "unknown_capability"},
+            )
             return
-        with session_scope() as session:
-            self.state.transition_attempt(
-                session, attempt_id=claimed.attempt_id, target=AttemptState.running, now_us=now_us
-            )
-            self.state.transition_step(
-                session, step_id=claimed.step_id, target=StepState.running, now_us=now_us
-            )
         action = {
             "idempotency_key": (
                 f"{claimed.run_id}:{claimed.definition_step_key}:"
@@ -603,42 +838,65 @@ class HarnessRunner:
             )
             return
         except Exception:  # noqa: BLE001 -- capability outcome is typed in the DB
-            with session_scope() as session:
-                self.state.transition_attempt(
-                    session,
-                    attempt_id=claimed.attempt_id,
-                    target=AttemptState.failed,
-                    now_us=self.executor.clock.utc_epoch_us(),
-                    error_class=AttemptErrorClass.bug.value,
-                    error_message="capability executor failed",
-                )
-                self.state.transition_step(
-                    session,
-                    step_id=claimed.step_id,
-                    target=StepState.failed,
-                    now_us=self.executor.clock.utc_epoch_us(),
-                    error_code="capability_error",
-                    error_message="capability executor failed",
-                )
-            return
-        with session_scope() as session:
-            self.state.transition_attempt(
-                session,
-                attempt_id=claimed.attempt_id,
-                target=AttemptState.succeeded,
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
                 now_us=self.executor.clock.utc_epoch_us(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.bug.value,
+                    "error_message": "capability executor failed",
+                },
+                step_values={
+                    "error_code": "capability_error",
+                    "error_message": "capability executor failed",
+                },
             )
-            self.state.transition_step(
+            return
+        self._finish_capability(
+            claimed=claimed,
+            target=AttemptState.succeeded,
+            now_us=self.executor.clock.utc_epoch_us(),
+        )
+
+    def _finish_capability(
+        self,
+        *,
+        claimed: ClaimedStep,
+        target: AttemptState,
+        now_us: int,
+        attempt_values: dict[str, Any] | None = None,
+        step_values: dict[str, Any] | None = None,
+    ) -> bool:
+        with session_scope() as session:
+            return self.state.finish_capability_cas(
                 session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
                 step_id=claimed.step_id,
-                target=StepState.succeeded,
-                now_us=self.executor.clock.utc_epoch_us(),
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                target=target,
+                now_us=now_us,
+                attempt_values=attempt_values,
+                step_values=step_values,
             )
 
     def _open_approval(
         self, *, claimed: ClaimedStep, run: dict, approval_request: dict, now_us: int
     ) -> None:
         with session_scope() as session:
+            if not self.state.start_attempt_cas(
+                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                now_us=now_us,
+            ):
+                return
             ApprovalRepository().request(
                 session,
                 scope=_scope_of(claimed),
@@ -652,18 +910,10 @@ class HarnessRunner:
                 now_us=now_us,
                 expires_at_us=now_us + DEFAULT_EXPIRY_SECONDS * MICROSECONDS_PER_SECOND,
             )
-            # The attempt ran and produced a request: leased -> running ->
-            # blocked, never leased -> blocked (a blocked attempt has executed).
-            self.state.transition_attempt(
-                session, attempt_id=claimed.attempt_id, target=AttemptState.running, now_us=now_us
-            )
+            # The exact start CAS above and this request share one transaction.
+            # Cancellation cannot create an orphan approval between them.
             self.state.transition_attempt(
                 session, attempt_id=claimed.attempt_id, target=AttemptState.blocked, now_us=now_us
-            )
-            # Likewise the step: it executed and now waits, so it passes
-            # through running rather than jumping straight from leased.
-            self.state.transition_step(
-                session, step_id=claimed.step_id, target=StepState.running, now_us=now_us
             )
             self.state.transition_step(
                 session,
@@ -1671,10 +1921,14 @@ class HarnessRunner:
 
     # ---------------------------------------------------------------- control
 
-    def _has_registered_handle(self, attempt_id: str) -> bool:
-        """Check both live and cleanup-failed registries without doing I/O."""
+    def _has_registered_execution(self, attempt_id: str) -> bool:
+        """Check every process-local execution owner without doing I/O."""
         with self._active_handles_lock:
-            return attempt_id in self._active_handles or attempt_id in self._cleanup_failed_handles
+            return (
+                attempt_id in self._active_handles
+                or attempt_id in self._cleanup_failed_handles
+                or attempt_id in self._active_local_executions
+            )
 
     @staticmethod
     def _attempt_has_pending_usage(session: Session, attempt_id: str) -> bool:
@@ -1769,6 +2023,12 @@ class HarnessRunner:
                     scope_type=ScopeType(current_run["scope_type"]),
                     scope_id=current_run["scope_id"],
                 )
+                ApprovalRepository().cancel_unconsumed_for_run(
+                    session,
+                    scope=scope,
+                    run_id=current_run["id"],
+                    now_us=now_us,
+                )
                 run_steps = self.step_repository.for_run(
                     session, scope=scope, run_id=current_run["id"]
                 )
@@ -1807,7 +2067,7 @@ class HarnessRunner:
                     # A local handle owns its callback/cleanup boundary. The
                     # cancellation signal was sent above; changing its DB
                     # state here would race delivery classification.
-                    if self._has_registered_handle(attempt_id):
+                    if self._has_registered_execution(attempt_id):
                         continue
                     owner = active_attempt["lease_owner"]
                     step_state = StepState(active_attempt["current_step_state"])
@@ -1937,7 +2197,7 @@ class HarnessRunner:
                 active = [
                     row
                     for row in self.step_repository.for_run(session, scope=scope, run_id=run["id"])
-                    if row["state"] in ("leased", "running", "retry_scheduled")
+                    if row["state"] in ("leased", "running")
                 ]
                 if active:
                     continue
