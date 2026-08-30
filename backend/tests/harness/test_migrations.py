@@ -15,6 +15,7 @@ Covers the six code gates the implementation plan names for migrations:
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import threading
 from pathlib import Path
@@ -108,6 +109,158 @@ def _claim_attempt(
     )
 
 
+def _insert_snapshot_graph(
+    conn: sqlite3.Connection,
+    run_id: str,
+    *,
+    state: str = "queued",
+    started_at: int | None = None,
+    finished_at: int | None = None,
+    cancel_requested_at: int | None = None,
+    pause_requested_at: int | None = None,
+    with_children: bool = False,
+    with_attempt_snapshot: bool = False,
+    create_snapshot: bool = True,
+) -> dict[str, str]:
+    """Create the smallest FK-valid graph used by 0012 trigger tests."""
+    scope_type, scope_id = "user", "migration-test"
+    workflow_key = f"workflow-{run_id}"
+    def digest(label: str) -> str:
+        return hashlib.sha256(f"{label}:{run_id}".encode()).hexdigest()
+    workflow_hash = digest("workflow")
+    binding_hash = digest("binding")
+    policy_hash = digest("policy")
+    capability_hash = digest("capability")
+    config_id = f"config-{run_id}"
+    step_id = f"step-{run_id}"
+    attempt_id = f"attempt-{run_id}"
+    # The migration-only schema intentionally does not own the application
+    # users table, but harness_runs has a legacy FK to it.
+    conn.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY)")
+    conn.execute(
+        "INSERT INTO harness_config_revisions "
+        "(id, snapshot_json, snapshot_sha256, gates_json, created_at) "
+        "VALUES (?, '{}', ?, '{}', 1)",
+            (config_id, digest("config")),
+    )
+    conn.execute(
+        "INSERT INTO harness_workflow_versions "
+        "(id, workflow_key, version, definition_json, definition_sha256, "
+        "input_schema, output_schema, created_at) "
+        "VALUES (?, ?, 1, '{}', ?, '{}', '{}', 'now')",
+        (f"workflow-{run_id}", workflow_key, workflow_hash),
+    )
+    conn.execute(
+        "INSERT INTO harness_workflow_definition_bindings "
+        "(binding_sha256, schema_version, workflow_key, workflow_version, "
+        "workflow_definition_sha256, binding_json, created_at) "
+        "VALUES (?, 1, ?, 1, ?, '{}', 'now')",
+        (binding_hash, workflow_key, workflow_hash),
+    )
+    conn.execute(
+        "INSERT INTO harness_runs "
+        "(id, scope_type, scope_id, workflow_key, workflow_version, definition_sha256, "
+        "config_revision_id, state, input_json, input_sha256, initiator, idempotency_key, "
+        "created_at, started_at, updated_at, finished_at, cancel_requested_at, "
+        "pause_requested_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, '{}', ?, "
+        "'user', ?, 1, ?, 1, ?, ?, ?)",
+        (
+            run_id,
+            scope_type,
+            scope_id,
+            workflow_key,
+            workflow_hash,
+            config_id,
+            state,
+            digest("input"),
+            f"idem-{run_id}",
+            started_at,
+            finished_at,
+            cancel_requested_at,
+            pause_requested_at,
+        ),
+    )
+
+    if (not with_children or with_attempt_snapshot) and create_snapshot:
+        _insert_run_snapshot(conn, {
+            "run_id": run_id,
+            "workflow_key": workflow_key,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "workflow_hash": workflow_hash,
+            "binding_hash": binding_hash,
+            "policy_hash": policy_hash,
+        })
+        if not with_children:
+            return {
+                "run_id": run_id,
+                "workflow_key": workflow_key,
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "step_id": step_id,
+                "attempt_id": attempt_id,
+                "workflow_hash": workflow_hash,
+                "binding_hash": binding_hash,
+                "policy_hash": policy_hash,
+            }
+
+    conn.execute(
+        "INSERT INTO harness_steps "
+        "(id, run_id, scope_type, scope_id, definition_step_key, instance_key, step_kind, "
+        "definition_json, state, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, 'reader', 'reader', 'agent', '{}', 'running', 1, 1)",
+        (step_id, run_id, scope_type, scope_id),
+    )
+    conn.execute(
+        "INSERT INTO harness_attempts "
+        "(id, step_id, run_id, scope_type, scope_id, attempt_no, state) "
+        "VALUES (?, ?, ?, ?, ?, 1, 'running')",
+        (attempt_id, step_id, run_id, scope_type, scope_id),
+    )
+    if with_attempt_snapshot:
+        conn.execute(
+            "INSERT INTO harness_capability_versions "
+            "(id, capability_key, version, definition_json, definition_sha256, created_at) "
+            "VALUES (?, 'reader', 1, '{}', ?, 'now')",
+            (f"capability-{run_id}", capability_hash),
+        )
+        conn.execute(
+            "INSERT INTO harness_attempt_definition_snapshots "
+            "(attempt_id, run_id, scope_type, scope_id, step_id, attempt_no, "
+            "definition_binding_sha256, run_policy_sha256, executor_kind, executor_identity, "
+            "executor_capability_key, executor_capability_version, "
+            "executor_capability_definition_sha256, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'capability', 'reader@1', 'reader', 1, ?, 'now')",
+            (attempt_id, run_id, scope_type, scope_id, step_id, binding_hash, policy_hash,
+             capability_hash),
+        )
+    return {
+        "run_id": run_id,
+        "workflow_key": workflow_key,
+        "scope_type": scope_type,
+        "scope_id": scope_id,
+        "step_id": step_id,
+        "attempt_id": attempt_id,
+        "workflow_hash": workflow_hash,
+        "binding_hash": binding_hash,
+        "policy_hash": policy_hash,
+    }
+
+
+def _insert_run_snapshot(conn: sqlite3.Connection, graph: dict[str, str]) -> None:
+    conn.execute(
+        "INSERT INTO harness_run_definition_snapshots "
+        "(run_id, scope_type, scope_id, workflow_key, workflow_version, "
+        "workflow_definition_sha256, definition_binding_sha256, "
+        "policy_snapshot_schema_version, policy_snapshot_sha256, policy_snapshot_json, "
+        "created_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1, ?, '{}', 'now')",
+        (
+            graph["run_id"], graph["scope_type"], graph["scope_id"], graph["workflow_key"],
+            graph["workflow_hash"], graph["binding_hash"], graph["policy_hash"],
+        ),
+    )
+
+
 def _poisoned_migrations() -> tuple[Migration, ...]:
     """The real migrations plus a deliberately failing revision.
 
@@ -180,7 +333,10 @@ def test_0010_is_independently_valid_before_snapshot_upgrade(
             )
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
-    assert run_migrations(db) == ["0011_harness_definition_snapshots"]
+    assert run_migrations(db) == [
+        "0011_harness_definition_snapshots",
+        "0012_harness_snapshot_parent_guards",
+    ]
 
 
 def test_repeat_run_is_idempotent(tmp_path: Path) -> None:
@@ -552,7 +708,12 @@ def test_definition_snapshot_migration_is_atomic(
     db = tmp_path / "definition-binding-rollback.sqlite"
     all_migrations = migrations.MIGRATIONS
     prior = all_migrations[:-1]
-    migration = all_migrations[-1]
+    migration = next(
+        migration
+        for migration in all_migrations
+        if migration.revision == "0011_harness_definition_snapshots"
+    )
+    prior = all_migrations[: all_migrations.index(migration)]
     monkeypatch.setattr(migrations, "MIGRATIONS", prior)
     run_migrations(db)
 
@@ -590,12 +751,163 @@ def test_definition_snapshot_migration_is_atomic(
     assert revisions == [migration.revision for migration in prior]
 
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
-    assert run_migrations(db) == [migration.revision]
+    assert run_migrations(db) == [
+        "0011_harness_definition_snapshots",
+        "0012_harness_snapshot_parent_guards",
+    ]
     assert run_migrations(db) == []
 
 
-def test_definition_binding_constraints_reject_invalid_values_and_fks(tmp_path: Path) -> None:
+def test_snapshot_parent_guards_upgrade_and_repeat(tmp_path: Path, monkeypatch) -> None:
+    """0012 is additive, preserves 0011 rows, and is repeat-safe."""
+    db = tmp_path / "snapshot-parent-guards.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    guard = all_migrations[-1]
+    assert guard.revision == "0012_harness_snapshot_parent_guards"
+    through_0011 = all_migrations[:-1]
+    monkeypatch.setattr(migrations, "MIGRATIONS", through_0011)
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        graph = _insert_snapshot_graph(conn, "upgrade-parent")
+        before = conn.execute(
+            "SELECT COUNT(*) FROM harness_run_definition_snapshots"
+        ).fetchone()[0]
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    assert run_migrations(db) == [guard.revision]
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM harness_run_definition_snapshots"
+        ).fetchone()[0] == before
+        trigger_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='trigger'"
+            )
+        }
+    assert {
+        "ck_harness_run_snapshot_creation_parent",
+        "ck_harness_run_snapshot_execution_identity_update",
+        "ck_harness_step_attempt_snapshot_update",
+    } <= trigger_names
+    assert run_migrations(db) == []
+    assert graph["run_id"] == "upgrade-parent"
+
+
+def test_run_snapshot_creation_guard_rejects_legacy_parents(tmp_path: Path) -> None:
+    db = tmp_path / "snapshot-parent-insert-guards.sqlite"
+    run_migrations(db)
+    invalid = (
+        {"state": "running"},
+        {"state": "paused"},
+        {"started_at": 2},
+        {"finished_at": 2},
+        {"cancel_requested_at": 2},
+        {"pause_requested_at": 2},
+    )
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        for index, values in enumerate(invalid):
+            with pytest.raises(sqlite3.IntegrityError, match="pristine queued"):
+                _insert_snapshot_graph(conn, f"invalid-parent-{index}", **values)
+
+        graph = _insert_snapshot_graph(conn, "child-parent", with_children=True)
+        with pytest.raises(sqlite3.IntegrityError, match="pristine queued"):
+            _insert_run_snapshot(conn, graph)
+
+        legacy = _insert_snapshot_graph(conn, "policy-parent", create_snapshot=False)
+        conn.execute(
+            "UPDATE harness_runs SET policy_snapshot_json = '{}' WHERE id = ?",
+            (legacy["run_id"],),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_run_snapshot(conn, legacy)
+
+
+def test_run_snapshot_freezes_execution_identity_but_not_lifecycle(tmp_path: Path) -> None:
+    db = tmp_path / "snapshot-run-freeze.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        graph = _insert_snapshot_graph(conn, "frozen-run")
+        # Normal reducer bookkeeping remains writable after binding.
+        conn.execute(
+            "UPDATE harness_runs SET state = 'running', usage_json = '{\"tokens\":1}', "
+            "priority = 7, updated_at = 2 WHERE id = ?",
+            (graph["run_id"],),
+        )
+        frozen = {
+            "config_revision_id": "other-config",
+            "input_json": '{"changed":true}',
+            "input_sha256": "1" * 64,
+            "idempotency_key": "other-key",
+            "initiator": "operator",
+            "parent_run_id": "parent",
+            "project_id": "project",
+            "budget_json": '{"limit":1}',
+        }
+        for column, value in frozen.items():
+            with pytest.raises(sqlite3.IntegrityError, match="execution identity"):
+                conn.execute(
+                    f"UPDATE harness_runs SET {column} = ? WHERE id = ?",
+                    (value, graph["run_id"]),
+                )
+        with pytest.raises(sqlite3.IntegrityError, match="identity or policy"):
+            conn.execute(
+                "UPDATE harness_runs SET workflow_key = 'other' WHERE id = ?",
+                (graph["run_id"],),
+            )
+
+
+def test_step_snapshot_freezes_definition_and_controls_only(tmp_path: Path) -> None:
+    db = tmp_path / "snapshot-step-freeze.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        graph = _insert_snapshot_graph(
+            conn, "frozen-step", with_children=True, with_attempt_snapshot=True
+        )
+        conn.execute(
+            "UPDATE harness_steps SET state = 'succeeded', lease_owner = 'worker', "
+            "lease_expires_at = 4, heartbeat_at = 4, output_artifact_id = 'artifact', "
+            "attempt_count = 1, ready_at = 4, error_code = NULL, error_message = NULL, "
+            "skip_reason = NULL, updated_at = 4, finished_at = 4 WHERE id = ?",
+            (graph["step_id"],),
+        )
+        frozen = {
+            "run_id": "other-run",
+            "scope_type": "system",
+            "scope_id": "other-scope",
+            "definition_step_key": "other-step",
+            "instance_key": "other-instance",
+            "step_kind": "deterministic",
+            "definition_json": '{"changed":true}',
+            "depends_on_json": '["other"]',
+            "fan_in": "all_terminal",
+            "min_success_count": 2,
+            "input_artifact_ids_json": '["other-artifact"]',
+            "max_attempts": 9,
+            "timeout_seconds": 3.0,
+            "retry_policy_json": '{"max":9}',
+            "created_at": 2,
+        }
+        for column, value in frozen.items():
+            with pytest.raises(sqlite3.IntegrityError, match="step execution identity"):
+                conn.execute(
+                    f"UPDATE harness_steps SET {column} = ? WHERE id = ?",
+                    (value, graph["step_id"]),
+                )
+
+
+def test_definition_binding_constraints_reject_invalid_values_and_fks(
+    tmp_path: Path, monkeypatch
+) -> None:
     db = tmp_path / "definition-binding-constraints.sqlite"
+    all_migrations = migrations.MIGRATIONS
+    # This is specifically the 0011 table-constraint contract.  The 0012
+    # parent guard is exercised above with creation-valid graphs; keeping this
+    # fixture on 0011 lets it continue testing arbitrary FK/check violations.
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:-1])
     run_migrations(db)
     profile_hash = "a" * 64
     workflow_hash = "b" * 64

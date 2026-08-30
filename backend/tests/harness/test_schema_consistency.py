@@ -222,9 +222,12 @@ def test_definition_binding_schema_contract_is_bidirectionally_pinned(tmp_path: 
             "ck_harness_attempt_snapshot_immutable_delete",
             "ck_harness_run_parent_snapshot_update",
             "ck_harness_run_parent_snapshot_delete",
-            "ck_harness_attempt_parent_snapshot_update",
-            "ck_harness_attempt_parent_snapshot_delete",
-        }
+                "ck_harness_attempt_parent_snapshot_update",
+                "ck_harness_attempt_parent_snapshot_delete",
+                "ck_harness_run_snapshot_creation_parent",
+                "ck_harness_run_snapshot_execution_identity_update",
+                "ck_harness_step_attempt_snapshot_update",
+            }
         assert trigger_names == expected_triggers
         for table in (
             "harness_model_profile_versions",

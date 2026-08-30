@@ -983,6 +983,102 @@ MIGRATIONS: tuple[Migration, ...] = (
             """,
         ),
     ),
+    Migration(
+        revision="0012_harness_snapshot_parent_guards",
+        description="Guard definition snapshot creation and freeze execution parents",
+        statements=(
+            # A snapshot is a creation-time binding, not a repair mechanism.
+            # The parent must still be a pristine queued Run: no lifecycle
+            # signal or child row may have been written before the binding.
+            # This deliberately rejects old Runs during a later upgrade even
+            # when their policy column happens to be NULL.
+            """
+            CREATE TRIGGER ck_harness_run_snapshot_creation_parent
+            BEFORE INSERT ON harness_run_definition_snapshots
+            WHEN NOT EXISTS (
+                SELECT 1
+                FROM harness_runs r
+                WHERE r.id = NEW.run_id
+                  AND r.scope_type = NEW.scope_type
+                  AND r.scope_id = NEW.scope_id
+                  AND r.state = 'queued'
+                  AND r.started_at IS NULL
+                  AND r.finished_at IS NULL
+                  AND r.cancel_requested_at IS NULL
+                  AND r.pause_requested_at IS NULL
+                  AND r.created_at = r.updated_at
+                  AND r.policy_snapshot_json IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM harness_steps s WHERE s.run_id = r.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM harness_attempts a WHERE a.run_id = r.id
+                  )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'run definition snapshot requires a pristine queued parent');
+            END
+            """,
+            # The 0011 trigger covers the original workflow identity. This
+            # additive trigger covers the request/config identity that must be
+            # stable for idempotency and audit replay. Operational columns
+            # (state, usage, priority and lifecycle timestamps) remain mutable.
+            """
+            CREATE TRIGGER ck_harness_run_snapshot_execution_identity_update
+            BEFORE UPDATE ON harness_runs
+            WHEN EXISTS (
+                SELECT 1 FROM harness_run_definition_snapshots s
+                WHERE s.run_id = OLD.id
+            )
+            AND (
+                OLD.config_revision_id IS NOT NEW.config_revision_id OR
+                OLD.input_json IS NOT NEW.input_json OR
+                OLD.input_sha256 IS NOT NEW.input_sha256 OR
+                OLD.idempotency_key IS NOT NEW.idempotency_key OR
+                OLD.initiator IS NOT NEW.initiator OR
+                OLD.parent_run_id IS NOT NEW.parent_run_id OR
+                OLD.project_id IS NOT NEW.project_id OR
+                OLD.budget_json IS NOT NEW.budget_json
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'run execution identity is frozen by snapshot');
+            END
+            """,
+            # Once an Attempt snapshot exists, the Step's executor-facing
+            # definition and control inputs are part of the audit record. Queue
+            # state, leases, outputs and errors are intentionally not listed:
+            # reducers and recovery workers must still be able to advance them.
+            """
+            CREATE TRIGGER ck_harness_step_attempt_snapshot_update
+            BEFORE UPDATE ON harness_steps
+            WHEN EXISTS (
+                SELECT 1 FROM harness_attempt_definition_snapshots a
+                WHERE a.step_id = OLD.id
+            )
+            AND (
+                OLD.id IS NOT NEW.id OR
+                OLD.run_id IS NOT NEW.run_id OR
+                OLD.scope_type IS NOT NEW.scope_type OR
+                OLD.scope_id IS NOT NEW.scope_id OR
+                OLD.definition_step_key IS NOT NEW.definition_step_key OR
+                OLD.instance_key IS NOT NEW.instance_key OR
+                OLD.step_kind IS NOT NEW.step_kind OR
+                OLD.definition_json IS NOT NEW.definition_json OR
+                OLD.depends_on_json IS NOT NEW.depends_on_json OR
+                OLD.fan_in IS NOT NEW.fan_in OR
+                OLD.min_success_count IS NOT NEW.min_success_count OR
+                OLD.input_artifact_ids_json IS NOT NEW.input_artifact_ids_json OR
+                OLD.max_attempts IS NOT NEW.max_attempts OR
+                OLD.timeout_seconds IS NOT NEW.timeout_seconds OR
+                OLD.retry_policy_json IS NOT NEW.retry_policy_json OR
+                OLD.created_at IS NOT NEW.created_at
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'step execution identity is frozen by attempt snapshot');
+            END
+            """,
+        ),
+    ),
 )
 
 
