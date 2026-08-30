@@ -468,10 +468,14 @@ class _PublishExecutor:
         return result
 
 
-def build_executors() -> dict:
+def build_executors() -> dict[tuple[str, str], Any]:
     """The capability executors the runner resolves the canary to."""
+    definitions = {cap.identity(): cap for cap in canary_capabilities()}
     return {
-        "canary.noop@1": _NoopExecutor(),
-        "canary.flaky@1": _FlakyExecutor(),
-        "canary.publish@1": _PublishExecutor(),
+        (identity, definition.definition_hash()): executor
+        for identity, definition, executor in (
+            ("canary.noop@1", definitions["canary.noop@1"], _NoopExecutor()),
+            ("canary.flaky@1", definitions["canary.flaky@1"], _FlakyExecutor()),
+            ("canary.publish@1", definitions["canary.publish@1"], _PublishExecutor()),
+        )
     }

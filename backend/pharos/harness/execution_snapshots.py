@@ -29,7 +29,9 @@ from pharos.harness.contracts import (
 from pharos.harness.definitions import (
     CapabilityDefinition,
     ModelProfileDefinition,
+    RetryPolicy,
     RoleDefinition,
+    StepDefinition,
     WorkflowDefinition,
     canonical_json,
 )
@@ -86,6 +88,46 @@ class RunDefinitionSnapshot:
 
 
 @dataclass(frozen=True)
+class FrozenStepView:
+    """Authenticated execution view of one physical workflow Step.
+
+    The database Step row contains both definition material and mutable state.
+    This view is built only after the row has been checked against the frozen
+    workflow binding, so execution code never needs to consult mutable Step
+    JSON or duplicated retry columns as policy authority.
+    """
+
+    definition_step_key: str
+    instance_key: str
+    step_definition: StepDefinition
+    step_definition_json: str
+    dynamic_metadata_json: str
+    retry_policy: RetryPolicy | None
+    max_attempts: int
+    timeout_seconds: float | None
+
+    @property
+    def retry_policy_json(self) -> str | None:
+        if self.retry_policy is None:
+            return None
+        return canonical_json(self.retry_policy.model_dump(mode="json"))
+
+    @property
+    def dynamic_metadata(self) -> dict[str, Any]:
+        # Return a fresh value; the authenticated canonical bytes remain the
+        # immutable source even when callers mutate this convenience result.
+        return dict(json.loads(self.dynamic_metadata_json))
+
+
+@dataclass(frozen=True)
+class _ValidatedExecutor:
+    runtime_kind: str
+    step_view: FrozenStepView
+    role_definition: RoleDefinition | None = None
+    capability_definition: CapabilityDefinition | None = None
+
+
+@dataclass(frozen=True)
 class AttemptDefinitionSnapshot:
     attempt_id: str
     run_id: str
@@ -113,6 +155,16 @@ class AttemptDefinitionSnapshot:
     model: str | None
     usage_source: str | None
     runtime_kind: str
+    definition_step_key: str
+    instance_key: str
+    step_definition: StepDefinition
+    step_definition_json: str
+    dynamic_metadata_json: str
+    retry_policy: RetryPolicy | None
+    max_attempts: int
+    timeout_seconds: float | None
+    role_definition: RoleDefinition | None
+    capability_definition: CapabilityDefinition | None
     policy_snapshot: RunPolicySnapshot
 
 
@@ -358,7 +410,7 @@ def _require_pristine_run_creation(session: Session, parent: dict[str, Any]) -> 
 
 def _verify_step_definition(
     step: dict[str, Any], binding: dict[str, Any]
-) -> dict[str, Any]:
+) -> FrozenStepView:
     """Authenticate a physical Step against the Run's frozen workflow.
 
     Step rows mix immutable expansion inputs with mutable state-machine fields.
@@ -440,7 +492,23 @@ def _verify_step_definition(
             raise SnapshotIntegrityError(
                 f"attempt step {control} does not match the Run binding"
             )
-    return step_definition
+    try:
+        typed_definition = StepDefinition.model_validate(expected)
+    except (TypeError, ValueError) as exc:
+        raise SnapshotIntegrityError("frozen workflow step has invalid shape") from exc
+    dynamic_metadata = {
+        key: step_definition[key] for key in sorted(dynamic_keys)
+    }
+    return FrozenStepView(
+        definition_step_key=step["definition_step_key"],
+        instance_key=step["instance_key"],
+        step_definition=typed_definition,
+        step_definition_json=canonical_json(expected),
+        dynamic_metadata_json=canonical_json(dynamic_metadata),
+        retry_policy=typed_definition.retry,
+        max_attempts=typed_definition.retry.max_attempts if typed_definition.retry else 3,
+        timeout_seconds=typed_definition.timeout_seconds,
+    )
 
 
 def _snapshot_from_row(row: dict[str, Any]) -> RunDefinitionSnapshot:
@@ -519,10 +587,10 @@ class ExecutionSnapshotStore:
             workflow_hash=run_snapshot.workflow_definition_sha256,
             binding_hash=run_snapshot.definition_binding_sha256,
         )
-        definition = _verify_step_definition(step, binding)
+        step_view = _verify_step_definition(step, binding)
         step_kind = step.get("step_kind")
         if step_kind in ("deterministic", "mapped"):
-            identity = definition.get("capability")
+            identity = step_view.step_definition.capability
             if not isinstance(identity, str):
                 raise SnapshotIntegrityError("deterministic step has no capability identity")
             key, version = _split_identity(identity, "capability")
@@ -559,7 +627,7 @@ class ExecutionSnapshotStore:
 
         if step_kind not in ("agent", "mapped_agent"):
             raise SnapshotIntegrityError("step has an unsupported executor kind")
-        identity = definition.get("role")
+        identity = step_view.step_definition.role
         if not isinstance(identity, str):
             raise SnapshotIntegrityError("agent step has no role identity")
         key, version = _split_identity(identity, "role")
@@ -889,7 +957,8 @@ class ExecutionSnapshotStore:
             "usage_source": usage_source,
             "created_at": created_at or now_iso(),
         }
-        runtime_kind = self._validate_executor(session, fields, run_snapshot)
+        validation = self._validate_executor(session, fields, run_snapshot)
+        runtime_kind = validation.runtime_kind
         session.execute(
             sqlite_insert(attempt_definition_snapshots)
             .values(**fields)
@@ -911,7 +980,7 @@ class ExecutionSnapshotStore:
     @staticmethod
     def _validate_executor(
         session: Session, fields: dict[str, Any], run_snapshot: RunDefinitionSnapshot
-    ) -> str:
+    ) -> _ValidatedExecutor:
         kind = fields["executor_kind"]
         identity = fields["executor_identity"]
         binding = _verify_workflow_and_binding(
@@ -930,7 +999,7 @@ class ExecutionSnapshotStore:
             & (steps.c.scope_id == fields["scope_id"]),
             label="attempt step",
         )
-        step_definition = _verify_step_definition(step, binding)
+        step_view = _verify_step_definition(step, binding)
         if kind == "capability":
             key, version = _split_identity(identity, "capability")
             expected = (key, version, fields["executor_capability_definition_sha256"])
@@ -959,7 +1028,7 @@ class ExecutionSnapshotStore:
                     "capability snapshot contains redundant agent metadata"
                 )
             if step.get("step_kind") not in ("deterministic", "mapped") or (
-                step_definition.get("capability") != identity
+                step_view.step_definition.capability != identity
             ):
                 raise SnapshotIntegrityError("capability executor does not match its step")
             capability_records = {
@@ -986,7 +1055,11 @@ class ExecutionSnapshotStore:
             )
             if definition.definition_hash() != fields["executor_capability_definition_sha256"]:
                 raise SnapshotIntegrityError("capability definition hash mismatch")
-            return "deterministic"
+            return _ValidatedExecutor(
+                runtime_kind="deterministic",
+                step_view=step_view,
+                capability_definition=definition,
+            )
         if kind != "role":
             raise SnapshotIntegrityError("executor_kind must be capability or role")
         key, version = _split_identity(identity, "role")
@@ -1005,7 +1078,7 @@ class ExecutionSnapshotStore:
         ):
             raise SnapshotIntegrityError("role snapshot contains redundant capability metadata")
         if step.get("step_kind") not in ("agent", "mapped_agent") or (
-            step_definition.get("role") != identity
+            step_view.step_definition.role != identity
         ):
             raise SnapshotIntegrityError("role executor does not match its step")
         role_records = {
@@ -1105,7 +1178,11 @@ class ExecutionSnapshotStore:
             role_row["model_profile_sha256"],
         ) != (profile_key, profile_version, fields["model_profile_sha256"]):
             raise SnapshotIntegrityError("stored role/profile foreign identity mismatch")
-        return role.runtime_kind
+        return _ValidatedExecutor(
+            runtime_kind=role.runtime_kind,
+            step_view=step_view,
+            role_definition=role,
+        )
 
     @staticmethod
     def _attempt_from_row(
@@ -1113,7 +1190,8 @@ class ExecutionSnapshotStore:
     ) -> AttemptDefinitionSnapshot:
         # Re-run all executor checks on read: a forged hash/metadata row must
         # never become executable merely because SQLite accepted its shape.
-        runtime_kind = ExecutionSnapshotStore._validate_executor(session, row, run_snapshot)
+        validation = ExecutionSnapshotStore._validate_executor(session, row, run_snapshot)
+        runtime_kind = validation.runtime_kind
         if (
             row["run_policy_sha256"] != run_snapshot.policy_snapshot_sha256
             or row["definition_binding_sha256"] != run_snapshot.definition_binding_sha256
@@ -1151,6 +1229,16 @@ class ExecutionSnapshotStore:
                 )
             },
             runtime_kind=runtime_kind,
+            definition_step_key=validation.step_view.definition_step_key,
+            instance_key=validation.step_view.instance_key,
+            step_definition=validation.step_view.step_definition,
+            step_definition_json=validation.step_view.step_definition_json,
+            dynamic_metadata_json=validation.step_view.dynamic_metadata_json,
+            retry_policy=validation.step_view.retry_policy,
+            max_attempts=validation.step_view.max_attempts,
+            timeout_seconds=validation.step_view.timeout_seconds,
+            role_definition=validation.role_definition,
+            capability_definition=validation.capability_definition,
             policy_snapshot=run_snapshot.policy_snapshot,
         )
 
@@ -1222,6 +1310,7 @@ def _split_identity(identity: object, label: str) -> tuple[str, int]:
 __all__ = [
     "AttemptDefinitionSnapshot",
     "ExecutionSnapshotStore",
+    "FrozenStepView",
     "MissingExecutionSnapshotError",
     "RunDefinitionSnapshot",
     "SnapshotConflictError",

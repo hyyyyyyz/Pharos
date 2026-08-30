@@ -26,6 +26,7 @@ from pharos.harness.contracts import (
     AttemptErrorClass,
     AttemptState,
     GatewayError,
+    NotFoundError,
     ProducerKind,
     RetryableCapabilityError,
     RunOutcome,
@@ -36,6 +37,11 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import ClaimedStep, HarnessDispatcher
 from pharos.harness.events import EventStore
+from pharos.harness.execution_snapshots import (
+    AttemptDefinitionSnapshot,
+    MissingExecutionSnapshotError,
+    SnapshotIntegrityError,
+)
 from pharos.harness.fakes import FakeClock, ModelResult
 from pharos.harness.model_gateway import ModelGateway
 from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
@@ -56,13 +62,11 @@ AgentOutputValidator = Callable[[Any], dict]
 
 @dataclass(frozen=True)
 class AgentOutputContract:
-    """Trusted role output validator and immutable provenance metadata."""
+    """Trusted validator for one hash-bound role output contract."""
 
     schema_name: str
     schema_version: int
     prompt_version: str
-    provider: str
-    model: str
     validator: AgentOutputValidator
 
 
@@ -72,8 +76,10 @@ class StepExecutor:
 
     gateway: ModelGateway | None = None
     artifacts: ArtifactStore = field(default_factory=ArtifactStore)
-    agent_output_contracts: dict[str, AgentOutputContract] = field(default_factory=dict)
-    capabilities: dict[str, Any] = field(default_factory=dict)
+    agent_output_contracts: dict[tuple[str, str], AgentOutputContract] = field(
+        default_factory=dict
+    )
+    capabilities: dict[tuple[str, str], Any] = field(default_factory=dict)
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
     events: EventStore = field(default_factory=EventStore)
@@ -155,28 +161,45 @@ class HarnessRunner:
                     # None therefore means no currently claimable row remains,
                     # not that an earlier gated/tampered page hid work.
                     break
-                run = self.run_repository.require(
-                    session, scope=_scope_of(claimed), run_id=claimed.run_id
-                )
-            if run is None:
-                continue
-            self._execute_one(claimed=claimed, run=run, now_us=now_us)
+            self._execute_one(claimed=claimed, now_us=now_us)
             executed += 1
             now_us = self.executor.clock.utc_epoch_us()
             self.reduce_all(now_us=now_us)
         return executed
 
-    def _execute_one(self, *, claimed: ClaimedStep, run: dict, now_us: int) -> None:
-        step_def = json.loads(claimed.definition_json)
+    def _execute_one(self, *, claimed: ClaimedStep, now_us: int) -> None:
+        authenticated = self._read_execution_snapshot(claimed)
+        if authenticated is None:
+            # A claim is not an execution authority.  Legacy, corrupt, or
+            # cross-owner snapshots stop here before any capability, gateway,
+            # usage, approval, or artifact side effect is attempted.
+            return
+        attempt_snapshot, _ = authenticated
+        # Re-fence the exact lease before any approval lookup, registry lookup,
+        # usage reservation, or external executor call.  A forged claim
+        # projection cannot borrow a valid snapshot from another lease.
+        with session_scope() as session:
+            if not self._claim_is_active(
+                session,
+                claimed=claimed,
+                attempt_state=AttemptState.leased,
+                step_state=StepState.leased,
+            ):
+                return
+        step_definition = attempt_snapshot.step_definition
         try:
-            if step_def.get("approval_required"):
+            if step_definition.approval_required:
                 self._execute_approved_or_request(
-                    claimed=claimed, run=run, step_def=step_def, now_us=now_us
+                    claimed=claimed,
+                    now_us=now_us,
                 )
-            elif step_def.get("kind") in ("deterministic", "mapped"):
-                self._run_deterministic(claimed=claimed, run=run, step_def=step_def, now_us=now_us)
+            elif step_definition.kind in ("deterministic", "mapped"):
+                self._run_deterministic(
+                    claimed=claimed,
+                    now_us=now_us,
+                )
             else:
-                self._run_agent_step(claimed=claimed, run=run, now_us=now_us)
+                self._run_agent_step(claimed=claimed, now_us=now_us)
         except GatewayError as error:
             self._classify_gateway_failure(claimed=claimed, error=error, now_us=now_us)
         except StateError:
@@ -184,6 +207,60 @@ class HarnessRunner:
         except Exception:  # noqa: BLE001 -- nothing may escape the worker loop
             log.exception("step %s crashed", claimed.step_id)
             self._mark_crashed(claimed=claimed, now_us=now_us)
+
+    def _read_execution_snapshot(
+        self, claimed: ClaimedStep
+    ) -> tuple[AttemptDefinitionSnapshot, dict] | None:
+        """Re-authenticate a claim in a fresh short-lived DB session.
+
+        Dispatcher projections are intentionally treated as hints only.  The
+        snapshot store rechecks owner, parent identity, frozen workflow
+        binding, physical Step definition and all hashes before this method
+        returns an execution context.
+        """
+        try:
+            with session_scope() as session:
+                snapshot = self.dispatcher.execution_snapshots.read_attempt(
+                    session,
+                    scope=claimed.scope_type,
+                    scope_id=claimed.scope_id,
+                    attempt_id=claimed.attempt_id,
+                    require_for_execution=True,
+                )
+                if snapshot is None or (
+                    snapshot.attempt_id != claimed.attempt_id
+                    or snapshot.run_id != claimed.run_id
+                    or snapshot.step_id != claimed.step_id
+                    or snapshot.scope_type != claimed.scope_type
+                    or snapshot.scope_id != claimed.scope_id
+                    or snapshot.attempt_no != claimed.attempt_no
+                    or snapshot.definition_step_key != claimed.definition_step_key
+                    or snapshot.instance_key != claimed.instance_key
+                ):
+                    raise SnapshotIntegrityError(
+                        "claimed identity does not match execution snapshot"
+                    )
+                # read_attempt -> read_run has already authenticated the
+                # canonical input and owner binding.  Fetch the input only
+                # after that verification and use the same scoped parent.
+                fresh_run = self.run_repository.require(
+                    session,
+                    scope=Scope(
+                        scope_type=ScopeType(snapshot.scope_type),
+                        scope_id=snapshot.scope_id,
+                    ),
+                    run_id=snapshot.run_id,
+                )
+                return snapshot, fresh_run
+        except (
+            MissingExecutionSnapshotError,
+            SnapshotIntegrityError,
+            NotFoundError,
+            ValueError,
+            TypeError,
+        ):
+            log.warning("step %s failed closed at execution snapshot boundary", claimed.step_id)
+            return None
 
     def _approval_request(self, claimed: ClaimedStep, run: dict) -> dict:
         """The canonical request whose hash binds grant, step and attempt."""
@@ -196,7 +273,10 @@ class HarnessRunner:
         }
 
     def _execute_approved_or_request(
-        self, *, claimed: ClaimedStep, run: dict, step_def: dict, now_us: int
+        self,
+        *,
+        claimed: ClaimedStep,
+        now_us: int,
     ) -> None:
         """Consume an existing approved grant, or open a new approval request.
 
@@ -204,6 +284,13 @@ class HarnessRunner:
         canonical (action, resource, request) tuple; it consumes the grant
         exactly once and executes.
         """
+        authenticated = self._read_execution_snapshot(claimed)
+        if authenticated is None:
+            return
+        snapshot, run = authenticated
+        if not snapshot.step_definition.approval_required:
+            raise SnapshotIntegrityError("approval entry does not match the frozen step")
+
         from pharos.harness.definitions import sha256_hex
 
         approval_request = self._approval_request(claimed, run)
@@ -230,31 +317,34 @@ class HarnessRunner:
                     consuming_attempt_id=claimed.attempt_id,
                     now_us=now_us,
                 )
-            self._run_deterministic(claimed=claimed, run=run, step_def=step_def, now_us=now_us)
+            self._run_deterministic(
+                claimed=claimed,
+                now_us=now_us,
+            )
             return
         self._open_approval(
             claimed=claimed, run=run, approval_request=approval_request, now_us=now_us
         )
 
     def _schedule_retry_or_fail(
-        self, *, claimed: ClaimedStep, error: RetryableCapabilityError, now_us: int
+        self,
+        *,
+        claimed: ClaimedStep,
+        error: RetryableCapabilityError,
+        snapshot: AttemptDefinitionSnapshot,
+        now_us: int,
     ) -> None:
         """Retry only within policy: attempts and backoff, never blind re-runs."""
         with session_scope() as session:
-            step = (
-                session.execute(steps.select().where(steps.c.id == claimed.step_id))
-                .mappings()
-                .first()
-            )
-            if step is None:
-                return
-            retry_json = step["retry_policy_json"]
-            policy = json.loads(retry_json) if retry_json else None
-            max_attempts = int(step["max_attempts"] or 3)
+            # Retry policy is authenticated in the Attempt snapshot.  The
+            # physical Step columns are duplicated expansion metadata, not a
+            # source of execution policy.
+            policy = snapshot.retry_policy
+            max_attempts = snapshot.max_attempts
             if policy and claimed.attempt_no < max_attempts:
                 backoff = float(
-                    policy.get("backoff_seconds", 1.0)
-                    * (float(policy.get("backoff_factor", 2.0)) ** (claimed.attempt_no - 1))
+                    policy.backoff_seconds
+                    * (float(policy.backoff_factor) ** (claimed.attempt_no - 1))
                 )
                 self.state.transition_attempt(
                     session,
@@ -312,10 +402,26 @@ class HarnessRunner:
                 )
 
     def _run_deterministic(
-        self, *, claimed: ClaimedStep, run: dict, step_def: dict, now_us: int
+        self,
+        *,
+        claimed: ClaimedStep,
+        now_us: int,
     ) -> None:
-        capability_key = step_def.get("capability") or ""
-        capability = self.executor.capabilities.get(capability_key)
+        authenticated = self._read_execution_snapshot(claimed)
+        if authenticated is None:
+            return
+        snapshot, run = authenticated
+        if snapshot.step_definition.kind not in ("deterministic", "mapped"):
+            raise SnapshotIntegrityError(
+                "deterministic entry does not match the frozen step"
+            )
+        capability_key = snapshot.executor_identity
+        capability_hash = snapshot.executor_capability_definition_sha256
+        capability = (
+            self.executor.capabilities.get((capability_key, capability_hash))
+            if capability_hash is not None
+            else None
+        )
         if capability is None:
             with session_scope() as session:
                 self.state.transition_attempt(
@@ -354,7 +460,10 @@ class HarnessRunner:
             capability.execute(action)
         except RetryableCapabilityError as error:
             self._schedule_retry_or_fail(
-                claimed=claimed, error=error, now_us=self.executor.clock.utc_epoch_us()
+                claimed=claimed,
+                error=error,
+                snapshot=snapshot,
+                now_us=self.executor.clock.utc_epoch_us(),
             )
             return
         except Exception as error:  # noqa: BLE001 -- capability outcome is typed in the DB
@@ -429,7 +538,59 @@ class HarnessRunner:
                 lease_expires_at=None,
             )
 
-    def _run_agent_step(self, *, claimed: ClaimedStep, run: dict, now_us: int) -> None:
+    def _run_agent_step(
+        self,
+        *,
+        claimed: ClaimedStep,
+        now_us: int,
+    ) -> None:
+        authenticated = self._read_execution_snapshot(claimed)
+        if authenticated is None:
+            return
+        snapshot, run = authenticated
+        if snapshot.step_definition.kind not in ("agent", "mapped_agent"):
+            raise SnapshotIntegrityError("agent entry does not match the frozen step")
+        provider = snapshot.provider
+        model = snapshot.model
+        usage_source = snapshot.usage_source
+        if not all(
+            isinstance(value, str) and value
+            for value in (provider, model, usage_source)
+        ):
+            raise SnapshotIntegrityError("agent snapshot has incomplete model route metadata")
+        assert isinstance(usage_source, str)
+        contract = self._agent_contract(snapshot)
+        if contract is None:
+            # Do not reserve usage or call the gateway when the role contract
+            # is absent, keyed by the wrong role hash, or disagrees with the
+            # authenticated role definition.
+            with session_scope() as session:
+                if self._claim_is_active(
+                    session,
+                    claimed=claimed,
+                    attempt_state=AttemptState.leased,
+                    step_state=StepState.leased,
+                ):
+                    self.state.transition_attempt(
+                        session,
+                        attempt_id=claimed.attempt_id,
+                        target=AttemptState.running,
+                        now_us=now_us,
+                    )
+                    self.state.transition_step(
+                        session,
+                        step_id=claimed.step_id,
+                        target=StepState.running,
+                        now_us=now_us,
+                    )
+            self._finish_agent_failure(
+                claimed=claimed,
+                reservation_id="",
+                error_class=AttemptErrorClass.configuration,
+                error_message="no authenticated output contract for role",
+                now_us=now_us,
+            )
+            return
         # A finish may be replayed after the worker has already committed.  Do
         # this check before reserving usage: the output reference is the
         # durable idempotency marker for the whole local finish operation.
@@ -446,7 +607,7 @@ class HarnessRunner:
         # The v2 canary is a claim-only DSH seam in this slice.  Do not route
         # a trusted DSH role through the legacy in-process fake gateway while
         # the actual sidecar adapter is still intentionally absent.
-        if claimed.runtime_kind == "dsh" or gateway is None:
+        if snapshot.runtime_kind == "dsh" or gateway is None:
             with session_scope() as session:
                 if not self._claim_is_active(
                     session,
@@ -501,7 +662,7 @@ class HarnessRunner:
                 step_id=claimed.step_id,
                 attempt_id=claimed.attempt_id,
                 kind="model_tokens",
-                source="system_shared",
+                source=usage_source,
                 amount=10,
                 cost_micros=0,
                 now_us=now_us,
@@ -537,10 +698,10 @@ class HarnessRunner:
             return
 
         try:
-            typed_output = self._validate_agent_output(
+            self._validate_agent_output(
                 result=result,
-                step_def=json.loads(claimed.definition_json),
-                trusted_role=claimed.role,
+                snapshot=snapshot,
+                contract=contract,
             )
         except (TypeError, ValueError) as error:
             # Validation happens before ArtifactStore.create.  Consequently a
@@ -557,10 +718,7 @@ class HarnessRunner:
         try:
             self._finish_agent_success(
                 claimed=claimed,
-                run=run,
-                step_def=json.loads(claimed.definition_json),
                 result=result,
-                typed_output=typed_output,
                 reservation_id=reservation or "",
                 now_us=self.executor.clock.utc_epoch_us(),
             )
@@ -574,8 +732,38 @@ class HarnessRunner:
                 now_us=self.executor.clock.utc_epoch_us(),
             )
 
+    def _agent_contract(
+        self, snapshot: AttemptDefinitionSnapshot
+    ) -> AgentOutputContract | None:
+        role = snapshot.executor_identity
+        role_hash = snapshot.executor_role_definition_sha256
+        role_definition = snapshot.role_definition
+        if role_hash is None or role_definition is None:
+            return None
+        contract = self.executor.agent_output_contracts.get((role, role_hash))
+        if contract is None:
+            return None
+        output_schema = role_definition.output_schema.rsplit("@", 1)
+        if len(output_schema) != 2 or not output_schema[1].isdigit():
+            return None
+        if (
+            contract.schema_name,
+            contract.schema_version,
+            contract.prompt_version,
+        ) != (
+            output_schema[0],
+            int(output_schema[1]),
+            role_definition.prompt_template_version,
+        ):
+            return None
+        return contract
+
     def _validate_agent_output(
-        self, *, result: ModelResult, step_def: dict, trusted_role: str | None = None
+        self,
+        *,
+        result: ModelResult,
+        snapshot: AttemptDefinitionSnapshot,
+        contract: AgentOutputContract,
     ) -> dict:
         """Validate the smallest strict output contract available in H1.
 
@@ -591,17 +779,8 @@ class HarnessRunner:
             raise ValueError("agent completion reported an error")
         if result.finish_reason != "stop":
             raise ValueError("agent completion did not finish normally")
-        if not isinstance(trusted_role, str) or not trusted_role:
-            raise ValueError("agent step has no trusted role identity")
-        role = trusted_role
-        if step_def.get("role") != trusted_role:
-            raise ValueError("agent step role does not match its trusted claim")
-        # The role definition is the source of the output schema.  The current
-        # trusted canary has one role; retaining this check prevents an Agent
-        # response from inventing a schema in its payload.
-        contract = self.executor.agent_output_contracts.get(role)
-        if contract is None:
-            raise ValueError(f"no validator registered for role {role!r}")
+        if snapshot.executor_kind != "role" or snapshot.role_definition is None:
+            raise ValueError("agent step has no authenticated role definition")
         output: Any = result.output
         if isinstance(output, str):
             try:
@@ -626,24 +805,34 @@ class HarnessRunner:
         self,
         *,
         claimed: ClaimedStep,
-        run: dict,
-        step_def: dict,
         result: ModelResult,
-        typed_output: dict,
         reservation_id: str,
         now_us: int,
     ) -> None:
         """Atomically publish the typed output and finish its attempt/step."""
-        if not isinstance(claimed.role, str) or not claimed.role:
-            raise ValueError("agent step has no trusted role identity")
-        if claimed.runtime_kind not in ("in_process_fake", "dsh"):
-            raise ValueError("agent step has no trusted runtime identity")
-        role = claimed.role
-        if step_def.get("role") != claimed.role:
-            raise ValueError("agent step role does not match its trusted claim")
-        contract = self.executor.agent_output_contracts.get(role)
+        authenticated = self._read_execution_snapshot(claimed)
+        if authenticated is None:
+            with session_scope() as session:
+                self._release_reservation(
+                    session, reservation_id=reservation_id, now_us=now_us
+                )
+            return
+        snapshot, run = authenticated
+        contract = self._agent_contract(snapshot)
         if contract is None:
-            raise ValueError(f"no validator registered for role {role!r}")
+            raise ValueError("no authenticated output contract")
+        if snapshot.executor_kind != "role":
+            raise ValueError("agent step has no authenticated role identity")
+        # Re-validate at the publication boundary.  A future asynchronous
+        # callback may carry only the raw model result; it can never inject a
+        # pre-validated payload or an alternate role contract into Artifact
+        # provenance.
+        typed_output = self._validate_agent_output(
+            result=result,
+            snapshot=snapshot,
+            contract=contract,
+        )
+        role = snapshot.executor_identity
         input_artifact_ids: list[str] = []
         with session_scope() as session:
             if not self._claim_is_active(
@@ -700,9 +889,11 @@ class HarnessRunner:
                 sensitivity=ArtifactSensitivity.private,
                 workflow_key=run["workflow_key"],
                 workflow_version=run["workflow_version"],
-                role_prompt_version=contract.prompt_version,
-                provider=contract.provider,
-                model=contract.model,
+                role_prompt_version=snapshot.role_definition.prompt_template_version
+                if snapshot.role_definition is not None
+                else contract.prompt_version,
+                provider=snapshot.provider,
+                model=snapshot.model,
                 input_artifact_ids=input_artifact_ids,
                 input_sha256=run["input_sha256"],
                 quality_status="valid",

@@ -10,6 +10,7 @@ from pharos.db.session import session_scope
 from pharos.harness.app import HarnessApp
 from pharos.harness.artifacts import ArtifactStore
 from pharos.harness.contracts import (
+    ApprovalConflictError,
     ApprovalState,
     AttemptErrorClass,
     AttemptState,
@@ -102,7 +103,8 @@ def test_terminal_failure_marks_run_failed(app, owner, monkeypatch):
             raise RetryableCapabilityError("permanently broken")
 
     executors = build_executors()
-    executors["canary.flaky@1"] = AlwaysFails()
+    flaky_key = next(key for key in executors if key[0] == "canary.flaky@1")
+    executors[flaky_key] = AlwaysFails()
     app.executor.capabilities = executors
     run = app.create_run(
         scope=owner,
@@ -126,7 +128,8 @@ def test_required_failure_fails_the_run(app, owner, monkeypatch):
             raise RuntimeError("boom")
 
     executors = build_executors()
-    executors["canary.noop@1"] = Fails()
+    noop_key = next(key for key in executors if key[0] == "canary.noop@1")
+    executors[noop_key] = Fails()
     app.executor.capabilities = executors
     run = app.create_run(
         scope=owner,
@@ -166,7 +169,7 @@ def test_approval_flow_approve_reject_expire(app, owner):
     run = run_until_terminal(app, owner=owner, run_id=run["id"])
     assert run["state"] == "succeeded"
     # The grant was consumed, not reusable.
-    with pytest.raises(Exception):
+    with pytest.raises(ApprovalConflictError):
         app.decide_approval(
             scope=owner,
             approval_id=approval_id,
@@ -215,7 +218,7 @@ def test_approval_flow_approve_reject_expire(app, owner):
     approval3 = app.pending_approvals(scope=owner, run_id=run3["id"])[0]
     app.clock.advance(8 * 24 * 60 * 60)  # past the default 7-day expiry
     app.cycle()
-    with pytest.raises(Exception):
+    with pytest.raises(ApprovalConflictError):
         app.decide_approval(
             scope=owner,
             approval_id=approval3["id"],
@@ -511,7 +514,6 @@ def test_replaying_agent_finish_does_not_duplicate_artifact_or_usage(app, owner)
             attempt_no=attempt["attempt_no"],
             lease_owner=attempt["lease_owner"] or app.dispatcher.worker_id,
         ),
-        run=run,
         now_us=app.clock.utc_epoch_us(),
     )
     with session_scope() as session:
@@ -600,10 +602,7 @@ def test_late_agent_finish_cannot_mutate_a_newer_attempt(app, owner):
     )
     app.runner._finish_agent_success(  # noqa: SLF001 -- inject stale callback
         claimed=stale,
-        run=app.get_run(scope=owner, run_id=run["id"]),
-        step_def={"role": "canary_actor@1"},
         result=result,
-        typed_output=result.output,
         reservation_id=stale_reservation,
         now_us=app.clock.utc_epoch_us(),
     )

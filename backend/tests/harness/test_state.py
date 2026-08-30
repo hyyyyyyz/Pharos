@@ -69,7 +69,7 @@ def test_terminal_states_have_no_exits():
 
 
 def test_every_legal_transition_passes():
-    for enum, table in (
+    for _enum, table in (
         (RunState, RUN_TRANSITIONS),
         (StepState, STEP_TRANSITIONS),
         (AttemptState, ATTEMPT_TRANSITIONS),

@@ -68,7 +68,10 @@ def test_crash_after_side_effect_recovers_without_repeating_the_effect(app, owne
     """
     enable_canary(app)
     executor = CrashAfterEffect()
-    app.executor.capabilities["canary.publish@1"] = executor
+    publish_key = next(
+        key for key in app.executor.capabilities if key[0] == "canary.publish@1"
+    )
+    app.executor.capabilities[publish_key] = executor
     run = app.create_run(
         scope=owner,
         workflow_key="harness.canary",
@@ -112,7 +115,10 @@ def test_retryable_crash_before_effect_never_records_a_result(app, owner):
             return {"ok": True, "key": key}
 
     executor = CrashBefore()
-    app.executor.capabilities["canary.flaky@1"] = executor
+    flaky_key = next(
+        key for key in app.executor.capabilities if key[0] == "canary.flaky@1"
+    )
+    app.executor.capabilities[flaky_key] = executor
     run = app.create_run(
         scope=owner,
         workflow_key="harness.canary",
