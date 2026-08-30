@@ -106,10 +106,13 @@ In rough order. Each is a workstream, not a ticket.
 5. **Build the Pharos Research Harness.** **In progress.** H0/H1 code gates now
    provide explicit migrations, a restart-safe DB kernel, owner-scoped API,
    Run Center and deterministic fake canary; production restore/operator canary/
-   72-hour soak are still open, so H1 is not Done. H1.5 has imported and built a
-   pinned DeepSeek Harness source snapshot and completed the no-tool safe-profile
-   code gate; the strict official-wire parent adapter and real-process fake
-   canary are in progress. H2 migrates Literature Discovery;
+   72-hour soak are still open, so H1 is not Done. H1.5 has completed its sealed
+   offline execution code slice: pinned DeepSeek Harness source, no-tool profile,
+   strict official wire, per-Attempt process/handle, persistent provenance and
+   delivery-aware usage, immutable Artifact binding, and a real Loader durable DB
+   fake canary. Default product startup still has no DSH factory; real provider,
+   restart reconciliation, production process isolation and operator soak remain
+   open, so H1.5 is not Done and H2 has not started. H2 migrates Literature Discovery;
    H3 migrates Daily Papers; H4 adds Project suggestions with human approval;
    H5 adds selected full-text reading plus an outbound, user-approved desktop
    capability bridge; H6 hardens eval, observability, quotas, and scale. H0-H6

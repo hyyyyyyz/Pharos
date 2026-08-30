@@ -1,7 +1,9 @@
 # Pharos Research Harness — architecture
 
-> 状态：**目标架构；H1 durable kernel 与 H1.5 safe-profile/official-wire code gate 已完成，生产
-> operational gate、per-Attempt DSH adapter 与恢复语义尚未完成。** 本文是
+> 状态：**目标架构；H1 durable kernel 与 H1.5 sealed-runtime execution code slice 已完成，生产
+> operational gate 与启动后恢复/对账仍未完成。** 当前代码已具备 per-Attempt DSH factory/handle、
+> 持久 delivery/provenance、多维 usage/budget、不可变 Artifact provenance，以及真实 Loader +
+> deterministic fake adapter 的 durable DB canary；默认产品装配仍不注入 DSH factory，runtime gate 默认关闭。本文是
 > Pharos Harness 的 source of truth。H2–H7 业务能力仍是 Planned；任何代码提交不得把 Planned 能力描述成
 > 已上线能力；分阶段落实顺序与验收门槛见
 > [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
@@ -17,8 +19,8 @@ Pharos Research Harness 是一层**可持久化、可恢复、可审计、受策
 [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)，三条业务工作流见
 [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md)。DeepSeek Harness 已确定为受限 Agent Attempt 执行内核，
 集成协议与 denylist 见 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)；源码已固定，
-wire/Loader code gate 证据见 [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)；per-Attempt
-product adapter 仍在实现且生产 gate 关闭。
+wire、sealed runtime 与 durable DB canary 证据见
+[`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)；真实 provider、生产隔离与 operator gate 仍关闭。
 
 ## 1. 目标与成功标准
 
@@ -150,7 +152,7 @@ revision；进程内 cache 只能提速，不能授权 claim、start 或 publish
 | `harness_enabled` | 无；总开关 | Harness start/control/write API 不可用，dispatcher 不启动；已存数据仍可由授权只读 API 导出 |
 | `dispatcher_enabled` / `canary_enabled` | `harness_enabled`；canary 还要求 dispatcher | 配置冲突时启动失败，不静默退回 legacy |
 | `agent_steps_enabled` | `harness_enabled` + `dispatcher_enabled` + Model Gateway ready | Agent Step 不认领，进入 typed waiting/configuration |
-| `agent_runtime_enabled` | `harness_enabled` + `dispatcher_enabled` + `agent_steps_enabled` | DSH route 不得 claim/open；当前 gate 已存在但尚未在 product DSH factory 消费 |
+| `agent_runtime_enabled` | `harness_enabled` + `dispatcher_enabled` + `agent_steps_enabled` | DSH route 不得 claim/open；claim、Runner 与 DB-bound factory 均重新校验该 gate，缺少经认证的 durable factory 或 route 不匹配时进入 typed `waiting_for_input(configuration)` |
 | `domain_publish_enabled` | `harness_enabled` + `dispatcher_enabled` + 对应 domain capability | 不认领 publish Step，不允许假成功 |
 | `fulltext_enabled` / `desktop_bridge_enabled` | `harness_enabled` + 对应阶段 gate + device capability | 等待设备/授权或走定义中的降级分支 |
 | `experiments_enabled` | `harness_enabled` + **正式 supersede Decision 9** + 独立 sandbox gate | H0–H6 永远 deny |
@@ -210,7 +212,8 @@ Harness 新 Run、claim、Run/Step control/write 与 publication，但不自动�
 - Model Gateway：统一 personal BYOK 与 official entitlement；
 - Future Sandbox / Local Bridge：独立 executor，不与 API 宿主权限混用。
 - DSH Agent sidecar：每个 active Agent Attempt 最多一个、仅 stdio JSON-RPC、固定 profile；不持有 Run/Step/
-  Attempt/Artifact/Approval/Usage 控制权，当前处于适配实现阶段、尚未部署。
+  Attempt/Artifact/Approval/Usage 控制权。显式 sealed test assembly 已实现 per-Attempt sidecar；默认
+  `HarnessApp()`、生产镜像与业务 route 均未装配它。
 
 ### 4.4 Artifact and domain plane
 
@@ -372,7 +375,7 @@ load immutable Step input Artifact IDs
 `TrickCard[]`。父 Agent 不把一段自然语言“告诉”子 Agent，也不能等待一个未持久化的子进程。需要子任务时
 创建 child Run，并以 Artifact link 连接输入输出。
 
-### 7.4 DeepSeek Harness adapter（已选型，接入中）
+### 7.4 DeepSeek Harness adapter（sealed execution code slice 已完成，生产关闭）
 
 已 vendor 的官方 DeepSeek Harness 是 Agent Step 的执行内核，通过无公网端口的
 Node stdio JSON-RPC sidecar 接入。DSH Session 记录该 Attempt 内部的 prompt projection、model turn
@@ -383,9 +386,14 @@ retry、publication 与 owner scope。DSH Session ID、cursor 和 hash 只作为
 生产 profile 必须由 Pharos 固定 allowlist 编译，禁止用户 profile/patch/plugin/MCP；v1 默认零 model-facing
 tool，未来 capability 也只能是经过 Pharos policy、approval、validator 和 idempotency contract 的
 typed Action/Observation。shell、terminal、subprocess、sandbox、E2B、code runtime、general filesystem、
-非 provider allowlist 的 network、动态插件、自修改和 DSH workflow 全部 deny。首个纵切已通过
-deterministic fake-model + 真实 DSH sidecar 的本地与远端 CI code gate；当前产品执行路径仍使用 `FakeModelGateway`，尚未从 Harness
-Attempt 打开 sidecar。
+非 provider allowlist 的 network、动态插件、自修改和 DSH workflow 全部 deny。当前已接通 `StepExecutor`、
+每 Attempt 独立 handle、active-handle cancel、wall deadline、delivery-aware accounting、Artifact provenance
+与 reducer，并以 sealed runtime + 真实 DSH Loader + deterministic fake adapter 完成离线
+claim → process → Artifact/usage → reduction canary。
+
+这条 canary 路径只能由显式注入的 authenticated `DshGatewayFactory` 使用；默认
+`HarnessApp(dsh_gateway_factory=None)` 仍只装配 `FakeGatewayFactory`，不会启动 DSH，也没有真实 provider、
+credential 或业务 Workflow route。code slice 通过不等于生产隔离或 H1.5 operational gate 通过。
 
 完整来源、所有权矩阵、stdio JSON-RPC v1 草案、资源/隐私/回滚门槛见
 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。
@@ -524,6 +532,12 @@ Provider response 不得覆盖终态。任何 retry 都插入 `attempt_no + 1` �
 
 进程内 `asyncio.Event` 可用于唤醒 dispatcher，但数据库永远是权威，丢失唤醒只会增加轮询延迟。
 
+DSH 当前保证 immutable launch provenance 在 spawn 前提交，child PID 在任何 `initialize`/prompt frame 写出前
+附着到同一 Attempt；但 OS `Popen` 与数据库 `attach_pid` 无法组成原子事务。父进程若恰在两者之间死亡，
+数据库可能仍是 `child_pid=NULL`，已经死亡的父进程也无法执行自己的 POSIX process-group cleanup。生产启用前
+必须由可信 supervisor/container/cgroup/PDEATHSIG 或等价进程所有权关闭这个窗口，并增加启动时 orphan sweep；
+当前测试父进程的 TERM/KILL/reap 不能替代这项部署保证。
+
 ### 10.5 Pause 与 cancel
 
 - pause 是持久请求：不再认领新 Step；正在运行 Step 在安全边界结束后 Run 进入 `paused`；
@@ -635,7 +649,8 @@ Unique `(scope_type, scope_id, workflow_key, idempotency_key)`，避免 SQLite �
 - retryable、error class/code/message；
 - started/heartbeat/finished；
 - H1.5 additive runtime 槽位：`runtime_session_id`, `child_pid`, `deadline_at`, `upstream_commit`,
-  `runtime_hash`, `profile_hash`, `policy_hash`, `protocol_version`, `delivery_state`；
+  `runtime_hash`, `profile_hash`, `policy_hash`, `protocol_version`, `runtime_message_id`, `delivery_state`,
+  `external_outcome`；
 - unique `(step_id, attempt_no)`。
 
 活跃更新必须带 `(step_id, attempt_no, lease_owner, expected_state)` CAS；终态 row 有数据库/repository 双层保护，
@@ -643,7 +658,8 @@ Unique `(scope_type, scope_id, workflow_key, idempotency_key)`，避免 SQLite �
 
 上述 runtime 字段在旧 Attempt 和尚未接 DSH 的路径中为 `NULL`，表示**没有 H1.5 runtime 证据**，不是
 `not_started`。有证据时 `delivery_state` 只允许 `not_started | sent | acknowledged | unknown | reconciled`；
-这些字段目前是 provenance/deadline/recovery 的 schema 槽位，尚未由 DSH product handle 写入。
+sealed DSH canary 已由 DB-bound handle 写入并通过不可变、owner/generation 与 frozen-snapshot cross-binding 校验。
+非 DSH 和历史 Attempt 继续使用 `NULL` 表示没有 runtime evidence；这不表示请求已知未发送。
 
 ### 11.5 `harness_events`
 
@@ -662,7 +678,13 @@ Event 清理保存 `retention_floor_seq` 与归档/删除边界；删除旧行�
 - inline JSON/text 或 blob sha/path；
 - content hash、size、sensitivity；
 - provider/model/prompt/tool/workflow/input hash provenance；
+- 对 DSH 产物还保存 `producer_attempt_id`、runtime session、upstream/runtime/profile/policy/protocol/route、
+  definition binding、run policy hash 与总 `provenance_sha256`；
 - immutable created_at。
+
+DSH provenance 只能从 owner-scoped Attempt 和 immutable execution snapshot 推导，caller 不能选择这些 hash。
+数据库 trigger 在 insert/update 边界验证 cross-binding，`ArtifactStore.require` 在读取与发布边界再次 fail closed；
+历史未绑定 Artifact 保留原语义，不被伪装成 DSH 产物。
 
 `harness_artifact_links` 表达 `derived_from`、`supports`、`contradicts`、`critiques`、`supersedes`、
 `published_as`。Link 也带 owner，数据库复合 FK 保证两端与 link 同 scope，不能跨用户。
@@ -731,6 +753,11 @@ system 与 user 的复合 FK/404 边界继续成立，也不会为每位用户�
 - kind `model_tokens|search_request|download_bytes|translation_pages|compute_ms`；
 - reserved/settled/released 数量、model/provider、cost micros、timestamp；
 - append-only；聚合值可重建。
+
+模型预算以同一逻辑 reservation 成对保存：base row 预留 output/cost，`reservation_id + ":input"` 预留 input；
+migration `0014` 保证每个 reservation 只能有一次 `reserve` 和最多一个 `settle|release` 终结结果。可能送达但
+结果未知时不会发明新的 ledger op，也不会 release；reservation 保持未终结并继续计入 pending，Attempt 的
+`delivery_state/external_outcome` 为后续 reconciliation 提供依据。当前尚无自动 provider reconciliation coordinator。
 
 ### 11.10 Migration
 
@@ -888,6 +915,11 @@ Gateway 必须把 provider request ID、请求是否确认发出、响应是否�
 除 Provider 明确支持幂等 key/status lookup 外，模型请求不是 exactly-once；timeout/disconnect 发生在可能送达之后
 时只能标记 `indeterminate`，不能把“本地没有 response row”解释为“供应商没有执行或收费”。
 
+当前 admission 已在同一事务并发约束 input、output、cost 和 model-call 数量；DSH 官方
+`initialize(maxTokens)` 只直接约束 output。真实 provider 上线前仍需 tokenizer/context preflight、可信价格上界与
+账单/request-status reconciliation。现阶段只要 cost budget 为正，就保守预留该 Run 的全部剩余 cost；这不会
+超卖预算，但会串行化带成本的模型调用，不能被描述为最终计费策略。
+
 ## 15. Artifact、Evidence 与 publication
 
 ### 15.1 Provenance 最小集合
@@ -1035,8 +1067,8 @@ frontend/src/components/HarnessRunCenter.*
 client/chrome/content/zotero/xpcom/pharos/harness.js   # later phase only
 ```
 
-DeepSeek Harness sidecar 的 protocol transport 已作为独立 H1.5 seam 实现，但仍不属于 H1 kernel 产品路径；
-后续每 Attempt adapter 必须继续保持独立的 Node stdio boundary，并按
+DeepSeek Harness sidecar 的 strict transport、sealed runtime 与 test-injectable per-Attempt adapter 已作为独立
+H1.5 seam 实现，但默认产品 assembly 仍没有 DSH factory。后续生产装配必须继续保持独立的 Node stdio boundary，并按
 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md) 的
 allowlist、denylist 和阶段门接入，不能把 vendor 源码直接挂进 API 进程或把 DSH Session 当业务状态。
 

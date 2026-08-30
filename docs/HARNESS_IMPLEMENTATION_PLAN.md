@@ -6,8 +6,9 @@
 > 阶段状态与证据见 [`PHASE-HARNESS-KERNEL.md`](PHASE-HARNESS-KERNEL.md) 与
 > [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)。
 > DeepSeek Harness 已完成固定来源导入与上游 build/SDK contract 验证，并确定为 Agent Attempt 执行内核；
-> no-tool 安全 profile、机器可读 policy、严格 stdio transport 与真实 Loader fake canary 已完成 code gate；
-> per-Attempt gateway/cancel/recovery 正在 H1.5 实现，尚未改变当前 fake-model 产品路径或任何生产状态。
+> no-tool 安全 profile、机器可读 policy、严格 stdio transport、per-Attempt gateway/cancel/deadline、
+> delivery-aware accounting、不可变 Artifact provenance 与真实 Loader durable DB fake canary 已完成 sealed-runtime
+> code slice；默认 `HarnessApp()` 仍不装配 DSH factory，生产隔离、启动恢复/对账、真实 provider 与 operator gate 未完成。
 > 它不是“预计完成”清单；只有通过本阶段全部退出门槛，阶段状态才可以改成 Done。
 
 本文必须与以下文档一起阅读：
@@ -545,7 +546,8 @@ retention floor 的 `resync_required`，通过 DB cursor 补齐；限制每 owne
 - operator queue/reaper/flag runbook；
 - canary 故障注入手册；
 - DeepSeek Harness 固定快照、所有权、安全 allowlist/denylist、隐私和回滚文档，以及已生效的 safe-profile
-  policy/effective-config 证据；official-wire transport 已通过 code gate，但 per-Attempt product adapter 仍未接入；
+  policy/effective-config 证据；official-wire 与 sealed per-Attempt adapter 已通过离线 code gate，但默认产品
+  assembly、真实 provider 与 operational gate 仍未接入；
 - `pharos/*` 扩展协议仅保留为未来 draft，不得描述成当前上游或当前实现的能力；
 - 更新 `ROADMAP.md`：kernel 已实现不等于三个业务 workflow 已迁移。
 
@@ -630,9 +632,10 @@ operator 执行；未取得其证据时不得把 H1 标为 Done。
 
 ## 5A. H1.5 — DeepSeek Agent execution adapter
 
-> 状态：**In progress，非生产。** 固定源码、安全 profile、严格官方 wire transport 与真实 Loader +
-> deterministic fake adapter canary 已通过 code gate；transport 尚未接入每个 Harness Attempt，主动取消、
-> deadline/unknown-delivery/recovery、部署资源证据和回滚演练尚未完成。
+> 状态：**In progress；sealed execution code slice complete，非生产。** 固定源码、安全 profile、严格官方
+> wire transport、每 Attempt 独立 gateway/handle、主动取消/deadline、持久 delivery/provenance、多维 usage/budget、
+> immutable Artifact 与真实 Loader durable DB fake canary 已通过 code gate。默认产品装配无 DSH factory；
+> spawn→PID attach 所有权窗口、启动后 reconciliation、生产隔离/资源证据、真实 provider 和回滚演练尚未完成。
 
 ### 5A.1 Goal
 
@@ -707,8 +710,8 @@ protocol version；不得先发明一套方法再把它描述成已经落地的 
 
 - 调用前按剩余 budget reserve；DSH/provider 返回的 input/output tokens 与 request metadata由 Pharos settle；
 - 未知送达保留 reservation/reconciliation 事实，不虚构 0 成本；重复 notification/close 不得重复 settle；
-- 父进程或 API 重启后扫描 active Attempt 与 child pid/session provenance，按证据 resume、abandon 或
-  `indeterminate`；不得静默创建第二个模型请求；
+- launch、PID、runtime message、delivery 与 usage evidence 已持久化；父进程或 API 重启后的自动扫描/
+  reconciliation coordinator 仍待实现，完成前不得静默创建第二个模型请求；
 - 初始并发为 1，Node `--max-old-space-size`、RSS/CPU/stdio/session bytes 和启动耗时纳入 admission/metrics；
 - 正常、异常、cancel、timeout 和测试失败路径都必须证明无孤儿进程。
 
@@ -735,8 +738,9 @@ deny-only emergency stop 只作配置通道失效时的最后手段。回滚保�
 
 - [x] safe profile 已由机器可读 policy、effective-config 与 negative tests 固化；官方 wire 已由严格
   schema/golden/negative tests 固化；二者由真实 Loader fake canary 联合验证；
-- [ ] 真实 DSH fake-model canary 从 claim 到 immutable Artifact/usage/run reduction 完整通过；
-- [ ] crash/cancel/restart/unknown-delivery/duplicate-event 全部有可重复测试且无孤儿进程；
+- [x] 真实 DSH fake-model canary 从 claim 到 immutable Artifact/usage/run reduction 完整通过（离线 sealed test assembly）；
+- [ ] live-parent cancel/deadline/unknown-delivery/duplicate/cleanup 已有可重复测试；启动后 reconciliation coordinator
+  与 spawn→PID attach 父进程崩溃窗口仍未关闭，不能宣称 restart/orphan gate 通过；
 - [ ] runtime build 可复现，Linux amd64 镜像 smoke、SBOM/license、hash provenance 通过；
 - [ ] 生产默认关闭，operator canary/停止条件/回滚 runbook 完成；
 - [ ] H1 operational gate 与 H1.5 gate 同时通过后，H2 才能把 Discovery Agent Step 指向 DSH。
@@ -746,9 +750,9 @@ deny-only emergency stop 只作配置通道失效时的最后手段。回滚保�
 1. [x] `Vendor and continuously verify the pinned DSH source`；
 2. [x] `Freeze the no-tool Pharos runtime profile`；
 3. [x] `Add the strict official-wire stdio client and fake runtime`；
-4. [x] `Persist Agent runtime provenance without changing business routes`（仅 additive schema 槽位，DSH 尚未写入）；
-5. [x] `Write validated Agent output as immutable Harness artifacts`（当前只接进程内 `FakeModelGateway` 路径）；
-6. [x] `Run the canary through a real DSH process and deterministic adapter`（仅 transport code gate，尚未接入 claim/reducer）；
+4. [x] `Persist Agent runtime provenance without changing business routes`（DB-bound DSH handle 已写入并交叉校验）；
+5. [x] `Write validated Agent output as immutable Harness artifacts`（sealed DSH path 已绑定 Attempt/snapshot provenance）；
+6. [x] `Run the canary through a real DSH process and deterministic adapter`（durable claim/usage/Artifact/reducer 全链）；
 7. `Package the bounded runtime into the production image`；
 8. `Exercise operator canary, resource ceiling and rollback`。
 
@@ -769,7 +773,8 @@ publish 到现有 `LiteratureSearch` / `LiteratureResult`，并继续严格标�
 
 ### 6.2 Entry conditions
 
-- [ ] H1 Done 且 canary 稳定；
+- [ ] H1 operational gate 与 H1.5 operational gate 均通过，真实 provider entitlement、input-token/cost policy
+  和 reconciliation contract 已冻结；
 - [ ] `HARNESS_WORKFLOWS.md` 的 Discovery schemas、fan-out、预算和 publish contract 已冻结；
 - [ ] 当前 arXiv/OpenAlex adapter、dedup 和 partial/error golden fixtures 齐全；
 - [ ] legacy `POST /api/discovery/search` contract 已记录；

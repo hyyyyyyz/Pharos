@@ -101,9 +101,11 @@ executable bundle。
 
 采用形态固定为一个 per-Attempt Node sidecar，通过无公网端口的 stdio JSON-RPC 与 Pharos Runner 通信。
 Pharos 保留 Run/Step/Attempt/Event/Artifact/Approval/Usage、policy、lease、retry、publication 和
-owner scope 的唯一所有权；DSH Session 只记录该 Attempt 的内部模型 turn 和受限 tool 交互。首个纵切
-必须是 deterministic fake-model canary；在协议、资源、隐私和 negative security tests 通过前不接真实
-provider。完整 allowlist、denylist、v1 协议和回滚门槛以 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)
+owner scope 的唯一所有权；DSH Session 只记录该 Attempt 的内部模型 turn 和受限 tool 交互。首个纵切已以
+sealed runtime、真实 Loader/DSH 进程、离线 deterministic fake adapter 和 durable DB 全链 canary 通过；
+这只证明执行内核 code boundary，不代表业务 route、真实 provider 或生产隔离已启用。在协议、资源、隐私和
+negative security/operator gates 全部通过前不接真实 provider。完整 allowlist、denylist、v1 协议和回滚门槛以
+[`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)
 为准。
 
 ## 4. OpenCode

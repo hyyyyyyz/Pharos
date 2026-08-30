@@ -1,16 +1,18 @@
 # Phase report — DeepSeek Harness official-wire boundary
 
 > Date: 2026-08-30
-> State: **H1.5 wire code gate complete; dormant in product execution**
+> State: **H1.5 sealed-runtime code slice complete; production/operator gates disabled**
 > Implementation commit: `ae135a9a` (`Add the bounded official Harness wire transport`)
 > CI-boundary hardening commit: `efa007dc` (`Stabilize the Harness wire CI boundary`)
+> Sealed-runtime integration commit: `10588f75` (`Seal the Harness runtime execution boundary`)
 > Production activation: **disabled**
 
 > **This is not the H1.5 exit gate and does not make H1 operationally passed.**
 
-This report records the first Pharos-to-DeepSeek-Harness execution boundary that is backed by
-code, negative tests and a real Loader canary. It is evidence for one H1.5 milestone, not a
-claim that the Agent runtime is production-ready.
+This report records both the original Pharos-to-DeepSeek-Harness official-wire boundary and its
+successor sealed per-Attempt integration. Both are backed by code, negative tests and a real
+Loader durable DB canary. This is H1.5 code evidence, not a claim that the Agent runtime is
+production-ready.
 
 ## 1. What this milestone proves
 
@@ -21,13 +23,22 @@ EOF, terminate descendants when necessary and reap the process before returning 
 candidate eligible for later validation and durable persistence.
 
 The real canary composes the vendored Loader with the external `pharos-fake` bundle and the
-no-tool Pharos profile. It does not replace DSH with a protocol-only mock. The same canary is run
-by `.github/workflows/harness-runtime.yml` through the Pharos parent-side `AttemptTransport` class. The 1:1
-binding to a durable DB Attempt/owner is deliberately still pending.
+no-tool Pharos profile. It does not replace DSH with a protocol-only mock. The successor canary is
+run by `.github/workflows/harness-runtime.yml` through the actual durable kernel and proves the
+1:1 owner/Run/Step/Attempt binding.
+
+The sealed path now proves: frozen definition/policy/route authentication; an exact `sdk` profile
+and fixed non-credential child environment; multidimensional owner-fenced usage reservation;
+immutable launch provenance before spawn; PID and monotonic delivery persistence; one private
+process/session/handle; strict typed output; Artifact provenance bound to the full frozen workflow,
+role, schema and producer identity; atomic usage settlement and Step reduction; safe retry only for
+leased Attempts that never crossed the executor boundary; bounded cleanup; and replay without a
+second process, Artifact or settlement.
 
 The milestone deliberately leaves the product route unchanged:
 
-- `HarnessApp` and `StepExecutor` still use the in-process deterministic `FakeModelGateway`;
+- default `HarnessApp()` still uses the in-process deterministic `FakeModelGateway`; DSH requires
+  an explicitly injected authenticated durable factory;
 - no business workflow opens a DSH process;
 - `agent_runtime_enabled` remains a distinct default-off gate;
 - no real model provider is enabled by this commit;
@@ -108,14 +119,16 @@ The transport also exposes monotonic pre-integration delivery evidence:
 - `sent`: the complete prompt frame was written but no exact receipt is proven;
 - `acknowledged`: an exact direct-user inbox receipt was validated.
 
-The next gateway/runner milestone must persistently map any possibly delivered nonterminal failure
-to `indeterminate`; it must not retry it as though no provider call occurred.
+The successor gateway/runner slice now persists this state: only `not_started` failures release the
+reservation, while `unknown|sent|acknowledged` nonterminal outcomes become `indeterminate` and keep
+an unresolved reserve unless authenticated usage can be settled. A known ACK plus cleanup failure
+settles trusted usage but still blocks Artifact publication.
 
 ### 2.4 Resource, process and privacy boundaries
 
 The implementation enforces:
 
-- one child process group per single-use transport; durable Attempt/owner binding remains pending;
+- one child process group per single-use transport, bound to one durable owner-scoped Attempt;
 - absolute executable, canonical existing cwd, exactly one fixed profile, explicit immutable
   provider/model allowlist and copied immutable argv/env policy;
 - explicit environment allowlist, bounded entries, no NUL bytes or invalid environment names;
@@ -136,9 +149,8 @@ equivalent and production egress enforcement remain deployment gates.
 
 ## 3. Evidence recorded on this milestone
 
-The implementation regression commands were run at `ae135a9a`; the isolated wire suite, profile
-checks and remote workflow were then rerun at `efa007dc`, whose only additional changes harden the
-CI/test boundary. The working tree contained only this subsequent documentation update.
+The first five rows preserve the precursor wire evidence. The remaining rows record the successor
+sealed runtime integration on 2026-08-30.
 
 | Evidence | Command | Result |
 |---|---|---:|
@@ -150,6 +162,12 @@ CI/test boundary. The working tree contained only this subsequent documentation 
 | Real Loader + safe profile + external fake bundle | `PYTHONPATH=backend backend/.venv/bin/python harness-runtime/scripts/run-fake-canary.py --attempt-transport` | passed |
 | Vendored-source integrity | `scripts/check-deepseek-harness-vendor.sh` | passed at `cd5ef8148158c3a752a658978873241fdf8e2bbc` |
 | Remote pinned-source/wire/Loader/SDK workflow | [`Validate Harness runtime source`](https://github.com/hyyyyyyz/Pharos/actions/runs/33276646427) at `efa007dc` | passed |
+| Full Harness subsystem, including sealed DB canary contract | `PYTHONPATH=backend pytest -q backend/tests/harness` | 659 passed, 1 skipped |
+| Full backend regression suite | `PYTHONPATH=backend pytest -q backend/tests` | 1626 passed, 2 skipped, 1 xfailed |
+| Static typing | `mypy backend/pharos/harness backend/pharos/db/migrations.py` | 30 source files passed |
+| Runtime provisioning tests | `python -m unittest discover -s harness-runtime/tests -p 'test_*.py'` | 20 passed |
+| Fresh sealed read-only runtime provision | `harness-runtime/scripts/provision-runtime.py ...` | passed |
+| Real Loader + durable DB canary | `pytest -q backend/tests/harness/test_dsh_app_canary.py -k sealed_runtime` with authenticated provision pins | passed |
 | Patch hygiene | `git diff --check` | passed |
 
 The focused tests include malformed/duplicate/oversized frames, wrong session/receipt/route,
@@ -160,41 +178,40 @@ descriptor closure and mutable launch-policy inputs.
 
 The pinned source identity is `cd5ef8148158c3a752a658978873241fdf8e2bbc`; the reviewed runtime inputs are
 `harness-runtime/profile/pharos-safe.cordis.patch.yml`, `harness-runtime/security-policy.json`
-and the external `harness-runtime/bundles/pharos-fake/` package. Production runtime/profile hashes are
-schema slots only at this stage and are not yet written by a DB-bound handle. The linked remote run
-completed successfully; that verifies the checked-in CI closure, not production isolation or a
-product DSH route.
+and the external `harness-runtime/bundles/pharos-fake/` package. The provisioned manifest authenticates
+Node/CLI/profile/patch/bundle/template tree/upstream identity, and the DB-bound handle now persists the
+runtime/profile/policy/route/binding hashes and session/message/PID delivery facts. The opt-in test is
+skipped only when external provision pins are absent; the freshly provisioned pinned run passed.
+These checks verify the checked-in CI closure, not production isolation or a product DSH route.
 
-## 4. What is still required before a product route
+## 4. What the successor slice delivered, and what still blocks a product route
 
-The next H1.5 milestone must not be skipped. It must deliver:
+Items 1–9 in the previous report are now delivered as a sealed offline code slice: per-Attempt
+factory/handle, owner-scoped cancellation and late-result CAS, immutable launch provenance,
+deadline/TERM/KILL/reap, monotonic delivery, pending unknown reservations, authenticated known-usage
+settlement, Attempt-bound Artifact publication, durable claim→DSH→reducer canary, and immutable
+argv/profile/patch/private-home verification.
 
-1. a `GatewayFactory` that opens exactly one `GatewayHandle` per claimed Attempt instead of sharing
-   the global gateway object;
-2. owner-scoped active-handle registration and Attempt CAS so late child results cannot overwrite
-   a terminal state;
-3. immutable runtime provenance written before provider dispatch: upstream commit, runtime/package
-   hash, profile/policy/config hash, protocol version, session ID, PID and deadline;
-4. active cancel and deadline coordination with bounded shutdown/TERM/KILL/reap;
-5. persistent delivery-state mapping and restart reconciliation; possibly delivered cancel,
-   timeout, crash or cleanup failure must become `indeterminate` and must not auto-retry;
-6. reserve/settle/reconcile usage conservation for successes and non-successes;
-7. immutable validated Artifact creation before Step/Run reduction;
-8. a claim → DSH fake adapter → Artifact/usage → reducer canary through the actual durable kernel;
-9. a factory-owned immutable argv/profile/patch closure, private `HOME`/`DSH_HOME`, verified hashes
-   and no user-controlled profile or plugin injection;
-10. Linux production packaging, container/cgroup and egress policy, SBOM/license evidence, RSS/CPU/
-    disk ceilings, operator canary, rollback drill and 72-hour soak.
+The remaining product gates are:
 
-Only after those gates pass may a business workflow route an Agent Step to DSH. Daily Papers,
-Literature Discovery and Research Projects remain unchanged by this milestone.
+1. explicitly assemble the authenticated runtime in a production image/startup path; default
+   `HarnessApp()` must remain no-DSH until that reviewed assembly exists;
+2. close the OS spawn→DB PID-attach crash window with trusted supervisor/container/cgroup/PDEATHSIG
+   ownership and a startup orphan sweep;
+3. implement restart reconciliation for active session/PID/delivery/pending-reservation evidence;
+4. define a real provider credential/entitlement route, request-status lookup, input-token preflight,
+   trusted price bound and bill reconciliation without exposing credentials to DSH;
+5. pass Linux isolation, egress, SBOM/license, RSS/CPU/disk and retention evidence;
+6. complete operator canary, stop conditions, rollback drill and 72-hour soak;
+7. only then migrate a business Workflow under shadow/cutover gates.
+
+Daily Papers, Literature Discovery and Research Projects remain unchanged by this milestone.
 
 ## 5. Rollback and operational meaning
 
-This milestone is dormant code plus CI coverage. Rolling these commits back does not require a database rollback
-and does not change existing Runs because no product route imports it. The durable schema fields and
-`agent_runtime_enabled` gate were added additively in earlier commits and remain safe with the gate
-off.
+This milestone is a test-injectable dormant sealed runtime plus additive schema and CI coverage.
+Rolling it back does not require a destructive database rollback and does not change existing business Runs,
+because default app assembly and every business route omit DSH. The `agent_runtime_enabled` gate remains off.
 
 If a later integration regresses, the first rollback action is to publish a new configuration
 revision with `agent_runtime_enabled=false`, stop new DSH claims and preserve all Run, Attempt,

@@ -1,9 +1,10 @@
 # DeepSeek Harness 与 Pharos Durable Harness 集成
 
-> 状态：**已选型，H1.5 实现中，尚未部署。** 当前已完成 Pharos H1 durable kernel code gate、
-> DSH 固定源码与 no-tool profile、严格官方 wire transport，以及真实 Loader + deterministic fake adapter
-> 的本地与远端 CI code gate；产品执行路径仍使用进程内 fake gateway，尚未把 DSH handle 接入 StepExecutor，也未通过
-> cancel/recovery、生产 operator canary、72 小时 soak 或生产恢复演练。本文不能被解释为生产就绪声明。
+> 状态：**已选型；H1.5 sealed-runtime code slice 已完成，尚未部署。** 当前已完成 Pharos H1 durable kernel、
+> DSH 固定源码与 no-tool profile、严格官方 wire、per-Attempt factory/handle、持久 delivery/provenance、
+> 主动取消/deadline、多维 usage/budget、不可变 Artifact provenance，以及真实 Loader + deterministic fake adapter
+> 的 durable DB canary。默认 `HarnessApp()` 不装配 DSH factory，runtime gate 默认关闭；生产隔离、启动后恢复/对账、
+> 真实 provider、operator canary、72 小时 soak 与生产恢复演练仍未完成。本文不能被解释为生产就绪声明。
 
 本文规定如何在不改变 Pharos 控制面和安全边界的前提下，使用已 vendor 的官方 DeepSeek Harness
 （简称 DSH）作为单个 Agent Attempt 的受限执行器。它不是把 DSH 变成 Pharos 的业务工作流引擎，
@@ -49,10 +50,13 @@ developer preview，允许不兼容变更；上游 SAFETY 明确它未经安全�
 `--ignore-scripts` 安装后，`pnpm run build` 成功；SDK protocol/client/server 共 7 个文件、130 项测试通过。
 `.github/workflows/harness-runtime.yml` 会在 vendor/运行时边界变化时复验来源、build 与 SDK contract。
 这一组 source gate 证据只证明固定源码可构建和官方 wire 基线成立；safe profile 另由机器可读 policy、
-effective-config 审计和 shutdown smoke 验证。父进程 transport 还通过真实 Loader/外置 fake adapter 验证了
+effective-config 审计和 shutdown smoke 验证。sealed runtime provisioner 还认证 manifest、Node、CLI、profile、
+patch、bundle、template tree 与 upstream commit，并只接受固定六 token argv、清理后的环境和 private Attempt workspace。
+父进程 transport 通过真实 Loader/外置 fake adapter 验证了
 receipt→running→turn→step→request→stream→assistant→idle→shutdown→EOF→exit 0→process-group empty→reap
-的完整因果链；这些证据仍不证明
-StepExecutor 集成、生产隔离或 operator gate 已通过。
+的完整因果链；durable DB canary 进一步验证 claim、冻结定义/策略/route、usage reserve、PID/delivery/message
+持久化、typed output、Attempt-bound Artifact provenance、settle、reducer、cleanup 与 replay exactly-once。
+这些证据仍不证明生产隔离、真实 provider 或 operator gate 已通过。
 
 ## 2. 两层架构与控制权
 
@@ -237,8 +241,9 @@ sidecar 始终不知道 Pharos DB transaction，也不能把“已发送”当�
 provider，生产容器还必须独立限制 egress。profile 校验通过不等于获得 OS 隔离或真实模型 entitlement。
 
 首个真实 Loader 纵切已用 deterministic fake model + 零 capability 证明握手、单 turn、text output、usage、
-wrong-model reject 与 clean shutdown；不调用真实模型、不执行真实网络、不写领域表、不读取本地 Zotero/PDF。
-它尚未证明 active cancel、deadline/crash/restart、Session→Attempt 持久映射，或 claim→Artifact/usage→reducer。
+wrong-model reject 与 clean shutdown；随后 sealed durable canary 已证明 active cancel/deadline、
+Session→Attempt 映射和 claim→Artifact/usage→reducer。它不调用真实模型、不执行真实网络、不写领域表、
+不读取本地 Zotero/PDF；启动后 restart reconciliation 与 spawn→PID attach 崩溃窗口仍未关闭。
 
 ### 5.2 v1 denylist（永久边界，除非新决策明确 supersede）
 
@@ -283,6 +288,11 @@ Node heap 上限并与 Translation、Daily 共享整机 4 GB 的 headroom。API 
 6. 把 sidecar CPU/RSS、启动时间、stdio backpressure、queue age、协议错误和退出类别写入 privacy-safe metrics；
 7. 启动时验证 vendor source/package lock/hash 与协议 schema；不匹配时整个 Agent execution gate fail closed。
 
+当前顺序保证 immutable launch provenance 在 spawn 前落库，PID 在 `initialize`/prompt 前附着；但 OS spawn 与
+DB attach 无法原子化。父进程若恰在两者之间死亡，数据库可能没有 PID，现有 POSIX process-group cleanup 也
+无法由已死亡父进程执行。这个窗口只能由可信 supervisor/container/cgroup/PDEATHSIG 或等价机制，加启动时
+orphan sweep 后关闭；在此之前 production runtime gate 保持关闭。
+
 这不改变 Pharos “数据库为真相”的部署决策：runtime companion 是 Runner 的受限执行器，不是第二个
 队列或第二个 durable control plane。生产仍不得擅自增加 Uvicorn worker。
 
@@ -314,18 +324,19 @@ DSH 适配作为 H1.5 插入 H1 code gate 与 H2 业务迁移之间；可以在�
 | 阶段 | DSH 集成要求 | 当前状态 |
 | --- | --- | --- |
 | H0 | 记录来源、许可证、denylist、协议 draft | H0 code gate 已通过；生产副本证据仍待 operator |
-| H1 code | fake-model canary 先证明 Pharos durable kernel | Pharos H1 code complete；当前产品路径仍无 DSH sidecar |
+| H1 code | fake-model canary 先证明 Pharos durable kernel | Pharos H1 code complete；默认产品 app 仍无 DSH factory |
 | H1.5 source/profile | 固定源码、可复现 build、机器可读 denylist 与 safe profile | code gate 完成：source/build/130 SDK tests/6 policy tests/effective dump/shutdown smoke |
-| H1.5 adapter/canary | 官方 wire adapter、fake runtime、真实 DSH fake adapter、Artifact/usage/process recovery | wire 与真实 Loader fake canary code gate 完成；per-Attempt gateway、cancel/deadline/recovery 仍在实现，禁止业务写入与真实 provider 默认调用 |
+| H1.5 adapter/canary | 官方 wire adapter、fake runtime、真实 DSH fake adapter、Artifact/usage/process recovery | sealed execution code slice 完成：per-Attempt gateway、cancel/deadline、delivery-aware usage 与 durable DB canary 通过；operational gate 仍 open，禁止业务写入与真实 provider 默认调用 |
 | H1 operational | operator canary、72h soak、rollback、resource/backup evidence | 未完成；H1 不是 Done |
 | H2–H4 | H1 operational + H1.5 同时通过后，业务 Agent Step 使用 DSH | 未开始业务 cutover |
 | H5 | Desktop/local capability 仍必须走 Pharos approval；DSH 不获得本地 bridge 权限 | Planned |
 | H6 | 用真实 queue/RSS/latency/quality/retention 数据决定是否保留 DSH；需要新 runtime/依赖须新 ADR | Planned |
 | H7 | 实验 sandbox 仍受 Decision 9 永久 deny；DSH 不能解除该 gate | Blocked by Decision 9 |
 
-进入 durable claim→DSH/operator/product canary 的最小证据：协议 schema/hash golden、fake sidecar crash/restart、frame/timeout
-拒绝、tool deny、usage conservation、owner/retention scrub、无公网端口检查、同一 Attempt 单 sidecar、
-以及 Pharos Event/Artifact/Run reduction 的可重放测试。缺任一项时保持 fake-only。
+durable claim→DSH offline canary 已具备协议 schema/hash golden、frame/timeout/tool deny、usage conservation、
+同一 Attempt 单 sidecar以及 Artifact/Run reduction 重放测试。进入 operator/product canary 仍至少需要 production
+process ownership、startup reconciliation、真实 provider entitlement/request-status/token/cost contract、owner/retention
+scrub、无公网端口与 egress 检查、资源 ceiling 和回滚演练；缺任一项时保持默认无 DSH factory。
 
 ## 9. 测试与质量门
 
@@ -348,6 +359,12 @@ DSH 适配作为 H1.5 插入 H1 code gate 与 H2 业务迁移之间；可以在�
 人工标注质量评测。任何 model/framework 升级必须跑冻结 eval set；不能因为上游 developer-preview 测试
 通过就宣称 Pharos workflow 或生产服务已就绪。
 
+当前 sealed code gate 的本地证据为：Harness subsystem `659 passed, 1 skipped`（唯一 skip 是没有外部 provisioned
+runtime pins 的 opt-in canary）、完整 backend `1626 passed, 2 skipped, 1 xfailed`、Ruff 与 30 个 source file 的
+mypy 通过、runtime provisioner 20 项测试通过、
+vendor identity 固定在 `cd5ef8148158c3a752a658978873241fdf8e2bbc`，fresh read-only runtime provision 与真实
+Loader durable DB canary 均通过。它们是可复现 code evidence，不是 operator/production evidence。
+
 ## 10. 回滚与待决策点
 
 回滚优先级固定如下：
@@ -363,16 +380,18 @@ DSH 适配作为 H1.5 插入 H1 code gate 与 H2 业务迁移之间；可以在�
 
 需要产品/安全/运维在实现前明确的事项：
 
-- 开发 profile/启动入口已冻结；生产 immutable closure/container 入口及可接受的 package/runtime 供应链范围；
-- Pharos ModelGateway 与 DSH LLM adapter 的责任边界、provider request ID 和 usage reconciliation；
+- immutable closure、manifest/hash 与启动 argv 已冻结；生产 container placement、supervisor/process ownership
+  和可接受的部署供应链范围；
+- per-Attempt accounting seam 已实现；真实 provider request ID/status lookup、tokenizer、价格上界和账单 reconciliation；
 - Session summary/cursor 的最小字段、默认 retention 天数与删除/tombstone 位置；
 - sidecar 的 CPU/RSS/启动/stdio 上限及与 Translation 的 admission 权重；
 - 是否需要任何 typed capability；若需要，逐项 action/resource/approval/idempotency，而不是开放 DSH tool；
 - fake-sidecar 合同测试通过后，哪一个内部 operator canary 账户可试运行，以及停止条件/升级回滚窗口；
 - 上游 commit 升级触发何种新 ADR、license audit、协议迁移和双读/回滚策略。
 
-正式结论是：**Pharos 已采用 DSH 作为 Agent Attempt 执行内核，当前正在实现 H1.5；现有代码中的 Agent
-Step/内部 canary 路径仍使用进程内 deterministic fake gateway，生产 DSH route/runtime gate 尚未启用或部署。
-safe profile、官方 wire transport 和真实 DSH fake canary 已通过本地与远端 CI code gate，但 per-Attempt
-集成、隔离/资源/恢复证据和 operator gate 全部通过前，
+正式结论是：**Pharos 已采用 DSH 作为 Agent Attempt 执行内核，H1.5 sealed-runtime code slice 已完成；
+显式 test assembly 能从 durable claim 运行真实 DSH 进程并发布经验证的 canary Artifact，但默认产品 app
+仍只使用进程内 deterministic fake gateway，生产 DSH route/runtime gate 尚未启用或部署。safe profile、
+官方 wire、per-Attempt 集成和真实 Loader durable DB canary 已通过 code gate；生产进程所有权、真实 provider、
+隔离/资源/启动恢复证据和 operator gate 全部通过前，
 不启用业务 DSH route、不默认执行真实模型、不开放上游高风险能力，也不宣称生产就绪。**
