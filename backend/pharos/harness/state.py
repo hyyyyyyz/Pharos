@@ -29,7 +29,7 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.events import EventStore, encode_event_payload
 from pharos.harness.repository import Scope
-from pharos.harness.tables import attempts, runs, steps
+from pharos.harness.tables import attempts, config_head, runs, steps
 
 # --------------------------------------------------------------------------
 # The transition tables.
@@ -371,7 +371,14 @@ class HarnessStateService:
             )
         return True
 
-    def activate_retry_cas(self, session: Session, *, step_id: str, now_us: int) -> bool:
+    def activate_retry_cas(
+        self,
+        session: Session,
+        *,
+        step_id: str,
+        now_us: int,
+        config_revision_id: str | None = None,
+    ) -> bool:
         """Promote one due retry, emitting an event only for the CAS winner."""
         row = (
             session.execute(select(steps).where(steps.c.id == step_id))
@@ -380,13 +387,38 @@ class HarnessStateService:
         )
         if row is None:
             return False
+        predicates = [
+            steps.c.id == step_id,
+            steps.c.state == StepState.retry_scheduled.value,
+            steps.c.ready_at <= now_us,
+            exists(
+                select(1)
+                .select_from(runs)
+                .where(
+                    runs.c.id == steps.c.run_id,
+                    runs.c.scope_type == steps.c.scope_type,
+                    runs.c.scope_id == steps.c.scope_id,
+                    runs.c.state.in_([RunState.queued.value, RunState.running.value]),
+                    runs.c.cancel_requested_at.is_(None),
+                    runs.c.pause_requested_at.is_(None),
+                )
+                .correlate_except(runs)
+            ),
+        ]
+        if config_revision_id is not None:
+            predicates.append(
+                exists(
+                    select(1)
+                    .select_from(config_head)
+                    .where(
+                        config_head.c.head_key == "singleton",
+                        config_head.c.current_revision_id == config_revision_id,
+                    )
+                )
+            )
         result: Any = session.execute(
             update(steps)
-            .where(
-                steps.c.id == step_id,
-                steps.c.state == StepState.retry_scheduled.value,
-                steps.c.ready_at <= now_us,
-            )
+            .where(*predicates)
             .values(
                 state=StepState.ready.value,
                 lease_owner=None,

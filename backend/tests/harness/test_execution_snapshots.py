@@ -27,6 +27,7 @@ from pharos.harness.repository import (
 )
 from pharos.harness.tables import attempts, runs, steps
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from tests.harness.conftest import enable_canary
 
 
@@ -201,16 +202,10 @@ def test_capability_attempt_shape_is_strict_and_legacy_attempt_fails_closed(app,
         _activate(app, session, owner, run)
         claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us(), limit=1)
         assert claimed is not None
-        assert store.read_attempt(
-            session, scope=owner, attempt_id=claimed.attempt_id
-        ) is None
-        with pytest.raises(MissingExecutionSnapshotError):
-            store.read_attempt(
-                session,
-                scope=owner,
-                attempt_id=claimed.attempt_id,
-                require_for_execution=True,
-            )
+        claimed_snapshot = store.read_attempt(
+            session, scope=owner, attempt_id=claimed.attempt_id, require_for_execution=True
+        )
+        assert claimed_snapshot is not None
         cap = app.registry.require_capability("canary.noop@1")
         result = store.write_attempt(
             session,
@@ -229,7 +224,7 @@ def test_capability_attempt_shape_is_strict_and_legacy_attempt_fails_closed(app,
             executor_capability_definition_sha256=cap.definition_hash(),
         )
         assert result.runtime_kind == "deterministic"
-        assert store.read_attempt(session, scope=owner, attempt_id=claimed.attempt_id) == result
+        assert result == claimed_snapshot
 
 
 def test_role_attempt_is_cross_bound_to_policy_profile_and_route(app, owner):
@@ -313,7 +308,7 @@ def test_role_attempt_is_cross_bound_to_policy_profile_and_route(app, owner):
         assert store.read_attempt(session, scope=owner, attempt_id=attempt_id) == result
 
 
-def test_attempt_rejects_a_step_tampered_after_claim(app, owner):
+def test_attempt_step_identity_is_frozen_after_claim(app, owner):
     run, binding = _run(app, owner)
     policy = _policy(app, run, binding)
     store = ExecutionSnapshotStore()
@@ -331,30 +326,15 @@ def test_attempt_rejects_a_step_tampered_after_claim(app, owner):
         _activate(app, session, owner, run)
         claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us(), limit=1)
         assert claimed is not None
-        session.execute(
-            steps.update().where(steps.c.id == claimed.step_id).values(timeout_seconds="999")
-        )
-        cap = app.registry.require_capability("canary.noop@1")
-        with pytest.raises(SnapshotIntegrityError, match="timeout"):
-            store.write_attempt(
-                session,
-                scope=owner,
-                attempt_id=claimed.attempt_id,
-                run_id=run["id"],
-                step_id=claimed.step_id,
-                attempt_no=claimed.attempt_no,
-                lease_owner=claimed.lease_owner,
-                definition_binding_sha256=binding.binding_sha256,
-                run_policy_sha256=policy.policy_hash(),
-                executor_kind="capability",
-                executor_identity=cap.identity(),
-                executor_capability_key=cap.capability_key,
-                executor_capability_version=cap.version,
-                executor_capability_definition_sha256=cap.definition_hash(),
+        with pytest.raises(IntegrityError, match="frozen by attempt snapshot"):
+            session.execute(
+                steps.update()
+                .where(steps.c.id == claimed.step_id)
+                .values(timeout_seconds="999")
             )
 
 
-def test_terminal_attempt_cannot_receive_a_late_snapshot(app, owner):
+def test_terminal_attempt_keeps_its_immutable_snapshot(app, owner):
     run, binding = _run(app, owner)
     policy = _policy(app, run, binding)
     store = ExecutionSnapshotStore()
@@ -378,23 +358,25 @@ def test_terminal_attempt_cannot_receive_a_late_snapshot(app, owner):
             .values(state="failed")
         )
         cap = app.registry.require_capability("canary.noop@1")
-        with pytest.raises(SnapshotIntegrityError, match="active claim owner"):
-            store.write_attempt(
-                session,
-                scope=owner,
-                attempt_id=claimed.attempt_id,
-                run_id=run["id"],
-                step_id=claimed.step_id,
-                attempt_no=claimed.attempt_no,
-                lease_owner=claimed.lease_owner,
-                definition_binding_sha256=binding.binding_sha256,
-                run_policy_sha256=policy.policy_hash(),
-                executor_kind="capability",
-                executor_identity=cap.identity(),
-                executor_capability_key=cap.capability_key,
-                executor_capability_version=cap.version,
-                executor_capability_definition_sha256=cap.definition_hash(),
-            )
+        result = store.write_attempt(
+            session,
+            scope=owner,
+            attempt_id=claimed.attempt_id,
+            run_id=run["id"],
+            step_id=claimed.step_id,
+            attempt_no=claimed.attempt_no,
+            lease_owner=claimed.lease_owner,
+            definition_binding_sha256=binding.binding_sha256,
+            run_policy_sha256=policy.policy_hash(),
+            executor_kind="capability",
+            executor_identity=cap.identity(),
+            executor_capability_key=cap.capability_key,
+            executor_capability_version=cap.version,
+            executor_capability_definition_sha256=cap.definition_hash(),
+        )
+        assert result == store.read_attempt(
+            session, scope=owner, attempt_id=claimed.attempt_id, require_for_execution=True
+        )
 
 
 def test_create_run_persists_snapshot_and_replays_without_reactivation(app, owner):

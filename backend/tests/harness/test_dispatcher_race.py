@@ -3,9 +3,9 @@
 The dispatcher's claim is a single conditional UPDATE, so of N competing
 workers exactly one may own each step. The race runs with two real threads on
 independent SQLAlchemy engines over one file-backed database -- never
-``:memory:``, which would fake the concurrency away. The loser returns
-``None`` after rolling back its short claim transaction, exactly like an empty
-queue, and never leaks a worker-thread exception.
+``:memory:``, which would fake the concurrency away. The loser continues the
+bounded keyset scan as if the first candidate were already claimed, and never
+leaks a worker-thread exception.
 """
 
 from __future__ import annotations
@@ -13,14 +13,16 @@ from __future__ import annotations
 import threading
 import uuid
 
+import pytest
 from pharos.db.session import _configure_sqlite, session_scope
 from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute
 from pharos.harness.contracts import ActivationState, AttemptState, ExecutionMode, StepState
 from pharos.harness.dispatcher import HarnessDispatcher
+from pharos.harness.execution_snapshots import SnapshotIntegrityError
 from pharos.harness.fakes import FakeClock
 from pharos.harness.repository import now_iso
+from pharos.harness.tables import attempts, config_head, config_revisions, runs, steps
 from pharos.harness.tables import events as events_table
-from pharos.harness.tables import steps
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from tests.harness.conftest import enable_canary
@@ -154,6 +156,120 @@ def test_claim_is_fenced_by_a_new_operator_head(app, owner):
     assert any(row["state"] == StepState.ready.value for row in rows)
 
 
+def test_claim_skips_legacy_run_and_reaches_snapshot_bound_run(app, owner):
+    """A pre-snapshot ready row cannot hide a valid later queue entry."""
+    enable_canary(app)
+    with session_scope() as session:
+        current = app.config_service.current_validated(session)
+        assert current is not None
+        workflow = app.registry.require_workflow("harness.canary@1")
+        legacy = app.runner.run_repository.create(
+            session,
+            scope=owner,
+            workflow=workflow,
+            config_revision_id=current.revision_id,
+            input={"mode": "success", "note": "legacy-first", "items": ["a"]},
+            idempotency_key=uuid.uuid4().hex,
+            initiator="user",
+            now_us=app.clock.utc_epoch_us(),
+        )
+        assert legacy is not None
+        legacy_id = legacy["id"]
+        app.runner.activate_run(session, scope=owner, run=legacy, now_us=app.clock.utc_epoch_us())
+        for row in session.execute(steps.select().where(steps.c.run_id == legacy_id)).mappings():
+            if row["state"] == StepState.pending.value and row["depends_on_json"] in (
+                None,
+                "",
+                "[]",
+            ):
+                app.state.transition_step(
+                    session,
+                    step_id=row["id"],
+                    target=StepState.ready,
+                    now_us=app.clock.utc_epoch_us(),
+                    ready_at=app.clock.utc_epoch_us(),
+                )
+    valid = _seed(app, owner, mode="success")
+    with session_scope() as session:
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None and claimed.run_id == valid
+
+
+def test_claim_snapshot_failure_rolls_back_lease_attempt_and_counter(app, owner, monkeypatch):
+    """A failed Attempt snapshot cannot leave a partially claimed Step."""
+    enable_canary(app)
+    run_id = _seed(app, owner, mode="success")
+
+    def fail_snapshot(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise SnapshotIntegrityError("test snapshot failure")
+
+    monkeypatch.setattr(app.dispatcher.execution_snapshots, "write_attempt", fail_snapshot)
+    with session_scope() as session:
+        session.execute(runs.update().where(runs.c.id == run_id).values(priority=7))
+        try:
+            app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+        except SnapshotIntegrityError as exc:
+            assert str(exc) == "test snapshot failure"
+        else:
+            pytest.fail("claim unexpectedly succeeded")
+
+    with session_scope() as session:
+        assert session.execute(
+            runs.select().where(runs.c.id == run_id)
+        ).mappings().one()["priority"] == 7
+        rows = session.execute(steps.select().where(steps.c.run_id == run_id)).mappings().all()
+        assert rows and all(row["state"] != StepState.leased.value for row in rows)
+        assert all(row["attempt_count"] == 0 for row in rows)
+        assert session.execute(attempts.select().where(attempts.c.run_id == run_id)).first() is None
+
+
+def test_retry_activation_skips_legacy_run_without_snapshot(app, owner):
+    """Legacy retry rows remain inert instead of re-entering the queue."""
+    enable_canary(app)
+    with session_scope() as session:
+        current = app.config_service.current_validated(session)
+        assert current is not None
+        workflow = app.registry.require_workflow("harness.canary@1")
+        legacy = app.runner.run_repository.create(
+            session,
+            scope=owner,
+            workflow=workflow,
+            config_revision_id=current.revision_id,
+            input={"mode": "success", "note": "legacy-retry", "items": ["a"]},
+            idempotency_key=uuid.uuid4().hex,
+            initiator="user",
+            now_us=app.clock.utc_epoch_us(),
+        )
+        created = app.runner.activate_run(
+            session, scope=owner, run=legacy, now_us=app.clock.utc_epoch_us()
+        )
+        root = next(row for row in created if row["depends_on_json"] == "[]")
+        session.execute(
+            steps.update()
+            .where(steps.c.id == root["id"])
+            .values(state=StepState.retry_scheduled.value, ready_at=app.clock.utc_epoch_us())
+        )
+        assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 0
+        row = session.execute(steps.select().where(steps.c.id == root["id"])).mappings().one()
+        assert row["state"] == StepState.retry_scheduled.value
+
+
+def test_claim_respects_cancel_and_pause_run_fence(app, owner):
+    """A control request committed before claim wins over a stale candidate."""
+    enable_canary(app)
+    cancelled_id = _seed(app, owner)
+    paused_id = _seed(app, owner)
+    with session_scope() as session:
+        now_us = app.clock.utc_epoch_us()
+        session.execute(
+            runs.update().where(runs.c.id == cancelled_id).values(cancel_requested_at=now_us)
+        )
+        session.execute(
+            runs.update().where(runs.c.id == paused_id).values(pause_requested_at=now_us)
+        )
+        assert app.dispatcher.claim_due(session, now_us=now_us) is None
+
+
 def test_old_run_can_claim_after_same_workflow_revision_cutover(app, owner):
     """A new authorized head does not strand runs on an older snapshot."""
     enable_canary(app)
@@ -162,6 +278,53 @@ def test_old_run_can_claim_after_same_workflow_revision_cutover(app, owner):
     with session_scope() as session:
         claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
     assert claimed is not None and claimed.run_id == run_id
+
+
+def test_frozen_v1_run_can_claim_after_active_route_moves_to_v2(app, owner):
+    """A real v1->v2 head cutover does not strand an already-frozen run."""
+    enable_canary(app)
+    run_id = _seed(app, owner, mode="success")
+    with session_scope() as session:
+        head = app.config_service.current(session)
+        assert head is not None
+        snapshot = HarnessConfigSnapshot(
+            gates={
+                "harness_enabled": True,
+                "dispatcher_enabled": True,
+                "canary_enabled": True,
+                # v2 is the DSH canary route, so exercise the complete gate
+                # rather than accidentally testing a same-version revision.
+                "agent_steps_enabled": True,
+                "agent_runtime_enabled": True,
+                "domain_publish_enabled": False,
+                "fulltext_enabled": False,
+                "desktop_bridge_enabled": False,
+                "experiments_enabled": False,
+            },
+            routes=(
+                WorkflowRoute(
+                    workflow_key="harness.canary",
+                    active_version=2,
+                    activation_state=ActivationState.active,
+                    execution_mode=None,
+                ),
+            ),
+            actor="operator",
+            reason="cut canary route to v2",
+        )
+        app.config_service.apply(
+            session,
+            snapshot=snapshot,
+            expected_head_revision=head["current_revision_id"],
+            actor="operator",
+            reason="cut canary route to v2",
+            now=now_iso(),
+        )
+    with session_scope() as session:
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None and claimed.run_id == run_id
+    assert claimed.attempt_snapshot is not None
+    assert claimed.attempt_snapshot.policy_snapshot.workflow_identity == "harness.canary@1"
 
 
 def test_claim_is_fenced_when_route_moves_to_legacy(app, owner):
@@ -339,3 +502,190 @@ def test_due_retry_uses_state_service_and_events(app, owner):
             )
         ).mappings().all()
     assert sum('"reason": "retry_due"' in event["payload_json"] for event in ready_events) == 1
+
+
+def _seed_due_retry(app, owner) -> tuple[str, str]:  # noqa: ANN001
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input={"mode": "retry_then_success", "note": "retry fence", "items": ["a"]},
+        idempotency_key=uuid.uuid4().hex,
+        initiator="user",
+    )
+    app.cycle()
+    with session_scope() as session:
+        retry = session.execute(
+            steps.select().where(
+                steps.c.run_id == run["id"],
+                steps.c.definition_step_key == "flaky",
+            )
+        ).mappings().one()
+    assert retry["state"] == StepState.retry_scheduled.value
+    return run["id"], retry["id"]
+
+
+def test_retry_does_not_activate_or_emit_event_when_gate_is_closed(app, owner):
+    """Disabling the dispatcher leaves due retries inert and event-free."""
+    enable_canary(app)
+    run_id, retry_id = _seed_due_retry(app, owner)
+    with session_scope() as session:
+        app.config_service.rollback(
+            session, actor="operator", reason="close retry gate", now=now_iso()
+        )
+    with session_scope() as session:
+        assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 0
+        retry = session.execute(steps.select().where(steps.c.id == retry_id)).mappings().one()
+        ready_events = session.execute(
+            events_table.select().where(
+                events_table.c.run_id == run_id,
+                events_table.c.step_id == retry_id,
+                events_table.c.event_type == "step.ready",
+            )
+        ).mappings().all()
+    assert retry["state"] == StepState.retry_scheduled.value
+    assert not any('"reason": "retry_due"' in event["payload_json"] for event in ready_events)
+
+
+def test_retry_does_not_activate_or_emit_event_on_legacy_route(app, owner):
+    """Moving the route to its legacy writer also leaves due retries inert."""
+    enable_canary(app)
+    run_id, retry_id = _seed_due_retry(app, owner)
+    with session_scope() as session:
+        head = app.config_service.current(session)
+        assert head is not None
+        snapshot = HarnessConfigSnapshot(
+            gates={
+                "harness_enabled": True,
+                "dispatcher_enabled": True,
+                "canary_enabled": True,
+                "agent_steps_enabled": False,
+                "agent_runtime_enabled": False,
+                "domain_publish_enabled": False,
+                "fulltext_enabled": False,
+                "desktop_bridge_enabled": False,
+                "experiments_enabled": False,
+            },
+            routes=(
+                WorkflowRoute(
+                    workflow_key="harness.canary",
+                    active_version=1,
+                    activation_state=ActivationState.active,
+                    execution_mode=ExecutionMode.legacy,
+                ),
+            ),
+            actor="operator",
+            reason="return canary retry route to legacy",
+        )
+        app.config_service.apply(
+            session,
+            snapshot=snapshot,
+            expected_head_revision=head["current_revision_id"],
+            actor="operator",
+            reason="return canary retry route to legacy",
+            now=now_iso(),
+        )
+    with session_scope() as session:
+        assert app.dispatcher.activate_retries(session, now_us=app.clock.utc_epoch_us()) == 0
+        retry = session.execute(steps.select().where(steps.c.id == retry_id)).mappings().one()
+        ready_events = session.execute(
+            events_table.select().where(
+                events_table.c.run_id == run_id,
+                events_table.c.step_id == retry_id,
+                events_table.c.event_type == "step.ready",
+            )
+        ).mappings().all()
+    assert retry["state"] == StepState.retry_scheduled.value
+    assert not any('"reason": "retry_due"' in event["payload_json"] for event in ready_events)
+
+
+def test_retry_cas_rechecks_run_controls_after_candidate_read(app, owner, monkeypatch):
+    """A control change after the initial read still loses the retry CAS."""
+    enable_canary(app)
+    run_id, retry_id = _seed_due_retry(app, owner)
+
+    with session_scope() as session:
+        original_execute = session.execute
+        injected = False
+        now_us = app.clock.utc_epoch_us()
+
+        def inject_cancel(statement, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            nonlocal injected
+            result = original_execute(statement, *args, **kwargs)
+            if not injected:
+                injected = True
+                original_execute(
+                    runs.update().where(runs.c.id == run_id).values(cancel_requested_at=now_us)
+                )
+            return result
+
+        monkeypatch.setattr(session, "execute", inject_cancel)
+        assert app.state.activate_retry_cas(session, step_id=retry_id, now_us=now_us) is False
+        original_execute(
+            runs.update().where(runs.c.id == run_id).values(cancel_requested_at=None)
+        )
+
+    # Repeat the same post-read injection for pause and the configuration head
+    # predicate. Each mutation is restored in the same transaction so this
+    # test cannot alter the fixture's active fence for later assertions.
+    with session_scope() as session:
+        original_execute = session.execute
+        injected = False
+
+        def inject_pause(statement, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            nonlocal injected
+            result = original_execute(statement, *args, **kwargs)
+            if not injected:
+                injected = True
+                original_execute(
+                    runs.update().where(runs.c.id == run_id).values(pause_requested_at=now_us)
+                )
+            return result
+
+        monkeypatch.setattr(session, "execute", inject_pause)
+        assert app.state.activate_retry_cas(session, step_id=retry_id, now_us=now_us) is False
+        original_execute(
+            runs.update().where(runs.c.id == run_id).values(pause_requested_at=None)
+        )
+
+    with session_scope() as session:
+        current = app.config_service.current(session)
+        assert current is not None
+        alternate_revision_id = session.execute(
+            config_revisions.select()
+            .where(config_revisions.c.id != current["current_revision_id"])
+            .limit(1)
+        ).scalar_one()
+        original_execute = session.execute
+        injected = False
+
+        def inject_head(statement, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            nonlocal injected
+            result = original_execute(statement, *args, **kwargs)
+            if not injected:
+                injected = True
+                original_execute(
+                    config_head.update()
+                    .where(config_head.c.head_key == "singleton")
+                    .values(current_revision_id=alternate_revision_id)
+                )
+            return result
+
+        monkeypatch.setattr(session, "execute", inject_head)
+        assert (
+            app.state.activate_retry_cas(
+                session,
+                step_id=retry_id,
+                now_us=now_us,
+                config_revision_id=current["current_revision_id"],
+            )
+            is False
+        )
+        original_execute(
+            config_head.update()
+            .where(config_head.c.head_key == "singleton")
+            .values(current_revision_id=current["current_revision_id"])
+        )
+
+    with session_scope() as session:
+        retry = session.execute(steps.select().where(steps.c.id == retry_id)).mappings().one()
+    assert retry["state"] == StepState.retry_scheduled.value

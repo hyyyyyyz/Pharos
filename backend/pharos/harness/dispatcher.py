@@ -12,7 +12,6 @@ here reads SQLite datetimes for lease math.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -28,9 +27,16 @@ from pharos.harness.configrev import (
 from pharos.harness.contracts import (
     AttemptState,
     ConfigIntegrityError,
+    NotFoundError,
     RunState,
     ScopeType,
     StepState,
+)
+from pharos.harness.execution_snapshots import (
+    AttemptDefinitionSnapshot,
+    ExecutionSnapshotStore,
+    MissingExecutionSnapshotError,
+    SnapshotIntegrityError,
 )
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope
 from pharos.harness.state import HarnessStateService
@@ -59,13 +65,15 @@ class ClaimedStep:
     definition_json: str
     attempt_no: int
     lease_owner: str
-    # These are resolved from the trusted registry and persisted config fence,
-    # never copied from run input or accepted as worker-provided metadata.
+    # These are projections of the authenticated Run binding/policy and the
+    # current config safety fence, never copied from run input or accepted as
+    # worker-provided metadata.
     role: str | None = None
     runtime_kind: str | None = None
     config_revision_id: str | None = None
     snapshot_sha256: str | None = None
     role_definition_sha256: str | None = None
+    attempt_snapshot: AttemptDefinitionSnapshot | None = None
 
 
 class HarnessDispatcher:
@@ -89,6 +97,7 @@ class HarnessDispatcher:
         self.claim_batch = claim_batch
         self.state = state_service or HarnessStateService()
         self.config_service = config_service
+        self.execution_snapshots = ExecutionSnapshotStore()
 
     # ------------------------------------------------------------- claiming
 
@@ -128,8 +137,10 @@ class HarnessDispatcher:
         route = next((item for item in snapshot.routes if item.workflow_key == workflow_key), None)
         if route is None or route.activation_state.value != "active":
             return False
-        if route.active_version != workflow_version:
-            return False
+        # A queued Run already carries its immutable workflow definition.  A
+        # later active-version cutover must not strand that Run solely because
+        # its version is no longer the creation-time head.  Route activation,
+        # execution mode and operator gates remain the live safety fence.
         # The internal canary has no legacy writer and therefore intentionally
         # uses execution_mode=NULL. Every business workflow must explicitly be
         # in Harness mode before a queued step can cross this fence.
@@ -147,102 +158,25 @@ class HarnessDispatcher:
                 return False
         return True
 
-    def _trusted_step_runtime(
-        self, *, workflow_key: str, workflow_version: int, row: Any
-    ) -> tuple[str | None, str | None, str | None] | None:
-        """Resolve role/runtime from the immutable registry, fail closed.
-
-        Step rows contain a frozen expander payload, but that payload is still
-        database data. The registry definition is the authority for the role
-        and runtime route; the row is accepted only when its security-relevant
-        fields agree with that definition.
-        """
-        try:
-            registry = self.config_service.registry if self.config_service else None
-            if registry is None:
-                return None
-            workflow = registry.workflow(f"{workflow_key}@{workflow_version}")
-            if workflow is None:
-                return None
-            if row["definition_sha256"] != workflow.definition_hash():
-                return None
-            trusted_step = workflow.step(row["definition_step_key"])
-            if row["step_kind"] != trusted_step.kind:
-                return None
-            definition = json.loads(row["definition_json"])
-            if not isinstance(definition, dict) or definition.get("kind") != trusted_step.kind:
-                return None
-            expected = trusted_step.model_dump(mode="json")
-            if set(expected) - set(definition):
-                return None
-            dynamic_keys = set(definition) - set(expected)
-            if trusted_step.kind in ("mapped", "mapped_agent"):
-                if dynamic_keys not in (set(), {"expand_items"}):
-                    return None
-                if "expand_items" in definition:
-                    items = definition["expand_items"]
-                    if (
-                        not isinstance(items, list)
-                        or trusted_step.max_fanout is None
-                        or len(items) > trusted_step.max_fanout
-                    ):
-                        return None
-            elif dynamic_keys:
-                return None
-            if any(definition.get(key) != value for key, value in expected.items()):
-                return None
-
-            # The step table duplicates selected definition fields for query
-            # and state-machine efficiency. Verify those copies too; otherwise
-            # a tampered row could alter dependencies, retry, or deadlines
-            # after the JSON contract check above.
-            if json.loads(row["depends_on_json"] or "[]") != list(trusted_step.depends_on):
-                return None
-            if row["fan_in"] != trusted_step.fan_in:
-                return None
-            if row["min_success_count"] != trusted_step.min_success_count:
-                return None
-            expected_attempts = trusted_step.retry.max_attempts if trusted_step.retry else 3
-            if row["max_attempts"] != expected_attempts:
-                return None
-            if trusted_step.timeout_seconds is None:
-                if row["timeout_seconds"] is not None:
-                    return None
-            elif (
-                row["timeout_seconds"] is None
-                or float(row["timeout_seconds"]) != trusted_step.timeout_seconds
-            ):
-                return None
-            actual_retry = (
-                json.loads(row["retry_policy_json"])
-                if row["retry_policy_json"]
-                else None
-            )
-            expected_retry = (
-                trusted_step.retry.model_dump(mode="json") if trusted_step.retry else None
-            )
-            if actual_retry != expected_retry:
-                return None
-
-            if trusted_step.kind in ("agent", "mapped_agent"):
-                role = trusted_step.role
-                if not isinstance(role, str) or definition.get("role") != role:
-                    return None
-                role_definition = registry.role(role)
-                if role_definition is None:
-                    return None
-                runtime_kind = role_definition.runtime_kind
-                if runtime_kind not in ("in_process_fake", "dsh"):
-                    return None
-                return role, runtime_kind, role_definition.definition_hash()
-            if definition.get("capability") != trusted_step.capability:
-                return None
-            return None, None, None
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    @staticmethod
+    def _runtime_kind_from_executor(
+        fields: dict[str, Any], run_snapshot: Any
+    ) -> str | None:
+        if fields.get("executor_kind") != "role":
             return None
+        identity = fields.get("executor_identity")
+        for binding in run_snapshot.policy_snapshot.role_bindings:
+            if binding.role_identity == identity:
+                return binding.role_definition.runtime_kind
+        return None
 
     def claim_due(
-        self, session: Session, *, now_us: int, limit: int | None = None
+        self,
+        session: Session,
+        *,
+        now_us: int,
+        limit: int | None = None,
+        _after: tuple[int, str] | None = None,
     ) -> ClaimedStep | None:
         """Atomically claim one due, ready step; None when the queue is empty.
 
@@ -269,6 +203,9 @@ class HarnessDispatcher:
         candidates = (
             select(
                 steps.c.id,
+                steps.c.run_id,
+                steps.c.scope_type,
+                steps.c.scope_id,
                 runs.c.workflow_key,
                 runs.c.workflow_version,
                 runs.c.definition_sha256,
@@ -293,9 +230,8 @@ class HarnessDispatcher:
             )
         )
         page_size = max(limit, self.claim_batch, 1)
-        cursor: tuple[int, str] | None = None
-        resolved: tuple[Any, tuple[str | None, str | None, str | None]] | None = None
-        while resolved is None:
+        cursor: tuple[int, str] | None = _after
+        while True:
             page_query = candidates
             if cursor is not None:
                 ready_cursor, id_cursor = cursor
@@ -311,131 +247,266 @@ class HarnessDispatcher:
                 .all()
             )
             if not page:
-                break
+                return None
             for row in page:
-                metadata = self._trusted_step_runtime(
-                    workflow_key=row["workflow_key"],
-                    workflow_version=row["workflow_version"],
-                    row=row,
-                )
-                if metadata is None:
+                # Legacy Runs remain readable, but cannot cross the execution
+                # boundary. Invalid snapshots are skipped as queue data, so
+                # one corrupt row cannot repeatedly poison the queue head.
+                try:
+                    run_snapshot = self.execution_snapshots.read_run(
+                        session,
+                        scope=row["scope_type"],
+                        scope_id=row["scope_id"],
+                        run_id=row["run_id"],
+                        require_for_execution=True,
+                    )
+                    assert run_snapshot is not None
+                    if (
+                        run_snapshot.workflow_key,
+                        run_snapshot.workflow_version,
+                        run_snapshot.workflow_definition_sha256,
+                    ) != (
+                        row["workflow_key"],
+                        row["workflow_version"],
+                        row["definition_sha256"],
+                    ):
+                        continue
+                    executor_fields = self.execution_snapshots.resolve_executor_fields(
+                        session, run_snapshot=run_snapshot, step=dict(row)
+                    )
+                except (MissingExecutionSnapshotError, SnapshotIntegrityError, NotFoundError):
                     continue
-                if self._route_allows_claim(
+                runtime_kind = self._runtime_kind_from_executor(executor_fields, run_snapshot)
+                if not self._route_allows_claim(
                     snapshot,
                     workflow_key=row["workflow_key"],
                     workflow_version=row["workflow_version"],
                     step_kind=row["step_kind"],
-                    runtime_kind=metadata[1],
+                    runtime_kind=runtime_kind,
                 ):
-                    resolved = row, metadata
-                    break
-            if resolved is not None or len(page) < page_size:
-                break
-            cursor = page[-1]["ready_at"], page[-1]["id"]
-        if resolved is None:
-            return None
-        candidate, (role, runtime_kind, role_definition_sha256) = resolved
-        result: Any = session.execute(
-            update(steps)
-            .where(
-                steps.c.id == candidate["id"],
-                steps.c.state == StepState.ready.value,
-                # Re-check the head in the CAS itself. If an operator
-                # committed a new revision after the fence was read, this
-                # UPDATE loses cleanly instead of claiming under stale policy.
-                exists(
-                    select(1)
-                    .select_from(config_head)
-                    .where(
-                        config_head.c.head_key == "singleton",
-                        config_head.c.current_revision_id == revision_id,
+                    continue
+                candidate, candidate_snapshot, candidate_fields = (
+                    row,
+                    run_snapshot,
+                    executor_fields,
+                )
+                result: Any = None
+                # The savepoint is the claim's atomic boundary.  If snapshot
+                # validation or persistence fails, a caller may catch the
+                # exception and still commit its outer transaction without
+                # leaving behind a leased Step or orphan Attempt.
+                with session.begin_nested():
+                    result = session.execute(
+                        update(steps)
+                        .where(
+                            steps.c.id == candidate["id"],
+                            steps.c.state == StepState.ready.value,
+                            exists(
+                                select(1)
+                                .select_from(runs)
+                                .where(
+                                    runs.c.id == steps.c.run_id,
+                                    runs.c.state.in_([
+                                        RunState.queued.value,
+                                        RunState.running.value,
+                                    ]),
+                                    runs.c.cancel_requested_at.is_(None),
+                                    runs.c.pause_requested_at.is_(None),
+                                )
+                                .correlate_except(runs)
+                            ),
+                            # Re-check the head in the CAS itself. If an
+                            # operator committed a new revision after the
+                            # fence was read, lose cleanly.
+                            exists(
+                                select(1)
+                                .select_from(config_head)
+                                .where(
+                                    config_head.c.head_key == "singleton",
+                                    config_head.c.current_revision_id == revision_id,
+                                )
+                            ),
+                        )
+                        .values(
+                            state=StepState.leased.value,
+                            lease_owner=self.worker_id,
+                            lease_expires_at=lease_expires,
+                            heartbeat_at=now_us,
+                            updated_at=now_us,
+                        )
                     )
-                ),
-            )
-            .values(
-                state=StepState.leased.value,
-                lease_owner=self.worker_id,
-                lease_expires_at=lease_expires,
-                heartbeat_at=now_us,
-                updated_at=now_us,
-            )
-        )
-        if result.rowcount != 1:
-            # A competing worker or a config cutover won the CAS. This is a
-            # normal queue outcome, not an application error. Roll back the
-            # short transaction so the caller cannot accidentally commit any
-            # speculative work before retrying.
-            session.rollback()
-            return None
-        claimed_row = (
-            session.execute(select(steps).where(steps.c.id == candidate["id"]))
-            .mappings()
-            .first()
-        )
-        assert claimed_row is not None
-        row = claimed_row
-        attempt_id = uuid.uuid4().hex
-        session.execute(
-            attempts.insert().values(
-                id=attempt_id,
-                step_id=row["id"],
-                run_id=row["run_id"],
-                scope_type=row["scope_type"],
-                scope_id=row["scope_id"],
-                attempt_no=row["attempt_count"] + 1,
-                worker_id=self.worker_id,
-                state=AttemptState.leased.value,
-                lease_owner=self.worker_id,
-                started_at=now_us,
-                heartbeat_at=now_us,
-            )
-        )
-        session.execute(
-            update(steps)
-            .where(steps.c.id == row["id"])
-            .values(attempt_count=row["attempt_count"] + 1, updated_at=now_us)
-        )
-        return ClaimedStep(
-            step_id=row["id"],
-            attempt_id=attempt_id,
-            run_id=row["run_id"],
-            scope_type=row["scope_type"],
-            scope_id=row["scope_id"],
-            definition_step_key=row["definition_step_key"],
-            instance_key=row["instance_key"],
-            step_kind=row["step_kind"],
-            definition_json=row["definition_json"],
-            attempt_no=row["attempt_count"] + 1,
-            lease_owner=self.worker_id,
-            role=role,
-            runtime_kind=runtime_kind,
-            config_revision_id=revision_id,
-            snapshot_sha256=snapshot_sha256,
-            role_definition_sha256=role_definition_sha256,
-        )
+                    if result.rowcount != 1:
+                        # Nothing was written in this savepoint. Continue the
+                        # keyset scan rather than treating a CAS loser as an
+                        # empty queue.
+                        continue
+                    claimed_row = (
+                        session.execute(select(steps).where(steps.c.id == candidate["id"]))
+                        .mappings()
+                        .first()
+                    )
+                    assert claimed_row is not None
+                    row = claimed_row
+                    attempt_id = uuid.uuid4().hex
+                    attempt_no = row["attempt_count"] + 1
+                    session.execute(
+                        attempts.insert().values(
+                            id=attempt_id,
+                            step_id=row["id"],
+                            run_id=row["run_id"],
+                            scope_type=row["scope_type"],
+                            scope_id=row["scope_id"],
+                            attempt_no=attempt_no,
+                            worker_id=self.worker_id,
+                            state=AttemptState.leased.value,
+                            lease_owner=self.worker_id,
+                            started_at=now_us,
+                            heartbeat_at=now_us,
+                        )
+                    )
+                    attempt_snapshot = self.execution_snapshots.write_attempt(
+                        session,
+                        scope=row["scope_type"],
+                        scope_id=row["scope_id"],
+                        attempt_id=attempt_id,
+                        run_id=row["run_id"],
+                        step_id=row["id"],
+                        attempt_no=attempt_no,
+                        lease_owner=self.worker_id,
+                        definition_binding_sha256=candidate_snapshot.definition_binding_sha256,
+                        run_policy_sha256=candidate_snapshot.policy_snapshot_sha256,
+                        policy_snapshot=candidate_snapshot.policy_snapshot,
+                        **candidate_fields,
+                    )
+                    session.execute(
+                        update(steps)
+                        .where(steps.c.id == row["id"])
+                        .values(attempt_count=row["attempt_count"] + 1, updated_at=now_us)
+                    )
+                    return ClaimedStep(
+                        step_id=row["id"],
+                        attempt_id=attempt_id,
+                        run_id=row["run_id"],
+                        scope_type=row["scope_type"],
+                        scope_id=row["scope_id"],
+                        definition_step_key=row["definition_step_key"],
+                        instance_key=row["instance_key"],
+                        step_kind=row["step_kind"],
+                        definition_json=row["definition_json"],
+                        attempt_no=attempt_no,
+                        lease_owner=self.worker_id,
+                        role=(
+                            attempt_snapshot.executor_identity
+                            if attempt_snapshot.executor_kind == "role"
+                            else None
+                        ),
+                        runtime_kind=attempt_snapshot.runtime_kind,
+                        config_revision_id=revision_id,
+                        snapshot_sha256=snapshot_sha256,
+                        role_definition_sha256=attempt_snapshot.executor_role_definition_sha256,
+                        attempt_snapshot=attempt_snapshot,
+                    )
+            if len(page) < page_size:
+                return None
+            cursor = page[-1]["ready_at"], page[-1]["id"]
 
     # ----------------------------------------------------------- retry queue
 
     def activate_retries(self, session: Session, *, now_us: int) -> int:
-        """Promote due retries through the state service and event log."""
+        """Promote due retries through the frozen execution fence.
+
+        A retry is a continuation of its original Run, not a new policy
+        decision.  The current head still supplies the operator safety fence;
+        the frozen Run binding supplies executor identity and version.
+        """
+        try:
+            fence = self._execution_fence(session)
+        except ConfigIntegrityError:
+            return 0
+        if fence is None:
+            return 0
+        revision_id, snapshot, _ = fence
         rows = (
             session.execute(
-                select(steps.c.id)
+                select(
+                    steps.c.id,
+                    steps.c.run_id,
+                    steps.c.scope_type,
+                    steps.c.scope_id,
+                    steps.c.step_kind,
+                    steps.c.definition_step_key,
+                    steps.c.definition_json,
+                    steps.c.depends_on_json,
+                    steps.c.fan_in,
+                    steps.c.min_success_count,
+                    steps.c.max_attempts,
+                    steps.c.timeout_seconds,
+                    steps.c.retry_policy_json,
+                    runs.c.workflow_key,
+                    runs.c.workflow_version,
+                    runs.c.definition_sha256,
+                )
+                .join(
+                    runs,
+                    (runs.c.id == steps.c.run_id)
+                    & (runs.c.scope_type == steps.c.scope_type)
+                    & (runs.c.scope_id == steps.c.scope_id),
+                )
                 .where(
                     steps.c.state == StepState.retry_scheduled.value,
                     steps.c.ready_at <= now_us,
+                    runs.c.state.in_([RunState.queued.value, RunState.running.value]),
+                    runs.c.cancel_requested_at.is_(None),
+                    runs.c.pause_requested_at.is_(None),
                 )
                 .order_by(steps.c.ready_at, steps.c.id)
             )
-            .scalars()
+            .mappings()
             .all()
         )
         activated = 0
-        for step_id in rows:
+        for row in rows:
+            try:
+                run_snapshot = self.execution_snapshots.read_run(
+                    session,
+                    scope=row["scope_type"],
+                    scope_id=row["scope_id"],
+                    run_id=row["run_id"],
+                    require_for_execution=True,
+                )
+                assert run_snapshot is not None
+                if (
+                    run_snapshot.workflow_key,
+                    run_snapshot.workflow_version,
+                    run_snapshot.workflow_definition_sha256,
+                ) != (
+                    row["workflow_key"],
+                    row["workflow_version"],
+                    row["definition_sha256"],
+                ):
+                    continue
+                executor_fields = self.execution_snapshots.resolve_executor_fields(
+                    session, run_snapshot=run_snapshot, step=dict(row)
+                )
+            except (MissingExecutionSnapshotError, SnapshotIntegrityError, NotFoundError):
+                continue
+            if not self._route_allows_claim(
+                snapshot,
+                workflow_key=row["workflow_key"],
+                workflow_version=row["workflow_version"],
+                step_kind=row["step_kind"],
+                runtime_kind=self._runtime_kind_from_executor(executor_fields, run_snapshot),
+            ):
+                continue
             # Multiple dispatchers can observe the same due row.  The state
             # service owns the conditional UPDATE; only its winner emits the
             # step.ready event.
-            if self.state.activate_retry_cas(session, step_id=step_id, now_us=now_us):
+            if self.state.activate_retry_cas(
+                session,
+                step_id=row["id"],
+                now_us=now_us,
+                config_revision_id=revision_id,
+            ):
                 activated += 1
         return activated
 

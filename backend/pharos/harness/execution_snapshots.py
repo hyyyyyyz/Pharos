@@ -495,6 +495,128 @@ def _run_identity(
 class ExecutionSnapshotStore:
     """Read/write-once persistence for the 0011 execution snapshots."""
 
+    def resolve_executor_fields(
+        self,
+        session: Session,
+        *,
+        run_snapshot: RunDefinitionSnapshot,
+        step: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve an executor solely from an authenticated Run snapshot.
+
+        Dispatch must not consult the live Registry to decide what a queued
+        Run executes.  This helper projects the authenticated binding and
+        policy into the exact Attempt snapshot columns; ``write_attempt``
+        performs the same checks again before persisting the projection.
+        """
+        binding = _verify_workflow_and_binding(
+            session,
+            workflow_key=run_snapshot.workflow_key,
+            workflow_version=run_snapshot.workflow_version,
+            workflow_hash=run_snapshot.workflow_definition_sha256,
+            binding_hash=run_snapshot.definition_binding_sha256,
+        )
+        definition = _verify_step_definition(step, binding)
+        step_kind = step.get("step_kind")
+        if step_kind in ("deterministic", "mapped"):
+            identity = definition.get("capability")
+            if not isinstance(identity, str):
+                raise SnapshotIntegrityError("deterministic step has no capability identity")
+            key, version = _split_identity(identity, "capability")
+            records = {
+                item.get("identity"): item
+                for item in binding.get("capabilities", [])
+                if isinstance(item, dict)
+            }
+            record = records.get(identity)
+            if not isinstance(record, dict):
+                raise SnapshotIntegrityError("capability is absent from the Run binding")
+            digest = record.get("definition_sha256")
+            if not isinstance(digest, str):
+                raise SnapshotIntegrityError("capability definition hash is missing")
+            return {
+                "executor_kind": "capability",
+                "executor_identity": identity,
+                "executor_role_key": None,
+                "executor_role_version": None,
+                "executor_role_definition_sha256": None,
+                "executor_capability_key": key,
+                "executor_capability_version": version,
+                "executor_capability_definition_sha256": digest,
+                "model_profile_identity": None,
+                "model_profile_key": None,
+                "model_profile_version": None,
+                "model_profile_sha256": None,
+                "model_route_key": None,
+                "model_route_sha256": None,
+                "provider": None,
+                "model": None,
+                "usage_source": None,
+            }
+
+        if step_kind not in ("agent", "mapped_agent"):
+            raise SnapshotIntegrityError("step has an unsupported executor kind")
+        identity = definition.get("role")
+        if not isinstance(identity, str):
+            raise SnapshotIntegrityError("agent step has no role identity")
+        key, version = _split_identity(identity, "role")
+        role_records = {
+            item.get("identity"): item
+            for item in binding.get("roles", [])
+            if isinstance(item, dict)
+        }
+        role_record = role_records.get(identity)
+        if not isinstance(role_record, dict):
+            raise SnapshotIntegrityError("role is absent from the Run binding")
+        role_digest = role_record.get("definition_sha256")
+        profile = role_record.get("model_profile")
+        if not isinstance(role_digest, str) or not isinstance(profile, dict):
+            raise SnapshotIntegrityError("role binding is incomplete")
+        profile_identity = profile.get("identity")
+        profile_digest = profile.get("definition_sha256")
+        if not isinstance(profile_identity, str) or not isinstance(profile_digest, str):
+            raise SnapshotIntegrityError("role model profile binding is incomplete")
+        profile_key, profile_version = _split_identity(profile_identity, "model profile")
+        frozen = next(
+            (
+                item
+                for item in run_snapshot.policy_snapshot.role_bindings
+                if item.role_identity == identity
+            ),
+            None,
+        )
+        if frozen is None:
+            raise SnapshotIntegrityError("role is absent from the frozen Run policy")
+        if (
+            frozen.role_definition_sha256,
+            frozen.model_profile_identity,
+            frozen.model_profile_sha256,
+        ) != (role_digest, profile_identity, profile_digest):
+            raise SnapshotIntegrityError("role binding does not match the frozen Run policy")
+        route_key = frozen.model_route_identity
+        route_digest = frozen.model_route_sha256
+        if not isinstance(route_key, str) or not isinstance(route_digest, str):
+            raise SnapshotIntegrityError("role model route binding is incomplete")
+        return {
+            "executor_kind": "role",
+            "executor_identity": identity,
+            "executor_role_key": key,
+            "executor_role_version": version,
+            "executor_role_definition_sha256": role_digest,
+            "executor_capability_key": None,
+            "executor_capability_version": None,
+            "executor_capability_definition_sha256": None,
+            "model_profile_identity": profile_identity,
+            "model_profile_key": profile_key,
+            "model_profile_version": profile_version,
+            "model_profile_sha256": profile_digest,
+            "model_route_key": route_key,
+            "model_route_sha256": route_digest,
+            "provider": frozen.provider,
+            "model": frozen.model,
+            "usage_source": frozen.usage_source.value,
+        }
+
     def write_run(
         self,
         session: Session,
