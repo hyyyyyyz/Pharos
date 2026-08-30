@@ -74,6 +74,7 @@ def test_workflow_capability_listing(client) -> None:
     assert {item["version"]: item["activationState"] for item in canaries} == {
         1: "active",
         2: "disabled",
+        3: "disabled",
     }
 
 
@@ -118,6 +119,7 @@ def test_workflow_capability_listing_only_marks_selected_version_active(client) 
     assert {item["version"]: item["activationState"] for item in canaries} == {
         1: "disabled",
         2: "active",
+        3: "disabled",
     }
 
 

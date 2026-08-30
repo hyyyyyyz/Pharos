@@ -24,14 +24,24 @@ from sqlalchemy.orm import Session
 from pharos.db.session import session_scope
 from pharos.harness.approvals import DEFAULT_EXPIRY_SECONDS, ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore, content_hash
+from pharos.harness.capabilities import (
+    CapabilityAction,
+    CapabilityContract,
+    CapabilityContractError,
+    CapabilityObservation,
+    TrustedCapabilityRegistry,
+)
 from pharos.harness.clock import SystemClock
 from pharos.harness.contracts import (
     ApprovalConflictError,
     ArtifactSensitivity,
     AttemptErrorClass,
     AttemptState,
+    CapabilityRisk,
+    DeliverySemantics,
     DeliveryState,
     GatewayError,
+    IdempotencyKind,
     NotFoundError,
     ProducerKind,
     RetryableCapabilityError,
@@ -117,7 +127,12 @@ class StepExecutor:
     gateway_factory: GatewayFactory | None = None
     artifacts: ArtifactStore = field(default_factory=ArtifactStore)
     agent_output_contracts: dict[tuple[str, str], AgentOutputContract] = field(default_factory=dict)
+    capability_contracts: TrustedCapabilityRegistry | None = None
     capabilities: dict[tuple[str, str], Any] = field(default_factory=dict)
+    # Only frozen internal H1 canaries may keep the pre-typed execution path.
+    # An unregistered product capability must fail closed instead of silently
+    # discarding its return value like the original H1 seam did.
+    legacy_capability_identities: frozenset[tuple[str, str]] = frozenset()
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
     events: EventStore = field(default_factory=EventStore)
@@ -819,6 +834,9 @@ class HarnessRunner:
         claimed: ClaimedStep,
         snapshot: AttemptDefinitionSnapshot,
         now_us: int,
+        input_sha256: str | None = None,
+        attempt_values: dict[str, Any] | None = None,
+        step_error_code: str = "retryable_failure",
     ) -> None:
         """Retry only within policy: attempts and backoff, never blind re-runs."""
         # Retry policy is authenticated in the Attempt snapshot. The physical
@@ -833,6 +851,11 @@ class HarnessRunner:
                 policy.backoff_seconds * (float(policy.backoff_factor) ** (claimed.attempt_no - 1))
             )
             with session_scope() as session:
+                retry_attempt_values = {
+                    "error_class": AttemptErrorClass.provider.value,
+                    "error_message": "retryable capability failure",
+                    **(attempt_values or {}),
+                }
                 scheduled = self.state.schedule_capability_retry_cas(
                     session,
                     scope=_scope_of(claimed),
@@ -843,11 +866,9 @@ class HarnessRunner:
                     lease_owner=claimed.lease_owner,
                     ready_at=now_us + int(backoff * MICROSECONDS_PER_SECOND),
                     now_us=now_us,
-                    attempt_values={
-                        "error_class": AttemptErrorClass.provider.value,
-                        "error_message": "retryable capability failure",
-                    },
-                    step_values={"error_code": "retryable_failure"},
+                    input_sha256=input_sha256,
+                    attempt_values=retry_attempt_values,
+                    step_values={"error_code": step_error_code},
                 )
             if scheduled:
                 return
@@ -859,6 +880,7 @@ class HarnessRunner:
             claimed=claimed,
             target=AttemptState.failed,
             now_us=now_us,
+            input_sha256=input_sha256,
             attempt_values={
                 "error_class": AttemptErrorClass.provider.value,
                 "error_message": (
@@ -866,6 +888,7 @@ class HarnessRunner:
                     if retry_suppressed
                     else "capability retries exhausted"
                 ),
+                **(attempt_values or {}),
             },
             step_values={
                 "error_code": "retry_suppressed" if retry_suppressed else "retries_exhausted"
@@ -986,6 +1009,156 @@ class HarnessRunner:
                 step_values={"error_code": "unknown_capability"},
             )
             return
+
+        identity = (capability_key, capability_hash)
+        contract: CapabilityContract | None = None
+        registry = self.executor.capability_contracts
+        if registry is not None and capability_hash is not None:
+            try:
+                contract = registry.require(
+                    identity=capability_key,
+                    definition_sha256=capability_hash,
+                )
+            except CapabilityContractError:
+                contract = None
+        if contract is None:
+            if identity not in self.executor.legacy_capability_identities:
+                self._finish_capability(
+                    claimed=claimed,
+                    target=AttemptState.failed,
+                    now_us=self.executor.clock.utc_epoch_us(),
+                    attempt_values={
+                        "error_class": AttemptErrorClass.configuration.value,
+                        "error_message": "typed capability contract is unavailable",
+                    },
+                    step_values={"error_code": "unknown_capability_contract"},
+                )
+                return
+            self._execute_started_legacy_capability(
+                claimed=claimed,
+                snapshot=snapshot,
+                run=run,
+                capability=capability,
+            )
+            return
+
+        if (
+            snapshot.capability_definition is None
+            or contract.identity != snapshot.capability_definition.identity()
+            or contract.definition_sha256
+            != snapshot.capability_definition.definition_hash()
+        ):
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
+                now_us=self.executor.clock.utc_epoch_us(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.configuration.value,
+                    "error_message": "typed capability contract does not match the snapshot",
+                },
+                step_values={"error_code": "capability_contract_mismatch"},
+            )
+            return
+
+        idempotency_key = None
+        if contract.definition.idempotency is IdempotencyKind.stable_key:
+            # The same physical Step keeps one key across Attempt retries.  An
+            # attempt-number key would make a provider-side idempotency
+            # contract useless precisely when a retry needs it.
+            idempotency_key = (
+                f"{claimed.run_id}:{claimed.definition_step_key}:{claimed.instance_key}"
+            )
+        action_payload = {
+            "workflow_key": run["workflow_key"],
+            "step_key": claimed.definition_step_key,
+            "input": json.loads(run["input_json"]),
+        }
+        try:
+            action = contract.create_action(
+                action_payload,
+                idempotency_key=idempotency_key,
+            )
+        except CapabilityContractError:
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
+                now_us=self.executor.clock.utc_epoch_us(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.validation.value,
+                    "error_message": "capability action does not match its frozen schema",
+                },
+                step_values={"error_code": "capability_action_invalid"},
+            )
+            return
+        try:
+            raw_observation = capability.execute(action.model_dump(mode="json"))
+            observation = (
+                contract.validate_observation(action, raw_observation)
+                if isinstance(raw_observation, CapabilityObservation)
+                else contract.succeed(action, raw_observation)
+            )
+        except RetryableCapabilityError:
+            # The explicit H1 compatibility path above owns the old exception
+            # retry seam. Typed capabilities return a TypedCapabilityError so
+            # retry safety can be checked against frozen idempotency/delivery
+            # metadata; accepting this legacy exception here would bypass it.
+            self._finish_capability(
+                claimed=claimed,
+                target=AttemptState.failed,
+                now_us=self.executor.clock.utc_epoch_us(),
+                input_sha256=action.action_sha256(),
+                attempt_values={
+                    "error_class": AttemptErrorClass.configuration.value,
+                    "error_message": "typed capability raised a legacy retry error",
+                },
+                step_values={"error_code": "legacy_retry_error"},
+            )
+            return
+        except CapabilityContractError:
+            self._finish_capability_validation_failure(
+                claimed=claimed,
+                snapshot=snapshot,
+                input_sha256=action.action_sha256(),
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+        except Exception:  # noqa: BLE001 -- delivery may have crossed a side-effect boundary
+            self._finish_untyped_capability_failure(
+                claimed=claimed,
+                snapshot=snapshot,
+                input_sha256=action.action_sha256(),
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+
+        if observation.status == "failed":
+            self._finish_typed_capability_error(
+                claimed=claimed,
+                snapshot=snapshot,
+                observation=observation,
+                input_sha256=action.action_sha256(),
+                now_us=self.executor.clock.utc_epoch_us(),
+            )
+            return
+        self._publish_capability_success(
+            claimed=claimed,
+            snapshot=snapshot,
+            run=run,
+            contract=contract,
+            action=action,
+            observation=observation,
+            now_us=self.executor.clock.utc_epoch_us(),
+        )
+
+    def _execute_started_legacy_capability(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        run: dict,
+        capability: Any,
+    ) -> None:
+        """Run only an explicitly allowlisted frozen H1 internal canary."""
         action = {
             "idempotency_key": (
                 f"{claimed.run_id}:{claimed.definition_step_key}:"
@@ -1025,12 +1198,297 @@ class HarnessRunner:
             now_us=self.executor.clock.utc_epoch_us(),
         )
 
+    @staticmethod
+    def _capability_failure_may_have_side_effect(
+        snapshot: AttemptDefinitionSnapshot,
+    ) -> bool:
+        definition = snapshot.capability_definition
+        if definition is None:
+            return True
+        return (
+            definition.risk
+            in {CapabilityRisk.write_private, CapabilityRisk.external_side_effect}
+            or definition.delivery is DeliverySemantics.external_at_least_once
+        )
+
+    def _finish_capability_indeterminate(
+        self,
+        *,
+        claimed: ClaimedStep,
+        now_us: int,
+        delivery_state: DeliveryState = DeliveryState.UNKNOWN,
+        error_code: str = "capability_outcome_unknown",
+        input_sha256: str | None = None,
+    ) -> None:
+        if delivery_state in {DeliveryState.NOT_STARTED, DeliveryState.RECONCILED}:
+            delivery_state = DeliveryState.UNKNOWN
+        with session_scope() as session:
+            self.state.finish_attempt_cas(
+                session,
+                scope=_scope_of(claimed),
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                expected_attempt_state=AttemptState.running,
+                expected_step_state=StepState.running,
+                target=AttemptState.indeterminate,
+                now_us=now_us,
+                attempt_values={
+                    "delivery_state": delivery_state.value,
+                    "external_outcome": "indeterminate",
+                    "error_class": AttemptErrorClass.indeterminate.value,
+                    "error_message": "capability outcome requires reconciliation",
+                    **(
+                        {"input_sha256": input_sha256}
+                        if input_sha256 is not None
+                        else {}
+                    ),
+                },
+                step_values={"error_code": error_code},
+            )
+
+    def _finish_capability_validation_failure(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        input_sha256: str,
+        now_us: int,
+    ) -> None:
+        if self._capability_failure_may_have_side_effect(snapshot):
+            self._finish_capability_indeterminate(
+                claimed=claimed,
+                now_us=now_us,
+                error_code="capability_observation_invalid_after_effect",
+                input_sha256=input_sha256,
+            )
+            return
+        self._finish_capability(
+            claimed=claimed,
+            target=AttemptState.failed,
+            now_us=now_us,
+            input_sha256=input_sha256,
+            attempt_values={
+                "external_outcome": "failed",
+                "error_class": AttemptErrorClass.validation.value,
+                "error_message": "capability observation does not match its frozen schema",
+            },
+            step_values={"error_code": "capability_observation_invalid"},
+        )
+
+    def _finish_untyped_capability_failure(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        input_sha256: str,
+        now_us: int,
+    ) -> None:
+        if self._capability_failure_may_have_side_effect(snapshot):
+            self._finish_capability_indeterminate(
+                claimed=claimed,
+                now_us=now_us,
+                error_code="capability_untyped_failure_after_effect",
+                input_sha256=input_sha256,
+            )
+            return
+        self._finish_capability(
+            claimed=claimed,
+            target=AttemptState.failed,
+            now_us=now_us,
+            input_sha256=input_sha256,
+            attempt_values={
+                "external_outcome": "failed",
+                "error_class": AttemptErrorClass.bug.value,
+                "error_message": "capability executor failed",
+            },
+            step_values={"error_code": "capability_error"},
+        )
+
+    def _finish_typed_capability_error(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        observation: CapabilityObservation,
+        input_sha256: str,
+        now_us: int,
+    ) -> None:
+        error = observation.error
+        definition = snapshot.capability_definition
+        if error is None or definition is None:
+            self._finish_capability_validation_failure(
+                claimed=claimed,
+                snapshot=snapshot,
+                input_sha256=input_sha256,
+                now_us=now_us,
+            )
+            return
+        if error.delivery_state in {DeliveryState.UNKNOWN, DeliveryState.SENT} or (
+            error.error_class is AttemptErrorClass.indeterminate
+        ):
+            self._finish_capability_indeterminate(
+                claimed=claimed,
+                now_us=now_us,
+                delivery_state=error.delivery_state,
+                error_code=error.code,
+                input_sha256=input_sha256,
+            )
+            return
+
+        retry_boundary_is_safe = bool(
+            error.retry_class is not None
+            and definition.idempotency is not IdempotencyKind.none
+            and definition.delivery is not DeliverySemantics.external_at_least_once
+            and (
+                error.delivery_state is DeliveryState.NOT_STARTED
+                or definition.idempotency is IdempotencyKind.inherently_idempotent
+                or definition.delivery is DeliverySemantics.provider_idempotent
+            )
+        )
+        if retry_boundary_is_safe:
+            self._schedule_retry_or_fail(
+                claimed=claimed,
+                snapshot=snapshot,
+                now_us=now_us,
+                input_sha256=input_sha256,
+                attempt_values={
+                    "delivery_state": error.delivery_state.value,
+                    "external_outcome": "failed",
+                    "error_class": error.error_class.value,
+                    "error_code": error.code,
+                    "error_message": "capability reported a typed failure",
+                },
+                step_error_code=error.code,
+            )
+            return
+        self._finish_capability(
+            claimed=claimed,
+            target=AttemptState.failed,
+            now_us=now_us,
+            input_sha256=input_sha256,
+            attempt_values={
+                "delivery_state": error.delivery_state.value,
+                "external_outcome": "failed",
+                "error_class": error.error_class.value,
+                # The typed message is bounded/scrubbed, but it may still
+                # contain private resource context. Durable state keeps only a
+                # stable public classification.
+                "error_message": "capability reported a typed failure",
+            },
+            step_values={"error_code": error.code},
+        )
+
+    def _publish_capability_success(
+        self,
+        *,
+        claimed: ClaimedStep,
+        snapshot: AttemptDefinitionSnapshot,
+        run: dict,
+        contract: CapabilityContract,
+        action: CapabilityAction,
+        observation: CapabilityObservation,
+        now_us: int,
+    ) -> None:
+        payload = observation.payload
+        if payload is None or observation.status == "failed":
+            raise CapabilityContractError("successful capability observation has no payload")
+        content = payload.value()
+        action_sha256 = action.action_sha256()
+        output_sha256 = content_hash(content)
+        try:
+            schema_name, schema_version_text = contract.definition.observation_schema.rsplit("@", 1)
+            schema_version = int(schema_version_text)
+        except (TypeError, ValueError):
+            raise CapabilityContractError(
+                "capability observation schema identity is invalid"
+            ) from None
+        if not schema_name or schema_version < 1:
+            raise CapabilityContractError("capability observation schema identity is invalid")
+
+        with session_scope() as session:
+            current_step = (
+                session.execute(
+                    steps.select().where(
+                        steps.c.id == claimed.step_id,
+                        steps.c.run_id == claimed.run_id,
+                        steps.c.scope_type == claimed.scope_type,
+                        steps.c.scope_id == claimed.scope_id,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if current_step is None or current_step["output_artifact_id"] is not None:
+                return
+            parsed_inputs = json.loads(current_step["input_artifact_ids_json"] or "[]")
+            if not (
+                isinstance(parsed_inputs, list)
+                and all(isinstance(item, str) and item for item in parsed_inputs)
+            ):
+                raise ValueError("capability step has malformed input artifact lineage")
+            input_artifact_ids = list(parsed_inputs)
+            scope = _scope_of(claimed)
+            for artifact_id in input_artifact_ids:
+                self.executor.artifacts.require(session, scope=scope, artifact_id=artifact_id)
+
+            if not self.state.acquire_capability_publication_cas(
+                session,
+                scope=scope,
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                attempt_id=claimed.attempt_id,
+                attempt_no=claimed.attempt_no,
+                lease_owner=claimed.lease_owner,
+                input_sha256=action_sha256,
+                output_sha256=output_sha256,
+                external_outcome=observation.status,
+                now_us=now_us,
+            ):
+                return
+            artifact = self.executor.artifacts.create(
+                session,
+                scope=scope,
+                run_id=claimed.run_id,
+                step_id=claimed.step_id,
+                artifact_type=schema_name,
+                schema_name=schema_name,
+                schema_version=schema_version,
+                content=content,
+                producer_kind=ProducerKind.deterministic,
+                now_us=now_us,
+                sensitivity=contract.definition.sensitivity,
+                workflow_key=run["workflow_key"],
+                workflow_version=run["workflow_version"],
+                input_artifact_ids=input_artifact_ids,
+                input_sha256=action_sha256,
+                quality_status=(
+                    "partial" if observation.status == "partial" else "valid"
+                ),
+                producer_attempt_id=claimed.attempt_id,
+            )
+            if artifact["content_sha256"] != output_sha256:
+                raise StateError("capability Artifact content hash changed during publication")
+            self.state.transition_step(
+                session,
+                step_id=claimed.step_id,
+                target=StepState.succeeded,
+                now_us=now_us,
+                output_artifact_id=artifact["id"],
+                lease_owner=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+            )
+
     def _finish_capability(
         self,
         *,
         claimed: ClaimedStep,
         target: AttemptState,
         now_us: int,
+        input_sha256: str | None = None,
         attempt_values: dict[str, Any] | None = None,
         step_values: dict[str, Any] | None = None,
     ) -> bool:
@@ -1045,6 +1503,7 @@ class HarnessRunner:
                 lease_owner=claimed.lease_owner,
                 target=target,
                 now_us=now_us,
+                input_sha256=input_sha256,
                 attempt_values=attempt_values,
                 step_values=step_values,
             )

@@ -62,13 +62,18 @@ from pharos.harness.workflows.canary import (
     CANARY_KEY,
     CANARY_V1_IDENTITY,
     CANARY_V2_IDENTITY,
+    CANARY_V3_IDENTITY,
+    build_canary_capability_registry,
     canary_capabilities,
     canary_dsh_workflow,
     canary_model_profiles,
     canary_roles,
+    canary_typed_capabilities,
+    canary_typed_workflow,
     canary_workflow,
     expand,
     expand_dsh,
+    expand_typed,
     reduce,
     validate_canary_actor_output,
 )
@@ -107,6 +112,8 @@ class HarnessApp:
         self.registry = Registry()
         for capability in canary_capabilities():
             self.registry.register_capability(capability)
+        for capability in canary_typed_capabilities():
+            self.registry.register_capability(capability)
         roles = canary_roles()
         for role in roles:
             self.registry.register_role(role)
@@ -114,6 +121,7 @@ class HarnessApp:
             self.registry.register_model_profile(profile)
         self.registry.register(canary_workflow())
         self.registry.register(canary_dsh_workflow())
+        self.registry.register(canary_typed_workflow())
         self.registry.compile()
         self.definition_repository = HarnessDefinitionRepository()
         self.config_service = HarnessConfigService(self.registry)
@@ -151,15 +159,28 @@ class HarnessApp:
                 )
                 for role in roles
             },
+            capability_contracts=build_canary_capability_registry(),
             capabilities=build_executors(),
+            legacy_capability_identities=frozenset(
+                (capability.identity(), capability.definition_hash())
+                for capability in canary_capabilities()
+            ),
             state=self.state,
             usage=self.usage,
             events=self.events,
             clock=self.clock,
-            # Execution hooks are version identities. A route selecting v2
-            # must never silently run the v1 expander/reducer pair.
-            expanders={CANARY_V1_IDENTITY: expand, CANARY_V2_IDENTITY: expand_dsh},
-            run_reducers={CANARY_V1_IDENTITY: reduce, CANARY_V2_IDENTITY: reduce},
+            # Execution hooks are version identities. A route must never
+            # silently run another version's expander/reducer pair.
+            expanders={
+                CANARY_V1_IDENTITY: expand,
+                CANARY_V2_IDENTITY: expand_dsh,
+                CANARY_V3_IDENTITY: expand_typed,
+            },
+            run_reducers={
+                CANARY_V1_IDENTITY: reduce,
+                CANARY_V2_IDENTITY: reduce,
+                CANARY_V3_IDENTITY: reduce,
+            },
         )
         self.dispatcher = dispatcher or HarnessDispatcher(
             state_service=self.state,

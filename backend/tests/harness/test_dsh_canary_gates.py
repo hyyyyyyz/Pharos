@@ -242,8 +242,16 @@ def test_run_snapshot_freezes_the_definition_hash(app: HarnessApp, owner: Scope)
 
 
 def test_canary_hooks_are_version_identity_keyed(app: HarnessApp) -> None:
-    assert set(app.executor.expanders) == {"harness.canary@1", "harness.canary@2"}
-    assert set(app.executor.run_reducers) == {"harness.canary@1", "harness.canary@2"}
+    assert set(app.executor.expanders) == {
+        "harness.canary@1",
+        "harness.canary@2",
+        "harness.canary@3",
+    }
+    assert set(app.executor.run_reducers) == {
+        "harness.canary@1",
+        "harness.canary@2",
+        "harness.canary@3",
+    }
     assert app.registry.require_workflow("harness.canary@2").step("actor_turn").role == (
         "canary_dsh_actor@1"
     )

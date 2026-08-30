@@ -611,6 +611,7 @@ class HarnessStateService:
         lease_owner: str,
         target: AttemptState,
         now_us: int,
+        input_sha256: str | None = None,
         attempt_values: dict[str, Any] | None = None,
         step_values: dict[str, Any] | None = None,
         payload: dict | None = None,
@@ -629,6 +630,12 @@ class HarnessStateService:
             AttemptState.failed,
         }:
             raise StateError("capability finish requires succeeded or failed target")
+        if input_sha256 is not None and (
+            not isinstance(input_sha256, str)
+            or len(input_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in input_sha256)
+        ):
+            raise StateError("capability input_sha256 must be a lowercase SHA-256")
 
         attempt_values = self._capability_values(
             attempt_values,
@@ -657,6 +664,14 @@ class HarnessStateService:
             return False
 
         step_target = StepState.succeeded if target is AttemptState.succeeded else StepState.failed
+        attempt_updates: dict[str, Any] = {
+            "state": target.value,
+            "lease_owner": None,
+            "finished_at": now_us,
+            **attempt_values,
+        }
+        if input_sha256 is not None:
+            attempt_updates["input_sha256"] = input_sha256
         result: Any = session.execute(
             update(attempts)
             .where(
@@ -683,12 +698,7 @@ class HarnessStateService:
                     )
                 ),
             )
-            .values(
-                state=target.value,
-                lease_owner=None,
-                finished_at=now_us,
-                **attempt_values,
-            )
+            .values(**attempt_updates)
         )
         if result.rowcount != 1:
             return False
@@ -892,6 +902,7 @@ class HarnessStateService:
         lease_owner: str,
         ready_at: int,
         now_us: int,
+        input_sha256: str | None = None,
         attempt_values: dict[str, Any] | None = None,
         step_values: dict[str, Any] | None = None,
         payload: dict | None = None,
@@ -905,6 +916,12 @@ class HarnessStateService:
         """
         if isinstance(ready_at, bool) or not isinstance(ready_at, int) or ready_at < now_us:
             raise StateError("capability retry ready_at must be an integer at or after now_us")
+        if input_sha256 is not None and (
+            not isinstance(input_sha256, str)
+            or len(input_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in input_sha256)
+        ):
+            raise StateError("capability input_sha256 must be a lowercase SHA-256")
         attempt_values = self._capability_values(
             attempt_values,
             reserved=_CAPABILITY_ATTEMPT_RESERVED | {"retryable"},
@@ -930,6 +947,15 @@ class HarnessStateService:
         if run_fence.rowcount != 1:
             return False
 
+        attempt_updates: dict[str, Any] = {
+            "state": AttemptState.failed.value,
+            "lease_owner": None,
+            "finished_at": now_us,
+            "retryable": 1,
+            **attempt_values,
+        }
+        if input_sha256 is not None:
+            attempt_updates["input_sha256"] = input_sha256
         result: Any = session.execute(
             update(attempts)
             .where(
@@ -956,13 +982,7 @@ class HarnessStateService:
                     )
                 ),
             )
-            .values(
-                state=AttemptState.failed.value,
-                lease_owner=None,
-                finished_at=now_us,
-                retryable=1,
-                **attempt_values,
-            )
+            .values(**attempt_updates)
         )
         if result.rowcount != 1:
             return False

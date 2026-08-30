@@ -232,11 +232,11 @@ def test_bootstrap_persists_every_registered_definition_binding(db) -> None:
             )
         }
     assert counts == {
-        "harness_workflow_versions": 2,
-        "harness_workflow_definition_bindings": 2,
+        "harness_workflow_versions": 3,
+        "harness_workflow_definition_bindings": 3,
         "harness_model_profile_versions": 2,
         "harness_role_versions": 2,
-        "harness_capability_versions": 3,
+        "harness_capability_versions": 6,
     }
 
 
