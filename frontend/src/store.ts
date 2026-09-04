@@ -46,6 +46,22 @@ const darkQuery = (): MediaQueryList | null =>
 const systemPrefersDark = (): boolean => darkQuery()?.matches ?? false;
 
 /**
+ * The live `(pointer: coarse)` query, or null where matchMedia is absent.
+ *
+ * Touch is what separates an Android tablet from a desktop window of the same
+ * pixel size: the tablet gets the detail panel as a slide-over instead of a
+ * third permanent column, because 196px of 分类树 plus 280px of 详情 leave a
+ * list too narrow to read. A narrow desktop window keeps the classic three
+ * panes — mouse users squeeze, they do not tap through overlays.
+ */
+const coarseQuery = (): MediaQueryList | null =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(pointer: coarse)")
+    : null;
+
+const hasCoarsePointer = (): boolean => coarseQuery()?.matches ?? false;
+
+/**
  * The stored appearance preference, validated rather than cast.
  *
  * The key predates `auto` and holds whatever a previous build wrote, so a value
@@ -118,6 +134,9 @@ interface UIState {
   lastClick: string | null;
   /** Click a row. `order` is the currently visible id order (for shift-range). */
   selectRow: (id: string, order: string[], mods: { meta: boolean; shift: boolean }) => void;
+  /** Whether the 详情 panel is on screen in overlay mode (see `isDetailOverlay`). */
+  libDetailOpen: boolean;
+  setLibDetail: (open: boolean) => void;
 
   /* --------------------------------------------------------------- daily */
   /** "YYYY-MM-DD" of the digest being viewed; null = not chosen yet, so the
@@ -153,6 +172,8 @@ interface UIState {
   winW: number;
   setWinW: (w: number) => void;
   toggleAI: () => void;
+  /** Live `(pointer: coarse)` match — the tablet/desktop fork for layouts. */
+  pointerCoarse: boolean;
 
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
@@ -171,6 +192,23 @@ interface UIState {
  */
 export function isAiOpen(s: Pick<UIState, "aiOpenPref" | "winW">): boolean {
   return s.aiOpenPref === "auto" ? s.winW >= 1200 : s.aiOpenPref;
+}
+
+/**
+ * Above this width a touch device gets the classic three-pane library; below
+ * it the 详情 panel becomes a slide-over.
+ *
+ * The number is the sum the three columns need to stay legible: at 1040px the
+ * 178px expanded rail + 196px 分类树 + 280px 详情 leave ~386px of list, which
+ * still reads; below that the list is the pane that starves. iPad landscape
+ * (1024px) deliberately lands on the overlay side — a 370px list with touch
+ * row heights loses to a 550px list plus a tap-to-open panel.
+ */
+export const DETAIL_OVERLAY_MAX_WIDTH = 1040;
+
+/** Pure so both the components and the tests can evaluate the same fork. */
+export function isDetailOverlay(s: Pick<UIState, "pointerCoarse" | "winW">): boolean {
+  return s.pointerCoarse && s.winW < DETAIL_OVERLAY_MAX_WIDTH;
 }
 
 export const useUI = create<UIState>((set) => ({
@@ -241,6 +279,8 @@ export const useUI = create<UIState>((set) => ({
   selectedIds: [],
   selectedPaperId: null,
   lastClick: null,
+  libDetailOpen: false,
+  setLibDetail: (libDetailOpen) => set({ libDetailOpen }),
   selectRow: (id, order, mods) =>
     set((s) => {
       let sel: string[];
@@ -300,6 +340,7 @@ export const useUI = create<UIState>((set) => ({
   winW: typeof window !== "undefined" ? window.innerWidth : 1440,
   setWinW: (winW) => set({ winW }),
   toggleAI: () => set((s) => ({ aiOpenPref: !isAiOpen(s) })),
+  pointerCoarse: hasCoarsePointer(),
 
   settingsOpen: false,
   settingsTab: "account",
@@ -319,6 +360,13 @@ export const useUI = create<UIState>((set) => ({
    keeps it and the OS is simply ignored from then on. */
 darkQuery()?.addEventListener("change", (event) => {
   useUI.setState((s) => ({ theme: resolveTheme(s.themePref, event.matches) }));
+});
+
+/* Same story for a mouse being plugged into (or a touch digitiser leaving) an
+   Android tablet: the library layout fork reads `pointerCoarse`, so the store
+   has to notice rather than freeze at the boot-time match. */
+coarseQuery()?.addEventListener("change", (event) => {
+  useUI.setState({ pointerCoarse: event.matches });
 });
 
 /* ======================================================================= */

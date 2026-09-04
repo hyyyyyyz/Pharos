@@ -1,0 +1,154 @@
+/* Tablet / touch adaptation.
+ *
+ * The desktop layout is the product; this file only bends it for the two
+ * devices that actually open Pharos in a browser from the couch: Android
+ * tablets (the reason this exists) and, incidentally, any coarse-pointer
+ * device. Three concerns live here, in order of the damage they cause:
+ *
+ *   1. touch targets — the desktop sizes are mouse-sized (24px buttons),
+ *      which on a digitiser miss or misfire;
+ *   2. safe-area insets — standalone PWA mode puts the app under the status
+ *      bar and camera notch;
+ *   3. toolbar overflow — the reader's top bar was budgeted for >=1200px.
+ *
+ * Layout forks that need JS state (the 详情 slide-over) are NOT here; they
+ * live in `store.ts` (`isDetailOverlay`) because a media query cannot move a
+ * React element into an overlay. This file is pure presentation.
+ */
+
+/* ------------------------------------------------------- standalone safe area */
+
+/* `viewport-fit=cover` (index.html) extends the page into the notch; hand the
+   edge back so the rail and status chrome never sit under it. Only standalone
+   needs this — in a browser tab the insets are all zero. */
+@media all and (display-mode: standalone) {
+  .ph-root {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+}
+
+/* ----------------------------------------------------------- touch targets */
+
+/* Roughly the Android Material minimum (48dp) for rows, 44px for buttons the
+   thumbs reach for; per-component rather than a blanket `button` rule, because
+   a blanket bump would distort the icon-only marks that are sized by their
+   width on desktop too. */
+@media (pointer: coarse) {
+  /* shell + rail */
+  .ph-rail-item--exp,
+  .ph-rail-item--col {
+    min-height: 44px;
+  }
+  .ph-rail-toggle {
+    width: 34px;
+    height: 34px;
+  }
+  .ph-rail-acct {
+    height: 48px;
+  }
+  .ph-rail-acct-mini {
+    width: 40px;
+    height: 40px;
+  }
+  .ph-rail-resize-handle {
+    /* dragging a 4px separator with a finger is not a thing; keep the handle
+       but make it graspable */
+    width: 12px;
+    margin-left: -6px;
+  }
+
+  /* tab strip */
+  .ph-tabbar {
+    height: 40px;
+  }
+  .ph-tabbar-tab {
+    height: 40px;
+    padding: 0 14px;
+  }
+  .ph-tabbar-close {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* library */
+  .ph-il-row {
+    min-height: 44px;
+  }
+  .ph-il-search {
+    height: 36px;
+  }
+  .ph-il-btn-ghost,
+  .ph-il-btn-primary {
+    height: 36px;
+  }
+  .ph-il-arxiv {
+    height: 36px;
+  }
+
+  /* detail panel */
+  .ph-dp-primary,
+  .ph-dp-secondary {
+    height: 38px;
+  }
+
+  /* reader */
+  .ph-rv-bar {
+    height: 44px;
+  }
+  .ph-rv-outline-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .ph-rv-seg-btn {
+    height: 30px;
+    padding: 0 12px;
+  }
+  .ph-rv-ai-btn {
+    height: 32px;
+  }
+  .ph-rv-subbar {
+    height: 40px;
+  }
+  .ph-rv-zoom-btn {
+    width: 34px;
+    height: 30px;
+  }
+  .ph-rv-fit {
+    height: 30px;
+  }
+  .ph-outline {
+    width: 200px;
+  }
+  .ph-outline-seg-btn {
+    height: 26px;
+  }
+  .ph-outline-collapse {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* ------------------------------------------------- narrow reader toolbar */
+
+/* The reader bar fits its buttons at 1200px+, but a portrait tablet cuts the
+   budget to roughly half: shrink the filename's share before anything
+   overflows. 24vw at 800px is 192px — enough for a stem, ellipsis does the
+   rest — and on a phone the seg control would still win, so let the bar wrap
+   instead of clip. */
+@media (max-width: 1040px) and (pointer: coarse) {
+  .ph-rv-file {
+    max-width: 24vw;
+  }
+  .ph-rv-bar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 44px;
+    padding: 3px 8px;
+  }
+  .ph-rv-spacer {
+    display: none;
+  }
+}

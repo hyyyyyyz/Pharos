@@ -7,6 +7,45 @@
   overflow-y: auto;
 }
 
+/* Tablet slide-over. Rendered only when `isDetailOverlay` says the viewport is
+   touch-sized, so the desktop panel keeps its static three-pane layout. */
+.ph-dp--overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: min(320px, 88vw);
+  border-left: 1px solid var(--c-bd, #e6e8ec);
+  box-shadow: -12px 0 28px rgba(11, 21, 36, 0.14);
+  animation: ph-fade 0.16s ease-out;
+}
+
+/* Sticky inside the panel's own scroll box, so it stays reachable when a long
+   abstract is being scrolled, and right-aligned by margin so it does not
+   overlay the title text beneath it. */
+.ph-dp-close {
+  position: sticky;
+  top: 8px;
+  z-index: 1;
+  margin: 8px 8px 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ph-dp-close:hover {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+
 /* ------------------------------------------------------------ empty state */
 
 .ph-dp-empty {

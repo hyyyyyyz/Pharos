@@ -510,7 +510,11 @@ Pharos deliberately distinguishes implemented records from automated research:
   [pharos.selab.top](https://pharos.selab.top/); GitHub Pages hosts only the
   public marketing site.
 - Desktop builds are unsigned. Signed and notarized releases, a Windows
-  installer rather than a portable archive, and a mobile client are future work.
+  installer rather than a portable archive, and a native mobile client are
+  future work. The web app already works on Android tablets — touch-sized
+  chrome, the detail panel as a slide-over on narrow viewports, and an
+  installable PWA shell — so the tablet path is "open the site, add to home
+  screen", not a store build.
 
 The next major workstreams are the durable Research Harness, grounded paper
 Q&A, an evidence-aware idea workflow, claim-to-result bindings, and an

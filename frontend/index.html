@@ -2,7 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets a standalone PWA (Android tablet) paint under
+         the status bar; tablet.css hands the edge back via safe-area insets. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Pharos — 从文献发现、精读与知识沉淀到研究项目推进的一体化科研工作台" />
 
     <!-- Versioned transparent assets force browsers to discard the old opaque

@@ -30,7 +30,7 @@ import {
   toVM,
   type PaperVM,
 } from "../lib/model";
-import { pdfTranslationEnabled, useSession, useUI, type SortCol } from "../store";
+import { pdfTranslationEnabled, isDetailOverlay, useSession, useUI, type SortCol } from "../store";
 import { PAPER_DRAG_MIME } from "./CollectionTree";
 import "./ItemList.css";
 
@@ -210,6 +210,8 @@ export function ItemList(): JSX.Element {
   const selectRow = useUI((s) => s.selectRow);
   const openPaper = useUI((s) => s.openPaper);
   const openSettings = useUI((s) => s.openSettings);
+  const setLibDetail = useUI((s) => s.setLibDetail);
+  const detailOverlay = useUI(isDetailOverlay);
   const pdfTx = useSession(pdfTranslationEnabled);
 
   const cols = pdfTx ? COLS : COLS_NO_TX;
@@ -632,6 +634,14 @@ export function ItemList(): JSX.Element {
                   onDragStart={(e) => onRowDragStart(e, r.id)}
                   onClick={(e) => {
                     selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
+                    // Overlay mode (touch, narrow): a plain tap shows the detail
+                    // slide-over, mirroring how the desktop pane follows the
+                    // selection. Modified clicks are multi-select business —
+                    // popping a panel over the list on every one of those would
+                    // fight the user's hands.
+                    if (detailOverlay && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+                      setLibDetail(true);
+                    }
                   }}
                   onDoubleClick={() => openPaper(r.id)}
                 >

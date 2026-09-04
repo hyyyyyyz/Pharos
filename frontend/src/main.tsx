@@ -6,6 +6,7 @@ import { AuthGate } from "./auth/AuthGate";
 import { ApiError } from "./api/client";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 import "./styles/global.css";
+import "./styles/tablet.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,33 @@ subscribeSession(() => {
   if (hadToken && !hasToken) queryClient.clear();
   hadToken = hasToken;
 });
+
+/**
+ * Service worker: installable on an Android tablet's home screen and able to
+ * repaint the shell with no network.
+ *
+ * `sw.js` deliberately never touches `/api/` — every Pharos answer is
+ * owner-scoped and session-shaped, and a cached paper list served after a
+ * sign-out would show one user another's papers, the exact failure the
+ * `queryClient.clear()` subscription above exists to prevent. The worker only
+ * caches the static shell (hashed assets + `index.html`), which is the part
+ * that makes an installed PWA open instead of failing with a dinosaur.
+ *
+ * Dev never registers: Vite's module graph invalidates far faster than a SW's
+ * update cycle, and a stale shell serving last week's modules is a bug no
+ * developer can see past. Prod only, and a failed registration is swallowed —
+ * the app must run where SWs are disabled (private mode, old WebView).
+ */
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  // Base-aware: the GitHub Pages "pages" build lives under /Pharos/, and a
+  // worker registered at the wrong scope silently covers nothing.
+  const swUrl = `${import.meta.env.BASE_URL}sw.js`;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register(swUrl).catch(() => {
+      /* offline shell is a progressive enhancement, never a dependency */
+    });
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
