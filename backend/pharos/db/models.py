@@ -442,6 +442,46 @@ class Highlight(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
+class InkStroke(Base):
+    """One handwritten stroke on one page of a rendition — stylus ink.
+
+    Same coordinate contract as :class:`Highlight`: **PDF user-space points at
+    scale 1, bottom-left origin**, so a stroke follows its page through zooms,
+    device pixel ratios, and other machines. ``points`` is a JSON array of
+    ``{x, y, p}`` samples — ``p`` is the stylus pressure (0..1) captured per
+    sample, which is what makes the rendered line swell and thin like real ink
+    rather than a constant-width polyline.
+
+    One row per stroke, not one row per page: strokes are written the moment
+    the pen lifts, so a long handwriting session produces many small inserts
+    rather than one rewrite of a growing page blob — and the eraser can remove
+    one stroke without ever re-serialising its neighbours.
+
+    ``kind`` anchors the stroke to a rendition exactly as for highlights: page
+    geometry differs between the original and the bilingual build, so ink drawn
+    on one must never be painted on the other.
+    """
+
+    __tablename__ = "ink_strokes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    #: "original" | "mono" | "dual"
+    kind: Mapped[str] = mapped_column(String(16), default="original")
+    #: 1-based page number within that rendition.
+    page: Mapped[int] = mapped_column(Integer)
+    #: JSON array of {x, y, p} in PDF points; see the class docstring.
+    points: Mapped[str] = mapped_column(Text)
+    #: Token name the frontend resolves to a ``--c-ink-*`` CSS variable — never
+    #: a literal colour, for the same theming reason as :class:`Highlight.color`.
+    color: Mapped[str] = mapped_column(String(16), default="ink")
+    #: Stroke width in PDF points at scale 1, so width scales with zoom the way
+    #: ink on paper does.
+    width: Mapped[float] = mapped_column(Float, default=2.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Note(Base):
     """A paper-level note — the 笔记 block in the detail panel.
 

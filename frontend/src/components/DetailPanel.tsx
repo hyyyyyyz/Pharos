@@ -11,7 +11,7 @@ import { api } from "../api/client";
 import type { Paper } from "../api/types";
 import { Icons } from "../design/icons";
 import { dash, isJobActive, statusOf, toVM } from "../lib/model";
-import { pdfTranslationEnabled, useSession, useUI } from "../store";
+import { isDetailOverlay, pdfTranslationEnabled, useSession, useUI } from "../store";
 import "./DetailPanel.css";
 
 /** Job error messages can be a whole stack trace; the panel only has room for a line. */
@@ -20,6 +20,8 @@ const ERR_MAX = 120;
 export function DetailPanel(): JSX.Element {
   const selectedPaperId = useUI((s) => s.selectedPaperId);
   const openPaper = useUI((s) => s.openPaper);
+  const detailOverlay = useUI(isDetailOverlay);
+  const setLibDetail = useUI((s) => s.setLibDetail);
   const pdfTx = useSession(pdfTranslationEnabled);
   const qc = useQueryClient();
   const id = selectedPaperId ?? "";
@@ -48,7 +50,18 @@ export function DetailPanel(): JSX.Element {
 
   if (!paper) {
     return (
-      <aside className="ph-dp ph-scroll">
+      <aside className={detailOverlay ? "ph-dp ph-dp--overlay ph-scroll" : "ph-dp ph-scroll"}>
+        {detailOverlay && (
+          <button
+            type="button"
+            className="ph-dp-close"
+            aria-label="关闭详情"
+            title="关闭详情"
+            onClick={() => setLibDetail(false)}
+          >
+            <Icons.close />
+          </button>
+        )}
         <div className="ph-dp-empty">
           选择一个条目
           <br />
@@ -70,7 +83,18 @@ export function DetailPanel(): JSX.Element {
   const abstract = vm.abstract?.trim() ?? "";
 
   return (
-    <aside className="ph-dp ph-scroll">
+    <aside className={detailOverlay ? "ph-dp ph-dp--overlay ph-scroll" : "ph-dp ph-scroll"}>
+      {detailOverlay && (
+        <button
+          type="button"
+          className="ph-dp-close"
+          aria-label="关闭详情"
+          title="关闭详情"
+          onClick={() => setLibDetail(false)}
+        >
+          <Icons.close />
+        </button>
+      )}
       <div className="ph-dp-body">
         <div className="ph-dp-title">{paper.title || paper.orig_filename}</div>
         <div className="ph-dp-sub">{paper.orig_filename}</div>

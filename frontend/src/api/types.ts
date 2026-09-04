@@ -203,6 +203,32 @@ export interface ArxivImportBody {
 
 export type PdfKind = "original" | "mono" | "dual";
 
+/* ------------------------------------------------------------------- ink */
+
+/** One stylus sample: PDF points at scale 1, bottom-left origin, plus the
+ *  pressure (0..1) captured at that instant. Mirrors `services/ink.Point`. */
+export interface InkPoint {
+  x: number;
+  y: number;
+  p: number;
+}
+
+/** One stored stroke — one pen-down to pen-up gesture. Mirrors `InkOut`. */
+export interface InkStrokeRow {
+  id: string;
+  paper_id: string;
+  /** The rendition this stroke was drawn on; never painted on another. */
+  kind: PdfKind;
+  /** 1-based page within that rendition. */
+  page: number;
+  points: InkPoint[];
+  /** Token name resolved to a `--c-ink-*` CSS variable — never a hex value. */
+  color: string;
+  /** Stroke width in PDF points, so width scales with zoom like ink on paper. */
+  width: number;
+  created_at: string;
+}
+
 /* ------------------------------------------------------------------ daily */
 
 /** A paper is only "done" once the reading layer actually produced a card.

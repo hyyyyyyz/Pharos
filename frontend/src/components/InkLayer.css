@@ -1,0 +1,65 @@
+/* InkLayer — the handwritten-stroke canvas over one PDF page. */
+
+/* ------------------------------------------------------------- the palette */
+/*
+   Fixed across themes, exactly like the highlight washes (see
+   HighlightLayer.css): a PDF page is white paper in light and dark alike, so
+   an ink that reads on it in one theme reads on it in the other, and swapping
+   the palette with the theme would mean handwriting that came back a
+   different colour at night.
+
+   These are deliberately DARKER than the highlight tokens — a wash sits at
+   oklch L ≈ 0.85 so glyphs stay readable through it, but a 2pt line at that
+   lightness would be invisible. Ink lives at L ≈ 0.45-0.62: dark enough to
+   read as pen strokes, saturated enough to tell the accents apart at that
+   weight.
+
+   The API stores token names ("ink", "amber", …), never values, so this block
+   is the single place a stroke's appearance is decided. Declared on BOTH
+   roots that consume it — the canvas layer and the reader's ink toolbar —
+   because the swatches live in the subbar, outside `.ph-ink`, and a variable
+   resolved only there would leave every swatch falling back to the text
+   colour (the "colour picker shows the wrong colours" bug). Same two-roots
+   shape as HighlightLayer's `.ph-hl, .ph-hl-pop`.
+*/
+.ph-ink,
+.ph-rv-inkbar {
+  --c-ink-ink: oklch(0.25 0.03 259);
+  --c-ink-amber: oklch(0.55 0.12 70);
+  --c-ink-green: oklch(0.52 0.11 150);
+  --c-ink-blue: oklch(0.5 0.12 250);
+  --c-ink-pink: oklch(0.55 0.16 355);
+  --c-ink-purple: oklch(0.48 0.13 300);
+}
+
+.ph-ink {
+  position: absolute;
+  inset: 0;
+  /* A canvas is a REPLACED element: `inset: 0` alone left-right-constrains a
+     div, but a canvas keeps its intrinsic 300x150 size and merely sits in the
+     corner — every stroke outside that box is cropped or never lands on the
+     layer at all ("cannot write", "strokes misplaced"). Explicit percentage
+     sizing is what actually stretches it over the page. */
+  width: 100%;
+  height: 100%;
+  /* Above the text layer (z 1) and the search-hit boxes (z 2). The dry and
+     wet canvases share this level — DOM order stacks wet over dry — and sit
+     BELOW the highlight toolbar popup (z 4), which stays clickable while a
+     pen tool is active. */
+  z-index: 3;
+  /* Inert until a tool is chosen: selection, pan and touch scrolling all pass
+     through to the layers beneath, exactly as before ink existed. */
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.ph-ink--live {
+  pointer-events: auto;
+  /* The browser's own touch handling is replaced here: touch pointers are
+     palm-rejected or drawn with, and two fingers pan manually. */
+  touch-action: none;
+}
+
+.ph-ink--erase {
+  cursor: cell;
+}

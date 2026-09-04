@@ -96,6 +96,12 @@ other.
   drag-to-pan, text selection, copy, in-document search, and annotations.
 - **Coordinate-stable highlights.** Highlight locations are stored in PDF
   coordinates so they remain attached at different zoom levels and window sizes.
+- **Handwritten notes with a stylus.** The web reader accepts stylus input:
+  pressure-sensitive strokes stored in the same PDF coordinates as highlights,
+  palm rejection (a pen outranks touch; finger writing is opt-in), a
+  whole-stroke eraser (a stylus eraser button works in any tool), two-finger
+  panning while a tool is active, and document-level undo/redo. Ink is
+  owner-scoped per rendition on the backend, like every annotation.
 - **Optional translation providers.** Keyless Bing/Google translation and
   configured DeepSeek/OpenAI-compatible providers share the same engine boundary.
 - **Per-account controls.** Whole-document translation can be disabled without
@@ -510,7 +516,11 @@ Pharos deliberately distinguishes implemented records from automated research:
   [pharos.selab.top](https://pharos.selab.top/); GitHub Pages hosts only the
   public marketing site.
 - Desktop builds are unsigned. Signed and notarized releases, a Windows
-  installer rather than a portable archive, and a mobile client are future work.
+  installer rather than a portable archive, and a native mobile client are
+  future work. The web app already works on Android tablets — touch-sized
+  chrome, the detail panel as a slide-over on narrow viewports, and an
+  installable PWA shell — so the tablet path is "open the site, add to home
+  screen", not a store build.
 
 The next major workstreams are the durable Research Harness, grounded paper
 Q&A, an evidence-aware idea workflow, claim-to-result bindings, and an

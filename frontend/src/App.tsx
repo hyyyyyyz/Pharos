@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useUI } from "./store";
+import { isDetailOverlay, useUI } from "./store";
 import { themeStyle } from "./design/tokens";
 import { Rail } from "./components/Rail";
 import { TabBar } from "./components/TabBar";
@@ -46,6 +46,13 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
+  // On a touch device below the detail-overlay breakpoint the 280px third
+  // column becomes a slide-over; on desktop the pane stays put and neither the
+  // backdrop nor the close button exist.
+  const detailOverlay = useUI(isDetailOverlay);
+  const libDetailOpen = useUI((s) => s.libDetailOpen);
+  const setLibDetail = useUI((s) => s.setLibDetail);
+
   return (
     <div className="ph-root" style={themeStyle(theme, accent)}>
       <Rail />
@@ -59,7 +66,19 @@ export default function App() {
               <div className="ph-libview">
                 <CollectionTree />
                 <ItemList />
-                <DetailPanel />
+                {detailOverlay ? (
+                  libDetailOpen && (
+                    <>
+                      <div
+                        className="ph-libview-backdrop"
+                        onClick={() => setLibDetail(false)}
+                      />
+                      <DetailPanel />
+                    </>
+                  )
+                ) : (
+                  <DetailPanel />
+                )}
               </div>
             )}
           </>

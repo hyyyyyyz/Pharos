@@ -44,6 +44,11 @@ export const Icons = {
   search: make(["M13 13l3.4 3.4", { c: true, cx: 9, cy: 9, r: 5 }]),
   kb: make(["M10 3.4 3.8 6.5 10 9.6l6.2-3.1z", "M3.8 10 10 13.1 16.2 10", "M3.8 13.2 10 16.3l6.2-3.1"]),
   writing: make(["M4.5 15.3 14 5.8l2.6 2.6-9.5 9.5H4.5z", "M12.6 7.2l2.6 2.6"]),
+  // 手写 ink tools: a nibbed stylus, a block eraser, and the undo/redo pair.
+  pen: make(["M4 16l1.2-4.2L14 3l3 3-8.8 8.8L4 16z", "M12.5 4.5l3 3"]),
+  eraser: make(["M3.5 13.5 10 7l4.5 4.5-6.5 6.5H5.5z", "M8 9l4.5 4.5"]),
+  undo: make(["M6 5.5h6.5a4 4 0 0 1 0 8H5.5", "M8 3 5.5 5.5 8 8"]),
+  redo: make(["M14 5.5H7.5a4 4 0 0 0 0 8H14.5", "M12 3l2.5 2.5L12 8"]),
   // 每日论文: a dated sheet with two lines of text — a digest that arrives daily.
   daily: make(
     [

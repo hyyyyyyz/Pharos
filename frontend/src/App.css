@@ -28,4 +28,15 @@
   flex: 1;
   display: flex;
   min-height: 0;
+  /* position: relative — anchor for the tablet slide-over 详情 panel and its
+     tap-closing backdrop, which are positioned against this box. */
+  position: relative;
+}
+
+.ph-libview-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(11, 21, 36, 0.22);
+  animation: ph-fade 0.15s ease-out;
 }
