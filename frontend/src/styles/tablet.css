@@ -19,15 +19,17 @@
 /* ------------------------------------------------------- standalone safe area */
 
 /* `viewport-fit=cover` (index.html) extends the page into the notch; hand the
-   edge back so the rail and status chrome never sit under it. Only standalone
-   needs this — in a browser tab the insets are all zero. */
-@media all and (display-mode: standalone) {
-  .ph-root {
-    padding-top: env(safe-area-inset-top);
-    padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-  }
+   edge back so the rail and status chrome never sit under it.
+   Applied UNCONDITIONALLY rather than behind `@media (display-mode:
+   standalone)`: in a WebView shell (the tablet test APK) the display-mode
+   query does not match "standalone", yet the status bar still overlays the
+   content — and in a plain browser tab the env() insets are all zero anyway,
+   so the unconditional rule is a no-op there. */
+.ph-root {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
 }
 
 /* ----------------------------------------------------------- touch targets */

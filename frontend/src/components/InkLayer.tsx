@@ -1,10 +1,22 @@
 /**
  * InkLayer — handwritten strokes on one PDF page, captured from a stylus.
  *
- * Mounted inside `.ph-pc-page` like `HighlightLayer`, at z-index 3: above the
- * text layer (ink sits ON the paper, and with a tool active the canvas — not
- * the text spans — receives the pointer, so writing never starts a selection)
- * and below the highlight toolbar (z-index 4), which stays clickable.
+ * Two canvases, the note-app architecture:
+ *
+ * - **dry** (z-index 3): every committed stroke, repainted from the query
+ *   cache whenever strokes or zoom change.
+ * - **wet** (z-index 4, above dry): the gesture in progress. Redrawn from
+ *   scratch on every input batch — cheap, because it only ever holds one
+ *   stroke — so the outline can breathe with pressure without tearing the
+ *   already-drawn tail. Predicted samples (Chromium's `getPredictedEvents`)
+ *   extend the wet outline past the physical pen tip to hide digitiser
+ *   latency; they are discarded on the next real sample.
+ *
+ * Mounted inside `.ph-pc-page` like `HighlightLayer`. Above the text layer
+ * (ink sits ON the paper, and with a tool active the canvas — not the text
+ * spans — receives the pointer, so writing never starts a selection) and
+ * below the highlight toolbar popup (z-index 5 for the wet layer, popups sit
+ * at their own level inside the highlight layer's root).
  *
  * Interaction model follows the note apps people already know:
  *
@@ -15,24 +27,27 @@
  *   `touch-action: none`, which stills the browser's own scrolling, so the
  *   two-finger pan is implemented here against the page viewport. A finger
  *   stroke still in progress is abandoned when a second finger lands — it was
- *   never committed, so nothing is lost. Pinch-zoom stays out of scope; the
- *   zoom controls remain the zoom.
- * - **The eraser removes whole strokes** (OneNote's default): a partial erase
- *   would have to split a stored row, and deleting half a written word reads
- *   as a bug. A stylus barrel/eraser button erases in any tool.
+ *   never committed, so nothing is lost.
+ * - **The eraser removes whole strokes** (OneNote's default). A stylus
+ *   barrel/eraser button erases in any tool.
  * - A finished stroke is written to the backend the moment the pen lifts; the
  *   gesture lands in the document-level undo stack (`store.inkPast`).
  *
  * Coordinates are PDF user space (points, scale 1, bottom-left origin) — the
  * same contract as highlights, so strokes follow their page through zooms and
  * devices. The canvas transform applies scale and the y-flip; `lib/ink` owns
- * the geometry and the rendering in that space.
+ * the geometry and the outline rendering in that space.
+ *
+ * Input is handled with native listeners (not React synthetic events) because
+ * the wet canvas needs `pointermove` at digitiser rate with coalesced
+ * samples, and because React's root delegation adds one scheduling hop we
+ * cannot afford mid-stroke.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { InkPoint, InkStrokeRow } from "../api/types";
-import { paintStroke, pointToPdf, strokeNear } from "../lib/ink";
+import { paintStroke, pointToPdf, strokeNear, strokeOutline, paintOutline } from "../lib/ink";
 import { useUI } from "../store";
 import "./InkLayer.css";
 
@@ -44,8 +59,8 @@ const MAX_POINTS = 2000;
 /** Start thinning below the ceiling, leaving the server a little headroom. */
 const THIN_THRESHOLD = 1900;
 
-/** A pointer actively writing this stroke. */
-interface StrokeSession {
+/** Gesture state — refs, because it changes at digitiser rate. */
+interface Session {
   pointerId: number;
   points: InkPoint[];
   erasing: boolean;
@@ -67,7 +82,8 @@ export function InkLayer({
   pageHeight: number;
 }): JSX.Element {
   const qc = useQueryClient();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dryRef = useRef<HTMLCanvasElement>(null);
+  const wetRef = useRef<HTMLCanvasElement>(null);
 
   const inkMode = useUI((s) => s.inkMode);
   const inkColor = useUI((s) => s.inkColor);
@@ -90,48 +106,63 @@ export function InkLayer({
 
   /* ------------------------------------------------------------- painting */
 
-  /**
-   * Repaint every stored stroke. `transform` applies scale and the PDF y-flip,
-   * so drawing and erasing both work in PDF points and line widths scale with
-   * zoom exactly the way ink on paper does.
-   */
-  const repaint = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (w === 0 || h === 0) return;
-    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-    }
-    const k = dpr * scale;
-    ctx.setTransform(k, 0, 0, -k, 0, pageHeight * k);
-    // User-space clear of the page box (the transform flips y, so 0..pageHeight
-    // covers the whole canvas).
-    ctx.clearRect(0, 0, w / scale, pageHeight);
-    // One computed-style read per repaint, not per stroke: 300 strokes would
-    // otherwise cost 300 forced style resolutions.
+  /** Size a canvas's backing store to its CSS box × dpr, and return the
+   *  PDF-space transform factor. Null when the canvas is not laid out yet. */
+  const prepare = useCallback(
+    (canvas: HTMLCanvasElement): { k: number; w: number } | null => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      if (w === 0 || h === 0) return null;
+      const bw = Math.floor(w * dpr);
+      const bh = Math.floor(h * dpr);
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+      }
+      const k = dpr * scale;
+      canvas.getContext("2d")?.setTransform(k, 0, 0, -k, 0, pageHeight * k);
+      return { k, w };
+    },
+    [scale, pageHeight],
+  );
+
+  const clearInSpace = useCallback(
+    (canvas: HTMLCanvasElement, w: number) => {
+      canvas
+        .getContext("2d")
+        ?.clearRect(0, 0, w / scale, pageHeight);
+    },
+    [scale, pageHeight],
+  );
+
+  /** The token->colour resolver, read once per repaint: 300 strokes must not
+   *  cost 300 forced style resolutions. */
+  const colorResolver = useCallback((canvas: HTMLCanvasElement) => {
     const style = getComputedStyle(canvas);
-    const colorOf = (token: string): string =>
+    return (token: string): string =>
       style.getPropertyValue(`--c-ink-${token}`).trim() ||
       style.getPropertyValue("--c-tx").trim() ||
       "#1e222a";
-    for (const stroke of mine) paintStroke(ctx, stroke, colorOf);
-  }, [mine, scale, pageHeight]);
+  }, []);
+
+  const repaintDry = useCallback(() => {
+    const canvas = dryRef.current;
+    if (!canvas) return;
+    const sized = prepare(canvas);
+    if (!sized) return;
+    clearInSpace(canvas, sized.w);
+    const colorOf = colorResolver(canvas);
+    for (const stroke of mine) paintStroke(canvas.getContext("2d")!, stroke, colorOf);
+  }, [mine, prepare, clearInSpace, colorResolver]);
 
   useEffect(() => {
-    repaint();
-  }, [repaint]);
+    repaintDry();
+  }, [repaintDry]);
 
   /* ------------------------------------------------------------- gestures */
 
-  // Gesture state lives in refs: it changes at pointer-event frequency and
-  // nothing about the React render depends on it mid-gesture.
-  const strokeRef = useRef<StrokeSession | null>(null);
+  const strokeRef = useRef<Session | null>(null);
   /** Pointer id of the active pen, while down — the palm-rejection gate. */
   const penRef = useRef<number | null>(null);
   /** Live touch pointers, for the two-finger pan. */
@@ -140,8 +171,7 @@ export function InkLayer({
   /** Strokes deleted by the in-flight eraser gesture, for one undo op. */
   const erasedRef = useRef<InkStrokeRow[]>([]);
 
-  /** Functional cache write: safe against mid-gesture staleness, because the
-   *  updater always sees the latest committed rows. */
+  /** Functional cache write: safe against mid-gesture staleness. */
   const updateCache = useCallback(
     (updater: (prev: InkStrokeRow[]) => InkStrokeRow[]) => {
       qc.setQueryData<InkStrokeRow[]>(["ink", paperId, kind], (prev) =>
@@ -152,189 +182,193 @@ export function InkLayer({
   );
 
   const viewportPan = useCallback((dx: number, dy: number) => {
-    const vp = canvasRef.current?.closest(".ph-pc") as HTMLElement | null;
+    const vp = wetRef.current?.closest(".ph-pc") as HTMLElement | null;
     if (!vp) return;
     vp.scrollLeft += dx;
     vp.scrollTop += dy;
   }, []);
 
-  /** Delete every stored stroke the current point touches, optimistically. */
+  /** Erase every stored stroke the point touches, optimistically. */
   const eraseAt = useCallback(
-    (clientX: number, clientY: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const origin = canvas.getBoundingClientRect();
-      const px = (clientX - origin.left) / scale;
-      const py = pageHeight - (clientY - origin.top) / scale;
-      const reach = ERASER_REACH_PX / scale;
+    (x: number, y: number) => {
       const done = new Set(erasedRef.current.map((s) => s.id));
       for (const stroke of mine) {
         if (done.has(stroke.id)) continue;
-        if (!strokeNear(stroke.points, stroke.width, px, py, reach)) continue;
+        if (!strokeNear(stroke.points, stroke.width, x, y, ERASER_REACH_PX / scale)) continue;
         erasedRef.current.push(stroke);
         updateCache((prev) => prev.filter((s) => s.id !== stroke.id));
         void api.ink.remove(stroke.id).catch(() => {
-          // The erase failed server-side; the refetch restores the truth.
           void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
         });
       }
     },
-    [mine, scale, pageHeight, updateCache, qc, paperId, kind],
+    [mine, scale, updateCache, qc, paperId, kind],
   );
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const native = e.nativeEvent;
+  /** Repaint the wet layer: the live outline, plus (for pens) the predicted
+   *  tail that hides digitiser latency. Predicted samples are render-only and
+   *  never enter `session.points`. */
+  const paintWet = useCallback(
+    (session: Session, predicted: InkPoint[]) => {
+      const wet = wetRef.current;
+      if (!wet) return;
+      const sized = prepare(wet);
+      if (!sized) return;
+      clearInSpace(wet, sized.w);
+      if (session.erasing) return;
+      const ctx = wet.getContext("2d")!;
+      const colorOf = colorResolver(wet);
+      const live = [...session.points, ...predicted];
+      const outline = strokeOutline(live, inkWidth, true);
+      if (outline.length >= 3) {
+        paintOutline(
+          ctx,
+          outline,
+          colorOf(inkColor),
+        );
+      }
+    },
+    [prepare, clearInSpace, colorResolver, inkWidth, inkColor],
+  );
 
-    if (native.pointerType === "touch") {
+  /* ------------------------------------------------- native event handlers */
+
+  useEffect(() => {
+    if (inkMode === "off") return;
+    const wet = wetRef.current;
+    if (!wet) return;
+    const debug = new URLSearchParams(window.location.search).has("inkdebug");
+
+    const inPageSpace = (clientX: number, clientY: number, pressure: number): InkPoint => {
+      const origin = wet.getBoundingClientRect();
+      return pointToPdf(clientX, clientY, origin, scale, pageHeight, pressure);
+    };
+
+    const startSession = (e: PointerEvent): void => {
+      if (strokeRef.current !== null) return; // one stroke at a time
+      // Barrel-button / eraser-end erases in any tool.
+      const eraserButton = e.pointerType === "pen" && (e.buttons & 32) !== 0;
+      const erasing = inkMode === "erase" || eraserButton;
+      const pressure = e.pressure > 0 ? e.pressure : 0.5;
+      strokeRef.current = {
+        pointerId: e.pointerId,
+        points: [inPageSpace(e.clientX, e.clientY, pressure)],
+        erasing,
+      };
+      erasedRef.current = [];
+      try {
+        wet.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture is an optimisation; events still target the canvas */
+      }
+      if (debug) console.debug("[ink] down", e.pointerType, e.pressure, e.pointerId);
+    };
+
+    const onTouchDown = (e: PointerEvent): void => {
       // A pen outranks everything: while it is down, a touch pointer is a palm.
       if (penRef.current !== null) return;
-      touchesRef.current.set(native.pointerId, { x: native.clientX, y: native.clientY });
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touchesRef.current.size === 2) {
-        // Second finger lands: abandon any in-progress finger stroke (never
-        // committed, so nothing is lost) and become a pan. The stroke's live
-        // segments are already on the canvas — repaint to wipe the ghost.
+        // Second finger: abandon the uncommitted finger stroke (wipe its wet
+        // ghost) and become a pan.
         strokeRef.current = null;
-        repaint();
+        paintWet({ pointerId: -1, points: [], erasing: true }, []);
         const pts = [...touchesRef.current.values()];
         panMidRef.current = {
           x: (pts[0]!.x + pts[1]!.x) / 2,
           y: (pts[0]!.y + pts[1]!.y) / 2,
         };
       } else if (touchesRef.current.size > 2) {
-        return; // a third finger joins the pan; it starts nothing
-      }
-      if (touchesRef.current.size !== 1 || !inkFingerDraw || strokeRef.current !== null) {
-        e.preventDefault();
         return;
       }
-      // Fall through: an opted-in single finger writes, like a pen would.
-    } else if (native.pointerType === "pen") {
-      penRef.current = native.pointerId;
-    }
-
-    if (strokeRef.current !== null) return; // one stroke at a time
-
-    // Barrel-button / eraser-end erases in any tool.
-    const eraserButton = native.pointerType === "pen" && (native.buttons & 32) !== 0;
-    const erasing = inkMode === "erase" || eraserButton;
-
-    const origin = canvas.getBoundingClientRect();
-    const pressure = native.pressure > 0 ? native.pressure : 0.5;
-    const first = pointToPdf(native.clientX, native.clientY, origin, scale, pageHeight, pressure);
-    strokeRef.current = { pointerId: native.pointerId, points: [first], erasing };
-    erasedRef.current = [];
-    canvas.setPointerCapture(native.pointerId);
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    const native = e.nativeEvent;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    if (native.pointerType === "touch") {
-      const touch = touchesRef.current.get(native.pointerId);
-      if (touch) {
-        touch.x = native.clientX;
-        touch.y = native.clientY;
+      if (touchesRef.current.size === 1 && inkFingerDraw && strokeRef.current === null) {
+        // Opted-in single finger writes, like a pen would.
+        startSession(e);
       }
-      const mid = panMidRef.current;
-      const pts = [...touchesRef.current.values()];
-      if (mid !== null && pts.length >= 2) {
-        const nextMid = {
-          x: (pts[0]!.x + pts[1]!.x) / 2,
-          y: (pts[0]!.y + pts[1]!.y) / 2,
-        };
-        viewportPan(mid.x - nextMid.x, mid.y - nextMid.y);
-        panMidRef.current = nextMid;
-        e.preventDefault();
-        return;
-      }
-      // Not panning: an opted-in finger stroke falls through to the draw path.
-    }
+    };
 
-    const session = strokeRef.current;
-    if (session === null || session.pointerId !== native.pointerId) return;
-
-    const origin = canvas.getBoundingClientRect();
-    if (session.erasing) {
-      eraseAt(native.clientX, native.clientY);
+    const onDown = (e: PointerEvent): void => {
       e.preventDefault();
-      return;
-    }
+      if (e.pointerType === "touch") {
+        onTouchDown(e);
+        return;
+      }
+      if (e.pointerType === "pen") penRef.current = e.pointerId;
+      // Pen tip is button 0; a pen already drawing must not restart.
+      if (e.button !== 0 && !(e.buttons & 32)) return;
+      startSession(e);
+      if (debug) console.debug("[ink] mode", inkMode, "color", inkColor, "width", inkWidth);
+    };
 
-    // Every sample the digitiser produced since the last event — coalesced
-    // delivery is what keeps a fast stroke smooth on a high-rate digitiser.
-    const events = native.getCoalescedEvents?.() ?? [];
-    for (const ev of events.length > 0 ? events : [native]) {
-      const pressure = ev.pressure > 0 ? ev.pressure : 0.5;
-      session.points.push(
-        pointToPdf(ev.clientX, ev.clientY, origin, scale, pageHeight, pressure),
-      );
-    }
+    const onMove = (e: PointerEvent): void => {
+      if (e.pointerType === "touch") {
+        const touch = touchesRef.current.get(e.pointerId);
+        if (touch) {
+          touch.x = e.clientX;
+          touch.y = e.clientY;
+        }
+        const mid = panMidRef.current;
+        const pts = [...touchesRef.current.values()];
+        if (mid !== null && pts.length >= 2) {
+          const nextMid = {
+            x: (pts[0]!.x + pts[1]!.x) / 2,
+            y: (pts[0]!.y + pts[1]!.y) / 2,
+          };
+          viewportPan(mid.x - nextMid.x, mid.y - nextMid.y);
+          panMidRef.current = nextMid;
+          e.preventDefault();
+        }
+        return;
+      }
 
-    // Live rendering: straight segments with per-sample width — fast, and
-    // good enough while the pen moves. The smoothed curve is painted on lift.
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const k = dpr * scale;
-    ctx.setTransform(k, 0, 0, -k, 0, pageHeight * k);
-    const style = getComputedStyle(canvas);
-    ctx.strokeStyle =
-      style.getPropertyValue(`--c-ink-${inkColor}`).trim() ||
-      style.getPropertyValue("--c-tx").trim() ||
-      "#1e222a";
-    const pts = session.points;
-    const prev = pts[pts.length - 2];
-    const cur = pts[pts.length - 1];
-    if (prev && cur) {
-      ctx.lineWidth = inkWidth * (0.5 + cur.p);
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.lineTo(cur.x, cur.y);
-      ctx.stroke();
-    }
-    e.preventDefault();
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    const native = e.nativeEvent;
-    if (native.pointerType === "pen" && penRef.current === native.pointerId) {
-      penRef.current = null;
-    }
-    if (native.pointerType === "touch") {
-      touchesRef.current.delete(native.pointerId);
-      if (touchesRef.current.size < 2) panMidRef.current = null;
-    }
-    commitStroke(native.pointerId);
-  };
-
-  const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    const native = e.nativeEvent;
-    if (native.pointerType === "pen" && penRef.current === native.pointerId) penRef.current = null;
-    if (native.pointerType === "touch") {
-      touchesRef.current.delete(native.pointerId);
-      if (touchesRef.current.size < 2) panMidRef.current = null;
-    }
-    // A cancelled stroke was never committed — drop it and repaint the truth.
-    strokeRef.current = null;
-    repaint();
-  };
-
-  /** Finish the stroke owned by `pointerId`: erase gestures record their undo
-   *  op, drawn strokes are written to the backend and painted smoothed. */
-  const commitStroke = useCallback(
-    (pointerId: number) => {
-      const canvas = canvasRef.current;
       const session = strokeRef.current;
-      if (session === null || session.pointerId !== pointerId) return;
+      if (session === null || session.pointerId !== e.pointerId) return;
+
+      if (session.erasing) {
+        const origin = wet.getBoundingClientRect();
+        eraseAt(
+          ((e.clientX - origin.left) / scale),
+          (pageHeight - (e.clientY - origin.top) / scale),
+        );
+        e.preventDefault();
+        return;
+      }
+
+      // Every sample since the last delivery, then the renderer's prediction
+      // of where the pen will be next (render-only, discarded each batch).
+      const coalesced = e.getCoalescedEvents?.() ?? [];
+      const batch = coalesced.length > 0 ? coalesced : [e];
+      for (const ev of batch) {
+        const pressure = ev.pressure > 0 ? ev.pressure : 0.5;
+        session.points.push(inPageSpace(ev.clientX, ev.clientY, pressure));
+      }
+      const predicted = (e.getPredictedEvents?.() ?? []).map((ev) =>
+        inPageSpace(ev.clientX, ev.clientY, ev.pressure > 0 ? ev.pressure : 0.5),
+      );
+      paintWet(session, predicted);
+      e.preventDefault();
+      if (debug && e.pointerType === "pen") {
+        console.debug("[ink] move", batch.length, "pred", predicted.length);
+      }
+    };
+
+    const finish = (e: PointerEvent, cancelled: boolean): void => {
+      if (e.pointerType === "pen" && penRef.current === e.pointerId) penRef.current = null;
+      if (e.pointerType === "touch") {
+        touchesRef.current.delete(e.pointerId);
+        if (touchesRef.current.size < 2) panMidRef.current = null;
+      }
+      const session = strokeRef.current;
+      if (session === null || session.pointerId !== e.pointerId) return;
       strokeRef.current = null;
-      if (canvas?.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+      if (wet.hasPointerCapture(e.pointerId)) wet.releasePointerCapture(e.pointerId);
+
+      if (cancelled) {
+        // A cancelled stroke was never committed — repaint dry as the truth.
+        paintWet({ pointerId: -1, points: [], erasing: true }, []);
+        repaintDry();
+        return;
+      }
 
       if (session.erasing) {
         if (erasedRef.current.length > 0) {
@@ -346,10 +380,13 @@ export function InkLayer({
 
       let points = session.points;
       if (points.length > MAX_POINTS) {
-        // Downsample rather than fail: a five-minute squiggle must still land.
         const stride = Math.ceil(points.length / THIN_THRESHOLD);
         points = points.filter((_, i) => i % stride === 0 || i === points.length - 1);
       }
+      // Clear the wet layer NOW: the dry repaint lands when the POST returns,
+      // and a live outline lingering over the committed stroke would double
+      // the tail (live outlines have no end taper).
+      paintWet({ pointerId: -1, points: [], erasing: true }, []);
       void api.ink
         .create(paperId, { kind, page, points, color: inkColor, width: inkWidth })
         .then((row) => {
@@ -360,30 +397,63 @@ export function InkLayer({
           // Server truth wins; the just-drawn stroke comes off the canvas.
           void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
         });
-    },
-    [inkColor, inkWidth, key, kind, page, paperId, pushInkOps, updateCache, qc],
-  );
+    };
+
+    const onUp = (e: PointerEvent): void => finish(e, false);
+    const onCancel = (e: PointerEvent): void => finish(e, true);
+    // Pen drags emit compatibility mouse events that would bubble to the
+    // viewport's pan handler mid-stroke; the wet canvas is the target, so
+    // this is where they stop.
+    const stopMouse = (e: MouseEvent): void => e.stopPropagation();
+
+    wet.addEventListener("pointerdown", onDown);
+    wet.addEventListener("pointermove", onMove);
+    wet.addEventListener("pointerup", onUp);
+    wet.addEventListener("pointercancel", onCancel);
+    wet.addEventListener("mousedown", stopMouse);
+    return () => {
+      wet.removeEventListener("pointerdown", onDown);
+      wet.removeEventListener("pointermove", onMove);
+      wet.removeEventListener("pointerup", onUp);
+      wet.removeEventListener("pointercancel", onCancel);
+      wet.removeEventListener("mousedown", stopMouse);
+    };
+  }, [
+    inkMode,
+    inkColor,
+    inkWidth,
+    inkFingerDraw,
+    scale,
+    pageHeight,
+    mine,
+    eraseAt,
+    paintWet,
+    repaintDry,
+    viewportPan,
+    pushInkOps,
+    key,
+    kind,
+    page,
+    paperId,
+    updateCache,
+    qc,
+  ]);
 
   /* ----------------------------------------------------------------- view */
 
   const interactive = inkMode !== "off";
   return (
-    <canvas
-      ref={canvasRef}
-      className={
-        "ph-ink" +
-        (interactive ? " ph-ink--live" : "") +
-        (inkMode === "erase" ? " ph-ink--erase" : "")
-      }
-      aria-hidden="true"
-      onPointerDown={interactive ? onPointerDown : undefined}
-      onPointerMove={interactive ? onPointerMove : undefined}
-      onPointerUp={interactive ? onPointerUp : undefined}
-      onPointerCancel={interactive ? onPointerCancel : undefined}
-      // Pen drags emit compatibility mouse events that would bubble to the
-      // viewport's pan handler mid-stroke; the canvas is the target, so this
-      // is where they stop.
-      onMouseDown={interactive ? (e) => e.stopPropagation() : undefined}
-    />
+    <>
+      <canvas ref={dryRef} className="ph-ink" aria-hidden="true" />
+      <canvas
+        ref={wetRef}
+        className={
+          "ph-ink ph-ink--wet" +
+          (interactive ? " ph-ink--live" : "") +
+          (inkMode === "erase" ? " ph-ink--erase" : "")
+        }
+        aria-hidden="true"
+      />
+    </>
   );
 }

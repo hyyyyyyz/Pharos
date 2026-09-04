@@ -31,9 +31,17 @@
 .ph-ink {
   position: absolute;
   inset: 0;
-  /* Above the text layer (z 1) and the search-hit boxes (z 2), below the
-     highlight toolbar (z 4): ink paints on top of the glyphs, and the
-     highlight popup stays clickable while a pen tool is active. */
+  /* A canvas is a REPLACED element: `inset: 0` alone left-right-constrains a
+     div, but a canvas keeps its intrinsic 300x150 size and merely sits in the
+     corner — every stroke outside that box is cropped or never lands on the
+     layer at all ("cannot write", "strokes misplaced"). Explicit percentage
+     sizing is what actually stretches it over the page. */
+  width: 100%;
+  height: 100%;
+  /* Above the text layer (z 1) and the search-hit boxes (z 2). The dry and
+     wet canvases share this level — DOM order stacks wet over dry — and sit
+     BELOW the highlight toolbar popup (z 4), which stays clickable while a
+     pen tool is active. */
   z-index: 3;
   /* Inert until a tool is chosen: selection, pan and touch scrolling all pass
      through to the layers beneath, exactly as before ink existed. */
