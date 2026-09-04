@@ -7,6 +7,15 @@ import { api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
 import { INK_COLORS } from "../lib/ink";
+
+/** Eraser presets: radius in CSS pixels. The on-page preview circle and the
+ *  erase reach both read this, so the button, the circle and the effect can
+ *  never disagree. */
+const ERASER_SIZES = [
+  { size: 8, label: "小" },
+  { size: 16, label: "中" },
+  { size: 28, label: "大" },
+];
 import type { DocumentRef } from "../lib/paperChat";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
 import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
@@ -244,6 +253,8 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const setInkWidth = useUI((s) => s.setInkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const toggleInkFingerDraw = useUI((s) => s.toggleInkFingerDraw);
+  const inkEraserSize = useUI((s) => s.inkEraserSize);
+  const setInkEraserSize = useUI((s) => s.setInkEraserSize);
   const inkPast = useUI((s) => s.inkPast);
   const inkFuture = useUI((s) => s.inkFuture);
   const inkOpsKey = useUI((s) => s.inkOpsKey);
@@ -505,6 +516,11 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   {/* Popover carries the PEN's options only: colour and width
                       are meaningless to the eraser, and showing them while it
                       is active made the tool look broken. */}
+                  {/* Each tool gets its own popover: the pen carries colour,
+                      width and the finger-draw switch; the eraser carries its
+                      reach — a size the preview circle then mirrors on the
+                      page. Colours are meaningless to an eraser, which is why
+                      the two never mix. */}
                   {inkMode === "draw" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="手写工具">
                       <div className="ph-rv-ink-row">
@@ -541,6 +557,28 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                         >
                           手指书写
                         </button>
+                      </div>
+                    </div>
+                  )}
+                  {inkMode === "erase" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="橡皮工具">
+                      <div className="ph-rv-ink-row">
+                        {ERASER_SIZES.map((s) => (
+                          <button
+                            key={s.size}
+                            className={`ph-rv-ink-width${inkEraserSize === s.size ? " is-on" : ""}`}
+                            title={`${s.label}（${s.size}px）`}
+                            aria-label={`橡皮 ${s.label}`}
+                            aria-pressed={inkEraserSize === s.size}
+                            onClick={() => setInkEraserSize(s.size)}
+                          >
+                            <span
+                              style={{ width: s.size, height: s.size }}
+                            />
+                          </button>
+                        ))}
+                        <span className="ph-rv-ink-sep" />
+                        <span className="ph-rv-ink-note">拖动擦除整笔 · 圈内即擦除范围</span>
                       </div>
                     </div>
                   )}

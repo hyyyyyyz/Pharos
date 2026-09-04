@@ -585,6 +585,20 @@
   background: var(--c-bd, #e6e8ec);
 }
 
+/* Eraser-size dots. The button span draws the literal reach the preview
+   circle will show (via inline width/height), so the picker previews its own
+   effect; overflow is visible so the large dot fills the button. */
+.ph-rv-ink-width span {
+  display: block;
+  border-radius: 50%;
+  background: var(--c-tx, #1e222a);
+}
+.ph-rv-ink-note {
+  font-size: 11px;
+  color: var(--c-tx3, #8b93a1);
+  white-space: nowrap;
+}
+
 .ph-rv-pdf-msg {
   flex: 1;
   display: flex;

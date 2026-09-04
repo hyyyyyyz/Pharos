@@ -204,6 +204,9 @@ interface UIState {
   /** Draw with a finger, not just a stylus. Off = palm rejection on touch. */
   inkFingerDraw: boolean;
   toggleInkFingerDraw: () => void;
+  /** Eraser radius in CSS pixels — what the on-page preview circle shows. */
+  inkEraserSize: number;
+  setInkEraserSize: (s: number) => void;
   /** Undo (past) and redo (future) stacks, oldest operation first. */
   inkPast: InkOp[];
   inkFuture: InkOp[];
@@ -391,6 +394,8 @@ export const useUI = create<UIState>((set) => ({
   setInkWidth: (inkWidth) => set({ inkWidth }),
   inkFingerDraw: false,
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
+  inkEraserSize: 16,
+  setInkEraserSize: (inkEraserSize) => set({ inkEraserSize }),
   inkPast: [],
   inkFuture: [],
   inkOpsKey: "",

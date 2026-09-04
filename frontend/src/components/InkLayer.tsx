@@ -52,9 +52,6 @@ import { useUI } from "../store";
 import "./InkLayer.css";
 
 
-/** Eraser reach, in CSS pixels beyond the stroke's own half-width. */
-const ERASER_REACH_PX = 10;
-
 /** Server-side ceiling for one stroke's sample count (see services/ink.py). */
 const MAX_POINTS = 2000;
 /** Start thinning below the ceiling, leaving the server a little headroom. */
@@ -90,6 +87,7 @@ export function InkLayer({
   const inkColor = useUI((s) => s.inkColor);
   const inkWidth = useUI((s) => s.inkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
+  const inkEraserSize = useUI((s) => s.inkEraserSize);
   const pushInkOps = useUI((s) => s.pushInkOps);
 
   // One fetch per document+rendition; every page instance shares the cache.
@@ -195,7 +193,7 @@ export function InkLayer({
       const done = new Set(erasedRef.current.map((s) => s.id));
       for (const stroke of mine) {
         if (done.has(stroke.id)) continue;
-        if (!strokeNear(stroke.points, stroke.width, x, y, ERASER_REACH_PX / scale)) continue;
+        if (!strokeNear(stroke.points, stroke.width, x, y, inkEraserSize / scale)) continue;
         erasedRef.current.push(stroke);
         updateCache((prev) => prev.filter((s) => s.id !== stroke.id));
         void api.ink.remove(stroke.id).catch(() => {
@@ -203,8 +201,56 @@ export function InkLayer({
         });
       }
     },
-    [mine, scale, updateCache, qc, paperId, kind],
+    [mine, scale, inkEraserSize, updateCache, qc, paperId, kind],
   );
+
+  /**
+   * The eraser preview: a white disc with a dark ring, exactly the reach of
+   * the eraser, drawn in DEVICE space (the PDF transform would rescale it
+   * with zoom — the preview must be a constant screen-size promise of what a
+   * touch will remove). One computed-style read avoided: pure white over the
+   * paper needs no theme tokens.
+   */
+  const paintEraserCursor = useCallback(
+    (clientX: number, clientY: number) => {
+      const wet = wetRef.current;
+      if (!wet) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const w = wet.clientWidth;
+      const h = wet.clientHeight;
+      if (w === 0 || h === 0) return;
+      const bw = Math.floor(w * dpr);
+      const bh = Math.floor(h * dpr);
+      if (wet.width !== bw || wet.height !== bh) {
+        wet.width = bw;
+        wet.height = bh;
+      } else {
+        wet.getContext("2d")?.clearRect(0, 0, bw, bh);
+      }
+      const rect = wet.getBoundingClientRect();
+      const ctx = wet.getContext("2d")!;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      ctx.arc(
+        (clientX - rect.left) * dpr,
+        (clientY - rect.top) * dpr,
+        inkEraserSize * dpr,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+      ctx.fill();
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.strokeStyle = "rgba(28, 32, 40, 0.95)";
+      ctx.stroke();
+    },
+    [inkEraserSize],
+  );
+
+  /** Empty the wet layer (hover cursor gone, gesture ghost gone). */
+  const clearWet = useCallback(() => {
+    wetRef.current?.getContext("2d")?.clearRect(0, 0, wetRef.current.width, wetRef.current.height);
+  }, []);
 
   /** Repaint the wet layer: the live outline, plus (for pens) the predicted
    *  tail that hides digitiser latency. Predicted samples are render-only and
@@ -282,8 +328,14 @@ export function InkLayer({
       } else if (touchesRef.current.size > 2) {
         return;
       }
-      if (touchesRef.current.size === 1 && inkFingerDraw && strokeRef.current === null) {
-        // Opted-in single finger writes, like a pen would.
+      if (
+        touchesRef.current.size === 1 &&
+        strokeRef.current === null &&
+        // Erasing is a deliberate edit gesture: a finger erases whatever the
+        // finger-draw preference says — palm rejection exists to stop
+        // accidental INK, and there is no ink to accidentally lay down here.
+        (inkMode === "erase" || inkFingerDraw)
+      ) {
         startSession(e);
       }
     };
@@ -318,12 +370,22 @@ export function InkLayer({
           viewportPan(mid.x - nextMid.x, mid.y - nextMid.y);
           panMidRef.current = nextMid;
           e.preventDefault();
+          return;
         }
-        return;
+        // Not panning: fall through — an opted-in finger stroke or a finger
+        // erase continues through the shared session path below.
       }
 
       const session = strokeRef.current;
-      if (session === null || session.pointerId !== e.pointerId) return;
+      if (session === null || session.pointerId !== e.pointerId) {
+        // Hover (pen/mouse) with the eraser active: keep the reach preview on
+        // screen even when nothing is being erased. Touch has no hover.
+        if (inkMode === "erase" && e.pointerType !== "touch") {
+          paintEraserCursor(e.clientX, e.clientY);
+          e.preventDefault();
+        }
+        return;
+      }
 
       if (session.erasing) {
         const origin = wet.getBoundingClientRect();
@@ -331,6 +393,8 @@ export function InkLayer({
           ((e.clientX - origin.left) / scale),
           (pageHeight - (e.clientY - origin.top) / scale),
         );
+        // The preview follows the erase so the user always sees the reach.
+        paintEraserCursor(e.clientX, e.clientY);
         e.preventDefault();
         return;
       }
@@ -376,6 +440,9 @@ export function InkLayer({
           pushInkOps(key, [{ kind: "remove", strokes: erasedRef.current }]);
           erasedRef.current = [];
         }
+        // Touch has no hover to keep showing the reach preview — lift the
+        // finger, the circle goes too. Pen/mouse keep it for the next drag.
+        if (e.pointerType === "touch") clearWet();
         return;
       }
 
@@ -442,24 +509,32 @@ export function InkLayer({
     // viewport's pan handler mid-stroke; the wet canvas is the target, so
     // this is where they stop.
     const stopMouse = (e: MouseEvent): void => e.stopPropagation();
+    // Left the page: the hover preview has no position to sit at.
+    const onLeave = (): void => clearWet();
 
     wet.addEventListener("pointerdown", onDown);
     wet.addEventListener("pointermove", onMove);
     wet.addEventListener("pointerup", onUp);
     wet.addEventListener("pointercancel", onCancel);
+    wet.addEventListener("pointerleave", onLeave);
     wet.addEventListener("mousedown", stopMouse);
     return () => {
       wet.removeEventListener("pointerdown", onDown);
       wet.removeEventListener("pointermove", onMove);
       wet.removeEventListener("pointerup", onUp);
       wet.removeEventListener("pointercancel", onCancel);
+      wet.removeEventListener("pointerleave", onLeave);
       wet.removeEventListener("mousedown", stopMouse);
+      // Rebinding (tool change, zoom, data) invalidates any preview painted
+      // under the previous settings.
+      clearWet();
     };
   }, [
     inkMode,
     inkColor,
     inkWidth,
     inkFingerDraw,
+    inkEraserSize,
     scale,
     pageHeight,
     mine,
@@ -467,6 +542,8 @@ export function InkLayer({
     paintWet,
     repaintDry,
     viewportPan,
+    paintEraserCursor,
+    clearWet,
     pushInkOps,
     key,
     kind,
