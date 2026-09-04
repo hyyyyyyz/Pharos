@@ -502,7 +502,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.eraser size={15} />
                   </button>
-                  {inkMode !== "off" && (
+                  {/* Popover carries the PEN's options only: colour and width
+                      are meaningless to the eraser, and showing them while it
+                      is active made the tool look broken. */}
+                  {inkMode === "draw" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="手写工具">
                       <div className="ph-rv-ink-row">
                         {INK_COLORS.map((c) => (
@@ -559,7 +562,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   <Icons.redo size={15} />
                 </button>
                 <div className="ph-rv-spacer" />
-                <span className="ph-rv-hint">Ctrl+滚轮缩放 · 拖动平移</span>
+                <span className="ph-rv-hint">Ctrl+滚轮 / 双指缩放 · 拖动平移</span>
               </div>
               {docError ? (
                 <div className="ph-rv-pdf-msg is-err">加载失败：{docError}</div>

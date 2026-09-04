@@ -51,6 +51,7 @@ import { paintStroke, pointToPdf, strokeNear, strokeOutline, paintOutline } from
 import { useUI } from "../store";
 import "./InkLayer.css";
 
+
 /** Eraser reach, in CSS pixels beyond the stroke's own half-width. */
 const ERASER_REACH_PX = 10;
 
@@ -383,18 +384,54 @@ export function InkLayer({
         const stride = Math.ceil(points.length / THIN_THRESHOLD);
         points = points.filter((_, i) => i % stride === 0 || i === points.length - 1);
       }
-      // Clear the wet layer NOW: the dry repaint lands when the POST returns,
-      // and a live outline lingering over the committed stroke would double
-      // the tail (live outlines have no end taper).
+      // OPTIMISTIC COMMIT, and why the flicker it fixes matters: clearing the
+      // wet layer and waiting for the POST round trip left the stroke
+      // *invisible* for the whole network window — the tablet tester saw
+      // every pen lift blink the stroke away. Instead the finished stroke
+      // enters the cache (and the dry layer) immediately under a temp id,
+      // the wet layer clears on the same frame, and the server's row simply
+      // replaces the temp when it arrives. Same geometry either way, so the
+      // swap is invisible; the only visible difference is the end taper,
+      // which the temp already carries (last:true outline).
+      const temp: InkStrokeRow = {
+        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        paper_id: paperId,
+        kind,
+        page,
+        points,
+        color: inkColor,
+        width: inkWidth,
+        created_at: new Date().toISOString(),
+      };
+      updateCache((prev) => [...prev, temp]);
+      pushInkOps(key, [{ kind: "add", stroke: temp }]);
       paintWet({ pointerId: -1, points: [], erasing: true }, []);
+      const settleStack = (row: InkStrokeRow): void => {
+        useUI.setState((s) => {
+          if (s.inkOpsKey !== key) return s;
+          const past = s.inkPast.slice();
+          const last = past[past.length - 1];
+          if (last && last.kind === "add" && last.stroke.id === temp.id) {
+            past[past.length - 1] = { kind: "add", stroke: row };
+          }
+          return { inkPast: past };
+        });
+      };
       void api.ink
         .create(paperId, { kind, page, points, color: inkColor, width: inkWidth })
         .then((row) => {
-          updateCache((prev) => [...prev, row]);
-          pushInkOps(key, [{ kind: "add", stroke: row }]);
+          updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
+          settleStack(row);
         })
         .catch(() => {
-          // Server truth wins; the just-drawn stroke comes off the canvas.
+          // The server refused it: roll the optimistic stroke back out of the
+          // cache and the undo stack, then let the refetch confirm the truth.
+          updateCache((prev) => prev.filter((s) => s.id !== temp.id));
+          useUI.setState((s) =>
+            s.inkOpsKey === key
+              ? { inkPast: s.inkPast.filter((op) => !(op.kind === "add" && op.stroke.id === temp.id)) }
+              : s,
+          );
           void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
         });
     };

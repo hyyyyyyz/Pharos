@@ -15,11 +15,15 @@
    weight.
 
    The API stores token names ("ink", "amber", …), never values, so this block
-   is the single place a stroke's appearance is decided. Scoped to the canvas
-   root rather than :root for the same reason as the highlight palette: these
-   names belong to the paper, not to themed chrome.
+   is the single place a stroke's appearance is decided. Declared on BOTH
+   roots that consume it — the canvas layer and the reader's ink toolbar —
+   because the swatches live in the subbar, outside `.ph-ink`, and a variable
+   resolved only there would leave every swatch falling back to the text
+   colour (the "colour picker shows the wrong colours" bug). Same two-roots
+   shape as HighlightLayer's `.ph-hl, .ph-hl-pop`.
 */
-.ph-ink {
+.ph-ink,
+.ph-rv-inkbar {
   --c-ink-ink: oklch(0.25 0.03 259);
   --c-ink-amber: oklch(0.55 0.12 70);
   --c-ink-green: oklch(0.52 0.11 150);

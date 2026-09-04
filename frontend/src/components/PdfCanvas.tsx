@@ -574,6 +574,110 @@ export function PdfCanvas({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /* ------------------------------------------------------ two-finger pinch zoom */
+  /**
+   * Pinch to zoom, the way every tablet reader behaves: two fingers scale the
+   * document around the midpoint of the pair, and moving the pair pans while
+   * pinching. Single-finger touch is left to the browser's native scrolling —
+   * this listener only claims the gesture once a second finger lands.
+   *
+   * Touch events rather than pointer events because the gesture must be
+   * claimed BEFORE the browser decides it is a page zoom/scroll: on the
+   * viewport (whose children include the text layer's spans) only a
+   * non-passive touchmove with preventDefault does that reliably.
+   *
+   * While an ink tool is active the wet canvas owns touch (palm rejection,
+   * draw, two-finger pan) — events still bubble here, so any gesture that
+   * starts on a live ink canvas is ignored.
+   *
+   * The anchor is approximate: zoom renders asynchronously (every page
+   * canvas re-renders on zoom change), so the scroll correction re-fires on
+   * the next frame against the *new* scrollWidth. Two frames of drift on a
+   * continuous gesture reads as smooth; exact anchoring would need a render
+   * completion signal the renderer does not expose.
+   */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const touches = new Map<number, { x: number; y: number }>();
+    let startDist = 0;
+    let startZoom = 1;
+    let startContentW = 0;
+    let startContentH = 0;
+    /** Where the pinch midpoint sat, as a fraction of the content box. */
+    let anchorX = 0;
+    let anchorY = 0;
+    let lastSent = 1;
+    let anchorFrame = 0;
+
+    const onStart = (e: TouchEvent) => {
+      if ((e.target as HTMLElement).closest(".ph-ink--live") !== null) return;
+      for (const t of Array.from(e.changedTouches)) {
+        touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      if (touches.size !== 2) return;
+      const [a, b] = [...touches.values()];
+      startDist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      if (startDist < 20) {
+        touches.clear(); // accidental near-simultaneous contact, not a pinch
+        return;
+      }
+      startZoom = zoomRef.current;
+      lastSent = startZoom;
+      startContentW = el.scrollWidth;
+      startContentH = el.scrollHeight;
+      const rect = el.getBoundingClientRect();
+      anchorX = ((a!.x + b!.x) / 2 - rect.left + el.scrollLeft) / startContentW;
+      anchorY = ((a!.y + b!.y) / 2 - rect.top + el.scrollTop) / startContentH;
+      e.preventDefault();
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (touches.size !== 2) return;
+      for (const t of Array.from(e.changedTouches)) {
+        if (touches.has(t.identifier)) touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      const [a, b] = [...touches.values()];
+      if (!a || !b) return;
+      const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
+      const next = clampZoom(startZoom * ratio);
+      // Stepped, not continuous: each zoom value re-renders every page
+      // canvas, and touchmove fires at digitiser rate.
+      if (Math.abs(next - lastSent) >= 0.01) {
+        lastSent = next;
+        onZoomRef.current(next);
+      }
+      // Anchor + follow: the midpoint's content position stays under the
+      // fingers, including when the whole pair drags while pinching.
+      cancelAnimationFrame(anchorFrame);
+      anchorFrame = requestAnimationFrame(() => {
+        const rect = el.getBoundingClientRect();
+        const midX = (a.x + b.x) / 2 - rect.left;
+        const midY = (a.y + b.y) / 2 - rect.top;
+        el.scrollLeft = anchorX * el.scrollWidth - midX;
+        el.scrollTop = anchorY * el.scrollHeight - midY;
+      });
+      e.preventDefault();
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
+      if (touches.size < 2) cancelAnimationFrame(anchorFrame);
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+      cancelAnimationFrame(anchorFrame);
+    };
+  }, []);
+
   /* --------------------------------------------------------- select vs. pan */
   /**
    * Both gestures are a left-drag, so the target decides: a drag that starts on
