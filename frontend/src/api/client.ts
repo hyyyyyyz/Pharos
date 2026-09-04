@@ -29,6 +29,8 @@ import type {
   PasswordChangeBody,
   Paper,
   PdfKind,
+  InkPoint,
+  InkStrokeRow,
   ProjectArtifact,
   ProjectArtifactCreateBody,
   ProjectArtifactPatchBody,
@@ -667,6 +669,38 @@ export const api = {
       json<AdminProbeResult>(`/admin/providers/${encodeURIComponent(name)}/probe`, {
         method: "POST",
       }),
+  },
+
+  /* ------------------------------------------------------------------ ink */
+
+  /**
+   * Handwritten strokes, one row per pen-down to pen-up gesture. Owner-scoped
+   * on the backend like every annotation; the list is read per document+kind,
+   * a stroke is written the moment the pen lifts, and the eraser deletes.
+   */
+  ink: {
+    list: (paperId: string, kind: PdfKind, signal?: AbortSignal): Promise<InkStrokeRow[]> =>
+      json<InkStrokeRow[]>(`/papers/${encodeURIComponent(paperId)}/ink?kind=${kind}`, {
+        signal,
+      }),
+
+    create: (
+      paperId: string,
+      stroke: {
+        kind: PdfKind;
+        page: number;
+        points: InkPoint[];
+        color: string;
+        width: number;
+      },
+    ): Promise<InkStrokeRow> =>
+      json<InkStrokeRow>(`/papers/${encodeURIComponent(paperId)}/ink`, {
+        method: "POST",
+        ...body(stroke),
+      }),
+
+    remove: (strokeId: string): Promise<void> =>
+      empty(`/ink/${encodeURIComponent(strokeId)}`, { method: "DELETE" }),
   },
 
 };

@@ -96,6 +96,12 @@ other.
   drag-to-pan, text selection, copy, in-document search, and annotations.
 - **Coordinate-stable highlights.** Highlight locations are stored in PDF
   coordinates so they remain attached at different zoom levels and window sizes.
+- **Handwritten notes with a stylus.** The web reader accepts stylus input:
+  pressure-sensitive strokes stored in the same PDF coordinates as highlights,
+  palm rejection (a pen outranks touch; finger writing is opt-in), a
+  whole-stroke eraser (a stylus eraser button works in any tool), two-finger
+  panning while a tool is active, and document-level undo/redo. Ink is
+  owner-scoped per rendition on the backend, like every annotation.
 - **Optional translation providers.** Keyless Bing/Google translation and
   configured DeepSeek/OpenAI-compatible providers share the same engine boundary.
 - **Per-account controls.** Whole-document translation can be disabled without

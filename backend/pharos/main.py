@@ -23,6 +23,7 @@ from pharos.api import (
     discovery,
     evidence,
     harness,
+    ink,
     jobs,
     organise,
     papers,
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(organise.router)
     app.include_router(annotate.router)
+    app.include_router(ink.router)
     app.include_router(projects.router)
     app.include_router(discovery.router)
     app.include_router(evidence.router)

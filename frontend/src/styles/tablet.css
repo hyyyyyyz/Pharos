@@ -129,6 +129,29 @@
     width: 28px;
     height: 28px;
   }
+
+  /* stylus ink tools: the pen/eraser/undo/redo buttons and their popover */
+  .ph-rv-ink-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .ph-rv-ink-color {
+    width: 26px;
+    height: 26px;
+  }
+  .ph-rv-ink-width {
+    width: 34px;
+    height: 30px;
+  }
+  .ph-rv-ink-finger {
+    height: 30px;
+    font-size: 12px;
+  }
+  /* The hint names mouse-only gestures (Ctrl+滚轮); on a digitiser it is
+     noise competing for subbar space with the ink tools. */
+  .ph-rv-hint {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------- narrow reader toolbar */

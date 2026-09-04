@@ -3,6 +3,7 @@ import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { Icons } from "../design/icons";
 import { HighlightLayer, type HighlightKind } from "./HighlightLayer";
+import { InkLayer } from "./InkLayer";
 import "./PdfCanvas.css";
 
 const MIN_ZOOM = 0.4;
@@ -590,6 +591,11 @@ export function PdfCanvas({
       // would stop its note textarea from ever taking focus on click. Chrome is
       // not paper: leave it entirely alone, panlock included.
       if (target.closest(".ph-hl-pop") !== null) return;
+      // Same for the ink canvas: a pen (or mouse, with the tool on) drawing a
+      // stroke must not pan the page under it. The ink layer stops its own
+      // pointer events; this catches the compatibility mouse events pen input
+      // also synthesises, which bypass pointer handlers entirely.
+      if (target.closest(".ph-ink") !== null) return;
       const onText = !panLock && e.button === 0 && target.closest(".ph-pc-tl") !== null;
       if (onText) return; // let the browser run its own selection drag
       if (e.button !== 0 && e.button !== 1) return;
@@ -745,6 +751,15 @@ export function PdfCanvas({
                   /* The raw zoom, NOT the floored page width: the text layer
                      positions glyphs from the unfloored scale, so flooring here
                      would drift a mark off the words it covers. */
+                  scale={zoom}
+                  pageHeight={p.h}
+                />
+              )}
+              {kind && (
+                <InkLayer
+                  paperId={paperId}
+                  kind={kind}
+                  page={i + 1}
                   scale={zoom}
                   pageHeight={p.h}
                 />

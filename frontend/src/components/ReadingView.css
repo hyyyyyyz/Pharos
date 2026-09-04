@@ -467,6 +467,124 @@
   color: var(--c-tx3, #8b93a1);
 }
 
+/* ------------------------------------------------------------ stylus ink */
+
+.ph-rv-subbar-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--c-bd, #e6e8ec);
+  margin: 0 3px;
+}
+
+.ph-rv-inkwrap {
+  position: relative;
+  display: flex;
+  gap: 2px;
+}
+
+.ph-rv-ink-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ph-rv-ink-btn.is-on {
+  border-color: var(--c-acsb, #dcdcf7);
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+}
+.ph-rv-ink-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The popover: one card holding colour, width and the finger-draw switch. */
+.ph-rv-inkbar {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  background: var(--c-sf, #fff);
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 8px;
+  box-shadow: var(--sh-sm);
+  padding: 8px 10px;
+}
+
+.ph-rv-ink-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ph-rv-ink-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.ph-rv-ink-color.is-on {
+  border-color: var(--c-tx, #1e222a);
+  box-shadow: inset 0 0 0 1.5px var(--c-sf, #fff);
+}
+
+.ph-rv-ink-width {
+  width: 24px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ph-rv-ink-width.is-on {
+  border-color: var(--c-bd, #e6e8ec);
+  background: var(--c-acs, #eef);
+}
+.ph-rv-ink-width span {
+  display: block;
+  border-radius: 50%;
+  background: var(--c-tx, #1e222a);
+}
+
+.ph-rv-ink-finger {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ph-rv-ink-finger.is-on {
+  border-color: var(--c-acsb, #dcdcf7);
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+}
+
+.ph-rv-ink-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--c-bd, #e6e8ec);
+}
+
 .ph-rv-pdf-msg {
   flex: 1;
   display: flex;

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
-import type { AuthUser, ZoteroOAuthResult } from "./api/types";
+import type { AuthUser, InkStrokeRow, ZoteroOAuthResult } from "./api/types";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "runs" | "admin";
@@ -12,6 +12,21 @@ export type OutlineMode = "outline" | "thumbs";
 export type SettingsTab = "account" | "ai" | "appearance" | "daily";
 export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
+
+/** The reader's stylus tools. Off = the ink layer paints but never captures. */
+export type InkMode = "off" | "draw" | "erase";
+
+/**
+ * One undoable ink operation, for the document-level undo stack.
+ *
+ * "add" is one finished stroke; "remove" is one eraser gesture, which may have
+ * taken several strokes at once and must come back together. Redo of a removal
+ * re-creates rows with fresh server ids, so the op that moves to the future
+ * stack is rebuilt by the caller — see `undoInk` in ReadingView.
+ */
+export type InkOp =
+  | { kind: "add"; stroke: InkStrokeRow }
+  | { kind: "remove"; strokes: InkStrokeRow[] };
 
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
@@ -174,6 +189,30 @@ interface UIState {
   toggleAI: () => void;
   /** Live `(pointer: coarse)` match — the tablet/desktop fork for layouts. */
   pointerCoarse: boolean;
+
+  /* ----------------------------------------------------------------- ink */
+  /** Stylus tool for the reader. Off by default: ink never captures a pointer
+   *  until asked, so selection/pan/scroll behave exactly as before. */
+  inkMode: InkMode;
+  setInkMode: (m: InkMode) => void;
+  /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
+  inkColor: string;
+  setInkColor: (c: string) => void;
+  /** Stroke width in PDF points at scale 1 — the 1× value, not screen px. */
+  inkWidth: number;
+  setInkWidth: (w: number) => void;
+  /** Draw with a finger, not just a stylus. Off = palm rejection on touch. */
+  inkFingerDraw: boolean;
+  toggleInkFingerDraw: () => void;
+  /** Undo (past) and redo (future) stacks, oldest operation first. */
+  inkPast: InkOp[];
+  inkFuture: InkOp[];
+  /** Which document the stacks belong to — switching papers/kinds resets. */
+  inkOpsKey: string;
+  /** Record finished operations; a key change discards the old document's stacks. */
+  pushInkOps: (key: string, ops: InkOp[]) => void;
+  /** Drop the stacks on document switch or when the cache is invalidated away. */
+  resetInkOps: () => void;
 
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
@@ -341,6 +380,26 @@ export const useUI = create<UIState>((set) => ({
   setWinW: (winW) => set({ winW }),
   toggleAI: () => set((s) => ({ aiOpenPref: !isAiOpen(s) })),
   pointerCoarse: hasCoarsePointer(),
+
+  inkMode: "off",
+  // The pen is the point of the feature, but a mouse should also be able to
+  // draw when the tool is on — defaulting to erase would be a trap.
+  setInkMode: (inkMode) => set({ inkMode }),
+  inkColor: "ink",
+  setInkColor: (inkColor) => set({ inkColor }),
+  inkWidth: 2,
+  setInkWidth: (inkWidth) => set({ inkWidth }),
+  inkFingerDraw: false,
+  toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
+  inkPast: [],
+  inkFuture: [],
+  inkOpsKey: "",
+  pushInkOps: (inkOpsKey, ops) =>
+    set((s) => {
+      if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: ops, inkFuture: [] };
+      return { inkPast: [...s.inkPast, ...ops], inkFuture: [] };
+    }),
+  resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
 
   settingsOpen: false,
   settingsTab: "account",
