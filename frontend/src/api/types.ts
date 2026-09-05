@@ -229,6 +229,27 @@ export interface InkStrokeRow {
   created_at: string;
 }
 
+/* ------------------------------------------------------------------ tape */
+
+/** One 胶带 strip. Mirrors `TapeOut`. `x`/`y` are the strip's own CENTRE
+ *  point (not a corner — a rotated rectangle has no fixed corner), `w` its
+ *  length along its own rotated axis, `h` its thickness. `angle` is degrees,
+ *  counter-clockwise from horizontal. */
+export interface TapeRow {
+  id: string;
+  paper_id: string;
+  kind: PdfKind;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  angle: number;
+  revealed: boolean;
+  created_at: string;
+  updated_at: string | null;
+}
+
 /* ------------------------------------------------------------------ daily */
 
 /** A paper is only "done" once the reading layer actually produced a card.

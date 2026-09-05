@@ -20,7 +20,10 @@ export type SortDir = "asc" | "desc";
  *  routing, and its laser-mode branch in `paintWet`), not a different
  *  interaction. A laser stroke is never sent to the backend at all: it
  *  fades on the wet canvas and is gone, nothing to undo or persist. */
-export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "select";
+/** "tape" is `TapeLayer`'s own tool, not `InkLayer`'s — `InkLayer` treats it
+ *  exactly like "off" (see its gesture effect's early return) so nothing
+ *  draws ink while a strip is being placed. */
+export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "select" | "tape";
 
 /**
  * One undoable ink operation, for the document-level undo stack.
@@ -292,6 +295,12 @@ interface UIState {
   /** Drop the stacks on document switch or when the cache is invalidated away. */
   resetInkOps: () => void;
 
+  /** 胶带: size a NEW strip's thickness from the text line under the drag,
+   *  rather than a fixed default. A global preference, not per-strip — it
+   *  only ever affects strips placed while it is on. */
+  tapeAutoThickness: boolean;
+  toggleTapeAutoThickness: () => void;
+
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
   settingsTab: SettingsTab;
@@ -497,6 +506,9 @@ export const useUI = create<UIState>((set) => ({
       return { inkPast: capHistory([...s.inkPast, ...ops]), inkFuture: [] };
     }),
   resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
+
+  tapeAutoThickness: false,
+  toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
 
   settingsOpen: false,
   settingsTab: "account",

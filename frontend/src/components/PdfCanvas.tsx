@@ -5,6 +5,7 @@ import { Icons } from "../design/icons";
 import { fractionsOf, loadReadPos, saveReadPos, scrollTarget, type ReadPos } from "../lib/readPos";
 import { HighlightLayer, type HighlightKind } from "./HighlightLayer";
 import { InkLayer } from "./InkLayer";
+import { TapeLayer } from "./TapeLayer";
 import "./PdfCanvas.css";
 
 const MIN_ZOOM = 0.4;
@@ -1065,6 +1066,15 @@ export function PdfCanvas({
               )}
               {kind && (
                 <InkLayer
+                  paperId={paperId}
+                  kind={kind}
+                  page={i + 1}
+                  scale={zoom}
+                  pageHeight={p.h}
+                />
+              )}
+              {kind && (
+                <TapeLayer
                   paperId={paperId}
                   kind={kind}
                   page={i + 1}

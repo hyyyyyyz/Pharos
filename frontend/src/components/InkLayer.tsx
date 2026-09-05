@@ -865,7 +865,9 @@ export function InkLayer({
   /* ------------------------------------------------- native event handlers */
 
   useEffect(() => {
-    if (inkMode === "off") return;
+    // "tape" is TapeLayer's own tool — nobody should be drawing ink while a
+    // strip is being placed, so this layer goes fully inert, same as "off".
+    if (inkMode === "off" || inkMode === "tape") return;
     const wet = wetRef.current;
     if (!wet) return;
     // The page transform is not ready yet (first layout pass, or mid pinch-

@@ -658,6 +658,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.styleBrush />
                   </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "tape" ? " is-on" : ""}`}
+                    title="胶带：拖出一条，盖住/显示切换靠点它"
+                    aria-pressed={inkMode === "tape"}
+                    onClick={() => setInkMode(inkMode === "tape" ? "off" : "tape")}
+                  >
+                    <Icons.tape />
+                  </button>
                   {/* Each tool gets its own popover: the pen carries colour,
                       width and the finger-draw switch; the eraser carries its
                       reach and its 整笔/局部 manner; the lasso explains the
