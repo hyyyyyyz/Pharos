@@ -300,6 +300,14 @@ interface UIState {
    *  only ever affects strips placed while it is on. */
   tapeAutoThickness: boolean;
   toggleTapeAutoThickness: () => void;
+  /** 胶带: lay a NEW strip along the pen's own path instead of running it
+   *  straight from where the drag started to where it ended. Straight is the
+   *  default because covering a line of text is the common case, but a strip
+   *  that curves with the hand is what an actual piece of tape does, so it is
+   *  a choice rather than an assumption. Per-strip once placed — this only
+   *  decides what the NEXT one is. */
+  tapeFreehand: boolean;
+  toggleTapeFreehand: () => void;
 
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
@@ -509,6 +517,8 @@ export const useUI = create<UIState>((set) => ({
 
   tapeAutoThickness: false,
   toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
+  tapeFreehand: false,
+  toggleTapeFreehand: () => set((s) => ({ tapeFreehand: !s.tapeFreehand })),
 
   settingsOpen: false,
   settingsTab: "account",

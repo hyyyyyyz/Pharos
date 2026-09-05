@@ -246,6 +246,10 @@ export interface TapeRow {
   h: number;
   angle: number;
   revealed: boolean;
+  /** A freehand strip's own path (PDF points, no pressure — tape has one
+   *  thickness end to end); null for a straight run, which `x/y/w/h/angle`
+   *  describe completely. Present or not, those five hold the bounding box. */
+  points: { x: number; y: number }[] | null;
   created_at: string;
   updated_at: string | null;
 }

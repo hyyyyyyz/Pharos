@@ -102,7 +102,9 @@ export function strokeOutline(
 export function paintOutline(
   ctx: CanvasRenderingContext2D,
   outline: [number, number][],
-  color: string,
+  /** A resolved colour, or a gradient for the laser's 七彩 sweep — both are
+   *  valid `fillStyle` values, and the laser needs the second. */
+  color: string | CanvasGradient,
 ): void {
   if (outline.length < 3) return;
   ctx.fillStyle = color;

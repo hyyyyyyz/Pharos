@@ -15,14 +15,24 @@
    weight.
 
    The API stores token names ("ink", "amber", …), never values, so this block
-   is the single place a stroke's appearance is decided. Declared on BOTH
-   roots that consume it — the canvas layer and the reader's ink toolbar —
-   because the swatches live in the subbar, outside `.ph-ink`, and a variable
-   resolved only there would leave every swatch falling back to the text
-   colour (the "colour picker shows the wrong colours" bug). Same two-roots
-   shape as HighlightLayer's `.ph-hl, .ph-hl-pop`.
+   is the single place a stroke's appearance is decided. Declared on EVERY
+   root that consumes it — the ink canvas, the watercolour canvas, and the
+   reader's ink toolbar — because `colorResolver` reads these off the element
+   it is painting into via `getComputedStyle`, and a custom property only
+   inherits DOWN the tree: the toolbar swatches live in the subbar and the
+   wash canvas is a SIBLING of `.ph-ink`, so neither sees a variable declared
+   only on `.ph-ink`.
+
+   Both omissions have now been shipped as bugs, which is why the list is
+   spelled out rather than kept "obvious": missing the toolbar made every
+   swatch fall back to the text colour ("the colour picker shows the wrong
+   colours"), and missing `.ph-ink-water` made every watercolour stroke paint
+   near-black ("水彩笔写过后就变黑了") — the wash tokens resolved to nothing
+   and fell through to `--c-tx`. A test that only asserts a stroke has
+   non-zero alpha cannot catch either one; assert the COLOUR.
 */
 .ph-ink,
+.ph-ink-water,
 .ph-rv-inkbar {
   --c-ink-ink: oklch(0.25 0.03 259);
   --c-ink-red: oklch(0.5 0.16 25);

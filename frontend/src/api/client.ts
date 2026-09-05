@@ -712,7 +712,17 @@ export const api = {
 
     create: (
       paperId: string,
-      strip: { kind: PdfKind; page: number; x: number; y: number; w: number; h: number; angle?: number },
+      strip: {
+        kind: PdfKind;
+        page: number;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        angle?: number;
+        /** Omit for a straight strip; send the pen's own path for a freehand one. */
+        points?: { x: number; y: number }[];
+      },
     ): Promise<TapeRow> =>
       json<TapeRow>(`/papers/${encodeURIComponent(paperId)}/tape`, {
         method: "POST",

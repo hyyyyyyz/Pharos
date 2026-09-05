@@ -218,6 +218,97 @@ def test_full_tape_lifecycle_over_http(client: TestClient) -> None:
     assert client.get(f"/api/papers/{OWNER_PAPER}/tape").json() == []
 
 
+# ------------------------------------------------------------------ freehand
+
+
+PATH = [{"x": 72.5, "y": 600.0}, {"x": 96.25, "y": 604.5}, {"x": 130.0, "y": 598.75}]
+
+
+def test_a_straight_strip_stores_no_path() -> None:
+    """NULL `points` IS the "this is a straight run" signal — a straight strip
+    must not be given a two-point path that means the same thing twice."""
+    tid = _make()
+    with session_scope() as s:
+        assert s.get(TapeMark, tid).points is None
+        assert tape.load_path(s.get(TapeMark, tid).points) is None
+
+
+def test_a_freehand_strip_round_trips_its_path() -> None:
+    tid = _make(points=PATH)
+    with session_scope() as s:
+        path = tape.load_path(s.get(TapeMark, tid).points)
+    assert path == [(p["x"], p["y"]) for p in PATH]
+
+
+def test_freehand_strip_keeps_its_bounding_box_too() -> None:
+    """The path does not replace (x, y, w, h): hit-testing and the popover
+    anchor read the box without caring which kind of strip they have."""
+    tid = _make(points=PATH)
+    with session_scope() as s:
+        row = s.get(TapeMark, tid)
+    assert (row.x, row.y, row.w, row.h) == (RECT["x"], RECT["y"], RECT["w"], RECT["h"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("not a list", id="not-a-list"),
+        pytest.param([], id="empty"),
+        pytest.param([{"x": 1, "y": 2}], id="single-point"),
+        pytest.param([{"x": 1, "y": 2}, {"x": 3}], id="missing-y"),
+        pytest.param([{"x": 1, "y": 2}, {"x": "3", "y": 4}], id="string-x"),
+        pytest.param([{"x": 1, "y": 2}, {"x": float("nan"), "y": 4}], id="nan-x"),
+        pytest.param([{"x": 1, "y": 2, "p": 0.5}, {"x": 3, "y": 4}], id="extra-key"),
+        pytest.param([{"x": 1, "y": 2}] * (tape.MAX_PATH_POINTS + 1), id="too-many"),
+    ],
+)
+def test_hostile_paths_are_refused(path: object) -> None:
+    with session_scope() as s, pytest.raises(Invalid):
+        tape.create_tape(
+            s, user_id=OWNER, paper_id=OWNER_PAPER, kind="original", page=1, **RECT, points=path
+        )
+
+
+def test_unreadable_path_falls_back_to_straight_not_fatal() -> None:
+    """A hand-edited row must not take the whole page's tape down with it —
+    the box is still there, so show it straight."""
+    tid = _make(points=PATH)
+    with session_scope() as s:
+        s.get(TapeMark, tid).points = "{not json"
+    with session_scope() as s:
+        assert tape.load_path(s.get(TapeMark, tid).points) is None
+
+
+def test_freehand_lifecycle_over_http(client: TestClient) -> None:
+    made = client.post(
+        f"/api/papers/{OWNER_PAPER}/tape",
+        json={"kind": "original", "page": 2, **RECT, "points": PATH},
+    )
+    assert made.status_code == 201
+    assert made.json()["points"] == PATH
+
+    listed = client.get(f"/api/papers/{OWNER_PAPER}/tape?kind=original").json()
+    assert listed[0]["points"] == PATH
+
+    # A reveal-only patch must not disturb the path either.
+    patched = client.patch(f"/api/tape/{made.json()['id']}", json={"revealed": True})
+    assert patched.json()["revealed"] is True
+    assert patched.json()["points"] == PATH
+
+
+def test_straight_strip_reports_null_points_over_http(client: TestClient) -> None:
+    made = client.post(f"/api/papers/{OWNER_PAPER}/tape", json={"kind": "original", "page": 2, **RECT})
+    assert made.json()["points"] is None
+
+
+def test_single_point_path_refused_at_the_edge(client: TestClient) -> None:
+    r = client.post(
+        f"/api/papers/{OWNER_PAPER}/tape",
+        json={"kind": "original", "page": 1, **RECT, "points": [{"x": 1, "y": 2}]},
+    )
+    assert r.status_code == 422  # pydantic's min_length=2, before the service runs
+
+
 def test_hostile_create_payload_refused_over_http(client: TestClient) -> None:
     r = client.post(
         f"/api/papers/{OWNER_PAPER}/tape",

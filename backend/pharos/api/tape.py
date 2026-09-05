@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
@@ -44,6 +44,16 @@ router = APIRouter(prefix="/api", tags=["tape"], route_class=_TapeRoute)
 # ------------------------------------------------------------------- schemas
 
 
+class PathPoint(BaseModel):
+    """One sample of a freehand strip's path. No pressure: a strip of tape has
+    one thickness end to end, unlike a pen stroke."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(allow_inf_nan=False, ge=-MAX_COORD, le=MAX_COORD)
+    y: float = Field(allow_inf_nan=False, ge=-MAX_COORD, le=MAX_COORD)
+
+
 class TapeOut(BaseModel):
     id: str
     paper_id: str
@@ -55,6 +65,8 @@ class TapeOut(BaseModel):
     h: float
     angle: float
     revealed: bool
+    #: The freehand path, or null for a straight strip.
+    points: list[PathPoint] | None
     created_at: datetime
     updated_at: datetime | None
 
@@ -70,6 +82,12 @@ class TapeCreate(BaseModel):
     h: float = Field(allow_inf_nan=False, ge=tape.MIN_SIZE, le=tape.MAX_SIZE)
     angle: float | None = None
     revealed: bool | None = None
+    #: Present for a freehand strip, omitted for a straight one. Bounded here
+    #: as well as in the service so an oversized payload is refused before
+    #: FastAPI builds hundreds of model instances out of it.
+    points: Annotated[list[PathPoint], Field(min_length=2, max_length=tape.MAX_PATH_POINTS)] | None = (
+        None
+    )
 
 
 class TapeUpdate(BaseModel):
@@ -105,6 +123,11 @@ def _tape_out(row: TapeMark) -> TapeOut:
         h=row.h,
         angle=row.angle,
         revealed=row.revealed,
+        points=(
+            None
+            if (path := tape.load_path(row.points)) is None
+            else [PathPoint(x=x, y=y) for x, y in path]
+        ),
         created_at=as_utc(row.created_at),
         updated_at=as_utc(row.updated_at) if row.updated_at else None,
     )
@@ -143,6 +166,7 @@ def create_tape(
         h=payload.h,
         angle=payload.angle,
         revealed=payload.revealed,
+        points=None if payload.points is None else [p.model_dump() for p in payload.points],
     )
     return _tape_out(row)
 

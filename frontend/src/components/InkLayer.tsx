@@ -72,6 +72,7 @@ import {
   unionBounds,
 } from "../lib/ink";
 import { Icons } from "../design/icons";
+import { isDrawingPointer } from "../lib/pointer";
 import { clampInkWidth, useUI, type InkMode } from "../store";
 import "./InkLayer.css";
 
@@ -80,21 +81,54 @@ const MAX_POINTS = 2000;
 /** Start thinning below the ceiling, leaving the server a little headroom. */
 const THIN_THRESHOLD = 1900;
 
-/** 激光笔: never a stored colour token — a laser pointer is never saved, so
- *  it never has to live in the backend's closed set. Vivid on purpose (the
- *  feature list's own "颜色炫一点"), a glow the ink colours never get. */
-const LASER_COLOR = "#ff2560";
-const LASER_WIDTH = 2.5;
-/** How long a laser mark stays fully bright before it starts fading, and how
- *  long the fade itself takes — a pointer, not a note: it must be gone
- *  quickly enough that nobody mistakes it for something meant to persist. */
-const LASER_HOLD_MS = 250;
-const LASER_FADE_MS = 700;
+/**
+ * 激光笔 — never a stored colour token, because a laser mark is never saved
+ * and so never has to live in the backend's closed set.
+ *
+ * "颜色炫一点，做成七彩渐变色的": each mark is painted with a gradient down
+ * its own length through these stops rather than one flat colour, which is
+ * also what makes a long sweep readable — the hue tells you which end you
+ * drew first.
+ */
+const LASER_STOPS = ["#ff2d55", "#ff9500", "#ffd60a", "#34c759", "#00c7ff", "#5e5ce6", "#bf5af2"];
+const LASER_WIDTH = 3;
+/**
+ * The mark holds at full brightness until the pen has been QUIET this long,
+ * then fades. Not "this long after the stroke ended": while you are still
+ * drawing — mark after mark, explaining something — everything you have drawn
+ * stays up, and the whole trail clears together once you actually stop
+ * ("在检测到 2s 内没有写入再消退"). The first version faded 250ms after each
+ * pen-up, which wiped the trail out from under an explanation still in
+ * progress.
+ */
+const LASER_HOLD_MS = 2000;
+const LASER_FADE_MS = 900;
 
 /** 改字体粗细与颜色 (style brush) hit-test reach, in CSS pixels — small and
  *  fixed, unlike the eraser's adjustable presets: this tool is meant to pick
  *  out ONE stroke precisely, not sweep an area. */
 const STYLE_BRUSH_REACH_PX = 10;
+
+/**
+ * The `PointerEvent.buttons` bits that mean "this stylus is asking to erase".
+ *
+ * Bit 1 (value **2**) is the BARREL button — the side button on a Samsung
+ * S Pen, and the one the first attempt at this feature missed entirely, which
+ * is why "按下按钮没有变出橡皮": an S Pen has no eraser end to report bit 5
+ * with, so nothing ever fired.
+ *
+ * Bit 5 (value **32**) is the dedicated eraser END that Surface- and
+ * Wacom-class pens have instead of (or as well as) a side button.
+ *
+ * Either one means the same thing to this reader, so both are accepted. Bit 0
+ * (value 1) is the tip touching the glass and is checked separately — a
+ * button pressed in mid-air must flip the tool WITHOUT starting a stroke.
+ */
+const PEN_ERASE_BUTTONS = 2 | 32;
+const PEN_TIP_BUTTON = 1;
+
+const penEraseHeld = (e: PointerEvent): boolean =>
+  e.pointerType === "pen" && (e.buttons & PEN_ERASE_BUTTONS) !== 0;
 
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
@@ -409,10 +443,19 @@ export function InkLayer({
    *  means the button is up, or the mode it would restore is already current
    *  (the user picked erase themselves; releasing must not fight that). */
   const barrelPrevModeRef = useRef<InkMode | null>(null);
-  /** rAF handle for a laser mark's fade-out; 0 = none in flight. Cancelled the
-   *  moment a new gesture starts, so a fresh laser stroke (or any other tool)
-   *  never fights a stale fade still repainting the wet canvas underneath it. */
+  /** rAF handle for the laser's hold-then-fade loop; 0 = none in flight. */
   const laserFadeRef = useRef(0);
+  /**
+   * Laser marks still on screen, oldest first — each one a finished sweep.
+   *
+   * A list, not a single mark, because the trail has to survive the NEXT
+   * sweep: you point at three things in a row while explaining, and all
+   * three stay up until you stop. `laserActiveAtRef` is the last moment the
+   * laser was actually drawing, and the whole trail holds until it has been
+   * quiet for `LASER_HOLD_MS`, then fades out together.
+   */
+  const laserMarksRef = useRef<InkPoint[][]>([]);
+  const laserActiveAtRef = useRef(0);
   /** Live touch pointers, for the two-finger pan. */
   const touchesRef = useRef(new Map<number, { x: number; y: number }>());
   const panMidRef = useRef<{ x: number; y: number } | null>(null);
@@ -697,6 +740,52 @@ export function InkLayer({
     wetRef.current?.getContext("2d")?.clearRect(0, 0, wetRef.current.width, wetRef.current.height);
   }, []);
 
+  /** The 七彩 sweep: a gradient down the mark's own longest axis, so a long
+   *  stroke runs the spectrum instead of ending up one muddy average. */
+  const laserGradient = useCallback(
+    (ctx: CanvasRenderingContext2D, points: InkPoint[]): CanvasGradient | string => {
+      if (points.length < 2) return LASER_STOPS[0]!;
+      const b = strokeBounds(points);
+      // Along whichever axis the mark actually spans — a vertical sweep should
+      // read top-to-bottom, not be flattened into a single hue.
+      const horizontal = b.x1 - b.x0 >= b.y1 - b.y0;
+      const g = horizontal
+        ? ctx.createLinearGradient(b.x0, b.y0, b.x1, b.y0)
+        : ctx.createLinearGradient(b.x0, b.y0, b.x0, b.y1);
+      LASER_STOPS.forEach((stop, i) => g.addColorStop(i / (LASER_STOPS.length - 1), stop));
+      return g;
+    },
+    [],
+  );
+
+  /** Paint every live laser mark at one shared alpha, glow and all. */
+  const paintLaserMarks = useCallback(
+    (ctx: CanvasRenderingContext2D, alpha: number) => {
+      if (alpha <= 0) return;
+      for (const points of laserMarksRef.current) {
+        const outline = strokeOutline(points, LASER_WIDTH);
+        if (outline.length < 3) continue;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = LASER_STOPS[0]!;
+        ctx.shadowBlur = 14 / scale;
+        paintOutline(ctx, outline, laserGradient(ctx, points));
+        ctx.restore();
+      }
+    },
+    [scale, laserGradient],
+  );
+
+  /** Drop the whole trail and stop the loop — switching away from the laser,
+   *  or the fade running to zero. */
+  const clearLaser = useCallback(() => {
+    if (laserFadeRef.current) {
+      cancelAnimationFrame(laserFadeRef.current);
+      laserFadeRef.current = 0;
+    }
+    laserMarksRef.current = [];
+  }, []);
+
   /** Repaint the wet layer, by gesture kind:
    *  - erase: the reach preview (or nothing while a touch erases without hover);
    *  - draw: the live outline, plus the predicted tail;
@@ -764,25 +853,40 @@ export function InkLayer({
         return;
       }
       if (session.erasing) return;
+      // The trail already on screen has to be repainted with the live stroke:
+      // this canvas is cleared every batch, so anything not redrawn here
+      // blinks out the moment the next sweep starts.
+      if (inkMode === "laser") paintLaserMarks(ctx, 1);
       const live = [...session.points, ...predicted];
       const width = inkMode === "laser" ? LASER_WIDTH : inkWidth;
       const outline = strokeOutline(live, width, true);
       if (outline.length >= 3) {
         if (inkMode === "laser") {
-          // 炫一点: a glow, not a flat fill — the pointer is meant to catch
-          // the eye for the few hundred ms it lives, unlike ink meant to be
-          // read calmly afterward.
+          // 炫一点: a 七彩 gradient with a glow, not a flat fill — the pointer
+          // is meant to catch the eye for the seconds it lives, unlike ink
+          // meant to be read calmly afterward.
           ctx.save();
-          ctx.shadowColor = LASER_COLOR;
+          ctx.shadowColor = LASER_STOPS[0]!;
           ctx.shadowBlur = 14 / scale;
-          paintOutline(ctx, outline, LASER_COLOR);
+          paintOutline(ctx, outline, laserGradient(ctx, live));
           ctx.restore();
         } else {
           paintOutline(ctx, outline, colorOf(inkColor));
         }
       }
     },
-    [prepare, clearInSpace, colorResolver, inkWidth, inkColor, inkMode, scale, paintSelection],
+    [
+      prepare,
+      clearInSpace,
+      colorResolver,
+      inkWidth,
+      inkColor,
+      inkMode,
+      scale,
+      paintSelection,
+      paintLaserMarks,
+      laserGradient,
+    ],
   );
 
   /* --------------------------------------------------- selection overlays */
@@ -916,14 +1020,19 @@ export function InkLayer({
 
     const startSession = (e: PointerEvent): void => {
       if (strokeRef.current !== null) return; // one gesture at a time
-      // A fresh gesture (laser or otherwise) owns the wet canvas now; a
-      // still-fading previous laser mark must not keep repainting over it.
+      // The fade loop must stop repainting under the gesture about to start.
+      // For a laser stroke the TRAIL survives (this sweep joins it, and the
+      // quiet-timer restarts); for any other tool the trail is abandoned —
+      // switching away from the laser should not leave marks hanging over
+      // the page.
       if (laserFadeRef.current) {
         cancelAnimationFrame(laserFadeRef.current);
         laserFadeRef.current = 0;
       }
+      if (inkMode === "laser") laserActiveAtRef.current = performance.now();
+      else laserMarksRef.current = [];
       // Barrel-button / eraser-end erases in any tool.
-      const eraserButton = e.pointerType === "pen" && (e.buttons & 32) !== 0;
+      const eraserButton = penEraseHeld(e);
       const pressure = e.pressure > 0 ? e.pressure : 0.5;
       const pt = inPageSpace(e.clientX, e.clientY, pressure);
 
@@ -1028,19 +1137,48 @@ export function InkLayer({
         return;
       }
       if (touchesRef.current.size === 1 && strokeRef.current === null) {
-        // Erasing, lassoing, style-brushing and the laser are deliberate edit
-        // (or pointing) gestures: a finger does them whatever the finger-draw
-        // preference says — palm rejection exists to stop accidental INK,
-        // and none of these lay down ink of their own.
-        if (
-          inkMode === "erase" ||
-          inkMode === "select" ||
-          inkMode === "style" ||
-          inkMode === "laser" ||
-          inkFingerDraw
-        ) {
-          startSession(e);
-        }
+        // 防手指: marking up the page is the pen's job — draw, erase, lasso,
+        // restyle, point, all of it. A lone finger here is a palm landing
+        // while writing, or a scroll that belongs to the viewport, and it now
+        // gets to be neither ink nor an edit.
+        //
+        // This used to exempt erase/select/style/laser on the grounds that
+        // they lay down no ink of their own, which was the wrong axis: a
+        // finger erasing a paragraph by accident is worse than a finger
+        // drawing a line, not better. 手指书写 remains the explicit opt-out
+        // for a tablet with no stylus (see `lib/pointer`).
+        if (isDrawingPointer(e, inkFingerDraw)) startSession(e);
+      }
+    };
+
+    /**
+     * Borrow the eraser while a stylus button is held, and give the tool back
+     * when it lifts — 按下按钮变橡皮，松开退出.
+     *
+     * Called from EVERY pen event, not just hover: the first version only ran
+     * in the hover branch, which assumes the device reports the button while
+     * the pen is in the air. Plenty do not — some only report it in contact,
+     * and some deliver no hover moves at all — so hover-only meant the
+     * feature silently never fired.
+     *
+     * It still refuses to switch while a gesture is in flight, because
+     * `inkMode` is a dependency of this whole effect: flipping it mid-stroke
+     * would tear the listeners down and abandon the stroke being drawn. A
+     * button pressed mid-stroke is therefore honoured for the NEXT stroke,
+     * and the in-flight one keeps whatever it started as (the per-gesture
+     * `eraserButton` check in `startSession` already covers "pressed before
+     * the tip landed", which is the case that actually matters).
+     */
+    const syncPenButton = (e: PointerEvent): void => {
+      if (e.pointerType !== "pen") return;
+      if (strokeRef.current !== null) return; // mid-gesture: see above
+      const held = penEraseHeld(e);
+      if (held && barrelPrevModeRef.current === null && inkMode !== "erase") {
+        barrelPrevModeRef.current = inkMode;
+        setInkMode("erase");
+      } else if (!held && barrelPrevModeRef.current !== null) {
+        setInkMode(barrelPrevModeRef.current);
+        barrelPrevModeRef.current = null;
       }
     };
 
@@ -1050,9 +1188,36 @@ export function InkLayer({
         onTouchDown(e);
         return;
       }
-      if (e.pointerType === "pen") penRef.current = e.pointerId;
-      // Pen tip is button 0; a pen already drawing must not restart.
-      if (e.button !== 0 && !(e.buttons & 32)) return;
+      if (debug) {
+        console.debug(
+          "[ink] down",
+          e.pointerType,
+          "button",
+          e.button,
+          "buttons",
+          e.buttons,
+          "pressure",
+          e.pressure,
+        );
+      }
+      // A stylus button pressed in MID-AIR has no contact bit: it must flip
+      // the tool and stop there, never mint a zero-length gesture. (The old
+      // gate let such an event through to `startSession` whenever bit 32 was
+      // set, and rejected a barrel-held tip-down outright because its
+      // `button` is not 0.)
+      const isPen = e.pointerType === "pen";
+      if (isPen) {
+        syncPenButton(e);
+        // `button === 0` is the tip transition; `buttons & 1` is the tip being
+        // held. Either will do: a driver that under-reports `buttons` on
+        // pointerdown would otherwise stop the pen drawing AT ALL, which is a
+        // far worse failure than the side button not being noticed.
+        const tipDown = e.button === 0 || (e.buttons & PEN_TIP_BUTTON) !== 0;
+        if (!tipDown) return; // a button pressed in mid-air: mode only
+        penRef.current = e.pointerId;
+      } else if (e.button !== 0) {
+        return; // a mouse's right/middle click is not a stroke
+      }
       startSession(e);
       if (debug) console.debug("[ink] mode", inkMode, "color", inkColor, "width", inkWidth);
     };
@@ -1082,22 +1247,10 @@ export function InkLayer({
 
       const session = strokeRef.current;
       if (session === null || session.pointerId !== e.pointerId) {
-        // S Pen (and most Wacom-class digitisers) report the barrel button
-        // as bit 32 on hover, before any contact — the moment to borrow the
-        // eraser is here, never mid-gesture (see `barrelPrevModeRef`), so
-        // the tool is already "erase" by the time the tip actually touches
-        // down. Release is symmetric: the bit clears on the next hover
-        // sample, and the previous tool comes back.
-        if (e.pointerType === "pen") {
-          const held = (e.buttons & 32) !== 0;
-          if (held && barrelPrevModeRef.current === null && inkMode !== "erase") {
-            barrelPrevModeRef.current = inkMode;
-            setInkMode("erase");
-          } else if (!held && barrelPrevModeRef.current !== null) {
-            setInkMode(barrelPrevModeRef.current);
-            barrelPrevModeRef.current = null;
-          }
-        }
+        // Hover is still the NICEST moment to borrow the eraser (the tool is
+        // already switched by the time the tip lands), it just is not the
+        // only one any more — `syncPenButton` is called from down/up too.
+        syncPenButton(e);
         // Hover (pen/mouse) with the eraser active: keep the reach preview on
         // screen even when nothing is being erased. Touch has no hover.
         if (inkMode === "erase" && e.pointerType !== "touch") {
@@ -1298,34 +1451,29 @@ export function InkLayer({
       }
 
       if (inkMode === "laser") {
-        // Never persisted, never undoable — a pointer, not a note. Hold it
-        // fully bright briefly, then fade it out by repainting the SAME
-        // outline at falling opacity; nothing else touches the wet canvas
-        // meanwhile, since `startSession` cancels this the instant any new
-        // gesture (laser or not) begins.
-        const pts = session.points;
-        const width = LASER_WIDTH;
-        const outline = strokeOutline(pts, width, false);
-        const startedAt = performance.now();
+        // Never persisted, never undoable — a pointer, not a note. The mark
+        // joins the standing trail, and the trail holds at full brightness
+        // until the pen has been QUIET for LASER_HOLD_MS, then fades out
+        // together. Drawing again before that resets the clock, so an
+        // explanation in progress never has the floor pulled out from under
+        // it (the first version faded each mark 250ms after its own pen-up).
+        if (session.points.length >= 2) laserMarksRef.current.push(session.points);
+        laserActiveAtRef.current = performance.now();
+        if (laserFadeRef.current) cancelAnimationFrame(laserFadeRef.current);
         const step = (): void => {
           const wetNow = wetRef.current;
           if (!wetNow) return;
           const sized = prepare(wetNow);
           if (!sized) return;
           clearInSpace(wetNow, sized.w);
-          const elapsed = performance.now() - startedAt;
-          const alpha = Math.max(0, 1 - Math.max(0, elapsed - LASER_HOLD_MS) / LASER_FADE_MS);
-          if (alpha <= 0 || outline.length < 3) {
+          const idle = performance.now() - laserActiveAtRef.current;
+          const alpha = Math.max(0, 1 - Math.max(0, idle - LASER_HOLD_MS) / LASER_FADE_MS);
+          if (alpha <= 0) {
+            laserMarksRef.current = [];
             laserFadeRef.current = 0;
             return;
           }
-          const ctx = wetNow.getContext("2d")!;
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.shadowColor = LASER_COLOR;
-          ctx.shadowBlur = 14 / scale;
-          paintOutline(ctx, outline, LASER_COLOR);
-          ctx.restore();
+          paintLaserMarks(wetNow.getContext("2d")!, alpha);
           laserFadeRef.current = requestAnimationFrame(step);
         };
         laserFadeRef.current = requestAnimationFrame(step);
@@ -1389,8 +1537,19 @@ export function InkLayer({
         });
     };
 
-    const onUp = (e: PointerEvent): void => finish(e, false);
-    const onCancel = (e: PointerEvent): void => finish(e, true);
+    const onUp = (e: PointerEvent): void => {
+      finish(e, false);
+      // After the gesture is closed out, not before: `syncPenButton` refuses
+      // to act while one is in flight, and on pointerup the button bits are
+      // already whatever they will be for the next stroke. This is what
+      // releases the borrowed eraser when the button was let go DURING a
+      // stroke rather than while hovering.
+      syncPenButton(e);
+    };
+    const onCancel = (e: PointerEvent): void => {
+      finish(e, true);
+      syncPenButton(e);
+    };
     // Pen drags emit compatibility mouse events that would bubble to the
     // viewport's pan handler mid-stroke; the wet canvas is the target, so
     // this is where they stop.
@@ -1428,12 +1587,13 @@ export function InkLayer({
         strokeRef.current = null;
         if (dead.erasing && inkEraseMode === "pixel") abandonPixelGesture();
         if (inkMode === "style") abandonStyleGesture();
-        if (laserFadeRef.current) {
-          cancelAnimationFrame(laserFadeRef.current);
-          laserFadeRef.current = 0;
-        }
         movingRef.current = null;
       }
+      // The laser trail belongs to the tool, not to a gesture: a rebind means
+      // the tool (or zoom) changed under it, and marks measured at the old
+      // scale must not be repainted at the new one. Outside the gesture check
+      // above on purpose — the common case is a tool switch with nothing down.
+      clearLaser();
       // Rebinding (tool change, zoom, data) invalidates any preview painted
       // under the previous settings.
       clearWet();
@@ -1458,6 +1618,8 @@ export function InkLayer({
     clearWet,
     paintSelection,
     paintSelectionHandles,
+    paintLaserMarks,
+    clearLaser,
     commitMove,
     commitTransform,
     pushInkOps,

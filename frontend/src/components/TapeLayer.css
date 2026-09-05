@@ -43,17 +43,36 @@
   box-shadow: var(--sh-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
 }
 
-/* Revealed: whatever was under it is showing, so the strip itself becomes
-   just a thin dashed outline — present enough to tap again, not present
-   enough to compete with the content it is no longer hiding. */
+/* Revealed: whatever was under it is showing, and the ONLY thing that matters
+   now is reading it. So the strip gets out of the way completely — no border,
+   no fill, nothing over the glyphs ("点击后一层黑边，影响查看": it used to
+   keep a dashed rule right across the text it had just uncovered, and stack a
+   2px selection outline on top of that).
+
+   What remains is a grip at the left end, outside the run of text: enough to
+   see where the strip still is and tap it back, and small enough to ignore. */
 .ph-tape-strip.is-revealed {
   background: transparent;
-  border: 1.5px dashed rgba(120, 100, 40, 0.55);
+  border: none;
+  box-shadow: none;
+}
+.ph-tape-strip.is-revealed::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 60%;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--c-tape-grip, rgba(120, 100, 40, 0.45));
 }
 
+/* Selection is a hairline, not a box: this sits ON the page content, so it
+   has to be findable without being something you read through. */
 .ph-tape-strip.is-selected {
-  outline: 2px solid var(--c-ac, #5b53d6);
-  outline-offset: 1px;
+  outline: 1px dashed var(--c-ac, #5b53d6);
+  outline-offset: 2px;
 }
 
 .ph-tape-strip.is-preview {
@@ -67,6 +86,52 @@
    itself (`.ph-tape`) is already `pointer-events: none` outside "tape" mode
    for the same reason on a bigger scale — see the component's own comment. */
 .ph-tape-strip.is-dormant {
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------ freehand strips */
+/*
+   A strip that followed the pen is a stroked path, not a box. One SVG holds
+   all of them (plus the live draft), laid out over the same page box as the
+   straight strips so both kinds share one coordinate space.
+*/
+.ph-tape-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ph-tape-path {
+  fill: none;
+  stroke: var(--c-tape, #e8dcb8);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* The hit area follows the visible strip rather than its bounding box, so a
+     tap in the hollow of a curve reaches the page underneath. */
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Revealed: same reasoning as a straight strip — get out of the way of what
+   was just uncovered. A path cannot carry a corner grip, so it keeps a faint
+   ghost of itself instead: findable, not readable-through. */
+.ph-tape-path.is-revealed {
+  stroke: var(--c-tape-ghost, rgba(120, 100, 40, 0.18));
+}
+
+.ph-tape-path.is-selected {
+  stroke-dasharray: 6 4;
+}
+
+.ph-tape-path.is-preview {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.ph-tape-path.is-dormant {
   pointer-events: none;
 }
 
