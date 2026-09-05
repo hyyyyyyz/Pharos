@@ -34,6 +34,14 @@
   pointer-events: none;
 }
 
+/* 锁定画布: a stray single finger must do nothing — no native scroll, no
+   native pinch. `touch-action: none` only stops the BROWSER's own touch
+   gestures; the two-finger pan the lock still allows is driven by the pinch
+   effect writing scrollLeft/scrollTop directly, which this does not touch. */
+.ph-pc.is-locked {
+  touch-action: none;
+}
+
 .ph-pc-pages {
   position: relative;
   display: flex;

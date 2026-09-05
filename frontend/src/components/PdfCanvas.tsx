@@ -212,6 +212,12 @@ export interface PdfCanvasProps {
   jumpTo: number | null;
   onJumped: () => void;
   onCurrentPage: (page: number) => void;
+  /** 锁定画布: freeze pan/zoom against a stray touch. Locked, a single finger
+   *  does nothing (no accidental scroll) and two fingers pan without
+   *  changing zoom; unlocked is today's behaviour (one finger scrolls,
+   *  two fingers pinch-zoom). Default false — the reader is not locked by
+   *  default, exactly today's behaviour for anyone who never toggles it. */
+  locked?: boolean;
 }
 
 /**
@@ -231,7 +237,10 @@ export function PdfCanvas({
   jumpTo,
   onJumped,
   onCurrentPage,
+  locked = false,
 }: PdfCanvasProps): JSX.Element {
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -742,16 +751,25 @@ export function PdfCanvas({
       }
       const [a, b] = [...touches.values()];
       if (!a || !b) return;
-      const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
-      const next = clampZoom(startZoom * ratio);
-      // Stepped, not continuous: each zoom value re-renders every page
-      // canvas, and touchmove fires at digitiser rate.
-      if (Math.abs(next - lastSent) >= 0.01) {
-        lastSent = next;
-        onZoomRef.current(next);
+      // Locked: two fingers pan only — the whole point of the lock is that
+      // zoom cannot change from a stray gesture, so the ratio is never
+      // turned into a zoom call at all (not just clamped to the start value,
+      // which would still recompute and re-render every page for nothing).
+      if (!lockedRef.current) {
+        const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
+        const next = clampZoom(startZoom * ratio);
+        // Stepped, not continuous: each zoom value re-renders every page
+        // canvas, and touchmove fires at digitiser rate.
+        if (Math.abs(next - lastSent) >= 0.01) {
+          lastSent = next;
+          onZoomRef.current(next);
+        }
       }
       // Anchor + follow: the midpoint's content position stays under the
-      // fingers, including when the whole pair drags while pinching.
+      // fingers, including when the whole pair drags while pinching. With
+      // zoom frozen (locked), `el.scrollWidth`/`scrollHeight` never change
+      // either, so this reduces to a pure translate by the pair's own
+      // movement — exactly "two fingers pan" with no extra branch needed.
       cancelAnimationFrame(anchorFrame);
       anchorFrame = requestAnimationFrame(() => {
         const rect = el.getBoundingClientRect();
@@ -974,7 +992,13 @@ export function PdfCanvas({
   );
 
   const hasQuery = normalizeQuery(query).length > 0;
-  const cls = ["ph-pc", "ph-scroll", grabbing && "is-grabbing", panLock && "is-panlock"]
+  const cls = [
+    "ph-pc",
+    "ph-scroll",
+    grabbing && "is-grabbing",
+    panLock && "is-panlock",
+    locked && "is-locked",
+  ]
     .filter(Boolean)
     .join(" ");
 

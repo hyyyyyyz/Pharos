@@ -209,6 +209,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const [fitMode, setFitMode] = useState(true);
   const fitModeRef = useRef(fitMode);
   fitModeRef.current = fitMode;
+  // 锁定画布: per-view, like zoom/fitMode — not worth persisting across a
+  // reload, and doing so would risk leaving a reader stuck locked with no
+  // visible reason why the page stopped responding to a finger.
+  const [canvasLocked, setCanvasLocked] = useState(false);
 
   // Fit width on load and whenever the document changes.
   useEffect(() => {
@@ -556,6 +560,18 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                 <button className="ph-rv-fit" title="适应宽度" onClick={fitWidth}>
                   适应宽度
                 </button>
+                <button
+                  className={`ph-rv-ink-btn${canvasLocked ? " is-on" : ""}`}
+                  title={
+                    canvasLocked
+                      ? "画布已锁定：双指拖动平移，单指无效，解锁后恢复单指拖动/双指缩放"
+                      : "锁定画布：防止误触缩放和平移"
+                  }
+                  aria-pressed={canvasLocked}
+                  onClick={() => setCanvasLocked((v) => !v)}
+                >
+                  <Icons.lock size={14} />
+                </button>
                 <span className="ph-rv-subbar-sep" />
                 {/* 手写: pen writes, eraser removes (whole strokes or, in
                     局部, splits them), lasso selects strokes for moving and
@@ -777,6 +793,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   jumpTo={jumpTo}
                   onJumped={onJumped}
                   onCurrentPage={onCurrentPage}
+                  locked={canvasLocked}
                 />
               )}
             </div>
