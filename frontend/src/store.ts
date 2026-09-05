@@ -20,7 +20,7 @@ export type SortDir = "asc" | "desc";
  *  routing, and its laser-mode branch in `paintWet`), not a different
  *  interaction. A laser stroke is never sent to the backend at all: it
  *  fades on the wet canvas and is gone, nothing to undo or persist. */
-export type InkMode = "off" | "draw" | "water" | "laser" | "erase" | "select";
+export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "select";
 
 /**
  * One undoable ink operation, for the document-level undo stack.

@@ -91,6 +91,11 @@ const LASER_WIDTH = 2.5;
 const LASER_HOLD_MS = 250;
 const LASER_FADE_MS = 700;
 
+/** 改字体粗细与颜色 (style brush) hit-test reach, in CSS pixels — small and
+ *  fixed, unlike the eraser's adjustable presets: this tool is meant to pick
+ *  out ONE stroke precisely, not sweep an area. */
+const STYLE_BRUSH_REACH_PX = 10;
+
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
   pointerId: number;
@@ -416,6 +421,11 @@ export function InkLayer({
   /** 局部 eraser account: rows removed / parts created during one gesture. */
   const pixelRemovedRef = useRef<InkStrokeRow[]>([]);
   const pixelAddedRef = useRef<InkStrokeRow[]>([]);
+  /** 改字体粗细与颜色 (style brush) account: same shape as the 局部 eraser's —
+   *  originals the pen touched this gesture, and their restyled replacements —
+   *  so one drag that crosses several strokes still lands as one undo op. */
+  const styleRemovedRef = useRef<InkStrokeRow[]>([]);
+  const styleAddedRef = useRef<InkStrokeRow[]>([]);
 
   /** Functional cache write: safe against mid-gesture staleness. */
   const updateCache = useCallback(
@@ -594,6 +604,49 @@ export function InkLayer({
       // commit), but they left the cache as they were cut.
       ...removed,
     ]);
+  }, [updateCache]);
+
+  /**
+   * 改字体粗细与颜色: the pen touching a stroke recolours/rewidths it to the
+   * CURRENT colour + thickness — the same pickers the pen tool itself uses,
+   * repurposed as "apply this style" rather than "draw with it". A stroke
+   * already at the target style is skipped, both because there is nothing to
+   * change and so re-crossing an already-touched stroke mid-drag is a no-op
+   * rather than minting a fresh temp row every pass.
+   */
+  const styleAt = useCallback(
+    (x: number, y: number) => {
+      const reach = STYLE_BRUSH_REACH_PX / scale;
+      for (const stroke of mineRef.current) {
+        if (stroke.color === inkColor && stroke.width === inkWidth) continue;
+        if (!strokeNear(stroke.points, stroke.width, x, y, reach)) continue;
+        const temp: InkStrokeRow = {
+          id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          paper_id: paperId,
+          kind,
+          page,
+          points: stroke.points,
+          color: inkColor,
+          width: inkWidth,
+          created_at: new Date().toISOString(),
+        };
+        updateCache((prev) => prev.map((s) => (s.id === stroke.id ? temp : s)));
+        if (!stroke.id.startsWith("temp-")) styleRemovedRef.current.push(stroke);
+        styleAddedRef.current.push(temp);
+      }
+    },
+    [scale, inkColor, inkWidth, updateCache, kind, page, paperId],
+  );
+
+  /** Throw away an in-flight style-brush gesture — same reasoning as
+   *  `abandonPixelGesture`: nothing has reached the server yet. */
+  const abandonStyleGesture = useCallback(() => {
+    const addedIds = new Set(styleAddedRef.current.map((a) => a.id));
+    const removed = styleRemovedRef.current;
+    styleAddedRef.current = [];
+    styleRemovedRef.current = [];
+    if (addedIds.size === 0 && removed.length === 0) return;
+    updateCache((prev) => [...prev.filter((s) => !addedIds.has(s.id)), ...removed]);
   }, [updateCache]);
 
   /**
@@ -973,11 +1026,17 @@ export function InkLayer({
         return;
       }
       if (touchesRef.current.size === 1 && strokeRef.current === null) {
-        // Erasing and lassoing are deliberate edit gestures: a finger does
-        // them whatever the finger-draw preference says — palm rejection
-        // exists to stop accidental INK, and there is no ink to lay down in
-        // these tools.
-        if (inkMode === "erase" || inkMode === "select" || inkFingerDraw) {
+        // Erasing, lassoing, style-brushing and the laser are deliberate edit
+        // (or pointing) gestures: a finger does them whatever the finger-draw
+        // preference says — palm rejection exists to stop accidental INK,
+        // and none of these lay down ink of their own.
+        if (
+          inkMode === "erase" ||
+          inkMode === "select" ||
+          inkMode === "style" ||
+          inkMode === "laser" ||
+          inkFingerDraw
+        ) {
           startSession(e);
         }
       }
@@ -1099,6 +1158,15 @@ export function InkLayer({
         return;
       }
 
+      if (inkMode === "style") {
+        const origin = wet.getBoundingClientRect();
+        const x = (e.clientX - origin.left) / scale;
+        const y = pageHeight - (e.clientY - origin.top) / scale;
+        styleAt(x, y);
+        e.preventDefault();
+        return;
+      }
+
       // Every sample since the last delivery, then the renderer's prediction
       // of where the pen will be next (render-only, discarded each batch).
       const coalesced = e.getCoalescedEvents?.() ?? [];
@@ -1131,6 +1199,7 @@ export function InkLayer({
       if (cancelled) {
         // A cancelled gesture was never committed — repaint dry as the truth.
         if (session.erasing && inkEraseMode === "pixel") abandonPixelGesture();
+        if (inkMode === "style") abandonStyleGesture();
         movingRef.current = null;
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         repaintDry();
@@ -1203,6 +1272,25 @@ export function InkLayer({
         }
         // Touch has no hover to keep showing the reach preview — lift the
         // finger, the circle goes too. Pen/mouse keep it for the next drag.
+        if (e.pointerType === "touch") clearWet();
+        return;
+      }
+
+      if (inkMode === "style") {
+        const removed = styleRemovedRef.current;
+        const added = styleAddedRef.current;
+        styleRemovedRef.current = [];
+        styleAddedRef.current = [];
+        if (removed.length > 0 || added.length > 0) {
+          // Same shape as the 局部 eraser's commit: the mid-gesture temps
+          // were a preview, the canonical swap is one edit op.
+          const addedIds = new Set(added.map((a) => a.id));
+          updateCache((prev) => prev.filter((s) => !addedIds.has(s.id)));
+          commitReplace(
+            removed,
+            added.map((a) => ({ points: a.points, color: a.color, width: a.width })),
+          );
+        }
         if (e.pointerType === "touch") clearWet();
         return;
       }
@@ -1337,6 +1425,11 @@ export function InkLayer({
         const dead = strokeRef.current;
         strokeRef.current = null;
         if (dead.erasing && inkEraseMode === "pixel") abandonPixelGesture();
+        if (inkMode === "style") abandonStyleGesture();
+        if (laserFadeRef.current) {
+          cancelAnimationFrame(laserFadeRef.current);
+          laserFadeRef.current = 0;
+        }
         movingRef.current = null;
       }
       // Rebinding (tool change, zoom, data) invalidates any preview painted
