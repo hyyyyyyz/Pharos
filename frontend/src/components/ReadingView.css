@@ -585,6 +585,38 @@
   background: var(--c-bd, #e6e8ec);
 }
 
+/* 整笔/局部 segmented control inside the eraser popover — the same visual
+   language as the read-mode seg in the top bar, scaled to the popover. */
+.ph-rv-ink-seg {
+  display: flex;
+  background: var(--c-bg, #fafbfc);
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 6px;
+  padding: 1px;
+  gap: 1px;
+}
+
+.ph-rv-ink-seg-btn {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.ph-rv-ink-seg-btn.is-on {
+  background: var(--c-sf, #fff);
+  color: var(--c-ac, #5b53d6);
+  font-weight: 600;
+  box-shadow: var(--sh-sm);
+}
+
 /* Eraser-size dots. The button span draws the literal reach the preview
    circle will show (via inline width/height), so the picker previews its own
    effect; overflow is visible so the large dot fills the button. */

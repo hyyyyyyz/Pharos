@@ -49,6 +49,15 @@ export const Icons = {
   eraser: make(["M3.5 13.5 10 7l4.5 4.5-6.5 6.5H5.5z", "M8 9l4.5 4.5"]),
   undo: make(["M6 5.5h6.5a4 4 0 0 1 0 8H5.5", "M8 3 5.5 5.5 8 8"]),
   redo: make(["M14 5.5H7.5a4 4 0 0 0 0 8H14.5", "M12 3l2.5 2.5L12 8"]),
+  // 套索: a loop of rope with its tail crossing — the gesture the tool performs.
+  lasso: make(
+    [
+      "M13.9 5.1c2.9 1 4.4 3.2 3.6 5.5-.8 2.2-3.7 3.7-6.9 3.7-1.2 0-2.4-.2-3.4-.5",
+      "M6.6 14.9c-2.6-1-4.3-3-2.2-5.6C6.5 6.6 10 5 10.6 4.9",
+      "M6.7 14.9c-.5.2-.9.6-.9 1.1 0 .8 1 1.2 1.9 1.2",
+    ],
+    { size: 15, sw: 1.4 },
+  ),
   // 每日论文: a dated sheet with two lines of text — a digest that arrives daily.
   daily: make(
     [

@@ -333,6 +333,13 @@ export function ItemList(): JSX.Element {
     onSuccess: (paper) => {
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["collections"] });
+      // The backend commits a yield-dependency session AFTER the response is
+      // on the wire (FastAPI ordering), so the refetch this invalidate fires
+      // can race the commit over a fresh proxy connection and come back
+      // without the new row — leaving the list at its empty state until some
+      // unrelated refetch. One delayed re-check heals that window without a
+      // refresh; a duplicate row is impossible (same id upserts the cache).
+      window.setTimeout(() => void qc.invalidateQueries({ queryKey: ["papers"] }), 700);
       selectRow(paper.id, [paper.id], { meta: false, shift: false });
     },
   });
@@ -344,6 +351,8 @@ export function ItemList(): JSX.Element {
       setNote("已导入 arXiv 论文");
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["collections"] });
+      // Same commit race as the upload path above.
+      window.setTimeout(() => void qc.invalidateQueries({ queryKey: ["papers"] }), 700);
       selectRow(paper.id, [paper.id], { meta: false, shift: false });
     },
   });

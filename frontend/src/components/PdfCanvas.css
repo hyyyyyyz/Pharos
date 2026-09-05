@@ -144,6 +144,36 @@
   user-select: none;
 }
 
+/* 回到原位: a floating pill after any jump (resume, outline, find hit) that
+   the reader made *for* the user. Sits on the wrap, not the scrolling
+   viewport, so it survives the scroll it causes. */
+.ph-pos-back {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  color: var(--c-tx2, #5a616e);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--sh-md);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ph-pos-back:hover {
+  color: var(--c-tx, #1e222a);
+  background: var(--c-hv, #f1f2f4);
+}
+
 .ph-pc-find {
   display: flex;
   align-items: center;

@@ -14,19 +14,27 @@ export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
 /** The reader's stylus tools. Off = the ink layer paints but never captures. */
-export type InkMode = "off" | "draw" | "erase";
+export type InkMode = "off" | "draw" | "erase" | "select";
 
 /**
  * One undoable ink operation, for the document-level undo stack.
  *
  * "add" is one finished stroke; "remove" is one eraser gesture, which may have
- * taken several strokes at once and must come back together. Redo of a removal
- * re-creates rows with fresh server ids, so the op that moves to the future
- * stack is rebuilt by the caller — see `undoInk` in ReadingView.
+ * taken several strokes at once and must come back together. "edit" replaces
+ * whole rows (a lasso move/recolour, or a partial erase that splits a stroke):
+ * `added` rows exist after the op, `removed` rows don't — the inverse flips
+ * the sides. In every op, `added` carries the ids that must be *live* for the
+ * next undo to delete; `removed` is only ever a payload to recreate. Redo of
+ * an edit re-creates from payloads and replaces `added` with fresh rows —
+ * the same protocol "add" already follows.
  */
 export type InkOp =
   | { kind: "add"; stroke: InkStrokeRow }
-  | { kind: "remove"; strokes: InkStrokeRow[] };
+  | { kind: "remove"; strokes: InkStrokeRow[] }
+  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] };
+
+/** How the eraser takes ink away. */
+export type EraseMode = "stroke" | "pixel";
 
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
@@ -187,6 +195,16 @@ interface UIState {
   winW: number;
   setWinW: (w: number) => void;
   toggleAI: () => void;
+  /** Open the AI panel for real (a selection asking for an explanation must
+   *  open it, not flip it). */
+  openAI: () => void;
+  /**
+   * A question queued for the AI panel by somewhere else in the reader (a
+   * selection's 问AI button). The panel consumes it — sends, then clears —
+   * so the sender never needs to know whether the panel is mounted yet.
+   */
+  aiPrompt: string | null;
+  setAiPrompt: (text: string | null) => void;
   /** Live `(pointer: coarse)` match — the tablet/desktop fork for layouts. */
   pointerCoarse: boolean;
 
@@ -207,6 +225,11 @@ interface UIState {
   /** Eraser radius in CSS pixels — what the on-page preview circle shows. */
   inkEraserSize: number;
   setInkEraserSize: (s: number) => void;
+  /** 整笔 = remove whole strokes (OneNote); 局部 = split strokes where the
+   *  eraser passes (real erasing). Default 整笔: it is what shipped first and
+   *  what a pen's barrel button should keep doing regardless of this pick. */
+  inkEraseMode: EraseMode;
+  setInkEraseMode: (m: EraseMode) => void;
   /** Undo (past) and redo (future) stacks, oldest operation first. */
   inkPast: InkOp[];
   inkFuture: InkOp[];
@@ -382,6 +405,9 @@ export const useUI = create<UIState>((set) => ({
   winW: typeof window !== "undefined" ? window.innerWidth : 1440,
   setWinW: (winW) => set({ winW }),
   toggleAI: () => set((s) => ({ aiOpenPref: !isAiOpen(s) })),
+  openAI: () => set({ aiOpenPref: true }),
+  aiPrompt: null,
+  setAiPrompt: (aiPrompt) => set({ aiPrompt }),
   pointerCoarse: hasCoarsePointer(),
 
   inkMode: "off",
@@ -396,6 +422,8 @@ export const useUI = create<UIState>((set) => ({
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
   inkEraserSize: 16,
   setInkEraserSize: (inkEraserSize) => set({ inkEraserSize }),
+  inkEraseMode: "stroke",
+  setInkEraseMode: (inkEraseMode) => set({ inkEraseMode }),
   inkPast: [],
   inkFuture: [],
   inkOpsKey: "",

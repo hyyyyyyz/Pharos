@@ -188,6 +188,138 @@ export function distToSegment(
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+/* ------------------------------------------------------------- lasso select */
+
+/**
+ * Ray-casting point-in-polygon. `poly` is a closed loop's vertex list in PDF
+ * space; the implicit closing edge (last vertex back to the first) counts.
+ */
+export function pointInPolygon(x: number, y: number, poly: { x: number; y: number }[]): boolean {
+  if (poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!;
+    const b = poly[j]!;
+    // The `> 0`/`<= 0` split puts a vertex exactly on the ray inside exactly
+    // one of the two edges, so crossings are never double-counted.
+    if (a.y > y !== b.y > y) {
+      const cx = ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x;
+      if (x < cx) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Does the lasso loop catch this stroke?
+ *
+ * "Any part inside" semantics, like every note app's lasso: a loop that merely
+ * crosses a stroke selects the whole of it. Each *sample* and the midpoint of
+ * each consecutive sample pair are tested — the midpoint matters because a
+ * fast pen move can put two samples either side of a thin loop with both
+ * endpoints outside it.
+ */
+export function strokeCaughtBy(
+  points: InkPoint[],
+  poly: { x: number; y: number }[],
+): boolean {
+  if (poly.length < 3) return false;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    if (pointInPolygon(p.x, p.y, poly)) return true;
+    if (i > 0) {
+      const q = points[i - 1]!;
+      if (pointInPolygon((p.x + q.x) / 2, (p.y + q.y) / 2, poly)) return true;
+    }
+  }
+  return false;
+}
+
+/** Translate every sample by (dx, dy) in PDF space, pressures untouched. */
+export function translatePoints(
+  points: InkPoint[],
+  dx: number,
+  dy: number,
+): InkPoint[] {
+  return points.map((p) => ({ x: p.x + dx, y: p.y + dy, p: p.p }));
+}
+
+/**
+ * Cut a stroke where the partial eraser passes, keeping the surviving pieces.
+ *
+ * A sample is erased when it sits inside the eraser's reach (its own half
+ * width folded in). A *segment* whose interior crosses the reach without an
+ * endpoint inside cuts the polyline there too — the two endpoint samples
+ * survive on opposite sides, which is exactly what a cut through the middle
+ * of a sparsely-sampled span should do. Surviving samples regroup into
+ * maximal consecutive runs.
+ *
+ * This is the geometry half of the 局部 eraser — the caller decides what to
+ * do with the parts (persist them, drop single-sample specks, …).
+ */
+export function splitStroke(
+  points: InkPoint[],
+  baseWidth: number,
+  x: number,
+  y: number,
+  reach: number,
+): InkPoint[][] {
+  if (points.length === 0) return [];
+  const isHit = (i: number): boolean => {
+    const p = points[i]!;
+    return Math.hypot(x - p.x, y - p.y) <= reach + sampleWidth(baseWidth, p.p) / 2;
+  };
+  const parts: InkPoint[][] = [];
+  let run: InkPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    if (isHit(i)) {
+      if (run.length > 0) {
+        parts.push(run);
+        run = [];
+      }
+      continue;
+    }
+    run.push(p);
+    // Does the eraser cross the span to the next sample without touching
+    // either endpoint? Then the cut falls between them.
+    const q = points[i + 1];
+    if (
+      q &&
+      !isHit(i + 1) &&
+      distToSegment(x, y, p.x, p.y, q.x, q.y) <= reach + sampleWidth(baseWidth, q.p) / 2
+    ) {
+      if (run.length > 0) {
+        parts.push(run);
+        run = [];
+      }
+    }
+  }
+  if (run.length > 0) parts.push(run);
+  return parts;
+}
+
+/** Axis-aligned bounds of a stroke's samples, in PDF space. */
+export function strokeBounds(points: InkPoint[]): {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+} {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of points) {
+    if (p.x < x0) x0 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.x > x1) x1 = p.x;
+    if (p.y > y1) y1 = p.y;
+  }
+  if (!Number.isFinite(x0)) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+  return { x0, y0, x1, y1 };
+}
+
 /* ------------------------------------------------------- centreline segments */
 
 /**

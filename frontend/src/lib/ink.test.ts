@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   distToSegment,
+  pointInPolygon,
   pointToCss,
   pointToPdf,
   sampleWidth,
+  splitStroke,
+  strokeBounds,
+  strokeCaughtBy,
   strokeNear,
   strokeSegments,
+  translatePoints,
 } from "./ink";
 
 const PAGE_H = 792; // US Letter, in points
@@ -133,5 +138,146 @@ describe("distToSegment", () => {
     expect(distToSegment(5, 5, 0, 0, 10, 0)).toBe(5);
     expect(distToSegment(-5, 0, 0, 0, 10, 0)).toBe(5); // clamped to the end
     expect(distToSegment(15, 0, 0, 0, 10, 0)).toBe(5);
+  });
+});
+
+/* ----------------------------------------------------------- lasso select */
+
+describe("pointInPolygon", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+
+  it("accepts points inside and rejects points outside", () => {
+    expect(pointInPolygon(5, 5, square)).toBe(true);
+    expect(pointInPolygon(15, 5, square)).toBe(false);
+    expect(pointInPolygon(5, -5, square)).toBe(false);
+  });
+
+  it("closes the loop implicitly (last vertex back to first)", () => {
+    // Left edge runs from (0,10) to (0,0): a point just left of it is outside
+    // even though the pair (i,j) that straddles it is the implicit closing one.
+    expect(pointInPolygon(-1, 5, square)).toBe(false);
+    expect(pointInPolygon(0.5, 5, square)).toBe(true);
+  });
+
+  it("is sane on a concave loop", () => {
+    // A square whose top edge dips down to (5,4): the wedge between the two
+    // slanted edges is outside, the strip beside it is inside.
+    const notch = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 5, y: 4 },
+      { x: 0, y: 10 },
+    ];
+    expect(pointInPolygon(0.5, 8, notch)).toBe(true); // beside the wedge
+    expect(pointInPolygon(5, 8, notch)).toBe(false); // inside the wedge cut
+    expect(pointInPolygon(5, 2, notch)).toBe(true); // below the notch tip
+  });
+
+  it("degenerate loops contain nothing", () => {
+    expect(pointInPolygon(1, 1, [])).toBe(false);
+    expect(pointInPolygon(1, 1, [{ x: 0, y: 0 }, { x: 2, y: 2 }])).toBe(false);
+  });
+});
+
+describe("strokeCaughtBy (the lasso's stroke test)", () => {
+  const line = [
+    { x: 0, y: 50, p: 0.5 },
+    { x: 100, y: 50, p: 0.5 },
+  ];
+  // A loop that crosses the line's middle but holds no endpoint.
+  const crossing = [
+    { x: 40, y: 40 },
+    { x: 60, y: 40 },
+    { x: 60, y: 60 },
+    { x: 40, y: 60 },
+  ];
+
+  it("catches a stroke the loop merely crosses", () => {
+    expect(strokeCaughtBy(line, crossing)).toBe(true);
+  });
+
+  it("misses strokes clear of the loop", () => {
+    const far = line.map((p) => ({ ...p, y: 200 }));
+    expect(strokeCaughtBy(far, crossing)).toBe(false);
+  });
+
+  it("requires an actual loop", () => {
+    expect(strokeCaughtBy(line, crossing.slice(0, 2))).toBe(false);
+  });
+});
+
+describe("translatePoints", () => {
+  it("shifts geometry and preserves pressure", () => {
+    const out = translatePoints(
+      [
+        { x: 1, y: 2, p: 0.3 },
+        { x: 3, y: 4, p: 0.9 },
+      ],
+      10,
+      -5,
+    );
+    expect(out[0]).toEqual({ x: 11, y: -3, p: 0.3 });
+    expect(out[1]).toEqual({ x: 13, y: -1, p: 0.9 });
+  });
+});
+
+describe("splitStroke (the partial eraser)", () => {
+  const line = (n: number): { x: number; y: number; p: number }[] =>
+    Array.from({ length: n }, (_, i) => ({ x: i * 10, y: 0, p: 0.5 }));
+
+  it("cuts the middle out and keeps two parts", () => {
+    const parts = splitStroke(line(11), 2, 50, 0, 5);
+    expect(parts.length).toBe(2);
+    expect(parts[0]!.length).toBe(5); // samples 0..4 (x=0..40)
+    expect(parts[0]![4]!.x).toBe(40);
+    expect(parts[1]![0]!.x).toBe(60);
+    expect(parts[1]!.length).toBe(5);
+  });
+
+  it("clears the stroke entirely when the reach covers it", () => {
+    expect(splitStroke(line(3), 2, 10, 0, 100)).toEqual([]);
+  });
+
+  it("leaves an untouched stroke as a single part with identical samples", () => {
+    const pts = line(5);
+    const parts = splitStroke(pts, 2, 500, 500, 4);
+    expect(parts.length).toBe(1);
+    expect(parts[0]).toEqual(pts);
+  });
+
+  it("cuts at the very end of a stroke", () => {
+    const parts = splitStroke(line(5), 2, 42, 0, 4); // hits only the last sample
+    expect(parts.length).toBe(1);
+    expect(parts[0]!.length).toBe(4);
+  });
+
+  it("keeps pressure through the cut", () => {
+    const pts = [
+      { x: 0, y: 0, p: 0.7 },
+      { x: 100, y: 0, p: 0.2 },
+    ];
+    const parts = splitStroke(pts, 2, 200, 0, 4);
+    expect(parts[0]![1]!.p).toBe(0.2);
+  });
+});
+
+describe("strokeBounds", () => {
+  it("wraps exactly the samples", () => {
+    const b = strokeBounds([
+      { x: 5, y: 10, p: 0.5 },
+      { x: 15, y: 2, p: 0.5 },
+      { x: 8, y: 6, p: 0.5 },
+    ]);
+    expect(b).toEqual({ x0: 5, y0: 2, x1: 15, y1: 10 });
+  });
+
+  it("returns a zero box, not infinities, for an empty stroke", () => {
+    expect(strokeBounds([])).toEqual({ x0: 0, y0: 0, x1: 0, y1: 0 });
   });
 });

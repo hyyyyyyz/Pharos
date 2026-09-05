@@ -255,6 +255,8 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const toggleInkFingerDraw = useUI((s) => s.toggleInkFingerDraw);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const setInkEraserSize = useUI((s) => s.setInkEraserSize);
+  const inkEraseMode = useUI((s) => s.inkEraseMode);
+  const setInkEraseMode = useUI((s) => s.setInkEraseMode);
   const inkPast = useUI((s) => s.inkPast);
   const inkFuture = useUI((s) => s.inkFuture);
   const inkOpsKey = useUI((s) => s.inkOpsKey);
@@ -273,22 +275,17 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
    * stack is rewritten with the rows the network actually returned, so ids
    * stay live through add→undo→redo→undo chains. A stale id in a delete op
    * would 404 and strand the row as un-undoable.
+   *
+   * The protocol every op follows: `added` rows (and a single add's stroke)
+   * must carry *live* ids whenever the op sits on top of a stack, because the
+   * inverse deletes them; `removed` rows are payloads the inverse re-creates
+   * with fresh ids. That is why an edit undone now stores the freshly
+   * recreated rows under `removed` while `added` keeps only its payloads.
    */
-  const undoInk = useCallback(async () => {
-    if (!pdfKind) return;
-    const s = useUI.getState();
-    if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
-    const op = s.inkPast[s.inkPast.length - 1];
-    useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
-    let inverse: typeof op;
-    if (op.kind === "add") {
-      await api.ink.remove(op.stroke.id).catch(() => undefined);
-      // Redo re-creates from the payload; the id it carries is stale but only
-      // a payload — the redo path replaces it with the fresh row.
-      inverse = { kind: "add", stroke: op.stroke };
-    } else {
+  const recreateStrokes = useCallback(
+    async (strokes: InkStrokeRow[]): Promise<InkStrokeRow[]> => {
       const remade: InkStrokeRow[] = [];
-      for (const stroke of op.strokes) {
+      for (const stroke of strokes) {
         try {
           remade.push(
             await api.ink.create(paperId, {
@@ -303,11 +300,36 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           /* a stroke the server refused is simply lost from the redo */
         }
       }
-      inverse = { kind: "remove", strokes: remade };
+      return remade;
+    },
+    [paperId],
+  );
+
+  const undoInk = useCallback(async () => {
+    if (!pdfKind) return;
+    const s = useUI.getState();
+    if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
+    const op = s.inkPast[s.inkPast.length - 1];
+    useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
+    let inverse: typeof op;
+    if (op.kind === "add") {
+      await api.ink.remove(op.stroke.id).catch(() => undefined);
+      // Redo re-creates from the payload; the id it carries is stale but only
+      // a payload — the redo path replaces it with the fresh row.
+      inverse = { kind: "add", stroke: op.stroke };
+    } else if (op.kind === "remove") {
+      inverse = { kind: "remove", strokes: await recreateStrokes(op.strokes) };
+    } else {
+      for (const row of op.added) await api.ink.remove(row.id).catch(() => undefined);
+      inverse = {
+        kind: "edit",
+        removed: await recreateStrokes(op.removed),
+        added: op.added,
+      };
     }
     useUI.setState((st) => ({ inkFuture: [...st.inkFuture, inverse] }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 
   const redoInk = useCallback(async () => {
     if (!pdfKind) return;
@@ -330,15 +352,25 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
         void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
         return;
       }
-    } else {
+    } else if (op.kind === "remove") {
       for (const stroke of op.strokes) {
         await api.ink.remove(stroke.id).catch(() => undefined);
       }
       reapplied = op;
+    } else {
+      for (const row of op.removed) await api.ink.remove(row.id).catch(() => undefined);
+      const added = await recreateStrokes(op.added);
+      reapplied = { kind: "edit", removed: op.removed, added };
+      if (added.length !== op.added.length) {
+        // Part of the redo was refused: the cache no longer matches this op,
+        // so keep it off the stacks and let the refetch settle the truth.
+        void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
+        return;
+      }
     }
     useUI.setState((st) => ({ inkPast: [...st.inkPast, reapplied] }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 
   /* ----------------------------------------------------------- thumbnails */
   const [thumbs, setThumbs] = useState<(string | null)[]>([]);
@@ -492,8 +524,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   适应宽度
                 </button>
                 <span className="ph-rv-subbar-sep" />
-                {/* 手写: pen writes, eraser removes whole strokes, and the
-                    pair shares one popover for colour / width / finger-draw.
+                {/* 手写: pen writes, eraser removes (whole strokes or, in
+                    局部, splits them), lasso selects strokes for moving and
+                    recolouring, and the tools share one popover row for the
+                    options that matter to each.
                     Ink mode must be reachable on desktop too — a mouse can
                     draw — but the popover only matters while a tool is on. */}
                 <div className="ph-rv-inkwrap">
@@ -513,14 +547,19 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.eraser size={15} />
                   </button>
-                  {/* Popover carries the PEN's options only: colour and width
-                      are meaningless to the eraser, and showing them while it
-                      is active made the tool look broken. */}
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "select" ? " is-on" : ""}`}
+                    title="套索选择"
+                    aria-pressed={inkMode === "select"}
+                    onClick={() => setInkMode(inkMode === "select" ? "off" : "select")}
+                  >
+                    <Icons.lasso />
+                  </button>
                   {/* Each tool gets its own popover: the pen carries colour,
                       width and the finger-draw switch; the eraser carries its
-                      reach — a size the preview circle then mirrors on the
-                      page. Colours are meaningless to an eraser, which is why
-                      the two never mix. */}
+                      reach and its 整笔/局部 manner; the lasso explains the
+                      moves it enables. Colours are meaningless to an eraser,
+                      which is why the three never mix. */}
                   {inkMode === "draw" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="手写工具">
                       <div className="ph-rv-ink-row">
@@ -563,6 +602,23 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   {inkMode === "erase" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="橡皮工具">
                       <div className="ph-rv-ink-row">
+                        <div className="ph-rv-ink-seg">
+                          <button
+                            className={`ph-rv-ink-seg-btn${inkEraseMode === "stroke" ? " is-on" : ""}`}
+                            aria-pressed={inkEraseMode === "stroke"}
+                            onClick={() => setInkEraseMode("stroke")}
+                          >
+                            整笔
+                          </button>
+                          <button
+                            className={`ph-rv-ink-seg-btn${inkEraseMode === "pixel" ? " is-on" : ""}`}
+                            aria-pressed={inkEraseMode === "pixel"}
+                            onClick={() => setInkEraseMode("pixel")}
+                          >
+                            局部
+                          </button>
+                        </div>
+                        <span className="ph-rv-ink-sep" />
                         {ERASER_SIZES.map((s) => (
                           <button
                             key={s.size}
@@ -578,7 +634,20 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           </button>
                         ))}
                         <span className="ph-rv-ink-sep" />
-                        <span className="ph-rv-ink-note">拖动擦除整笔 · 圈内即擦除范围</span>
+                        <span className="ph-rv-ink-note">
+                          {inkEraseMode === "stroke"
+                            ? "拖动擦除整笔 · 圈内即擦除范围"
+                            : "擦过处笔迹断开 · 可撤销"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {inkMode === "select" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="套索工具">
+                      <div className="ph-rv-ink-row">
+                        <span className="ph-rv-ink-note">
+                          圈选笔迹：拖动移动 · 换色 · 删除，不碰论文文字
+                        </span>
                       </div>
                     </div>
                   )}

@@ -63,3 +63,76 @@
 .ph-ink--erase {
   cursor: cell;
 }
+
+.ph-ink--select {
+  cursor: crosshair;
+}
+
+/* ------------------------------------------------ the lasso selection bar */
+/*
+   A floating toolbar for the caught strokes, anchored near where the lasso
+   ended. Sits above the wet canvas (z 4) so it stays clickable while the
+   tool is on — the same relationship HighlightLayer's popup has with the
+   text layer. Palette shared with `.ph-ink` above, and the swatch colours
+   are the same tokens the strokes themselves resolve, so what you pick is
+   what you get.
+*/
+.ph-ink-selbar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
+}
+
+.ph-ink-sel-n {
+  min-width: 14px;
+  padding: 0 3px;
+  color: var(--c-tx3, #8b93a1);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ph-ink-sel-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+}
+
+.ph-ink-sel-color.is-on {
+  outline: 2px solid var(--c-ac, #5b53d6);
+  outline-offset: 1px;
+}
+
+.ph-ink-sel-btn {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font: inherit;
+}
+
+.ph-ink-sel-btn:hover {
+  background: var(--c-hv, #f1f2f4);
+  color: var(--c-tx);
+}
+
+.ph-ink-sel-btn.is-danger {
+  color: var(--c-err, #d93a3a);
+}
