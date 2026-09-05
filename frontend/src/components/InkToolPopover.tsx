@@ -39,10 +39,16 @@ export interface InkSwatch {
   label: string;
 }
 
-/** A dot sized to preview a width without letting a 100pt brush blow the
- *  button apart — past ~20 the preview stops growing and the number carries
- *  the rest. */
-const dotSize = (w: number, k: number): number => 3 + Math.min(w, 20) * k;
+/**
+ * A dot previewing a stroke width, on a SQUARE-ROOT scale.
+ *
+ * Linear-with-a-ceiling was the obvious thing and it was wrong: clamping at
+ * 20 made 16, 32 and 64 render as the same dot, so half the preset row looked
+ * like duplicates of each other. Square root keeps every preset visibly
+ * distinct across the whole 1-100 range while still fitting a 24px button —
+ * which is what a size preview is for.
+ */
+const dotSize = (w: number, k: number): number => 3 + Math.sqrt(Math.max(0, w)) * k;
 
 export function InkToolPopover({
   label,
@@ -107,7 +113,7 @@ export function InkToolPopover({
         >
           <span
             className="ph-rv-ink-width-dot"
-            style={{ width: dotSize(width, 0.6), height: dotSize(width, 0.6) }}
+            style={{ width: dotSize(width, 0.9), height: dotSize(width, 0.9) }}
           />
         </button>
         {children && <span className="ph-rv-ink-sep" />}
@@ -158,7 +164,7 @@ export function InkToolPopover({
                 aria-pressed={Math.round(width) === w}
                 onClick={() => onWidth(w)}
               >
-                <span style={{ width: dotSize(w, 1.1), height: dotSize(w, 1.1) }} />
+                <span style={{ width: dotSize(w, 1.9), height: dotSize(w, 1.9) }} />
               </button>
             ))}
           </div>

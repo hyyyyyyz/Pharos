@@ -269,6 +269,8 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const setInkWidth = useUI((s) => s.setInkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const toggleInkFingerDraw = useUI((s) => s.toggleInkFingerDraw);
+  const inkSound = useUI((s) => s.inkSound);
+  const toggleInkSound = useUI((s) => s.toggleInkSound);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const setInkEraserSize = useUI((s) => s.setInkEraserSize);
   const inkEraseMode = useUI((s) => s.inkEraseMode);
@@ -775,6 +777,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                         onClick={toggleInkFingerDraw}
                       >
                         手指书写
+                      </button>
+                      <button
+                        className={`ph-rv-ink-finger${inkSound ? " is-on" : ""}`}
+                        title="书写音效：笔尖摩擦声，跟着落笔速度变化（默认关闭）"
+                        aria-pressed={inkSound}
+                        onClick={toggleInkSound}
+                      >
+                        音效
                       </button>
                     </InkToolPopover>
                   )}

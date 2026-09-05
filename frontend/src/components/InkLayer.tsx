@@ -73,6 +73,7 @@ import {
 } from "../lib/ink";
 import { Icons } from "../design/icons";
 import { isDrawingPointer } from "../lib/pointer";
+import { penSound } from "../lib/penSound";
 import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
 import { batchOps, clampInkWidth, useUI, type InkMode, type InkOp } from "../store";
 import "./InkLayer.css";
@@ -284,6 +285,7 @@ export function InkLayer({
   }, [inkColorUsage]);
   const inkWidth = useUI((s) => s.inkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
+  const inkSound = useUI((s) => s.inkSound);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const inkEraseMode = useUI((s) => s.inkEraseMode);
   const pushInkOps = useUI((s) => s.pushInkOps);
@@ -499,6 +501,10 @@ export function InkLayer({
    *  means the button is up, or the mode it would restore is already current
    *  (the user picked erase themselves; releasing must not fight that). */
   const barrelPrevModeRef = useRef<InkMode | null>(null);
+  /** Last input sample, for the nib's speed (CSS px and ms — the sound is
+   *  about how fast the HAND is moving, which is a screen-space question,
+   *  not a PDF-space one: the same hand at 400% zoom is not writing faster. */
+  const lastSampleRef = useRef<{ x: number; y: number; t: number } | null>(null);
   /** rAF handle for the laser's hold-then-fade loop; 0 = none in flight. */
   const laserFadeRef = useRef(0);
   /**
@@ -1514,6 +1520,15 @@ export function InkLayer({
         const pressure = ev.pressure > 0 ? ev.pressure : 0.5;
         session.points.push(inPageSpace(ev.clientX, ev.clientY, pressure));
       }
+      if (inkSound && inkMode !== "erase") {
+        const prev = lastSampleRef.current;
+        const now = e.timeStamp;
+        if (prev && now > prev.t) {
+          const speed = Math.hypot(e.clientX - prev.x, e.clientY - prev.y) / (now - prev.t);
+          penSound().nib(speed);
+        }
+        lastSampleRef.current = { x: e.clientX, y: e.clientY, t: now };
+      }
       const predicted = (e.getPredictedEvents?.() ?? []).map((ev) =>
         inPageSpace(ev.clientX, ev.clientY, ev.pressure > 0 ? ev.pressure : 0.5),
       );
@@ -1731,6 +1746,8 @@ export function InkLayer({
     };
 
     const onUp = (e: PointerEvent): void => {
+      lastSampleRef.current = null;
+      if (inkSound) penSound().lift();
       finish(e, false);
       // After the gesture is closed out, not before: `syncPenButton` refuses
       // to act while one is in flight, and on pointerup the button bits are
@@ -1740,6 +1757,8 @@ export function InkLayer({
       syncPenButton(e);
     };
     const onCancel = (e: PointerEvent): void => {
+      lastSampleRef.current = null;
+      if (inkSound) penSound().lift();
       finish(e, true);
       syncPenButton(e);
     };
@@ -1797,6 +1816,7 @@ export function InkLayer({
     inkColor,
     inkWidth,
     inkFingerDraw,
+    inkSound,
     inkEraserSize,
     inkEraseMode,
     scale,

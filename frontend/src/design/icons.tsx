@@ -83,29 +83,62 @@ export const Icons = {
   star: make(["M10 3.6l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L4.2 7.8l4-.6z"], { size: 15, sw: 1.4 }),
   inbox: make(["M3.5 5.5h11v9h-11z", "M3.5 11h3.2l1 1.6h4.6l1-1.6h1.7"], { size: 15, sw: 1.4 }),
   trash: make(["M4.5 6h10", "M8 6V4.6h3V6", "M6 6l.7 8.4h6.1L13.5 6"], { size: 15, sw: 1.4 }),
+  /* ---------------------------------------------------------------------
+     The 手写 tool icons, redrawn.
+
+     The first cut of these reached for whatever primitive was nearest: a bare
+     teardrop for the watercolour brush, a dot ringed by four ticks that reads
+     as a loading spinner rather than a laser, a rectangle with two rules that
+     reads as a form field rather than tape. At 15px an icon is carried by its
+     SILHOUETTE, and several of these had the same one as each other.
+
+     Each now says what its own tool does, and says it differently from its
+     neighbours in the same toolbar: the wash has a wash under it, the laser
+     emits, the brush has bristles, the tape is a torn strip on the slant.
+     Same house style as the prototype's own icons above — 20-unit box,
+     1.3-1.5 stroke, rounded joins, as few strokes as will carry it.
+     --------------------------------------------------------------------- */
+
   lock: make(
-    [{ r0: { x: 5, y: 9.5, width: 10, height: 7.5, rx: 1.4 } }, "M7 9.5V7a3 3 0 0 1 6 0v2.5"],
+    [
+      { r0: { x: 4.8, y: 9.2, width: 10.4, height: 7.6, rx: 1.8 } },
+      "M7.2 9.2V6.9a2.8 2.8 0 0 1 5.6 0v2.3",
+    ],
     { size: 15, sw: 1.4 },
   ),
+  /** 水彩笔 — a drop, plus the wash it leaves behind. The drop on its own was
+   *  any liquid at all; the wash under it is what this tool puts on a page. */
   droplet: make(
-    ["M10 3.2c2.6 3.4 4.4 6 4.4 8.2a4.4 4.4 0 1 1-8.8 0c0-2.2 1.8-4.8 4.4-8.2z"],
+    [
+      "M10 3.1c2.3 3 3.9 5.3 3.9 7.2a3.9 3.9 0 0 1-7.8 0c0-1.9 1.6-4.2 3.9-7.2z",
+      "M4.4 16.4c1.5-.9 3-.9 4.6 0s3.1.9 4.6 0",
+    ],
     { size: 15, sw: 1.4 },
   ),
+  /** 激光笔 — a point that EMITS: a beam with a burst at the far end, rather
+   *  than a dot with ticks all round it (which read as a spinner). */
   laser: make(
-    [{ c: true, cx: 10, cy: 10, r: 2.4, fill: "currentColor" }, "M10 3.5v2.4", "M10 14.1v2.4", "M3.5 10h2.4", "M14.1 10h2.4"],
-    { size: 15, sw: 1.6 },
+    [
+      { c: true, cx: 5.9, cy: 14.1, r: 1.7, fill: "currentColor" },
+      "M7.3 12.7 12.9 7.1",
+      "M12.3 4.5a7.2 7.2 0 0 1 3.1 3.1",
+      "M14.5 2.8a10.4 10.4 0 0 1 2.6 2.6",
+    ],
+    { size: 15, sw: 1.5 },
   ),
+  /** 改样式 — a brush: handle, ferrule, bristles. Deliberately not a wand,
+   *  which the still-deferred 魔法棒 (text transform) will want for itself. */
   styleBrush: make(
-    ["M14.5 3.5 7 11l1.4 1.4L16 5z", "M8.4 12.4c.6 1.8-.2 3.2-2.9 3.6 1.8-.6 1.1-1.8.5-2.6z"],
+    ["M15.9 4.1 11.2 8.8", "M10.4 8 12 9.6 8.6 13 7 11.4z", "M7 11.4 3.9 16.1 8.6 13"],
     { size: 15, sw: 1.4 },
   ),
+  /** 胶带 — a strip on the slant with torn ends. */
   tape: make(
     [
-      { r0: { x: 3, y: 7.5, width: 14, height: 5, rx: 1 } },
-      "M3 9.2h14",
-      "M3 10.8h14",
+      "M2.6 11.9 3.3 15.4l13.5-3.1-.7-3.5z",
+      "M2.6 11.9 5.2 9.6l.5 2 2.6-2.3.5 2 2.6-2.3.5 2 2.6-2.3.5 2",
     ],
-    { size: 15, sw: 1.2 },
+    { size: 15, sw: 1.3 },
   ),
   cloud: make(["M6 13.5a3 3 0 0 1 .3-6 4 4 0 0 1 7.6 1.1A2.7 2.7 0 0 1 14 13.5z"], { size: 13, sw: 1.4 }),
   sync: make(["M14.5 6.5A5 5 0 0 0 5.3 8", "M5.5 13.5A5 5 0 0 0 14.7 12", "M14.5 4.5v2h-2", "M5.5 15.5v-2h2"], { size: 13, sw: 1.4 }),
@@ -165,12 +198,17 @@ export const Icons = {
     ["M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10s-3 5.5-7.5 5.5S2.5 10 2.5 10z", { c: true, cx: 10, cy: 10, r: 2.2 }],
     { size: 15, sw: 1.4 },
   ),
+  /** …and on a strip that has been tapped open.
+   *
+   *  The slash is SHORT on purpose. A full-corner-to-corner one turns the eye
+   *  into a circle with a line through it — the universal "prohibited" glyph,
+   *  which says the wrong thing entirely — because at 15px the eye's own
+   *  outline reads as a circle and the slash dominates it. Crossing only the
+   *  pupil leaves the eye legible as an eye. */
   eyeOff: make(
     [
-      "M2.5 10s3-5.5 7.5-5.5c1.4 0 2.7.4 3.8 1",
-      "M17.5 10s-1.1 2-3 3.5",
-      "M7 15c.9.3 1.9.5 3 .5 4.5 0 7.5-5.5 7.5-5.5",
-      "M3 3l14 14",
+      "M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10s-3 5.5-7.5 5.5S2.5 10 2.5 10z",
+      "M7.6 12.4 12.4 7.6",
     ],
     { size: 15, sw: 1.4 },
   ),

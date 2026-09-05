@@ -66,16 +66,41 @@ export function sampleWidth(baseWidth: number, pressure: number): number {
 
 /* ------------------------------------------------------------------ outline */
 
-/** Tuning of the outline generator. Values are perfect-freehand defaults-ish,
- *  chosen so pressure dominates the width and input jitter is absorbed. */
+/**
+ * Tuning of the outline generator — the "手感" of the pen.
+ *
+ * Each of these was moved off the round-1 defaults for a reason:
+ *
+ * - **`streamline` 0.45 → 0.32.** This is the input-lag knob: it pulls the
+ *   drawn point toward a lagging average, so a high value smooths a shaky
+ *   hand at the cost of the line trailing behind the nib. At 0.45 a fast
+ *   stroke visibly rubber-bands after the pen. 0.32 still absorbs digitiser
+ *   jitter while keeping the ink under the tip, which is most of what makes
+ *   writing feel direct rather than sluggish.
+ * - **`smoothing` 0.5 → 0.62.** Curve fitting between samples, which costs
+ *   nothing in latency (it is geometry, not history). Raising it is the way
+ *   to buy back the softness that lowering `streamline` gives up.
+ * - **`easing`.** Pressure now runs through a sine ease-out rather than
+ *   straight through. A real nib bites early and then compresses: most of the
+ *   width appears in the first half of the press, and leaning harder past
+ *   that changes little. Linear pressure feels sponge-like by comparison.
+ * - **`thinning` 0.6 → 0.55.** With the easing above, 0.6 over-swung into
+ *   very thin hairlines at a light touch.
+ * - **`start`/`end` taper.** A short taper at both ends is what makes a
+ *   stroke read as a pen mark rather than a rounded bar; the end taper only
+ *   applies to a finished stroke (`last: true`), so the live line never
+ *   appears to shrink away from the tip while it is still being drawn.
+ */
 const OUTLINE_OPTIONS = {
   size: 2, // overridden per call
-  thinning: 0.6,
-  smoothing: 0.5,
-  streamline: 0.45,
-  easing: (t: number): number => t,
+  thinning: 0.55,
+  smoothing: 0.62,
+  streamline: 0.32,
+  easing: (t: number): number => Math.sin((t * Math.PI) / 2),
   simulatePressure: false, // real digitiser pressure only
   cap: true,
+  start: { taper: 2, cap: true },
+  end: { taper: 4, cap: true },
 };
 
 /**

@@ -264,6 +264,7 @@ function initialRailWidth(): number {
 }
 
 const INK_COLOR_USAGE_KEY = "ph-ink-color-usage-v1";
+const INK_SOUND_KEY = "ph-ink-sound";
 
 function initialInkColorUsage(): Record<string, InkColorUsage> {
   const raw = ls(INK_COLOR_USAGE_KEY);
@@ -415,6 +416,13 @@ interface UIState {
   /** Draw with a finger, not just a stylus. Off = palm rejection on touch. */
   inkFingerDraw: boolean;
   toggleInkFingerDraw: () => void;
+  /** 书写音效: a synthesised nib-on-paper texture that follows the pen's own
+   *  speed (`lib/penSound`). Off by default and persisted — a reader in a
+   *  library does not want a surprise noise out of a page, and a feature you
+   *  have to find in order to silence it is a worse default than one you have
+   *  to find in order to hear it. */
+  inkSound: boolean;
+  toggleInkSound: () => void;
   /** Eraser radius in CSS pixels — what the on-page preview circle shows. */
   inkEraserSize: number;
   setInkEraserSize: (s: number) => void;
@@ -673,6 +681,13 @@ export const useUI = create<UIState>((set) => ({
   setInkWidth: (inkWidth) => set({ inkWidth: clampInkWidth(inkWidth) }),
   inkFingerDraw: false,
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
+  inkSound: ls(INK_SOUND_KEY) === "1",
+  toggleInkSound: () =>
+    set((s) => {
+      const inkSound = !s.inkSound;
+      save(INK_SOUND_KEY, inkSound ? "1" : "0");
+      return { inkSound };
+    }),
   inkEraserSize: 16,
   setInkEraserSize: (inkEraserSize) => set({ inkEraserSize }),
   inkEraseMode: "stroke",
