@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
-import type { AuthUser, InkStrokeRow, ZoteroOAuthResult } from "./api/types";
+import type { AuthUser, InkStrokeRow, TapeRow, ZoteroOAuthResult } from "./api/types";
 import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
@@ -40,7 +40,25 @@ export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "
 export type InkOp =
   | { kind: "add"; stroke: InkStrokeRow }
   | { kind: "remove"; strokes: InkStrokeRow[] }
-  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] };
+  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] }
+  /* 胶带 shares the reader's ONE undo stack rather than keeping its own:
+     "撤回操作应包括…胶带粘贴", and a reader who has just laid down a strip and
+     hits undo means that strip, whatever kind of mark it happened to be.
+     Same id protocol as the stroke ops — a row recreated by an undo carries a
+     fresh id, so the op that crosses to the other stack is rewritten with
+     what the network returned. */
+  | { kind: "tape-add"; tape: TapeRow }
+  | { kind: "tape-remove"; tape: TapeRow }
+  | { kind: "tape-edit"; id: string; before: TapePatch; after: TapePatch };
+
+/** The fields a 胶带 edit can change — resize, straighten. Deliberately NOT
+ *  `revealed`: covering and uncovering is its own undo (tap it again), and
+ *  filling a capped history with reveal toggles would push real edits out. */
+export interface TapePatch {
+  w?: number;
+  h?: number;
+  angle?: number;
+}
 
 /** Undo/redo ops carry full stroke payloads (points and all), so an
  *  all-day note-taking session cannot be let grow the stack forever — the
@@ -101,6 +119,40 @@ export function toolRemembers(mode: InkMode): boolean {
 
 export function capHistory<T>(ops: T[]): T[] {
   return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
+}
+
+/** Rewrite one op so any reference to `oldId` names the recreated row
+ *  instead. Exported for its own test — the shape is easy to get subtly
+ *  wrong, and the failure it prevents (a duplicated strip) only shows up
+ *  two undos later. */
+export function remapOp(op: InkOp, oldId: string, next: InkStrokeRow | TapeRow): InkOp {
+  const stroke = next as InkStrokeRow;
+  const tape = next as TapeRow;
+  switch (op.kind) {
+    case "add":
+      return op.stroke.id === oldId ? { ...op, stroke } : op;
+    case "remove":
+      return op.strokes.some((s) => s.id === oldId)
+        ? { ...op, strokes: op.strokes.map((s) => (s.id === oldId ? stroke : s)) }
+        : op;
+    case "edit": {
+      const hit =
+        op.removed.some((s) => s.id === oldId) || op.added.some((s) => s.id === oldId);
+      return hit
+        ? {
+            ...op,
+            removed: op.removed.map((s) => (s.id === oldId ? stroke : s)),
+            added: op.added.map((s) => (s.id === oldId ? stroke : s)),
+          }
+        : op;
+    }
+    case "tape-add":
+      return op.tape.id === oldId ? { ...op, tape } : op;
+    case "tape-remove":
+      return op.tape.id === oldId ? { ...op, tape } : op;
+    case "tape-edit":
+      return op.id === oldId ? { ...op, id: next.id } : op;
+  }
 }
 
 /** How the eraser takes ink away. */
@@ -342,6 +394,22 @@ interface UIState {
   inkOpsKey: string;
   /** Record finished operations; a key change discards the old document's stacks. */
   pushInkOps: (key: string, ops: InkOp[]) => void;
+  /**
+   * Point every op in BOTH stacks at a row that has just been recreated.
+   *
+   * Undo/redo re-creates rows through the API, and the row that comes back
+   * has a new id. The op being moved between stacks is rewritten with it
+   * (that much always worked), but any OTHER op still holding the old id is
+   * left naming a row the server has never heard of — and its delete then
+   * silently 404s while its redo happily creates a SECOND copy.
+   *
+   * Concretely: place a strip, delete it, undo (it comes back with a new id),
+   * undo again — the placement op still names the original id, so the strip
+   * does not go away, and redo duplicates it. Same shape applies to strokes
+   * recreated by an eraser undo. So the rename is applied across the whole
+   * history, not just to the op in flight.
+   */
+  remapInkRow: (oldId: string, next: InkStrokeRow | TapeRow) => void;
   /** Drop the stacks on document switch or when the cache is invalidated away. */
   resetInkOps: () => void;
 
@@ -579,6 +647,11 @@ export const useUI = create<UIState>((set) => ({
       if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: capHistory(ops), inkFuture: [] };
       return { inkPast: capHistory([...s.inkPast, ...ops]), inkFuture: [] };
     }),
+  remapInkRow: (oldId, next) =>
+    set((s) => ({
+      inkPast: s.inkPast.map((op) => remapOp(op, oldId, next)),
+      inkFuture: s.inkFuture.map((op) => remapOp(op, oldId, next)),
+    })),
   resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
 
   tapeAutoThickness: false,

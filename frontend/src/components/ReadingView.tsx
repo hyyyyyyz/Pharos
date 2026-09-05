@@ -4,7 +4,7 @@ import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
-import type { InkStrokeRow, Paper, PdfKind } from "../api/types";
+import type { InkStrokeRow, Paper, PdfKind, TapeRow } from "../api/types";
 import { Icons } from "../design/icons";
 import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
 import { InkToolPopover } from "./InkToolPopover";
@@ -339,20 +339,49 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
       const remade: InkStrokeRow[] = [];
       for (const stroke of strokes) {
         try {
-          remade.push(
-            await api.ink.create(paperId, {
-              kind: stroke.kind,
-              page: stroke.page,
-              points: stroke.points,
-              color: stroke.color,
-              width: stroke.width,
-            }),
-          );
+          const row = await api.ink.create(paperId, {
+            kind: stroke.kind,
+            page: stroke.page,
+            points: stroke.points,
+            color: stroke.color,
+            width: stroke.width,
+          });
+          remade.push(row);
+          // The row came back with a NEW id: teach the rest of the history
+          // about it, or an older op still naming the old one will 404 on
+          // its delete and duplicate on its redo. See `remapInkRow`.
+          useUI.getState().remapInkRow(stroke.id, row);
         } catch {
           /* a stroke the server refused is simply lost from the redo */
         }
       }
       return remade;
+    },
+    [paperId],
+  );
+
+  /** Put a 胶带 strip back, from the payload an undo/redo is carrying. The
+   *  new row has a FRESH id — same protocol as `recreateStrokes` — so the op
+   *  crossing to the other stack has to be rewritten with what comes back, or
+   *  the next undo would try to delete an id the server has never seen. */
+  const recreateTape = useCallback(
+    async (tape: TapeRow): Promise<TapeRow | null> => {
+      try {
+        const row = await api.tape.create(paperId, {
+          kind: tape.kind,
+          page: tape.page,
+          x: tape.x,
+          y: tape.y,
+          w: tape.w,
+          h: tape.h,
+          angle: tape.angle,
+          ...(tape.points ? { points: tape.points } : {}),
+        });
+        useUI.getState().remapInkRow(tape.id, row);
+        return row;
+      } catch {
+        return null; // refused: the strip is simply lost from the redo
+      }
     },
     [paperId],
   );
@@ -364,7 +393,27 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     const op = s.inkPast[s.inkPast.length - 1];
     useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
     let inverse: typeof op;
-    if (op.kind === "add") {
+    if (op.kind === "tape-add") {
+      // Undoing a placement takes the strip away; the redo re-places it from
+      // this payload (with a fresh id, same protocol as a stroke).
+      await api.tape.remove(op.tape.id).catch(() => undefined);
+      inverse = { kind: "tape-add", tape: op.tape };
+      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "tape-remove") {
+      const back = await recreateTape(op.tape);
+      inverse = { kind: "tape-remove", tape: back ?? op.tape };
+      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "tape-edit") {
+      await api.tape.update(op.id, op.before).catch(() => undefined);
+      inverse = op; // the same op describes the redo: patch to `after`
+      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "add") {
       await api.ink.remove(op.stroke.id).catch(() => undefined);
       // Redo re-creates from the payload; the id it carries is stale but only
       // a payload — the redo path replaces it with the fresh row.
@@ -381,7 +430,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     }
     useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes, recreateTape]);
 
   const redoInk = useCallback(async () => {
     if (!pdfKind) return;
@@ -390,7 +439,25 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     const op = s.inkFuture[s.inkFuture.length - 1];
     useUI.setState((st) => ({ inkFuture: st.inkFuture.slice(0, -1) }));
     let reapplied: typeof op;
-    if (op.kind === "add") {
+    if (op.kind === "tape-add") {
+      const back = await recreateTape(op.tape);
+      reapplied = { kind: "tape-add", tape: back ?? op.tape };
+      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "tape-remove") {
+      await api.tape.remove(op.tape.id).catch(() => undefined);
+      reapplied = op;
+      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "tape-edit") {
+      await api.tape.update(op.id, op.after).catch(() => undefined);
+      reapplied = op;
+      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
+      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+      return;
+    } else if (op.kind === "add") {
       try {
         const row = await api.ink.create(paperId, {
           kind: op.stroke.kind,
@@ -422,7 +489,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     }
     useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes, recreateTape]);
 
   /* ----------------------------------------------------------- thumbnails */
   const [thumbs, setThumbs] = useState<(string | null)[]>([]);

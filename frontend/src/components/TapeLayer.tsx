@@ -96,6 +96,10 @@ export function TapeLayer({
   const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const setInkTray = useUI((s) => s.setInkTray);
+  const pushInkOps = useUI((s) => s.pushInkOps);
+  /** 胶带 joins the reader's ONE undo stack, keyed the same way the ink
+   *  ops are — see `InkOp`'s tape variants. */
+  const opsKey = `${paperId} ${kind}`;
 
   // Same staleTime: Infinity reasoning as InkLayer's own query — every write
   // patches the cache directly, so a background refetch only risks a race
@@ -166,23 +170,31 @@ export function TapeLayer({
 
   const patchTape = useCallback(
     (t: TapeRow, patch: Partial<Pick<TapeRow, "w" | "h" | "angle">>) => {
+      // Only the fields this patch actually touches go into the op, so an
+      // undo of "made it wider" does not also revert an unrelated straighten.
+      const before: Partial<Pick<TapeRow, "w" | "h" | "angle">> = {};
+      for (const field of Object.keys(patch) as (keyof typeof patch)[]) {
+        before[field] = t[field];
+      }
+      pushInkOps(opsKey, [{ kind: "tape-edit", id: t.id, before, after: { ...patch } }]);
       updateCache((prev) => prev.map((s) => (s.id === t.id ? { ...s, ...patch } : s)));
       void api.tape.update(t.id, patch).catch(() => {
         void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
       });
     },
-    [updateCache, qc, paperId, kind],
+    [updateCache, qc, paperId, kind, pushInkOps, opsKey],
   );
 
   const deleteTape = useCallback(
     (t: TapeRow) => {
+      pushInkOps(opsKey, [{ kind: "tape-remove", tape: t }]);
       updateCache((prev) => prev.filter((s) => s.id !== t.id));
       setSelectedId(null);
       void api.tape.remove(t.id).catch(() => {
         void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
       });
     },
-    [updateCache, qc, paperId, kind],
+    [updateCache, qc, paperId, kind, pushInkOps, opsKey],
   );
 
   /* ------------------------------------------------------------- create */
@@ -271,6 +283,7 @@ export function TapeLayer({
           ...(freehand ? { points: drawn } : {}),
         });
         updateCache((prev) => [...prev, row]);
+        pushInkOps(opsKey, [{ kind: "tape-add", tape: row }]);
       } catch {
         /* refused (hostile geometry, or the paper is not this user's) —
            nothing was optimistically added, so nothing to roll back. */
@@ -292,6 +305,8 @@ export function TapeLayer({
     tapeFreehand,
     inkFingerDraw,
     setInkTray,
+    pushInkOps,
+    opsKey,
     scale,
     paperId,
     kind,
