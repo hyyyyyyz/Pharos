@@ -631,6 +631,59 @@
   white-space: nowrap;
 }
 
+/* 更多颜色 / 笔画粗细 toggles — same footprint as a width preset button, so
+   the quick bar reads as one continuous row. */
+.ph-rv-ink-more-btn {
+  width: 24px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ph-rv-ink-more-btn.is-on {
+  border-color: var(--c-bd, #e6e8ec);
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+}
+.ph-rv-ink-width-dot {
+  display: block;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+/* A second row inside the same popover card — the collapsible tray for the
+   rest of the palette, or the thickness slider + presets. Same gap/align as
+   the row above so opening either never shifts the first row's layout. */
+.ph-rv-ink-row2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+  max-width: 220px;
+}
+
+.ph-rv-ink-width-slider {
+  flex: 1;
+  min-width: 96px;
+  accent-color: var(--c-ac, #5b53d6);
+}
+.ph-rv-ink-width-val {
+  min-width: 22px;
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-tx2, #5a616e);
+}
+
 .ph-rv-pdf-msg {
   flex: 1;
   display: flex;

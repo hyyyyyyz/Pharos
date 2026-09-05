@@ -6,7 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import { INK_COLORS } from "../lib/ink";
+import { INK_COLORS, rankInkColors } from "../lib/ink";
 
 /** Eraser presets: radius in CSS pixels. The on-page preview circle and the
  *  erase reach both read this, so the button, the circle and the effect can
@@ -16,9 +16,22 @@ const ERASER_SIZES = [
   { size: 16, label: "中" },
   { size: 28, label: "大" },
 ];
+
+/** Thickness presets shown in the collapsible width panel — a handful of
+ *  common tiers across the 1-100 range, not a value for every integer. */
+const INK_WIDTH_PRESETS = [1, 2, 4, 8, 16, 32];
 import type { DocumentRef } from "../lib/paperChat";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
-import { capHistory, isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
+import {
+  MAX_INK_WIDTH,
+  MIN_INK_WIDTH,
+  capHistory,
+  isAiOpen,
+  pdfTranslationEnabled,
+  useSession,
+  useUI,
+  type ReadMode,
+} from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
 import { PdfCanvas } from "./PdfCanvas";
@@ -249,6 +262,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const setInkMode = useUI((s) => s.setInkMode);
   const inkColor = useUI((s) => s.inkColor);
   const setInkColor = useUI((s) => s.setInkColor);
+  const inkColorUsage = useUI((s) => s.inkColorUsage);
   const inkWidth = useUI((s) => s.inkWidth);
   const setInkWidth = useUI((s) => s.setInkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
@@ -261,6 +275,25 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const inkFuture = useUI((s) => s.inkFuture);
   const inkOpsKey = useUI((s) => s.inkOpsKey);
   const resetInkOps = useUI((s) => s.resetInkOps);
+
+  // Quick bar: 墨黑 pinned, then the top 3 of the rest by recency-weighted
+  // usage (`rankInkColors`); everything else lives in the 更多颜色 panel.
+  // Recomputed only when usage actually changes — a colour just picked
+  // should not visibly reshuffle the bar the reader is still looking at.
+  const quickColorKeys = useMemo(
+    () => rankInkColors(INK_COLORS, inkColorUsage, Date.now()),
+    [inkColorUsage],
+  );
+  const quickColors = useMemo(
+    () => quickColorKeys.map((key) => INK_COLORS.find((c) => c.key === key)).filter((c) => c != null),
+    [quickColorKeys],
+  );
+  const paletteColors = useMemo(
+    () => INK_COLORS.filter((c) => !quickColorKeys.includes(c.key)),
+    [quickColorKeys],
+  );
+  const [colorPanelOpen, setColorPanelOpen] = useState(false);
+  const [widthPanelOpen, setWidthPanelOpen] = useState(false);
 
   const inkKey = pdfKind ? `${paperId} ${pdfKind}` : "";
 
@@ -563,7 +596,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   {inkMode === "draw" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="手写工具">
                       <div className="ph-rv-ink-row">
-                        {INK_COLORS.map((c) => (
+                        {/* Quick pick: 墨黑 pinned, then the top 3 by recent
+                            usage — fast reach for the colours actually in
+                            play today. The rest live behind 更多颜色. */}
+                        {quickColors.map((c) => (
                           <button
                             key={c.key}
                             className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
@@ -574,19 +610,28 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                             onClick={() => setInkColor(c.key)}
                           />
                         ))}
+                        <button
+                          className={`ph-rv-ink-more-btn${colorPanelOpen ? " is-on" : ""}`}
+                          title="调色盘：更多颜色"
+                          aria-label="更多颜色"
+                          aria-pressed={colorPanelOpen}
+                          onClick={() => setColorPanelOpen((v) => !v)}
+                        >
+                          <Icons.palette size={14} />
+                        </button>
                         <span className="ph-rv-ink-sep" />
-                        {[1.5, 2.5, 4].map((w) => (
-                          <button
-                            key={w}
-                            className={`ph-rv-ink-width${inkWidth === w ? " is-on" : ""}`}
-                            title={`笔宽 ${w}`}
-                            aria-label={`笔宽 ${w}`}
-                            aria-pressed={inkWidth === w}
-                            onClick={() => setInkWidth(w)}
-                          >
-                            <span style={{ width: 3 + w * 1.6, height: 3 + w * 1.6 }} />
-                          </button>
-                        ))}
+                        <button
+                          className={`ph-rv-ink-more-btn${widthPanelOpen ? " is-on" : ""}`}
+                          title={`笔宽 ${inkWidth}`}
+                          aria-label="笔画粗细"
+                          aria-pressed={widthPanelOpen}
+                          onClick={() => setWidthPanelOpen((v) => !v)}
+                        >
+                          <span
+                            className="ph-rv-ink-width-dot"
+                            style={{ width: 3 + Math.min(inkWidth, 20) * 0.6, height: 3 + Math.min(inkWidth, 20) * 0.6 }}
+                          />
+                        </button>
                         <span className="ph-rv-ink-sep" />
                         <button
                           className={`ph-rv-ink-finger${inkFingerDraw ? " is-on" : ""}`}
@@ -597,6 +642,52 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           手指书写
                         </button>
                       </div>
+                      {colorPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="调色盘">
+                          {paletteColors.map((c) => (
+                            <button
+                              key={c.key}
+                              className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                              style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                              title={c.label}
+                              aria-label={c.label}
+                              aria-pressed={inkColor === c.key}
+                              onClick={() => setInkColor(c.key)}
+                            />
+                          ))}
+                          {paletteColors.length === 0 && (
+                            <span className="ph-rv-ink-note">已用完整个调色盘</span>
+                          )}
+                        </div>
+                      )}
+                      {widthPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="笔画粗细">
+                          <input
+                            type="range"
+                            className="ph-rv-ink-width-slider"
+                            min={MIN_INK_WIDTH}
+                            max={MAX_INK_WIDTH}
+                            step={1}
+                            value={inkWidth}
+                            aria-label="笔画粗细"
+                            onChange={(e) => setInkWidth(Number(e.target.value))}
+                          />
+                          <span className="ph-rv-ink-width-val">{Math.round(inkWidth)}</span>
+                          <span className="ph-rv-ink-sep" />
+                          {INK_WIDTH_PRESETS.map((w) => (
+                            <button
+                              key={w}
+                              className={`ph-rv-ink-width${inkWidth === w ? " is-on" : ""}`}
+                              title={`笔宽 ${w}`}
+                              aria-label={`笔宽 ${w}`}
+                              aria-pressed={inkWidth === w}
+                              onClick={() => setInkWidth(w)}
+                            >
+                              <span style={{ width: 3 + Math.min(w, 20) * 1.1, height: 3 + Math.min(w, 20) * 1.1 }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   {inkMode === "erase" && (

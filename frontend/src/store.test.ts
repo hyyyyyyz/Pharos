@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DETAIL_OVERLAY_MAX_WIDTH,
   MAX_INK_HISTORY,
+  MAX_INK_WIDTH,
+  MIN_INK_WIDTH,
   capHistory,
+  clampInkWidth,
   isAiOpen,
   isDetailOverlay,
   useUI,
@@ -75,6 +78,30 @@ describe("capHistory (bounded ink undo/redo)", () => {
     expect(capped.length).toBe(MAX_INK_HISTORY);
     expect(capped[0]).toBe(10);
     expect(capped[capped.length - 1]).toBe(MAX_INK_HISTORY + 9);
+  });
+});
+
+describe("clampInkWidth (the 1-100 thickness range, mirroring the backend bounds)", () => {
+  it("passes an in-range width through untouched", () => {
+    expect(clampInkWidth(24)).toBe(24);
+  });
+
+  it("clamps below MIN_INK_WIDTH and above MAX_INK_WIDTH", () => {
+    expect(clampInkWidth(0)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(-5)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(500)).toBe(MAX_INK_WIDTH);
+  });
+
+  it("falls back to the floor for a non-finite value rather than storing garbage", () => {
+    expect(clampInkWidth(NaN)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(Infinity)).toBe(MIN_INK_WIDTH);
+  });
+});
+
+describe("setInkWidth (regression: the slider must never store a width the server would refuse)", () => {
+  it("clamps on the way into the store", () => {
+    useUI.getState().setInkWidth(9999);
+    expect(useUI.getState().inkWidth).toBe(MAX_INK_WIDTH);
   });
 });
 

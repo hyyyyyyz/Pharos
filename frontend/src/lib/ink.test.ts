@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INK_COLORS,
   distToSegment,
   pointInPolygon,
   pointToCss,
   pointToPdf,
+  rankInkColors,
   sampleWidth,
   splitStroke,
   strokeBounds,
@@ -279,5 +281,45 @@ describe("strokeBounds", () => {
 
   it("returns a zero box, not infinities, for an empty stroke", () => {
     expect(strokeBounds([])).toEqual({ x0: 0, y0: 0, x1: 0, y1: 0 });
+  });
+});
+
+describe("rankInkColors (the quick-bar ranking)", () => {
+  const NOW = 1_700_000_000_000;
+
+  it("pins the palette's first colour (ink/black) in front with no history", () => {
+    expect(rankInkColors(INK_COLORS, {}, NOW)[0]).toBe("ink");
+  });
+
+  it("falls back to the palette's own order with no usage history — day one looks like today", () => {
+    expect(rankInkColors(INK_COLORS, {}, NOW)).toEqual(["ink", "red", "amber", "brown"]);
+  });
+
+  it("ranks the most-used colour first, ahead of the palette order", () => {
+    const usage = {
+      pink: { count: 9, last: NOW },
+      teal: { count: 1, last: NOW },
+    };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    expect(ranked[1]).toBe("pink");
+  });
+
+  it("decays an old count enough to fall behind a smaller but recent one", () => {
+    const twoDaysAgo = NOW - 2 * 24 * 3_600_000;
+    const usage = {
+      // Used 3 times, but two half-lives ago: score decays to 3 * 0.25 = 0.75.
+      purple: { count: 3, last: twoDaysAgo },
+      // Used once, just now: score stays 1 — no decay yet.
+      teal: { count: 1, last: NOW },
+    };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    // Raw counts alone would put purple ahead (3 > 1); decay flips it.
+    expect(ranked.indexOf("teal")).toBeLessThan(ranked.indexOf("purple"));
+  });
+
+  it("never lets more than one colour past the first occupy the same slot", () => {
+    const usage = { red: { count: 5, last: NOW }, amber: { count: 5, last: NOW } };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    expect(new Set(ranked).size).toBe(ranked.length);
   });
 });

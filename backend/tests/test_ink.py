@@ -166,7 +166,7 @@ def test_hostile_point_payloads_are_refused(points: object) -> None:
         )
 
 
-@pytest.mark.parametrize("width", [0, -1, 99])
+@pytest.mark.parametrize("width", [0, -1, 101])
 def test_hostile_widths_are_refused(width: float) -> None:
     with session_scope() as s, pytest.raises(Invalid):
         ink.create_stroke(

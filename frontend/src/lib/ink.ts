@@ -385,12 +385,59 @@ function midpoint(a: InkPoint, b: InkPoint): InkPoint {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, p: a.p };
 }
 
-/** The color tokens the backend accepts, in toolbar order. */
+/**
+ * The full colour palette the backend accepts, in a fixed reference order —
+ * also the tie-break, and the fallback order before any colour has usage
+ * history (a fresh install's quick bar should look exactly like today's
+ * fixed toolbar, not an arbitrary shuffle).
+ */
 export const INK_COLORS = [
   { key: "ink", label: "墨黑" },
+  { key: "red", label: "朱红" },
   { key: "amber", label: "琥珀" },
+  { key: "brown", label: "赭石" },
   { key: "green", label: "青绿" },
+  { key: "teal", label: "青碧" },
   { key: "blue", label: "湖蓝" },
-  { key: "pink", label: "绯红" },
   { key: "purple", label: "紫罗兰" },
+  { key: "pink", label: "绯红" },
+  { key: "gray", label: "灰石" },
 ] as const;
+
+/** How recently, and how often, a colour has been picked — the quick-bar
+ *  ranking's raw material. `last` is a `Date.now()` epoch millisecond. */
+export interface InkColorUsage {
+  count: number;
+  last: number;
+}
+
+const RECENCY_HALFLIFE_HOURS = 24;
+
+/**
+ * The quick-bar order: the palette's first colour (墨黑, "ink") pinned in
+ * front always — handwriting is overwhelmingly black or near-black, and
+ * ranking it against how often pink got picked would answer the wrong
+ * question — then `quickSlots` more from the rest of the palette, by a
+ * recency-weighted usage score: a colour picked often but long ago decays
+ * toward one picked a little less but just now, on a
+ * `RECENCY_HALFLIFE_HOURS` half-life. Everything else stays off the quick
+ * bar, in the full palette panel. Ties (most commonly: everything at 0, a
+ * fresh install with no history yet) keep the palette's own order.
+ */
+export function rankInkColors(
+  colors: readonly { key: string }[],
+  usage: Record<string, InkColorUsage>,
+  now: number,
+  quickSlots = 3,
+): string[] {
+  const [pinned, ...rest] = colors;
+  if (!pinned) return [];
+  const scored = rest.map((c, i) => {
+    const u = usage[c.key];
+    const hours = u ? Math.max(0, (now - u.last) / 3_600_000) : 0;
+    const score = u ? u.count * Math.pow(0.5, hours / RECENCY_HALFLIFE_HOURS) : 0;
+    return { key: c.key, score, i };
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return [pinned.key, ...scored.slice(0, quickSlots).map((s) => s.key)];
+}

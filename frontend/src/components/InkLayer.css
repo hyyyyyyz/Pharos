@@ -25,11 +25,15 @@
 .ph-ink,
 .ph-rv-inkbar {
   --c-ink-ink: oklch(0.25 0.03 259);
+  --c-ink-red: oklch(0.5 0.16 25);
   --c-ink-amber: oklch(0.55 0.12 70);
+  --c-ink-brown: oklch(0.45 0.07 55);
   --c-ink-green: oklch(0.52 0.11 150);
+  --c-ink-teal: oklch(0.5 0.1 195);
   --c-ink-blue: oklch(0.5 0.12 250);
-  --c-ink-pink: oklch(0.55 0.16 355);
   --c-ink-purple: oklch(0.48 0.13 300);
+  --c-ink-pink: oklch(0.55 0.16 355);
+  --c-ink-gray: oklch(0.5 0.015 259);
 }
 
 .ph-ink {

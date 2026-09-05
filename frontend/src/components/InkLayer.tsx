@@ -58,6 +58,7 @@ import {
   INK_COLORS,
   paintStroke,
   pointToPdf,
+  rankInkColors,
   splitStroke,
   strokeBounds,
   strokeCaughtBy,
@@ -67,7 +68,7 @@ import {
   translatePoints,
 } from "../lib/ink";
 import { Icons } from "../design/icons";
-import { useUI } from "../store";
+import { useUI, type InkMode } from "../store";
 import "./InkLayer.css";
 
 /** Server-side ceiling for one stroke's sample count (see services/ink.py). */
@@ -125,7 +126,16 @@ export function InkLayer({
   const wetRef = useRef<HTMLCanvasElement>(null);
 
   const inkMode = useUI((s) => s.inkMode);
+  const setInkMode = useUI((s) => s.setInkMode);
   const inkColor = useUI((s) => s.inkColor);
+  const inkColorUsage = useUI((s) => s.inkColorUsage);
+  // The selection recolour bar is a quick action on a floating popover, not
+  // a place to browse the whole palette — same quick 4 the draw toolbar
+  // leads with (更多颜色 in that toolbar reaches the rest).
+  const selColors = useMemo(() => {
+    const keys = rankInkColors(INK_COLORS, inkColorUsage, Date.now());
+    return keys.map((key) => INK_COLORS.find((c) => c.key === key)).filter((c) => c != null);
+  }, [inkColorUsage]);
   const inkWidth = useUI((s) => s.inkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
@@ -273,6 +283,12 @@ export function InkLayer({
   const strokeRef = useRef<Session | null>(null);
   /** Pointer id of the active pen, while down — the palm-rejection gate. */
   const penRef = useRef<number | null>(null);
+  /** The tool a S Pen-style barrel button borrowed, restored on release. Set
+   *  only while hovering (never mid-gesture — flipping `inkMode` there would
+   *  rebind this whole effect and abandon the stroke in progress). `null`
+   *  means the button is up, or the mode it would restore is already current
+   *  (the user picked erase themselves; releasing must not fight that). */
+  const barrelPrevModeRef = useRef<InkMode | null>(null);
   /** Live touch pointers, for the two-finger pan. */
   const touchesRef = useRef(new Map<number, { x: number; y: number }>());
   const panMidRef = useRef<{ x: number; y: number } | null>(null);
@@ -780,6 +796,22 @@ export function InkLayer({
 
       const session = strokeRef.current;
       if (session === null || session.pointerId !== e.pointerId) {
+        // S Pen (and most Wacom-class digitisers) report the barrel button
+        // as bit 32 on hover, before any contact — the moment to borrow the
+        // eraser is here, never mid-gesture (see `barrelPrevModeRef`), so
+        // the tool is already "erase" by the time the tip actually touches
+        // down. Release is symmetric: the bit clears on the next hover
+        // sample, and the previous tool comes back.
+        if (e.pointerType === "pen") {
+          const held = (e.buttons & 32) !== 0;
+          if (held && barrelPrevModeRef.current === null && inkMode !== "erase") {
+            barrelPrevModeRef.current = inkMode;
+            setInkMode("erase");
+          } else if (!held && barrelPrevModeRef.current !== null) {
+            setInkMode(barrelPrevModeRef.current);
+            barrelPrevModeRef.current = null;
+          }
+        }
         // Hover (pen/mouse) with the eraser active: keep the reach preview on
         // screen even when nothing is being erased. Touch has no hover.
         if (inkMode === "erase" && e.pointerType !== "touch") {
@@ -983,8 +1015,17 @@ export function InkLayer({
     // viewport's pan handler mid-stroke; the wet canvas is the target, so
     // this is where they stop.
     const stopMouse = (e: MouseEvent): void => e.stopPropagation();
-    // Left the page: the hover preview has no position to sit at.
-    const onLeave = (): void => clearWet();
+    // Left the page: the hover preview has no position to sit at, and a
+    // barrel button borrowed the eraser mid-hover has no more samples coming
+    // to tell it the button lifted — give the tool back now rather than
+    // strand the reader in "erase" until they hover back in.
+    const onLeave = (): void => {
+      if (barrelPrevModeRef.current !== null) {
+        setInkMode(barrelPrevModeRef.current);
+        barrelPrevModeRef.current = null;
+      }
+      clearWet();
+    };
 
     wet.addEventListener("pointerdown", onDown);
     wet.addEventListener("pointermove", onMove);
@@ -1014,6 +1055,7 @@ export function InkLayer({
     };
   }, [
     inkMode,
+    setInkMode,
     inkColor,
     inkWidth,
     inkFingerDraw,
@@ -1066,7 +1108,7 @@ export function InkLayer({
           onPointerDown={(e) => e.stopPropagation()}
         >
           <span className="ph-ink-sel-n">{selection.rows.length}</span>
-          {INK_COLORS.map((c) => (
+          {selColors.map((c) => (
             <button
               key={c.key}
               className={`ph-ink-sel-color${selection.rows.every((r) => r.color === c.key) ? " is-on" : ""}`}

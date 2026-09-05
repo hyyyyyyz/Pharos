@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
 import type { AuthUser, InkStrokeRow, ZoteroOAuthResult } from "./api/types";
+import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "runs" | "admin";
@@ -39,6 +40,17 @@ export type InkOp =
  *  bounded undo. Redo is capped identically so undo→redo→undo… cannot
  *  regrow past it either. */
 export const MAX_INK_HISTORY = 200;
+
+/** Stroke width bounds, in PDF points at scale 1 — mirrors the backend's
+ *  `MIN_WIDTH`/`MAX_WIDTH` (`services/ink.py`) exactly, so a value the
+ *  slider allows is never one the server refuses. */
+export const MIN_INK_WIDTH = 1;
+export const MAX_INK_WIDTH = 100;
+
+export function clampInkWidth(width: number): number {
+  if (!Number.isFinite(width)) return MIN_INK_WIDTH;
+  return Math.min(MAX_INK_WIDTH, Math.max(MIN_INK_WIDTH, width));
+}
 
 export function capHistory<T>(ops: T[]): T[] {
   return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
@@ -125,6 +137,21 @@ function initialRailWidth(): number {
   if (raw === null) return RAIL_DEFAULT_WIDTH;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? clampRailWidth(parsed) : RAIL_DEFAULT_WIDTH;
+}
+
+const INK_COLOR_USAGE_KEY = "ph-ink-color-usage-v1";
+
+function initialInkColorUsage(): Record<string, InkColorUsage> {
+  const raw = ls(INK_COLOR_USAGE_KEY);
+  if (raw === null) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed !== null && typeof parsed === "object"
+      ? (parsed as Record<string, InkColorUsage>)
+      : {};
+  } catch {
+    return {}; // corrupt value from a previous build — start clean, not crash
+  }
 }
 
 interface UIState {
@@ -227,6 +254,11 @@ interface UIState {
   /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
   inkColor: string;
   setInkColor: (c: string) => void;
+  /** Pick count + last-picked time per colour token, for the quick-bar
+   *  ranking (`rankInkColors`) — how the four-swatch bar decides which three
+   *  non-black colours earn a slot today. Persisted so the ranking survives
+   *  a reload instead of resetting to the fixed order every session. */
+  inkColorUsage: Record<string, InkColorUsage>;
   /** Stroke width in PDF points at scale 1 — the 1× value, not screen px. */
   inkWidth: number;
   setInkWidth: (w: number) => void;
@@ -426,9 +458,21 @@ export const useUI = create<UIState>((set) => ({
   // draw when the tool is on — defaulting to erase would be a trap.
   setInkMode: (inkMode) => set({ inkMode }),
   inkColor: "ink",
-  setInkColor: (inkColor) => set({ inkColor }),
+  // Picking a colour IS the usage signal the quick-bar ranking runs on — no
+  // separate "log this" call for every caller to remember to make.
+  setInkColor: (inkColor) =>
+    set((s) => {
+      const prior = s.inkColorUsage[inkColor];
+      const inkColorUsage = {
+        ...s.inkColorUsage,
+        [inkColor]: { count: (prior?.count ?? 0) + 1, last: Date.now() },
+      };
+      save(INK_COLOR_USAGE_KEY, JSON.stringify(inkColorUsage));
+      return { inkColor, inkColorUsage };
+    }),
+  inkColorUsage: initialInkColorUsage(),
   inkWidth: 2,
-  setInkWidth: (inkWidth) => set({ inkWidth }),
+  setInkWidth: (inkWidth) => set({ inkWidth: clampInkWidth(inkWidth) }),
   inkFingerDraw: false,
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
   inkEraserSize: 16,
