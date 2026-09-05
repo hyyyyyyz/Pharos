@@ -642,6 +642,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.lasso />
                   </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "laser" ? " is-on" : ""}`}
+                    title="激光笔：指一下，自动消失"
+                    aria-pressed={inkMode === "laser"}
+                    onClick={() => setInkMode(inkMode === "laser" ? "off" : "laser")}
+                  >
+                    <Icons.laser />
+                  </button>
                   {/* Each tool gets its own popover: the pen carries colour,
                       width and the finger-draw switch; the eraser carries its
                       reach and its 整笔/局部 manner; the lasso explains the

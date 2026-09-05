@@ -15,10 +15,12 @@ export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
 /** The reader's stylus tools. Off = the ink layer paints but never captures. */
-/** "water" writes with the same gesture code as "draw" — it is a colour +
- *  width preset and a different rendering target (see `InkLayer`'s
- *  `isWaterColor` routing), not a different interaction. */
-export type InkMode = "off" | "draw" | "water" | "erase" | "select";
+/** "water" and "laser" both write with the same gesture code as "draw" —
+ *  each is a colour/rendering choice (see `InkLayer`'s `isWaterColor`
+ *  routing, and its laser-mode branch in `paintWet`), not a different
+ *  interaction. A laser stroke is never sent to the backend at all: it
+ *  fades on the wet canvas and is gone, nothing to undo or persist. */
+export type InkMode = "off" | "draw" | "water" | "laser" | "erase" | "select";
 
 /**
  * One undoable ink operation, for the document-level undo stack.

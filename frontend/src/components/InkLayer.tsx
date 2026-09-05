@@ -80,6 +80,17 @@ const MAX_POINTS = 2000;
 /** Start thinning below the ceiling, leaving the server a little headroom. */
 const THIN_THRESHOLD = 1900;
 
+/** 激光笔: never a stored colour token — a laser pointer is never saved, so
+ *  it never has to live in the backend's closed set. Vivid on purpose (the
+ *  feature list's own "颜色炫一点"), a glow the ink colours never get. */
+const LASER_COLOR = "#ff2560";
+const LASER_WIDTH = 2.5;
+/** How long a laser mark stays fully bright before it starts fading, and how
+ *  long the fade itself takes — a pointer, not a note: it must be gone
+ *  quickly enough that nobody mistakes it for something meant to persist. */
+const LASER_HOLD_MS = 250;
+const LASER_FADE_MS = 700;
+
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
   pointerId: number;
@@ -393,6 +404,10 @@ export function InkLayer({
    *  means the button is up, or the mode it would restore is already current
    *  (the user picked erase themselves; releasing must not fight that). */
   const barrelPrevModeRef = useRef<InkMode | null>(null);
+  /** rAF handle for a laser mark's fade-out; 0 = none in flight. Cancelled the
+   *  moment a new gesture starts, so a fresh laser stroke (or any other tool)
+   *  never fights a stale fade still repainting the wet canvas underneath it. */
+  const laserFadeRef = useRef(0);
   /** Live touch pointers, for the two-finger pan. */
   const touchesRef = useRef(new Map<number, { x: number; y: number }>());
   const panMidRef = useRef<{ x: number; y: number } | null>(null);
@@ -697,16 +712,24 @@ export function InkLayer({
       }
       if (session.erasing) return;
       const live = [...session.points, ...predicted];
-      const outline = strokeOutline(live, inkWidth, true);
+      const width = inkMode === "laser" ? LASER_WIDTH : inkWidth;
+      const outline = strokeOutline(live, width, true);
       if (outline.length >= 3) {
-        paintOutline(
-          ctx,
-          outline,
-          colorOf(inkColor),
-        );
+        if (inkMode === "laser") {
+          // 炫一点: a glow, not a flat fill — the pointer is meant to catch
+          // the eye for the few hundred ms it lives, unlike ink meant to be
+          // read calmly afterward.
+          ctx.save();
+          ctx.shadowColor = LASER_COLOR;
+          ctx.shadowBlur = 14 / scale;
+          paintOutline(ctx, outline, LASER_COLOR);
+          ctx.restore();
+        } else {
+          paintOutline(ctx, outline, colorOf(inkColor));
+        }
       }
     },
-    [prepare, clearInSpace, colorResolver, inkWidth, inkColor, scale, paintSelection],
+    [prepare, clearInSpace, colorResolver, inkWidth, inkColor, inkMode, scale, paintSelection],
   );
 
   /* --------------------------------------------------- selection overlays */
@@ -838,6 +861,12 @@ export function InkLayer({
 
     const startSession = (e: PointerEvent): void => {
       if (strokeRef.current !== null) return; // one gesture at a time
+      // A fresh gesture (laser or otherwise) owns the wet canvas now; a
+      // still-fading previous laser mark must not keep repainting over it.
+      if (laserFadeRef.current) {
+        cancelAnimationFrame(laserFadeRef.current);
+        laserFadeRef.current = 0;
+      }
       // Barrel-button / eraser-end erases in any tool.
       const eraserButton = e.pointerType === "pen" && (e.buttons & 32) !== 0;
       const pressure = e.pressure > 0 ? e.pressure : 0.5;
@@ -1175,6 +1204,41 @@ export function InkLayer({
         // Touch has no hover to keep showing the reach preview — lift the
         // finger, the circle goes too. Pen/mouse keep it for the next drag.
         if (e.pointerType === "touch") clearWet();
+        return;
+      }
+
+      if (inkMode === "laser") {
+        // Never persisted, never undoable — a pointer, not a note. Hold it
+        // fully bright briefly, then fade it out by repainting the SAME
+        // outline at falling opacity; nothing else touches the wet canvas
+        // meanwhile, since `startSession` cancels this the instant any new
+        // gesture (laser or not) begins.
+        const pts = session.points;
+        const width = LASER_WIDTH;
+        const outline = strokeOutline(pts, width, false);
+        const startedAt = performance.now();
+        const step = (): void => {
+          const wetNow = wetRef.current;
+          if (!wetNow) return;
+          const sized = prepare(wetNow);
+          if (!sized) return;
+          clearInSpace(wetNow, sized.w);
+          const elapsed = performance.now() - startedAt;
+          const alpha = Math.max(0, 1 - Math.max(0, elapsed - LASER_HOLD_MS) / LASER_FADE_MS);
+          if (alpha <= 0 || outline.length < 3) {
+            laserFadeRef.current = 0;
+            return;
+          }
+          const ctx = wetNow.getContext("2d")!;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.shadowColor = LASER_COLOR;
+          ctx.shadowBlur = 14 / scale;
+          paintOutline(ctx, outline, LASER_COLOR);
+          ctx.restore();
+          laserFadeRef.current = requestAnimationFrame(step);
+        };
+        laserFadeRef.current = requestAnimationFrame(step);
         return;
       }
 
