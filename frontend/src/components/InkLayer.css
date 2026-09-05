@@ -34,6 +34,18 @@
   --c-ink-purple: oklch(0.48 0.13 300);
   --c-ink-pink: oklch(0.55 0.16 355);
   --c-ink-gray: oklch(0.5 0.015 259);
+  /* 水彩笔 washes — the exact values HighlightLayer's `--c-hl-*` uses (light,
+     oklch L ≈ 0.85-0.89), painted on their own `mix-blend-mode: multiply`
+     canvas below (see `.ph-ink-water`) so a stroke drawn straight over text
+     keeps the glyphs readable through it, same reasoning as the highlight
+     marks. Regular ink stays opaque and unblended — a pen must fully cover
+     what it writes over — so this is a disjoint set of tokens, not an alpha
+     variant of the ones above. */
+  --c-ink-wc-amber: oklch(0.89 0.15 88);
+  --c-ink-wc-green: oklch(0.88 0.14 148);
+  --c-ink-wc-blue: oklch(0.87 0.1 238);
+  --c-ink-wc-pink: oklch(0.86 0.11 355);
+  --c-ink-wc-purple: oklch(0.85 0.1 305);
 }
 
 .ph-ink {
@@ -55,6 +67,24 @@
      through to the layers beneath, exactly as before ink existed. */
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* 水彩笔 washes paint here — same box, DOM order puts it BELOW `.ph-ink`
+   (dry/wet), so a pen note written afterward sits crisply on top of a wash
+   rather than the wash covering it. `mix-blend-mode: multiply` is what keeps
+   glyphs on the page canvas beneath readable through the colour, the same
+   technique HighlightLayer's `.ph-hl-mark` uses. Never receives pointer
+   events itself — it is painted from the same gesture InkLayer's own canvas
+   handles, never a target in its own right. */
+.ph-ink-water {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  mix-blend-mode: multiply;
 }
 
 .ph-ink--live {

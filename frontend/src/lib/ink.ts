@@ -456,6 +456,28 @@ export const INK_COLORS = [
   { key: "gray", label: "灰石" },
 ] as const;
 
+/**
+ * 水彩笔 tones — a separate, smaller palette from `INK_COLORS`: these are
+ * light washes meant to sit behind text (`mix-blend-mode: multiply`, see
+ * `InkLayer.css`'s `.ph-ink-water`), not opaque lines, so mixing them into
+ * the pen's own colour picker would offer a pen colour that barely shows up
+ * and a wash so dark it hides what it is meant to sit behind. The "wc-"
+ * prefix is how the renderer (`InkLayer`) tells which strokes are washes.
+ */
+export const WATER_COLORS = [
+  { key: "wc-amber", label: "琥珀" },
+  { key: "wc-green", label: "青绿" },
+  { key: "wc-blue", label: "湖蓝" },
+  { key: "wc-purple", label: "紫罗兰" },
+  { key: "wc-pink", label: "绯红" },
+] as const;
+
+/** Every watercolour stroke is tagged this way — the one place that
+ *  convention is spelled out, so nothing hardcodes the "wc-" prefix itself. */
+export function isWaterColor(token: string): boolean {
+  return token.startsWith("wc-");
+}
+
 /** How recently, and how often, a colour has been picked — the quick-bar
  *  ranking's raw material. `last` is a `Date.now()` epoch millisecond. */
 export interface InkColorUsage {

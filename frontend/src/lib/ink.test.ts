@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   INK_COLORS,
+  WATER_COLORS,
   distToSegment,
+  isWaterColor,
   pointInPolygon,
   pointToCss,
   pointToPdf,
@@ -267,6 +269,16 @@ describe("rotatePoints (the lasso rotate handle)", () => {
     const out = rotatePoints([{ x: 3, y: 7, p: 0.5 }], 1, 1, Math.PI * 2);
     expect(out[0]!.x).toBeCloseTo(3);
     expect(out[0]!.y).toBeCloseTo(7);
+  });
+});
+
+describe("isWaterColor (the pen/watercolour rendering split)", () => {
+  it("recognises every WATER_COLORS token", () => {
+    for (const c of WATER_COLORS) expect(isWaterColor(c.key)).toBe(true);
+  });
+
+  it("rejects every regular INK_COLORS token", () => {
+    for (const c of INK_COLORS) expect(isWaterColor(c.key)).toBe(false);
   });
 });
 

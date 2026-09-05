@@ -15,7 +15,10 @@ export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
 /** The reader's stylus tools. Off = the ink layer paints but never captures. */
-export type InkMode = "off" | "draw" | "erase" | "select";
+/** "water" writes with the same gesture code as "draw" — it is a colour +
+ *  width preset and a different rendering target (see `InkLayer`'s
+ *  `isWaterColor` routing), not a different interaction. */
+export type InkMode = "off" | "draw" | "water" | "erase" | "select";
 
 /**
  * One undoable ink operation, for the document-level undo stack.
@@ -51,6 +54,10 @@ export function clampInkWidth(width: number): number {
   if (!Number.isFinite(width)) return MIN_INK_WIDTH;
   return Math.min(MAX_INK_WIDTH, Math.max(MIN_INK_WIDTH, width));
 }
+
+/** A highlighter needs breadth, not a pen's line — the width switching into
+ *  水彩笔 mode suggests, if the reader has not already picked one of their own. */
+export const DEFAULT_WATER_WIDTH = 14;
 
 export function capHistory<T>(ops: T[]): T[] {
   return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;

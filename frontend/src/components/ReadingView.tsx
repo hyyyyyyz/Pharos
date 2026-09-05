@@ -6,7 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import { INK_COLORS, rankInkColors } from "../lib/ink";
+import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
 
 /** Eraser presets: radius in CSS pixels. The on-page preview circle and the
  *  erase reach both read this, so the button, the circle and the effect can
@@ -23,6 +23,7 @@ const INK_WIDTH_PRESETS = [1, 2, 4, 8, 16, 32];
 import type { DocumentRef } from "../lib/paperChat";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
 import {
+  DEFAULT_WATER_WIDTH,
   MAX_INK_WIDTH,
   MIN_INK_WIDTH,
   capHistory,
@@ -584,9 +585,46 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                     className={`ph-rv-ink-btn${inkMode === "draw" ? " is-on" : ""}`}
                     title="手写笔"
                     aria-pressed={inkMode === "draw"}
-                    onClick={() => setInkMode(inkMode === "draw" ? "off" : "draw")}
+                    onClick={() => {
+                      if (inkMode === "draw") {
+                        setInkMode("off");
+                        return;
+                      }
+                      setInkMode("draw");
+                      // Coming back from 水彩笔: a wash colour/width left on
+                      // would silently paint the NEXT stroke as a wash too
+                      // (routing is by colour token, not by which tool is
+                      // active — see `isWaterColor` in InkLayer) even though
+                      // the pen button is what is lit up.
+                      if (inkColor.startsWith("wc-")) {
+                        setInkColor(INK_COLORS[0].key);
+                        setInkWidth(2);
+                      }
+                    }}
                   >
                     <Icons.pen size={15} />
+                  </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "water" ? " is-on" : ""}`}
+                    title="水彩笔：色底不遮字"
+                    aria-pressed={inkMode === "water"}
+                    onClick={() => {
+                      if (inkMode === "water") {
+                        setInkMode("off");
+                        return;
+                      }
+                      setInkMode("water");
+                      // Entering fresh (not already set up for water) picks a
+                      // sane starting point — a pen colour/width would either
+                      // be invisible as a wash or refused by the backend's
+                      // closed colour set.
+                      if (!inkColor.startsWith("wc-")) {
+                        setInkColor(WATER_COLORS[0].key);
+                        setInkWidth(DEFAULT_WATER_WIDTH);
+                      }
+                    }}
+                  >
+                    <Icons.droplet size={14} />
                   </button>
                   <button
                     className={`ph-rv-ink-btn${inkMode === "erase" ? " is-on" : ""}`}
@@ -702,6 +740,52 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                               <span style={{ width: 3 + Math.min(w, 20) * 1.1, height: 3 + Math.min(w, 20) * 1.1 }} />
                             </button>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {inkMode === "water" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="水彩笔工具">
+                      <div className="ph-rv-ink-row">
+                        {WATER_COLORS.map((c) => (
+                          <button
+                            key={c.key}
+                            className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                            style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                            title={c.label}
+                            aria-label={c.label}
+                            aria-pressed={inkColor === c.key}
+                            onClick={() => setInkColor(c.key)}
+                          />
+                        ))}
+                        <span className="ph-rv-ink-sep" />
+                        <button
+                          className={`ph-rv-ink-more-btn${widthPanelOpen ? " is-on" : ""}`}
+                          title={`笔宽 ${inkWidth}`}
+                          aria-label="笔画粗细"
+                          aria-pressed={widthPanelOpen}
+                          onClick={() => setWidthPanelOpen((v) => !v)}
+                        >
+                          <span
+                            className="ph-rv-ink-width-dot"
+                            style={{ width: 3 + Math.min(inkWidth, 20) * 0.6, height: 3 + Math.min(inkWidth, 20) * 0.6 }}
+                          />
+                        </button>
+                        <span className="ph-rv-ink-note">色底不遮字，可与钢笔叠加</span>
+                      </div>
+                      {widthPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="笔画粗细">
+                          <input
+                            type="range"
+                            className="ph-rv-ink-width-slider"
+                            min={MIN_INK_WIDTH}
+                            max={MAX_INK_WIDTH}
+                            step={1}
+                            value={inkWidth}
+                            aria-label="笔画粗细"
+                            onChange={(e) => setInkWidth(Number(e.target.value))}
+                          />
+                          <span className="ph-rv-ink-width-val">{Math.round(inkWidth)}</span>
                         </div>
                       )}
                     </div>

@@ -56,6 +56,7 @@ import { api } from "../api/client";
 import type { InkPoint, InkStrokeRow } from "../api/types";
 import {
   INK_COLORS,
+  isWaterColor,
   paintStroke,
   pointToPdf,
   rankInkColors,
@@ -178,6 +179,7 @@ export function InkLayer({
 }): JSX.Element {
   const qc = useQueryClient();
   const dryRef = useRef<HTMLCanvasElement>(null);
+  const waterRef = useRef<HTMLCanvasElement>(null);
   const wetRef = useRef<HTMLCanvasElement>(null);
 
   const inkMode = useUI((s) => s.inkMode);
@@ -289,17 +291,31 @@ export function InkLayer({
    * data change never re-creates this callback (and thus never rebinds the
    * gesture effect mid-drag; see the ref's note).
    */
+  /** Repaints BOTH committed-stroke canvases: the regular opaque dry layer,
+   *  and 水彩笔's separate multiply-blended wash layer (`.ph-ink-water`) —
+   *  kept apart so an opaque pen stroke never gets the wash's blend mode,
+   *  and a wash never gets the pen's opacity. One function, so every one of
+   *  this file's several repaint-after-a-gesture call sites refreshes both
+   *  layers without having to remember a second call. */
   const repaintDry = useCallback(() => {
-    const canvas = dryRef.current;
-    if (!canvas) return;
-    const sized = prepare(canvas);
-    if (!sized) return;
-    clearInSpace(canvas, sized.w);
-    const colorOf = colorResolver(canvas);
+    const dry = dryRef.current;
+    const water = waterRef.current;
+    if (!dry || !water) return;
+    const dryReady = prepare(dry);
+    const waterReady = prepare(water);
+    if (!dryReady || !waterReady) return;
+    clearInSpace(dry, dryReady.w);
+    clearInSpace(water, waterReady.w);
+    const colorOfDry = colorResolver(dry);
+    const colorOfWater = colorResolver(water);
     const carried = movingRef.current?.ids;
     for (const stroke of mineRef.current) {
       if (carried?.has(stroke.id)) continue; // being dragged; the wet layer shows it
-      paintStroke(canvas.getContext("2d")!, stroke, colorOf);
+      if (isWaterColor(stroke.color)) {
+        paintStroke(water.getContext("2d")!, stroke, colorOfWater);
+      } else {
+        paintStroke(dry.getContext("2d")!, stroke, colorOfDry);
+      }
     }
   }, [prepare, clearInSpace, colorResolver]);
 
@@ -1299,6 +1315,7 @@ export function InkLayer({
   const interactive = inkMode !== "off";
   return (
     <>
+      <canvas ref={waterRef} className="ph-ink-water" aria-hidden="true" />
       <canvas ref={dryRef} className="ph-ink" aria-hidden="true" />
       <canvas
         ref={wetRef}

@@ -64,7 +64,29 @@ __all__ = [
 ]
 
 INK_COLORS = frozenset(
-    {"ink", "red", "amber", "brown", "green", "teal", "blue", "purple", "pink", "gray"}
+    {
+        "ink",
+        "red",
+        "amber",
+        "brown",
+        "green",
+        "teal",
+        "blue",
+        "purple",
+        "pink",
+        "gray",
+        # 水彩笔 (watercolour): light washes, rendered with a multiply blend so
+        # a stroke drawn straight over text keeps the glyphs readable through
+        # it — the same "wc-" prefix the frontend keys its wash-vs-opaque
+        # rendering choice on (see lib/ink.ts). A closed set for the same
+        # reason the rest of INK_COLORS is one: a hex value would put an
+        # unthemable, unrecognised colour in the database.
+        "wc-amber",
+        "wc-green",
+        "wc-blue",
+        "wc-pink",
+        "wc-purple",
+    }
 )
 
 DEFAULT_COLOR = "ink"
