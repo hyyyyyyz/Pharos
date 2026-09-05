@@ -59,6 +59,8 @@ import {
   paintStroke,
   pointToPdf,
   rankInkColors,
+  rotatePoints,
+  scalePoints,
   splitStroke,
   strokeBounds,
   strokeCaughtBy,
@@ -66,9 +68,10 @@ import {
   strokeOutline,
   paintOutline,
   translatePoints,
+  unionBounds,
 } from "../lib/ink";
 import { Icons } from "../design/icons";
-import { useUI, type InkMode } from "../store";
+import { clampInkWidth, useUI, type InkMode } from "../store";
 import "./InkLayer.css";
 
 /** Server-side ceiling for one stroke's sample count (see services/ink.py). */
@@ -97,7 +100,59 @@ interface Session {
     startX: number;
     startY: number;
   } | null;
+  /**
+   * Dragging a resize corner or the rotate handle: the ids being transformed,
+   * the pivot the transform is anchored to (the opposite corner for a
+   * resize, the selection's own centre for a rotate), and the live factor
+   * (1 = untouched) or angle (0 = untouched) measured against where the
+   * drag started. Mutually exclusive with `moving` — a gesture is one kind
+   * of edit.
+   */
+  transform: {
+    kind: "resize" | "rotate";
+    ids: Set<string>;
+    cx: number;
+    cy: number;
+    startX: number;
+    startY: number;
+    factor: number;
+    radians: number;
+  } | null;
 }
+
+/** A corner drives a resize (anchored to the opposite corner); "rotate" is
+ *  the standalone handle above the selection's top edge. */
+type HandleKind = "nw" | "ne" | "sw" | "se" | "rotate";
+
+/** Constant on-screen sizes for the selection's resize/rotate handles —
+ *  device pixels, not PDF points, so a handle is exactly as easy to grab at
+ *  25% zoom as at 400%. */
+const HANDLE_HIT_PX = 18;
+const ROTATE_GAP_PX = 24;
+
+/** Where the selection's handles sit, in PDF space, for one bounding box at
+ *  the current zoom. The opposite-corner map is what a resize drag anchors
+ *  to — dragging "se" scales away from "nw", and so on. */
+function selectionHandles(
+  box: { x0: number; y0: number; x1: number; y1: number },
+  scale: number,
+): { kind: HandleKind; x: number; y: number }[] {
+  const gap = ROTATE_GAP_PX / scale;
+  return [
+    { kind: "sw", x: box.x0, y: box.y0 },
+    { kind: "se", x: box.x1, y: box.y0 },
+    { kind: "nw", x: box.x0, y: box.y1 },
+    { kind: "ne", x: box.x1, y: box.y1 },
+    { kind: "rotate", x: (box.x0 + box.x1) / 2, y: box.y1 + gap },
+  ];
+}
+
+const OPPOSITE_CORNER: Record<Exclude<HandleKind, "rotate">, Exclude<HandleKind, "rotate">> = {
+  nw: "se",
+  ne: "sw",
+  sw: "ne",
+  se: "nw",
+};
 
 /** The selection itself: rows plus a toolbar anchor in CSS page pixels. */
 interface Selection {
@@ -276,6 +331,39 @@ export function InkLayer({
       }
     },
     [dashedRect],
+  );
+
+  /** The resize corners + rotate handle around the WHOLE selection (a single
+   *  combined box, not one per stroke — dragging one handle transforms the
+   *  group together). Idle only: a live resize/rotate repaints its own
+   *  preview instead (see `paintWet`'s `transform` branch), so the handles
+   *  never fight the drag they belong to. */
+  const paintSelectionHandles = useCallback(
+    (ctx: CanvasRenderingContext2D, rows: InkStrokeRow[]) => {
+      if (rows.length === 0) return;
+      const box = unionBounds(rows.map((r) => strokeBounds(r.points)));
+      const cx = (box.x0 + box.x1) / 2;
+      const r = 5 / scale;
+      const gap = ROTATE_GAP_PX / scale;
+      ctx.strokeStyle = "rgba(28, 32, 40, 0.9)";
+      ctx.lineWidth = 1 / scale;
+      ctx.beginPath();
+      ctx.moveTo(cx, box.y1);
+      ctx.lineTo(cx, box.y1 + gap);
+      ctx.stroke();
+      for (const h of selectionHandles(box, scale)) {
+        ctx.beginPath();
+        if (h.kind === "rotate") {
+          ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
+        } else {
+          ctx.rect(h.x - r, h.y - r, r * 2, r * 2);
+        }
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.stroke();
+      }
+    },
+    [scale],
   );
 
   /* ------------------------------------------------------------- gestures */
@@ -574,6 +662,23 @@ export function InkLayer({
         paintSelection(ctx, rows);
         return;
       }
+      if (session.transform) {
+        const { ids, cx, cy, factor, radians } = session.transform;
+        const rows = (selRef.current?.rows ?? []).filter((r) => ids.has(r.id));
+        const preview = rows.map((r) => ({
+          ...r,
+          points:
+            session.transform!.kind === "resize"
+              ? scalePoints(r.points, cx, cy, factor)
+              : rotatePoints(r.points, cx, cy, radians),
+          width: session.transform!.kind === "resize" ? r.width * Math.max(0.05, factor) : r.width,
+        }));
+        for (const stroke of preview) {
+          paintStroke(ctx, { points: stroke.points, width: stroke.width, color: stroke.color }, colorOf);
+        }
+        paintSelection(ctx, preview);
+        return;
+      }
       if (session.erasing) return;
       const live = [...session.points, ...predicted];
       const outline = strokeOutline(live, inkWidth, true);
@@ -598,8 +703,10 @@ export function InkLayer({
     const sized = prepare(wet);
     if (!sized) return;
     clearInSpace(wet, sized.w);
-    paintSelection(wet.getContext("2d")!, selection.rows);
-  }, [selection, prepare, clearInSpace, paintSelection]);
+    const ctx = wet.getContext("2d")!;
+    paintSelection(ctx, selection.rows);
+    paintSelectionHandles(ctx, selection.rows);
+  }, [selection, prepare, clearInSpace, paintSelection, paintSelectionHandles]);
 
   /* Clear a selection the tool no longer supports — and when the strokes it
      holds have gone from the cache (another view deleted them). */
@@ -630,6 +737,32 @@ export function InkLayer({
         points: translatePoints(r.points, moving.dx, moving.dy),
         color: r.color,
         width: r.width,
+      }));
+      setSelection(null);
+      commitReplace(rows, specs);
+    },
+    [commitReplace, repaintDry],
+  );
+
+  /** Commit a resize or rotate: apply the live factor/angle once, swap rows —
+   *  same shape as `commitMove`, a different geometry function. */
+  const commitTransform = useCallback(
+    (session: Session) => {
+      const t = session.transform;
+      if (!t || (t.factor === 1 && t.radians === 0)) {
+        movingRef.current = null;
+        repaintDry();
+        return;
+      }
+      const rows = (selRef.current?.rows ?? []).filter((r) => t.ids.has(r.id));
+      movingRef.current = null;
+      const specs = rows.map((r) => ({
+        points:
+          t.kind === "resize"
+            ? scalePoints(r.points, t.cx, t.cy, t.factor)
+            : rotatePoints(r.points, t.cx, t.cy, t.radians),
+        color: r.color,
+        width: t.kind === "resize" ? clampInkWidth(r.width * Math.max(0.05, t.factor)) : r.width,
       }));
       setSelection(null);
       commitReplace(rows, specs);
@@ -673,6 +806,20 @@ export function InkLayer({
       return false;
     };
 
+    /** Which resize/rotate handle (x, y) is over, checked BEFORE a plain
+     *  drag-to-move so a touch near a corner grabs the handle, not the
+     *  stroke under it. */
+    const handleAt = (x: number, y: number): { kind: HandleKind; x: number; y: number } | null => {
+      const sel = selRef.current;
+      if (!sel || sel.rows.length === 0) return null;
+      const box = unionBounds(sel.rows.map((r) => strokeBounds(r.points)));
+      const reach = HANDLE_HIT_PX / scale;
+      for (const h of selectionHandles(box, scale)) {
+        if (Math.hypot(x - h.x, y - h.y) <= reach) return h;
+      }
+      return null;
+    };
+
     const startSession = (e: PointerEvent): void => {
       if (strokeRef.current !== null) return; // one gesture at a time
       // Barrel-button / eraser-end erases in any tool.
@@ -681,16 +828,47 @@ export function InkLayer({
       const pt = inPageSpace(e.clientX, e.clientY, pressure);
 
       if (inkMode === "select") {
-        // Down on the selection carries it; down on fresh paper starts a
-        // new lasso (and forgets the old selection — a tap outside clears).
-        if (selRef.current && overSelection(pt.x, pt.y)) {
-          const ids = new Set(selRef.current.rows.map((r) => r.id));
+        // A handle wins over a plain carry — grabbing near a corner resizes
+        // (or, at the top handle, rotates) rather than dragging the stroke
+        // that happens to sit under it.
+        const handle = handleAt(pt.x, pt.y);
+        const sel = selRef.current;
+        if (handle && sel) {
+          const ids = new Set(sel.rows.map((r) => r.id));
+          const box = unionBounds(sel.rows.map((r) => strokeBounds(r.points)));
+          const center = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+          const corner = handle.kind === "rotate" ? null : OPPOSITE_CORNER[handle.kind];
+          const pivot =
+            corner === null
+              ? center
+              : selectionHandles(box, scale).find((h) => h.kind === corner)!;
+          strokeRef.current = {
+            pointerId: e.pointerId,
+            points: [],
+            erasing: false,
+            lasso: false,
+            moving: null,
+            transform: {
+              kind: handle.kind === "rotate" ? "rotate" : "resize",
+              ids,
+              cx: pivot.x,
+              cy: pivot.y,
+              startX: pt.x,
+              startY: pt.y,
+              factor: 1,
+              radians: 0,
+            },
+          };
+          movedRef.current = false;
+        } else if (sel && overSelection(pt.x, pt.y)) {
+          const ids = new Set(sel.rows.map((r) => r.id));
           strokeRef.current = {
             pointerId: e.pointerId,
             points: [],
             erasing: false,
             lasso: false,
             moving: { ids, dx: 0, dy: 0, startX: pt.x, startY: pt.y },
+            transform: null,
           };
           movedRef.current = false;
         } else {
@@ -701,6 +879,7 @@ export function InkLayer({
             erasing: false,
             lasso: true,
             moving: null,
+            transform: null,
           };
         }
       } else {
@@ -711,6 +890,7 @@ export function InkLayer({
           erasing,
           lasso: false,
           moving: null,
+          transform: null,
         };
         if (erasing) {
           if (inkEraseMode === "pixel") {
@@ -738,7 +918,7 @@ export function InkLayer({
         // ghost) and become a pan.
         strokeRef.current = null;
         movingRef.current = null;
-        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null }, []);
+        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         const pts = [...touchesRef.current.values()];
         panMidRef.current = {
           x: (pts[0]!.x + pts[1]!.x) / 2,
@@ -842,6 +1022,26 @@ export function InkLayer({
         return;
       }
 
+      if (session.transform) {
+        const origin = wet.getBoundingClientRect();
+        const x = (e.clientX - origin.left) / scale;
+        const y = pageHeight - (e.clientY - origin.top) / scale;
+        const t = session.transform;
+        const startDist = Math.hypot(t.startX - t.cx, t.startY - t.cy);
+        const liveDist = Math.hypot(x - t.cx, y - t.cy);
+        const factor = t.kind === "resize" && startDist > 1e-6 ? liveDist / startDist : 1;
+        const startAngle = Math.atan2(t.startY - t.cy, t.startX - t.cx);
+        const liveAngle = Math.atan2(y - t.cy, x - t.cx);
+        const radians = t.kind === "rotate" ? liveAngle - startAngle : 0;
+        session.transform = { ...t, factor, radians };
+        movedRef.current = true;
+        movingRef.current = { ids: t.ids, dx: 0, dy: 0 };
+        repaintDry();
+        paintWet(session, []);
+        e.preventDefault();
+        return;
+      }
+
       if (session.erasing) {
         const origin = wet.getBoundingClientRect();
         const x = (e.clientX - origin.left) / scale;
@@ -887,7 +1087,7 @@ export function InkLayer({
         // A cancelled gesture was never committed — repaint dry as the truth.
         if (session.erasing && inkEraseMode === "pixel") abandonPixelGesture();
         movingRef.current = null;
-        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null }, []);
+        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         repaintDry();
         return;
       }
@@ -911,15 +1111,25 @@ export function InkLayer({
         const ax = Math.min(Math.max((last.x * scale), 8), Math.max(8, rect.width - 8));
         const ay = Math.min(Math.max((pageHeight - last.y) * scale, 8), Math.max(8, rect.height - 8));
         setSelection({ rows: caught, ax, ay });
-        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null }, []);
+        paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         // Repaint the ants for the fresh selection.
         const sized = prepare(wet);
-        if (sized) paintSelection(wet.getContext("2d")!, caught);
+        if (sized) {
+          const ctx = wet.getContext("2d")!;
+          paintSelection(ctx, caught);
+          paintSelectionHandles(ctx, caught);
+        }
         return;
       }
 
       if (session.moving) {
         commitMove(session);
+        clearWet();
+        return;
+      }
+
+      if (session.transform) {
+        commitTransform(session);
         clearWet();
         return;
       }
@@ -978,7 +1188,7 @@ export function InkLayer({
       };
       updateCache((prev) => [...prev, temp]);
       pushInkOps(key, [{ kind: "add", stroke: temp }]);
-      paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null }, []);
+      paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
       const settleStack = (row: InkStrokeRow): void => {
         useUI.setState((s) => {
           if (s.inkOpsKey !== key) return s;
@@ -1072,7 +1282,9 @@ export function InkLayer({
     paintEraserCursor,
     clearWet,
     paintSelection,
+    paintSelectionHandles,
     commitMove,
+    commitTransform,
     pushInkOps,
     key,
     kind,

@@ -244,6 +244,58 @@ export function translatePoints(
   return points.map((p) => ({ x: p.x + dx, y: p.y + dy, p: p.p }));
 }
 
+/** Scale every sample toward/away from a pivot (typically the selection's own
+ *  centre), uniformly on both axes — a stroke keeps its shape, only its size
+ *  changes. `factor` <= 0 would collapse or invert the stroke, so it is
+ *  floored well above zero rather than trusted from a live drag. */
+export function scalePoints(
+  points: InkPoint[],
+  cx: number,
+  cy: number,
+  factor: number,
+): InkPoint[] {
+  const f = Math.max(0.05, factor);
+  return points.map((p) => ({ x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f, p: p.p }));
+}
+
+/** Rotate every sample about a pivot by `radians` (positive = counter-
+ *  clockwise, matching PDF space's own bottom-left-origin, right-handed
+ *  axes — the same convention `pointToPdf`'s y-flip sets up). */
+export function rotatePoints(
+  points: InkPoint[],
+  cx: number,
+  cy: number,
+  radians: number,
+): InkPoint[] {
+  const sin = Math.sin(radians);
+  const cos = Math.cos(radians);
+  return points.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos, p: p.p };
+  });
+}
+
+/** The combined bounds of several strokes — the lasso selection's own box,
+ *  which a single stroke's `strokeBounds` cannot answer once more than one
+ *  stroke is caught. */
+export function unionBounds(
+  boxes: { x0: number; y0: number; x1: number; y1: number }[],
+): { x0: number; y0: number; x1: number; y1: number } {
+  if (boxes.length === 0) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const b of boxes) {
+    if (b.x0 < x0) x0 = b.x0;
+    if (b.y0 < y0) y0 = b.y0;
+    if (b.x1 > x1) x1 = b.x1;
+    if (b.y1 > y1) y1 = b.y1;
+  }
+  return { x0, y0, x1, y1 };
+}
+
 /**
  * Cut a stroke where the partial eraser passes, keeping the surviving pieces.
  *

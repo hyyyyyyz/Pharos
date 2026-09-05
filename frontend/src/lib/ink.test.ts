@@ -7,13 +7,16 @@ import {
   pointToCss,
   pointToPdf,
   rankInkColors,
+  rotatePoints,
   sampleWidth,
+  scalePoints,
   splitStroke,
   strokeBounds,
   strokeCaughtBy,
   strokeNear,
   strokeSegments,
   translatePoints,
+  unionBounds,
 } from "./ink";
 
 const PAGE_H = 792; // US Letter, in points
@@ -226,6 +229,58 @@ describe("translatePoints", () => {
     );
     expect(out[0]).toEqual({ x: 11, y: -3, p: 0.3 });
     expect(out[1]).toEqual({ x: 13, y: -1, p: 0.9 });
+  });
+});
+
+describe("scalePoints (the lasso resize handle)", () => {
+  it("doubles distance from the pivot in both axes, pressure untouched", () => {
+    const out = scalePoints([{ x: 12, y: 14, p: 0.4 }], 10, 10, 2);
+    expect(out[0]).toEqual({ x: 14, y: 18, p: 0.4 });
+  });
+
+  it("leaves the pivot itself fixed under any factor", () => {
+    const out = scalePoints([{ x: 10, y: 10, p: 0.5 }], 10, 10, 3);
+    expect(out[0]).toEqual({ x: 10, y: 10, p: 0.5 });
+  });
+
+  it("floors a collapsing or inverting factor rather than trust a live drag", () => {
+    const out = scalePoints([{ x: 12, y: 10, p: 0.5 }], 10, 10, -4);
+    // factor floored to 0.05: 10 + (12-10)*0.05 = 10.1, never negative/flipped.
+    expect(out[0]!.x).toBeCloseTo(10.1);
+  });
+});
+
+describe("rotatePoints (the lasso rotate handle)", () => {
+  it("rotates a point a quarter turn about the pivot", () => {
+    const out = rotatePoints([{ x: 11, y: 10, p: 0.5 }], 10, 10, Math.PI / 2);
+    expect(out[0]!.x).toBeCloseTo(10);
+    expect(out[0]!.y).toBeCloseTo(11);
+  });
+
+  it("leaves the pivot itself fixed", () => {
+    const out = rotatePoints([{ x: 5, y: 5, p: 0.5 }], 5, 5, 1.234);
+    expect(out[0]!.x).toBeCloseTo(5);
+    expect(out[0]!.y).toBeCloseTo(5);
+  });
+
+  it("a full turn returns to the start", () => {
+    const out = rotatePoints([{ x: 3, y: 7, p: 0.5 }], 1, 1, Math.PI * 2);
+    expect(out[0]!.x).toBeCloseTo(3);
+    expect(out[0]!.y).toBeCloseTo(7);
+  });
+});
+
+describe("unionBounds (the multi-stroke selection box)", () => {
+  it("wraps several boxes in the smallest box containing them all", () => {
+    const b = unionBounds([
+      { x0: 0, y0: 0, x1: 5, y1: 5 },
+      { x0: 3, y0: -2, x1: 8, y1: 4 },
+    ]);
+    expect(b).toEqual({ x0: 0, y0: -2, x1: 8, y1: 5 });
+  });
+
+  it("returns a zero box for an empty selection rather than +/-Infinity", () => {
+    expect(unionBounds([])).toEqual({ x0: 0, y0: 0, x1: 0, y1: 0 });
   });
 });
 
