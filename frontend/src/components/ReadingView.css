@@ -657,18 +657,41 @@
   background: currentcolor;
 }
 
-/* A second row inside the same popover card — the collapsible tray for the
-   rest of the palette, or the thickness slider + presets. Same gap/align as
-   the row above so opening either never shifts the first row's layout. */
-.ph-rv-ink-row2 {
+/* The collapsible tray under a tool's main row — the 调色盘 grid, or the
+   thickness slider and its presets. Only one is ever open at a time, so this
+   never stacks into a tall panel over the page. */
+.ph-rv-ink-tray {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  flex-wrap: wrap;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--c-bd, #e6e8ec);
-  max-width: 220px;
+}
+
+/* 调色盘: the WHOLE palette, always in the same grid positions, so its shape
+   can be learned. Five to a row — ten inks become two tidy rows, five washes
+   one — and the ranked quick row above is what changes with use, not this. */
+.ph-rv-ink-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 22px);
+  gap: 6px;
+}
+
+.ph-rv-ink-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 0;
+  cursor: pointer;
+}
+.ph-rv-ink-chip.is-on {
+  /* A ring that reads on a dark ink and a pale wash alike: the surface colour
+     draws the gap, the text colour draws the ring around it. */
+  box-shadow:
+    inset 0 0 0 2px var(--c-sf, #fff),
+    0 0 0 2px var(--c-tx, #1e222a);
 }
 
 .ph-rv-ink-width-slider {

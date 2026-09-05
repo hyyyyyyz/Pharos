@@ -95,6 +95,7 @@ export function TapeLayer({
   const tapeFreehand = useUI((s) => s.tapeFreehand);
   const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
+  const setInkTray = useUI((s) => s.setInkTray);
 
   // Same staleTime: Infinity reasoning as InkLayer's own query — every write
   // patches the cache directly, so a background refetch only risks a race
@@ -218,6 +219,8 @@ export function TapeLayer({
       // page. A finger here is a palm resting while writing, or a scroll that
       // the viewport should have got instead.
       if (!isDrawingPointer(e, inkFingerDraw)) return;
+      setInkTray(null); // a tray open over the page has had its turn
+
       const pt = toPage(e.clientX, e.clientY);
       start = { ...pt, clientX: e.clientX, clientY: e.clientY };
       path = [pt];
@@ -288,6 +291,7 @@ export function TapeLayer({
     tapeAutoThickness,
     tapeFreehand,
     inkFingerDraw,
+    setInkTray,
     scale,
     paperId,
     kind,

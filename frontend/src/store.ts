@@ -64,6 +64,41 @@ export function clampInkWidth(width: number): number {
  *  水彩笔 mode suggests, if the reader has not already picked one of their own. */
 export const DEFAULT_WATER_WIDTH = 14;
 
+/**
+ * What each drawing tool remembers between visits.
+ *
+ * One thickness control and one palette serve every tool ("粗细统一拉出来设定
+ * 大小，不要单独列开"), but the VALUE each tool wants is different: a pen
+ * writes thin, a watercolour wash has to be broad to be a wash at all, and
+ * their palettes do not even overlap (opaque inks vs light washes). Sharing a
+ * single `inkWidth`/`inkColor` across tools meant every switch either carried
+ * the wrong value over — a 2pt "wash", a wash colour on the pen that the
+ * water canvas then painted — or had to be papered over with a reset on each
+ * toolbar button, which is what round 2 did.
+ *
+ * So the live `inkColor`/`inkWidth` stay exactly as every consumer already
+ * reads them, and `setInkMode` swaps them out to and in from these slots.
+ * Nothing downstream had to learn about tools.
+ */
+export interface ToolPref {
+  color: string;
+  width: number;
+}
+
+export const DEFAULT_TOOL_PREFS: Record<string, ToolPref> = {
+  draw: { color: "ink", width: 2 },
+  water: { color: "wc-amber", width: DEFAULT_WATER_WIDTH },
+  // The style brush paints an existing stroke's colour/width onto it, so it
+  // starts from the pen's own habits rather than a third set.
+  style: { color: "ink", width: 2 },
+};
+
+/** Tools that carry a colour/width of their own. The eraser, lasso, laser and
+ *  tape do not — nothing they do is coloured by `inkColor`. */
+export function toolRemembers(mode: InkMode): boolean {
+  return mode === "draw" || mode === "water" || mode === "style";
+}
+
 export function capHistory<T>(ops: T[]): T[] {
   return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
 }
@@ -263,6 +298,21 @@ interface UIState {
    *  until asked, so selection/pan/scroll behave exactly as before. */
   inkMode: InkMode;
   setInkMode: (m: InkMode) => void;
+  /** Per-tool colour/width memory — see `DEFAULT_TOOL_PREFS`. Read through
+   *  `inkColor`/`inkWidth`; this is only where the values a tool is not
+   *  currently using are parked. */
+  toolPrefs: Record<string, ToolPref>;
+  /**
+   * Which collapsible tray under the active tool's popover is open — 调色盘,
+   * 粗细, or neither. At most one at a time ("每次只启用一个，不然会重叠").
+   *
+   * In the store rather than in `ReadingView`'s own state because the thing
+   * that most needs to close it is the furthest from it: the moment a stroke
+   * starts, the tray should get out of the way ("开始书写后，折叠栏应该自动收
+   * 起来"), and that gesture is detected down in `InkLayer`/`TapeLayer`.
+   */
+  inkTray: "color" | "width" | null;
+  setInkTray: (tray: "color" | "width" | null) => void;
   /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
   inkColor: string;
   setInkColor: (c: string) => void;
@@ -480,9 +530,25 @@ export const useUI = create<UIState>((set) => ({
   pointerCoarse: hasCoarsePointer(),
 
   inkMode: "off",
+  toolPrefs: { ...DEFAULT_TOOL_PREFS },
+  inkTray: null,
+  setInkTray: (inkTray) => set({ inkTray }),
   // The pen is the point of the feature, but a mouse should also be able to
   // draw when the tool is on — defaulting to erase would be a trap.
-  setInkMode: (inkMode) => set({ inkMode }),
+  //
+  // Switching tools parks the outgoing tool's colour/width and loads the
+  // incoming one's, so a pen stays thin and a wash stays broad without either
+  // toolbar button having to "fix up" the other's leftovers.
+  setInkMode: (inkMode) =>
+    set((s) => {
+      if (inkMode === s.inkMode) return { inkMode };
+      const toolPrefs = toolRemembers(s.inkMode)
+        ? { ...s.toolPrefs, [s.inkMode]: { color: s.inkColor, width: s.inkWidth } }
+        : s.toolPrefs;
+      if (!toolRemembers(inkMode)) return { inkMode, toolPrefs };
+      const next = toolPrefs[inkMode] ?? DEFAULT_TOOL_PREFS[inkMode]!;
+      return { inkMode, toolPrefs, inkColor: next.color, inkWidth: next.width };
+    }),
   inkColor: "ink",
   // Picking a colour IS the usage signal the quick-bar ranking runs on — no
   // separate "log this" call for every caller to remember to make.

@@ -234,6 +234,10 @@ export function InkLayer({
 
   const inkMode = useUI((s) => s.inkMode);
   const setInkMode = useUI((s) => s.setInkMode);
+  const setInkTray = useUI((s) => s.setInkTray);
+  /** Shut the toolbar's open tray. Stable, so it can sit in the gesture
+   *  effect's deps without rebinding it every render. */
+  const closeInkTray = useCallback(() => setInkTray(null), [setInkTray]);
   const inkColor = useUI((s) => s.inkColor);
   const inkColorUsage = useUI((s) => s.inkColorUsage);
   // The selection recolour bar is a quick action on a floating popover, not
@@ -1020,6 +1024,10 @@ export function InkLayer({
 
     const startSession = (e: PointerEvent): void => {
       if (strokeRef.current !== null) return; // one gesture at a time
+      // 开始书写后，折叠栏应该自动收起来: the palette/thickness tray has done
+      // its job the moment the pen touches down, and from then on it is just
+      // a panel sitting over the page being written on.
+      closeInkTray();
       // The fade loop must stop repainting under the gesture about to start.
       // For a laser stroke the TRAIL survives (this sweep joins it, and the
       // quiet-timer restarts); for any other tool the trail is abandoned —
@@ -1620,6 +1628,7 @@ export function InkLayer({
     paintSelectionHandles,
     paintLaserMarks,
     clearLaser,
+    closeInkTray,
     commitMove,
     commitTransform,
     pushInkOps,
