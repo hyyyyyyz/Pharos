@@ -27,6 +27,7 @@ import {
   useSession,
   useUI,
   type InkMode,
+  type InkOp,
   type ReadMode,
 } from "../store";
 import { AiPanel } from "./AiPanel";
@@ -386,110 +387,142 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     [paperId],
   );
 
+  /**
+   * Undo ONE op and return the op that redoes it.
+   *
+   * Split out of `undoInk` so a `batch` — one lasso drag that moved strokes
+   * and 胶带 together — can just recurse over its members in reverse. Before
+   * this, each member was pushed as its own history entry, so undoing "that
+   * drag" took several presses with the page half-restored in between.
+   */
+  const undoOne = useCallback(
+    async (op: InkOp): Promise<InkOp> => {
+      switch (op.kind) {
+        case "batch": {
+          const inverses: InkOp[] = [];
+          for (let i = op.ops.length - 1; i >= 0; i--) {
+            inverses.unshift(await undoOneRef.current(op.ops[i]!));
+          }
+          return { kind: "batch", ops: inverses };
+        }
+        case "tape-add":
+          await api.tape.remove(op.tape.id).catch(() => undefined);
+          // Redo re-places it from this payload, with a fresh id — the same
+          // protocol a stroke follows.
+          return op;
+        case "tape-remove": {
+          const back = await recreateTape(op.tape);
+          return { kind: "tape-remove", tape: back ?? op.tape };
+        }
+        case "tape-edit":
+          await api.tape.update(op.id, op.before).catch(() => undefined);
+          return op; // the same op describes the redo: patch to `after`
+        case "add":
+          await api.ink.remove(op.stroke.id).catch(() => undefined);
+          return op;
+        case "remove":
+          return { kind: "remove", strokes: await recreateStrokes(op.strokes) };
+        case "edit": {
+          for (const row of op.added) await api.ink.remove(row.id).catch(() => undefined);
+          return { kind: "edit", removed: await recreateStrokes(op.removed), added: op.added };
+        }
+      }
+    },
+    [recreateStrokes, recreateTape],
+  );
+  // Recursion through a ref: `undoOne` is a useCallback, so a batch cannot
+  // name it inside its own definition.
+  const undoOneRef = useRef(undoOne);
+  undoOneRef.current = undoOne;
+
+  /** Redo ONE op and return the op that undoes it again. `null` means the
+   *  server refused part of it, and the caller drops it from the stacks
+   *  rather than leave an entry that no longer describes the page. */
+  const redoOne = useCallback(
+    async (op: InkOp): Promise<InkOp | null> => {
+      switch (op.kind) {
+        case "batch": {
+          const done: InkOp[] = [];
+          for (const inner of op.ops) {
+            const back = await redoOneRef.current(inner);
+            if (back === null) return null;
+            done.push(back);
+          }
+          return { kind: "batch", ops: done };
+        }
+        case "tape-add": {
+          const back = await recreateTape(op.tape);
+          return { kind: "tape-add", tape: back ?? op.tape };
+        }
+        case "tape-remove":
+          await api.tape.remove(op.tape.id).catch(() => undefined);
+          return op;
+        case "tape-edit":
+          await api.tape.update(op.id, op.after).catch(() => undefined);
+          return op;
+        case "add":
+          try {
+            const row = await api.ink.create(paperId, {
+              kind: op.stroke.kind,
+              page: op.stroke.page,
+              points: op.stroke.points,
+              color: op.stroke.color,
+              width: op.stroke.width,
+            });
+            return { kind: "add", stroke: row };
+          } catch {
+            return null;
+          }
+        case "remove":
+          for (const stroke of op.strokes) {
+            await api.ink.remove(stroke.id).catch(() => undefined);
+          }
+          return op;
+        case "edit": {
+          for (const row of op.removed) await api.ink.remove(row.id).catch(() => undefined);
+          const added = await recreateStrokes(op.added);
+          // Part of the redo was refused: the cache no longer matches this op.
+          if (added.length !== op.added.length) return null;
+          return { kind: "edit", removed: op.removed, added };
+        }
+      }
+    },
+    [paperId, recreateStrokes, recreateTape],
+  );
+  const redoOneRef = useRef(redoOne);
+  redoOneRef.current = redoOne;
+
+  /** Both stacks are keyed to one document+rendition, and both kinds of mark
+   *  live on the same page, so one invalidate pair settles whatever moved. */
+  const settleAfterHistory = useCallback(() => {
+    if (!pdfKind) return;
+    void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
+    void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
+  }, [qc, paperId, pdfKind]);
+
   const undoInk = useCallback(async () => {
     if (!pdfKind) return;
     const s = useUI.getState();
     if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
-    const op = s.inkPast[s.inkPast.length - 1];
+    const op = s.inkPast[s.inkPast.length - 1]!;
     useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
-    let inverse: typeof op;
-    if (op.kind === "tape-add") {
-      // Undoing a placement takes the strip away; the redo re-places it from
-      // this payload (with a fresh id, same protocol as a stroke).
-      await api.tape.remove(op.tape.id).catch(() => undefined);
-      inverse = { kind: "tape-add", tape: op.tape };
-      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "tape-remove") {
-      const back = await recreateTape(op.tape);
-      inverse = { kind: "tape-remove", tape: back ?? op.tape };
-      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "tape-edit") {
-      await api.tape.update(op.id, op.before).catch(() => undefined);
-      inverse = op; // the same op describes the redo: patch to `after`
-      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "add") {
-      await api.ink.remove(op.stroke.id).catch(() => undefined);
-      // Redo re-creates from the payload; the id it carries is stale but only
-      // a payload — the redo path replaces it with the fresh row.
-      inverse = { kind: "add", stroke: op.stroke };
-    } else if (op.kind === "remove") {
-      inverse = { kind: "remove", strokes: await recreateStrokes(op.strokes) };
-    } else {
-      for (const row of op.added) await api.ink.remove(row.id).catch(() => undefined);
-      inverse = {
-        kind: "edit",
-        removed: await recreateStrokes(op.removed),
-        added: op.added,
-      };
-    }
+    const inverse = await undoOne(op);
     useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
-    void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc, recreateStrokes, recreateTape]);
+    settleAfterHistory();
+  }, [inkKey, pdfKind, undoOne, settleAfterHistory]);
 
   const redoInk = useCallback(async () => {
     if (!pdfKind) return;
     const s = useUI.getState();
     if (s.inkOpsKey !== inkKey || s.inkFuture.length === 0) return;
-    const op = s.inkFuture[s.inkFuture.length - 1];
+    const op = s.inkFuture[s.inkFuture.length - 1]!;
     useUI.setState((st) => ({ inkFuture: st.inkFuture.slice(0, -1) }));
-    let reapplied: typeof op;
-    if (op.kind === "tape-add") {
-      const back = await recreateTape(op.tape);
-      reapplied = { kind: "tape-add", tape: back ?? op.tape };
+    const reapplied = await redoOne(op);
+    if (reapplied !== null) {
       useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "tape-remove") {
-      await api.tape.remove(op.tape.id).catch(() => undefined);
-      reapplied = op;
-      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "tape-edit") {
-      await api.tape.update(op.id, op.after).catch(() => undefined);
-      reapplied = op;
-      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
-      void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
-      return;
-    } else if (op.kind === "add") {
-      try {
-        const row = await api.ink.create(paperId, {
-          kind: op.stroke.kind,
-          page: op.stroke.page,
-          points: op.stroke.points,
-          color: op.stroke.color,
-          width: op.stroke.width,
-        });
-        reapplied = { kind: "add", stroke: row };
-      } catch {
-        void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-        return;
-      }
-    } else if (op.kind === "remove") {
-      for (const stroke of op.strokes) {
-        await api.ink.remove(stroke.id).catch(() => undefined);
-      }
-      reapplied = op;
-    } else {
-      for (const row of op.removed) await api.ink.remove(row.id).catch(() => undefined);
-      const added = await recreateStrokes(op.added);
-      reapplied = { kind: "edit", removed: op.removed, added };
-      if (added.length !== op.added.length) {
-        // Part of the redo was refused: the cache no longer matches this op,
-        // so keep it off the stacks and let the refetch settle the truth.
-        void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-        return;
-      }
     }
-    useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
-    void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc, recreateStrokes, recreateTape]);
+    settleAfterHistory();
+  }, [inkKey, pdfKind, redoOne, settleAfterHistory]);
 
   /* ----------------------------------------------------------- thumbnails */
   const [thumbs, setThumbs] = useState<(string | null)[]>([]);

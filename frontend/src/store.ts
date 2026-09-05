@@ -49,15 +49,30 @@ export type InkOp =
      what the network returned. */
   | { kind: "tape-add"; tape: TapeRow }
   | { kind: "tape-remove"; tape: TapeRow }
-  | { kind: "tape-edit"; id: string; before: TapePatch; after: TapePatch };
+  | { kind: "tape-edit"; id: string; before: TapePatch; after: TapePatch }
+  /* One gesture, one undo. A lasso drag over a mixed selection changes
+     strokes AND strips, and pushing those as separate entries meant undoing
+     "that drag" took several presses, with the page half-restored in between.
+     A batch is applied in order and undone in reverse, like any transaction. */
+  | { kind: "batch"; ops: InkOp[] };
 
-/** The fields a 胶带 edit can change — resize, straighten. Deliberately NOT
- *  `revealed`: covering and uncovering is its own undo (tap it again), and
- *  filling a capped history with reveal toggles would push real edits out. */
+/**
+ * The fields a 胶带 edit can change — everything a resize, a straighten, or a
+ * lasso move/scale/rotate touches. A freehand strip's `points` are in here
+ * too: rotating one rewrites its path, and an undo that restored only the box
+ * would leave the strip drawn along the OLD curve in a new place.
+ *
+ * Deliberately NOT `revealed`: covering and uncovering is its own undo (tap
+ * it again), and filling a capped history with reveal toggles would push real
+ * edits out of it.
+ */
 export interface TapePatch {
+  x?: number;
+  y?: number;
   w?: number;
   h?: number;
   angle?: number;
+  points?: { x: number; y: number }[] | null;
 }
 
 /** Undo/redo ops carry full stroke payloads (points and all), so an
@@ -152,7 +167,17 @@ export function remapOp(op: InkOp, oldId: string, next: InkStrokeRow | TapeRow):
       return op.tape.id === oldId ? { ...op, tape } : op;
     case "tape-edit":
       return op.id === oldId ? { ...op, id: next.id } : op;
+    case "batch":
+      return { ...op, ops: op.ops.map((inner) => remapOp(inner, oldId, next)) };
   }
+}
+
+/** Fold several ops from ONE gesture into a single history entry. A lone op
+ *  stays as it is — a batch of one would only make the stacks harder to read
+ *  in a debugger for no behavioural gain. */
+export function batchOps(ops: InkOp[]): InkOp[] {
+  if (ops.length <= 1) return ops;
+  return [{ kind: "batch", ops }];
 }
 
 /** How the eraser takes ink away. */
@@ -365,6 +390,17 @@ interface UIState {
    */
   inkTray: "color" | "width" | null;
   setInkTray: (tray: "color" | "width" | null) => void;
+  /**
+   * Ids currently being previewed by a lasso drag in `InkLayer`.
+   *
+   * `TapeLayer` hides these while the drag is in flight, because the moving
+   * copy is painted on the ink layer's wet canvas — without this the reader
+   * sees the strip twice, once where it was and once where it is going. The
+   * ink layer already does the same for strokes through a ref; tape needs it
+   * in the store because the two live in different components.
+   */
+  inkCarried: string[];
+  setInkCarried: (ids: string[]) => void;
   /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
   inkColor: string;
   setInkColor: (c: string) => void;
@@ -601,6 +637,8 @@ export const useUI = create<UIState>((set) => ({
   toolPrefs: { ...DEFAULT_TOOL_PREFS },
   inkTray: null,
   setInkTray: (inkTray) => set({ inkTray }),
+  inkCarried: [],
+  setInkCarried: (inkCarried) => set({ inkCarried }),
   // The pen is the point of the feature, but a mouse should also be able to
   // draw when the tool is on — defaulting to erase would be a trap.
   //

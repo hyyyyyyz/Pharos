@@ -53,7 +53,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { InkPoint, InkStrokeRow } from "../api/types";
+import type { InkPoint, InkStrokeRow, TapeRow } from "../api/types";
 import {
   INK_COLORS,
   isWaterColor,
@@ -73,7 +73,8 @@ import {
 } from "../lib/ink";
 import { Icons } from "../design/icons";
 import { isDrawingPointer } from "../lib/pointer";
-import { clampInkWidth, useUI, type InkMode } from "../store";
+import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
+import { batchOps, clampInkWidth, useUI, type InkMode, type InkOp } from "../store";
 import "./InkLayer.css";
 
 /** Server-side ceiling for one stroke's sample count (see services/ink.py). */
@@ -208,8 +209,41 @@ const OPPOSITE_CORNER: Record<Exclude<HandleKind, "rotate">, Exclude<HandleKind,
 /** The selection itself: rows plus a toolbar anchor in CSS page pixels. */
 interface Selection {
   rows: InkStrokeRow[];
+  /** 胶带 caught by the same loop. The lasso is the reader's ONE transform
+   *  tool — "所有对象可以跟框选一样，可以被调大小、旋转" — so a strip inside
+   *  the loop moves, scales and turns with the strokes around it. */
+  tapes: TapeRow[];
   ax: number;
   ay: number;
+}
+
+/** The one box the ants and the handles both use: everything caught by the
+ *  lasso, strokes and 胶带 alike. */
+function selectionBox(
+  rows: InkStrokeRow[],
+  tapes: TapeRow[],
+): { x0: number; y0: number; x1: number; y1: number } {
+  return unionBounds([...rows.map((r) => strokeBounds(r.points)), ...tapes.map(tapeBox)]);
+}
+
+/** The bounding box of one tape strip, in the same PDF space stroke bounds
+ *  use — its own path when it has one, otherwise its rotated corners. */
+function tapeBox(t: TapeRow): { x0: number; y0: number; x1: number; y1: number } {
+  const pts = tapeOutline(t);
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x0) x0 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.x > x1) x1 = p.x;
+    if (p.y > y1) y1 = p.y;
+  }
+  // A freehand strip's path is its centreline, so the ink reaches half a
+  // thickness past it on each side.
+  const pad = t.points ? t.h / 2 : 0;
+  return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
 }
 
 export function InkLayer({
@@ -235,6 +269,7 @@ export function InkLayer({
   const inkMode = useUI((s) => s.inkMode);
   const setInkMode = useUI((s) => s.setInkMode);
   const setInkTray = useUI((s) => s.setInkTray);
+  const setInkCarried = useUI((s) => s.setInkCarried);
   /** Shut the toolbar's open tray. Stable, so it can sit in the gesture
    *  effect's deps without rebinding it every render. */
   const closeInkTray = useCallback(() => setInkTray(null), [setInkTray]);
@@ -276,6 +311,20 @@ export function InkLayer({
     () => (all ?? []).filter((s) => s.page === page && s.points.length > 0),
     [all, page],
   );
+
+  // The same cache entry `TapeLayer` fills — one fetch, two readers. The lasso
+  // needs these to catch strips, and the transform preview needs them live.
+  const { data: allTape } = useQuery({
+    queryKey: ["tape", paperId, kind],
+    queryFn: ({ signal }) => api.tape.list(paperId, kind, signal),
+    staleTime: Infinity,
+  });
+  const myTape = useMemo(
+    () => (allTape ?? []).filter((t) => t.page === page),
+    [allTape, page],
+  );
+  const tapeRef = useRef(myTape);
+  tapeRef.current = myTape;
   /**
    * The gesture handlers read `mine` through this ref, never through the
    * effect closure: an eraser gesture mutates the cache mid-drag (strokes
@@ -391,14 +440,18 @@ export function InkLayer({
     [scale],
   );
 
-  /** The selection marching ants: one padded box per caught stroke. */
+  /**
+   * The marching ants: ONE box around the whole selection.
+   *
+   * It used to draw a separate dashed box per caught stroke, which read as a
+   * pile of unrelated boxes rather than one thing you can grab — while the
+   * resize/rotate handles were already on the combined box, so the chrome
+   * disagreed with itself about what was selected. One box, one set of
+   * handles, one thing to drag.
+   */
   const paintSelection = useCallback(
-    (ctx: CanvasRenderingContext2D, rows: InkStrokeRow[]) => {
-      for (const stroke of rows) {
-        if (stroke.points.length === 0) continue;
-        const b = strokeBounds(stroke.points);
-        dashedRect(ctx, b, stroke.width / 2 + 2);
-      }
+    (ctx: CanvasRenderingContext2D, box: { x0: number; y0: number; x1: number; y1: number }) => {
+      dashedRect(ctx, box, 3);
     },
     [dashedRect],
   );
@@ -409,9 +462,8 @@ export function InkLayer({
    *  preview instead (see `paintWet`'s `transform` branch), so the handles
    *  never fight the drag they belong to. */
   const paintSelectionHandles = useCallback(
-    (ctx: CanvasRenderingContext2D, rows: InkStrokeRow[]) => {
-      if (rows.length === 0) return;
-      const box = unionBounds(rows.map((r) => strokeBounds(r.points)));
+    (ctx: CanvasRenderingContext2D, box: { x0: number; y0: number; x1: number; y1: number }) => {
+      if (box.x1 - box.x0 <= 0 && box.y1 - box.y0 <= 0) return;
       const cx = (box.x0 + box.x1) / 2;
       const r = 5 / scale;
       const gap = ROTATE_GAP_PX / scale;
@@ -496,7 +548,13 @@ export function InkLayer({
    *  eraser (split). `specs` are the replacement row payloads in the same
    *  order as the temp rows this function mints. */
   const commitReplace = useCallback(
-    (removedRows: InkStrokeRow[], specs: { points: InkPoint[]; color: string; width: number }[]) => {
+    (
+      removedRows: InkStrokeRow[],
+      specs: { points: InkPoint[]; color: string; width: number }[],
+      /** Ops from the SAME gesture (a lasso drag's 胶带 edits), folded into
+       *  one history entry with this one — one drag, one undo. */
+      alsoOps: InkOp[] = [],
+    ) => {
       const temps: InkStrokeRow[] = specs.map((s) => ({
         id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         paper_id: paperId,
@@ -512,7 +570,10 @@ export function InkLayer({
         ...prev.filter((r) => !goneIds.has(r.id)),
         ...temps,
       ]);
-      pushInkOps(key, [{ kind: "edit", removed: removedRows, added: temps }]);
+      pushInkOps(
+        key,
+        batchOps([...alsoOps, { kind: "edit", removed: removedRows, added: temps }]),
+      );
 
       /** Point one settled row at its temp, in the cache and in the undo op. */
       const settle = (tempId: string, row: InkStrokeRow): void => {
@@ -780,6 +841,44 @@ export function InkLayer({
     [scale, laserGradient],
   );
 
+  /**
+   * A carried 胶带 strip, drawn on the wet canvas while a lasso drag is in
+   * flight. `TapeLayer` hides the committed strip meanwhile (`inkCarried`),
+   * so the reader sees one strip moving rather than a ghost and a copy.
+   *
+   * Plain and opaque: this is a preview of a cover, and its exact texture is
+   * `TapeLayer`'s business once the drag commits.
+   */
+  const paintTapePreview = useCallback(
+    (ctx: CanvasRenderingContext2D, t: TapeRow) => {
+      ctx.save();
+      ctx.fillStyle = "rgba(232, 220, 184, 0.92)";
+      ctx.strokeStyle = "rgba(120, 100, 40, 0.5)";
+      ctx.lineWidth = 1 / scale;
+      if (t.points && t.points.length >= 2) {
+        // A freehand strip is its path, stroked at its own thickness.
+        ctx.strokeStyle = "rgba(232, 220, 184, 0.92)";
+        ctx.lineWidth = t.h;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(t.points[0]!.x, t.points[0]!.y);
+        for (const p of t.points.slice(1)) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      } else {
+        const corners = tapeOutline(t);
+        ctx.beginPath();
+        ctx.moveTo(corners[0]!.x, corners[0]!.y);
+        for (const c of corners.slice(1)) ctx.lineTo(c.x, c.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+    [scale],
+  );
+
   /** Drop the whole trail and stop the loop — switching away from the laser,
    *  or the fade running to zero. */
   const clearLaser = useCallback(() => {
@@ -824,36 +923,48 @@ export function InkLayer({
         return;
       }
       if (session.moving) {
-        const rows = (selRef.current?.rows ?? []).filter((r) => session.moving!.ids.has(r.id));
+        const { ids, dx, dy } = session.moving;
+        const rows = (selRef.current?.rows ?? []).filter((r) => ids.has(r.id));
         for (const stroke of rows) {
           paintStroke(
             ctx,
             {
-              points: translatePoints(stroke.points, session.moving.dx, session.moving.dy),
+              points: translatePoints(stroke.points, dx, dy),
               width: stroke.width,
               color: stroke.color,
             },
             colorOf,
           );
         }
-        paintSelection(ctx, rows);
+        const tapes = (selRef.current?.tapes ?? [])
+          .filter((t) => ids.has(t.id))
+          .map((t) => ({ ...t, ...translateTape(t, dx, dy) }));
+        for (const t of tapes) paintTapePreview(ctx, t);
+        paintSelection(ctx, selectionBox(rows.map((r) => ({ ...r, points: translatePoints(r.points, dx, dy) })), tapes));
         return;
       }
       if (session.transform) {
         const { ids, cx, cy, factor, radians } = session.transform;
+        const resize = session.transform.kind === "resize";
         const rows = (selRef.current?.rows ?? []).filter((r) => ids.has(r.id));
         const preview = rows.map((r) => ({
           ...r,
-          points:
-            session.transform!.kind === "resize"
-              ? scalePoints(r.points, cx, cy, factor)
-              : rotatePoints(r.points, cx, cy, radians),
-          width: session.transform!.kind === "resize" ? r.width * Math.max(0.05, factor) : r.width,
+          points: resize
+            ? scalePoints(r.points, cx, cy, factor)
+            : rotatePoints(r.points, cx, cy, radians),
+          width: resize ? r.width * Math.max(0.05, factor) : r.width,
         }));
         for (const stroke of preview) {
           paintStroke(ctx, { points: stroke.points, width: stroke.width, color: stroke.color }, colorOf);
         }
-        paintSelection(ctx, preview);
+        const tapes = (selRef.current?.tapes ?? [])
+          .filter((t) => ids.has(t.id))
+          .map((t) => ({
+            ...t,
+            ...(resize ? scaleTape(t, cx, cy, factor) : rotateTape(t, cx, cy, radians)),
+          }));
+        for (const t of tapes) paintTapePreview(ctx, t);
+        paintSelection(ctx, selectionBox(preview, tapes));
         return;
       }
       if (session.erasing) return;
@@ -890,6 +1001,7 @@ export function InkLayer({
       paintSelection,
       paintLaserMarks,
       laserGradient,
+      paintTapePreview,
     ],
   );
 
@@ -897,15 +1009,16 @@ export function InkLayer({
 
   /** Marching ants follow the zoom; also repaint on selection/stroke changes. */
   useEffect(() => {
-    if (!selection || selection.rows.length === 0) return;
+    if (!selection || selection.rows.length + selection.tapes.length === 0) return;
     const wet = wetRef.current;
     if (!wet) return;
     const sized = prepare(wet);
     if (!sized) return;
     clearInSpace(wet, sized.w);
     const ctx = wet.getContext("2d")!;
-    paintSelection(ctx, selection.rows);
-    paintSelectionHandles(ctx, selection.rows);
+    const box = selectionBox(selection.rows, selection.tapes);
+    paintSelection(ctx, box);
+    paintSelectionHandles(ctx, box);
   }, [selection, prepare, clearInSpace, paintSelection, paintSelectionHandles]);
 
   /* Clear a selection the tool no longer supports — and when the strokes it
@@ -916,11 +1029,58 @@ export function InkLayer({
       setSelection(null);
       return;
     }
-    const live = new Set(mine.map((s) => s.id));
-    if (selection.rows.some((r) => !live.has(r.id))) {
+    const live = new Set([...mine.map((s) => s.id), ...myTape.map((t) => t.id)]);
+    if ([...selection.rows, ...selection.tapes].some((r) => !live.has(r.id))) {
       setSelection(null);
     }
-  }, [inkMode, mine, selection]);
+  }, [inkMode, mine, myTape, selection]);
+
+  /**
+   * Persist a lasso transform applied to 胶带.
+   *
+   * Unlike a stroke — which is replaced wholesale, because its geometry IS
+   * its samples — a strip is edited in place: the same PATCH the popover's
+   * steppers use, with the new box (and, for a freehand strip, the new path).
+   * Each strip's change goes on the undo stack as its own `tape-edit`, so one
+   * undo of a mixed selection puts everything back together.
+   */
+  const commitTapeTransform = useCallback(
+    (tapes: TapeRow[], apply: (t: TapeRow) => Partial<TapeRow>): InkOp[] => {
+      const ops: InkOp[] = [];
+      for (const t of tapes) {
+        const next = apply(t);
+        const patch = {
+          x: next.x ?? t.x,
+          y: next.y ?? t.y,
+          w: clampTapeSize(next.w ?? t.w),
+          h: clampTapeSize(next.h ?? t.h),
+          angle: ((next.angle ?? t.angle) % 360 + 360) % 360,
+          ...(next.points ? { points: next.points } : {}),
+        };
+        ops.push(
+          {
+            kind: "tape-edit",
+            id: t.id,
+            // The whole box AND the path: a move changes x/y, a rotate
+            // rewrites a freehand strip's samples, and an undo that put back
+            // only some of that would leave the strip drawn along its old
+            // curve in its new place.
+            before: { x: t.x, y: t.y, w: t.w, h: t.h, angle: t.angle, points: t.points },
+            after: patch,
+          },
+        );
+        qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
+          (prev ?? []).map((row) => (row.id === t.id ? { ...row, ...patch } : row)),
+        );
+        void api.tape.update(t.id, patch).catch(() => {
+          void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
+        });
+      }
+      setInkCarried([]);
+      return ops;
+    },
+    [qc, paperId, kind, setInkCarried],
+  );
 
   /** Commit the drag: translate the selection by the live delta, swap rows. */
   const commitMove = useCallback(
@@ -928,6 +1088,7 @@ export function InkLayer({
       const moving = session.moving;
       if (!moving || (moving.dx === 0 && moving.dy === 0)) {
         movingRef.current = null;
+        setInkCarried([]);
         repaintDry();
         return;
       }
@@ -938,10 +1099,12 @@ export function InkLayer({
         color: r.color,
         width: r.width,
       }));
+      const tapes = (selRef.current?.tapes ?? []).filter((t) => moving.ids.has(t.id));
       setSelection(null);
-      commitReplace(rows, specs);
+      const tapeOps = commitTapeTransform(tapes, (t) => translateTape(t, moving.dx, moving.dy));
+      commitReplace(rows, specs, tapeOps);
     },
-    [commitReplace, repaintDry],
+    [commitReplace, repaintDry, commitTapeTransform, setInkCarried],
   );
 
   /** Commit a resize or rotate: apply the live factor/angle once, swap rows —
@@ -951,6 +1114,7 @@ export function InkLayer({
       const t = session.transform;
       if (!t || (t.factor === 1 && t.radians === 0)) {
         movingRef.current = null;
+        setInkCarried([]);
         repaintDry();
         return;
       }
@@ -964,10 +1128,16 @@ export function InkLayer({
         color: r.color,
         width: t.kind === "resize" ? clampInkWidth(r.width * Math.max(0.05, t.factor)) : r.width,
       }));
+      const tapes = (selRef.current?.tapes ?? []).filter((tp) => t.ids.has(tp.id));
       setSelection(null);
-      commitReplace(rows, specs);
+      const tapeOps = commitTapeTransform(tapes, (tp) =>
+        t.kind === "resize"
+          ? scaleTape(tp, t.cx, t.cy, t.factor)
+          : rotateTape(tp, t.cx, t.cy, t.radians),
+      );
+      commitReplace(rows, specs, tapeOps);
     },
-    [commitReplace, repaintDry],
+    [commitReplace, repaintDry, commitTapeTransform, setInkCarried],
   );
 
   /* ------------------------------------------------- native event handlers */
@@ -1005,6 +1175,10 @@ export function InkLayer({
         const pad = stroke.width / 2 + 4;
         if (x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad) return true;
       }
+      for (const t of sel.tapes) {
+        const b = tapeBox(t);
+        if (x >= b.x0 - 4 && x <= b.x1 + 4 && y >= b.y0 - 4 && y <= b.y1 + 4) return true;
+      }
       return false;
     };
 
@@ -1013,8 +1187,8 @@ export function InkLayer({
      *  stroke under it. */
     const handleAt = (x: number, y: number): { kind: HandleKind; x: number; y: number } | null => {
       const sel = selRef.current;
-      if (!sel || sel.rows.length === 0) return null;
-      const box = unionBounds(sel.rows.map((r) => strokeBounds(r.points)));
+      if (!sel || sel.rows.length + sel.tapes.length === 0) return null;
+      const box = selectionBox(sel.rows, sel.tapes);
       const reach = HANDLE_HIT_PX / scale;
       for (const h of selectionHandles(box, scale)) {
         if (Math.hypot(x - h.x, y - h.y) <= reach) return h;
@@ -1051,8 +1225,9 @@ export function InkLayer({
         const handle = handleAt(pt.x, pt.y);
         const sel = selRef.current;
         if (handle && sel) {
-          const ids = new Set(sel.rows.map((r) => r.id));
-          const box = unionBounds(sel.rows.map((r) => strokeBounds(r.points)));
+          const ids = new Set([...sel.rows, ...sel.tapes].map((r) => r.id));
+          setInkCarried(sel.tapes.map((t) => t.id));
+          const box = selectionBox(sel.rows, sel.tapes);
           const center = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
           const corner = handle.kind === "rotate" ? null : OPPOSITE_CORNER[handle.kind];
           const pivot =
@@ -1078,7 +1253,8 @@ export function InkLayer({
           };
           movedRef.current = false;
         } else if (sel && overSelection(pt.x, pt.y)) {
-          const ids = new Set(sel.rows.map((r) => r.id));
+          const ids = new Set([...sel.rows, ...sel.tapes].map((r) => r.id));
+          setInkCarried(sel.tapes.map((t) => t.id));
           strokeRef.current = {
             pointerId: e.pointerId,
             points: [],
@@ -1377,7 +1553,15 @@ export function InkLayer({
           return;
         }
         const caught = mineRef.current.filter((s) => strokeCaughtBy(s.points, session.points));
-        if (caught.length === 0) {
+        // 胶带 is caught by the same loop, on its own outline: a strip's path
+        // when it has one, its rotated corners when it does not.
+        const caughtTape = tapeRef.current.filter((t) =>
+          strokeCaughtBy(
+            tapeOutline(t).map((pt) => ({ x: pt.x, y: pt.y, p: 0.5 })),
+            session.points,
+          ),
+        );
+        if (caught.length === 0 && caughtTape.length === 0) {
           setSelection(null);
           clearWet();
           return;
@@ -1387,14 +1571,15 @@ export function InkLayer({
         // Anchor in CSS page pixels, clamped so the toolbar stays on the page.
         const ax = Math.min(Math.max((last.x * scale), 8), Math.max(8, rect.width - 8));
         const ay = Math.min(Math.max((pageHeight - last.y) * scale, 8), Math.max(8, rect.height - 8));
-        setSelection({ rows: caught, ax, ay });
+        setSelection({ rows: caught, tapes: caughtTape, ax, ay });
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         // Repaint the ants for the fresh selection.
         const sized = prepare(wet);
         if (sized) {
           const ctx = wet.getContext("2d")!;
-          paintSelection(ctx, caught);
-          paintSelectionHandles(ctx, caught);
+          const box = selectionBox(caught, caughtTape);
+          paintSelection(ctx, box);
+          paintSelectionHandles(ctx, box);
         }
         return;
       }
@@ -1629,6 +1814,7 @@ export function InkLayer({
     paintLaserMarks,
     clearLaser,
     closeInkTray,
+    setInkCarried,
     commitMove,
     commitTransform,
     pushInkOps,
@@ -1666,7 +1852,7 @@ export function InkLayer({
           // Buttons are HTML, not canvas: clicks here must not start a lasso.
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <span className="ph-ink-sel-n">{selection.rows.length}</span>
+          <span className="ph-ink-sel-n">{selection.rows.length + selection.tapes.length}</span>
           {selColors.map((c) => (
             <button
               key={c.key}
@@ -1674,6 +1860,7 @@ export function InkLayer({
               style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
               title={c.label}
               aria-label={`改为${c.label}`}
+              disabled={selection.rows.length === 0}
               onClick={() => {
                 const rows = selection.rows;
                 setSelection(null);
@@ -1690,14 +1877,26 @@ export function InkLayer({
             aria-label="删除选中的笔迹"
             onClick={() => {
               const rows = selection.rows;
+              const tapes = selection.tapes;
               setSelection(null);
               const gone = new Set(rows.map((r) => r.id));
               updateCache((prev) => prev.filter((s) => !gone.has(s.id)));
-              pushInkOps(key, [{ kind: "remove", strokes: rows }]);
+              if (rows.length > 0) pushInkOps(key, [{ kind: "remove", strokes: rows }]);
               for (const row of rows) {
                 if (row.id.startsWith("temp-")) continue;
                 void api.ink.remove(row.id).catch(() => {
                   void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+                });
+              }
+              // 胶带 caught by the same loop goes with it — one delete, one
+              // undo, whatever mix of marks was selected.
+              for (const t of tapes) {
+                pushInkOps(key, [{ kind: "tape-remove", tape: t }]);
+                qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
+                  (prev ?? []).filter((row) => row.id !== t.id),
+                );
+                void api.tape.remove(t.id).catch(() => {
+                  void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
                 });
               }
             }}

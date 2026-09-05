@@ -237,6 +237,7 @@ def update_tape(
     h: object = ...,
     angle: object = ...,
     revealed: object = ...,
+    points: object = ...,
 ) -> TapeMark:
     """Change any subset of a tape mark's fields — a resize, a straighten, or a
     reveal/cover tap are all just "some of these fields changed", not three
@@ -259,6 +260,12 @@ def update_tape(
         tape.angle = _clean_angle(angle)
     if revealed is not ...:
         tape.revealed = _clean_revealed(revealed)
+    if points is not ...:
+        # `None` clears the path — a freehand strip straightened back into a
+        # plain run — while a list replaces it. A lasso transform rewrites the
+        # path because a moved/scaled/rotated strip is not the same curve in
+        # page space any more.
+        tape.points = None if points is None else dump_path(clean_path(points))
     tape.updated_at = _now()
     session.flush()
     return tape

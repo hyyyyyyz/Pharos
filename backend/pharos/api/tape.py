@@ -106,6 +106,12 @@ class TapeUpdate(BaseModel):
     h: float | None = Field(default=None, allow_inf_nan=False, ge=tape.MIN_SIZE, le=tape.MAX_SIZE)
     angle: float | None = None
     revealed: bool | None = None
+    #: Rewrite (or, as null, clear) a freehand strip's path — what a lasso
+    #: transform has to do, since a moved or rotated strip traces a different
+    #: curve in page space.
+    points: Annotated[list[PathPoint], Field(min_length=2, max_length=tape.MAX_PATH_POINTS)] | None = (
+        None
+    )
 
 
 # ---------------------------------------------------------------- converters
@@ -191,6 +197,11 @@ def update_tape(
         h=payload.h if "h" in sent else ...,
         angle=payload.angle if "angle" in sent else ...,
         revealed=payload.revealed if "revealed" in sent else ...,
+        points=(
+            (None if payload.points is None else [p.model_dump() for p in payload.points])
+            if "points" in sent
+            else ...
+        ),
     )
     return _tape_out(row)
 

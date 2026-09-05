@@ -735,7 +735,17 @@ export const api = {
      *  `...` sentinel in `update_tape`). */
     update: (
       tapeId: string,
-      patch: Partial<{ x: number; y: number; w: number; h: number; angle: number; revealed: boolean }>,
+      patch: Partial<{
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        angle: number;
+        revealed: boolean;
+        /** Rewrites a freehand strip's path — what a lasso transform must
+         *  do, since a moved or rotated strip traces a different curve. */
+        points: { x: number; y: number }[] | null;
+      }>,
     ): Promise<TapeRow> =>
       json<TapeRow>(`/tape/${encodeURIComponent(tapeId)}`, {
         method: "PATCH",

@@ -96,6 +96,9 @@ export function TapeLayer({
   const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const setInkTray = useUI((s) => s.setInkTray);
+  /** Strips the lasso is carrying: painted on the ink layer's wet canvas
+   *  right now, so this layer must not also draw them where they were. */
+  const carried = useUI((s) => s.inkCarried);
   const pushInkOps = useUI((s) => s.pushInkOps);
   /** 胶带 joins the reader's ONE undo stack, keyed the same way the ink
    *  ops are — see `InkOp`'s tape variants. */
@@ -110,7 +113,10 @@ export function TapeLayer({
     queryFn: ({ signal }) => api.tape.list(paperId, kind, signal),
     staleTime: Infinity,
   });
-  const mine = useMemo(() => (all ?? []).filter((t) => t.page === page), [all, page]);
+  const mine = useMemo(
+    () => (all ?? []).filter((t) => t.page === page && !carried.includes(t.id)),
+    [all, page, carried],
+  );
 
   const updateCache = useCallback(
     (updater: (prev: TapeRow[]) => TapeRow[]) => {
