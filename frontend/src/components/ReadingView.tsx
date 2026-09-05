@@ -6,7 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
-import { INK_COLORS } from "../lib/ink";
+import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
 
 /** Eraser presets: radius in CSS pixels. The on-page preview circle and the
  *  erase reach both read this, so the button, the circle and the effect can
@@ -16,9 +16,23 @@ const ERASER_SIZES = [
   { size: 16, label: "中" },
   { size: 28, label: "大" },
 ];
+
+/** Thickness presets shown in the collapsible width panel — a handful of
+ *  common tiers across the 1-100 range, not a value for every integer. */
+const INK_WIDTH_PRESETS = [1, 2, 4, 8, 16, 32];
 import type { DocumentRef } from "../lib/paperChat";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
-import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
+import {
+  DEFAULT_WATER_WIDTH,
+  MAX_INK_WIDTH,
+  MIN_INK_WIDTH,
+  capHistory,
+  isAiOpen,
+  pdfTranslationEnabled,
+  useSession,
+  useUI,
+  type ReadMode,
+} from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
 import { PdfCanvas } from "./PdfCanvas";
@@ -196,6 +210,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const [fitMode, setFitMode] = useState(true);
   const fitModeRef = useRef(fitMode);
   fitModeRef.current = fitMode;
+  // 锁定画布: per-view, like zoom/fitMode — not worth persisting across a
+  // reload, and doing so would risk leaving a reader stuck locked with no
+  // visible reason why the page stopped responding to a finger.
+  const [canvasLocked, setCanvasLocked] = useState(false);
 
   // Fit width on load and whenever the document changes.
   useEffect(() => {
@@ -249,16 +267,38 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const setInkMode = useUI((s) => s.setInkMode);
   const inkColor = useUI((s) => s.inkColor);
   const setInkColor = useUI((s) => s.setInkColor);
+  const inkColorUsage = useUI((s) => s.inkColorUsage);
   const inkWidth = useUI((s) => s.inkWidth);
   const setInkWidth = useUI((s) => s.setInkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const toggleInkFingerDraw = useUI((s) => s.toggleInkFingerDraw);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const setInkEraserSize = useUI((s) => s.setInkEraserSize);
+  const inkEraseMode = useUI((s) => s.inkEraseMode);
+  const setInkEraseMode = useUI((s) => s.setInkEraseMode);
   const inkPast = useUI((s) => s.inkPast);
   const inkFuture = useUI((s) => s.inkFuture);
   const inkOpsKey = useUI((s) => s.inkOpsKey);
   const resetInkOps = useUI((s) => s.resetInkOps);
+
+  // Quick bar: 墨黑 pinned, then the top 3 of the rest by recency-weighted
+  // usage (`rankInkColors`); everything else lives in the 更多颜色 panel.
+  // Recomputed only when usage actually changes — a colour just picked
+  // should not visibly reshuffle the bar the reader is still looking at.
+  const quickColorKeys = useMemo(
+    () => rankInkColors(INK_COLORS, inkColorUsage, Date.now()),
+    [inkColorUsage],
+  );
+  const quickColors = useMemo(
+    () => quickColorKeys.map((key) => INK_COLORS.find((c) => c.key === key)).filter((c) => c != null),
+    [quickColorKeys],
+  );
+  const paletteColors = useMemo(
+    () => INK_COLORS.filter((c) => !quickColorKeys.includes(c.key)),
+    [quickColorKeys],
+  );
+  const [colorPanelOpen, setColorPanelOpen] = useState(false);
+  const [widthPanelOpen, setWidthPanelOpen] = useState(false);
 
   const inkKey = pdfKind ? `${paperId} ${pdfKind}` : "";
 
@@ -273,22 +313,17 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
    * stack is rewritten with the rows the network actually returned, so ids
    * stay live through add→undo→redo→undo chains. A stale id in a delete op
    * would 404 and strand the row as un-undoable.
+   *
+   * The protocol every op follows: `added` rows (and a single add's stroke)
+   * must carry *live* ids whenever the op sits on top of a stack, because the
+   * inverse deletes them; `removed` rows are payloads the inverse re-creates
+   * with fresh ids. That is why an edit undone now stores the freshly
+   * recreated rows under `removed` while `added` keeps only its payloads.
    */
-  const undoInk = useCallback(async () => {
-    if (!pdfKind) return;
-    const s = useUI.getState();
-    if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
-    const op = s.inkPast[s.inkPast.length - 1];
-    useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
-    let inverse: typeof op;
-    if (op.kind === "add") {
-      await api.ink.remove(op.stroke.id).catch(() => undefined);
-      // Redo re-creates from the payload; the id it carries is stale but only
-      // a payload — the redo path replaces it with the fresh row.
-      inverse = { kind: "add", stroke: op.stroke };
-    } else {
+  const recreateStrokes = useCallback(
+    async (strokes: InkStrokeRow[]): Promise<InkStrokeRow[]> => {
       const remade: InkStrokeRow[] = [];
-      for (const stroke of op.strokes) {
+      for (const stroke of strokes) {
         try {
           remade.push(
             await api.ink.create(paperId, {
@@ -303,11 +338,36 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           /* a stroke the server refused is simply lost from the redo */
         }
       }
-      inverse = { kind: "remove", strokes: remade };
+      return remade;
+    },
+    [paperId],
+  );
+
+  const undoInk = useCallback(async () => {
+    if (!pdfKind) return;
+    const s = useUI.getState();
+    if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
+    const op = s.inkPast[s.inkPast.length - 1];
+    useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
+    let inverse: typeof op;
+    if (op.kind === "add") {
+      await api.ink.remove(op.stroke.id).catch(() => undefined);
+      // Redo re-creates from the payload; the id it carries is stale but only
+      // a payload — the redo path replaces it with the fresh row.
+      inverse = { kind: "add", stroke: op.stroke };
+    } else if (op.kind === "remove") {
+      inverse = { kind: "remove", strokes: await recreateStrokes(op.strokes) };
+    } else {
+      for (const row of op.added) await api.ink.remove(row.id).catch(() => undefined);
+      inverse = {
+        kind: "edit",
+        removed: await recreateStrokes(op.removed),
+        added: op.added,
+      };
     }
-    useUI.setState((st) => ({ inkFuture: [...st.inkFuture, inverse] }));
+    useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 
   const redoInk = useCallback(async () => {
     if (!pdfKind) return;
@@ -330,15 +390,25 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
         void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
         return;
       }
-    } else {
+    } else if (op.kind === "remove") {
       for (const stroke of op.strokes) {
         await api.ink.remove(stroke.id).catch(() => undefined);
       }
       reapplied = op;
+    } else {
+      for (const row of op.removed) await api.ink.remove(row.id).catch(() => undefined);
+      const added = await recreateStrokes(op.added);
+      reapplied = { kind: "edit", removed: op.removed, added };
+      if (added.length !== op.added.length) {
+        // Part of the redo was refused: the cache no longer matches this op,
+        // so keep it off the stacks and let the refetch settle the truth.
+        void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
+        return;
+      }
     }
-    useUI.setState((st) => ({ inkPast: [...st.inkPast, reapplied] }));
+    useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
-  }, [inkKey, paperId, pdfKind, qc]);
+  }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 
   /* ----------------------------------------------------------- thumbnails */
   const [thumbs, setThumbs] = useState<(string | null)[]>([]);
@@ -491,9 +561,23 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                 <button className="ph-rv-fit" title="适应宽度" onClick={fitWidth}>
                   适应宽度
                 </button>
+                <button
+                  className={`ph-rv-ink-btn${canvasLocked ? " is-on" : ""}`}
+                  title={
+                    canvasLocked
+                      ? "画布已锁定：双指拖动平移，单指无效，解锁后恢复单指拖动/双指缩放"
+                      : "锁定画布：防止误触缩放和平移"
+                  }
+                  aria-pressed={canvasLocked}
+                  onClick={() => setCanvasLocked((v) => !v)}
+                >
+                  <Icons.lock size={14} />
+                </button>
                 <span className="ph-rv-subbar-sep" />
-                {/* 手写: pen writes, eraser removes whole strokes, and the
-                    pair shares one popover for colour / width / finger-draw.
+                {/* 手写: pen writes, eraser removes (whole strokes or, in
+                    局部, splits them), lasso selects strokes for moving and
+                    recolouring, and the tools share one popover row for the
+                    options that matter to each.
                     Ink mode must be reachable on desktop too — a mouse can
                     draw — but the popover only matters while a tool is on. */}
                 <div className="ph-rv-inkwrap">
@@ -501,9 +585,46 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                     className={`ph-rv-ink-btn${inkMode === "draw" ? " is-on" : ""}`}
                     title="手写笔"
                     aria-pressed={inkMode === "draw"}
-                    onClick={() => setInkMode(inkMode === "draw" ? "off" : "draw")}
+                    onClick={() => {
+                      if (inkMode === "draw") {
+                        setInkMode("off");
+                        return;
+                      }
+                      setInkMode("draw");
+                      // Coming back from 水彩笔: a wash colour/width left on
+                      // would silently paint the NEXT stroke as a wash too
+                      // (routing is by colour token, not by which tool is
+                      // active — see `isWaterColor` in InkLayer) even though
+                      // the pen button is what is lit up.
+                      if (inkColor.startsWith("wc-")) {
+                        setInkColor(INK_COLORS[0].key);
+                        setInkWidth(2);
+                      }
+                    }}
                   >
                     <Icons.pen size={15} />
+                  </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "water" ? " is-on" : ""}`}
+                    title="水彩笔：色底不遮字"
+                    aria-pressed={inkMode === "water"}
+                    onClick={() => {
+                      if (inkMode === "water") {
+                        setInkMode("off");
+                        return;
+                      }
+                      setInkMode("water");
+                      // Entering fresh (not already set up for water) picks a
+                      // sane starting point — a pen colour/width would either
+                      // be invisible as a wash or refused by the backend's
+                      // closed colour set.
+                      if (!inkColor.startsWith("wc-")) {
+                        setInkColor(WATER_COLORS[0].key);
+                        setInkWidth(DEFAULT_WATER_WIDTH);
+                      }
+                    }}
+                  >
+                    <Icons.droplet size={14} />
                   </button>
                   <button
                     className={`ph-rv-ink-btn${inkMode === "erase" ? " is-on" : ""}`}
@@ -513,18 +634,144 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.eraser size={15} />
                   </button>
-                  {/* Popover carries the PEN's options only: colour and width
-                      are meaningless to the eraser, and showing them while it
-                      is active made the tool look broken. */}
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "select" ? " is-on" : ""}`}
+                    title="套索选择"
+                    aria-pressed={inkMode === "select"}
+                    onClick={() => setInkMode(inkMode === "select" ? "off" : "select")}
+                  >
+                    <Icons.lasso />
+                  </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "laser" ? " is-on" : ""}`}
+                    title="激光笔：指一下，自动消失"
+                    aria-pressed={inkMode === "laser"}
+                    onClick={() => setInkMode(inkMode === "laser" ? "off" : "laser")}
+                  >
+                    <Icons.laser />
+                  </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "style" ? " is-on" : ""}`}
+                    title="改笔迹粗细与颜色：笔碰到已写的字即可改样式"
+                    aria-pressed={inkMode === "style"}
+                    onClick={() => setInkMode(inkMode === "style" ? "off" : "style")}
+                  >
+                    <Icons.styleBrush />
+                  </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "tape" ? " is-on" : ""}`}
+                    title="胶带：拖出一条，盖住/显示切换靠点它"
+                    aria-pressed={inkMode === "tape"}
+                    onClick={() => setInkMode(inkMode === "tape" ? "off" : "tape")}
+                  >
+                    <Icons.tape />
+                  </button>
                   {/* Each tool gets its own popover: the pen carries colour,
                       width and the finger-draw switch; the eraser carries its
-                      reach — a size the preview circle then mirrors on the
-                      page. Colours are meaningless to an eraser, which is why
-                      the two never mix. */}
+                      reach and its 整笔/局部 manner; the lasso explains the
+                      moves it enables. Colours are meaningless to an eraser,
+                      which is why the three never mix. */}
                   {inkMode === "draw" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="手写工具">
                       <div className="ph-rv-ink-row">
-                        {INK_COLORS.map((c) => (
+                        {/* Quick pick: 墨黑 pinned, then the top 3 by recent
+                            usage — fast reach for the colours actually in
+                            play today. The rest live behind 更多颜色. */}
+                        {quickColors.map((c) => (
+                          <button
+                            key={c.key}
+                            className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                            style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                            title={c.label}
+                            aria-label={c.label}
+                            aria-pressed={inkColor === c.key}
+                            onClick={() => setInkColor(c.key)}
+                          />
+                        ))}
+                        <button
+                          className={`ph-rv-ink-more-btn${colorPanelOpen ? " is-on" : ""}`}
+                          title="调色盘：更多颜色"
+                          aria-label="更多颜色"
+                          aria-pressed={colorPanelOpen}
+                          onClick={() => setColorPanelOpen((v) => !v)}
+                        >
+                          <Icons.palette size={14} />
+                        </button>
+                        <span className="ph-rv-ink-sep" />
+                        <button
+                          className={`ph-rv-ink-more-btn${widthPanelOpen ? " is-on" : ""}`}
+                          title={`笔宽 ${inkWidth}`}
+                          aria-label="笔画粗细"
+                          aria-pressed={widthPanelOpen}
+                          onClick={() => setWidthPanelOpen((v) => !v)}
+                        >
+                          <span
+                            className="ph-rv-ink-width-dot"
+                            style={{ width: 3 + Math.min(inkWidth, 20) * 0.6, height: 3 + Math.min(inkWidth, 20) * 0.6 }}
+                          />
+                        </button>
+                        <span className="ph-rv-ink-sep" />
+                        <button
+                          className={`ph-rv-ink-finger${inkFingerDraw ? " is-on" : ""}`}
+                          title="手指书写（关闭时手指用于平移和防误触）"
+                          aria-pressed={inkFingerDraw}
+                          onClick={toggleInkFingerDraw}
+                        >
+                          手指书写
+                        </button>
+                      </div>
+                      {colorPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="调色盘">
+                          {paletteColors.map((c) => (
+                            <button
+                              key={c.key}
+                              className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                              style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                              title={c.label}
+                              aria-label={c.label}
+                              aria-pressed={inkColor === c.key}
+                              onClick={() => setInkColor(c.key)}
+                            />
+                          ))}
+                          {paletteColors.length === 0 && (
+                            <span className="ph-rv-ink-note">已用完整个调色盘</span>
+                          )}
+                        </div>
+                      )}
+                      {widthPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="笔画粗细">
+                          <input
+                            type="range"
+                            className="ph-rv-ink-width-slider"
+                            min={MIN_INK_WIDTH}
+                            max={MAX_INK_WIDTH}
+                            step={1}
+                            value={inkWidth}
+                            aria-label="笔画粗细"
+                            onChange={(e) => setInkWidth(Number(e.target.value))}
+                          />
+                          <span className="ph-rv-ink-width-val">{Math.round(inkWidth)}</span>
+                          <span className="ph-rv-ink-sep" />
+                          {INK_WIDTH_PRESETS.map((w) => (
+                            <button
+                              key={w}
+                              className={`ph-rv-ink-width${inkWidth === w ? " is-on" : ""}`}
+                              title={`笔宽 ${w}`}
+                              aria-label={`笔宽 ${w}`}
+                              aria-pressed={inkWidth === w}
+                              onClick={() => setInkWidth(w)}
+                            >
+                              <span style={{ width: 3 + Math.min(w, 20) * 1.1, height: 3 + Math.min(w, 20) * 1.1 }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {inkMode === "water" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="水彩笔工具">
+                      <div className="ph-rv-ink-row">
+                        {WATER_COLORS.map((c) => (
                           <button
                             key={c.key}
                             className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
@@ -536,33 +783,57 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           />
                         ))}
                         <span className="ph-rv-ink-sep" />
-                        {[1.5, 2.5, 4].map((w) => (
-                          <button
-                            key={w}
-                            className={`ph-rv-ink-width${inkWidth === w ? " is-on" : ""}`}
-                            title={`笔宽 ${w}`}
-                            aria-label={`笔宽 ${w}`}
-                            aria-pressed={inkWidth === w}
-                            onClick={() => setInkWidth(w)}
-                          >
-                            <span style={{ width: 3 + w * 1.6, height: 3 + w * 1.6 }} />
-                          </button>
-                        ))}
-                        <span className="ph-rv-ink-sep" />
                         <button
-                          className={`ph-rv-ink-finger${inkFingerDraw ? " is-on" : ""}`}
-                          title="手指书写（关闭时手指用于平移和防误触）"
-                          aria-pressed={inkFingerDraw}
-                          onClick={toggleInkFingerDraw}
+                          className={`ph-rv-ink-more-btn${widthPanelOpen ? " is-on" : ""}`}
+                          title={`笔宽 ${inkWidth}`}
+                          aria-label="笔画粗细"
+                          aria-pressed={widthPanelOpen}
+                          onClick={() => setWidthPanelOpen((v) => !v)}
                         >
-                          手指书写
+                          <span
+                            className="ph-rv-ink-width-dot"
+                            style={{ width: 3 + Math.min(inkWidth, 20) * 0.6, height: 3 + Math.min(inkWidth, 20) * 0.6 }}
+                          />
                         </button>
+                        <span className="ph-rv-ink-note">色底不遮字，可与钢笔叠加</span>
                       </div>
+                      {widthPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="笔画粗细">
+                          <input
+                            type="range"
+                            className="ph-rv-ink-width-slider"
+                            min={MIN_INK_WIDTH}
+                            max={MAX_INK_WIDTH}
+                            step={1}
+                            value={inkWidth}
+                            aria-label="笔画粗细"
+                            onChange={(e) => setInkWidth(Number(e.target.value))}
+                          />
+                          <span className="ph-rv-ink-width-val">{Math.round(inkWidth)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {inkMode === "erase" && (
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="橡皮工具">
                       <div className="ph-rv-ink-row">
+                        <div className="ph-rv-ink-seg">
+                          <button
+                            className={`ph-rv-ink-seg-btn${inkEraseMode === "stroke" ? " is-on" : ""}`}
+                            aria-pressed={inkEraseMode === "stroke"}
+                            onClick={() => setInkEraseMode("stroke")}
+                          >
+                            整笔
+                          </button>
+                          <button
+                            className={`ph-rv-ink-seg-btn${inkEraseMode === "pixel" ? " is-on" : ""}`}
+                            aria-pressed={inkEraseMode === "pixel"}
+                            onClick={() => setInkEraseMode("pixel")}
+                          >
+                            局部
+                          </button>
+                        </div>
+                        <span className="ph-rv-ink-sep" />
                         {ERASER_SIZES.map((s) => (
                           <button
                             key={s.size}
@@ -578,8 +849,104 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           </button>
                         ))}
                         <span className="ph-rv-ink-sep" />
-                        <span className="ph-rv-ink-note">拖动擦除整笔 · 圈内即擦除范围</span>
+                        <span className="ph-rv-ink-note">
+                          {inkEraseMode === "stroke"
+                            ? "拖动擦除整笔 · 圈内即擦除范围"
+                            : "擦过处笔迹断开 · 可撤销"}
+                        </span>
                       </div>
+                    </div>
+                  )}
+                  {inkMode === "select" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="套索工具">
+                      <div className="ph-rv-ink-row">
+                        <span className="ph-rv-ink-note">
+                          圈选笔迹：拖动移动 · 换色 · 删除，不碰论文文字
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {inkMode === "style" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="改样式工具">
+                      <div className="ph-rv-ink-row">
+                        {quickColors.map((c) => (
+                          <button
+                            key={c.key}
+                            className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                            style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                            title={c.label}
+                            aria-label={c.label}
+                            aria-pressed={inkColor === c.key}
+                            onClick={() => setInkColor(c.key)}
+                          />
+                        ))}
+                        <button
+                          className={`ph-rv-ink-more-btn${colorPanelOpen ? " is-on" : ""}`}
+                          title="调色盘：更多颜色"
+                          aria-label="更多颜色"
+                          aria-pressed={colorPanelOpen}
+                          onClick={() => setColorPanelOpen((v) => !v)}
+                        >
+                          <Icons.palette size={14} />
+                        </button>
+                        <span className="ph-rv-ink-sep" />
+                        <button
+                          className={`ph-rv-ink-more-btn${widthPanelOpen ? " is-on" : ""}`}
+                          title={`笔宽 ${inkWidth}`}
+                          aria-label="笔画粗细"
+                          aria-pressed={widthPanelOpen}
+                          onClick={() => setWidthPanelOpen((v) => !v)}
+                        >
+                          <span
+                            className="ph-rv-ink-width-dot"
+                            style={{ width: 3 + Math.min(inkWidth, 20) * 0.6, height: 3 + Math.min(inkWidth, 20) * 0.6 }}
+                          />
+                        </button>
+                        <span className="ph-rv-ink-note">笔碰到字，即改为当前颜色/粗细</span>
+                      </div>
+                      {colorPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="调色盘">
+                          {paletteColors.map((c) => (
+                            <button
+                              key={c.key}
+                              className={`ph-rv-ink-color${inkColor === c.key ? " is-on" : ""}`}
+                              style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                              title={c.label}
+                              aria-label={c.label}
+                              aria-pressed={inkColor === c.key}
+                              onClick={() => setInkColor(c.key)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {widthPanelOpen && (
+                        <div className="ph-rv-ink-row ph-rv-ink-row2" role="group" aria-label="笔画粗细">
+                          <input
+                            type="range"
+                            className="ph-rv-ink-width-slider"
+                            min={MIN_INK_WIDTH}
+                            max={MAX_INK_WIDTH}
+                            step={1}
+                            value={inkWidth}
+                            aria-label="笔画粗细"
+                            onChange={(e) => setInkWidth(Number(e.target.value))}
+                          />
+                          <span className="ph-rv-ink-width-val">{Math.round(inkWidth)}</span>
+                          <span className="ph-rv-ink-sep" />
+                          {INK_WIDTH_PRESETS.map((w) => (
+                            <button
+                              key={w}
+                              className={`ph-rv-ink-width${inkWidth === w ? " is-on" : ""}`}
+                              title={`笔宽 ${w}`}
+                              aria-label={`笔宽 ${w}`}
+                              aria-pressed={inkWidth === w}
+                              onClick={() => setInkWidth(w)}
+                            >
+                              <span style={{ width: 3 + Math.min(w, 20) * 1.1, height: 3 + Math.min(w, 20) * 1.1 }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -617,6 +984,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   jumpTo={jumpTo}
                   onJumped={onJumped}
                   onCurrentPage={onCurrentPage}
+                  locked={canvasLocked}
                 />
               )}
             </div>

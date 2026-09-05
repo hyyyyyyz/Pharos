@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
 import type { AuthUser, InkStrokeRow, ZoteroOAuthResult } from "./api/types";
+import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "runs" | "admin";
@@ -14,19 +15,61 @@ export type SortCol = "title" | "authors" | "year" | "pages" | "status";
 export type SortDir = "asc" | "desc";
 
 /** The reader's stylus tools. Off = the ink layer paints but never captures. */
-export type InkMode = "off" | "draw" | "erase";
+/** "water" and "laser" both write with the same gesture code as "draw" —
+ *  each is a colour/rendering choice (see `InkLayer`'s `isWaterColor`
+ *  routing, and its laser-mode branch in `paintWet`), not a different
+ *  interaction. A laser stroke is never sent to the backend at all: it
+ *  fades on the wet canvas and is gone, nothing to undo or persist. */
+/** "tape" is `TapeLayer`'s own tool, not `InkLayer`'s — `InkLayer` treats it
+ *  exactly like "off" (see its gesture effect's early return) so nothing
+ *  draws ink while a strip is being placed. */
+export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "select" | "tape";
 
 /**
  * One undoable ink operation, for the document-level undo stack.
  *
  * "add" is one finished stroke; "remove" is one eraser gesture, which may have
- * taken several strokes at once and must come back together. Redo of a removal
- * re-creates rows with fresh server ids, so the op that moves to the future
- * stack is rebuilt by the caller — see `undoInk` in ReadingView.
+ * taken several strokes at once and must come back together. "edit" replaces
+ * whole rows (a lasso move/recolour, or a partial erase that splits a stroke):
+ * `added` rows exist after the op, `removed` rows don't — the inverse flips
+ * the sides. In every op, `added` carries the ids that must be *live* for the
+ * next undo to delete; `removed` is only ever a payload to recreate. Redo of
+ * an edit re-creates from payloads and replaces `added` with fresh rows —
+ * the same protocol "add" already follows.
  */
 export type InkOp =
   | { kind: "add"; stroke: InkStrokeRow }
-  | { kind: "remove"; strokes: InkStrokeRow[] };
+  | { kind: "remove"; strokes: InkStrokeRow[] }
+  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] };
+
+/** Undo/redo ops carry full stroke payloads (points and all), so an
+ *  all-day note-taking session cannot be let grow the stack forever — the
+ *  oldest ops fall off once the cap is hit, same as every other note app's
+ *  bounded undo. Redo is capped identically so undo→redo→undo… cannot
+ *  regrow past it either. */
+export const MAX_INK_HISTORY = 200;
+
+/** Stroke width bounds, in PDF points at scale 1 — mirrors the backend's
+ *  `MIN_WIDTH`/`MAX_WIDTH` (`services/ink.py`) exactly, so a value the
+ *  slider allows is never one the server refuses. */
+export const MIN_INK_WIDTH = 1;
+export const MAX_INK_WIDTH = 100;
+
+export function clampInkWidth(width: number): number {
+  if (!Number.isFinite(width)) return MIN_INK_WIDTH;
+  return Math.min(MAX_INK_WIDTH, Math.max(MIN_INK_WIDTH, width));
+}
+
+/** A highlighter needs breadth, not a pen's line — the width switching into
+ *  水彩笔 mode suggests, if the reader has not already picked one of their own. */
+export const DEFAULT_WATER_WIDTH = 14;
+
+export function capHistory<T>(ops: T[]): T[] {
+  return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
+}
+
+/** How the eraser takes ink away. */
+export type EraseMode = "stroke" | "pixel";
 
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
@@ -108,6 +151,21 @@ function initialRailWidth(): number {
   return Number.isFinite(parsed) ? clampRailWidth(parsed) : RAIL_DEFAULT_WIDTH;
 }
 
+const INK_COLOR_USAGE_KEY = "ph-ink-color-usage-v1";
+
+function initialInkColorUsage(): Record<string, InkColorUsage> {
+  const raw = ls(INK_COLOR_USAGE_KEY);
+  if (raw === null) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed !== null && typeof parsed === "object"
+      ? (parsed as Record<string, InkColorUsage>)
+      : {};
+  } catch {
+    return {}; // corrupt value from a previous build — start clean, not crash
+  }
+}
+
 interface UIState {
   /* ---------------------------------------------------------- appearance */
   /** What the user chose — the value the 主题 picker highlights. */
@@ -187,6 +245,16 @@ interface UIState {
   winW: number;
   setWinW: (w: number) => void;
   toggleAI: () => void;
+  /** Open the AI panel for real (a selection asking for an explanation must
+   *  open it, not flip it). */
+  openAI: () => void;
+  /**
+   * A question queued for the AI panel by somewhere else in the reader (a
+   * selection's 问AI button). The panel consumes it — sends, then clears —
+   * so the sender never needs to know whether the panel is mounted yet.
+   */
+  aiPrompt: string | null;
+  setAiPrompt: (text: string | null) => void;
   /** Live `(pointer: coarse)` match — the tablet/desktop fork for layouts. */
   pointerCoarse: boolean;
 
@@ -198,6 +266,11 @@ interface UIState {
   /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
   inkColor: string;
   setInkColor: (c: string) => void;
+  /** Pick count + last-picked time per colour token, for the quick-bar
+   *  ranking (`rankInkColors`) — how the four-swatch bar decides which three
+   *  non-black colours earn a slot today. Persisted so the ranking survives
+   *  a reload instead of resetting to the fixed order every session. */
+  inkColorUsage: Record<string, InkColorUsage>;
   /** Stroke width in PDF points at scale 1 — the 1× value, not screen px. */
   inkWidth: number;
   setInkWidth: (w: number) => void;
@@ -207,6 +280,11 @@ interface UIState {
   /** Eraser radius in CSS pixels — what the on-page preview circle shows. */
   inkEraserSize: number;
   setInkEraserSize: (s: number) => void;
+  /** 整笔 = remove whole strokes (OneNote); 局部 = split strokes where the
+   *  eraser passes (real erasing). Default 整笔: it is what shipped first and
+   *  what a pen's barrel button should keep doing regardless of this pick. */
+  inkEraseMode: EraseMode;
+  setInkEraseMode: (m: EraseMode) => void;
   /** Undo (past) and redo (future) stacks, oldest operation first. */
   inkPast: InkOp[];
   inkFuture: InkOp[];
@@ -216,6 +294,12 @@ interface UIState {
   pushInkOps: (key: string, ops: InkOp[]) => void;
   /** Drop the stacks on document switch or when the cache is invalidated away. */
   resetInkOps: () => void;
+
+  /** 胶带: size a NEW strip's thickness from the text line under the drag,
+   *  rather than a fixed default. A global preference, not per-strip — it
+   *  only ever affects strips placed while it is on. */
+  tapeAutoThickness: boolean;
+  toggleTapeAutoThickness: () => void;
 
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
@@ -382,6 +466,9 @@ export const useUI = create<UIState>((set) => ({
   winW: typeof window !== "undefined" ? window.innerWidth : 1440,
   setWinW: (winW) => set({ winW }),
   toggleAI: () => set((s) => ({ aiOpenPref: !isAiOpen(s) })),
+  openAI: () => set({ aiOpenPref: true }),
+  aiPrompt: null,
+  setAiPrompt: (aiPrompt) => set({ aiPrompt }),
   pointerCoarse: hasCoarsePointer(),
 
   inkMode: "off",
@@ -389,22 +476,39 @@ export const useUI = create<UIState>((set) => ({
   // draw when the tool is on — defaulting to erase would be a trap.
   setInkMode: (inkMode) => set({ inkMode }),
   inkColor: "ink",
-  setInkColor: (inkColor) => set({ inkColor }),
+  // Picking a colour IS the usage signal the quick-bar ranking runs on — no
+  // separate "log this" call for every caller to remember to make.
+  setInkColor: (inkColor) =>
+    set((s) => {
+      const prior = s.inkColorUsage[inkColor];
+      const inkColorUsage = {
+        ...s.inkColorUsage,
+        [inkColor]: { count: (prior?.count ?? 0) + 1, last: Date.now() },
+      };
+      save(INK_COLOR_USAGE_KEY, JSON.stringify(inkColorUsage));
+      return { inkColor, inkColorUsage };
+    }),
+  inkColorUsage: initialInkColorUsage(),
   inkWidth: 2,
-  setInkWidth: (inkWidth) => set({ inkWidth }),
+  setInkWidth: (inkWidth) => set({ inkWidth: clampInkWidth(inkWidth) }),
   inkFingerDraw: false,
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
   inkEraserSize: 16,
   setInkEraserSize: (inkEraserSize) => set({ inkEraserSize }),
+  inkEraseMode: "stroke",
+  setInkEraseMode: (inkEraseMode) => set({ inkEraseMode }),
   inkPast: [],
   inkFuture: [],
   inkOpsKey: "",
   pushInkOps: (inkOpsKey, ops) =>
     set((s) => {
-      if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: ops, inkFuture: [] };
-      return { inkPast: [...s.inkPast, ...ops], inkFuture: [] };
+      if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: capHistory(ops), inkFuture: [] };
+      return { inkPast: capHistory([...s.inkPast, ...ops]), inkFuture: [] };
     }),
   resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
+
+  tapeAutoThickness: false,
+  toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
 
   settingsOpen: false,
   settingsTab: "account",

@@ -49,6 +49,15 @@ export const Icons = {
   eraser: make(["M3.5 13.5 10 7l4.5 4.5-6.5 6.5H5.5z", "M8 9l4.5 4.5"]),
   undo: make(["M6 5.5h6.5a4 4 0 0 1 0 8H5.5", "M8 3 5.5 5.5 8 8"]),
   redo: make(["M14 5.5H7.5a4 4 0 0 0 0 8H14.5", "M12 3l2.5 2.5L12 8"]),
+  // 套索: a loop of rope with its tail crossing — the gesture the tool performs.
+  lasso: make(
+    [
+      "M13.9 5.1c2.9 1 4.4 3.2 3.6 5.5-.8 2.2-3.7 3.7-6.9 3.7-1.2 0-2.4-.2-3.4-.5",
+      "M6.6 14.9c-2.6-1-4.3-3-2.2-5.6C6.5 6.6 10 5 10.6 4.9",
+      "M6.7 14.9c-.5.2-.9.6-.9 1.1 0 .8 1 1.2 1.9 1.2",
+    ],
+    { size: 15, sw: 1.4 },
+  ),
   // 每日论文: a dated sheet with two lines of text — a digest that arrives daily.
   daily: make(
     [
@@ -74,6 +83,30 @@ export const Icons = {
   star: make(["M10 3.6l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L4.2 7.8l4-.6z"], { size: 15, sw: 1.4 }),
   inbox: make(["M3.5 5.5h11v9h-11z", "M3.5 11h3.2l1 1.6h4.6l1-1.6h1.7"], { size: 15, sw: 1.4 }),
   trash: make(["M4.5 6h10", "M8 6V4.6h3V6", "M6 6l.7 8.4h6.1L13.5 6"], { size: 15, sw: 1.4 }),
+  lock: make(
+    [{ r0: { x: 5, y: 9.5, width: 10, height: 7.5, rx: 1.4 } }, "M7 9.5V7a3 3 0 0 1 6 0v2.5"],
+    { size: 15, sw: 1.4 },
+  ),
+  droplet: make(
+    ["M10 3.2c2.6 3.4 4.4 6 4.4 8.2a4.4 4.4 0 1 1-8.8 0c0-2.2 1.8-4.8 4.4-8.2z"],
+    { size: 15, sw: 1.4 },
+  ),
+  laser: make(
+    [{ c: true, cx: 10, cy: 10, r: 2.4, fill: "currentColor" }, "M10 3.5v2.4", "M10 14.1v2.4", "M3.5 10h2.4", "M14.1 10h2.4"],
+    { size: 15, sw: 1.6 },
+  ),
+  styleBrush: make(
+    ["M14.5 3.5 7 11l1.4 1.4L16 5z", "M8.4 12.4c.6 1.8-.2 3.2-2.9 3.6 1.8-.6 1.1-1.8.5-2.6z"],
+    { size: 15, sw: 1.4 },
+  ),
+  tape: make(
+    [
+      { r0: { x: 3, y: 7.5, width: 14, height: 5, rx: 1 } },
+      "M3 9.2h14",
+      "M3 10.8h14",
+    ],
+    { size: 15, sw: 1.2 },
+  ),
   cloud: make(["M6 13.5a3 3 0 0 1 .3-6 4 4 0 0 1 7.6 1.1A2.7 2.7 0 0 1 14 13.5z"], { size: 13, sw: 1.4 }),
   sync: make(["M14.5 6.5A5 5 0 0 0 5.3 8", "M5.5 13.5A5 5 0 0 0 14.7 12", "M14.5 4.5v2h-2", "M5.5 15.5v-2h2"], { size: 13, sw: 1.4 }),
   link: make(
@@ -128,4 +161,17 @@ export const Icons = {
   ),
   user: make([{ c: true, cx: 10, cy: 7.5, r: 3 }, "M4.8 16.2a5.2 5.2 0 0 1 10.4 0"], { size: 17 }),
   check: make(["M5 10.5l3.2 3.4 6.8-7.4"], { size: 16, sw: 1.7 }),
+  eye: make(
+    ["M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10s-3 5.5-7.5 5.5S2.5 10 2.5 10z", { c: true, cx: 10, cy: 10, r: 2.2 }],
+    { size: 15, sw: 1.4 },
+  ),
+  eyeOff: make(
+    [
+      "M2.5 10s3-5.5 7.5-5.5c1.4 0 2.7.4 3.8 1",
+      "M17.5 10s-1.1 2-3 3.5",
+      "M7 15c.9.3 1.9.5 3 .5 4.5 0 7.5-5.5 7.5-5.5",
+      "M3 3l14 14",
+    ],
+    { size: 15, sw: 1.4 },
+  ),
 };

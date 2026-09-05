@@ -120,6 +120,8 @@
   }
   .ph-rv-fit {
     height: 30px;
+    white-space: nowrap;
+    flex: none;
   }
   .ph-outline {
     width: 200px;
@@ -132,7 +134,7 @@
     height: 28px;
   }
 
-  /* stylus ink tools: the pen/eraser/undo/redo buttons and their popover */
+  /* stylus ink tools: the pen/eraser/lasso buttons and their popover */
   .ph-rv-ink-btn {
     width: 32px;
     height: 32px;
@@ -148,6 +150,37 @@
   .ph-rv-ink-finger {
     height: 30px;
     font-size: 12px;
+  }
+  .ph-rv-ink-seg-btn {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  /* the lasso selection bar follows the caught strokes */
+  .ph-ink-sel-color {
+    width: 24px;
+    height: 24px;
+  }
+  .ph-ink-sel-btn {
+    width: 30px;
+    height: 30px;
+  }
+  /* highlight toolbar: swatches and buttons get thumb-sized */
+  .ph-hl-sw {
+    width: 26px;
+    height: 26px;
+  }
+  .ph-hl-btn {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+  /* the back pill is already 30px; a touch device gets a little more */
+  .ph-pos-back {
+    height: 38px;
+    padding: 0 16px;
+    font-size: 13px;
+    bottom: max(14px, env(safe-area-inset-bottom));
   }
   /* The hint names mouse-only gestures (Ctrl+滚轮); on a digitiser it is
      noise competing for subbar space with the ink tools. */
@@ -175,5 +208,41 @@
   }
   .ph-rv-spacer {
     display: none;
+  }
+}
+
+/* ------------------------------------------------------ AI as a drawer */
+/*
+   On a narrow touch screen the AI panel as a flex sibling would tax every
+   reading moment it was open: the PDF column drops to a sliver and the
+   reading position scrambles under the reflow. As an overlay drawer it
+   borrows the space for the length of a question and gives it back whole —
+   the reader underneath is never re-laid-out, so the page, the zoom and the
+   scroll position are exactly where the drawer found them.
+
+   Landscape tablets (>=1040px) keep the side-by-side layout: there is room
+   for both, and reading with a running conversation is the point of the
+   wide screen.
+*/
+@media (max-width: 1040px) and (pointer: coarse) {
+  .ph-rv {
+    position: relative;
+  }
+  .ph-ai {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(88vw, 430px);
+    min-width: 0;
+    z-index: 40;
+    border-left: 1px solid var(--c-bd, #e6e8ec);
+    box-shadow: -12px 0 32px rgba(20, 24, 32, 0.16);
+  }
+  /* When the drawer borrows the stage, the collapse button in its header is
+     the way back — make it findable with a thumb. */
+  .ph-ai-collapse {
+    width: 34px;
+    height: 34px;
   }
 }

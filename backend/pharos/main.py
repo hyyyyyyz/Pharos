@@ -29,6 +29,7 @@ from pharos.api import (
     papers,
     projects,
     search,
+    tape,
     updates,
     zotero,
 )
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(organise.router)
     app.include_router(annotate.router)
     app.include_router(ink.router)
+    app.include_router(tape.router)
     app.include_router(projects.router)
     app.include_router(discovery.router)
     app.include_router(evidence.router)

@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INK_COLORS,
+  WATER_COLORS,
   distToSegment,
+  isWaterColor,
+  pointInPolygon,
   pointToCss,
   pointToPdf,
+  rankInkColors,
+  rotatePoints,
   sampleWidth,
+  scalePoints,
+  splitStroke,
+  strokeBounds,
+  strokeCaughtBy,
   strokeNear,
   strokeSegments,
+  translatePoints,
+  unionBounds,
 } from "./ink";
 
 const PAGE_H = 792; // US Letter, in points
@@ -133,5 +145,248 @@ describe("distToSegment", () => {
     expect(distToSegment(5, 5, 0, 0, 10, 0)).toBe(5);
     expect(distToSegment(-5, 0, 0, 0, 10, 0)).toBe(5); // clamped to the end
     expect(distToSegment(15, 0, 0, 0, 10, 0)).toBe(5);
+  });
+});
+
+/* ----------------------------------------------------------- lasso select */
+
+describe("pointInPolygon", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+
+  it("accepts points inside and rejects points outside", () => {
+    expect(pointInPolygon(5, 5, square)).toBe(true);
+    expect(pointInPolygon(15, 5, square)).toBe(false);
+    expect(pointInPolygon(5, -5, square)).toBe(false);
+  });
+
+  it("closes the loop implicitly (last vertex back to first)", () => {
+    // Left edge runs from (0,10) to (0,0): a point just left of it is outside
+    // even though the pair (i,j) that straddles it is the implicit closing one.
+    expect(pointInPolygon(-1, 5, square)).toBe(false);
+    expect(pointInPolygon(0.5, 5, square)).toBe(true);
+  });
+
+  it("is sane on a concave loop", () => {
+    // A square whose top edge dips down to (5,4): the wedge between the two
+    // slanted edges is outside, the strip beside it is inside.
+    const notch = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 5, y: 4 },
+      { x: 0, y: 10 },
+    ];
+    expect(pointInPolygon(0.5, 8, notch)).toBe(true); // beside the wedge
+    expect(pointInPolygon(5, 8, notch)).toBe(false); // inside the wedge cut
+    expect(pointInPolygon(5, 2, notch)).toBe(true); // below the notch tip
+  });
+
+  it("degenerate loops contain nothing", () => {
+    expect(pointInPolygon(1, 1, [])).toBe(false);
+    expect(pointInPolygon(1, 1, [{ x: 0, y: 0 }, { x: 2, y: 2 }])).toBe(false);
+  });
+});
+
+describe("strokeCaughtBy (the lasso's stroke test)", () => {
+  const line = [
+    { x: 0, y: 50, p: 0.5 },
+    { x: 100, y: 50, p: 0.5 },
+  ];
+  // A loop that crosses the line's middle but holds no endpoint.
+  const crossing = [
+    { x: 40, y: 40 },
+    { x: 60, y: 40 },
+    { x: 60, y: 60 },
+    { x: 40, y: 60 },
+  ];
+
+  it("catches a stroke the loop merely crosses", () => {
+    expect(strokeCaughtBy(line, crossing)).toBe(true);
+  });
+
+  it("misses strokes clear of the loop", () => {
+    const far = line.map((p) => ({ ...p, y: 200 }));
+    expect(strokeCaughtBy(far, crossing)).toBe(false);
+  });
+
+  it("requires an actual loop", () => {
+    expect(strokeCaughtBy(line, crossing.slice(0, 2))).toBe(false);
+  });
+});
+
+describe("translatePoints", () => {
+  it("shifts geometry and preserves pressure", () => {
+    const out = translatePoints(
+      [
+        { x: 1, y: 2, p: 0.3 },
+        { x: 3, y: 4, p: 0.9 },
+      ],
+      10,
+      -5,
+    );
+    expect(out[0]).toEqual({ x: 11, y: -3, p: 0.3 });
+    expect(out[1]).toEqual({ x: 13, y: -1, p: 0.9 });
+  });
+});
+
+describe("scalePoints (the lasso resize handle)", () => {
+  it("doubles distance from the pivot in both axes, pressure untouched", () => {
+    const out = scalePoints([{ x: 12, y: 14, p: 0.4 }], 10, 10, 2);
+    expect(out[0]).toEqual({ x: 14, y: 18, p: 0.4 });
+  });
+
+  it("leaves the pivot itself fixed under any factor", () => {
+    const out = scalePoints([{ x: 10, y: 10, p: 0.5 }], 10, 10, 3);
+    expect(out[0]).toEqual({ x: 10, y: 10, p: 0.5 });
+  });
+
+  it("floors a collapsing or inverting factor rather than trust a live drag", () => {
+    const out = scalePoints([{ x: 12, y: 10, p: 0.5 }], 10, 10, -4);
+    // factor floored to 0.05: 10 + (12-10)*0.05 = 10.1, never negative/flipped.
+    expect(out[0]!.x).toBeCloseTo(10.1);
+  });
+});
+
+describe("rotatePoints (the lasso rotate handle)", () => {
+  it("rotates a point a quarter turn about the pivot", () => {
+    const out = rotatePoints([{ x: 11, y: 10, p: 0.5 }], 10, 10, Math.PI / 2);
+    expect(out[0]!.x).toBeCloseTo(10);
+    expect(out[0]!.y).toBeCloseTo(11);
+  });
+
+  it("leaves the pivot itself fixed", () => {
+    const out = rotatePoints([{ x: 5, y: 5, p: 0.5 }], 5, 5, 1.234);
+    expect(out[0]!.x).toBeCloseTo(5);
+    expect(out[0]!.y).toBeCloseTo(5);
+  });
+
+  it("a full turn returns to the start", () => {
+    const out = rotatePoints([{ x: 3, y: 7, p: 0.5 }], 1, 1, Math.PI * 2);
+    expect(out[0]!.x).toBeCloseTo(3);
+    expect(out[0]!.y).toBeCloseTo(7);
+  });
+});
+
+describe("isWaterColor (the pen/watercolour rendering split)", () => {
+  it("recognises every WATER_COLORS token", () => {
+    for (const c of WATER_COLORS) expect(isWaterColor(c.key)).toBe(true);
+  });
+
+  it("rejects every regular INK_COLORS token", () => {
+    for (const c of INK_COLORS) expect(isWaterColor(c.key)).toBe(false);
+  });
+});
+
+describe("unionBounds (the multi-stroke selection box)", () => {
+  it("wraps several boxes in the smallest box containing them all", () => {
+    const b = unionBounds([
+      { x0: 0, y0: 0, x1: 5, y1: 5 },
+      { x0: 3, y0: -2, x1: 8, y1: 4 },
+    ]);
+    expect(b).toEqual({ x0: 0, y0: -2, x1: 8, y1: 5 });
+  });
+
+  it("returns a zero box for an empty selection rather than +/-Infinity", () => {
+    expect(unionBounds([])).toEqual({ x0: 0, y0: 0, x1: 0, y1: 0 });
+  });
+});
+
+describe("splitStroke (the partial eraser)", () => {
+  const line = (n: number): { x: number; y: number; p: number }[] =>
+    Array.from({ length: n }, (_, i) => ({ x: i * 10, y: 0, p: 0.5 }));
+
+  it("cuts the middle out and keeps two parts", () => {
+    const parts = splitStroke(line(11), 2, 50, 0, 5);
+    expect(parts.length).toBe(2);
+    expect(parts[0]!.length).toBe(5); // samples 0..4 (x=0..40)
+    expect(parts[0]![4]!.x).toBe(40);
+    expect(parts[1]![0]!.x).toBe(60);
+    expect(parts[1]!.length).toBe(5);
+  });
+
+  it("clears the stroke entirely when the reach covers it", () => {
+    expect(splitStroke(line(3), 2, 10, 0, 100)).toEqual([]);
+  });
+
+  it("leaves an untouched stroke as a single part with identical samples", () => {
+    const pts = line(5);
+    const parts = splitStroke(pts, 2, 500, 500, 4);
+    expect(parts.length).toBe(1);
+    expect(parts[0]).toEqual(pts);
+  });
+
+  it("cuts at the very end of a stroke", () => {
+    const parts = splitStroke(line(5), 2, 42, 0, 4); // hits only the last sample
+    expect(parts.length).toBe(1);
+    expect(parts[0]!.length).toBe(4);
+  });
+
+  it("keeps pressure through the cut", () => {
+    const pts = [
+      { x: 0, y: 0, p: 0.7 },
+      { x: 100, y: 0, p: 0.2 },
+    ];
+    const parts = splitStroke(pts, 2, 200, 0, 4);
+    expect(parts[0]![1]!.p).toBe(0.2);
+  });
+});
+
+describe("strokeBounds", () => {
+  it("wraps exactly the samples", () => {
+    const b = strokeBounds([
+      { x: 5, y: 10, p: 0.5 },
+      { x: 15, y: 2, p: 0.5 },
+      { x: 8, y: 6, p: 0.5 },
+    ]);
+    expect(b).toEqual({ x0: 5, y0: 2, x1: 15, y1: 10 });
+  });
+
+  it("returns a zero box, not infinities, for an empty stroke", () => {
+    expect(strokeBounds([])).toEqual({ x0: 0, y0: 0, x1: 0, y1: 0 });
+  });
+});
+
+describe("rankInkColors (the quick-bar ranking)", () => {
+  const NOW = 1_700_000_000_000;
+
+  it("pins the palette's first colour (ink/black) in front with no history", () => {
+    expect(rankInkColors(INK_COLORS, {}, NOW)[0]).toBe("ink");
+  });
+
+  it("falls back to the palette's own order with no usage history — day one looks like today", () => {
+    expect(rankInkColors(INK_COLORS, {}, NOW)).toEqual(["ink", "red", "amber", "brown"]);
+  });
+
+  it("ranks the most-used colour first, ahead of the palette order", () => {
+    const usage = {
+      pink: { count: 9, last: NOW },
+      teal: { count: 1, last: NOW },
+    };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    expect(ranked[1]).toBe("pink");
+  });
+
+  it("decays an old count enough to fall behind a smaller but recent one", () => {
+    const twoDaysAgo = NOW - 2 * 24 * 3_600_000;
+    const usage = {
+      // Used 3 times, but two half-lives ago: score decays to 3 * 0.25 = 0.75.
+      purple: { count: 3, last: twoDaysAgo },
+      // Used once, just now: score stays 1 — no decay yet.
+      teal: { count: 1, last: NOW },
+    };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    // Raw counts alone would put purple ahead (3 > 1); decay flips it.
+    expect(ranked.indexOf("teal")).toBeLessThan(ranked.indexOf("purple"));
+  });
+
+  it("never lets more than one colour past the first occupy the same slot", () => {
+    const usage = { red: { count: 5, last: NOW }, amber: { count: 5, last: NOW } };
+    const ranked = rankInkColors(INK_COLORS, usage, NOW);
+    expect(new Set(ranked).size).toBe(ranked.length);
   });
 });

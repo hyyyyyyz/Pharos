@@ -356,6 +356,22 @@ export function AiPanel({
     }
   };
 
+  /**
+   * A selection elsewhere in the reader asked a question (问AI / 翻译): the
+   * prompt arrives here already written, whether this panel was open, closed
+   * or not yet mounted. Consumed before sending so the send itself can never
+   * re-trigger the effect; if the panel is busy streaming, the prompt waits
+   * for that stream to settle (the effect re-runs on the flip).
+   */
+  const aiPrompt = useUI((s) => s.aiPrompt);
+  const setAiPrompt = useUI((s) => s.setAiPrompt);
+  useEffect(() => {
+    if (!aiPrompt || !available || streaming) return;
+    const text = aiPrompt;
+    setAiPrompt(null);
+    void send(text);
+  }, [aiPrompt, available, streaming, send, setAiPrompt]);
+
   const statusLabel = phaseText(contextPhase, provider, contextStatus);
   const empty = messages.length === 0 && !streaming;
 

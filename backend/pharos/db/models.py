@@ -482,6 +482,46 @@ class InkStroke(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class TapeMark(Base):
+    """A movable, resizable strip that covers ink or text until tapped — 胶带.
+
+    Same coordinate contract as :class:`Highlight` and :class:`InkStroke`:
+    PDF user-space points at scale 1, bottom-left origin. ``(x, y)`` is the
+    strip's own CENTRE point (not a corner — a rotated rectangle has no
+    well-defined "bottom-left" once ``angle`` is not 0, but always has a
+    centre), ``w`` its length along its own rotated axis, ``h`` its thickness
+    across that axis. Unlike a stroke, a tape mark is a plain rectangle, not a
+    sampled path, so a resize just rewrites some of these numbers rather than
+    replacing a stroke's whole geometry.
+
+    ``angle`` is degrees, counter-clockwise from horizontal, set by whatever
+    line the strip was dragged along (a real line of text is virtually always
+    horizontal, so a drag with any hand-tremor still ends up a degree or two
+    off 0); "拉直" (straighten) resets it to exactly 0. ``revealed`` is the
+    toggle a tap flips: covered (the default) hides whatever sits under the
+    strip, revealed shows it — the strip itself stays in place either way, so
+    tapping it back re-covers the same spot rather than needing to be redrawn.
+    """
+
+    __tablename__ = "tape_marks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    #: "original" | "mono" | "dual"
+    kind: Mapped[str] = mapped_column(String(16), default="original")
+    #: 1-based page number within that rendition.
+    page: Mapped[int] = mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Float)
+    y: Mapped[float] = mapped_column(Float)
+    w: Mapped[float] = mapped_column(Float)
+    h: Mapped[float] = mapped_column(Float)
+    angle: Mapped[float] = mapped_column(Float, default=0.0)
+    revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
 class Note(Base):
     """A paper-level note — the 笔记 block in the detail panel.
 

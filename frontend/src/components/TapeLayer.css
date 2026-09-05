@@ -1,0 +1,129 @@
+/* TapeLayer — 胶带 strips over one PDF page. */
+
+.ph-tape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Above ink (3/4) and the highlight toolbar (4) — tape covers either. Below
+     its own popover, which needs z-index higher still to stay clickable. */
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Only "off" and "tape" ever let this layer own a touch — see the
+   component's own doc comment for why. */
+.ph-tape--live {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.ph-tape-strip {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+/* Covered: an opaque strip, like a real piece of tape laid over the page —
+   the whole point is that nothing under it is visible. A faint diagonal
+   texture (repeating-linear-gradient) reads as "tape", not "redaction bar". */
+.ph-tape-strip:not(.is-revealed) {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.35) 0px,
+      rgba(255, 255, 255, 0.35) 3px,
+      transparent 3px,
+      transparent 7px
+    ),
+    var(--c-tape, #e8dcb8);
+  border: 1px solid rgba(120, 100, 40, 0.35);
+  box-shadow: var(--sh-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+}
+
+/* Revealed: whatever was under it is showing, so the strip itself becomes
+   just a thin dashed outline — present enough to tap again, not present
+   enough to compete with the content it is no longer hiding. */
+.ph-tape-strip.is-revealed {
+  background: transparent;
+  border: 1.5px dashed rgba(120, 100, 40, 0.55);
+}
+
+.ph-tape-strip.is-selected {
+  outline: 2px solid var(--c-ac, #5b53d6);
+  outline-offset: 1px;
+}
+
+.ph-tape-strip.is-preview {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Some OTHER ink tool is active: the strip stays visible (still covering
+   whatever it covers) but stops accepting the pointer, so a pen/eraser/
+   lasso/etc. gesture that merely crosses over it is not swallowed. The wrap
+   itself (`.ph-tape`) is already `pointer-events: none` outside "tape" mode
+   for the same reason on a bigger scale — see the component's own comment. */
+.ph-tape-strip.is-dormant {
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ the popover */
+
+.ph-tape-pop {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 260px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
+  pointer-events: auto;
+}
+
+.ph-tape-pop-btn {
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-tx2, #5a616e);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.ph-tape-pop-btn:hover {
+  background: var(--c-hv, #f1f2f4);
+  color: var(--c-tx);
+}
+.ph-tape-pop-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ph-tape-pop-btn.is-on {
+  border-color: var(--c-acsb, #dcdcf7);
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
+}
+.ph-tape-pop-btn.is-danger {
+  color: var(--c-err, #d93a3a);
+}
+
+.ph-tape-pop-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--c-bd, #e6e8ec);
+}

@@ -63,7 +63,31 @@ __all__ = [
     "load_points",
 ]
 
-INK_COLORS = frozenset({"ink", "amber", "green", "blue", "pink", "purple"})
+INK_COLORS = frozenset(
+    {
+        "ink",
+        "red",
+        "amber",
+        "brown",
+        "green",
+        "teal",
+        "blue",
+        "purple",
+        "pink",
+        "gray",
+        # 水彩笔 (watercolour): light washes, rendered with a multiply blend so
+        # a stroke drawn straight over text keeps the glyphs readable through
+        # it — the same "wc-" prefix the frontend keys its wash-vs-opaque
+        # rendering choice on (see lib/ink.ts). A closed set for the same
+        # reason the rest of INK_COLORS is one: a hex value would put an
+        # unthemable, unrecognised colour in the database.
+        "wc-amber",
+        "wc-green",
+        "wc-blue",
+        "wc-pink",
+        "wc-purple",
+    }
+)
 
 DEFAULT_COLOR = "ink"
 
@@ -73,11 +97,14 @@ DEFAULT_COLOR = "ink"
 #: per stroke and making every page load carry it.
 MAX_POINTS = 2000
 
-#: Stroke width bounds, in PDF points at scale 1. The floor keeps a
-#: sub-pixel hairline from becoming invisible at low zoom, and the ceiling
-#: keeps one hostile row from painting half the page black.
-MIN_WIDTH = 0.2
-MAX_WIDTH = 24.0
+#: Stroke width bounds, in PDF points at scale 1 — the reader's thickness
+#: control runs the same 1-100 range end to end. The floor keeps a
+#: sub-pixel hairline from becoming invisible at low zoom; the ceiling still
+#: stops a hostile row from painting the whole page (100pt is already a very
+#: wide marker on a ~600pt-wide page), while leaving room for a deliberately
+#: thick watercolour/highlighter brush.
+MIN_WIDTH = 1.0
+MAX_WIDTH = 100.0
 
 DEFAULT_WIDTH = 2.0
 

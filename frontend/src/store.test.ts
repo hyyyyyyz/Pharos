@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   DETAIL_OVERLAY_MAX_WIDTH,
+  MAX_INK_HISTORY,
+  MAX_INK_WIDTH,
+  MIN_INK_WIDTH,
+  capHistory,
+  clampInkWidth,
   isAiOpen,
   isDetailOverlay,
   useUI,
@@ -58,5 +63,58 @@ describe("isAiOpen (regression: the tablet fork must not disturb the AI panel)",
     expect(isAiOpen({ aiOpenPref: "auto", winW: 1200 })).toBe(true);
     expect(isAiOpen({ aiOpenPref: "auto", winW: 1024 })).toBe(false);
     expect(isAiOpen({ aiOpenPref: true, winW: 600 })).toBe(true);
+  });
+});
+
+describe("capHistory (bounded ink undo/redo)", () => {
+  it("passes a short list through untouched", () => {
+    const ops = [1, 2, 3];
+    expect(capHistory(ops)).toEqual([1, 2, 3]);
+  });
+
+  it("drops the oldest entries once the cap is hit, keeping the newest", () => {
+    const ops = Array.from({ length: MAX_INK_HISTORY + 10 }, (_, i) => i);
+    const capped = capHistory(ops);
+    expect(capped.length).toBe(MAX_INK_HISTORY);
+    expect(capped[0]).toBe(10);
+    expect(capped[capped.length - 1]).toBe(MAX_INK_HISTORY + 9);
+  });
+});
+
+describe("clampInkWidth (the 1-100 thickness range, mirroring the backend bounds)", () => {
+  it("passes an in-range width through untouched", () => {
+    expect(clampInkWidth(24)).toBe(24);
+  });
+
+  it("clamps below MIN_INK_WIDTH and above MAX_INK_WIDTH", () => {
+    expect(clampInkWidth(0)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(-5)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(500)).toBe(MAX_INK_WIDTH);
+  });
+
+  it("falls back to the floor for a non-finite value rather than storing garbage", () => {
+    expect(clampInkWidth(NaN)).toBe(MIN_INK_WIDTH);
+    expect(clampInkWidth(Infinity)).toBe(MIN_INK_WIDTH);
+  });
+});
+
+describe("setInkWidth (regression: the slider must never store a width the server would refuse)", () => {
+  it("clamps on the way into the store", () => {
+    useUI.getState().setInkWidth(9999);
+    expect(useUI.getState().inkWidth).toBe(MAX_INK_WIDTH);
+  });
+});
+
+describe("pushInkOps (regression: a long note-taking session must not grow the undo stack forever)", () => {
+  beforeEach(() => {
+    useUI.setState({ inkPast: [], inkFuture: [], inkOpsKey: "" });
+  });
+
+  it("caps inkPast at MAX_INK_HISTORY as ops accumulate one at a time", () => {
+    const { pushInkOps } = useUI.getState();
+    for (let i = 0; i < MAX_INK_HISTORY + 25; i++) {
+      pushInkOps("doc a", [{ kind: "add", stroke: { id: `s${i}` } as never }]);
+    }
+    expect(useUI.getState().inkPast.length).toBe(MAX_INK_HISTORY);
   });
 });

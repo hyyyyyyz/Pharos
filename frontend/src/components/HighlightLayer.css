@@ -153,6 +153,30 @@
   color: var(--c-err);
 }
 
+/* The in-place understanding row: 解释 runs the selection through the AI
+   panel as an asked question; 翻译 and 复制 are the same seam. Shares the
+   button metrics, tinted only by the spark icon so the row reads as "the
+   reading tools", not as a second toolbar. */
+.ph-hl-btn.is-ai {
+  color: var(--c-ac);
+}
+.ph-hl-btn.is-ai:hover {
+  background: var(--c-acs, #eef);
+  color: var(--c-ac);
+}
+
+/* The honest failure line: a save that never reached the server says so
+   here, in the popup, next to the buttons that can retry it. */
+.ph-hl-err {
+  font-size: 11px;
+  color: var(--c-err, #d93a3a);
+  white-space: nowrap;
+}
+/* The queueing states are not failures — same line, quieter colour. */
+.ph-hl-err.is-wait {
+  color: var(--c-tx3, #8b93a1);
+}
+
 /* ------------------------------------------------------------- note editor */
 
 .ph-hl-note {

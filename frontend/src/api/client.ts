@@ -31,6 +31,7 @@ import type {
   PdfKind,
   InkPoint,
   InkStrokeRow,
+  TapeRow,
   ProjectArtifact,
   ProjectArtifactCreateBody,
   ProjectArtifactPatchBody,
@@ -701,6 +702,38 @@ export const api = {
 
     remove: (strokeId: string): Promise<void> =>
       empty(`/ink/${encodeURIComponent(strokeId)}`, { method: "DELETE" }),
+  },
+
+  tape: {
+    list: (paperId: string, kind: PdfKind, signal?: AbortSignal): Promise<TapeRow[]> =>
+      json<TapeRow[]>(`/papers/${encodeURIComponent(paperId)}/tape?kind=${kind}`, {
+        signal,
+      }),
+
+    create: (
+      paperId: string,
+      strip: { kind: PdfKind; page: number; x: number; y: number; w: number; h: number; angle?: number },
+    ): Promise<TapeRow> =>
+      json<TapeRow>(`/papers/${encodeURIComponent(paperId)}/tape`, {
+        method: "POST",
+        ...body(strip),
+      }),
+
+    /** A resize, a straighten, or a reveal/cover tap — any subset of fields.
+     *  Only the keys actually present are sent, so leaving one out really
+     *  means "untouched", not "reset to a default" (mirrors the backend's
+     *  `...` sentinel in `update_tape`). */
+    update: (
+      tapeId: string,
+      patch: Partial<{ x: number; y: number; w: number; h: number; angle: number; revealed: boolean }>,
+    ): Promise<TapeRow> =>
+      json<TapeRow>(`/tape/${encodeURIComponent(tapeId)}`, {
+        method: "PATCH",
+        ...body(patch),
+      }),
+
+    remove: (tapeId: string): Promise<void> =>
+      empty(`/tape/${encodeURIComponent(tapeId)}`, { method: "DELETE" }),
   },
 
 };

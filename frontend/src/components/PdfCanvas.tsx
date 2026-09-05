@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { Icons } from "../design/icons";
+import { fractionsOf, loadReadPos, saveReadPos, scrollTarget, type ReadPos } from "../lib/readPos";
 import { HighlightLayer, type HighlightKind } from "./HighlightLayer";
 import { InkLayer } from "./InkLayer";
+import { TapeLayer } from "./TapeLayer";
 import "./PdfCanvas.css";
 
 const MIN_ZOOM = 0.4;
@@ -211,6 +213,12 @@ export interface PdfCanvasProps {
   jumpTo: number | null;
   onJumped: () => void;
   onCurrentPage: (page: number) => void;
+  /** 锁定画布: freeze pan/zoom against a stray touch. Locked, a single finger
+   *  does nothing (no accidental scroll) and two fingers pan without
+   *  changing zoom; unlocked is today's behaviour (one finger scrolls,
+   *  two fingers pinch-zoom). Default false — the reader is not locked by
+   *  default, exactly today's behaviour for anyone who never toggles it. */
+  locked?: boolean;
 }
 
 /**
@@ -230,7 +238,10 @@ export function PdfCanvas({
   jumpTo,
   onJumped,
   onCurrentPage,
+  locked = false,
 }: PdfCanvasProps): JSX.Element {
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -251,6 +262,12 @@ export function PdfCanvas({
   const [panLock, setPanLock] = useState(false);
   /** Bumped when text layers finish, to re-run the search against fresh DOM. */
   const [layerVersion, setLayerVersion] = useState(0);
+  /**
+   * Positions to return to, newest last — pushed whenever the reader moves
+   * somewhere the *user* did not scroll to (a resume, an outline jump, a
+   * find hit). The pill shows while anything is on the stack.
+   */
+  const [backStack, setBackStack] = useState<ReadPos[]>([]);
 
   const [findOpen, setFindOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -268,6 +285,29 @@ export function PdfCanvas({
   onFitScaleRef.current = onFitScale;
   const onCurrentPageRef = useRef(onCurrentPage);
   onCurrentPageRef.current = onCurrentPage;
+  /** The fit scale as reported, for "was the reader deliberately zoomed?". */
+  const fitScaleRef = useRef(1);
+
+  /* ------------------------------------------ scroll persistence + back */
+  /**
+   * The position record this document reads from and writes to: paper plus
+   * rendition, because a translated re-layout has different pages — the same
+   * rule the highlights and ink follow.
+   */
+  const posKey = `${paperId} ${kind ?? ""}`;
+  /** Push the current position onto the back stack (capped, no duplicates). */
+  const pushBack = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const { fy, fx } = fractionsOf(el);
+    setBackStack((s) => {
+      const top = s[s.length - 1];
+      // A second push at the same spot (two find hits on one screenful) is
+      // not a place worth remembering.
+      if (top && Math.abs(top.fy - fy) < 0.005 && Math.abs(top.fx - fx) < 0.02) return s;
+      return [...s.slice(-19), { fy, fx, zoom: null }];
+    });
+  }, []);
 
   /* --------------------------------------------------- page sizes (scale 1) */
   useEffect(() => {
@@ -301,7 +341,11 @@ export function PdfCanvas({
     if (!el || !first) return;
     const report = () => {
       const avail = el.clientWidth - GUTTER;
-      if (avail > 0) onFitScaleRef.current(clampZoom(avail / first.w));
+      if (avail > 0) {
+        const scale = clampZoom(avail / first.w);
+        fitScaleRef.current = scale;
+        onFitScaleRef.current(scale);
+      }
     };
     report();
     const ro = new ResizeObserver(report);
@@ -309,7 +353,74 @@ export function PdfCanvas({
     return () => ro.disconnect();
   }, [pages]);
 
-  /* ------------------------------------------------------- canvas rendering */
+  /* ------------------------------------------------- resume reading position */
+  /**
+   * Restore the last reading position once per document, after the pages
+   * have their real sizes (otherwise scrollHeight is still 0 and the
+   * fractions land at the top). The restore is also pushed onto the back
+   * stack first, so 回到原位 from a resumed spot returns to the top.
+   *
+   * Two rAFs: the first lets the page boxes commit their widths/heights,
+   * the second reads the final scroll box. The zoom is re-applied first when
+   * the reader was deliberately zoomed — the scroll fractions only mean
+   * something under the zoom they were taken at.
+   */
+  const restoredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!doc || pages.length === 0) return;
+    if (restoredRef.current === posKey) return;
+    restoredRef.current = posKey;
+    setBackStack([]);
+    const pos = loadReadPos(posKey);
+    if (!pos) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      const el = viewportRef.current;
+      if (!el) return;
+      if (pos.zoom && Math.abs(pos.zoom - zoomRef.current) > 0.02) {
+        onZoomRef.current(pos.zoom);
+      }
+      raf2 = requestAnimationFrame(() => {
+        const el2 = viewportRef.current;
+        if (!el2) return;
+        pushBack();
+        const { top, left } = scrollTarget(pos, el2);
+        el2.scrollTop = top;
+        el2.scrollLeft = left;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [doc, pages, posKey, pushBack]);
+
+  /** Save the live position, debounced — scroll is not a storage bus. */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || pages.length === 0) return;
+    let timer = 0;
+    const save = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        const { fy, fx } = fractionsOf(vp);
+        // Deliberately zoomed = away from fit by more than rounding noise.
+        const zoomed = Math.abs(zoomRef.current - fitScaleRef.current) > 0.02;
+        saveReadPos(posKey, { fy, fx, zoom: zoomed ? zoomRef.current : null });
+      }, 400);
+    };
+    el.addEventListener("scroll", save, { passive: true });
+    window.addEventListener("pagehide", save);
+    return () => {
+      el.removeEventListener("scroll", save);
+      window.removeEventListener("pagehide", save);
+      window.clearTimeout(timer);
+    };
+  }, [pages, posKey]);
+
+  /* ----------------------------------------------------------- canvas rendering */
   useEffect(() => {
     if (!doc || pages.length === 0) return;
     let cancelled = false;
@@ -506,6 +617,7 @@ export function PdfCanvas({
     const vp = viewportRef.current;
     const match = matches[current];
     if (!vp || !match) return;
+    pushBack();
     const pageEl = pageRefs.current[match.page - 1];
     const rect = match.rects[0];
     if (!pageEl || !rect) return;
@@ -517,7 +629,7 @@ export function PdfCanvas({
       opts.left = Math.max(0, off.left + rect.x - vp.clientWidth / 2 + rect.w / 2);
     }
     vp.scrollTo(opts);
-  }, [current, matches]);
+  }, [current, matches, pushBack]);
 
   /** Highlight boxes grouped per page, with the active hit flagged. */
   const hlByPage = useMemo(() => {
@@ -556,10 +668,11 @@ export function PdfCanvas({
     const el = viewportRef.current;
     const pageEl = pageRefs.current[jumpTo - 1];
     if (el && pageEl) {
+      pushBack();
       el.scrollTo({ top: Math.max(0, offsetIn(pageEl, el).top - 8), behavior: "smooth" });
     }
     onJumped();
-  }, [jumpTo, onJumped]);
+  }, [jumpTo, onJumped, pushBack]);
 
   /* ----------------------------------------------------- ctrl/⌘ + wheel zoom */
   useEffect(() => {
@@ -639,16 +752,25 @@ export function PdfCanvas({
       }
       const [a, b] = [...touches.values()];
       if (!a || !b) return;
-      const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
-      const next = clampZoom(startZoom * ratio);
-      // Stepped, not continuous: each zoom value re-renders every page
-      // canvas, and touchmove fires at digitiser rate.
-      if (Math.abs(next - lastSent) >= 0.01) {
-        lastSent = next;
-        onZoomRef.current(next);
+      // Locked: two fingers pan only — the whole point of the lock is that
+      // zoom cannot change from a stray gesture, so the ratio is never
+      // turned into a zoom call at all (not just clamped to the start value,
+      // which would still recompute and re-render every page for nothing).
+      if (!lockedRef.current) {
+        const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
+        const next = clampZoom(startZoom * ratio);
+        // Stepped, not continuous: each zoom value re-renders every page
+        // canvas, and touchmove fires at digitiser rate.
+        if (Math.abs(next - lastSent) >= 0.01) {
+          lastSent = next;
+          onZoomRef.current(next);
+        }
       }
       // Anchor + follow: the midpoint's content position stays under the
-      // fingers, including when the whole pair drags while pinching.
+      // fingers, including when the whole pair drags while pinching. With
+      // zoom frozen (locked), `el.scrollWidth`/`scrollHeight` never change
+      // either, so this reduces to a pure translate by the pair's own
+      // movement — exactly "two fingers pan" with no extra branch needed.
       cancelAnimationFrame(anchorFrame);
       anchorFrame = requestAnimationFrame(() => {
         const rect = el.getBoundingClientRect();
@@ -660,21 +782,84 @@ export function PdfCanvas({
       e.preventDefault();
     };
 
-    const onEnd = (e: TouchEvent) => {
+    /* ---------------------------------------------------- double-tap zoom */
+    /**
+     * Two quick single-finger taps toggle between fit width and a column-
+     * readable zoom anchored at the tapped point — the gesture tablet
+     * readers have trained for years, and the reliable way into a two-column
+     * paper at fit width (whose glyphs are ~9px on a portrait tablet).
+     *
+     * No column detection: the zoom target is 2× fit, clamped into the
+     * readable band, and the *anchor* does the "read the column you tapped"
+     * work — whatever was under the finger stays under it.
+     *
+     * A tap is counted only when it lands on the paper itself: presses on
+     * the highlight toolbar, the ink selection bar or the find bar are that
+     * UI's business. The completing tap's touchend is prevented so the
+     * browser does not turn the pair into a click (and a word selection).
+     */
+    /** The previous tap's end, for pairing. A tap is its END event: taps are
+     *  short, so the inter-tap interval is what separates a pair from two
+     *  slow deliberate taps. */
+    let lastTap: { t: number; x: number; y: number } | null = null;
+    let zoomFrame = 0;
+
+    const onEndForTap = (e: TouchEvent): void => {
       for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
       if (touches.size < 2) cancelAnimationFrame(anchorFrame);
+      if (touches.size !== 0 || e.changedTouches.length !== 1) return;
+      const t = e.changedTouches[0]!;
+      const target = e.target as HTMLElement;
+      const now = performance.now();
+      // Not the paper: a control or the ink canvas got the touch.
+      if (target.closest(".ph-hl-pop, button, a, input, textarea, .ph-ink") !== null) {
+        lastTap = null;
+        return;
+      }
+      const prev = lastTap;
+      lastTap = { t: now, x: t.clientX, y: t.clientY };
+      if (
+        !prev ||
+        now - prev.t > 350 ||
+        Math.hypot(t.clientX - prev.x, t.clientY - prev.y) > 48
+      ) {
+        return; // first tap of a pair — the next tap decides
+      }
+      lastTap = null;
+      e.preventDefault(); // no synthetic click, no word selection out of this
+
+      const fit = fitScaleRef.current;
+      const zoomed = Math.abs(zoomRef.current - fit) > 0.02;
+      const targetZoom = zoomed ? fit : clampZoom(Math.max(fit * 2, 1.5));
+      if (Math.abs(targetZoom - zoomRef.current) < 0.01) return;
+      const ratio = targetZoom / zoomRef.current;
+      const rect = el.getBoundingClientRect();
+      // Content point under the finger, kept there by the anchor.
+      const contentX = t.clientX - rect.left + el.scrollLeft;
+      const contentY = t.clientY - rect.top + el.scrollTop;
+      onZoomRef.current(targetZoom);
+      const settle = () => {
+        zoomFrame = requestAnimationFrame(() => {
+          zoomFrame = requestAnimationFrame(() => {
+            el.scrollLeft = contentX * ratio - (t.clientX - rect.left);
+            el.scrollTop = contentY * ratio - (t.clientY - rect.top);
+          });
+        });
+      };
+      settle();
     };
 
     el.addEventListener("touchstart", onStart, { passive: false });
     el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd);
-    el.addEventListener("touchcancel", onEnd);
+    el.addEventListener("touchend", onEndForTap);
+    el.addEventListener("touchcancel", onEndForTap);
     return () => {
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("touchend", onEndForTap);
+      el.removeEventListener("touchcancel", onEndForTap);
       cancelAnimationFrame(anchorFrame);
+      cancelAnimationFrame(zoomFrame);
     };
   }, []);
 
@@ -808,9 +993,29 @@ export function PdfCanvas({
   );
 
   const hasQuery = normalizeQuery(query).length > 0;
-  const cls = ["ph-pc", "ph-scroll", grabbing && "is-grabbing", panLock && "is-panlock"]
+  const cls = [
+    "ph-pc",
+    "ph-scroll",
+    grabbing && "is-grabbing",
+    panLock && "is-panlock",
+    locked && "is-locked",
+  ]
     .filter(Boolean)
     .join(" ");
+
+  /** Return to the most recent position a jump left behind. */
+  const goBack = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    setBackStack((s) => {
+      const pos = s[s.length - 1];
+      if (pos) {
+        const target = scrollTarget(pos, el);
+        el.scrollTo({ top: target.top, left: target.left, behavior: "smooth" });
+      }
+      return s.slice(0, -1);
+    });
+  }, []);
 
   return (
     <div className="ph-pc-wrap" ref={wrapRef}>
@@ -868,12 +1073,28 @@ export function PdfCanvas({
                   pageHeight={p.h}
                 />
               )}
+              {kind && (
+                <TapeLayer
+                  paperId={paperId}
+                  kind={kind}
+                  page={i + 1}
+                  scale={zoom}
+                  pageHeight={p.h}
+                />
+              )}
             </div>
           ))}
         </div>
         {!doc && !error && <div className="ph-pc-msg">正在加载 PDF…</div>}
         {error && <div className="ph-pc-msg is-err">加载失败：{error}</div>}
       </div>
+
+      {backStack.length > 0 && (
+        <button className="ph-pos-back" title="回到跳转前的位置" onClick={goBack}>
+          <Icons.undo size={13} />
+          回到原位
+        </button>
+      )}
 
       {doc &&
         (findOpen ? (

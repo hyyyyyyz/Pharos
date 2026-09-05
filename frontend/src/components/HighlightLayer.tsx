@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authHeaders } from "../api/client";
 import { Icons } from "../design/icons";
+import { useUI } from "../store";
 import "./HighlightLayer.css";
 
 /**
@@ -324,6 +325,13 @@ export function HighlightLayer({
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   /**
+   * The last save that failed to reach the server, shown honestly inside the
+   * toolbar. Silence here was a data-loss bug: a create that died (offline,
+   * expired token, server hiccup) left no mark and no message — the popup
+   * just closed as if the tap had never happened.
+   */
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  /**
    * Where the toolbar sits, in CSS pixels relative to the page box.
    *
    * Its own state rather than a field on `draft`, because the toolbar outlives
@@ -374,6 +382,7 @@ export function HighlightLayer({
         }),
       }),
     onSuccess: refresh,
+    onError: () => setSaveErr("保存失败，请重试"),
   });
 
   const update = useMutation({
@@ -383,11 +392,13 @@ export function HighlightLayer({
         ...jsonBody(p.color !== undefined ? { color: p.color } : { note: p.note }),
       }),
     onSuccess: refresh,
+    onError: () => setSaveErr("保存失败，请重试"),
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => req<void>(`/highlights/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
+    onError: () => setSaveErr("删除失败，请重试"),
   });
 
   /* ------------------------------------------------------------------ closing */
@@ -397,6 +408,7 @@ export function HighlightLayer({
     setActiveId(null);
     setAnchor(null);
     setNoteOpen(false);
+    setSaveErr(null);
     offerClaim(key, page, null);
   }, [key, page]);
 
@@ -548,47 +560,87 @@ export function HighlightLayer({
 
   const pick = useCallback(
     async (color: string) => {
+      setSaveErr(null);
       // Branch on the id, not on the resolved row: right after 添加笔记 creates a
       // highlight, `activeId` is set but the refetch has not landed, and keying
       // on `active` would make a colour click in that window do nothing at all.
-      if (activeId) {
-        await update.mutateAsync({ id: activeId, color });
+      try {
+        if (activeId) {
+          await update.mutateAsync({ id: activeId, color });
+          dismiss();
+          return;
+        }
+        if (!draft) return;
+        await commitAll(key, color);
+        // Clear the browser selection: its wash sits above the mark we just
+        // painted, so leaving it would hide the result of the user's own click.
+        window.getSelection()?.removeAllRanges();
         dismiss();
-        return;
+      } catch {
+        // mutateAsync rejects through here too; onError already recorded the
+        // message. The popup stays open with the draft intact for a retry.
       }
-      if (!draft) return;
-      await commitAll(key, color);
-      // Clear the browser selection: its wash sits above the mark we just
-      // painted, so leaving it would hide the result of the user's own click.
-      window.getSelection()?.removeAllRanges();
-      dismiss();
     },
     [activeId, draft, key, update, dismiss],
   );
 
   const openNote = useCallback(async () => {
+    setSaveErr(null);
     if (!activeId && draft) {
       // A note needs a highlight to hang on, so store one at the default colour
       // first — then the editor is editing something real, and abandoning the
       // note still leaves the mark the user asked for.
-      const made = await commitAll(key, COLORS[0].key);
-      window.getSelection()?.removeAllRanges();
-      setDraft(null);
-      offerClaim(key, page, null);
-      // The row for *this* page, taken from the create response rather than by
-      // refetching the list and assuming the newest entry is ours — which it
-      // would not be for a selection that also created one on the next page.
-      setActiveId(made.find((h) => h.page === page)?.id ?? null);
-      setNoteText("");
+      try {
+        const made = await commitAll(key, COLORS[0].key);
+        window.getSelection()?.removeAllRanges();
+        setDraft(null);
+        offerClaim(key, page, null);
+        // The row for *this* page, taken from the create response rather than by
+        // refetching the list and assuming the newest entry is ours — which it
+        // would not be for a selection that also created one on the next page.
+        setActiveId(made.find((h) => h.page === page)?.id ?? null);
+        setNoteText("");
+      } catch {
+        /* onError already surfaced the failure; keep the draft for a retry */
+        return;
+      }
     }
     setNoteOpen(true);
   }, [activeId, draft, key, page]);
 
   const saveNote = useCallback(async () => {
     if (!activeId) return;
-    await update.mutateAsync({ id: activeId, note: noteText.trim() || null });
-    dismiss();
+    setSaveErr(null);
+    try {
+      await update.mutateAsync({ id: activeId, note: noteText.trim() || null });
+      dismiss();
+    } catch {
+      /* the editor stays open; onError recorded why */
+    }
   }, [activeId, noteText, update, dismiss]);
+
+  /**
+   * Hand the selection to the AI panel as an already-asked question. The
+   * toolbar knows only that the panel exists; `store.aiPrompt` is the seam —
+   * the panel consumes the prompt whether it was open, closed, or not yet
+   * mounted. A fresh draft is NOT stored: asking a question should not plant
+   * a highlight the user never asked for.
+   */
+  const askAi = useCallback(
+    (manner: "explain" | "translate") => {
+      const text = (active?.text ?? draft?.text ?? "").trim();
+      if (!text) return;
+      const prompt =
+        manner === "translate"
+          ? `请把下面这段论文原文翻译成中文，专业术语保留英文原文：\n\n「${text}」`
+          : `请结合这篇论文的上下文，解释下面这段内容；涉及公式或术语时一并说明：\n\n「${text}」`;
+      const ui = useUI.getState();
+      ui.setAiPrompt(prompt);
+      ui.openAI();
+      dismiss();
+    },
+    [active, draft, dismiss],
+  );
 
   /* -------------------------------------------------------------------- view */
 
@@ -674,6 +726,43 @@ export function HighlightLayer({
               </button>
             )}
           </div>
+
+          <div className="ph-hl-row">
+            <button
+              className="ph-hl-btn is-ai"
+              title="让 AI 结合论文上下文解释这段内容"
+              onClick={() => askAi("explain")}
+            >
+              <Icons.spark size={12} />
+              解释
+            </button>
+            <button
+              className="ph-hl-btn is-ai"
+              title="翻译这段内容"
+              onClick={() => askAi("translate")}
+            >
+              翻译
+            </button>
+            <button
+              className="ph-hl-btn"
+              title="复制原文，粘贴到任何地方"
+              onClick={() => {
+                const text = (active?.text ?? draft?.text ?? "").trim();
+                if (text) void navigator.clipboard?.writeText(text).catch(() => undefined);
+                dismiss();
+              }}
+            >
+              复制
+            </button>
+          </div>
+
+          {saveErr && <div className="ph-hl-err">{saveErr}</div>}
+          {!saveErr && (create.isPaused || update.isPaused) && (
+            <div className="ph-hl-err is-wait">等待网络，恢复后自动保存</div>
+          )}
+          {!saveErr && !create.isPaused && !update.isPaused && (create.isPending || update.isPending) && (
+            <div className="ph-hl-err is-wait">正在保存…</div>
+          )}
 
           {noteOpen && (
             <div className="ph-hl-note">
