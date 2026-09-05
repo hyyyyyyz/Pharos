@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   DETAIL_OVERLAY_MAX_WIDTH,
+  MAX_INK_HISTORY,
+  capHistory,
   isAiOpen,
   isDetailOverlay,
   useUI,
@@ -58,5 +60,34 @@ describe("isAiOpen (regression: the tablet fork must not disturb the AI panel)",
     expect(isAiOpen({ aiOpenPref: "auto", winW: 1200 })).toBe(true);
     expect(isAiOpen({ aiOpenPref: "auto", winW: 1024 })).toBe(false);
     expect(isAiOpen({ aiOpenPref: true, winW: 600 })).toBe(true);
+  });
+});
+
+describe("capHistory (bounded ink undo/redo)", () => {
+  it("passes a short list through untouched", () => {
+    const ops = [1, 2, 3];
+    expect(capHistory(ops)).toEqual([1, 2, 3]);
+  });
+
+  it("drops the oldest entries once the cap is hit, keeping the newest", () => {
+    const ops = Array.from({ length: MAX_INK_HISTORY + 10 }, (_, i) => i);
+    const capped = capHistory(ops);
+    expect(capped.length).toBe(MAX_INK_HISTORY);
+    expect(capped[0]).toBe(10);
+    expect(capped[capped.length - 1]).toBe(MAX_INK_HISTORY + 9);
+  });
+});
+
+describe("pushInkOps (regression: a long note-taking session must not grow the undo stack forever)", () => {
+  beforeEach(() => {
+    useUI.setState({ inkPast: [], inkFuture: [], inkOpsKey: "" });
+  });
+
+  it("caps inkPast at MAX_INK_HISTORY as ops accumulate one at a time", () => {
+    const { pushInkOps } = useUI.getState();
+    for (let i = 0; i < MAX_INK_HISTORY + 25; i++) {
+      pushInkOps("doc a", [{ kind: "add", stroke: { id: `s${i}` } as never }]);
+    }
+    expect(useUI.getState().inkPast.length).toBe(MAX_INK_HISTORY);
   });
 });

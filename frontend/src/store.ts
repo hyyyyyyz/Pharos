@@ -33,6 +33,17 @@ export type InkOp =
   | { kind: "remove"; strokes: InkStrokeRow[] }
   | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] };
 
+/** Undo/redo ops carry full stroke payloads (points and all), so an
+ *  all-day note-taking session cannot be let grow the stack forever — the
+ *  oldest ops fall off once the cap is hit, same as every other note app's
+ *  bounded undo. Redo is capped identically so undo→redo→undo… cannot
+ *  regrow past it either. */
+export const MAX_INK_HISTORY = 200;
+
+export function capHistory<T>(ops: T[]): T[] {
+  return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
+}
+
 /** How the eraser takes ink away. */
 export type EraseMode = "stroke" | "pixel";
 
@@ -429,8 +440,8 @@ export const useUI = create<UIState>((set) => ({
   inkOpsKey: "",
   pushInkOps: (inkOpsKey, ops) =>
     set((s) => {
-      if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: ops, inkFuture: [] };
-      return { inkPast: [...s.inkPast, ...ops], inkFuture: [] };
+      if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: capHistory(ops), inkFuture: [] };
+      return { inkPast: capHistory([...s.inkPast, ...ops]), inkFuture: [] };
     }),
   resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
 

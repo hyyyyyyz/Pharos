@@ -18,7 +18,7 @@ const ERASER_SIZES = [
 ];
 import type { DocumentRef } from "../lib/paperChat";
 import { TRANSLATE_STAGES, dash, isJobActive, stageIndex, toVM } from "../lib/model";
-import { isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
+import { capHistory, isAiOpen, pdfTranslationEnabled, useSession, useUI, type ReadMode } from "../store";
 import { AiPanel } from "./AiPanel";
 import { OutlinePanel, type OutlineEntry } from "./OutlinePanel";
 import { PdfCanvas } from "./PdfCanvas";
@@ -327,7 +327,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
         added: op.added,
       };
     }
-    useUI.setState((st) => ({ inkFuture: [...st.inkFuture, inverse] }));
+    useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
   }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 
@@ -368,7 +368,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
         return;
       }
     }
-    useUI.setState((st) => ({ inkPast: [...st.inkPast, reapplied] }));
+    useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
     void qc.invalidateQueries({ queryKey: ["ink", paperId, pdfKind] });
   }, [inkKey, paperId, pdfKind, qc, recreateStrokes]);
 

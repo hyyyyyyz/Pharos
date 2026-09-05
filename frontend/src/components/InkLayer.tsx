@@ -133,9 +133,22 @@ export function InkLayer({
   const pushInkOps = useUI((s) => s.pushInkOps);
 
   // One fetch per document+rendition; every page instance shares the cache.
+  // `staleTime: Infinity` matters here, not just as a network saving: every
+  // write goes through `updateCache` (an optimistic `setQueryData`) the
+  // instant it happens, so this query is never the source of truth again
+  // after the first load. Without it, scrolling reveals a new page, mounts a
+  // fresh `InkLayer` for the SAME query key, and — because the global
+  // `staleTime` is 5s — that remounts triggers a background refetch. If that
+  // request happened to start before an erase/edit and resolves after it,
+  // `useQuery` overwrites the cache with the pre-edit snapshot: erased
+  // strokes reappear (or an undo/redo you already did silently reverts).
+  // The cache is patched locally on every mutation and explicitly
+  // invalidated on failure, so a background refetch was never buying
+  // freshness — only this race.
   const { data: all } = useQuery({
     queryKey: ["ink", paperId, kind],
     queryFn: ({ signal }) => api.ink.list(paperId, kind, signal),
+    staleTime: Infinity,
   });
 
   const mine = useMemo(
@@ -614,6 +627,16 @@ export function InkLayer({
     if (inkMode === "off") return;
     const wet = wetRef.current;
     if (!wet) return;
+    // The page transform is not ready yet (first layout pass, or mid pinch-
+    // zoom before the new scale settles): `pointToPdf` divides by `scale`, so
+    // a zero or not-yet-finite value turns every point into Infinity/NaN.
+    // `JSON.stringify` renders those as `null`, and the backend's `PointIn`
+    // requires a finite float — every stroke drawn in that window landed as
+    // a 422 the user could not explain (tablet testing: writing "randomly"
+    // stopped saving). Wait for real geometry instead of capturing garbage.
+    if (!Number.isFinite(scale) || scale <= 0 || !Number.isFinite(pageHeight) || pageHeight <= 0) {
+      return;
+    }
     const debug = new URLSearchParams(window.location.search).has("inkdebug");
 
     const inPageSpace = (clientX: number, clientY: number, pressure: number): InkPoint => {
