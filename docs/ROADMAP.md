@@ -78,6 +78,19 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 - The web client now has focused Vitest coverage plus TypeScript and production
   build gates, but it still lacks browser-level end-to-end coverage for the
   complete reader, workflow, authentication, and recovery paths.
+- **The daily vault's folder connection is per-browser, not per-account.**
+  `lib/dailyVault.ts` stores the connection under one fixed key
+  (`pharos.daily.vault.connection.v1`) with its directory handle under the
+  IndexedDB key `"active"`, and neither is scoped by user id. On a shared
+  device that means the second person to sign in inherits the first person's
+  directory handle and writes their digest into someone else's folder — with
+  no indication that is what is happening, because the picker never reappears.
+  Single-user machines are unaffected, which is why it has gone unnoticed.
+  Fixing it means keying both stores by the signed-in user, and deciding what
+  an existing unscoped connection should do on upgrade: silently adopting it
+  for whoever logs in first would reproduce the bug once more, so it should
+  most likely be dropped and re-picked. See
+  [`DAILY_VAULT_FORMAT.md`](DAILY_VAULT_FORMAT.md).
 
 ## Next
 
