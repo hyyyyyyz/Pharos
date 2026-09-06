@@ -106,6 +106,21 @@
   z-index: 3;
   pointer-events: none;
   border-radius: inherit;
+}
+
+/*
+   The blend is applied only while a wash is actually painted on the canvas —
+   see `blend()` in InkLayer.tsx.
+
+   `mix-blend-mode` is not conditional on having content. An element that
+   declares one makes the compositor rasterise its whole backdrop into a
+   texture so it can be read back, every frame, even when the element is
+   blank. On a page with no watercolour that measured as page-sized backdrop
+   layers of 25 MiB and 12 MiB for two empty canvases. Reading a paper is the
+   common case, and the common case should not be paying for a feature it is
+   not using.
+*/
+.ph-ink-water.is-blending {
   mix-blend-mode: multiply;
 }
 

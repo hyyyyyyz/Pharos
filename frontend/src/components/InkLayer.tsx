@@ -193,6 +193,52 @@ const penEraseHeld = (e: PointerEvent): boolean => {
   return e.button === 2 || e.button === 5;
 };
 
+/**
+ * Give a canvas's pixels back.
+ *
+ * Setting a dimension to 0 is what frees the backing store — and, on an
+ * accelerated compositor, the GPU texture behind it. `clearRect` only paints
+ * over the pixels; they stay allocated, and a blank canvas costs exactly as
+ * much 显存 as a full one.
+ */
+function release(canvas: HTMLCanvasElement | null): void {
+  if (canvas && canvas.width !== 0) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+  blend(canvas, false);
+}
+
+/**
+ * Turn a wash canvas's `mix-blend-mode` on or off.
+ *
+ * A blend mode is not free and is not conditional on having content: an
+ * element that declares one forces the compositor to rasterise everything
+ * BEHIND it into a texture so it can be read back, every frame, even if the
+ * element itself is empty. Measured on a page with no watercolour at all,
+ * that showed up as page-sized backdrop layers — 25 MiB and 12 MiB apiece at
+ * zoom — for two canvases holding nothing.
+ *
+ * So the blend is applied only while a wash is actually on the canvas. Done by
+ * `classList` on a ref rather than through React state on purpose: this is
+ * called from the paint path, and a re-render per stroke to toggle a class
+ * would cost more than the class saves.
+ */
+function blend(canvas: HTMLCanvasElement | null, on: boolean): void {
+  canvas?.classList.toggle("is-blending", on);
+}
+
+/**
+ * A hard ceiling on any one canvas, in device pixels.
+ *
+ * The dpr cap already stops the backing store growing with zoom, but it is
+ * proportional to the PAGE, and a page is not a bounded thing: an A3 preprint
+ * or a fold-out figure is several times a Letter page. 16 megapixels is 64 MiB
+ * at 4 bytes each — generous for one layer, and low enough that a poster-sized
+ * page cannot on its own exhaust a tablet's GPU memory.
+ */
+const MAX_CANVAS_PX = 16_000_000;
+
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
   pointerId: number;
@@ -487,6 +533,7 @@ export function InkLayer({
 
   /* ------------------------------------------------------------- painting */
 
+
   /**
    * Size a canvas's backing store to its CSS box × dpr, and return the
    * PDF-space transform factor. Null when the canvas is not laid out yet.
@@ -507,10 +554,14 @@ export function InkLayer({
    */
   const prepare = useCallback(
     (canvas: HTMLCanvasElement): { k: number; w: number } | null => {
-      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
+      let dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       if (w === 0 || h === 0) return null;
+      // …and a hard area ceiling on top of the ratio cap, because the cap is
+      // proportional to the PAGE and a page is not a bounded thing.
+      const area = w * h * dpr * dpr;
+      if (area > MAX_CANVAS_PX) dpr *= Math.sqrt(MAX_CANVAS_PX / area);
       const bw = Math.floor(w * dpr);
       const bh = Math.floor(h * dpr);
       if (canvas.width !== bw || canvas.height !== bh) {
@@ -558,21 +609,32 @@ export function InkLayer({
     const dry = dryRef.current;
     const water = waterRef.current;
     if (!dry || !water) return;
-    const dryReady = prepare(dry);
-    const waterReady = prepare(water);
-    if (!dryReady || !waterReady) return;
-    clearInSpace(dry, dryReady.w);
-    clearInSpace(water, waterReady.w);
-    const colorOfDry = colorResolver(dry);
-    const colorOfWater = colorResolver(water);
     const carried = movingRef.current?.ids;
-    for (const stroke of mineRef.current) {
-      if (carried?.has(stroke.id)) continue; // being dragged; the wet layer shows it
-      if (isWaterColor(stroke.color)) {
-        paintStroke(water.getContext("2d")!, stroke, colorOfWater);
-      } else {
-        paintStroke(dry.getContext("2d")!, stroke, colorOfDry);
-      }
+    const rows = mineRef.current.filter((s) => !carried?.has(s.id));
+    // Allocate only what actually has something on it.
+    //
+    // Every sized canvas is a GPU texture whether or not a single pixel was
+    // ever drawn into it, and a page in READING mode has nothing in any of
+    // these. Measured before this: 15 live canvases and 67 MiB with no ink on
+    // the document at all — five per page, four of them blank. On a paper
+    // annotated on two pages out of twelve, the blank ones were most of the
+    // 显存 the reader was paying for.
+    const wet = rows.some((s) => isWaterColor(s.color));
+    const dryInk = rows.some((s) => !isWaterColor(s.color));
+    const dryReady = dryInk ? prepare(dry) : (release(dry), null);
+    const waterReady = wet ? prepare(water) : (release(water), null);
+    if (dryReady) {
+      clearInSpace(dry, dryReady.w);
+      const colorOf = colorResolver(dry);
+      const ctx = dry.getContext("2d")!;
+      for (const stroke of rows) if (!isWaterColor(stroke.color)) paintStroke(ctx, stroke, colorOf);
+    }
+    blend(water, wet);
+    if (waterReady) {
+      clearInSpace(water, waterReady.w);
+      const colorOf = colorResolver(water);
+      const ctx = water.getContext("2d")!;
+      for (const stroke of rows) if (isWaterColor(stroke.color)) paintStroke(ctx, stroke, colorOf);
     }
   }, [prepare, clearInSpace, colorResolver]);
 
@@ -1094,6 +1156,9 @@ export function InkLayer({
     const c = wetWaterRef.current;
     if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    // Nothing on it any more, so it must stop asking the compositor to read
+    // back the page behind it.
+    blend(c, false);
   }, []);
 
   /** Empty BOTH wet layers (hover cursor gone, gesture ghost gone, live wash
@@ -1306,7 +1371,10 @@ export function InkLayer({
       let target = ctx;
       if (isWaterColor(inkColor)) {
         const wetWater = wetWaterRef.current;
-        if (wetWater && prepare(wetWater)) target = wetWater.getContext("2d")!;
+        if (wetWater && prepare(wetWater)) {
+          blend(wetWater, true);
+          target = wetWater.getContext("2d")!;
+        }
       }
       paintInk(target, live, inkWidth, colorOf(inkColor), true);
     },
@@ -1384,6 +1452,35 @@ export function InkLayer({
     paintSelectionHandles(ctx, box);
     return true;
   }, [prepare, clearInSpace, paintSelection, paintSelectionHandles]);
+
+  /**
+   * Does this layer claim the pointer at all?
+   *
+   * NOT simply "a tool is selected": in 胶带 and 文本 mode the gesture effect
+   * above returns immediately, so a live canvas would sit over the page
+   * swallowing pointers and suppressing touch scrolling on behalf of code that
+   * does nothing. That is the shape of bug that made 锁定画布 look broken, and
+   * it is cheap to not have twice.
+   */
+  const interactive = inkMode !== "off" && inkMode !== "tape" && inkMode !== "text";
+
+  /**
+   * Hand back the two gesture canvases whenever nothing is using them.
+   *
+   * They are full-page and, unlike the committed layers, hold something only
+   * during a gesture or while a selection frame is up. Left allocated they are
+   * two more GPU textures per live page for a reader who is only reading —
+   * which, with the page window, is still four textures across the viewport
+   * doing nothing.
+   *
+   * The cost of giving them back is one reallocation when the next gesture
+   * starts, which `prepare` already does on its first paint.
+   */
+  useEffect(() => {
+    if (interactive || selection !== null) return;
+    release(wetRef.current);
+    release(wetWaterRef.current);
+  }, [interactive, selection]);
 
   /** The frame follows the zoom; also repaints on selection/stroke changes —
    *  and CLEARS when the selection goes.
@@ -2645,16 +2742,6 @@ export function InkLayer({
 
   /* ----------------------------------------------------------------- view */
 
-  /**
-   * Does this layer claim the pointer at all?
-   *
-   * NOT simply "a tool is selected": in 胶带 and 文本 mode the gesture effect
-   * above returns immediately, so a live canvas would sit over the page
-   * swallowing pointers and suppressing touch scrolling on behalf of code that
-   * does nothing. That is the shape of bug that made 锁定画布 look broken, and
-   * it is cheap to not have twice.
-   */
-  const interactive = inkMode !== "off" && inkMode !== "tape" && inkMode !== "text";
   /**
    * Where the command bar sits: centred over the selection's own frame, just
    * above the rotate handle — the placement in the reference, and the one that

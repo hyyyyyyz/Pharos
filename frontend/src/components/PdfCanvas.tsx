@@ -1197,7 +1197,7 @@ export function PdfCanvas({
             <div
               key={i}
               data-page={i + 1}
-              className="ph-pc-page"
+              className={`ph-pc-page${live.has(i + 1) ? "" : " is-dormant"}`}
               ref={(el) => {
                 pageRefs.current[i] = el;
               }}
