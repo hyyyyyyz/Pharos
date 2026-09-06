@@ -24,6 +24,19 @@ bash scripts/setup_engine_env.sh
 Never commit secrets. API keys live in a local `.env` (git-ignored); commit an
 `.env.example` with blank values instead.
 
+**Set `PHAROS_AUTH_SECRET` in that `.env`, not in your shell.** The backend
+requires one as soon as it is reachable from outside localhost — which it is
+the moment you bind `0.0.0.0` to reach it from a phone or tablet — and a value
+exported into a single shell lives only in that process. Restart the server and
+every token it ever signed becomes invalid: everyone is silently logged out,
+with nothing in the log to say why. Putting it in `.env` is what makes a
+restart uneventful.
+
+Still open: the failure is silent by construction (a fresh secret is
+indistinguishable from a forged token), so the backend should probably persist
+a generated development secret on first boot rather than leaving it ephemeral.
+Nobody has done that yet.
+
 ## Commit messages — Conventional Commits
 
 Format: `type(scope): summary` (imperative, ≤ 72 chars).
