@@ -36,6 +36,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { PageNoteRow, PageNoteStyle, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
+import { removeRow, serverId, settleInto, tempId, trackCreate } from "../lib/optimistic";
 import { useUI } from "../store";
 import "./NoteLayer.css";
 
@@ -48,6 +49,8 @@ export const NEW_NOTE_H = 44;
  *  a size the server will refuse. */
 const MIN_SIZE = 8;
 const MAX_SIZE = 2000;
+/** Mirrors `services/pagenote.MAX_BODY`, for the same reason. */
+const MAX_NOTE_BODY = 4000;
 
 const clampSize = (v: number): number =>
   !Number.isFinite(v) ? MIN_SIZE : Math.min(MAX_SIZE, Math.max(MIN_SIZE, v));
@@ -91,7 +94,19 @@ export function NoteLayer({
 
   const updateCache = useCallback(
     (updater: (prev: PageNoteRow[]) => PageNoteRow[]) => {
-      qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => updater(prev ?? []));
+      // A list GET still in flight would resolve AFTER this write and replace
+      // the whole array with the server's older copy — every mark made since
+      // the request left simply gone from the page, though the POSTs
+      // succeeded and the server has them. The window is small but it is
+      // exactly the wrong one: it opens when the paper is first opened and
+      // again after any failed write invalidates the list, which is precisely
+      // when a reader is drawing. Cancelling makes the in-flight result be
+      // discarded instead of applied.
+      const queryKey = ["note", paperId, kind];
+      if (qc.isFetching({ queryKey, exact: true }) > 0) {
+        void qc.cancelQueries({ queryKey, exact: true });
+      }
+      qc.setQueryData<PageNoteRow[]>(queryKey, (prev) => updater(prev ?? []));
     },
     [qc, paperId, kind],
   );
@@ -99,9 +114,18 @@ export function NoteLayer({
   const patch = useCallback(
     (id: string, fields: Partial<PageNoteRow>) => {
       updateCache((prev) => prev.map((n) => (n.id === id ? { ...n, ...fields } : n)));
-      void api.note.update(id, fields).catch(() => {
-        void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
-      });
+      // Through `serverId`, because a note is at its most editable in the
+      // second right after it is made — that is when the reader types into it,
+      // drags it somewhere better, folds it up. All of those PATCH, and until
+      // the POST returns the only id we have is one the server 404s on. The
+      // 404 then invalidated the list, and the refetch overwrote the cache with
+      // the server's copy: the note snapped back to its old spot, and anything
+      // typed inside that window was simply gone.
+      void serverId(id)
+        .then((real) => (real === null ? null : api.note.update(real, fields)))
+        .catch(() => {
+          void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
+        });
     },
     [updateCache, qc, paperId, kind],
   );
@@ -127,7 +151,7 @@ export function NoteLayer({
   const remove = useCallback(
     (id: string) => {
       updateCache((prev) => prev.filter((n) => n.id !== id));
-      void api.note.remove(id).catch(() => {
+      void removeRow(id, (real) => api.note.remove(real)).catch(() => {
         void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
       });
     },
@@ -151,7 +175,7 @@ export function NoteLayer({
   const addAt = useCallback(
     (pageX: number, pageY: number, style: PageNoteStyle) => {
       const temp: PageNoteRow = {
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -171,16 +195,19 @@ export function NoteLayer({
       setPendingFocus(temp.id);
       void (async () => {
         try {
-          const row = await api.note.create(paperId, {
-            kind,
-            page,
-            x: pageX,
-            y: pageY,
-            w: NEW_NOTE_W,
-            h: NEW_NOTE_H,
-            style,
-            color: noteColor,
-          });
+          const row = await trackCreate(
+            temp.id,
+            api.note.create(paperId, {
+              kind,
+              page,
+              x: pageX,
+              y: pageY,
+              w: NEW_NOTE_W,
+              h: NEW_NOTE_H,
+              style,
+              color: noteColor,
+            }),
+          );
           // Swapping the id changes the React key, which UNMOUNTS the
           // textarea and takes the caret with it — the reader would be typing
           // and then suddenly not be. So ask for it back, but only if it was
@@ -188,7 +215,9 @@ export function NoteLayer({
           // caret out of whatever the reader moved on to in the meantime.
           const hadCaret =
             document.activeElement?.closest?.(`[data-note="${temp.id}"]`) != null;
-          updateCache((prev) => prev.map((n) => (n.id === temp.id ? { ...row, body: n.body } : n)));
+          updateCache((prev) =>
+            settleInto(prev, temp.id, { ...row, body: prev.find((n) => n.id === temp.id)?.body ?? row.body }),
+          );
           if (hadCaret) setPendingFocus(row.id);
           // Anything typed before the row existed has to be sent now.
           const typed = qc
@@ -468,6 +497,13 @@ function NoteBox({
         style={{ fontSize: note.size * scale }}
         value={text}
         readOnly={!editable}
+        // Mirrors `services/pagenote.MAX_BODY`. Without it the server refuses
+        // the save with a 422 that nothing surfaces: the note keeps showing
+        // what was typed, the reader has no reason to think it was not saved,
+        // and the overflow is gone at the next reload. The textarea simply
+        // stops accepting characters at the limit instead — the one place the
+        // reader can actually see it happen.
+        maxLength={MAX_NOTE_BODY}
         placeholder={editable ? "输入文字…" : ""}
         onFocus={() => {
           touchedRef.current = true;

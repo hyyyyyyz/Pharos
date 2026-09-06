@@ -82,6 +82,7 @@ import {
 import { Icons } from "../design/icons";
 import { NEW_NOTE_H, NEW_NOTE_W } from "./NoteLayer";
 import { isDrawingPointer, isStylus } from "../lib/pointer";
+import { removeRow, settleInto, tempId, trackCreate } from "../lib/optimistic";
 import { penSound } from "../lib/penSound";
 import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
 import {
@@ -820,9 +821,19 @@ export function InkLayer({
   /** Functional cache write: safe against mid-gesture staleness. */
   const updateCache = useCallback(
     (updater: (prev: InkStrokeRow[]) => InkStrokeRow[]) => {
-      qc.setQueryData<InkStrokeRow[]>(["ink", paperId, kind], (prev) =>
-        updater(prev ?? []),
-      );
+      // A list GET still in flight would resolve AFTER this write and replace
+      // the whole array with the server's older copy — every mark made since
+      // the request left simply gone from the page, though the POSTs
+      // succeeded and the server has them. The window is small but it is
+      // exactly the wrong one: it opens when the paper is first opened and
+      // again after any failed write invalidates the list, which is precisely
+      // when a reader is drawing. Cancelling makes the in-flight result be
+      // discarded instead of applied.
+      const queryKey = ["ink", paperId, kind];
+      if (qc.isFetching({ queryKey, exact: true }) > 0) {
+        void qc.cancelQueries({ queryKey, exact: true });
+      }
+      qc.setQueryData<InkStrokeRow[]>(queryKey, (prev) => updater(prev ?? []));
     },
     [qc, paperId, kind],
   );
@@ -852,7 +863,7 @@ export function InkLayer({
       alsoOps: InkOp[] = [],
     ): InkStrokeRow[] => {
       const temps: InkStrokeRow[] = specs.map((s) => ({
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -874,14 +885,14 @@ export function InkLayer({
       /** Point one settled row at its temp — in the cache, in the undo op, and
        *  in the SELECTION, so a selection kept alive across an edit ends up
        *  holding server rows rather than ids the server has never heard of. */
-      const settle = (tempId: string, row: InkStrokeRow): void => {
+      const settle = (temp: string, row: InkStrokeRow): void => {
         // Recorded FIRST, and synchronously: `updateCache` notifies TanStack
         // subscribers immediately, so the very next render can already see the
         // temp gone — and the selection resync effect needs to be able to
         // follow it to `row` at that moment, not one batched state update
         // later.
         if (settledRef.current.size > 200) settledRef.current.clear();
-        settledRef.current.set(tempId, row);
+        settledRef.current.set(temp, row);
         // A gesture IN FLIGHT is holding this id too, and it must follow the
         // rename or it silently loses the reader's work.
         //
@@ -897,49 +908,53 @@ export function InkLayer({
         // the selection dies. Entirely network-timed, which is exactly why it
         // reads as erratic rather than as a bug with a shape.
         const swap = (ids: Set<string>): void => {
-          if (!ids.delete(tempId)) return;
+          if (!ids.delete(temp)) return;
           ids.add(row.id);
         };
         const live = strokeRef.current;
         if (live?.moving) swap(live.moving.ids);
         if (live?.transform) swap(live.transform.ids);
         if (movingRef.current) swap(movingRef.current.ids);
-        updateCache((prev) => prev.map((s) => (s.id === tempId ? row : s)));
-        useUI.setState((s) => {
-          if (s.inkOpsKey !== key) return s;
-          for (let i = s.inkPast.length - 1; i >= 0; i--) {
-            const op = s.inkPast[i];
-            if (op.kind !== "edit") continue;
-            const idx = op.added.findIndex((a) => a.id === tempId);
-            if (idx === -1) continue;
-            const added = op.added.slice();
-            added[idx] = row;
-            const past = s.inkPast.slice();
-            past[i] = { ...op, added };
-            return { inkPast: past };
-          }
-          return s;
-        });
+        updateCache((prev) => settleInto(prev, temp, row));
+        // `remapInkRow` rather than a walk of our own. It recurses into
+        // `batch` and it covers `inkFuture` as well as `inkPast`, and this
+        // gesture produces exactly the op neither of those was optional for:
+        // a lasso drag over ink AND 胶带 folds its edit inside a batch (see
+        // `alsoOps` above), where a scan that skips anything not `kind ===
+        // "edit"` never finds it. The temp id then survives on the undo
+        // stack, and undoing re-adds a stroke the server already holds under
+        // its real id — one drag, two copies of the ink, and no way back.
+        useUI.getState().remapInkRow(temp, row);
       };
 
       void (async () => {
         let failed = false;
         for (const row of removedRows) {
-          if (row.id.startsWith("temp-")) continue; // never reached the server
-          await api.ink.remove(row.id).catch(() => {
+          // NOT `if (isTempId) continue`. A temp id means the create has not
+          // landed YET, not that there is nothing to delete — and this very
+          // function POSTs one round trip per stroke, so dragging a five-stroke
+          // selection twice in quick succession reliably asks us to remove rows
+          // whose creates are still in the air. Skipping them leaves the server
+          // holding strokes this session will never show again and undo can
+          // never reach: the reader drags, sees one copy, reopens the paper and
+          // finds the ink duplicated at both positions.
+          await removeRow(row.id, (id) => api.ink.remove(id)).catch(() => {
             failed = true;
           });
         }
         const settled: InkStrokeRow[] = [];
         for (let i = 0; i < specs.length; i++) {
           try {
-            const row = await api.ink.create(paperId, {
-              kind,
-              page,
-              points: specs[i]!.points,
-              color: specs[i]!.color,
-              width: specs[i]!.width,
-            });
+            const row = await trackCreate(
+              temps[i]!.id,
+              api.ink.create(paperId, {
+                kind,
+                page,
+                points: specs[i]!.points,
+                color: specs[i]!.color,
+                width: specs[i]!.width,
+              }),
+            );
             settled.push(row);
             settle(temps[i]!.id, row);
           } catch {
@@ -985,9 +1000,9 @@ export function InkLayer({
         if (!strokeNear(stroke.points, stroke.width, x, y, inkEraserSize / scale)) continue;
         erasedRef.current.push(stroke);
         updateCache((prev) => prev.filter((s) => s.id !== stroke.id));
-        void api.ink.remove(stroke.id).catch(() => {
-          void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
-        });
+        void removeRow(stroke.id, (id) => api.ink.remove(id)).catch(() => {
+            void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+          });
       }
     },
     [scale, inkEraserSize, updateCache, qc, paperId, kind],
@@ -1004,7 +1019,7 @@ export function InkLayer({
         if (parts.length === 1 && parts[0]!.length === stroke.points.length) continue;
         const kept = parts.filter((p) => p.length >= 2); // specks are noise
         const temps: InkStrokeRow[] = kept.map((points) => ({
-          id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          id: tempId(),
           paper_id: paperId,
           kind,
           page,
@@ -1019,8 +1034,16 @@ export function InkLayer({
         // only — the server half of the gesture commits at gesture end, as
         // one edit op.
         updateCache((prev) => [...prev.filter((s) => s.id !== goneId), ...temps]);
+        // "Did THIS gesture mint it", not "does the id look temporary". A part
+        // split twice in one pass leaves the account and its children take its
+        // place — but a stroke drawn a second ago also still carries a temp id
+        // while its POST flies, and that one the server very much does hold.
+        // Judging by the id shape lumped the two together and let the second
+        // kind fall out of `removed` entirely: the fragment stayed on the
+        // server, so the erased stroke came back whole on the next open.
+        const ourOwn = pixelAddedRef.current.some((a) => a.id === stroke.id);
         pixelAddedRef.current = pixelAddedRef.current.filter((a) => a.id !== stroke.id);
-        if (!stroke.id.startsWith("temp-")) pixelRemovedRef.current.push(stroke);
+        if (!ourOwn) pixelRemovedRef.current.push(stroke);
         pixelAddedRef.current.push(...temps);
       }
     },
@@ -1061,7 +1084,7 @@ export function InkLayer({
         if (stroke.color === inkColor && stroke.width === inkWidth) continue;
         if (!strokeNear(stroke.points, stroke.width, x, y, reach)) continue;
         const temp: InkStrokeRow = {
-          id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          id: tempId(),
           paper_id: paperId,
           kind,
           page,
@@ -1071,7 +1094,11 @@ export function InkLayer({
           created_at: new Date().toISOString(),
         };
         updateCache((prev) => prev.map((s) => (s.id === stroke.id ? temp : s)));
-        if (!stroke.id.startsWith("temp-")) styleRemovedRef.current.push(stroke);
+        // Ours, or merely still in flight? Only the first is safe to drop from
+        // `removed` — see the matching note in `eraseAtPixel`.
+        const ourOwn = styleAddedRef.current.some((a) => a.id === stroke.id);
+        styleAddedRef.current = styleAddedRef.current.filter((a) => a.id !== stroke.id);
+        if (!ourOwn) styleRemovedRef.current.push(stroke);
         styleAddedRef.current.push(temp);
       }
     },
@@ -2335,7 +2362,7 @@ export function InkLayer({
       // swap is invisible; the only visible difference is the end taper,
       // which the temp already carries (last:true outline).
       const temp: InkStrokeRow = {
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -2348,22 +2375,20 @@ export function InkLayer({
       pushInkOps(key, [{ kind: "add", stroke: temp }]);
       cancelPendingPaint();
       paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
-      const settleStack = (row: InkStrokeRow): void => {
-        useUI.setState((s) => {
-          if (s.inkOpsKey !== key) return s;
-          const past = s.inkPast.slice();
-          const last = past[past.length - 1];
-          if (last && last.kind === "add" && last.stroke.id === temp.id) {
-            past[past.length - 1] = { kind: "add", stroke: row };
-          }
-          return { inkPast: past };
-        });
-      };
-      void api.ink
-        .create(paperId, { kind, page, points, color: inkColor, width: inkWidth })
+      void trackCreate(
+        temp.id,
+        api.ink.create(paperId, { kind, page, points, color: inkColor, width: inkWidth }),
+      )
         .then((row) => {
-          updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
-          settleStack(row);
+          updateCache((prev) => settleInto(prev, temp.id, row));
+          // Was a hand-rolled patch of `past[past.length - 1]` only. Writing
+          // fast — which is the normal way to write — puts the NEXT stroke's
+          // op on top before this POST returns, and then the top is not ours:
+          // the repair silently does nothing and `temp-…` stays on the undo
+          // stack. Undo that far back deletes an id the server 404s on, so the
+          // stroke never goes away. `remapInkRow` finds the op wherever it has
+          // sunk to, in either stack, including inside a batch.
+          useUI.getState().remapInkRow(temp.id, row);
         })
         .catch(() => {
           // The server refused it: roll the optimistic stroke back out of the
@@ -2461,6 +2486,17 @@ export function InkLayer({
         if (inkMode === "style") abandonStyleGesture();
         movingRef.current = null;
       }
+      // Carried 胶带 goes back to being visible.
+      //
+      // `inkCarried` is how a drag tells `TapeLayer` "I am painting these
+      // strips myself, do not draw them" — so a gesture that dies without
+      // committing leaves its strips hidden by a flag nothing will clear.
+      // Zooming mid-drag rebinds these handlers, which is exactly how a reader
+      // reaches it: the tape is not deleted, not undoable, and does not come
+      // back until the page is reloaded. Guarded rather than unconditional
+      // because a rebind happens on every zoom step and an empty array is
+      // still a new identity to every subscriber.
+      if (useUI.getState().inkCarried.length > 0) setInkCarried([]);
       // A frame queued by `schedulePaintWet` would repaint a gesture that no
       // longer exists, onto a canvas about to be cleared.
       cancelPendingPaint();
@@ -2528,10 +2564,11 @@ export function InkLayer({
         updateCache((prev) => prev.filter((s) => !gone.has(s.id)));
         ops.push({ kind: "remove", strokes: rows });
         for (const row of rows) {
-          if (row.id.startsWith("temp-")) continue;
-          void api.ink.remove(row.id).catch(() => {
-            void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
-          });
+          // Await the create rather than skipping the row: lasso, drag, delete
+          // is a two-second sequence and the drag's POSTs are still landing.
+          void removeRow(row.id, (id) => api.ink.remove(id)).catch(() => {
+              void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+            });
         }
       }
       for (const t of tapes) {
@@ -2539,9 +2576,9 @@ export function InkLayer({
         qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
           (prev ?? []).filter((row) => row.id !== t.id),
         );
-        void api.tape.remove(t.id).catch(() => {
-          void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
-        });
+        void removeRow(t.id, (id) => api.tape.remove(id)).catch(() => {
+            void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
+          });
       }
       // One gesture, one undo — the same rule the lasso's drag follows.
       if (ops.length > 0) pushInkOps(key, batchOps(ops));
@@ -2596,7 +2633,7 @@ export function InkLayer({
       // the activation the menu tap provided. The box has to exist, and be
       // asking for the caret, before this call stack unwinds.
       const temp: PageNoteRow = {
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -2616,21 +2653,28 @@ export function InkLayer({
       setNoteFocus(temp.id);
       void (async () => {
         try {
-          const row = await api.note.create(paperId, {
-            kind,
-            page,
-            x,
-            y,
-            w: NEW_NOTE_W,
-            h: NEW_NOTE_H,
-            style,
-            color: noteColor,
-          });
+          const row = await trackCreate(
+            temp.id,
+            api.note.create(paperId, {
+              kind,
+              page,
+              x,
+              y,
+              w: NEW_NOTE_W,
+              h: NEW_NOTE_H,
+              style,
+              color: noteColor,
+            }),
+          );
           const hadCaret =
             document.activeElement?.closest?.(`[data-note="${temp.id}"]`) != null;
-          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) =>
-            (prev ?? []).map((n) => (n.id === temp.id ? { ...row, body: n.body } : n)),
-          );
+          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => {
+            const rows = prev ?? [];
+            // Whatever has been typed since the POST left wins over the empty
+            // body the note was created with.
+            const mine = rows.find((n) => n.id === temp.id);
+            return settleInto(rows, temp.id, { ...row, body: mine?.body ?? row.body });
+          });
           if (hadCaret) setNoteFocus(row.id);
         } catch {
           qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) =>
@@ -2671,7 +2715,7 @@ export function InkLayer({
       // Optimistic, like every other write here: the copies appear under the
       // pen immediately and the server's rows replace the temps as they land.
       const temps: InkStrokeRow[] = clip.strokes.map((s) => ({
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -2693,14 +2737,17 @@ export function InkLayer({
         const ops: InkOp[] = [];
         for (const temp of temps) {
           try {
-            const row = await api.ink.create(paperId, {
-              kind,
-              page,
-              points: temp.points,
-              color: temp.color,
-              width: temp.width,
-            });
-            updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
+            const row = await trackCreate(
+              temp.id,
+              api.ink.create(paperId, {
+                kind,
+                page,
+                points: temp.points,
+                color: temp.color,
+                width: temp.width,
+              }),
+            );
+            updateCache((prev) => settleInto(prev, temp.id, row));
             setSelection((sel) =>
               sel ? { ...sel, rows: sel.rows.map((r) => (r.id === temp.id ? row : r)) } : sel,
             );

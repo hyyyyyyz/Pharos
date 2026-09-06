@@ -41,6 +41,34 @@ const clampZoom = (v: number, fitScale = MIN_ZOOM): number => {
 const fitScaleFor = (avail: number, pageWidth: number): number =>
   Math.max(HARD_MIN_ZOOM, Math.min(MAX_ZOOM, avail / pageWidth));
 
+/**
+ * A hard ceiling on one page canvas, in device pixels — the same 16 megapixels
+ * `InkLayer.MAX_CANVAS_PX` allows its own layers, for the same reason.
+ */
+const MAX_CANVAS_PX = 16_000_000;
+
+/**
+ * The widest or tallest a single canvas may be, in device pixels.
+ *
+ * Chromium will hand out a canvas far larger than the GPU can hold as a
+ * texture; the tile that exceeds the limit simply never paints, so the page
+ * comes back blank with nothing logged. 8192 is the conservative limit across
+ * the tablet GPUs this runs on.
+ */
+const MAX_CANVAS_SIDE = 8192;
+
+/** Scale `dpr` down until a page of this CSS size fits both ceilings. */
+export function pageDpr(dpr: number, cssWidth: number, cssHeight: number): number {
+  if (!(cssWidth > 0) || !(cssHeight > 0)) return dpr;
+  let out = dpr;
+  const area = cssWidth * cssHeight * out * out;
+  if (area > MAX_CANVAS_PX) out *= Math.sqrt(MAX_CANVAS_PX / area);
+  const side = Math.max(cssWidth, cssHeight) * out;
+  if (side > MAX_CANVAS_SIDE) out *= MAX_CANVAS_SIDE / side;
+  // Never magnify, and never round down to nothing: a page has to render.
+  return Math.max(Math.min(out, dpr), 0.05);
+}
+
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : typeof e === "string" ? e : "未知错误";
 
@@ -506,11 +534,41 @@ export function PdfCanvas({
       if (live.has(n)) continue;
       const canvas = canvasRefs.current[n - 1];
       if (canvas && canvas.width !== 0) {
-        tasks.get(n)?.task.cancel();
+        const running = tasks.get(n);
+        running?.task.cancel();
         // Setting either dimension to 0 is what actually frees a canvas's
         // pixels; clearRect only paints over them.
         canvas.width = 0;
         canvas.height = 0;
+        // And the CSS box with them. It is left over from whatever zoom this
+        // page was last rendered at, and it is not re-set until the page comes
+        // back into the window — so after zooming OUT, every dormant canvas
+        // still claims the old, larger width. The page divs shrink correctly
+        // (their size is an inline style off the current zoom) but the
+        // oversized canvases keep the scroll area wide, and the reader gets a
+        // horizontal scrollbar over empty space.
+        canvas.style.width = "";
+        canvas.style.height = "";
+        // And the pixels are only half of what a rendered page costs.
+        //
+        // pdf.js keeps per-page scratch alive after a render — the parsed
+        // operator list, the glyph and image caches built to execute it — and
+        // hands the SAME `PDFPageProxy` back on every `getPage(n)`, so it
+        // accumulates for the life of the document and is never collected
+        // while `doc` is held. Freeing the canvas without this releases the
+        // compositor's copy and leaves the interpreter's, which on a
+        // figure-heavy paper is the larger of the two. `cleanup()` drops it;
+        // the next render simply re-parses.
+        //
+        // After the cancel settles, never before: cleanup during a live render
+        // pulls the operator list out from under it.
+        void (running?.settled ?? Promise.resolve()).then(() => {
+          if (live.has(n)) return; // scrolled back into view while we waited
+          void doc.getPage(n).then(
+            (p) => p.cleanup(),
+            () => undefined,
+          );
+        });
       }
     }
 
@@ -533,15 +591,27 @@ export function PdfCanvas({
         const viewport = page.getViewport({ scale: zoom });
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
+        // The dpr cap above is proportional to the PAGE, and a page is not a
+        // bounded thing — a fold-out figure or an A0 conference poster is many
+        // times a Letter page, and `2.5 / zoom` leaves such a page's canvas as
+        // large as it likes. Measured on an A0 poster at 400%: 128.6 megapixels,
+        // 514 MB in one backing store, and past the 8192-pixel texture limit
+        // most tablet GPUs have — where the canvas does not fail loudly, it
+        // just comes back blank.
+        //
+        // So the same absolute ceiling `InkLayer` puts on its own layers, plus
+        // a per-axis one. Sharpness is what gives, on the one class of page
+        // where nothing else can.
+        const shrink = pageDpr(dpr, viewport.width, viewport.height);
+        canvas.width = Math.floor(viewport.width * shrink);
+        canvas.height = Math.floor(viewport.height * shrink);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
 
         const task = page.render({
           canvasContext: ctx,
           viewport,
-          transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
+          transform: shrink !== 1 ? [shrink, 0, 0, shrink, 0, 0] : undefined,
         });
         // Never rejects: a cancelled task is an expected outcome, not an error.
         const settled = task.promise.then(

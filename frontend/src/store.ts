@@ -148,8 +148,69 @@ export function toolRemembers(mode: InkMode): boolean {
   return mode === "draw" || mode === "water" || mode === "style";
 }
 
-export function capHistory<T>(ops: T[]): T[] {
-  return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
+/**
+ * Samples an op keeps alive.
+ *
+ * An op does not hold a reference to a stroke — it holds the whole row,
+ * points and all, because that payload is what re-creates the stroke on the
+ * server when the op is undone. So the history's real cost is measured in
+ * samples, not in entries.
+ */
+function opSamples(op: InkOp): number {
+  const n = (rows: { points?: unknown[] }[]): number =>
+    rows.reduce((sum, r) => sum + (r.points?.length ?? 0), 0);
+  switch (op.kind) {
+    case "add":
+      return n([op.stroke]);
+    case "remove":
+      return n(op.strokes);
+    case "edit":
+      return n(op.removed) + n(op.added);
+    case "batch":
+      return op.ops.reduce((sum, inner) => sum + opSamples(inner), 0);
+    default:
+      return 0; // a 胶带 op is a rectangle: four numbers, not a sample list
+  }
+}
+
+/**
+ * Retained samples across one stack, roughly 30 MB of live point objects.
+ *
+ * Ordinary writing never reaches it — two hundred strokes of handwriting is
+ * some forty thousand samples — so for the common case `MAX_INK_HISTORY`
+ * still decides the depth, and the reader keeps every undo they expect.
+ */
+export const MAX_INK_HISTORY_SAMPLES = 300_000;
+
+/**
+ * Trim a history stack to what it is reasonable to keep alive.
+ *
+ * By COUNT was the whole cap, and count is not what an op costs. One lasso
+ * drag over forty strokes pushes a single `edit` holding eighty rows —
+ * everything it removed and everything it added — so two hundred such ops is
+ * sixteen thousand strokes' worth of samples on the undo stack, with as much
+ * again on the redo stack, none of it reachable by the garbage collector
+ * while the paper stays open. That is hundreds of megabytes accumulated by a
+ * reader doing nothing unusual, on a device that answers memory pressure by
+ * killing the renderer — the 闪退 the reader reported after "胶带使用较多",
+ * arriving through editing rather than through canvases.
+ *
+ * Newest first, since that is the end undo reaches first: an op is kept while
+ * both budgets allow it, and everything older than the first refusal goes.
+ */
+export function capHistory(ops: InkOp[]): InkOp[] {
+  if (ops.length === 0) return ops;
+  let samples = 0;
+  let keep = 0;
+  for (let i = ops.length - 1; i >= 0; i--) {
+    // The newest op is kept whatever it costs — a history that cannot hold
+    // even one entry would make undo silently do nothing.
+    if (keep >= MAX_INK_HISTORY) break;
+    samples += opSamples(ops[i]!);
+    if (keep > 0 && samples > MAX_INK_HISTORY_SAMPLES) break;
+    keep++;
+  }
+  return keep === ops.length ? ops : ops.slice(ops.length - keep);
 }
 
 /** Rewrite one op so any reference to `oldId` names the recreated row

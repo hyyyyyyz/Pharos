@@ -8,6 +8,7 @@ import type { InkStrokeRow, Paper, PdfKind, TapeRow } from "../api/types";
 import { Icons } from "../design/icons";
 import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
 import { penSound } from "../lib/penSound";
+import { removeRow } from "../lib/optimistic";
 import { InkToolPopover } from "./InkToolPopover";
 
 /** Eraser presets: radius in CSS pixels. The on-page preview circle and the
@@ -457,7 +458,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           return { kind: "batch", ops: inverses };
         }
         case "tape-add":
-          await api.tape.remove(op.tape.id).catch(() => undefined);
+          await removeRow(op.tape.id, (id) => api.tape.remove(id)).catch(() => undefined);
           // Redo re-places it from this payload, with a fresh id — the same
           // protocol a stroke follows.
           return op;
@@ -469,12 +470,18 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           await api.tape.update(op.id, op.before).catch(() => undefined);
           return op; // the same op describes the redo: patch to `after`
         case "add":
-          await api.ink.remove(op.stroke.id).catch(() => undefined);
+          // Through `removeRow`: "write something, immediately take it back" is
+          // one of the commonest things a reader does, and it lands inside the
+          // POST window every time. Deleting the temp id straight out 404s,
+          // the catch swallows it, and the stroke the reader just undid comes
+          // back with the next refetch — permanent, and unreachable by undo.
+          await removeRow(op.stroke.id, (id) => api.ink.remove(id)).catch(() => undefined);
           return op;
         case "remove":
           return { kind: "remove", strokes: await recreateStrokes(op.strokes) };
         case "edit": {
-          for (const row of op.added) await api.ink.remove(row.id).catch(() => undefined);
+          for (const row of op.added)
+            await removeRow(row.id, (id) => api.ink.remove(id)).catch(() => undefined);
           return { kind: "edit", removed: await recreateStrokes(op.removed), added: op.added };
         }
       }
@@ -506,7 +513,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           return { kind: "tape-add", tape: back ?? op.tape };
         }
         case "tape-remove":
-          await api.tape.remove(op.tape.id).catch(() => undefined);
+          await removeRow(op.tape.id, (id) => api.tape.remove(id)).catch(() => undefined);
           return op;
         case "tape-edit":
           await api.tape.update(op.id, op.after).catch(() => undefined);
@@ -526,11 +533,12 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
           }
         case "remove":
           for (const stroke of op.strokes) {
-            await api.ink.remove(stroke.id).catch(() => undefined);
+            await removeRow(stroke.id, (id) => api.ink.remove(id)).catch(() => undefined);
           }
           return op;
         case "edit": {
-          for (const row of op.removed) await api.ink.remove(row.id).catch(() => undefined);
+          for (const row of op.removed)
+            await removeRow(row.id, (id) => api.ink.remove(id)).catch(() => undefined);
           const added = await recreateStrokes(op.added);
           // Part of the redo was refused: the cache no longer matches this op.
           if (added.length !== op.added.length) return null;
@@ -551,29 +559,54 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     void qc.invalidateQueries({ queryKey: ["tape", paperId, pdfKind] });
   }, [qc, paperId, pdfKind]);
 
+  /**
+   * One history step at a time, queued — never two in flight together.
+   *
+   * Undo pops its op synchronously and then awaits a string of round trips.
+   * A second tap inside that window (tapping undo three times to back out of a
+   * bad stroke is the normal way to use it, and each step is several hundred
+   * milliseconds of network) reads the stack while the first step is still
+   * rewriting it: `recreateStrokes` re-creates rows under FRESH server ids and
+   * teaches the history about them via `remapInkRow`, but the second call has
+   * already taken its own op into a local and holds the ids from before the
+   * remap. Its deletes then 404 and its re-creates duplicate — the page ends
+   * up with more ink after undoing than before.
+   *
+   * Chained rather than dropped: every tap the reader makes still happens, in
+   * order. Rejections are absorbed so one refused step cannot wedge the chain.
+   */
+  const historyChain = useRef<Promise<void>>(Promise.resolve());
+  const queueHistory = useCallback((step: () => Promise<void>): void => {
+    historyChain.current = historyChain.current.then(step, step);
+  }, []);
+
   const undoInk = useCallback(async () => {
     if (!pdfKind) return;
-    const s = useUI.getState();
-    if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
-    const op = s.inkPast[s.inkPast.length - 1]!;
-    useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
-    const inverse = await undoOne(op);
-    useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
-    settleAfterHistory();
-  }, [inkKey, pdfKind, undoOne, settleAfterHistory]);
+    queueHistory(async () => {
+      const s = useUI.getState();
+      if (s.inkOpsKey !== inkKey || s.inkPast.length === 0) return;
+      const op = s.inkPast[s.inkPast.length - 1]!;
+      useUI.setState((st) => ({ inkPast: st.inkPast.slice(0, -1) }));
+      const inverse = await undoOne(op);
+      useUI.setState((st) => ({ inkFuture: capHistory([...st.inkFuture, inverse]) }));
+      settleAfterHistory();
+    });
+  }, [inkKey, pdfKind, undoOne, settleAfterHistory, queueHistory]);
 
   const redoInk = useCallback(async () => {
     if (!pdfKind) return;
-    const s = useUI.getState();
-    if (s.inkOpsKey !== inkKey || s.inkFuture.length === 0) return;
-    const op = s.inkFuture[s.inkFuture.length - 1]!;
-    useUI.setState((st) => ({ inkFuture: st.inkFuture.slice(0, -1) }));
-    const reapplied = await redoOne(op);
-    if (reapplied !== null) {
-      useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
-    }
-    settleAfterHistory();
-  }, [inkKey, pdfKind, redoOne, settleAfterHistory]);
+    queueHistory(async () => {
+      const s = useUI.getState();
+      if (s.inkOpsKey !== inkKey || s.inkFuture.length === 0) return;
+      const op = s.inkFuture[s.inkFuture.length - 1]!;
+      useUI.setState((st) => ({ inkFuture: st.inkFuture.slice(0, -1) }));
+      const reapplied = await redoOne(op);
+      if (reapplied !== null) {
+        useUI.setState((st) => ({ inkPast: capHistory([...st.inkPast, reapplied]) }));
+      }
+      settleAfterHistory();
+    });
+  }, [inkKey, pdfKind, redoOne, settleAfterHistory, queueHistory]);
 
   /* ----------------------------------------------------------- thumbnails */
   const [thumbs, setThumbs] = useState<(string | null)[]>([]);

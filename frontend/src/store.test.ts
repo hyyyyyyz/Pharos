@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import type { InkStrokeRow } from "./api/types";
+import type { InkOp } from "./store";
 import {
   DETAIL_OVERLAY_MAX_WIDTH,
   MAX_INK_HISTORY,
+  MAX_INK_HISTORY_SAMPLES,
   MAX_INK_WIDTH,
   MIN_INK_WIDTH,
   capHistory,
@@ -68,17 +71,63 @@ describe("isAiOpen (regression: the tablet fork must not disturb the AI panel)",
 });
 
 describe("capHistory (bounded ink undo/redo)", () => {
+  /** One `add` carrying `samples` points, tagged so order is checkable. */
+  const add = (tag: number, samples = 0): InkOp => ({
+    kind: "add",
+    stroke: { id: `s${tag}`, points: new Array(samples).fill({ x: 0, y: 0, p: 0.5 }) } as never,
+  });
+  const tagOf = (op: InkOp): string => (op.kind === "add" ? op.stroke.id : "?");
+
   it("passes a short list through untouched", () => {
-    const ops = [1, 2, 3];
-    expect(capHistory(ops)).toEqual([1, 2, 3]);
+    const ops = [add(1), add(2), add(3)];
+    expect(capHistory(ops)).toBe(ops);
   });
 
   it("drops the oldest entries once the cap is hit, keeping the newest", () => {
-    const ops = Array.from({ length: MAX_INK_HISTORY + 10 }, (_, i) => i);
+    const ops = Array.from({ length: MAX_INK_HISTORY + 10 }, (_, i) => add(i));
     const capped = capHistory(ops);
     expect(capped.length).toBe(MAX_INK_HISTORY);
-    expect(capped[0]).toBe(10);
-    expect(capped[capped.length - 1]).toBe(MAX_INK_HISTORY + 9);
+    expect(tagOf(capped[0]!)).toBe("s10");
+    expect(tagOf(capped[capped.length - 1]!)).toBe(`s${MAX_INK_HISTORY + 9}`);
+  });
+
+  it("caps on retained SAMPLES, not only on entry count", () => {
+    // A lasso drag over forty strokes pushes ONE op holding eighty rows. Two
+    // hundred of those is sixteen thousand strokes' worth of points pinned in
+    // memory — the count cap never fires, and the renderer is killed for
+    // memory instead.
+    const heavy = Math.ceil(MAX_INK_HISTORY_SAMPLES / 4);
+    const ops = Array.from({ length: 12 }, (_, i) => add(i, heavy));
+    const capped = capHistory(ops);
+    expect(capped.length).toBeLessThan(12);
+    expect(capped.length).toBeLessThanOrEqual(5);
+    // Newest kept, oldest dropped — undo reaches the newest first.
+    expect(tagOf(capped[capped.length - 1]!)).toBe("s11");
+  });
+
+  it("counts a batch's members, not the batch", () => {
+    const inner = Array.from({ length: 8 }, (_, i) => add(i, MAX_INK_HISTORY_SAMPLES / 4));
+    const ops: InkOp[] = [{ kind: "batch", ops: inner }, add(99, 1)];
+    // The batch alone is twice the budget, so only the newest op survives.
+    expect(capHistory(ops).length).toBe(1);
+    expect(tagOf(capHistory(ops)[0]!)).toBe("s99");
+  });
+
+  it("always keeps the newest op, however large", () => {
+    // A history that cannot hold even one entry would make undo silently do
+    // nothing after a big edit — worse than forgetting an old one.
+    const ops = [add(1, 10), add(2, MAX_INK_HISTORY_SAMPLES * 3)];
+    const capped = capHistory(ops);
+    expect(capped.length).toBe(1);
+    expect(tagOf(capped[0]!)).toBe("s2");
+  });
+
+  it("leaves 胶带 ops uncounted — a strip is a rectangle, not a sample list", () => {
+    const ops: InkOp[] = Array.from({ length: 50 }, (_, i) => ({
+      kind: "tape-add",
+      tape: { id: `t${i}` } as never,
+    }));
+    expect(capHistory(ops).length).toBe(50);
   });
 });
 
@@ -157,5 +206,69 @@ describe("pushInkOps (regression: a long note-taking session must not grow the u
       pushInkOps("doc a", [{ kind: "add", stroke: { id: `s${i}` } as never }]);
     }
     expect(useUI.getState().inkPast.length).toBe(MAX_INK_HISTORY);
+  });
+});
+
+describe("remapInkRow (regression: an optimistic id must be repaired wherever it has sunk to)", () => {
+  const row = (id: string): InkStrokeRow => ({ id }) as never;
+  const settled = row("server-1");
+
+  beforeEach(() => {
+    useUI.setState({ inkPast: [], inkFuture: [], inkOpsKey: "doc a" });
+  });
+
+  it("reaches an edit nested inside a batch", () => {
+    // The case the old hand-rolled walk in `InkLayer.settle` could not see: it
+    // skipped anything whose `kind` was not "edit", and a lasso drag over ink
+    // AND 胶带 folds its edit inside a batch. The temp id survived on the undo
+    // stack, so undoing that drag re-added a stroke the server already held
+    // under its real id — one drag, two copies of the ink.
+    useUI.setState({
+      inkPast: [
+        {
+          kind: "batch",
+          ops: [
+            { kind: "tape-edit", id: "t1", before: {}, after: {} },
+            { kind: "edit", removed: [], added: [row("temp-1")] },
+          ],
+        },
+      ],
+    });
+    useUI.getState().remapInkRow("temp-1", settled);
+    const batch = useUI.getState().inkPast[0]!;
+    expect(batch.kind).toBe("batch");
+    const inner = batch.kind === "batch" ? batch.ops[1]! : batch;
+    expect(inner.kind === "edit" && inner.added[0]!.id).toBe("server-1");
+  });
+
+  it("reaches an op that a later op has buried", () => {
+    // `settleStack` only ever repaired `past[past.length - 1]`. Writing fast —
+    // the normal way to write — puts the next stroke's op on top before the
+    // previous POST returns, and then the repair silently did nothing.
+    useUI.setState({
+      inkPast: [
+        { kind: "add", stroke: row("temp-1") },
+        { kind: "add", stroke: row("other") },
+      ],
+    });
+    useUI.getState().remapInkRow("temp-1", settled);
+    const first = useUI.getState().inkPast[0]!;
+    expect(first.kind === "add" && first.stroke.id).toBe("server-1");
+  });
+
+  it("repairs the redo stack too", () => {
+    // An op that has been undone is sitting in `inkFuture`, and redoing it
+    // must not name an id the server never had.
+    useUI.setState({ inkFuture: [{ kind: "remove", strokes: [row("temp-1")] }] });
+    useUI.getState().remapInkRow("temp-1", settled);
+    const op = useUI.getState().inkFuture[0]!;
+    expect(op.kind === "remove" && op.strokes[0]!.id).toBe("server-1");
+  });
+
+  it("leaves ops that do not mention the id alone", () => {
+    const before: InkOp[] = [{ kind: "add", stroke: row("other") }];
+    useUI.setState({ inkPast: before });
+    useUI.getState().remapInkRow("temp-1", settled);
+    expect(useUI.getState().inkPast[0]).toBe(before[0]);
   });
 });

@@ -113,7 +113,19 @@ export function TapeLayer({
 
   const updateCache = useCallback(
     (updater: (prev: TapeRow[]) => TapeRow[]) => {
-      qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) => updater(prev ?? []));
+      // A list GET still in flight would resolve AFTER this write and replace
+      // the whole array with the server's older copy — every mark made since
+      // the request left simply gone from the page, though the POSTs
+      // succeeded and the server has them. The window is small but it is
+      // exactly the wrong one: it opens when the paper is first opened and
+      // again after any failed write invalidates the list, which is precisely
+      // when a reader is drawing. Cancelling makes the in-flight result be
+      // discarded instead of applied.
+      const queryKey = ["tape", paperId, kind];
+      if (qc.isFetching({ queryKey, exact: true }) > 0) {
+        void qc.cancelQueries({ queryKey, exact: true });
+      }
+      qc.setQueryData<TapeRow[]>(queryKey, (prev) => updater(prev ?? []));
     },
     [qc, paperId, kind],
   );
