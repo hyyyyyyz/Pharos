@@ -104,13 +104,16 @@ class InkCreate(BaseModel):
 # ---------------------------------------------------------------- converters
 
 
-def _stroke_out(row: InkStroke) -> InkOut:
+def _stroke_out(row: InkStroke, points: list[ink.Point] | None = None) -> InkOut:
+    """``points`` lets a caller that has already decoded the column pass it in
+    rather than have it decoded a second time — see ``list_strokes``."""
+    samples = ink.load_points(row.points) if points is None else points
     return InkOut(
         id=row.id,
         paper_id=row.paper_id,
         kind=row.kind,
         page=row.page,
-        points=[PointOut(x=p.x, y=p.y, p=p.p) for p in ink.load_points(row.points)],
+        points=[PointOut(x=p.x, y=p.y, p=p.p) for p in samples],
         color=row.color,
         width=row.width,
         created_at=as_utc(row.created_at),
@@ -132,8 +135,8 @@ def list_strokes(
     Private like every annotation: two researchers can share the PDF blob, and
     neither ever sees the other's handwriting.
     """
-    rows = ink.list_strokes(session, user_id=user.id, paper_id=paper_id, kind=kind)
-    return [_stroke_out(r) for r in rows]
+    pairs = ink.list_strokes_with_points(session, user_id=user.id, paper_id=paper_id, kind=kind)
+    return [_stroke_out(row, points) for row, points in pairs]
 
 
 @router.post("/papers/{paper_id}/ink", response_model=InkOut, status_code=201)
