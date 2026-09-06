@@ -81,6 +81,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Status for a request that never reached a server at all.
+ *
+ * Zero, because there is no HTTP status: the transport failed. Distinct from
+ * every real code so `status === 401` and friends keep meaning what they mean,
+ * and so a caller can ask "was this the network?" without matching on prose.
+ */
+export const NETWORK_ERROR = 0;
+
 /* --------------------------------------------------------------- transport */
 
 /** Options that change how a single request is authenticated. */
@@ -103,7 +112,35 @@ async function http(path: string, init: RequestInit = {}, opts: FetchOpts = {}):
   const token = opts.anon === true ? null : getToken();
   if (token !== null) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...init, headers });
+  } catch (cause) {
+    // `fetch` rejects with a bare `TypeError: Failed to fetch` for every
+    // transport failure there is — no route to the host, the server not
+    // listening, a connection reset mid-body, a request body that could not be
+    // read, TLS refused, cleartext blocked. The browser deliberately tells the
+    // page nothing more, to avoid leaking network topology.
+    //
+    // That message then went straight to the user, who saw "上传失败：Failed to
+    // fetch" and had nothing to act on. Whatever the cause, the useful thing to
+    // say is WHERE it was trying to reach and WHAT is worth checking; the
+    // status is 0 so callers can still tell this from a real HTTP answer.
+    if (cause instanceof TypeError) {
+      // Spell the target out absolutely. On the web `BASE` is "/api", which
+      // tells a reader nothing; in the Android build it is a LAN address baked
+      // in at build time, and "which machine was it even trying?" is usually
+      // the whole answer.
+      const target =
+        BASE.startsWith("/") && typeof location !== "undefined" ? `${location.origin}${BASE}` : BASE;
+      throw new ApiError(
+        NETWORK_ERROR,
+        `连不上服务器 ${target}。请检查网络是否可达、后端是否在运行；` +
+          `如果是上传，也可能是文件太大被中途掐断。`,
+      );
+    }
+    throw cause;
+  }
 
   // A 401 on a request we *authenticated* means the token is dead — expired,
   // revoked via logout-all, or the account is gone. Drop it: the session store
@@ -276,9 +313,51 @@ export const api = {
 
   getPaper: (id: string): Promise<Paper> => json<Paper>(`/papers/${id}`),
 
-  upload: (file: File): Promise<Paper> => {
+  /**
+   * Upload one PDF.
+   *
+   * The bytes are read into memory BEFORE the request, rather than handing the
+   * `File` straight to `FormData` and letting the browser stream it. That looks
+   * like a pointless copy and is not, on Android:
+   *
+   * A file chosen from a cloud provider — Drive, OneDrive, 百度网盘, anything
+   * that plugs into the system document picker — is not a file. It is a
+   * `content://` reference to a document the provider will materialise on
+   * demand. The `File` object is created happily, `name` and `size` are
+   * populated, and nothing has been read yet. The read happens later, while the
+   * request body is being streamed, and if the provider cannot deliver (the
+   * file is not cached offline, its permission grant has lapsed, the network is
+   * gone, or it is a Google-native doc with no bytes at all) the body stream
+   * errors mid-flight. `fetch` then rejects with exactly one thing:
+   * `TypeError: Failed to fetch` — indistinguishable from the server being
+   * down, which is why "上传云端文件会显示 Failed to fetch" was unactionable.
+   *
+   * Reading first moves that failure somewhere it can be named, and where it
+   * can be told apart from a transport problem: if this throws, the file is the
+   * problem; if the POST throws, the network is. It also means a read that DOES
+   * succeed can no longer die halfway through the upload.
+   */
+  upload: async (file: File): Promise<Paper> => {
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await file.arrayBuffer();
+    } catch {
+      throw new ApiError(
+        NETWORK_ERROR,
+        "读不到这个文件的内容。如果它在云盘里（Google Drive / OneDrive / 百度网盘等），" +
+          "系统只给了一个引用而不是文件本身——请先把它下载到平板本机，再从「文件」里选一次。",
+      );
+    }
+    if (bytes.byteLength === 0) {
+      throw new ApiError(
+        NETWORK_ERROR,
+        "这个文件是空的（0 字节）。云盘里没下载下来的文件常常是这样，请先下载到本机再上传。",
+      );
+    }
     const form = new FormData();
-    form.append("file", file);
+    // Re-wrapped as a Blob carrying the original name and type: the server
+    // checks the extension, so the name has to survive the round trip.
+    form.append("file", new Blob([bytes], { type: file.type || "application/pdf" }), file.name);
     // No Content-Type here on purpose: the browser must set it so it can add
     // the multipart boundary. `http` only ever *adds* Authorization, so the
     // upload is authenticated like everything else.
