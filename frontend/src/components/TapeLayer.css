@@ -31,9 +31,11 @@
      piece of tape", not "border of a box". */
   --c-tape-edge: rgba(120, 100, 40, 0.28);
   /* Revealed: the strip stops covering and becomes a colour底. Light enough
-     that glyphs read straight through it under `mix-blend-mode: multiply` —
-     the same lightness band the highlight washes live in. */
-  --c-tape-wash: oklch(0.93 0.05 88);
+     that glyphs read straight through it under `mix-blend-mode: multiply`.
+     Lightened once more on request — "胶条隐藏后色底再浅一些" — from L 0.93 to
+     0.965, and the chroma halved with it: at this point the band is there to
+     say "a strip is still here", not to tint the paragraph. */
+  --c-tape-wash: oklch(0.965 0.025 88);
   /* Selection. Deliberately a TINT, not the full accent: this frame sits on
      top of the page you are reading. */
   --c-tape-sel: rgba(91, 141, 239, 0.55);
@@ -133,77 +135,6 @@
    itself (`.ph-tape`) is already `pointer-events: none` outside "tape" mode
    for the same reason on a bigger scale — see the component's own comment. */
 .ph-tape-strip.is-dormant {
-  pointer-events: none;
-}
-
-/* ------------------------------------------------------ freehand strips */
-/*
-   A strip that followed the pen is a stroked path, not a box. One SVG holds
-   all of them (plus the live draft), laid out over the same page box as the
-   straight strips so both kinds share one coordinate space.
-*/
-.ph-tape-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 5;
-  overflow: visible;
-  pointer-events: none;
-}
-
-/*
-   Revealed freehand strips live in a SECOND svg that carries the blend on
-   ITSELF, rather than on each path.
-
-   Same isolation problem as the wrap: this `<svg>` is positioned with a
-   z-index and is therefore a stacking context, so a `mix-blend-mode` on a
-   path INSIDE it would blend with the svg's own transparent canvas and
-   nothing else. Put the blend on the element whose parent does not isolate —
-   which is the svg — and split covered from revealed so the two kinds of
-   strip can have different compositing without special-casing either.
-*/
-.ph-tape-svg--wash {
-  mix-blend-mode: multiply;
-}
-
-.ph-tape-path {
-  fill: none;
-  stroke: var(--c-tape, #e8dcb8);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  /* The hit area follows the visible strip rather than its bounding box, so a
-     tap in the hollow of a curve reaches the page underneath. */
-  pointer-events: stroke;
-  cursor: pointer;
-}
-
-/* Revealed: same as a straight strip — a light wash, multiplied over the page
-   by the `.ph-tape-svg--wash` element these paths live in, so the strip is
-   still visibly there and the glyphs read straight through it. */
-.ph-tape-path.is-revealed {
-  stroke: var(--c-tape-wash, oklch(0.93 0.05 88));
-}
-
-/* A path has no "outside" for an `outline` to sit on, so its selection cue is
-   a slightly fatter copy of itself drawn UNDERNEATH, in the same light tint
-   the boxes outline themselves with — the SVG equivalent of `outline-offset`.
-   Recolouring the strip itself would have been simpler and wrong: a covered
-   strip would stop covering the moment it was selected. */
-.ph-tape-halo {
-  fill: none;
-  stroke: var(--c-tape-sel, rgba(91, 141, 239, 0.55));
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-
-.ph-tape-path.is-preview {
-  pointer-events: none;
-  opacity: 0.6;
-}
-
-.ph-tape-path.is-dormant {
   pointer-events: none;
 }
 

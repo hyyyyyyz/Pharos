@@ -1,7 +1,13 @@
 import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
-import type { AuthUser, InkStrokeRow, TapeRow, ZoteroOAuthResult } from "./api/types";
+import type {
+  AuthUser,
+  InkStrokeRow,
+  PageNoteStyle,
+  TapeRow,
+  ZoteroOAuthResult,
+} from "./api/types";
 import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
@@ -20,10 +26,20 @@ export type SortDir = "asc" | "desc";
  *  routing, and its laser-mode branch in `paintWet`), not a different
  *  interaction. A laser stroke is never sent to the backend at all: it
  *  fades on the wet canvas and is gone, nothing to undo or persist. */
-/** "tape" is `TapeLayer`'s own tool, not `InkLayer`'s — `InkLayer` treats it
- *  exactly like "off" (see its gesture effect's early return) so nothing
- *  draws ink while a strip is being placed. */
-export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "select" | "tape";
+/** "tape" is `TapeLayer`'s own tool and "text" is `NoteLayer`'s, neither of
+ *  them `InkLayer`'s — `InkLayer` treats both exactly like "off" (see its
+ *  gesture effect's early return) so nothing draws ink while a strip is being
+ *  placed or a text box typed into. */
+export type InkMode =
+  | "off"
+  | "draw"
+  | "water"
+  | "laser"
+  | "style"
+  | "erase"
+  | "select"
+  | "tape"
+  | "text";
 
 /**
  * One undoable ink operation, for the document-level undo stack.
@@ -179,6 +195,19 @@ export function batchOps(ops: InkOp[]): InkOp[] {
   if (ops.length <= 1) return ops;
   return [{ kind: "batch", ops }];
 }
+
+/**
+ * What colour a new note starts as, per style.
+ *
+ * A 文本框's colour is its GLYPHS and a 便利贴's is its CARD, so one default
+ * cannot serve both: black text is right and a black card is a redaction bar;
+ * amber is a sticky note and amber handwriting is hard to read. Same problem
+ * the pen and the watercolour have, solved the same way — see `DEFAULT_TOOL_PREFS`.
+ */
+export const DEFAULT_NOTE_COLORS: Record<PageNoteStyle, string> = {
+  text: "ink",
+  note: "amber",
+};
 
 /** How the eraser takes ink away. */
 export type EraseMode = "stroke" | "pixel";
@@ -489,14 +518,6 @@ interface UIState {
    *  only ever affects strips placed while it is on. */
   tapeAutoThickness: boolean;
   toggleTapeAutoThickness: () => void;
-  /** 胶带: lay a NEW strip along the pen's own path instead of running it
-   *  straight from where the drag started to where it ended. Straight is the
-   *  default because covering a line of text is the common case, but a strip
-   *  that curves with the hand is what an actual piece of tape does, so it is
-   *  a choice rather than an assumption. Per-strip once placed — this only
-   *  decides what the NEXT one is. */
-  tapeFreehand: boolean;
-  toggleTapeFreehand: () => void;
 
   /**
    * What 剪切/复制 put aside, ready for 粘贴.
@@ -514,6 +535,38 @@ interface UIState {
    */
   inkClipboard: InkClipboard | null;
   setInkClipboard: (c: InkClipboard | null) => void;
+
+  /* --------------------------------------------------------- 文本框 / 便利贴 */
+  /** Which presentation the 文本 tool places: characters on the paper, or a
+   *  tinted card on top of it. The long-press menu offers both explicitly and
+   *  ignores this. */
+  noteStyle: PageNoteStyle;
+  setNoteStyle: (s: PageNoteStyle) => void;
+  /**
+   * Ink token for new notes — the glyph colour of a 文本框, the CARD TINT of a
+   * 便利贴.
+   *
+   * Because those are two different jobs, the two styles remember two values,
+   * exactly as the pen and the watercolour do (`toolPrefs`): black glyphs are
+   * right for a text box and would make an invisible sticky note, while amber
+   * is a sticky note and unreadable handwriting. `setNoteStyle` swaps the live
+   * value out to and in from `noteColors`, so nothing downstream has to know
+   * there are two.
+   */
+  noteColor: string;
+  setNoteColor: (c: string) => void;
+  /** Where the style not currently selected parks its colour. */
+  noteColors: Record<PageNoteStyle, string>;
+  /**
+   * A note that has just been created and should receive the caret.
+   *
+   * In the store because the thing that creates a note is not the thing that
+   * renders it: a long-press is detected in `InkLayer`, the toolbar tap in
+   * `ReadingView`, and the `<textarea>` lives in `NoteLayer`. Cleared by
+   * whoever focuses it, so it can never re-steal the caret on a later render.
+   */
+  noteFocusId: string | null;
+  setNoteFocusId: (id: string | null) => void;
 
   /**
    * Show what the stylus is actually reporting, live, on the page.
@@ -772,11 +825,25 @@ export const useUI = create<UIState>((set) => ({
 
   tapeAutoThickness: false,
   toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
-  tapeFreehand: false,
-  toggleTapeFreehand: () => set((s) => ({ tapeFreehand: !s.tapeFreehand })),
 
   inkClipboard: null,
   setInkClipboard: (inkClipboard) => set({ inkClipboard }),
+  noteStyle: "text",
+  setNoteStyle: (noteStyle) =>
+    set((s) =>
+      noteStyle === s.noteStyle
+        ? { noteStyle }
+        : {
+            noteStyle,
+            noteColors: { ...s.noteColors, [s.noteStyle]: s.noteColor },
+            noteColor: s.noteColors[noteStyle],
+          },
+    ),
+  noteColor: DEFAULT_NOTE_COLORS.text,
+  setNoteColor: (noteColor) => set({ noteColor }),
+  noteColors: { ...DEFAULT_NOTE_COLORS },
+  noteFocusId: null,
+  setNoteFocusId: (noteFocusId) => set({ noteFocusId }),
   inkPenDebug: false,
   toggleInkPenDebug: () =>
     set((s) => ({ inkPenDebug: !s.inkPenDebug, inkPenProbe: null })),

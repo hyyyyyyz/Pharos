@@ -53,7 +53,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { InkPoint, InkStrokeRow, TapeRow } from "../api/types";
+import type {
+  InkPoint,
+  InkStrokeRow,
+  PageNoteRow,
+  PageNoteStyle,
+  TapeRow,
+} from "../api/types";
 import {
   INK_COLORS,
   WATER_COLORS,
@@ -74,6 +80,7 @@ import {
   unionBounds,
 } from "../lib/ink";
 import { Icons } from "../design/icons";
+import { NEW_NOTE_H, NEW_NOTE_W } from "./NoteLayer";
 import { isDrawingPointer, isStylus } from "../lib/pointer";
 import { penSound } from "../lib/penSound";
 import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
@@ -121,6 +128,14 @@ const LASER_FADE_MS = 900;
  *  fixed, unlike the eraser's adjustable presets: this tool is meant to pick
  *  out ONE stroke precisely, not sweep an area. */
 const STYLE_BRUSH_REACH_PX = 10;
+
+/** Hold this long, this still, and the 粘贴/文本框/便利贴 menu appears.
+ *  1000ms is what the reader asked for ("摁一个位置 1s"); the slop is
+ *  deliberately generous because a stylus resting on glass jitters by a point
+ *  or two, and a menu that will not appear because of digitiser noise is worse
+ *  than one that appears a fraction late. */
+const LONG_PRESS_MS = 1000;
+const LONG_PRESS_SLOP_PX = 8;
 
 /**
  * The `PointerEvent.buttons` bits that mean "this stylus is asking to erase".
@@ -379,6 +394,8 @@ export function InkLayer({
   const setPenProbe = useUI((s) => s.setInkPenProbe);
   const clipboard = useUI((s) => s.inkClipboard);
   const setClipboard = useUI((s) => s.setInkClipboard);
+  const noteColor = useUI((s) => s.noteColor);
+  const setNoteFocus = useUI((s) => s.setNoteFocusId);
   const pushInkOps = useUI((s) => s.pushInkOps);
 
   // One fetch per document+rendition; every page instance shares the cache.
@@ -441,6 +458,17 @@ export function InkLayer({
   useEffect(() => {
     if (selection === null) setStyleOpen(false);
   }, [selection]);
+
+  /**
+   * temp id -> the row the server returned for it.
+   *
+   * Written synchronously in `commitReplace`'s `settle`, BEFORE the cache
+   * write, so a render triggered by that write can always follow an id the
+   * selection is still holding. Bounded rather than cleaned per-entry: a
+   * mapping is only interesting for the few hundred milliseconds between the
+   * POST landing and the selection catching up.
+   */
+  const settledRef = useRef(new Map<string, InkStrokeRow>());
 
   /** Live move preview, consulted by `repaintDry` (hide the carried rows). */
   const movingRef = useRef<{ ids: Set<string>; dx: number; dy: number } | null>(null);
@@ -637,6 +665,40 @@ export function InkLayer({
   const penDebugRef = useRef(inkPenDebug);
   penDebugRef.current = inkPenDebug;
   const probeAtRef = useRef(0);
+
+  /* ------------------------------------------------------ the long press */
+  /**
+   * Hold the pen still for a second and a small menu appears — 粘贴, 文本框,
+   * 便利贴.
+   *
+   * The gesture exists because there is nowhere else for those three to live.
+   * A paste has no toolbar button (paste WHERE? the answer is "here", and only
+   * a press knows where "here" is), and putting a text box down means naming a
+   * spot on the page. A long press is the one gesture that carries a location
+   * and is not already spoken for by drawing.
+   *
+   * It is armed on pointerdown and disarmed by movement or by the pen lifting,
+   * so it can never fire in the middle of a stroke — the timer is cancelled by
+   * the first sample that travels more than `LONG_PRESS_SLOP` from where the
+   * pen landed. That threshold is deliberately generous: a stylus resting on
+   * glass jitters by a point or two, and a menu that refuses to appear because
+   * of digitiser noise is worse than one that appears a fraction late.
+   */
+  const [pressMenu, setPressMenu] = useState<{
+    /** CSS page pixels, for placing the menu. */
+    left: number;
+    top: number;
+    /** PDF space, for placing whatever it creates. */
+    x: number;
+    y: number;
+  } | null>(null);
+  const pressTimerRef = useRef(0);
+  const cancelLongPress = useCallback(() => {
+    if (pressTimerRef.current !== 0) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = 0;
+    }
+  }, []);
   /** rAF handle for the laser's hold-then-fade loop; 0 = none in flight. */
   const laserFadeRef = useRef(0);
   /**
@@ -684,7 +746,12 @@ export function InkLayer({
   /** Replace whole rows: optimistic cache swap, one undoable edit op, then
    *  the network settles it. Used by the lasso (move, recolour) and the 局部
    *  eraser (split). `specs` are the replacement row payloads in the same
-   *  order as the temp rows this function mints. */
+   *  order as the temp rows this function mints.
+   *
+   *  Returns the temps, so a caller that wants the selection to SURVIVE the
+   *  edit can re-select them. Moving a stroke replaces the row, so the rows a
+   *  selection was holding are stale the moment a drag commits — which is
+   *  exactly why a selection used to evaporate after one operation. */
   const commitReplace = useCallback(
     (
       removedRows: InkStrokeRow[],
@@ -692,7 +759,7 @@ export function InkLayer({
       /** Ops from the SAME gesture (a lasso drag's 胶带 edits), folded into
        *  one history entry with this one — one drag, one undo. */
       alsoOps: InkOp[] = [],
-    ) => {
+    ): InkStrokeRow[] => {
       const temps: InkStrokeRow[] = specs.map((s) => ({
         id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         paper_id: paperId,
@@ -713,8 +780,17 @@ export function InkLayer({
         batchOps([...alsoOps, { kind: "edit", removed: removedRows, added: temps }]),
       );
 
-      /** Point one settled row at its temp, in the cache and in the undo op. */
+      /** Point one settled row at its temp — in the cache, in the undo op, and
+       *  in the SELECTION, so a selection kept alive across an edit ends up
+       *  holding server rows rather than ids the server has never heard of. */
       const settle = (tempId: string, row: InkStrokeRow): void => {
+        // Recorded FIRST, and synchronously: `updateCache` notifies TanStack
+        // subscribers immediately, so the very next render can already see the
+        // temp gone — and the selection resync effect needs to be able to
+        // follow it to `row` at that moment, not one batched state update
+        // later.
+        if (settledRef.current.size > 200) settledRef.current.clear();
+        settledRef.current.set(tempId, row);
         updateCache((prev) => prev.map((s) => (s.id === tempId ? row : s)));
         useUI.setState((s) => {
           if (s.inkOpsKey !== key) return s;
@@ -776,8 +852,13 @@ export function InkLayer({
             }
             return s;
           });
+          // The rows the selection is holding no longer exist. Dropping it is
+          // the honest answer: keeping a box around ids the server refused
+          // would offer operations that cannot work.
+          setSelection(null);
         }
       })();
+      return temps;
     },
     [key, kind, page, paperId, pushInkOps, updateCache, qc],
   );
@@ -1045,7 +1126,9 @@ export function InkLayer({
    *    canvas when the colour is a 水彩笔 tone, so it is a colour底 from the
    *    first sample rather than only after the pen lifts;
    *  - lasso: the dashed loop;
-   *  - move: the carried strokes at their live offset, the frame over them. */
+   *  - move: the carried strokes at their live offset, the frame over them.
+   *
+   *  Call `schedulePaintWet` from an input handler, not this — see there. */
   const paintWet = useCallback(
     (session: Session, predicted: InkPoint[]) => {
       const wet = wetRef.current;
@@ -1064,12 +1147,12 @@ export function InkLayer({
           ctx.beginPath();
           ctx.moveTo(session.points[0]!.x, session.points[0]!.y);
           for (const p of session.points.slice(1)) ctx.lineTo(p.x, p.y);
-          // Close the loop visually so the catch area is never a surprise.
-          const first = session.points[0]!;
-          const last = session.points[session.points.length - 1]!;
-          if (session.points.length > 2 && Math.hypot(first.x - last.x, first.y - last.y) > 8 / scale) {
-            ctx.lineTo(first.x, first.y);
-          }
+          // NOT closed visually. `pointInPolygon` closes the loop implicitly
+          // when it hit-tests, so the catch area is the same either way — but
+          // drawing that closing edge put a long dashed chord across the page
+          // between wherever the pen started and wherever it is now, which is
+          // what "套索工具首尾一直有一条黑虚线" is about. The loop you see is
+          // now just the path you drew.
           ctx.stroke();
           ctx.setLineDash([]);
         }
@@ -1167,6 +1250,47 @@ export function InkLayer({
     ],
   );
 
+  /**
+   * One wet repaint per FRAME, whatever rate the digitiser delivers at.
+   *
+   * "荧光笔不稳定，会闪烁." A stylus reports at 120-240 Hz and the display
+   * refreshes at 60, so an unthrottled `paintWet` cleared and redrew the canvas
+   * two to four times per displayed frame. For a plain stroke that is merely
+   * wasteful; for the laser it flickers, because each pass clears the canvas
+   * and then rebuilds a `shadowBlur` glow and a seven-stop gradient for every
+   * mark on screen — expensive enough to run past the frame budget, so the
+   * compositor sometimes samples the canvas in its CLEARED state.
+   *
+   * The samples themselves are never dropped: `onMove` still pushes every
+   * coalesced point into the session before asking for a repaint, so the stroke
+   * that gets committed has full resolution. Only the drawing is coalesced.
+   */
+  const paintFrameRef = useRef(0);
+  const pendingPaintRef = useRef<{ session: Session; predicted: InkPoint[] } | null>(null);
+  const schedulePaintWet = useCallback(
+    (session: Session, predicted: InkPoint[]) => {
+      pendingPaintRef.current = { session, predicted };
+      if (paintFrameRef.current !== 0) return;
+      paintFrameRef.current = requestAnimationFrame(() => {
+        paintFrameRef.current = 0;
+        const next = pendingPaintRef.current;
+        pendingPaintRef.current = null;
+        if (next) paintWet(next.session, next.predicted);
+      });
+    },
+    [paintWet],
+  );
+
+  /** Drop a frame that has not run yet — the gesture it belonged to is over,
+   *  and painting it now would put a ghost back on a canvas just cleared. */
+  const cancelPendingPaint = useCallback(() => {
+    if (paintFrameRef.current !== 0) {
+      cancelAnimationFrame(paintFrameRef.current);
+      paintFrameRef.current = 0;
+    }
+    pendingPaintRef.current = null;
+  }, []);
+
   /* --------------------------------------------------- selection overlays */
 
   /**
@@ -1201,18 +1325,53 @@ export function InkLayer({
     repaintSelectionChrome();
   }, [selection, repaintSelectionChrome]);
 
-  /* Clear a selection the tool no longer supports — and when the strokes it
-     holds have gone from the cache (another view deleted them). */
+  /**
+   * Keep the selection pointing at rows that exist — RESYNC it, do not drop it.
+   *
+   * The distinction is the whole of "框选不要操作一次后立马断了". A drag
+   * replaces every stroke it moved: the optimistic temps go into the cache
+   * first and the server's rows replace them one at a time as the POSTs land.
+   * The previous version cleared the selection the moment ANY id in it was not
+   * in the cache — which is guaranteed to happen mid-settle, and measurably
+   * did: three temps selected, one already swapped for `181080d3…`, whole
+   * selection gone.
+   *
+   * So an id that has been settled is followed to its replacement rather than
+   * counted as missing, and the selection is only cleared when nothing in it
+   * survives at all (a real deletion, from here or another view). Resyncing
+   * also refreshes the rows' geometry, which is what keeps the frame on the
+   * marks after a change that came from somewhere else.
+   */
   useEffect(() => {
     if (!selection) return;
     if (inkMode !== "select") {
       setSelection(null);
       return;
     }
-    const live = new Set([...mine.map((s) => s.id), ...myTape.map((t) => t.id)]);
-    if ([...selection.rows, ...selection.tapes].some((r) => !live.has(r.id))) {
+    const rowById = new Map(mine.map((r) => [r.id, r]));
+    const tapeById = new Map(myTape.map((t) => [t.id, t]));
+    const follow = (row: InkStrokeRow): InkStrokeRow | undefined => {
+      const direct = rowById.get(row.id);
+      if (direct) return direct;
+      const settled = settledRef.current.get(row.id);
+      return settled ? rowById.get(settled.id) : undefined;
+    };
+    const rows = selection.rows.map(follow).filter((r): r is InkStrokeRow => r != null);
+    const tapes = selection.tapes
+      .map((t) => tapeById.get(t.id))
+      .filter((t): t is TapeRow => t != null);
+    if (rows.length + tapes.length === 0) {
       setSelection(null);
+      return;
     }
+    // Only write when something actually changed, or this effect re-triggers
+    // itself forever on the array identities it just created.
+    const same =
+      rows.length === selection.rows.length &&
+      tapes.length === selection.tapes.length &&
+      rows.every((r, i) => r === selection.rows[i]) &&
+      tapes.every((t, i) => t === selection.tapes[i]);
+    if (!same) setSelection({ rows, tapes });
   }, [inkMode, mine, myTape, selection]);
 
   /**
@@ -1225,8 +1384,16 @@ export function InkLayer({
    * undo of a mixed selection puts everything back together.
    */
   const commitTapeTransform = useCallback(
-    (tapes: TapeRow[], apply: (t: TapeRow) => Partial<TapeRow>): InkOp[] => {
+    (
+      tapes: TapeRow[],
+      apply: (t: TapeRow) => Partial<TapeRow>,
+    ): { ops: InkOp[]; moved: TapeRow[] } => {
       const ops: InkOp[] = [];
+      // The strips as they now are. A strip is edited in place, so its id
+      // survives — but its geometry does not, and a selection kept alive
+      // across the drag has to hold the NEW numbers or its frame would sit
+      // where the strip used to be.
+      const moved: TapeRow[] = [];
       for (const t of tapes) {
         const next = apply(t);
         const patch = {
@@ -1252,12 +1419,13 @@ export function InkLayer({
         qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
           (prev ?? []).map((row) => (row.id === t.id ? { ...row, ...patch } : row)),
         );
+        moved.push({ ...t, ...patch });
         void api.tape.update(t.id, patch).catch(() => {
           void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
         });
       }
       setInkCarried([]);
-      return ops;
+      return { ops, moved };
     },
     [qc, paperId, kind, setInkCarried],
   );
@@ -1280,9 +1448,16 @@ export function InkLayer({
         width: r.width,
       }));
       const tapes = (selRef.current?.tapes ?? []).filter((t) => moving.ids.has(t.id));
-      setSelection(null);
-      const tapeOps = commitTapeTransform(tapes, (t) => translateTape(t, moving.dx, moving.dy));
-      commitReplace(rows, specs, tapeOps);
+      const { ops: tapeOps, moved } = commitTapeTransform(tapes, (t) =>
+        translateTape(t, moving.dx, moving.dy),
+      );
+      const made = commitReplace(rows, specs, tapeOps);
+      // The selection SURVIVES the drag, now pointing at what the drag
+      // produced: "框选不要操作一次后立马断了，应可多次拖动对其操作". Moving a
+      // stroke replaces its row, so re-selecting the temps (which `settle`
+      // later swaps for the server's rows) is what keeps the box on the marks
+      // rather than on ids that no longer exist.
+      setSelection({ rows: made, tapes: moved });
     },
     [commitReplace, repaintDry, commitTapeTransform, setInkCarried],
   );
@@ -1309,13 +1484,14 @@ export function InkLayer({
         width: t.kind === "resize" ? clampInkWidth(r.width * Math.max(0.05, t.factor)) : r.width,
       }));
       const tapes = (selRef.current?.tapes ?? []).filter((tp) => t.ids.has(tp.id));
-      setSelection(null);
-      const tapeOps = commitTapeTransform(tapes, (tp) =>
+      const { ops: tapeOps, moved } = commitTapeTransform(tapes, (tp) =>
         t.kind === "resize"
           ? scaleTape(tp, t.cx, t.cy, t.factor)
           : rotateTape(tp, t.cx, t.cy, t.radians),
       );
-      commitReplace(rows, specs, tapeOps);
+      // Same as `commitMove`: keep the selection on the result, so a resize
+      // can be followed by a rotate can be followed by a drag.
+      setSelection({ rows: commitReplace(rows, specs, tapeOps), tapes: moved });
     },
     [commitReplace, repaintDry, commitTapeTransform, setInkCarried],
   );
@@ -1323,9 +1499,10 @@ export function InkLayer({
   /* ------------------------------------------------- native event handlers */
 
   useEffect(() => {
-    // "tape" is TapeLayer's own tool — nobody should be drawing ink while a
-    // strip is being placed, so this layer goes fully inert, same as "off".
-    if (inkMode === "off" || inkMode === "tape") return;
+    // "tape" is TapeLayer's own tool and "text" is NoteLayer's — nobody should
+    // be drawing ink while a strip is placed or a text box typed into, so this
+    // layer goes fully inert for both, same as "off".
+    if (inkMode === "off" || inkMode === "tape" || inkMode === "text") return;
     const wet = wetRef.current;
     if (!wet) return;
     // The page transform is not ready yet (first layout pass, or mid pinch-
@@ -1478,6 +1655,27 @@ export function InkLayer({
           }
         }
       }
+      // Arm the long press. Any real movement disarms it (see `onMove`), so it
+      // can only ever fire on a pen that has genuinely been held still.
+      cancelLongPress();
+      const downAt = { x: e.clientX, y: e.clientY };
+      const rect = wet.getBoundingClientRect();
+      pressTimerRef.current = window.setTimeout(() => {
+        pressTimerRef.current = 0;
+        // A gesture that has become a stroke, a lasso or a drag is no longer a
+        // press — bail rather than interrupt it.
+        const session = strokeRef.current;
+        if (!session || session.points.length > 2 || session.moving || session.transform) return;
+        strokeRef.current = null;
+        cancelPendingPaint();
+        clearWet();
+        setPressMenu({
+          left: downAt.x - rect.left,
+          top: downAt.y - rect.top,
+          x: pt.x,
+          y: pt.y,
+        });
+      }, LONG_PRESS_MS);
       try {
         wet.setPointerCapture(e.pointerId);
       } catch {
@@ -1489,12 +1687,24 @@ export function InkLayer({
     const onTouchDown = (e: PointerEvent): void => {
       // A pen outranks everything: while it is down, a touch pointer is a palm.
       if (penRef.current !== null) return;
+      // 防手指 says a finger is not ink. The corollary — and the half that was
+      // missing — is that a finger is therefore NAVIGATION, and navigation
+      // belongs to the viewport: one finger pans, two fingers zoom, and
+      // 锁定画布 decides which of those are allowed. This layer swallowing
+      // every touch to run a two-finger pan of its own is why, with a tool
+      // selected, one finger did nothing, two fingers could never zoom, and
+      // the lock button looked inert (measured, both ways).
+      //
+      // With 手指书写 on a finger genuinely IS ink, and everything below —
+      // including the layer's own two-finger pan — is right to keep it.
+      if (!inkFingerDraw) return;
       touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touchesRef.current.size === 2) {
         // Second finger: abandon the uncommitted gesture (wipe its wet
         // ghost) and become a pan.
         strokeRef.current = null;
         movingRef.current = null;
+        cancelPendingPaint();
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         const pts = [...touchesRef.current.values()];
         panMidRef.current = {
@@ -1628,9 +1838,12 @@ export function InkLayer({
       } else if (e.button !== 0) {
         return; // a mouse's right/middle click is not a stroke
       }
-      // Build the audio graph HERE, in a real user gesture. A pointermove is
-      // not one, so a context created there starts (and stays) suspended —
-      // which is the other half of "音效失败，没有出现音效".
+      // Try to arm the audio graph here — but do NOT rely on it. A
+      // pointerdown is an activation-triggering event only when `pointerType`
+      // is "mouse"; for the pen this reader actually writes with, it grants
+      // nothing, and a context built now starts suspended. `onUp` arms it
+      // again from a pointerup, which for a pen DOES activate. See
+      // `PenSound.arm`.
       if (inkSound) penSound().arm();
       startSession(e);
       if (debug) console.debug("[ink] mode", inkMode, "color", inkColor, "width", inkWidth);
@@ -1660,6 +1873,16 @@ export function InkLayer({
       }
 
       const session = strokeRef.current;
+      // Movement disarms the long press. Checked before anything else so a
+      // stroke, a lasso loop and a selection drag all cancel it alike, without
+      // each branch having to remember to.
+      if (pressTimerRef.current !== 0 && session && session.pointerId === e.pointerId) {
+        const from = session.points[0];
+        const origin = wet.getBoundingClientRect();
+        const cx0 = from ? from.x * scale + origin.left : e.clientX;
+        const cy0 = from ? (pageHeight - from.y) * scale + origin.top : e.clientY;
+        if (Math.hypot(e.clientX - cx0, e.clientY - cy0) > LONG_PRESS_SLOP_PX) cancelLongPress();
+      }
       if (session === null || session.pointerId !== e.pointerId) {
         // Hover is the ONE safe moment to move the toolbar to the eraser and
         // back: nothing is in flight, so the effect rebind `setInkMode`
@@ -1679,7 +1902,7 @@ export function InkLayer({
       if (session.lasso) {
         const pressure = e.pressure > 0 ? e.pressure : 0.5;
         session.points.push(inPageSpace(e.clientX, e.clientY, pressure));
-        paintWet(session, []);
+        schedulePaintWet(session, []);
         e.preventDefault();
         return;
       }
@@ -1692,7 +1915,7 @@ export function InkLayer({
         movedRef.current = Math.abs(dx) > 1 || Math.abs(dy) > 1;
         movingRef.current = session.moving;
         repaintDry();
-        paintWet(session, []);
+        schedulePaintWet(session, []);
         e.preventDefault();
         return;
       }
@@ -1712,7 +1935,7 @@ export function InkLayer({
         movedRef.current = true;
         movingRef.current = { ids: t.ids, dx: 0, dy: 0 };
         repaintDry();
-        paintWet(session, []);
+        schedulePaintWet(session, []);
         e.preventDefault();
         return;
       }
@@ -1758,7 +1981,7 @@ export function InkLayer({
       const predicted = (e.getPredictedEvents?.() ?? []).map((ev) =>
         inPageSpace(ev.clientX, ev.clientY, ev.pressure > 0 ? ev.pressure : 0.5),
       );
-      paintWet(session, predicted);
+      schedulePaintWet(session, predicted);
       e.preventDefault();
       if (debug && e.pointerType === "pen") {
         console.debug("[ink] move", batch.length, "pred", predicted.length);
@@ -1766,6 +1989,8 @@ export function InkLayer({
     };
 
     const finish = (e: PointerEvent, cancelled: boolean): void => {
+      // The pen has left: whatever this gesture was, it was not a hold.
+      cancelLongPress();
       if (e.pointerType === "pen" && penRef.current === e.pointerId) penRef.current = null;
       if (e.pointerType === "touch") {
         touchesRef.current.delete(e.pointerId);
@@ -1781,6 +2006,7 @@ export function InkLayer({
         if (session.erasing && inkEraseMode === "pixel") abandonPixelGesture();
         if (inkMode === "style") abandonStyleGesture();
         movingRef.current = null;
+        cancelPendingPaint();
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         repaintDry();
         return;
@@ -1808,6 +2034,7 @@ export function InkLayer({
           return;
         }
         setSelection({ rows: caught, tapes: caughtTape });
+        cancelPendingPaint();
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
         // Paint the chrome now rather than waiting a render for the effect —
         // `selRef` is assigned during render, and `setSelection` has not
@@ -1932,6 +2159,7 @@ export function InkLayer({
       };
       updateCache((prev) => [...prev, temp]);
       pushInkOps(key, [{ kind: "add", stroke: temp }]);
+      cancelPendingPaint();
       paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
       const settleStack = (row: InkStrokeRow): void => {
         useUI.setState((s) => {
@@ -1984,7 +2212,13 @@ export function InkLayer({
 
     const onUp = (e: PointerEvent): void => {
       lastSampleRef.current = null;
-      if (inkSound) penSound().lift();
+      // A pen's pointerup IS an activation-triggering event, unlike its
+      // pointerdown — so this is the call that actually gets the audio device
+      // running on a tablet, in time for the NEXT stroke.
+      if (inkSound) {
+        penSound().arm();
+        penSound().lift();
+      }
       reportPen(e, "抬起");
       finish(e, false);
       releasePenButton(e);
@@ -2040,6 +2274,10 @@ export function InkLayer({
         if (inkMode === "style") abandonStyleGesture();
         movingRef.current = null;
       }
+      // A frame queued by `schedulePaintWet` would repaint a gesture that no
+      // longer exists, onto a canvas about to be cleared.
+      cancelPendingPaint();
+      cancelLongPress();
       // The laser trail belongs to the tool, not to a gesture: a rebind means
       // the tool (or zoom) changed under it, and marks measured at the old
       // scale must not be repainted at the new one. Outside the gesture check
@@ -2068,6 +2306,9 @@ export function InkLayer({
     viewportPan,
     paintEraserCursor,
     clearWet,
+    schedulePaintWet,
+    cancelPendingPaint,
+    cancelLongPress,
     paintSelection,
     paintSelectionHandles,
     repaintSelectionChrome,
@@ -2151,8 +2392,39 @@ export function InkLayer({
    * copied from the bottom of one page and pasted onto a shorter one would
    * otherwise land past its edge, where it is invisible and unselectable.
    */
-  const pasteClipboard = useCallback(
-    (clip: InkClipboard) => {
+  /**
+   * Put a text box or a sticky note where the pen was held.
+   *
+   * Lives here rather than in `NoteLayer` because the gesture that asks for it
+   * is a pen press on the ink canvas, and only this layer sees those. The row
+   * goes straight into `NoteLayer`'s query cache and its id into
+   * `noteFocusId`, which is how the caret ends up in a box created by a
+   * component that does not render it.
+   */
+  const addNoteAt = useCallback(
+    async (x: number, y: number, style: PageNoteStyle) => {
+      try {
+        const row = await api.note.create(paperId, {
+          kind,
+          page,
+          x,
+          y,
+          w: NEW_NOTE_W,
+          h: NEW_NOTE_H,
+          style,
+          color: noteColor,
+        });
+        qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => [...(prev ?? []), row]);
+        setNoteFocus(row.id);
+      } catch {
+        /* refused — nothing was optimistically added, so nothing to undo */
+      }
+    },
+    [paperId, kind, page, noteColor, qc, setNoteFocus],
+  );
+
+  const pasteClipboardAt = useCallback(
+    (clip: InkClipboard, atX?: number, atY?: number) => {
       const wet = wetRef.current;
       if (!wet) return;
       const pageWidth = wet.clientWidth / scale;
@@ -2163,8 +2435,14 @@ export function InkLayer({
       ];
       if (boxes.length === 0) return;
       const b = unionBounds(boxes);
-      let dx = NUDGE;
-      let dy = -NUDGE;
+      // Two ways to place a paste, and the difference matters. From the
+      // selection bar there is no target, so it lands next to where it came
+      // from — a visible copy you can then drag. From the long-press menu
+      // there IS a target: the spot the pen was held, which the reader chose
+      // precisely so the paste would go THERE, so its centre goes on it.
+      const toPoint = atX !== undefined && atY !== undefined;
+      let dx = toPoint ? atX - (b.x0 + b.x1) / 2 : NUDGE;
+      let dy = toPoint ? atY - (b.y0 + b.y1) / 2 : -NUDGE;
       // Keep the whole paste on the paper.
       dx = Math.min(dx, pageWidth - 4 - b.x1);
       dx = Math.max(dx, 4 - b.x0);
@@ -2245,7 +2523,16 @@ export function InkLayer({
 
   /* ----------------------------------------------------------------- view */
 
-  const interactive = inkMode !== "off";
+  /**
+   * Does this layer claim the pointer at all?
+   *
+   * NOT simply "a tool is selected": in 胶带 and 文本 mode the gesture effect
+   * above returns immediately, so a live canvas would sit over the page
+   * swallowing pointers and suppressing touch scrolling on behalf of code that
+   * does nothing. That is the shape of bug that made 锁定画布 look broken, and
+   * it is cheap to not have twice.
+   */
+  const interactive = inkMode !== "off" && inkMode !== "tape" && inkMode !== "text";
   /**
    * Where the command bar sits: centred over the selection's own frame, just
    * above the rotate handle — the placement in the reference, and the one that
@@ -2282,6 +2569,65 @@ export function InkLayer({
         }
         aria-hidden="true"
       />
+      {/*
+          The long-press menu: 粘贴 / 文本框 / 便利贴.
+
+          Anchored where the pen was held, because that is the whole point of
+          the gesture — each of these three needs a location, and none of them
+          has a sensible toolbar equivalent ("paste where?"). Dismissed by any
+          choice, and by a tap anywhere else.
+      */}
+      {pressMenu && (
+        <>
+          <div
+            className="ph-ink-press-veil"
+            onPointerDown={() => setPressMenu(null)}
+            aria-hidden="true"
+          />
+          <div
+            className="ph-ink-press"
+            role="menu"
+            aria-label="在此处插入"
+            style={{ left: pressMenu.left, top: pressMenu.top }}
+          >
+            <button
+              role="menuitem"
+              className="ph-ink-press-btn"
+              disabled={clipboard === null}
+              title={clipboard === null ? "还没有剪切或复制过东西" : "把剪贴板里的内容粘到这里"}
+              onClick={() => {
+                const at = pressMenu;
+                setPressMenu(null);
+                if (clipboard) pasteClipboardAt(clipboard, at.x, at.y);
+              }}
+            >
+              粘贴
+            </button>
+            <button
+              role="menuitem"
+              className="ph-ink-press-btn"
+              onClick={() => {
+                const at = pressMenu;
+                setPressMenu(null);
+                void addNoteAt(at.x, at.y, "text");
+              }}
+            >
+              文本框
+            </button>
+            <button
+              role="menuitem"
+              className="ph-ink-press-btn"
+              onClick={() => {
+                const at = pressMenu;
+                setPressMenu(null);
+                void addNoteAt(at.x, at.y, "note");
+              }}
+            >
+              便利贴
+            </button>
+          </div>
+        </>
+      )}
       {selection && selChrome && (
         <div
           className={`ph-ink-selbar${selChrome.flip ? " is-below" : ""}`}
@@ -2307,7 +2653,7 @@ export function InkLayer({
             className="ph-ink-sel-cmd"
             disabled={clipboard === null}
             title={clipboard === null ? "还没有剪切或复制过东西" : "粘贴到这一页"}
-            onClick={() => clipboard && pasteClipboard(clipboard)}
+            onClick={() => clipboard && pasteClipboardAt(clipboard)}
           >
             粘贴
           </button>

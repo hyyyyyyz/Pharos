@@ -140,6 +140,25 @@ export const Icons = {
     ],
     { size: 15, sw: 1.3 },
   ),
+  /** 键盘 — the text tool. A keyboard rather than an "A" or a T-bar, because
+   *  what this tool inserts is TYPED text, and the keyboard is the thing that
+   *  is about to appear on a tablet when you tap it. The keys are drawn as
+   *  three short rules plus a spacebar: at 15px individual keycaps turn to
+   *  mush, and the silhouette is what has to read. */
+  keyboard: make(
+    [
+      "M2.8 6.2h14.4v7.6H2.8z",
+      "M5 8.4h1M8 8.4h1M11 8.4h1M14 8.4h1",
+      "M6.6 11.4h6.8",
+    ],
+    { size: 15, sw: 1.3 },
+  ),
+  /** 便利贴 — a square with its bottom-right corner turned up. The fold IS the
+   *  icon: without it this is indistinguishable from a plain text box. */
+  sticky: make(
+    ["M4 3.8h12v8.4l-3.8 4H4z", "M16 12.2h-3.8v4"],
+    { size: 15, sw: 1.35 },
+  ),
   cloud: make(["M6 13.5a3 3 0 0 1 .3-6 4 4 0 0 1 7.6 1.1A2.7 2.7 0 0 1 14 13.5z"], { size: 13, sw: 1.4 }),
   sync: make(["M14.5 6.5A5 5 0 0 0 5.3 8", "M5.5 13.5A5 5 0 0 0 14.7 12", "M14.5 4.5v2h-2", "M5.5 15.5v-2h2"], { size: 13, sw: 1.4 }),
   link: make(

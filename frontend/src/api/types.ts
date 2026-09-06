@@ -254,6 +254,40 @@ export interface TapeRow {
   updated_at: string | null;
 }
 
+/**
+ * Typed text placed ON a page — a text box (文本框) or a sticky note (便利贴).
+ *
+ * The third kind of mark, after handwriting and tape, and the only one made of
+ * characters: what the keyboard tool inserts and what the pen's long-press menu
+ * offers. `(x, y)` is the box's own CENTRE, matching `TapeRow` — these are
+ * moved and resized as objects, and a centre survives both without the caller
+ * having to know which corner is which.
+ */
+export interface PageNoteRow {
+  id: string;
+  paper_id: string;
+  kind: PdfKind;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** "text" = characters on the paper; "note" = a tinted card on top of it.
+   *  Presentation only: both are a position, a size, some text and a colour. */
+  style: PageNoteStyle;
+  /** A token name resolved to a CSS variable, never a hex — same contract as
+   *  ink colours, so the palette stays one file's business. */
+  color: string;
+  /** Font size in PDF points at scale 1, so text scales with zoom exactly as a
+   *  stroke's width does. */
+  size: number;
+  body: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export type PageNoteStyle = "text" | "note";
+
 /* ------------------------------------------------------------------ daily */
 
 /** A paper is only "done" once the reading layer actually produced a card.

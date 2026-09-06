@@ -44,6 +44,9 @@ const PEAK_GAIN = 0.22;
  * peak is.
  */
 const MIN_VOICE = 0.35;
+/** The confirmation beeps. Louder than the nib on purpose: this one has to be
+ *  heard once, over a room, to answer a yes/no question. */
+const TEST_GAIN = 0.35;
 /** Speed (CSS px per ms) at which the nib reaches full voice. A brisk hand is
  *  around 1.5-2; anything past this is already as loud as it gets. */
 const FULL_SPEED = 1.8;
@@ -64,17 +67,39 @@ export class PenSound {
   /**
    * Build the graph, from inside a real user gesture.
    *
-   * This must be called from a **pointerdown**, and that is the second half of
-   * why the sound never arrived: `nib()` is driven by `pointermove`, which is
-   * not a user-activation trigger in any browser. An AudioContext constructed
-   * there starts `suspended`, and the `resume()` that follows is refused for
-   * exactly the same reason — so the graph was built, connected, and mute.
+   * Call this from a **click** or a **pointerUP** — never from pointerdown or
+   * pointermove, and that distinction is the whole bug.
+   *
+   * `nib()` is driven by `pointermove`, which is not a user-activation trigger
+   * anywhere, so a context built there starts `suspended` and the `resume()`
+   * that follows is refused for the same reason. Round 4 moved the arming to
+   * `pointerdown`, which fixed it on a desktop and changed nothing on the
+   * tablet — because per HTML's "activation triggering input event" list,
+   * `pointerdown` only counts **when `pointerType` is "mouse"**. For a pen or
+   * a finger the activating event is `pointerup`. So the desktop test passed
+   * with a mouse while an S Pen armed the graph with no activation at all,
+   * built it suspended, and wrote in silence: "还是没有写字音效".
    *
    * Still lazy: a reader who never turns the sound on never pays for an audio
    * device at all.
    */
   arm(): void {
     this.ensure();
+  }
+
+  /**
+   * What the audio device is actually doing, for the on-screen readout.
+   *
+   * Shipped diagnostics, same reasoning as 笔尖诊断: this feature has now
+   * failed twice on hardware none of this code can be run against, and
+   * "running" versus "suspended" is the one fact that separates a browser
+   * policy problem from a volume problem. Without it the next report is
+   * another "还是没有".
+   */
+  state(): "未启动" | "运行中" | "已挂起" | "不可用" {
+    if (this.failed) return "不可用";
+    if (!this.ctx) return "未启动";
+    return this.ctx.state === "running" ? "运行中" : "已挂起";
   }
 
   private ensure(): boolean {
@@ -158,23 +183,36 @@ export class PenSound {
   }
 
   /**
-   * One short scratch, now — the sound of a nib touching down and lifting.
+   * Two short beeps, now — what the 音效 toggle plays when it is switched ON.
    *
-   * What the 音效 toggle plays when it is switched ON. A setting whose only
-   * feedback arrives later, under a pen, on a device whose media volume might
-   * be at zero, is a setting nobody can tell is broken; this answers "did that
-   * work?" at the moment the question is asked. It is also the click that
-   * *creates* the AudioContext inside a real gesture, so the first stroke
-   * afterward already has a running graph.
+   * A clear TONE rather than the nib's filtered noise, and deliberately: a
+   * faint scratch on a tablet, in a room, with a hand moving across the glass,
+   * is exactly the sound a reader cannot tell from silence. A pair of sine
+   * beeps cannot be mistaken for anything, so "did that work?" gets an answer
+   * at the moment the question is asked instead of later, under a pen.
+   *
+   * It also runs from a click, which IS an activation-triggering event — so
+   * this is what actually gets the context into `running` on a tablet, where
+   * a stylus pointerdown never would.
    */
   test(): void {
-    if (!this.ensure() || !this.ctx || !this.gain || !this.filter) return;
-    const now = this.ctx.currentTime;
-    this.gain.gain.cancelScheduledValues(now);
-    this.gain.gain.setValueAtTime(0, now);
-    this.gain.gain.linearRampToValueAtTime(PEAK_GAIN, now + 0.03);
-    this.gain.gain.linearRampToValueAtTime(0, now + 0.22);
-    this.filter.frequency.setValueAtTime(1600, now);
+    if (!this.ensure() || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const beep = (at: number, hz: number): void => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = hz;
+      g.gain.setValueAtTime(0, now + at);
+      g.gain.linearRampToValueAtTime(TEST_GAIN, now + at + 0.02);
+      g.gain.linearRampToValueAtTime(0, now + at + 0.13);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + 0.16);
+    };
+    beep(0, 660);
+    beep(0.17, 880);
   }
 
   /** The pen has left the paper. */

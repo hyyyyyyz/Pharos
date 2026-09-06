@@ -267,3 +267,54 @@
 .ph-ink-sel-btn.is-danger {
   color: var(--c-err, #d93a3a);
 }
+
+
+/* ----------------------------------------------------- the long-press menu */
+/*
+   Held the pen still for a second: 粘贴 / 文本框 / 便利贴, right where it was
+   held. Each of these needs a LOCATION, and none has a sensible toolbar
+   equivalent — "paste" with no target is not a command, it is a question.
+
+   The veil catches a tap anywhere else so the menu is dismissible without a
+   close button, and sits below the menu itself.
+*/
+.ph-ink-press-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}
+
+.ph-ink-press {
+  position: absolute;
+  z-index: 7;
+  /* Hangs up and to the right of the pen tip, so the hand holding the stylus
+     is not covering the thing it just summoned. */
+  transform: translate(-8px, -100%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  background: var(--c-sf, #fff);
+  box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
+  white-space: nowrap;
+}
+
+.ph-ink-press-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-tx, #1e222a);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ph-ink-press-btn:hover:not(:disabled) {
+  background: var(--c-hv, #f1f2f4);
+}
+.ph-ink-press-btn:disabled {
+  color: var(--c-tx3, #8b93a1);
+  cursor: default;
+}
