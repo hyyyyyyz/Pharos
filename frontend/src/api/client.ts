@@ -31,6 +31,8 @@ import type {
   PdfKind,
   InkPoint,
   InkStrokeRow,
+  PageNoteRow,
+  PageNoteStyle,
   TapeRow,
   ProjectArtifact,
   ProjectArtifactCreateBody,
@@ -781,6 +783,61 @@ export const api = {
 
     remove: (strokeId: string): Promise<void> =>
       empty(`/ink/${encodeURIComponent(strokeId)}`, { method: "DELETE" }),
+  },
+
+  /* ----------------------------------------------------------- page notes */
+
+  /** 文本框 / 便利贴 — typed text anchored to a spot on a page. Edited in
+   *  place like a tape strip, never replaced like a stroke: a note's geometry
+   *  is four numbers, not a sampled path. */
+  note: {
+    list: (paperId: string, kind: PdfKind, signal?: AbortSignal): Promise<PageNoteRow[]> =>
+      json<PageNoteRow[]>(`/papers/${encodeURIComponent(paperId)}/notes?kind=${kind}`, {
+        signal,
+      }),
+
+    create: (
+      paperId: string,
+      note: {
+        kind: PdfKind;
+        page: number;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        style?: PageNoteStyle;
+        color?: string;
+        size?: number;
+        body?: string;
+      },
+    ): Promise<PageNoteRow> =>
+      json<PageNoteRow>(`/papers/${encodeURIComponent(paperId)}/notes`, {
+        method: "POST",
+        ...body(note),
+      }),
+
+    /** Any subset of fields. A field left out is untouched — which is what
+     *  lets typing not move the box, and dragging not rewrite the text. */
+    update: (
+      noteId: string,
+      patch: {
+        x?: number;
+        y?: number;
+        w?: number;
+        h?: number;
+        style?: PageNoteStyle;
+        color?: string;
+        size?: number;
+        body?: string;
+      },
+    ): Promise<PageNoteRow> =>
+      json<PageNoteRow>(`/notes/${encodeURIComponent(noteId)}`, {
+        method: "PATCH",
+        ...body(patch),
+      }),
+
+    remove: (noteId: string): Promise<void> =>
+      empty(`/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }),
   },
 
   tape: {

@@ -136,6 +136,69 @@
   color: var(--c-err);
 }
 
+/* ------------------------------------------------------- upload in flight */
+/*
+   An indeterminate bar, because there is no honest number to show: `fetch`
+   reports nothing about how much of a body it has sent, and the slow half is
+   the server reading and indexing the PDF afterwards, which has no percentage
+   at all. What this has to answer is "is it doing anything?" — for a large
+   file over a LAN the button simply went quiet and the app looked dead.
+*/
+.ph-il-uploading {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-il-uploading-txt {
+  font-size: 11.5px;
+  color: var(--c-tx2, #5a616e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ph-il-uploading-bar {
+  flex: none;
+  position: relative;
+  width: 92px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--c-hv, #f1f2f4);
+}
+
+.ph-il-uploading-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--c-ac, #5b53d6);
+  animation: ph-il-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes ph-il-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+/* A reader who has asked for less motion gets a steady bar instead of a
+   travelling one — it still says "busy", without the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .ph-il-uploading-bar > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.55;
+  }
+}
+
 /* --------------------------------------------------------------------- body */
 
 .ph-il-body {

@@ -328,8 +328,12 @@ export function ItemList(): JSX.Element {
 
   /* ------------------------------------------------------------------ rows */
 
+  /** The file an upload in flight is carrying, for the progress row. */
+  const [uploading, setUploading] = useState<{ name: string; size: number } | null>(null);
+
   const upload = useMutation({
     mutationFn: (f: File) => api.upload(f),
+    onSettled: () => setUploading(null),
     onSuccess: (paper) => {
       void qc.invalidateQueries({ queryKey: ["papers"] });
       void qc.invalidateQueries({ queryKey: ["collections"] });
@@ -407,6 +411,9 @@ export function ItemList(): JSX.Element {
   const sendFile = (f: File | null | undefined) => {
     if (!f || !f.name.toLowerCase().endsWith(".pdf")) return;
     setNote(null);
+    // Remembered for the progress row: the mutation only carries the file
+    // while it runs, and the row wants to name what it is waiting for.
+    setUploading({ name: f.name, size: f.size });
     upload.mutate(f);
   };
 
@@ -531,6 +538,26 @@ export function ItemList(): JSX.Element {
         />
       </div>
 
+      {/*
+          An upload has no progress signal worth showing: `fetch` does not
+          report how much of a body it has sent, and the slow half is the
+          server reading and indexing the PDF afterwards, which has no
+          percentage at all. So this is an indeterminate bar — honest about
+          not knowing, and it answers the only question actually being asked
+          ("is it doing anything?"). Before it there was NOTHING: the button
+          went quiet and a large file over a LAN looked like a dead app.
+      */}
+      {upload.isPending && uploading && (
+        <div className="ph-il-uploading" role="status" aria-live="polite">
+          <span className="ph-il-uploading-bar" aria-hidden="true">
+            <span />
+          </span>
+          <span className="ph-il-uploading-txt">
+            正在上传 {uploading.name}
+            {uploading.size > 0 && `（${(uploading.size / 1048576).toFixed(1)} MB）`}…
+          </span>
+        </div>
+      )}
       {note && <div className="ph-il-note">{note}</div>}
       {uploadError && <div className="ph-il-note is-error">上传失败：{uploadError}</div>}
       {importError && <div className="ph-il-note is-error">arXiv 导入失败：{importError}</div>}

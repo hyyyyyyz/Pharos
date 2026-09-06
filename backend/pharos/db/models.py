@@ -530,11 +530,68 @@ class TapeMark(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
+class PageNote(Base):
+    """Typed text placed ON a page — a text box (文本框) or a sticky note (便利贴).
+
+    The third kind of mark a reader can leave, after handwriting and tape, and
+    the only one made of characters rather than geometry: it is what the
+    keyboard tool inserts, and what the pen's long-press menu offers. A stylus
+    is the wrong instrument for a paragraph, and handwriting is the wrong
+    format for something meant to be searched or read back later.
+
+    Same coordinate contract as :class:`Highlight`, :class:`InkStroke` and
+    :class:`TapeMark`: PDF user-space points at scale 1, bottom-left origin.
+    ``(x, y)`` is the box's own CENTRE — matching :class:`TapeMark` rather than
+    :class:`Highlight`, because these are moved and resized as objects and a
+    centre survives both operations without the caller having to know which
+    corner is which.
+
+    ``style`` distinguishes the two presentations, and only the presentation:
+
+    * ``"text"`` — a plain text box. No card, no shadow; characters sitting on
+      the paper, the way a typed annotation should read.
+    * ``"note"`` — a sticky note. A tinted card with a shadow, deliberately
+      looking like an object placed on top rather than part of the document.
+
+    They share one table because they share everything that matters — a
+    position, a size, some text, a colour — and splitting them would mean two
+    services, two routers and two undo paths for what is one idea rendered two
+    ways.
+    """
+
+    __tablename__ = "page_notes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    #: "original" | "mono" | "dual" — the rendition this note lives on.
+    kind: Mapped[str] = mapped_column(String(16), default="original")
+    #: 1-based page number within that rendition.
+    page: Mapped[int] = mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Float)
+    y: Mapped[float] = mapped_column(Float)
+    w: Mapped[float] = mapped_column(Float)
+    h: Mapped[float] = mapped_column(Float)
+    #: "text" | "note".
+    style: Mapped[str] = mapped_column(String(8), default="text")
+    #: A token name the frontend resolves to a CSS variable, exactly as ink
+    #: colours are stored — never a hex, so the palette stays one file's
+    #: business and an old row cannot pin a colour the theme has retired.
+    color: Mapped[str] = mapped_column(String(16), default="ink")
+    #: Font size in PDF points at scale 1, so text scales with zoom the same
+    #: way a stroke's width does.
+    size: Mapped[float] = mapped_column(Float, default=12.0)
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
 class Note(Base):
     """A paper-level note — the 笔记 block in the detail panel.
 
-    Separate from :class:`Highlight`'s ``note``, which is anchored to a passage;
-    this one is about the paper as a whole.
+    Separate from :class:`Highlight`'s ``note``, which is anchored to a passage,
+    and from :class:`PageNote`, which is anchored to a spot on a page; this one
+    is about the paper as a whole.
     """
 
     __tablename__ = "notes"

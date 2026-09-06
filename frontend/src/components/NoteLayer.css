@@ -1,0 +1,160 @@
+/* NoteLayer — 文本框 and 便利贴 on one PDF page. */
+
+.ph-note {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+
+  /* The ink palette again, declared here because a custom property only
+     inherits DOWN and this layer is a SIBLING of the ink canvases, not a
+     child. That mistake has now shipped three times (the toolbar, the wash
+     canvas, the lasso bar) — see InkLayer.css for the full list. A note's
+     colour is an ink token, so it has to resolve here too. */
+  --c-ink-ink: oklch(0.25 0.03 259);
+  --c-ink-red: oklch(0.5 0.16 25);
+  --c-ink-amber: oklch(0.55 0.12 70);
+  --c-ink-brown: oklch(0.45 0.07 55);
+  --c-ink-green: oklch(0.52 0.11 150);
+  --c-ink-teal: oklch(0.5 0.1 195);
+  --c-ink-blue: oklch(0.5 0.12 250);
+  --c-ink-purple: oklch(0.48 0.13 300);
+  --c-ink-pink: oklch(0.55 0.16 355);
+  --c-ink-gray: oklch(0.5 0.015 259);
+}
+
+/* The tap surface for placing a new note, present only while the 文本 tool is.
+   Sits above the ink canvases (z 3/4) but below tape (5) — a note is written
+   on the page, and tape covers it like anything else. */
+.ph-note-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: auto;
+}
+
+.ph-note-box {
+  position: absolute;
+  z-index: 4;
+  pointer-events: auto;
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+
+/*
+   文本框 — characters sitting on the paper. No card, no shadow, no border:
+   a typed annotation should read as writing on the page, not as a widget
+   floating over it. The dashed outline appears only while the tool is active,
+   so the box is findable when you are editing and invisible when you are
+   reading.
+*/
+.ph-note-box.is-text {
+  background: transparent;
+}
+.ph-note-box.is-text.has-chrome {
+  outline: 1px dashed var(--c-note, currentColor);
+  outline-offset: 1px;
+}
+
+/*
+   便利贴 — deliberately an object placed ON TOP. A tinted card with a soft
+   shadow and a slightly heavier corner, because that is what makes a sticky
+   note read as something added rather than as part of the document.
+
+   `color-mix` against white keeps the tint light enough to read black text on
+   whatever ink token was chosen, rather than needing a second palette of
+   pastel variants.
+*/
+.ph-note-box.is-note {
+  background: color-mix(in oklab, var(--c-note, #e8dcb8) 30%, white);
+  box-shadow: var(--sh-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  border: 1px solid color-mix(in oklab, var(--c-note, #e8dcb8) 35%, transparent);
+}
+
+/* A sticky note's own colour is its CARD, so the text on it stays plain dark
+   ink — amber glyphs on an amber card is not a colour scheme, it is a blank
+   card. A text box is the other way round: there the colour IS the glyphs. */
+.ph-note-box.is-note .ph-note-text {
+  color: var(--c-tx, #1e222a);
+}
+
+.ph-note-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 3px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--c-note, var(--c-tx, #1e222a));
+  font: inherit;
+  line-height: 1.35;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* An IME needs real text handling — the whole reason this layer is DOM and
+     not canvas. */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ph-note-text::placeholder {
+  color: var(--c-tx3, #8b93a1);
+  opacity: 0.7;
+}
+
+.ph-note-text[readonly] {
+  cursor: default;
+}
+
+/* ------------------------------------------------------------- the chrome */
+/* Move grip, resize corner and delete, shown only while the 文本 tool is the
+   active one. The rest of the time a note is content, not furniture. */
+
+.ph-note-grip {
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  width: 6px;
+  height: 34%;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--c-note, var(--c-tx3));
+  opacity: 0.55;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ph-note-resize {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.25px solid var(--c-ac, #5b53d6);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.ph-note-del {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: 50%;
+  background: var(--c-sf, #fff);
+  color: var(--c-tx3, #8b93a1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-note-del:hover {
+  color: var(--c-err, #d93a3a);
+}

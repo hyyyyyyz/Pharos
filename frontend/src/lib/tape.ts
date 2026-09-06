@@ -56,57 +56,81 @@ export function tapeFromDrag(
   };
 }
 
+/* ------------------------------------------------------- axis-locked drag */
+/*
+   胶带 is laid along a line of text, and a line of text is horizontal. A strip
+   built from nothing but its two endpoints inherits every degree of hand
+   tremor, so covering one line meant dragging, looking at the result, and
+   reaching for 拉直 — "直胶条要做到边写边改，而不是单单首尾相连".
+
+   So the strip SNAPS to horizontal or vertical while it is being drawn, and
+   then STAYS there. The rule the reader asked for, verbatim:
+
+     "当方向为横或竖时，一直保持其方向，除非笔尖超出胶条宽边界，后可变方向"
+
+   Two halves, and both matter:
+
+   - **Snap** when the drag is near an axis (`AXIS_SNAP_TAN`), so an ordinary
+     hand-drawn line along a paragraph comes out exactly level. A deliberately
+     diagonal drag is left at its own angle — the rule is about keeping a
+     direction that IS horizontal or vertical, not about forbidding others.
+   - **Hold** it against the perpendicular wobble that the rest of the drag
+     inevitably has, and release it only when the pen leaves the strip
+     altogether — more than half a thickness off the axis, which is precisely
+     "笔尖超出胶条宽边界". That hysteresis is what makes it feel locked rather
+     than twitchy: without it, the axis would flip the instant |dy| crept past
+     |dx| in the middle of a long horizontal sweep.
+*/
+
+/** Which way a strip is currently locked; `null` = not locked (free angle, or
+ *  the drag is still too short to have a direction). */
+export type TapeAxis = "x" | "y" | null;
+
+/** How near an axis a drag has to be to snap onto it: tan(20°). Generous,
+ *  because a hand dragging along a line of text is rarely within 5°, and the
+ *  cases it would wrongly capture (a genuinely diagonal strip) are rare. */
+const AXIS_SNAP_TAN = 0.36;
+
+/** Travel before a drag has a direction at all, in PDF points. Below this the
+ *  angle is just noise, and snapping to it would pick an axis at random. */
+const AXIS_MIN_TRAVEL = 6;
+
 /**
- * The row descriptor for a FREEHAND strip — one that follows the pen's own
- * path rather than running straight ("可以直，也可以跟画笔画出来的一样不直").
+ * The strip this drag describes right now, and the axis it is locked to.
  *
- * The fields mean the SAME things they mean for a straight strip, which is
- * the whole point and is what the first version got wrong:
- *
- * - `w` is **how much tape was laid down** — the path's own length, exactly
- *   as a straight strip's `w` is the drag's distance;
- * - `h` is the strip's **thickness**, exactly as it is for a straight strip;
- * - `(x, y)` is the path's bounding-box centre;
- * - `angle` is 0 by definition — a path carries its own direction, and
- *   rotating a box under it would say something different from what is drawn.
- *
- * The previous version put the path's bounding-box HEIGHT in `h`, which every
- * consumer then read as the thickness it is documented to be. `TapePaths`
- * strokes at `t.h * scale`, so a squiggle 100pt tall came out as a 100pt-wide
- * bar instead of a 14pt ribbon — "随意涂功能有问题，不对". Nothing needs a
- * bounding box out of the row anyway: a freehand strip's geometry IS its path,
- * and `tapeOutline` hands that straight to the hit tests.
+ * Pure, and the caller threads `axis` back in on the next sample — that is
+ * what carries the lock across a drag without this function needing state.
  */
-export function tapeFromPath(
-  path: { x: number; y: number }[],
+export function tapeAlongAxis(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
   thickness: number,
-): TapeRect {
-  if (path.length === 0) {
-    return { x: 0, y: 0, w: MIN_DRAG_LENGTH, h: clampTapeSize(thickness), angle: 0 };
+  axis: TapeAxis,
+): { rect: TapeRect; axis: TapeAxis } {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const half = clampTapeSize(thickness) / 2;
+
+  // Does the existing lock still hold? It breaks only when the pen tip leaves
+  // the strip's own width — the reader's "超出胶条宽边界".
+  let next: TapeAxis = axis;
+  if (next === "x" && Math.abs(dy) > half) next = null;
+  if (next === "y" && Math.abs(dx) > half) next = null;
+
+  if (next === null && Math.hypot(dx, dy) >= AXIS_MIN_TRAVEL) {
+    const ex = Math.abs(dx);
+    const ey = Math.abs(dy);
+    if (ey <= ex * AXIS_SNAP_TAN) next = "x";
+    else if (ex <= ey * AXIS_SNAP_TAN) next = "y";
   }
-  let x0 = Infinity;
-  let y0 = Infinity;
-  let x1 = -Infinity;
-  let y1 = -Infinity;
-  let length = 0;
-  for (let i = 0; i < path.length; i++) {
-    const p = path[i]!;
-    if (p.x < x0) x0 = p.x;
-    if (p.y < y0) y0 = p.y;
-    if (p.x > x1) x1 = p.x;
-    if (p.y > y1) y1 = p.y;
-    if (i > 0) length += Math.hypot(p.x - path[i - 1]!.x, p.y - path[i - 1]!.y);
-  }
-  return {
-    x: (x0 + x1) / 2,
-    y: (y0 + y1) / 2,
-    // Clamped here rather than left for the server to refuse: a long squiggle
-    // really can run past MAX_SIZE, and the strip is drawn from its path, so
-    // a clamped `w` costs nothing but a rejected POST costs the whole strip.
-    w: clampTapeSize(Math.max(MIN_DRAG_LENGTH, length)),
-    h: clampTapeSize(thickness),
-    angle: 0,
-  };
+
+  // Locked: project the pen onto the axis, so the strip is exactly level (or
+  // exactly upright) however the hand actually moved.
+  if (next === "x") return { rect: tapeFromDrag(ax, ay, bx, ay, thickness), axis: next };
+  if (next === "y") return { rect: tapeFromDrag(ax, ay, ax, by, thickness), axis: next };
+  return { rect: tapeFromDrag(ax, ay, bx, by, thickness), axis: next };
 }
 
 /* ------------------------------------------------------ lasso transforms */

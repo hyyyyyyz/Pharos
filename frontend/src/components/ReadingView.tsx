@@ -38,13 +38,37 @@ import "./ReadingView.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
+/**
+ * The zoom band a reader can dial by hand.
+ *
+ * 0.4 is a floor for the STEPPERS, not a truth about the document: it stops
+ * someone tapping "−" into an unreadable postage stamp. 适应宽度 is a different
+ * question — it asks for whatever scale makes the page fit — and clamping that
+ * to 0.4 is what "缩放功能有 Bug…当适应宽度需要更低时，就卡住了" reports. A wide
+ * page (a landscape figure, a two-column A3 preprint) in a narrow viewport
+ * needs less than 0.4, and the clamp meant it simply never fit: the page
+ * stayed wider than the window with nothing the reader could do about it.
+ *
+ * So the floor is the LOWER of 0.4 and whatever fit width needs — see
+ * `zoomFloor`. Below that is `HARD_MIN_ZOOM`, which exists only so a
+ * pathological page cannot ask for a scale of zero.
+ */
 const MIN_ZOOM = 0.4;
+const HARD_MIN_ZOOM = 0.05;
 const MAX_ZOOM = 4;
 const THUMB_WIDTH = 120;
 /** Backend errors can be a whole stack trace; the panel shows the gist. */
 const ERROR_MAX = 200;
 
-const clampZoom = (v: number): number => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v));
+/** The lowest zoom this document allows: normally 40%, but never above the
+ *  scale that makes the page fit, or 适应宽度 could not be reached. */
+export function zoomFloor(fitScale: number): number {
+  const fit = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : MIN_ZOOM;
+  return Math.max(HARD_MIN_ZOOM, Math.min(MIN_ZOOM, fit));
+}
+
+const clampZoom = (v: number, fitScale = MIN_ZOOM): number =>
+  Math.max(zoomFloor(fitScale), Math.min(MAX_ZOOM, v));
 
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : typeof e === "string" ? e : "未知错误";
@@ -222,14 +246,20 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
     setFitScale(scale);
     if (fitModeRef.current) setZoom(scale);
   }, []);
-  const handleZoom = useCallback((next: number) => {
-    setFitMode(false);
-    setZoom(clampZoom(next));
-  }, []);
-  const zoomStep = useCallback((d: number) => {
-    setFitMode(false);
-    setZoom((z) => clampZoom(z + d));
-  }, []);
+  const handleZoom = useCallback(
+    (next: number) => {
+      setFitMode(false);
+      setZoom(clampZoom(next, fitScale));
+    },
+    [fitScale],
+  );
+  const zoomStep = useCallback(
+    (d: number) => {
+      setFitMode(false);
+      setZoom((z) => clampZoom(z + d, fitScale));
+    },
+    [fitScale],
+  );
   const fitWidth = useCallback(() => {
     setFitMode(true);
     setZoom(fitScale);
@@ -272,6 +302,16 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const toggleInkFingerDraw = useUI((s) => s.toggleInkFingerDraw);
   const inkSound = useUI((s) => s.inkSound);
   const toggleInkSound = useUI((s) => s.toggleInkSound);
+  /** What the audio device is doing, shown beside the 音效 toggle while it is
+   *  on. "运行中" vs "已挂起" is the one fact that separates a browser autoplay
+   *  policy from a muted tablet, and neither can be guessed from here. */
+  const [soundState, setSoundState] = useState<string>("未启动");
+  useEffect(() => {
+    if (!inkSound) return;
+    setSoundState(penSound().state());
+    const t = setInterval(() => setSoundState(penSound().state()), 1000);
+    return () => clearInterval(t);
+  }, [inkSound]);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const setInkEraserSize = useUI((s) => s.setInkEraserSize);
   const inkEraseMode = useUI((s) => s.inkEraseMode);
@@ -279,8 +319,10 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const inkPenDebug = useUI((s) => s.inkPenDebug);
   const toggleInkPenDebug = useUI((s) => s.toggleInkPenDebug);
   const inkPenProbe = useUI((s) => s.inkPenProbe);
-  const tapeFreehand = useUI((s) => s.tapeFreehand);
-  const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
+  const noteStyle = useUI((s) => s.noteStyle);
+  const setNoteStyle = useUI((s) => s.setNoteStyle);
+  const noteColor = useUI((s) => s.noteColor);
+  const setNoteColor = useUI((s) => s.setNoteColor);
   const tapeAutoThickness = useUI((s) => s.tapeAutoThickness);
   const toggleTapeAutoThickness = useUI((s) => s.toggleTapeAutoThickness);
   const inkPast = useUI((s) => s.inkPast);
@@ -761,6 +803,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     <Icons.tape />
                   </button>
+                  <button
+                    className={`ph-rv-ink-btn${inkMode === "text" ? " is-on" : ""}`}
+                    title="插入文字：点一下页面放一个文本框，直接用键盘输入"
+                    aria-pressed={inkMode === "text"}
+                    onClick={() => pickTool("text")}
+                  >
+                    <Icons.keyboard />
+                  </button>
                   {/* Each tool gets its own popover: the pen carries colour,
                       width and the finger-draw switch; the eraser carries its
                       reach and its 整笔/局部 manner; the lasso explains the
@@ -788,25 +838,31 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                       </button>
                       <button
                         className={`ph-rv-ink-finger${inkSound ? " is-on" : ""}`}
-                        title="书写音效：笔尖摩擦声，跟着落笔速度变化（默认关闭）。打开时会先响一下，听不到就是设备静音了"
+                        title="书写音效：笔尖摩擦声，跟着落笔速度变化（默认关闭）。打开时会「哔哔」两声——听不到就是设备静音或媒体音量为 0"
                         aria-pressed={inkSound}
                         onClick={() => {
                           const on = !inkSound;
                           toggleInkSound();
-                          // Switching it ON plays one short scratch, right
-                          // here, inside the click — which is a real user
-                          // gesture and therefore the moment an AudioContext
-                          // is allowed to start. Two jobs at once: the graph
-                          // is running before the first stroke, and the reader
-                          // finds out NOW whether the device can make a sound
-                          // at all, instead of concluding the feature is
-                          // broken because their media volume is down.
+                          // Switching it ON beeps twice, right here, inside
+                          // the click. A click IS an activation-triggering
+                          // event, so this is the moment an AudioContext is
+                          // allowed to start — and on a tablet it is the ONLY
+                          // reliable one, because a stylus pointerdown does
+                          // not activate. Two jobs at once: the graph is
+                          // running before the first stroke, and the reader
+                          // learns NOW whether the device makes sound at all
+                          // rather than concluding the feature is broken
+                          // because their media volume is down.
                           if (on) penSound().test();
                           else penSound().lift();
+                          setSoundState(penSound().state());
                         }}
                       >
                         音效
                       </button>
+                      {inkSound && (
+                        <span className="ph-rv-ink-note">音频：{soundState}</span>
+                      )}
                     </InkToolPopover>
                   )}
                   {inkMode === "water" && (
@@ -893,33 +949,52 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                       </div>
                     </div>
                   )}
-                  {/* 胶带's own options. They used to live ONLY in the popover
-                      of an already-placed strip, which meant the way to draw a
-                      freehand strip was to draw a straight one first, tap it,
-                      and find the toggle — so 随手 was, in practice, not
-                      reachable at all. They belong with the tool. */}
-                  {inkMode === "tape" && (
-                    <div className="ph-rv-inkbar" role="toolbar" aria-label="胶带工具">
+                  {/* 胶带's own options, on the tool rather than buried in an
+                      already-placed strip's popover. Only 自动粗细 is left:
+                      直条/随手 went with freehand tape itself, and a strip now
+                      snaps to horizontal or vertical as it is drawn rather
+                      than needing a mode chosen up front. */}
+                  {inkMode === "text" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="文字工具">
                       <div className="ph-rv-ink-row">
                         <div className="ph-rv-ink-seg">
                           <button
-                            className={`ph-rv-ink-seg-btn${!tapeFreehand ? " is-on" : ""}`}
-                            title="直条：从起点到终点拉成一条直的"
-                            aria-pressed={!tapeFreehand}
-                            onClick={() => tapeFreehand && toggleTapeFreehand()}
+                            className={`ph-rv-ink-seg-btn${noteStyle === "text" ? " is-on" : ""}`}
+                            title="文本框：字直接写在页面上，没有卡片"
+                            aria-pressed={noteStyle === "text"}
+                            onClick={() => setNoteStyle("text")}
                           >
-                            直条
+                            文本框
                           </button>
                           <button
-                            className={`ph-rv-ink-seg-btn${tapeFreehand ? " is-on" : ""}`}
-                            title="随手：跟着笔走，画成什么样就是什么样"
-                            aria-pressed={tapeFreehand}
-                            onClick={() => !tapeFreehand && toggleTapeFreehand()}
+                            className={`ph-rv-ink-seg-btn${noteStyle === "note" ? " is-on" : ""}`}
+                            title="便利贴：一张贴在页面上的小卡片"
+                            aria-pressed={noteStyle === "note"}
+                            onClick={() => setNoteStyle("note")}
                           >
-                            随手
+                            便利贴
                           </button>
                         </div>
                         <span className="ph-rv-ink-sep" />
+                        {quickColors.map((c) => (
+                          <button
+                            key={c.key}
+                            className={`ph-rv-ink-color${noteColor === c.key ? " is-on" : ""}`}
+                            style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                            title={c.label}
+                            aria-label={c.label}
+                            aria-pressed={noteColor === c.key}
+                            onClick={() => setNoteColor(c.key)}
+                          />
+                        ))}
+                        <span className="ph-rv-ink-sep" />
+                        <span className="ph-rv-ink-note">点页面放一个 · 直接打字</span>
+                      </div>
+                    </div>
+                  )}
+                  {inkMode === "tape" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="胶带工具">
+                      <div className="ph-rv-ink-row">
                         <button
                           className={`ph-rv-ink-finger${tapeAutoThickness ? " is-on" : ""}`}
                           title="根据下面那行字的大小决定胶带多粗（新胶带生效）"
@@ -929,7 +1004,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           自动粗细
                         </button>
                         <span className="ph-rv-ink-sep" />
-                        <span className="ph-rv-ink-note">拖出一条盖住 · 点一下露出色底</span>
+                        <span className="ph-rv-ink-note">拖出一条盖住 · 自动拉平横竖 · 点一下露出色底</span>
                       </div>
                     </div>
                   )}

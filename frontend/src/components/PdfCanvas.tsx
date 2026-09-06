@@ -2,13 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { Icons } from "../design/icons";
+import { useUI } from "../store";
 import { fractionsOf, loadReadPos, saveReadPos, scrollTarget, type ReadPos } from "../lib/readPos";
 import { HighlightLayer, type HighlightKind } from "./HighlightLayer";
 import { InkLayer } from "./InkLayer";
+import { NoteLayer } from "./NoteLayer";
 import { TapeLayer } from "./TapeLayer";
 import "./PdfCanvas.css";
 
+/** Mirrors `ReadingView`'s band. See `zoomFloor` there for why the low end is
+ *  not a constant: 适应宽度 must be reachable even when the page needs less
+ *  than 40% to fit, which is what used to leave it stuck. */
 const MIN_ZOOM = 0.4;
+const HARD_MIN_ZOOM = 0.05;
 const MAX_ZOOM = 4;
 /** Padding of the page column, both sides — used for the fit-width maths. */
 const GUTTER = 40;
@@ -19,7 +25,20 @@ const GUTTER = 40;
  */
 const MAX_MATCHES = 2000;
 
-const clampZoom = (v: number): number => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v));
+/** The fit-width scale this viewport last reported, so the manual floor can
+ *  never sit above it. Module-scope-free: it is threaded through `clampZoom`'s
+ *  second argument from `fitScaleRef`. */
+const clampZoom = (v: number, fitScale = MIN_ZOOM): number => {
+  const fit = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : MIN_ZOOM;
+  const floor = Math.max(HARD_MIN_ZOOM, Math.min(MIN_ZOOM, fit));
+  return Math.max(floor, Math.min(MAX_ZOOM, v));
+};
+
+/** What 适应宽度 asks for, bounded only by sanity — NOT by the manual floor.
+ *  This is the value that used to be clamped to 0.4 and so could not fit a
+ *  wide page into a narrow viewport. */
+const fitScaleFor = (avail: number, pageWidth: number): number =>
+  Math.max(HARD_MIN_ZOOM, Math.min(MAX_ZOOM, avail / pageWidth));
 
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : typeof e === "string" ? e : "未知错误";
@@ -242,6 +261,13 @@ export function PdfCanvas({
 }: PdfCanvasProps): JSX.Element {
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
+  /** 手指书写 — the one setting under which a finger really is ink, and so the
+   *  one under which the ink canvas keeps a touch gesture to itself. Read
+   *  through a ref: the touch listeners are bound once, and rebinding them on
+   *  a toggle would drop a gesture in flight. */
+  const inkFingerDraw = useUI((s) => s.inkFingerDraw);
+  const fingerDrawRef = useRef(inkFingerDraw);
+  fingerDrawRef.current = inkFingerDraw;
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -342,7 +368,7 @@ export function PdfCanvas({
     const report = () => {
       const avail = el.clientWidth - GUTTER;
       if (avail > 0) {
-        const scale = clampZoom(avail / first.w);
+        const scale = fitScaleFor(avail, first.w);
         fitScaleRef.current = scale;
         onFitScaleRef.current(scale);
       }
@@ -681,7 +707,7 @@ export function PdfCanvas({
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      onZoomRef.current(clampZoom(zoomRef.current - e.deltaY * 0.0016));
+      onZoomRef.current(clampZoom(zoomRef.current - e.deltaY * 0.0016, fitScaleRef.current));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -699,9 +725,21 @@ export function PdfCanvas({
    * viewport (whose children include the text layer's spans) only a
    * non-passive touchmove with preventDefault does that reliably.
    *
-   * While an ink tool is active the wet canvas owns touch (palm rejection,
-   * draw, two-finger pan) — events still bubble here, so any gesture that
-   * starts on a live ink canvas is ignored.
+   * **Who owns a finger.** 防手指 says a finger is not ink; the corollary,
+   * which the first version missed, is that a finger is therefore NAVIGATION,
+   * and navigation is this handler's job even while an ink tool is active.
+   * Previously any gesture starting on a live ink canvas was dropped here and
+   * left to `InkLayer`, which implements only a two-finger pan — so with a pen
+   * tool selected (the tablet's normal state) one finger did nothing and two
+   * fingers could not zoom, and 锁定画布 appeared to do nothing because the
+   * unlocked behaviour was already the locked one. Measured, both ways.
+   *
+   * The one case where the canvas really does own touch is 手指书写: there a
+   * finger IS ink, and `InkLayer` keeps its own two-finger pan for it.
+   *
+   * `touch-action: none` on a live ink canvas (and on a locked viewport) also
+   * kills the browser's own scrolling, so single-finger panning has to be
+   * driven from here in those states — see `panOnly` below.
    *
    * The anchor is approximate: zoom renders asynchronously (every page
    * canvas re-renders on zoom change), so the scroll correction re-fires on
@@ -722,13 +760,38 @@ export function PdfCanvas({
     let anchorY = 0;
     let lastSent = 1;
     let anchorFrame = 0;
+    /** Where a manual one-finger pan last was, or null when the browser is
+     *  doing the scrolling (or the lock says nobody is). */
+    let panFrom: { x: number; y: number } | null = null;
+
+    /** Is this gesture the ink canvas's to keep? Only when a finger is
+     *  allowed to draw — otherwise a finger is navigation and belongs here. */
+    const inkOwnsTouch = (e: TouchEvent): boolean =>
+      fingerDrawRef.current && (e.target as HTMLElement).closest(".ph-ink--live") !== null;
+
+    /** Does the BROWSER still scroll this viewport on a one-finger drag? It
+     *  does not once `touch-action: none` is in play — which is exactly the
+     *  two states where one finger has to be panned by hand. */
+    const nativeScrolls = (e: TouchEvent): boolean =>
+      !lockedRef.current &&
+      (e.target as HTMLElement).closest(".ph-ink--live, .ph-tape--live") === null;
 
     const onStart = (e: TouchEvent) => {
-      if ((e.target as HTMLElement).closest(".ph-ink--live") !== null) return;
+      if (inkOwnsTouch(e)) return;
       for (const t of Array.from(e.changedTouches)) {
         touches.set(t.identifier, { x: t.clientX, y: t.clientY });
       }
+      if (touches.size === 1) {
+        // A lone finger. Locked, it does nothing at all — that IS the lock.
+        // Unlocked, it pans; natively where the browser still will, by hand
+        // where `touch-action: none` has stopped it.
+        const only = [...touches.values()][0]!;
+        panFrom = lockedRef.current || nativeScrolls(e) ? null : { x: only.x, y: only.y };
+        if (panFrom) e.preventDefault();
+        return;
+      }
       if (touches.size !== 2) return;
+      panFrom = null;
       const [a, b] = [...touches.values()];
       startDist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
       if (startDist < 20) {
@@ -746,10 +809,20 @@ export function PdfCanvas({
     };
 
     const onMove = (e: TouchEvent) => {
-      if (touches.size !== 2) return;
+      if (inkOwnsTouch(e)) return;
       for (const t of Array.from(e.changedTouches)) {
         if (touches.has(t.identifier)) touches.set(t.identifier, { x: t.clientX, y: t.clientY });
       }
+      // One finger, in a state where the browser will not scroll for us.
+      if (touches.size === 1 && panFrom) {
+        const only = [...touches.values()][0]!;
+        el.scrollLeft += panFrom.x - only.x;
+        el.scrollTop += panFrom.y - only.y;
+        panFrom = { x: only.x, y: only.y };
+        e.preventDefault();
+        return;
+      }
+      if (touches.size !== 2) return;
       const [a, b] = [...touches.values()];
       if (!a || !b) return;
       // Locked: two fingers pan only — the whole point of the lock is that
@@ -758,7 +831,7 @@ export function PdfCanvas({
       // which would still recompute and re-render every page for nothing).
       if (!lockedRef.current) {
         const ratio = Math.hypot(a.x - b.x, a.y - b.y) / startDist;
-        const next = clampZoom(startZoom * ratio);
+        const next = clampZoom(startZoom * ratio, fitScaleRef.current);
         // Stepped, not continuous: each zoom value re-renders every page
         // canvas, and touchmove fires at digitiser rate.
         if (Math.abs(next - lastSent) >= 0.01) {
@@ -807,6 +880,7 @@ export function PdfCanvas({
     const onEndForTap = (e: TouchEvent): void => {
       for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
       if (touches.size < 2) cancelAnimationFrame(anchorFrame);
+      if (touches.size === 0) panFrom = null;
       if (touches.size !== 0 || e.changedTouches.length !== 1) return;
       const t = e.changedTouches[0]!;
       const target = e.target as HTMLElement;
@@ -830,7 +904,7 @@ export function PdfCanvas({
 
       const fit = fitScaleRef.current;
       const zoomed = Math.abs(zoomRef.current - fit) > 0.02;
-      const targetZoom = zoomed ? fit : clampZoom(Math.max(fit * 2, 1.5));
+      const targetZoom = zoomed ? fit : clampZoom(Math.max(fit * 2, 1.5), fitScaleRef.current);
       if (Math.abs(targetZoom - zoomRef.current) < 0.01) return;
       const ratio = targetZoom / zoomRef.current;
       const rect = el.getBoundingClientRect();
@@ -1066,6 +1140,17 @@ export function PdfCanvas({
               )}
               {kind && (
                 <InkLayer
+                  paperId={paperId}
+                  kind={kind}
+                  page={i + 1}
+                  scale={zoom}
+                  pageHeight={p.h}
+                />
+              )}
+              {/* Notes go BELOW tape and above ink: typed text is written on
+                  the page, and a strip of tape covers it like anything else. */}
+              {kind && (
+                <NoteLayer
                   paperId={paperId}
                   kind={kind}
                   page={i + 1}

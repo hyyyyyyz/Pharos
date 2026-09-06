@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_DRAG_LENGTH, MIN_TAPE_SIZE, tapeFromPath, tapeFromDrag } from "./tape";
+import { MIN_DRAG_LENGTH, MIN_TAPE_SIZE, tapeAlongAxis, tapeFromDrag } from "./tape";
 
 describe("tapeFromDrag", () => {
   it("builds a horizontal strip from a horizontal drag", () => {
@@ -40,67 +40,69 @@ describe("tapeFromDrag", () => {
   });
 });
 
-describe("tapeFromPath (freehand strips)", () => {
-  /* The regression this file exists for: `h` is the strip's THICKNESS, and
-     `TapePaths` strokes the path at exactly that. When `h` held the path's
-     bounding-box height instead, a squiggle 100pt tall was stroked 100pt
-     wide — a blob, not a ribbon ("随意涂功能有问题"). */
-  it("puts the THICKNESS in h, not the path's bounding height", () => {
-    const r = tapeFromPath(
-      [
-        { x: 0, y: 0 },
-        { x: 10, y: 60 },
-      ],
-      6,
-    );
-    expect(r.h).toBe(6);
+describe("tapeAlongAxis (直胶条: snap to the line, then hold it)", () => {
+  /* A hand dragging along a paragraph is never level to the degree. Without
+     the snap, every strip inherited that tremor and needed 拉直 afterwards. */
+  it("snaps a near-horizontal drag to exactly level", () => {
+    const { rect, axis } = tapeAlongAxis(0, 100, 80, 106, 14, null);
+    expect(axis).toBe("x");
+    expect(rect.angle).toBe(0);
+    expect(rect.w).toBeCloseTo(80);
+    expect(rect.y).toBeCloseTo(100); // the 6pt of wobble is discarded
   });
 
-  it("measures w along the path — how much tape was laid down", () => {
-    const r = tapeFromPath(
-      [
-        { x: 0, y: 0 },
-        { x: 30, y: 0 },
-        { x: 30, y: 40 },
-      ],
-      6,
-    );
-    expect(r.w).toBeCloseTo(70);
+  it("snaps a near-vertical drag to exactly upright", () => {
+    const { rect, axis } = tapeAlongAxis(50, 0, 55, 90, 14, null);
+    expect(axis).toBe("y");
+    expect(Math.abs(rect.angle)).toBeCloseTo(90);
+    expect(rect.x).toBeCloseTo(50);
   });
 
-  it("centres on the path's bounding box", () => {
-    const r = tapeFromPath(
-      [
-        { x: 0, y: 0 },
-        { x: 10, y: 4 },
-      ],
-      6,
-    );
-    expect(r.x).toBeCloseTo(5);
-    expect(r.y).toBeCloseTo(2);
+  it("leaves a deliberately diagonal drag at its own angle", () => {
+    const { rect, axis } = tapeAlongAxis(0, 0, 60, 60, 14, null);
+    expect(axis).toBe(null);
+    expect(rect.angle).toBeCloseTo(45);
   });
 
-  it("is never rotated — the path carries its own direction", () => {
-    const r = tapeFromPath(
-      [
-        { x: 0, y: 0 },
-        { x: 10, y: 10 },
-      ],
-      2,
-    );
-    expect(r.angle).toBe(0);
+  it("has no direction at all until the drag has actually travelled", () => {
+    const { axis } = tapeAlongAxis(0, 0, 2, 1, 14, null);
+    expect(axis).toBe(null);
   });
 
-  it("clamps a very long squiggle into the size range the server accepts", () => {
-    const path = Array.from({ length: 400 }, (_, i) => ({ x: i * 20, y: 0 }));
-    const r = tapeFromPath(path, 6);
-    expect(r.w).toBeLessThanOrEqual(2000);
+  /* The hysteresis. Without it the axis flips the moment |dy| creeps past
+     |dx| midway through a long sweep, which is the twitchiness the lock
+     exists to remove. */
+  it("holds a locked axis through wobble inside the strip's own width", () => {
+    const { rect, axis } = tapeAlongAxis(0, 100, 200, 106, 14, "x");
+    expect(axis).toBe("x"); // 6pt off-axis, strip is 14 wide: still inside
+    expect(rect.y).toBeCloseTo(100);
   });
 
-  it("survives an empty path rather than producing NaN bounds", () => {
-    const r = tapeFromPath([], 6);
-    expect(Number.isFinite(r.x)).toBe(true);
-    expect(Number.isFinite(r.w)).toBe(true);
-    expect(r.w).toBeGreaterThanOrEqual(MIN_DRAG_LENGTH);
+  /* "除非笔尖超出胶条宽边界，后可变方向" — leaving the strip releases it. */
+  it("releases the lock once the pen leaves the strip's width", () => {
+    // 80pt off the axis of a 14pt strip: the lock is gone, and the travel is
+    // now overwhelmingly vertical, so that is the new direction.
+    const { axis } = tapeAlongAxis(0, 100, 10, 180, 14, "x");
+    expect(axis).toBe("y");
+  });
+
+  it("releases to a FREE angle when the escape is diagonal", () => {
+    // Equal travel both ways is neither horizontal nor vertical, and the rule
+    // only pins a direction that IS one of those.
+    const { rect, axis } = tapeAlongAxis(0, 100, 40, 140, 14, "x");
+    expect(axis).toBe(null);
+    expect(rect.angle).toBeCloseTo(45);
+  });
+
+  it("re-locks to the same axis when the movement still says so", () => {
+    // Far off-axis, but still overwhelmingly horizontal travel.
+    const { axis } = tapeAlongAxis(0, 100, 400, 112, 14, "x");
+    expect(axis).toBe("x");
+  });
+
+  it("clamps into the size range the server accepts", () => {
+    const { rect } = tapeAlongAxis(0, 0, 2, 0, 1.5, "x");
+    expect(rect.w).toBeGreaterThanOrEqual(MIN_TAPE_SIZE);
+    expect(rect.h).toBeGreaterThanOrEqual(MIN_TAPE_SIZE);
   });
 });
