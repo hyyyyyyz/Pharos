@@ -208,10 +208,6 @@ export function TapeLayer({
     /** The axis the strip is currently pinned to, carried across samples.
      *  This ref IS the lock — see `tapeAlongAxis`. */
     let axis: TapeAxis = null;
-    /** The strip as of the last frame, so pen-up commits exactly what the
-     *  reader was looking at. Recomputing it from the final point would throw
-     *  the axis away and go back to "首尾相连". */
-    let live: TapeRect | null = null;
     const rafRef = { current: 0 };
 
     /** The thickness a strip laid down right here should get: the text line's
@@ -227,6 +223,12 @@ export function TapeLayer({
 
     const onDown = (e: PointerEvent) => {
       if ((e.target as HTMLElement).closest(".ph-tape-strip, .ph-tape-pop") !== null) return;
+      // Anywhere else dismisses the popover — "胶带的弹窗不要一直显示，以免影响
+      // 正常使用". It used to stay up from the tap that opened it until the
+      // tool was switched away, parked over the page with the reader's own
+      // options in the way of the page they were reading. Tap-away-to-dismiss
+      // is what every other popover here already does.
+      setSelectedId(null);
       // 防手指: a strip is drawn with the pen, like every other mark on the
       // page. A finger here is a palm resting while writing, or a scroll that
       // the viewport should have got instead.
@@ -237,7 +239,6 @@ export function TapeLayer({
       start = { ...pt, clientX: e.clientX, clientY: e.clientY };
       moved = false;
       axis = null;
-      live = null;
       el.setPointerCapture(e.pointerId);
     };
 
@@ -263,7 +264,6 @@ export function TapeLayer({
         // that continuity is the whole of "一直保持其方向".
         const next = tapeAlongAxis(s.x, s.y, pt.x, pt.y, thickness, axis);
         axis = next.axis;
-        live = next.rect;
         setDragPreview({ rect: next.rect });
       });
     };
@@ -279,13 +279,19 @@ export function TapeLayer({
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       setDragPreview(null);
       if (!moved) return;
-      // Commit what was on screen. If the last frame never ran (a very short
-      // drag), derive it once here through the same function, so there is no
-      // second definition of what a strip is.
+      // Commit from where the pen ACTUALLY ENDED, always — never from the
+      // last frame that happened to get rendered.
+      //
+      // The preview is throttled to one frame, which is right; trusting that
+      // frame as the committed geometry is not. A hand moving faster than the
+      // display refreshes leaves the final samples unrendered, so the strip
+      // that got stored was wherever the pen was one frame ago. Measured: a
+      // drag right-then-down committed while still locked horizontal, because
+      // the frames covering the turn never ran. Recomputing here costs one
+      // call and makes "what I drew" and "what was saved" the same thing by
+      // construction — the axis carries across because it is threaded in.
       const pt = toPage(e.clientX, e.clientY);
-      const rect =
-        live ?? tapeAlongAxis(s.x, s.y, pt.x, pt.y, thicknessAt(e.clientX, e.clientY), axis).rect;
-      live = null;
+      const rect = tapeAlongAxis(s.x, s.y, pt.x, pt.y, thicknessAt(e.clientX, e.clientY), axis).rect;
       axis = null;
       try {
         const row = await api.tape.create(paperId, { kind, page, ...rect });
@@ -350,7 +356,13 @@ export function TapeLayer({
           onTap={() => {
             if (!stripsInteractive) return;
             toggleRevealed(t);
-            if (inkMode === "tape") setSelectedId(t.id);
+            // The popover comes up only on the tap that COVERS a strip again,
+            // not on the one that uncovers it. Uncovering is the reader
+            // wanting to read what is under there; putting a panel of size
+            // controls over it at that exact moment is the opposite of
+            // helping. Re-covering is the moment they are fiddling with the
+            // strip itself, which is when its options are worth offering.
+            if (inkMode === "tape") setSelectedId(t.revealed ? t.id : null);
           }}
         />
       ))}

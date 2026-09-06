@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { Icons } from "../design/icons";
+import { isPenDown, lastPointerWasStylus } from "../lib/pointer";
 import { useUI } from "../store";
 import { fractionsOf, loadReadPos, saveReadPos, scrollTarget, type ReadPos } from "../lib/readPos";
 import { HighlightLayer, type HighlightKind } from "./HighlightLayer";
@@ -446,6 +447,51 @@ export function PdfCanvas({
     };
   }, [pages, posKey]);
 
+  /* ------------------------------------------------------- the live window */
+  /**
+   * Which pages are rendered and carry annotation layers.
+   *
+   * Without this, EVERY page of the document is mounted with its own pdf.js
+   * canvas plus up to four ink canvases, none of them ever released. Because a
+   * canvas's backing store is `pageSize x zoom x dpr` on each axis, the total
+   * grows as zoom SQUARED and multiplies by the page count: a twelve-page
+   * paper at 400% measures out at nearly five gigabytes of canvas, which is
+   * not a leak to be tuned but an amount of memory no tablet has. That is the
+   * defect behind "缩放时闪退" — an Android WebView renderer killed for memory
+   * comes back to the reader as the app disappearing.
+   *
+   * A second observer rather than reusing the one above, because they answer
+   * different questions: that one asks "which page is the reader ON" and wants
+   * a tight threshold, this asks "which pages might they SEE next" and wants a
+   * generous margin. `rootMargin: 100%` keeps one viewport-height of pages
+   * live on each side, so scrolling never waits on a render, while memory
+   * becomes proportional to the SCREEN rather than to the document.
+   */
+  const [live, setLive] = useState<Set<number>>(() => new Set([1]));
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || pages.length === 0) return;
+    const near = new Set<number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const n = Number((entry.target as HTMLElement).dataset.page);
+          if (entry.isIntersecting) near.add(n);
+          else near.delete(n);
+        }
+        // Always keep at least one page live, or a document scrolled into a
+        // gap would blank entirely.
+        const next = near.size > 0 ? new Set(near) : new Set([1]);
+        setLive((prev) =>
+          prev.size === next.size && [...next].every((n) => prev.has(n)) ? prev : next,
+        );
+      },
+      { root: el, rootMargin: "100% 0px", threshold: 0 },
+    );
+    pageRefs.current.slice(0, pages.length).forEach((p) => p && io.observe(p));
+    return () => io.disconnect();
+  }, [pages]);
+
   /* ----------------------------------------------------------- canvas rendering */
   useEffect(() => {
     if (!doc || pages.length === 0) return;
@@ -454,8 +500,22 @@ export function PdfCanvas({
     // Very large canvases blow up memory; trade a little sharpness at high zoom.
     const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / zoom));
 
+    // Release the backing store of every page outside the window BEFORE
+    // rendering the ones inside it, so the peak never holds both.
+    for (let n = 1; n <= pages.length; n++) {
+      if (live.has(n)) continue;
+      const canvas = canvasRefs.current[n - 1];
+      if (canvas && canvas.width !== 0) {
+        tasks.get(n)?.task.cancel();
+        // Setting either dimension to 0 is what actually frees a canvas's
+        // pixels; clearRect only paints over them.
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+
     (async () => {
-      for (let n = 1; n <= pages.length; n++) {
+      for (const n of [...live].sort((a, b) => a - b)) {
         if (cancelled) return;
         const canvas = canvasRefs.current[n - 1];
         if (!canvas) continue;
@@ -500,7 +560,7 @@ export function PdfCanvas({
       cancelled = true;
       tasks.forEach((t) => t.task.cancel());
     };
-  }, [doc, pages, zoom]);
+  }, [doc, pages, zoom, live]);
 
   /* ----------------------------------------------------------- text layers */
   /**
@@ -688,6 +748,7 @@ export function PdfCanvas({
     return () => io.disconnect();
   }, [pages]);
 
+
   /* ------------------------------------------------------------ jump to page */
   useEffect(() => {
     if (jumpTo == null) return;
@@ -777,6 +838,12 @@ export function PdfCanvas({
       (e.target as HTMLElement).closest(".ph-ink--live, .ph-tape--live") === null;
 
     const onStart = (e: TouchEvent) => {
+      // A stylus is not a finger. `TouchEvent` cannot tell us that — a pen
+      // contact arrives here exactly like a fingertip — so the answer comes
+      // from the pointer stream via `isPenDown`. Without it the one-finger
+      // manual pan below fires on every pen stroke, dragging the page out from
+      // under the writing: "使用笔拖动时，会误拖动屏幕".
+      if (isPenDown()) return;
       if (inkOwnsTouch(e)) return;
       for (const t of Array.from(e.changedTouches)) {
         touches.set(t.identifier, { x: t.clientX, y: t.clientY });
@@ -809,6 +876,7 @@ export function PdfCanvas({
     };
 
     const onMove = (e: TouchEvent) => {
+      if (isPenDown()) return;
       if (inkOwnsTouch(e)) return;
       for (const t of Array.from(e.changedTouches)) {
         if (touches.has(t.identifier)) touches.set(t.identifier, { x: t.clientX, y: t.clientY });
@@ -879,6 +947,14 @@ export function PdfCanvas({
 
     const onEndForTap = (e: TouchEvent): void => {
       for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
+      // `isPenDown` is already false by now — `pointerup` fires before
+      // `touchend` — so the double-tap zoom needs the "what was it LAST"
+      // question instead. Two taps of a pen on the paper must not jump the
+      // zoom any more than a pen drag may pan.
+      if (lastPointerWasStylus()) {
+        lastTap = null;
+        return;
+      }
       if (touches.size < 2) cancelAnimationFrame(anchorFrame);
       if (touches.size === 0) panFrom = null;
       if (touches.size !== 0 || e.changedTouches.length !== 1) return;
@@ -954,6 +1030,28 @@ export function PdfCanvas({
       // would stop its note textarea from ever taking focus on click. Chrome is
       // not paper: leave it entirely alone, panlock included.
       if (target.closest(".ph-hl-pop") !== null) return;
+      // A STYLUS never pans, wherever it landed. "只有手指才能拖动画布，笔不应
+      // 触发画布拖动" — and this handler cannot see that for itself, because a
+      // MouseEvent carries no `pointerType`: pen input reaches here as a
+      // compatibility mouse event indistinguishable from a real one. Hence the
+      // global pen tracker, which is written from the pointer stream that DOES
+      // know (see lib/pointer). Guarding by pointer type rather than by a list
+      // of exempt CSS classes is the point: the class list has now been the
+      // wrong tool twice, and it can only ever cover the elements someone
+      // remembered.
+      if (isPenDown() || lastPointerWasStylus()) return;
+      // Text boxes and sticky notes own their own presses. Without this the
+      // `preventDefault()` below cancels the mousedown's default action — which
+      // IS focusing the textarea and placing the caret — and `el.focus()` then
+      // takes focus away, so a note could never be typed into. Same reasoning
+      // as `.ph-hl-pop` above, whose own textarea needed the same exemption.
+      if (target.closest(".ph-note") !== null) return;
+      // 胶带 too. A drag on the tape surface is laying down a strip, and this
+      // handler was panning the page underneath it at the same time — so the
+      // strip tracked the scroll and came out as whatever the two motions left
+      // over. Measured: a drag right-then-down produced a purely horizontal
+      // strip, because the page had scrolled by exactly the vertical distance.
+      if (target.closest(".ph-tape") !== null) return;
       // Same for the ink canvas: a pen (or mouse, with the tool on) drawing a
       // stroke must not pan the page under it. The ink layer stops its own
       // pointer events; this catches the compatibility mouse events pen input
@@ -1126,7 +1224,15 @@ export function PdfCanvas({
                   />
                 ))}
               </div>
-              {kind && (
+              {/*
+                  The annotation layers exist only for pages in the live
+                  window. InkLayer alone owns up to four full-size canvases,
+                  so mounting it on every page of a long document is what
+                  turns zoom into gigabytes — see the live-window note above.
+                  Nothing is lost by unmounting: every layer paints from the
+                  query cache and comes back identical when the page returns.
+              */}
+              {kind && live.has(i + 1) && (
                 <HighlightLayer
                   paperId={paperId}
                   kind={kind}
@@ -1138,7 +1244,7 @@ export function PdfCanvas({
                   pageHeight={p.h}
                 />
               )}
-              {kind && (
+              {kind && live.has(i + 1) && (
                 <InkLayer
                   paperId={paperId}
                   kind={kind}
@@ -1149,7 +1255,7 @@ export function PdfCanvas({
               )}
               {/* Notes go BELOW tape and above ink: typed text is written on
                   the page, and a strip of tape covers it like anything else. */}
-              {kind && (
+              {kind && live.has(i + 1) && (
                 <NoteLayer
                   paperId={paperId}
                   kind={kind}
@@ -1158,7 +1264,7 @@ export function PdfCanvas({
                   pageHeight={p.h}
                 />
               )}
-              {kind && (
+              {kind && live.has(i + 1) && (
                 <TapeLayer
                   paperId={paperId}
                   kind={kind}

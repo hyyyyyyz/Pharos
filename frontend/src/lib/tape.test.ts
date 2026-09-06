@@ -78,20 +78,31 @@ describe("tapeAlongAxis (直胶条: snap to the line, then hold it)", () => {
     expect(rect.y).toBeCloseTo(100);
   });
 
-  /* "除非笔尖超出胶条宽边界，后可变方向" — leaving the strip releases it. */
-  it("releases the lock once the pen leaves the strip's width", () => {
-    // 80pt off the axis of a 14pt strip: the lock is gone, and the travel is
-    // now overwhelmingly vertical, so that is the new direction.
-    const { axis } = tapeAlongAxis(0, 100, 10, 180, 14, "x");
+  /* "笔尖超出胶带宽度范围后，应改变胶带的绘制方向" — leaving the strip is the
+     permission to switch, and then the dominant component decides. */
+  it("turns vertical once the pen leaves the strip and is heading down", () => {
+    const { rect, axis } = tapeAlongAxis(0, 100, 10, 180, 14, "x");
     expect(axis).toBe("y");
+    expect(Math.abs(rect.angle)).toBeCloseTo(90);
   });
 
-  it("releases to a FREE angle when the escape is diagonal", () => {
-    // Equal travel both ways is neither horizontal nor vertical, and the rule
-    // only pins a direction that IS one of those.
-    const { rect, axis } = tapeAlongAxis(0, 100, 40, 140, 14, "x");
-    expect(axis).toBe(null);
-    expect(rect.angle).toBeCloseTo(45);
+  /* The bug this replaces: the escape used to re-apply the 20-degree snap
+     test, so a drag 100 right and 40 down — plainly outside a 14pt strip —
+     was "not near vertical" and re-locked to horizontal. The direction could
+     therefore never change, which is what "方向切换逻辑仍未正确实现" reported.
+     Outside the strip there is no tolerance band: the larger component wins. */
+  it("switches on the DOMINANT component, with no tolerance band", () => {
+    expect(tapeAlongAxis(0, 100, 100, 140, 14, "x").axis).toBe("x"); // 100 > 40
+    expect(tapeAlongAxis(0, 100, 40, 200, 14, "x").axis).toBe("y"); // 100 > 40
+    expect(tapeAlongAxis(100, 0, 140, 100, 14, "y").axis).toBe("y"); // 100 > 40
+    expect(tapeAlongAxis(100, 0, 200, 40, 14, "y").axis).toBe("x"); // 100 > 40
+  });
+
+  it("never goes back to a free angle once it has a direction", () => {
+    // A locked strip that escapes picks the other axis, not a diagonal: the
+    // reader removed 随手 precisely so a strip is always straight.
+    const { axis } = tapeAlongAxis(0, 100, 40, 140, 14, "x");
+    expect(axis === "x" || axis === "y").toBe(true);
   });
 
   it("re-locks to the same axis when the movement still says so", () => {

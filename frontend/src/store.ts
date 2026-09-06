@@ -566,7 +566,7 @@ interface UIState {
    * whoever focuses it, so it can never re-steal the caret on a later render.
    */
   noteFocusId: string | null;
-  setNoteFocusId: (id: string | null) => void;
+  setNoteFocusId: (id: string | null | ((cur: string | null) => string | null)) => void;
 
   /**
    * Show what the stylus is actually reporting, live, on the page.
@@ -843,7 +843,10 @@ export const useUI = create<UIState>((set) => ({
   setNoteColor: (noteColor) => set({ noteColor }),
   noteColors: { ...DEFAULT_NOTE_COLORS },
   noteFocusId: null,
-  setNoteFocusId: (noteFocusId) => set({ noteFocusId }),
+  setNoteFocusId: (noteFocusId) =>
+    set((s) => ({
+      noteFocusId: typeof noteFocusId === "function" ? noteFocusId(s.noteFocusId) : noteFocusId,
+    })),
   inkPenDebug: false,
   toggleInkPenDebug: () =>
     set((s) => ({ inkPenDebug: !s.inkPenDebug, inkPenProbe: null })),

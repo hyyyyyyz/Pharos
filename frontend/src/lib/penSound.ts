@@ -60,8 +60,12 @@ type AudioCtor = typeof AudioContext;
 export class PenSound {
   private ctx: AudioContext | null = null;
   private gain: GainNode | null = null;
+  /** The last level `nib()` asked for, surfaced in the toolbar readout so a
+   *  reader who hears nothing can say whether the graph was even trying. */
+  private lastVoice = 0;
   private filter: BiquadFilterNode | null = null;
   private source: AudioBufferSourceNode | null = null;
+  private limiter: DynamicsCompressorNode | null = null;
   private failed = false;
 
   /**
@@ -102,6 +106,23 @@ export class PenSound {
     return this.ctx.state === "running" ? "运行中" : "已挂起";
   }
 
+  /**
+   * A one-line report for the toolbar: is the device running, and what level
+   * did the nib last ask for?
+   *
+   * The level is the half that was missing. "运行中" alone says the graph is
+   * alive but not whether it is producing anything, so a reader could still
+   * only report "no sound" — the same dead end as the last three rounds. A
+   * number they can read out turns "no sound" into either "the graph is
+   * asking for 0.00" (the app's fault) or "asking for 0.19 and I hear
+   * nothing" (the device's).
+   */
+  report(): string {
+    const s = this.state();
+    if (s !== "运行中") return s;
+    return `运行中 · 音量 ${this.lastVoice.toFixed(2)}`;
+  }
+
   private ensure(): boolean {
     if (this.failed) return false;
     if (this.ctx) {
@@ -129,31 +150,61 @@ export class PenSound {
       // paper texture has more energy low down, and pure white noise reads as
       // hiss/static.
       let prev = 0;
+      let peak = 0;
       for (let i = 0; i < frames; i++) {
         const white = Math.random() * 2 - 1;
         prev = prev * 0.6 + white * 0.4;
         data[i] = prev;
+        const mag = prev < 0 ? -prev : prev;
+        if (mag > peak) peak = mag;
+      }
+      // NORMALISE. The one-pole filter above is where most of the missing
+      // loudness went: averaging ±1 white noise leaves an RMS of about 0.29,
+      // roughly 11 dB below full scale, before anything downstream has taken
+      // its own cut. Three rounds of raising `PEAK_GAIN` were compensating at
+      // the wrong end of the chain for a signal that arrived quiet.
+      if (peak > 0) {
+        const norm = 0.95 / peak;
+        for (let i = 0; i < frames; i++) data[i] *= norm;
       }
 
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
 
+      // A gentle BANDSHELF rather than a narrow bandpass. `bandpass` at
+      // Q 0.7 threw away roughly another 5 dB of a source that had already
+      // been low-passed toward its own passband — paying twice for the same
+      // timbre. A peaking filter keeps the paper character (a lift around the
+      // nib's own frequencies) while passing the rest of the signal at unity,
+      // so the level that reaches the gain node is the level the buffer has.
       const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.value = 1400;
-      filter.Q.value = 0.7;
+      filter.type = "peaking";
+      filter.frequency.value = 1600;
+      filter.Q.value = 0.9;
+      filter.gain.value = 6;
 
       const gain = ctx.createGain();
       gain.gain.value = 0;
 
-      source.connect(filter).connect(gain).connect(ctx.destination);
+      // A limiter on the way out. With the source at full scale the peaks are
+      // real peaks, and a nib that clips sounds like a fault rather than like
+      // paper; this catches them without costing average level.
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 6;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.12;
+
+      source.connect(filter).connect(gain).connect(limiter).connect(ctx.destination);
       source.start();
 
       this.ctx = ctx;
       this.source = source;
       this.filter = filter;
       this.gain = gain;
+      this.limiter = limiter;
       return true;
     } catch {
       // No audio device, a policy refusal, a locked-down WebView: writing must
@@ -177,6 +228,7 @@ export class PenSound {
     // leaves careful handwriting almost silent — and a floor under that, so
     // "audible" does not depend on writing fast.
     const voice = MIN_VOICE + (1 - MIN_VOICE) * Math.sqrt(t);
+    this.lastVoice = PEAK_GAIN * voice;
     this.gain.gain.cancelScheduledValues(now);
     this.gain.gain.setTargetAtTime(PEAK_GAIN * voice, now, ATTACK);
     this.filter.frequency.setTargetAtTime(900 + 1800 * t, now, ATTACK);
@@ -207,7 +259,7 @@ export class PenSound {
       g.gain.setValueAtTime(0, now + at);
       g.gain.linearRampToValueAtTime(TEST_GAIN, now + at + 0.02);
       g.gain.linearRampToValueAtTime(0, now + at + 0.13);
-      osc.connect(g).connect(ctx.destination);
+      osc.connect(g).connect(this.limiter ?? ctx.destination);
       osc.start(now + at);
       osc.stop(now + at + 0.16);
     };
@@ -235,6 +287,7 @@ export class PenSound {
     this.ctx = null;
     this.gain = null;
     this.filter = null;
+    this.limiter = null;
     this.source = null;
   }
 }

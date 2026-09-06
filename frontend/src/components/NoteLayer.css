@@ -58,18 +58,149 @@
 }
 
 /*
-   便利贴 — deliberately an object placed ON TOP. A tinted card with a soft
-   shadow and a slightly heavier corner, because that is what makes a sticky
-   note read as something added rather than as part of the document.
+   便利贴 — an object placed ON TOP of the document, and it has to look like
+   one. Four things do that work, and none of them is decoration:
 
-   `color-mix` against white keeps the tint light enough to read black text on
-   whatever ink token was chosen, rather than needing a second palette of
-   pastel variants.
+   - **A gradient, not a flat fill.** Real paper catches light unevenly; a
+     single flat colour reads as a UI panel. The lift is 6% across the
+     diagonal, which is under the threshold of being noticed as a gradient and
+     over the threshold of being noticed as paper.
+   - **A two-stage shadow.** A tight dark contact shadow plus a wide soft one
+     is what tells the eye how far above the page something is floating. The
+     single 1px shadow it replaces put the card flat on the paper, which is
+     exactly what a sticky note is not.
+   - **A turned-up corner**, drawn in `::after` as a triangle of page-coloured
+     fill with its own shadow. This is the one shape that says "sticky note"
+     with no text at all, and its absence is most of why the previous version
+     read as a plain tinted rectangle.
+   - **A warmer, deeper tint.** 30% of the token against white was so pale on
+     white paper that the card's edge was doing all the work of separating it
+     from the page.
 */
 .ph-note-box.is-note {
-  background: color-mix(in oklab, var(--c-note, #e8dcb8) 30%, white);
-  box-shadow: var(--sh-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
-  border: 1px solid color-mix(in oklab, var(--c-note, #e8dcb8) 35%, transparent);
+  /* A PASTEL, not a percentage of the ink token. The ink palette is built for
+     handwriting — `--c-ink-amber` is a dark ochre at L 0.55 — so mixing 40% of
+     it into white gives mud, which is what the first attempt produced. Taking
+     a small amount of the token for its HUE and letting white supply the
+     lightness is what makes a card look like paper someone would stick on a
+     page rather than like a brown box. */
+  --c-note-card: color-mix(in oklab, var(--c-note, #e8dcb8) 20%, white);
+  background:
+    linear-gradient(
+      148deg,
+      color-mix(in oklab, var(--c-note-card) 96%, white) 0%,
+      var(--c-note-card) 66%,
+      color-mix(in oklab, var(--c-note-card) 93%, black) 100%
+    );
+  border: 0;
+  border-radius: 3px;
+  /* Two stages: a tight contact shadow and a wide soft one. That pairing is
+     what tells the eye how far above the page something floats; the single
+     1px shadow this replaces laid the card flat on the paper, which is
+     precisely what a sticky note is not. */
+  box-shadow:
+    0 1px 1px rgba(60, 48, 20, 0.14),
+    0 5px 12px -3px rgba(60, 48, 20, 0.2);
+}
+
+/*
+   The turned-up corner — the one shape that says "sticky note" with no text at
+   all. A darker triangle for the flap's underside, with a light edge along the
+   fold.
+
+   Only when NOT being edited: while the 文本 tool is active the resize handle
+   owns that same corner, and two round things fighting for one 12px square is
+   worse than having neither.
+*/
+.ph-note-box.is-note:not(.has-chrome)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 13px 13px;
+  border-color: transparent transparent color-mix(in oklab, var(--c-note-card) 82%, black)
+    transparent;
+  border-bottom-right-radius: 3px;
+  filter: drop-shadow(-1px -1px 1px rgba(60, 48, 20, 0.18));
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ folding */
+/*
+   收起 — the card folds to one line of its own text. Deliberately still a
+   sticky note (same tint, same shadow) rather than a neutral chip: a folded
+   thing has to be recognisable as the thing it folded from, or finding it
+   again is a hunt.
+*/
+.ph-note-box.is-folded {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: auto;
+  padding: 3px 9px 3px 7px;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--c-tx, #1e222a);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* No turned-up corner while folded: at 22px tall it would be most of the pill. */
+.ph-note-box.is-folded::after {
+  content: none;
+}
+
+.ph-note-fold-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-note, #b08a2e);
+  opacity: 0.75;
+}
+
+.ph-note-fold-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+}
+
+/* The fold control: a small chevron in the card's top-right, visible only on
+   a 便利贴 and only while it is expanded. */
+.ph-note-fold {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+.ph-note-fold:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.5);
+}
+/* A chevron drawn from a rotated square's two borders — no icon import, and it
+   stays crisp at any size. */
+.ph-note-fold > span {
+  width: 6px;
+  height: 6px;
+  border-left: 1.5px solid var(--c-tx2, #5a616e);
+  border-bottom: 1.5px solid var(--c-tx2, #5a616e);
+  transform: rotate(-45deg) translate(1px, -1px);
 }
 
 /* A sticky note's own colour is its CARD, so the text on it stays plain dark
@@ -77,6 +208,9 @@
    card. A text box is the other way round: there the colour IS the glyphs. */
 .ph-note-box.is-note .ph-note-text {
   color: var(--c-tx, #1e222a);
+  /* Clear of the fold chevron (top-right) and, when it is showing, the
+     turned corner (bottom-right), so neither ever sits on a glyph. */
+  padding: 4px 20px 11px 7px;
 }
 
 .ph-note-text {

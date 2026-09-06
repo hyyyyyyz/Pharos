@@ -60,6 +60,9 @@ class PageNoteOut(BaseModel):
     #: Font size in PDF points at scale 1.
     size: float
     body: str
+    #: Folded down to a pill. NULL in the database (a row written before the
+    #: column existed) reads as False.
+    collapsed: bool
     created_at: datetime
     updated_at: datetime | None
 
@@ -79,6 +82,7 @@ class PageNoteCreate(BaseModel):
     #: Bounded here as well as in the service so an oversized body is refused
     #: at the door rather than after it has been parsed.
     body: str | None = Field(default=None, max_length=pagenote.MAX_BODY)
+    collapsed: bool | None = None
 
 
 class PageNoteUpdate(BaseModel):
@@ -99,6 +103,7 @@ class PageNoteUpdate(BaseModel):
     color: str | None = None
     size: float | None = Field(default=None, allow_inf_nan=False, ge=pagenote.MIN_FONT, le=pagenote.MAX_FONT)
     body: str | None = Field(default=None, max_length=pagenote.MAX_BODY)
+    collapsed: bool | None = None
 
 
 # ---------------------------------------------------------------- converters
@@ -118,6 +123,7 @@ def _note_out(row: PageNote) -> PageNoteOut:
         color=row.color,
         size=row.size,
         body=row.body,
+        collapsed=bool(row.collapsed),
         created_at=as_utc(row.created_at),
         updated_at=as_utc(row.updated_at) if row.updated_at else None,
     )
@@ -158,6 +164,7 @@ def create_page_note(
         color=payload.color,
         size=payload.size,
         body=payload.body,
+        collapsed=payload.collapsed,
     )
     return _note_out(row)
 
@@ -182,6 +189,7 @@ def update_page_note(
         color=payload.color if "color" in sent else ...,
         size=payload.size if "size" in sent else ...,
         body=payload.body if "body" in sent else ...,
+        collapsed=payload.collapsed if "collapsed" in sent else ...,
     )
     return _note_out(row)
 

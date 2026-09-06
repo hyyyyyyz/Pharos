@@ -282,6 +282,9 @@ export interface PageNoteRow {
    *  stroke's width does. */
   size: number;
   body: string;
+  /** Folded down to a pill showing its first line. A long sticky note is
+   *  useful to have written and often in the way afterwards. */
+  collapsed: boolean;
   created_at: string;
   updated_at: string | null;
 }

@@ -46,3 +46,67 @@ export function isDrawingPointer(
 export function isStylus(e: { pointerType: string }): boolean {
   return e.pointerType === "pen" || e.pointerType === "eraser";
 }
+
+/* ------------------------------------------------- who is touching, globally */
+/**
+ * Is a stylus on the glass right now, and what kind of pointer arrived last?
+ *
+ * This exists because the two things that PAN the reader cannot see a pointer
+ * type. One is a `MouseEvent` handler and the other a `TouchEvent` handler,
+ * and neither event carries `pointerType` — a stylus reaches both as an
+ * ordinary contact. So "笔不应触发画布拖动" cannot be expressed where the pan
+ * actually happens; it has to be remembered from the pointer stream, which is
+ * the only place the distinction survives.
+ *
+ * A capture-phase listener on `window`, because Chromium dispatches
+ * `pointerdown` BEFORE both the corresponding `touchstart` and the
+ * compatibility `mousedown`. By the time either pan handler runs, this is
+ * already correct for the gesture that is starting.
+ *
+ * One listener for the whole app rather than a hook per component: there is
+ * exactly one pointer, and any component asking "is it a pen" wants the same
+ * answer.
+ */
+let penDown = false;
+let lastType = "";
+
+if (typeof window !== "undefined") {
+  const opts = { capture: true, passive: true } as const;
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      lastType = e.pointerType;
+      if (isStylus(e)) penDown = true;
+    },
+    opts,
+  );
+  const up = (e: PointerEvent): void => {
+    lastType = e.pointerType;
+    if (isStylus(e)) penDown = false;
+  };
+  window.addEventListener("pointerup", up, opts);
+  window.addEventListener("pointercancel", up, opts);
+  // A pen lifted out of range without a pointerup (it happens on Android when
+  // the digitiser loses the stylus) would otherwise leave the flag stuck on,
+  // and with it the viewport permanently unpannable.
+  window.addEventListener(
+    "pointerleave",
+    (e) => {
+      if (isStylus(e)) penDown = false;
+    },
+    opts,
+  );
+}
+
+/** Is a stylus in contact right now? */
+export const isPenDown = (): boolean => penDown;
+
+/**
+ * Was the most recent pointer a stylus?
+ *
+ * Needed as well as `isPenDown` because some things are decided AFTER the pen
+ * lifts — a double-tap is recognised on `touchend`, by which time `pointerup`
+ * has already cleared the down flag.
+ */
+export const lastPointerWasStylus = (): boolean =>
+  lastType === "pen" || lastType === "eraser";

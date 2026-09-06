@@ -307,9 +307,8 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
    *  policy from a muted tablet, and neither can be guessed from here. */
   const [soundState, setSoundState] = useState<string>("未启动");
   useEffect(() => {
-    if (!inkSound) return;
-    setSoundState(penSound().state());
-    const t = setInterval(() => setSoundState(penSound().state()), 1000);
+    setSoundState(penSound().report());
+    const t = setInterval(() => setSoundState(penSound().report()), 700);
     return () => clearInterval(t);
   }, [inkSound]);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
@@ -843,6 +842,14 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                         onClick={() => {
                           const on = !inkSound;
                           toggleInkSound();
+                          // Beep on EVERY press, not only on OFF->ON. The
+                          // previous version could not fire for the one person
+                          // who needed it: 音效 is persisted, so a reader who
+                          // switched it on in an earlier build comes back with
+                          // it already on, and the only transition left to them
+                          // is ON->OFF — silent by construction. That is why
+                          // four rounds of audio fixes produced no evidence.
+                          penSound().test();
                           // Switching it ON beeps twice, right here, inside
                           // the click. A click IS an activation-triggering
                           // event, so this is the moment an AudioContext is
@@ -853,16 +860,18 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           // learns NOW whether the device makes sound at all
                           // rather than concluding the feature is broken
                           // because their media volume is down.
-                          if (on) penSound().test();
-                          else penSound().lift();
-                          setSoundState(penSound().state());
+                          if (!on) penSound().lift();
+                          setSoundState(penSound().report());
                         }}
                       >
                         音效
                       </button>
-                      {inkSound && (
-                        <span className="ph-rv-ink-note">音频：{soundState}</span>
-                      )}
+                      {/* Rendered whether or not the sound is on: "音频：未启动"
+                          is itself the answer when a reader says nothing
+                          happens, and hiding it behind the very toggle under
+                          suspicion is how the last diagnostic became
+                          unreachable. */}
+                      <span className="ph-rv-ink-note">音频：{soundState}</span>
                     </InkToolPopover>
                   )}
                   {inkMode === "water" && (

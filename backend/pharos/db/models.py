@@ -582,6 +582,12 @@ class PageNote(Base):
     #: way a stroke's width does.
     size: Mapped[float] = mapped_column(Float, default=12.0)
     body: Mapped[str] = mapped_column(Text, default="")
+    #: Shown as a small pill rather than the full card. A long sticky note is
+    #: useful to have written and often in the way afterwards, so it folds down
+    #: to its first line and unfolds on a tap. NULLABLE because it was added to
+    #: a table that already existed in the wild: ``_add_missing_columns`` can
+    #: only ever add nullable columns, and NULL here reads as "not collapsed".
+    collapsed: Mapped[bool | None] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 

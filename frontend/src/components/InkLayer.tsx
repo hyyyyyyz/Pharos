@@ -111,7 +111,17 @@ const THIN_THRESHOLD = 1900;
  * drew first.
  */
 const LASER_STOPS = ["#ff2d55", "#ff9500", "#ffd60a", "#34c759", "#00c7ff", "#5e5ce6", "#bf5af2"];
-const LASER_WIDTH = 3;
+/**
+ * 激光笔 width, in SCREEN pixels — divided by the zoom at every use.
+ *
+ * Every other mark on the page is measured in PDF points, because a pen stroke
+ * is part of the document and has to grow and shrink with it. A laser pointer
+ * is the opposite: it is a gesture, it is never stored, and it exists to be
+ * seen right now. So its width belongs to the SCREEN, and at 400% zoom a
+ * 3-point line came out 12 screen pixels thick while at 40% it was barely more
+ * than one — "无论画布放大还是缩小，屏幕上显示的笔迹粗细都应保持一致".
+ */
+const LASER_SCREEN_WIDTH = 3;
 /**
  * The mark holds at full brightness until the pen has been QUIET this long,
  * then fades. Not "this long after the stroke ended": while you are still
@@ -477,11 +487,27 @@ export function InkLayer({
 
   /* ------------------------------------------------------------- painting */
 
-  /** Size a canvas's backing store to its CSS box × dpr, and return the
-   *  PDF-space transform factor. Null when the canvas is not laid out yet. */
+  /**
+   * Size a canvas's backing store to its CSS box × dpr, and return the
+   * PDF-space transform factor. Null when the canvas is not laid out yet.
+   *
+   * The dpr cap is the important line, and it was missing here while its
+   * sibling had it. A canvas's CSS box is already `pageSize × zoom`, so
+   * multiplying by a fixed 2.5 makes the backing store grow as **zoom
+   * squared**: at zoom 4 on a Letter page that is 6120 × 7920 device pixels,
+   * 184 MiB, for ONE canvas — and this layer owns up to four of them per
+   * page, on every page of the document at once. Nearly five gigabytes of
+   * canvas on a twelve-page paper, which an Android WebView does not survive.
+   * `PdfCanvas` has capped the same product since it was written (see its
+   * "Very large canvases blow up memory" comment); this is the same cap.
+   *
+   * What it costs is real and small: strokes rasterise at 2.5 device pixels
+   * per PDF point rather than 10 — still above the panel's own resolution,
+   * and exactly what the printed page underneath is already drawn at.
+   */
   const prepare = useCallback(
     (canvas: HTMLCanvasElement): { k: number; w: number } | null => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       if (w === 0 || h === 0) return null;
@@ -693,6 +719,9 @@ export function InkLayer({
     y: number;
   } | null>(null);
   const pressTimerRef = useRef(0);
+  /** Where the pen landed, in client pixels — the anchor the slop is measured
+   *  from. See the note in `onMove`. */
+  const pressAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const cancelLongPress = useCallback(() => {
     if (pressTimerRef.current !== 0) {
       clearTimeout(pressTimerRef.current);
@@ -791,6 +820,28 @@ export function InkLayer({
         // later.
         if (settledRef.current.size > 200) settledRef.current.clear();
         settledRef.current.set(tempId, row);
+        // A gesture IN FLIGHT is holding this id too, and it must follow the
+        // rename or it silently loses the reader's work.
+        //
+        // The id sets in `session.moving` / `session.transform` and in
+        // `movingRef` are captured once at pointerdown and were never remapped.
+        // If a POST lands while the pen is still down — which it routinely
+        // does, because the reader is invited to drag a selection repeatedly
+        // and each drag fires a round trip per stroke — then: the carried
+        // preview filters to nothing and VANISHES mid-drag; `repaintDry` stops
+        // recognising the row as carried and paints it back at its old
+        // position, so the ink appears to snap out from under the pen; and at
+        // pen-up the commit filter is empty, so the whole drag is discarded and
+        // the selection dies. Entirely network-timed, which is exactly why it
+        // reads as erratic rather than as a bug with a shape.
+        const swap = (ids: Set<string>): void => {
+          if (!ids.delete(tempId)) return;
+          ids.add(row.id);
+        };
+        const live = strokeRef.current;
+        if (live?.moving) swap(live.moving.ids);
+        if (live?.transform) swap(live.transform.ids);
+        if (movingRef.current) swap(movingRef.current.ids);
         updateCache((prev) => prev.map((s) => (s.id === tempId ? row : s)));
         useUI.setState((s) => {
           if (s.inkOpsKey !== key) return s;
@@ -987,7 +1038,10 @@ export function InkLayer({
     (clientX: number, clientY: number) => {
       const wet = wetRef.current;
       if (!wet) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      // The SAME cap as `prepare`, and it has to be: this function sizes the
+      // very same canvas, so a different dpr here would resize (and therefore
+      // clear) it on every hover, fighting `prepare` for the backing store.
+      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
       const w = wet.clientWidth;
       const h = wet.clientHeight;
       if (w === 0 || h === 0) return;
@@ -1016,8 +1070,22 @@ export function InkLayer({
       ctx.strokeStyle = "rgba(28, 32, 40, 0.95)";
       ctx.stroke();
     },
-    [inkEraserSize],
+    [inkEraserSize, scale],
   );
+
+  const paintFrameRef = useRef(0);
+  const pendingPaintRef = useRef<{ session: Session; predicted: InkPoint[] } | null>(null);
+
+
+  /** Drop a frame that has not run yet — the gesture it belonged to is over,
+   *  and painting it now would put a ghost back on a canvas just cleared. */
+  const cancelPendingPaint = useCallback(() => {
+    if (paintFrameRef.current !== 0) {
+      cancelAnimationFrame(paintFrameRef.current);
+      paintFrameRef.current = 0;
+    }
+    pendingPaintRef.current = null;
+  }, []);
 
   /** Wipe the live-wash canvas. Called on EVERY `paintWet`, not only when a
    *  wash is being drawn: it is a second canvas that nothing else clears, so
@@ -1032,9 +1100,17 @@ export function InkLayer({
    *  gone). One function, because a caller that cleared only the top one left
    *  the last wash sitting under the page with nothing to remove it. */
   const clearWet = useCallback(() => {
+    // Drop any frame the scheduler still owes FIRST. A queued repaint that
+    // lands after a clear puts back exactly what the clear removed — a lasso
+    // loop, a carried preview, a selection frame — a frame or two later, at a
+    // moment decided by rAF rather than by the reader. Four of this
+    // function's nine call sites used to forget the cancel individually, and
+    // that intermittency is what "显示时间不一致" describes. Doing it here
+    // makes every clear correct by construction instead of by memory.
+    cancelPendingPaint();
     wetRef.current?.getContext("2d")?.clearRect(0, 0, wetRef.current.width, wetRef.current.height);
     clearWetWater();
-  }, [clearWetWater]);
+  }, [clearWetWater, cancelPendingPaint]);
 
   /** The 七彩 sweep: a gradient down the mark's own longest axis, so a long
    *  stroke runs the spectrum instead of ending up one muddy average. */
@@ -1059,7 +1135,7 @@ export function InkLayer({
     (ctx: CanvasRenderingContext2D, alpha: number) => {
       if (alpha <= 0) return;
       for (const points of laserMarksRef.current) {
-        const outline = strokeOutline(points, LASER_WIDTH);
+        const outline = strokeOutline(points, LASER_SCREEN_WIDTH / scale);
         if (outline.length < 3) continue;
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -1213,7 +1289,7 @@ export function InkLayer({
         // 炫一点: a 七彩 gradient with a glow, not a flat fill — the pointer
         // is meant to catch the eye for the seconds it lives, unlike ink
         // meant to be read calmly afterward.
-        const outline = strokeOutline(live, LASER_WIDTH, true);
+        const outline = strokeOutline(live, LASER_SCREEN_WIDTH / scale, true);
         if (outline.length >= 3) {
           ctx.save();
           ctx.shadowColor = LASER_STOPS[0]!;
@@ -1250,6 +1326,20 @@ export function InkLayer({
     ],
   );
 
+  const schedulePaintWet = useCallback(
+    (session: Session, predicted: InkPoint[]) => {
+      pendingPaintRef.current = { session, predicted };
+      if (paintFrameRef.current !== 0) return;
+      paintFrameRef.current = requestAnimationFrame(() => {
+        paintFrameRef.current = 0;
+        const next = pendingPaintRef.current;
+        pendingPaintRef.current = null;
+        if (next) paintWet(next.session, next.predicted);
+      });
+    },
+    [paintWet],
+  );
+
   /**
    * One wet repaint per FRAME, whatever rate the digitiser delivers at.
    *
@@ -1265,31 +1355,6 @@ export function InkLayer({
    * coalesced point into the session before asking for a repaint, so the stroke
    * that gets committed has full resolution. Only the drawing is coalesced.
    */
-  const paintFrameRef = useRef(0);
-  const pendingPaintRef = useRef<{ session: Session; predicted: InkPoint[] } | null>(null);
-  const schedulePaintWet = useCallback(
-    (session: Session, predicted: InkPoint[]) => {
-      pendingPaintRef.current = { session, predicted };
-      if (paintFrameRef.current !== 0) return;
-      paintFrameRef.current = requestAnimationFrame(() => {
-        paintFrameRef.current = 0;
-        const next = pendingPaintRef.current;
-        pendingPaintRef.current = null;
-        if (next) paintWet(next.session, next.predicted);
-      });
-    },
-    [paintWet],
-  );
-
-  /** Drop a frame that has not run yet — the gesture it belonged to is over,
-   *  and painting it now would put a ghost back on a canvas just cleared. */
-  const cancelPendingPaint = useCallback(() => {
-    if (paintFrameRef.current !== 0) {
-      cancelAnimationFrame(paintFrameRef.current);
-      paintFrameRef.current = 0;
-    }
-    pendingPaintRef.current = null;
-  }, []);
 
   /* --------------------------------------------------- selection overlays */
 
@@ -1320,10 +1385,19 @@ export function InkLayer({
     return true;
   }, [prepare, clearInSpace, paintSelection, paintSelectionHandles]);
 
-  /** The frame follows the zoom; also repaints on selection/stroke changes. */
+  /** The frame follows the zoom; also repaints on selection/stroke changes —
+   *  and CLEARS when the selection goes.
+   *
+   *  `repaintSelectionChrome` returns false and paints nothing when there is
+   *  no selection, which is right for it and was wrong here: dismissing a
+   *  selection from a DOM button (删除, 复制, ✕, 更改风格) left the blue frame
+   *  and its five handles sitting on the page until something else happened to
+   *  wipe the canvas — a pointerleave, or the next gesture. Chrome outliving
+   *  the thing it describes is half of "显示时间不一致". */
   useEffect(() => {
-    repaintSelectionChrome();
-  }, [selection, repaintSelectionChrome]);
+    if (repaintSelectionChrome()) return;
+    if (selection === null) clearWet();
+  }, [selection, repaintSelectionChrome, clearWet]);
 
   /**
    * Keep the selection pointing at rows that exist — RESYNC it, do not drop it.
@@ -1655,17 +1729,29 @@ export function InkLayer({
           }
         }
       }
-      // Arm the long press. Any real movement disarms it (see `onMove`), so it
-      // can only ever fire on a pen that has genuinely been held still.
+      // Arm the long press. MOVEMENT disarms it (see `onMove`) — and only
+      // movement, which is the whole correction here.
+      //
+      // The first version also bailed if the session had accumulated more than
+      // a couple of sample points, on the reasoning that a stroke is not a
+      // press. That reasoning silently assumed a mouse. A stationary mouse
+      // emits no `pointermove` at all, so its point count stays at 1 and the
+      // menu appeared. A stylus resting on glass emits `pointermove`
+      // continuously at 120-240Hz — pressure noise alone is enough — so after
+      // one second the count is in the hundreds even though the pen has not
+      // travelled a single pixel. The count test therefore could not fail on
+      // the desktop and could not succeed on the tablet: "用笔尖在同一位置长按
+      // 1 秒后，仍然不会弹出对应的功能菜单".
       cancelLongPress();
       const downAt = { x: e.clientX, y: e.clientY };
+      pressAnchorRef.current = downAt;
       const rect = wet.getBoundingClientRect();
       pressTimerRef.current = window.setTimeout(() => {
         pressTimerRef.current = 0;
-        // A gesture that has become a stroke, a lasso or a drag is no longer a
-        // press — bail rather than interrupt it.
+        // A gesture that started as a drag or a transform was never a press —
+        // those are decided at pointerdown, not by what happens after.
         const session = strokeRef.current;
-        if (!session || session.points.length > 2 || session.moving || session.transform) return;
+        if (!session || session.moving || session.transform) return;
         strokeRef.current = null;
         cancelPendingPaint();
         clearWet();
@@ -1877,11 +1963,15 @@ export function InkLayer({
       // stroke, a lasso loop and a selection drag all cancel it alike, without
       // each branch having to remember to.
       if (pressTimerRef.current !== 0 && session && session.pointerId === e.pointerId) {
-        const from = session.points[0];
-        const origin = wet.getBoundingClientRect();
-        const cx0 = from ? from.x * scale + origin.left : e.clientX;
-        const cy0 = from ? (pageHeight - from.y) * scale + origin.top : e.clientY;
-        if (Math.hypot(e.clientX - cx0, e.clientY - cy0) > LONG_PRESS_SLOP_PX) cancelLongPress();
+        // Measured against the anchor recorded at pointerdown, in CLIENT
+        // pixels. Reconstructing the origin from the first PDF-space sample
+        // (as this used to) round-trips through `scale` and `pageHeight` and
+        // can drift by a pixel or two at high zoom — enough, against an 8px
+        // slop, to disarm a press that never moved.
+        const from = pressAnchorRef.current;
+        if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > LONG_PRESS_SLOP_PX) {
+          cancelLongPress();
+        }
       }
       if (session === null || session.pointerId !== e.pointerId) {
         // Hover is the ONE safe moment to move the toolbar to the eraser and
@@ -2402,23 +2492,55 @@ export function InkLayer({
    * component that does not render it.
    */
   const addNoteAt = useCallback(
-    async (x: number, y: number, style: PageNoteStyle) => {
-      try {
-        const row = await api.note.create(paperId, {
-          kind,
-          page,
-          x,
-          y,
-          w: NEW_NOTE_W,
-          h: NEW_NOTE_H,
-          style,
-          color: noteColor,
-        });
-        qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => [...(prev ?? []), row]);
-        setNoteFocus(row.id);
-      } catch {
-        /* refused — nothing was optimistically added, so nothing to undo */
-      }
+    (x: number, y: number, style: PageNoteStyle) => {
+      // Optimistic and SYNCHRONOUS, for the same reason `NoteLayer.addAt` is:
+      // Android raises the soft keyboard only when the focus change is
+      // attributable to a user activation, and awaiting the POST first ends
+      // the activation the menu tap provided. The box has to exist, and be
+      // asking for the caret, before this call stack unwinds.
+      const temp: PageNoteRow = {
+        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        paper_id: paperId,
+        kind,
+        page,
+        x,
+        y,
+        w: NEW_NOTE_W,
+        h: NEW_NOTE_H,
+        style,
+        color: noteColor,
+        size: 12,
+        body: "",
+        collapsed: false,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      };
+      qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => [...(prev ?? []), temp]);
+      setNoteFocus(temp.id);
+      void (async () => {
+        try {
+          const row = await api.note.create(paperId, {
+            kind,
+            page,
+            x,
+            y,
+            w: NEW_NOTE_W,
+            h: NEW_NOTE_H,
+            style,
+            color: noteColor,
+          });
+          const hadCaret =
+            document.activeElement?.closest?.(`[data-note="${temp.id}"]`) != null;
+          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) =>
+            (prev ?? []).map((n) => (n.id === temp.id ? { ...row, body: n.body } : n)),
+          );
+          if (hadCaret) setNoteFocus(row.id);
+        } catch {
+          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) =>
+            (prev ?? []).filter((n) => n.id !== temp.id),
+          );
+        }
+      })();
     },
     [paperId, kind, page, noteColor, qc, setNoteFocus],
   );
@@ -2609,7 +2731,7 @@ export function InkLayer({
               onClick={() => {
                 const at = pressMenu;
                 setPressMenu(null);
-                void addNoteAt(at.x, at.y, "text");
+                addNoteAt(at.x, at.y, "text");
               }}
             >
               文本框
@@ -2620,7 +2742,7 @@ export function InkLayer({
               onClick={() => {
                 const at = pressMenu;
                 setPressMenu(null);
-                void addNoteAt(at.x, at.y, "note");
+                addNoteAt(at.x, at.y, "note");
               }}
             >
               便利贴
