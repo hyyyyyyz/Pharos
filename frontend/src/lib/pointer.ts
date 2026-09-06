@@ -27,3 +27,22 @@ export function isDrawingPointer(
 ): boolean {
   return e.pointerType !== "touch" || fingerDraw;
 }
+
+/**
+ * Is this pointer a stylus — of either kind a stylus can arrive as?
+ *
+ * `"eraser"` is the one that keeps getting missed, and missing it is why
+ * "按下 S Pen 按键变橡皮功能还是不对" survived a round of fixes. Android
+ * reports a stylus whose barrel button is held as `MotionEvent.TOOL_TYPE_ERASER`
+ * — that is how Samsung's own apps implement button-to-erase — and Chromium
+ * passes it through as `pointerType: "eraser"`, NOT as a `"pen"` with a
+ * button bit set. Every `pointerType === "pen"` test therefore fell through
+ * to the plain-mouse branch: the button did not switch to the eraser, it
+ * switched off the pen handling entirely and drew a line.
+ *
+ * So this is the test for "a stylus is doing something", and
+ * `penEraseHeld` in `InkLayer` is the test for "and it is asking to erase".
+ */
+export function isStylus(e: { pointerType: string }): boolean {
+  return e.pointerType === "pen" || e.pointerType === "eraser";
+}

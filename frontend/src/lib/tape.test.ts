@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_DRAG_LENGTH, tapeBoundsOfPath, tapeFromDrag } from "./tape";
+import { MIN_DRAG_LENGTH, MIN_TAPE_SIZE, tapeFromPath, tapeFromDrag } from "./tape";
 
 describe("tapeFromDrag", () => {
   it("builds a horizontal strip from a horizontal drag", () => {
@@ -24,11 +24,52 @@ describe("tapeFromDrag", () => {
     expect(r.x).toBeCloseTo(0);
     expect(r.y).toBeCloseTo(10);
   });
+
+  /* The server refuses anything under MIN_SIZE, and a drag qualifies as a
+     drag after 4 CSS pixels — which at any zoom past 1 is fewer than 4 PDF
+     points. Unclamped, those strips were POSTed and 422'd, so the strip the
+     reader watched appear simply never existed. */
+  it("clamps a short drag up into the size range the server accepts", () => {
+    const r = tapeFromDrag(5, 5, 7, 5, 6);
+    expect(r.w).toBeGreaterThanOrEqual(MIN_TAPE_SIZE);
+  });
+
+  it("clamps a thickness measured off a small text line at high zoom", () => {
+    const r = tapeFromDrag(0, 0, 40, 0, 1.5);
+    expect(r.h).toBeGreaterThanOrEqual(MIN_TAPE_SIZE);
+  });
 });
 
-describe("tapeBoundsOfPath (freehand strips)", () => {
-  it("centres the box on the path and pads it by the stroke's own thickness", () => {
-    const r = tapeBoundsOfPath(
+describe("tapeFromPath (freehand strips)", () => {
+  /* The regression this file exists for: `h` is the strip's THICKNESS, and
+     `TapePaths` strokes the path at exactly that. When `h` held the path's
+     bounding-box height instead, a squiggle 100pt tall was stroked 100pt
+     wide — a blob, not a ribbon ("随意涂功能有问题"). */
+  it("puts the THICKNESS in h, not the path's bounding height", () => {
+    const r = tapeFromPath(
+      [
+        { x: 0, y: 0 },
+        { x: 10, y: 60 },
+      ],
+      6,
+    );
+    expect(r.h).toBe(6);
+  });
+
+  it("measures w along the path — how much tape was laid down", () => {
+    const r = tapeFromPath(
+      [
+        { x: 0, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 40 },
+      ],
+      6,
+    );
+    expect(r.w).toBeCloseTo(70);
+  });
+
+  it("centres on the path's bounding box", () => {
+    const r = tapeFromPath(
       [
         { x: 0, y: 0 },
         { x: 10, y: 4 },
@@ -37,12 +78,10 @@ describe("tapeBoundsOfPath (freehand strips)", () => {
     );
     expect(r.x).toBeCloseTo(5);
     expect(r.y).toBeCloseTo(2);
-    expect(r.w).toBeCloseTo(16); // 10 spanned + 6 of thickness
-    expect(r.h).toBeCloseTo(10); // 4 spanned + 6 of thickness
   });
 
   it("is never rotated — the path carries its own direction", () => {
-    const r = tapeBoundsOfPath(
+    const r = tapeFromPath(
       [
         { x: 0, y: 0 },
         { x: 10, y: 10 },
@@ -52,8 +91,14 @@ describe("tapeBoundsOfPath (freehand strips)", () => {
     expect(r.angle).toBe(0);
   });
 
+  it("clamps a very long squiggle into the size range the server accepts", () => {
+    const path = Array.from({ length: 400 }, (_, i) => ({ x: i * 20, y: 0 }));
+    const r = tapeFromPath(path, 6);
+    expect(r.w).toBeLessThanOrEqual(2000);
+  });
+
   it("survives an empty path rather than producing NaN bounds", () => {
-    const r = tapeBoundsOfPath([], 6);
+    const r = tapeFromPath([], 6);
     expect(Number.isFinite(r.x)).toBe(true);
     expect(Number.isFinite(r.w)).toBe(true);
     expect(r.w).toBeGreaterThanOrEqual(MIN_DRAG_LENGTH);

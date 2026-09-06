@@ -22,9 +22,28 @@
  * has to be discovered to be turned on.
  */
 
-/** Loudest the nib ever gets. Deliberately faint: this is a texture under the
- *  writing, not a sound effect competing with it. */
-const PEAK_GAIN = 0.055;
+/**
+ * Loudest the nib ever gets.
+ *
+ * The first version used 0.055 and called it "deliberately faint". On a
+ * tablet that is not faint, it is **silent** — "音效失败，没有出现音效". The
+ * arithmetic nobody did: the noise source runs at RMS ≈ 0.3 after its
+ * one-pole filter, a Q=0.7 bandpass throws away roughly half of what is left,
+ * and the speed mapping then multiplied by another 0.4 for the unhurried pace
+ * handwriting actually goes at. 0.055 × 0.3 × 0.5 × 0.4 ≈ 0.0033 — about
+ * -50 dBFS, under the noise floor of a room, never mind a tablet speaker with
+ * a hand moving across the glass in front of it.
+ */
+const PEAK_GAIN = 0.22;
+/**
+ * Loudness at the slowest audible movement, as a fraction of `PEAK_GAIN`.
+ *
+ * A nib in contact and moving at all makes a sound; only a stationary pen is
+ * silent. Without a floor, careful handwriting — which is most handwriting —
+ * sits at the bottom of the speed curve and is inaudible however loud the
+ * peak is.
+ */
+const MIN_VOICE = 0.35;
 /** Speed (CSS px per ms) at which the nib reaches full voice. A brisk hand is
  *  around 1.5-2; anything past this is already as loud as it gets. */
 const FULL_SPEED = 1.8;
@@ -43,13 +62,21 @@ export class PenSound {
   private failed = false;
 
   /**
-   * Build the graph on first use.
+   * Build the graph, from inside a real user gesture.
    *
-   * Lazily, because an AudioContext created before a user gesture starts
-   * suspended in every current browser, and because a reader who never turns
-   * the sound on should never pay for one at all. Called from a pointerdown,
-   * which IS the gesture that allows it to start.
+   * This must be called from a **pointerdown**, and that is the second half of
+   * why the sound never arrived: `nib()` is driven by `pointermove`, which is
+   * not a user-activation trigger in any browser. An AudioContext constructed
+   * there starts `suspended`, and the `resume()` that follows is refused for
+   * exactly the same reason — so the graph was built, connected, and mute.
+   *
+   * Still lazy: a reader who never turns the sound on never pays for an audio
+   * device at all.
    */
+  arm(): void {
+    this.ensure();
+  }
+
   private ensure(): boolean {
     if (this.failed) return false;
     if (this.ctx) {
@@ -122,10 +149,32 @@ export class PenSound {
     const t = Math.max(0, Math.min(1, speed / FULL_SPEED));
     const now = this.ctx.currentTime;
     // sqrt so that slow, deliberate writing is still audible — a linear map
-    // leaves careful handwriting almost silent.
+    // leaves careful handwriting almost silent — and a floor under that, so
+    // "audible" does not depend on writing fast.
+    const voice = MIN_VOICE + (1 - MIN_VOICE) * Math.sqrt(t);
     this.gain.gain.cancelScheduledValues(now);
-    this.gain.gain.setTargetAtTime(PEAK_GAIN * Math.sqrt(t), now, ATTACK);
+    this.gain.gain.setTargetAtTime(PEAK_GAIN * voice, now, ATTACK);
     this.filter.frequency.setTargetAtTime(900 + 1800 * t, now, ATTACK);
+  }
+
+  /**
+   * One short scratch, now — the sound of a nib touching down and lifting.
+   *
+   * What the 音效 toggle plays when it is switched ON. A setting whose only
+   * feedback arrives later, under a pen, on a device whose media volume might
+   * be at zero, is a setting nobody can tell is broken; this answers "did that
+   * work?" at the moment the question is asked. It is also the click that
+   * *creates* the AudioContext inside a real gesture, so the first stroke
+   * afterward already has a running graph.
+   */
+  test(): void {
+    if (!this.ensure() || !this.ctx || !this.gain || !this.filter) return;
+    const now = this.ctx.currentTime;
+    this.gain.gain.cancelScheduledValues(now);
+    this.gain.gain.setValueAtTime(0, now);
+    this.gain.gain.linearRampToValueAtTime(PEAK_GAIN, now + 0.03);
+    this.gain.gain.linearRampToValueAtTime(0, now + 0.22);
+    this.filter.frequency.setValueAtTime(1600, now);
   }
 
   /** The pen has left the paper. */

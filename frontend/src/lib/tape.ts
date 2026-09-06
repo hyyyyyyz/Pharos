@@ -41,42 +41,70 @@ export function tapeFromDrag(
   const dy = by - ay;
   const w = Math.max(MIN_DRAG_LENGTH, Math.hypot(dx, dy));
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  return { x: (ax + bx) / 2, y: (ay + by) / 2, w, h: thickness, angle };
+  // Clamped into the server's own [MIN_SIZE, MAX_SIZE] rather than sent as
+  // measured. A drag qualifies as a drag after 4 CSS pixels, which at a
+  // typical zoom is under 3 PDF points — below `MIN_TAPE_SIZE`, so the POST
+  // came back 422 and the strip the reader had just watched appear vanished
+  // with no explanation. The same goes for a thickness measured off a small
+  // text line at high zoom.
+  return {
+    x: (ax + bx) / 2,
+    y: (ay + by) / 2,
+    w: clampTapeSize(w),
+    h: clampTapeSize(thickness),
+    angle,
+  };
 }
 
 /**
- * The bounding descriptor for a FREEHAND strip — one that follows the pen's
- * own path rather than running straight ("可以直，也可以跟画笔画出来的一样不直").
+ * The row descriptor for a FREEHAND strip — one that follows the pen's own
+ * path rather than running straight ("可以直，也可以跟画笔画出来的一样不直").
  *
- * The path itself is stored alongside, but every consumer that only wants to
- * know *where* a strip is (hit-testing, the popover's anchor, a lasso's catch
- * test) reads this box instead, so neither kind of strip needs special-casing
- * there. `angle` is 0 by definition: a path carries its own direction, and
- * rotating the box under it would say something different from what is drawn.
+ * The fields mean the SAME things they mean for a straight strip, which is
+ * the whole point and is what the first version got wrong:
+ *
+ * - `w` is **how much tape was laid down** — the path's own length, exactly
+ *   as a straight strip's `w` is the drag's distance;
+ * - `h` is the strip's **thickness**, exactly as it is for a straight strip;
+ * - `(x, y)` is the path's bounding-box centre;
+ * - `angle` is 0 by definition — a path carries its own direction, and
+ *   rotating a box under it would say something different from what is drawn.
+ *
+ * The previous version put the path's bounding-box HEIGHT in `h`, which every
+ * consumer then read as the thickness it is documented to be. `TapePaths`
+ * strokes at `t.h * scale`, so a squiggle 100pt tall came out as a 100pt-wide
+ * bar instead of a 14pt ribbon — "随意涂功能有问题，不对". Nothing needs a
+ * bounding box out of the row anyway: a freehand strip's geometry IS its path,
+ * and `tapeOutline` hands that straight to the hit tests.
  */
-export function tapeBoundsOfPath(
+export function tapeFromPath(
   path: { x: number; y: number }[],
   thickness: number,
 ): TapeRect {
-  if (path.length === 0) return { x: 0, y: 0, w: MIN_DRAG_LENGTH, h: thickness, angle: 0 };
+  if (path.length === 0) {
+    return { x: 0, y: 0, w: MIN_DRAG_LENGTH, h: clampTapeSize(thickness), angle: 0 };
+  }
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const p of path) {
+  let length = 0;
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i]!;
     if (p.x < x0) x0 = p.x;
     if (p.y < y0) y0 = p.y;
     if (p.x > x1) x1 = p.x;
     if (p.y > y1) y1 = p.y;
+    if (i > 0) length += Math.hypot(p.x - path[i - 1]!.x, p.y - path[i - 1]!.y);
   }
-  // The stroke is `thickness` wide around its centreline, so the ink actually
-  // reaches half a thickness past the raw sample bounds on every side.
-  const half = thickness / 2;
   return {
     x: (x0 + x1) / 2,
     y: (y0 + y1) / 2,
-    w: Math.max(MIN_DRAG_LENGTH, x1 - x0 + thickness),
-    h: Math.max(half, y1 - y0 + thickness),
+    // Clamped here rather than left for the server to refuse: a long squiggle
+    // really can run past MAX_SIZE, and the strip is drawn from its path, so
+    // a clamped `w` costs nothing but a rejected POST costs the whole strip.
+    w: clampTapeSize(Math.max(MIN_DRAG_LENGTH, length)),
+    h: clampTapeSize(thickness),
     angle: 0,
   };
 }

@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind, TapeRow } from "../api/types";
 import { Icons } from "../design/icons";
 import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
+import { penSound } from "../lib/penSound";
 import { InkToolPopover } from "./InkToolPopover";
 
 /** Eraser presets: radius in CSS pixels. The on-page preview circle and the
@@ -275,6 +276,13 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
   const setInkEraserSize = useUI((s) => s.setInkEraserSize);
   const inkEraseMode = useUI((s) => s.inkEraseMode);
   const setInkEraseMode = useUI((s) => s.setInkEraseMode);
+  const inkPenDebug = useUI((s) => s.inkPenDebug);
+  const toggleInkPenDebug = useUI((s) => s.toggleInkPenDebug);
+  const inkPenProbe = useUI((s) => s.inkPenProbe);
+  const tapeFreehand = useUI((s) => s.tapeFreehand);
+  const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
+  const tapeAutoThickness = useUI((s) => s.tapeAutoThickness);
+  const toggleTapeAutoThickness = useUI((s) => s.toggleTapeAutoThickness);
   const inkPast = useUI((s) => s.inkPast);
   const inkFuture = useUI((s) => s.inkFuture);
   const inkOpsKey = useUI((s) => s.inkOpsKey);
@@ -780,9 +788,22 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                       </button>
                       <button
                         className={`ph-rv-ink-finger${inkSound ? " is-on" : ""}`}
-                        title="书写音效：笔尖摩擦声，跟着落笔速度变化（默认关闭）"
+                        title="书写音效：笔尖摩擦声，跟着落笔速度变化（默认关闭）。打开时会先响一下，听不到就是设备静音了"
                         aria-pressed={inkSound}
-                        onClick={toggleInkSound}
+                        onClick={() => {
+                          const on = !inkSound;
+                          toggleInkSound();
+                          // Switching it ON plays one short scratch, right
+                          // here, inside the click — which is a real user
+                          // gesture and therefore the moment an AudioContext
+                          // is allowed to start. Two jobs at once: the graph
+                          // is running before the first stroke, and the reader
+                          // finds out NOW whether the device can make a sound
+                          // at all, instead of concluding the feature is
+                          // broken because their media volume is down.
+                          if (on) penSound().test();
+                          else penSound().lift();
+                        }}
                       >
                         音效
                       </button>
@@ -837,10 +858,28 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                           </button>
                         ))}
                         <span className="ph-rv-ink-sep" />
+                        {/* S Pen 诊断. Shipped UI for a debugging job, and
+                            deliberately: the barrel button has now failed
+                            twice on a device this code cannot be run against,
+                            and each fix has been a guess at what Android hands
+                            the WebView. This turns the next report into a
+                            reading. It lives here because "why doesn't my pen
+                            erase" is a question asked at the eraser. */}
+                        <button
+                          className={`ph-rv-ink-finger${inkPenDebug ? " is-on" : ""}`}
+                          title="笔尖诊断：显示笔实际报上来的 pointerType / button / buttons，用来排查侧键"
+                          aria-pressed={inkPenDebug}
+                          onClick={toggleInkPenDebug}
+                        >
+                          笔尖诊断
+                        </button>
+                        <span className="ph-rv-ink-sep" />
                         <span className="ph-rv-ink-note">
-                          {inkEraseMode === "stroke"
-                            ? "拖动擦除整笔 · 圈内即擦除范围"
-                            : "擦过处笔迹断开 · 可撤销"}
+                          {inkPenDebug
+                            ? (inkPenProbe ?? "用笔碰一下页面，这里会显示它报上来的数据")
+                            : inkEraseMode === "stroke"
+                              ? "拖动擦除整笔 · 圈内即擦除范围 · 按住笔侧键也能擦"
+                              : "擦过处笔迹断开 · 可撤销 · 按住笔侧键也能擦"}
                         </span>
                       </div>
                     </div>
@@ -849,8 +888,48 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                     <div className="ph-rv-inkbar" role="toolbar" aria-label="套索工具">
                       <div className="ph-rv-ink-row">
                         <span className="ph-rv-ink-note">
-                          圈选笔迹：拖动移动 · 换色 · 删除，不碰论文文字
+                          画虚线圈住笔迹和胶带：框内拖动移动 · 四角缩放 · 顶上把手旋转 · 剪切复制粘贴
                         </span>
+                      </div>
+                    </div>
+                  )}
+                  {/* 胶带's own options. They used to live ONLY in the popover
+                      of an already-placed strip, which meant the way to draw a
+                      freehand strip was to draw a straight one first, tap it,
+                      and find the toggle — so 随手 was, in practice, not
+                      reachable at all. They belong with the tool. */}
+                  {inkMode === "tape" && (
+                    <div className="ph-rv-inkbar" role="toolbar" aria-label="胶带工具">
+                      <div className="ph-rv-ink-row">
+                        <div className="ph-rv-ink-seg">
+                          <button
+                            className={`ph-rv-ink-seg-btn${!tapeFreehand ? " is-on" : ""}`}
+                            title="直条：从起点到终点拉成一条直的"
+                            aria-pressed={!tapeFreehand}
+                            onClick={() => tapeFreehand && toggleTapeFreehand()}
+                          >
+                            直条
+                          </button>
+                          <button
+                            className={`ph-rv-ink-seg-btn${tapeFreehand ? " is-on" : ""}`}
+                            title="随手：跟着笔走，画成什么样就是什么样"
+                            aria-pressed={tapeFreehand}
+                            onClick={() => !tapeFreehand && toggleTapeFreehand()}
+                          >
+                            随手
+                          </button>
+                        </div>
+                        <span className="ph-rv-ink-sep" />
+                        <button
+                          className={`ph-rv-ink-finger${tapeAutoThickness ? " is-on" : ""}`}
+                          title="根据下面那行字的大小决定胶带多粗（新胶带生效）"
+                          aria-pressed={tapeAutoThickness}
+                          onClick={toggleTapeAutoThickness}
+                        >
+                          自动粗细
+                        </button>
+                        <span className="ph-rv-ink-sep" />
+                        <span className="ph-rv-ink-note">拖出一条盖住 · 点一下露出色底</span>
                       </div>
                     </div>
                   )}

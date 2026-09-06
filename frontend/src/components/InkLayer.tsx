@@ -56,7 +56,9 @@ import { api } from "../api/client";
 import type { InkPoint, InkStrokeRow, TapeRow } from "../api/types";
 import {
   INK_COLORS,
+  WATER_COLORS,
   isWaterColor,
+  paintInk,
   paintStroke,
   pointToPdf,
   rankInkColors,
@@ -72,10 +74,19 @@ import {
   unionBounds,
 } from "../lib/ink";
 import { Icons } from "../design/icons";
-import { isDrawingPointer } from "../lib/pointer";
+import { isDrawingPointer, isStylus } from "../lib/pointer";
 import { penSound } from "../lib/penSound";
 import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
-import { batchOps, clampInkWidth, useUI, type InkMode, type InkOp } from "../store";
+import {
+  MAX_INK_WIDTH,
+  MIN_INK_WIDTH,
+  batchOps,
+  clampInkWidth,
+  useUI,
+  type InkClipboard,
+  type InkMode,
+  type InkOp,
+} from "../store";
 import "./InkLayer.css";
 
 /** Server-side ceiling for one stroke's sample count (see services/ink.py). */
@@ -129,8 +140,33 @@ const STYLE_BRUSH_REACH_PX = 10;
 const PEN_ERASE_BUTTONS = 2 | 32;
 const PEN_TIP_BUTTON = 1;
 
-const penEraseHeld = (e: PointerEvent): boolean =>
-  e.pointerType === "pen" && (e.buttons & PEN_ERASE_BUTTONS) !== 0;
+/**
+ * Is this stylus asking to erase?
+ *
+ * THREE signals, because Android does not agree with the Pointer Events spec
+ * about which one it sends, and the second attempt at this feature checked
+ * only the ones the spec describes:
+ *
+ * 1. `pointerType === "eraser"`. This is the one that was missing, and it is
+ *    the one a Samsung S Pen actually produces: Android reports a stylus with
+ *    its barrel button held as `MotionEvent.TOOL_TYPE_ERASER`, and Chromium
+ *    forwards that as a pointer of type `"eraser"` rather than as a `"pen"`
+ *    carrying a button bit. Every `pointerType === "pen"` gate in this file
+ *    therefore *rejected* the button press — so holding the button did not
+ *    fail to erase, it fell through to the mouse branch and drew a line,
+ *    which is exactly what "按下按钮没有变出橡皮" describes.
+ * 2. The `buttons` bits above, for devices that do follow the spec.
+ * 3. `button === 2` / `button === 5` on the transition event itself, for
+ *    drivers that announce the press but report `buttons` a frame late.
+ */
+const penEraseHeld = (e: PointerEvent): boolean => {
+  if (!isStylus(e)) return false;
+  if (e.pointerType === "eraser") return true;
+  if ((e.buttons & PEN_ERASE_BUTTONS) !== 0) return true;
+  // `button` is -1 on a plain move and 0 on a tip transition; 2 is the barrel
+  // button and 5 the eraser end, per the spec's button-value table.
+  return e.button === 2 || e.button === 5;
+};
 
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
@@ -180,8 +216,37 @@ type HandleKind = "nw" | "ne" | "sw" | "se" | "rotate";
 /** Constant on-screen sizes for the selection's resize/rotate handles —
  *  device pixels, not PDF points, so a handle is exactly as easy to grab at
  *  25% zoom as at 400%. */
-const HANDLE_HIT_PX = 18;
-const ROTATE_GAP_PX = 24;
+const HANDLE_HIT_PX = 22;
+const ROTATE_GAP_PX = 26;
+/** Drawn radius of a corner/rotate handle, in CSS pixels. Smaller than the hit
+ *  radius above on purpose: the target a finger has to find should be bigger
+ *  than the dot it is aiming at, not the same size. */
+const HANDLE_DRAW_PX = 5.5;
+/** The selection's own chrome — a thin accent-blue frame with round handles,
+ *  the marquee every note app draws and the one in the reference. The dark
+ *  dashed rectangle it replaces read as a crop tool, and its square handles
+ *  read as something you resize a window by. */
+const SELECT_STROKE = "#5b8def";
+const SELECT_FILL = "#ffffff";
+/** Breathing room between the caught marks and the frame, in PDF points at
+ *  zoom 1 — enough that the frame never touches the ink it is describing. */
+const SELECT_PAD_PX = 6;
+
+/**
+ * The frame's rectangle: the marks' own bounds plus a constant on-screen gap.
+ *
+ * One function for it because the frame, the handles and the hit test all
+ * have to agree on where the corners are — when the painter padded and the
+ * hit test did not, every handle was `SELECT_PAD_PX` away from the dot the
+ * reader was aiming at, which at a tablet's finger sizes is a miss.
+ */
+function paddedBox(
+  box: { x0: number; y0: number; x1: number; y1: number },
+  scale: number,
+): { x0: number; y0: number; x1: number; y1: number } {
+  const pad = SELECT_PAD_PX / scale;
+  return { x0: box.x0 - pad, y0: box.y0 - pad, x1: box.x1 + pad, y1: box.y1 + pad };
+}
 
 /** Where the selection's handles sit, in PDF space, for one bounding box at
  *  the current zoom. The opposite-corner map is what a resize drag anchors
@@ -207,15 +272,16 @@ const OPPOSITE_CORNER: Record<Exclude<HandleKind, "rotate">, Exclude<HandleKind,
   se: "nw",
 };
 
-/** The selection itself: rows plus a toolbar anchor in CSS page pixels. */
+/** The selection itself: the rows the loop caught. The toolbar's position is
+ *  derived from the selection's own box rather than stored — see
+ *  `selectionAnchor`. Anchoring it where the lasso happened to END put the
+ *  toolbar in an arbitrary place, often over the marks it acts on. */
 interface Selection {
   rows: InkStrokeRow[];
   /** 胶带 caught by the same loop. The lasso is the reader's ONE transform
    *  tool — "所有对象可以跟框选一样，可以被调大小、旋转" — so a strip inside
    *  the loop moves, scales and turns with the strokes around it. */
   tapes: TapeRow[];
-  ax: number;
-  ay: number;
 }
 
 /** The one box the ants and the handles both use: everything caught by the
@@ -265,6 +331,20 @@ export function InkLayer({
   const qc = useQueryClient();
   const dryRef = useRef<HTMLCanvasElement>(null);
   const waterRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * The live 水彩笔 stroke — its own canvas, sharing `.ph-ink-water`'s
+   * `mix-blend-mode: multiply` and its place BELOW the pen layers.
+   *
+   * "水彩笔画的时候先盖住字，然后再作为色底于字后，这不对，应该直接作为色底."
+   * Exactly right, and the cause was structural: the wash was committed to a
+   * multiply-blended canvas but *previewed* on the ordinary wet canvas, which
+   * sits above the ink and does not blend. So the stroke under the pen was an
+   * opaque bar over the glyphs, and it only dropped behind them once the pen
+   * lifted and the commit moved it to the other layer. A blend mode is a
+   * property of the canvas, not of a draw call, so the fix is a canvas — not
+   * a flag on `paintWet`.
+   */
+  const wetWaterRef = useRef<HTMLCanvasElement>(null);
   const wetRef = useRef<HTMLCanvasElement>(null);
 
   const inkMode = useUI((s) => s.inkMode);
@@ -276,18 +356,29 @@ export function InkLayer({
   const closeInkTray = useCallback(() => setInkTray(null), [setInkTray]);
   const inkColor = useUI((s) => s.inkColor);
   const inkColorUsage = useUI((s) => s.inkColorUsage);
-  // The selection recolour bar is a quick action on a floating popover, not
-  // a place to browse the whole palette — same quick 4 the draw toolbar
-  // leads with (更多颜色 in that toolbar reaches the rest).
-  const selColors = useMemo(() => {
+  /**
+   * The palette behind 更改风格 on the selection bar.
+   *
+   * A quick action on a floating toolbar, not a place to browse the whole
+   * palette: the same four inks the draw toolbar leads with (墨黑 plus this
+   * reader's top three), and then the washes — because what the lasso caught
+   * may well BE a wash, and a restyle bar that cannot express what is
+   * selected is a restyle bar that can only make things worse.
+   */
+  const selStyleColors = useMemo(() => {
     const keys = rankInkColors(INK_COLORS, inkColorUsage, Date.now());
-    return keys.map((key) => INK_COLORS.find((c) => c.key === key)).filter((c) => c != null);
+    const inks = keys.map((key) => INK_COLORS.find((c) => c.key === key)).filter((c) => c != null);
+    return [...inks, ...WATER_COLORS];
   }, [inkColorUsage]);
   const inkWidth = useUI((s) => s.inkWidth);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const inkSound = useUI((s) => s.inkSound);
   const inkEraserSize = useUI((s) => s.inkEraserSize);
   const inkEraseMode = useUI((s) => s.inkEraseMode);
+  const inkPenDebug = useUI((s) => s.inkPenDebug);
+  const setPenProbe = useUI((s) => s.setInkPenProbe);
+  const clipboard = useUI((s) => s.inkClipboard);
+  const setClipboard = useUI((s) => s.setInkClipboard);
   const pushInkOps = useUI((s) => s.pushInkOps);
 
   // One fetch per document+rendition; every page instance shares the cache.
@@ -343,6 +434,13 @@ export function InkLayer({
   const [selection, setSelection] = useState<Selection | null>(null);
   const selRef = useRef<Selection | null>(null);
   selRef.current = selection;
+  /** Is 更改风格's colour/width tray open on the selection bar? Collapsed by
+   *  default and reset with the selection, so the bar stays the width of its
+   *  own row of commands until asked to be more. */
+  const [styleOpen, setStyleOpen] = useState(false);
+  useEffect(() => {
+    if (selection === null) setStyleOpen(false);
+  }, [selection]);
 
   /** Live move preview, consulted by `repaintDry` (hide the carried rows). */
   const movingRef = useRef<{ ids: Set<string>; dx: number; dy: number } | null>(null);
@@ -430,62 +528,91 @@ export function InkLayer({
     repaintDry();
   }, [repaintDry, mine]);
 
-  /** Dashed 1.5px-device outline, in PDF space. */
-  const dashedRect = useCallback(
-    (ctx: CanvasRenderingContext2D, b: { x0: number; y0: number; x1: number; y1: number }, pad: number) => {
-      ctx.setLineDash([4 / scale, 3 / scale]);
-      ctx.lineWidth = 1.5 / scale;
-      ctx.strokeStyle = "rgba(28, 32, 40, 0.9)";
-      ctx.strokeRect(b.x0 - pad, b.y0 - pad, b.x1 - b.x0 + pad * 2, b.y1 - b.y0 + pad * 2);
-      ctx.setLineDash([]);
-    },
-    [scale],
-  );
-
   /**
-   * The marching ants: ONE box around the whole selection.
+   * The selection frame: ONE thin accent rectangle around everything caught.
    *
    * It used to draw a separate dashed box per caught stroke, which read as a
    * pile of unrelated boxes rather than one thing you can grab — while the
    * resize/rotate handles were already on the combined box, so the chrome
    * disagreed with itself about what was selected. One box, one set of
    * handles, one thing to drag.
+   *
+   * Solid and accent-coloured now, not dark and dashed. Dashes are the LASSO's
+   * language — a loop being drawn — and using them for the result too meant
+   * the "I am cutting a shape out" and "here is what I cut" states looked the
+   * same. This is the marquee from the reference: a hairline frame, and the
+   * handles below sitting on it.
    */
   const paintSelection = useCallback(
     (ctx: CanvasRenderingContext2D, box: { x0: number; y0: number; x1: number; y1: number }) => {
-      dashedRect(ctx, box, 3);
+      const b = paddedBox(box, scale);
+      ctx.save();
+      ctx.strokeStyle = SELECT_STROKE;
+      ctx.lineWidth = 1.25 / scale;
+      ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+      ctx.restore();
     },
-    [dashedRect],
+    [scale],
   );
 
   /** The resize corners + rotate handle around the WHOLE selection (a single
    *  combined box, not one per stroke — dragging one handle transforms the
-   *  group together). Idle only: a live resize/rotate repaints its own
-   *  preview instead (see `paintWet`'s `transform` branch), so the handles
-   *  never fight the drag they belong to. */
+   *  group together). Round, white-filled and accent-ringed, matching the
+   *  frame; the rotate handle sits above the top edge on a short stem and
+   *  carries an arc so it cannot be mistaken for a fifth resize corner.
+   *  Idle only: a live resize/rotate repaints its own preview instead (see
+   *  `paintWet`'s `transform` branch), so the handles never fight the drag
+   *  they belong to. */
   const paintSelectionHandles = useCallback(
     (ctx: CanvasRenderingContext2D, box: { x0: number; y0: number; x1: number; y1: number }) => {
       if (box.x1 - box.x0 <= 0 && box.y1 - box.y0 <= 0) return;
-      const cx = (box.x0 + box.x1) / 2;
-      const r = 5 / scale;
+      const padded = paddedBox(box, scale);
+      const cx = (padded.x0 + padded.x1) / 2;
+      const r = HANDLE_DRAW_PX / scale;
       const gap = ROTATE_GAP_PX / scale;
-      ctx.strokeStyle = "rgba(28, 32, 40, 0.9)";
-      ctx.lineWidth = 1 / scale;
+      ctx.save();
+      ctx.strokeStyle = SELECT_STROKE;
+      ctx.lineWidth = 1.25 / scale;
       ctx.beginPath();
-      ctx.moveTo(cx, box.y1);
-      ctx.lineTo(cx, box.y1 + gap);
+      ctx.moveTo(cx, padded.y1);
+      ctx.lineTo(cx, padded.y1 + gap);
       ctx.stroke();
-      for (const h of selectionHandles(box, scale)) {
+      for (const h of selectionHandles(padded, scale)) {
+        // The rotate handle is a size up from the four that resize: it does a
+        // different job, and at corner-dot size there is simply no room inside
+        // for a glyph that reads as anything.
+        const hr = h.kind === "rotate" ? r * 1.5 : r;
         ctx.beginPath();
-        if (h.kind === "rotate") {
-          ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
-        } else {
-          ctx.rect(h.x - r, h.y - r, r * 2, r * 2);
-        }
-        ctx.fillStyle = "#fff";
+        ctx.arc(h.x, h.y, hr, 0, Math.PI * 2);
+        ctx.fillStyle = SELECT_FILL;
         ctx.fill();
         ctx.stroke();
+        if (h.kind === "rotate") {
+          // A curved arrow: an arc of about 200 degrees with a solid head on
+          // the end. Both properties are load-bearing. The first attempt drew
+          // a nearly-closed ring, which at this size reads as the © glyph, not
+          // as "turn me"; what makes it an arrow is that it is visibly OPEN
+          // and that one end is pointed.
+          const ar = hr * 0.52;
+          const from = Math.PI * 0.2;
+          const to = Math.PI * 1.3;
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, ar, from, to);
+          ctx.stroke();
+          const hx = h.x + ar * Math.cos(to);
+          const hy = h.y + ar * Math.sin(to);
+          const t = to + Math.PI / 2; // the tangent, i.e. where it is heading
+          const head = hr * 0.42;
+          ctx.beginPath();
+          ctx.moveTo(hx + head * Math.cos(t), hy + head * Math.sin(t));
+          ctx.lineTo(hx + head * Math.cos(t + 2.3), hy + head * Math.sin(t + 2.3));
+          ctx.lineTo(hx + head * Math.cos(t - 2.3), hy + head * Math.sin(t - 2.3));
+          ctx.closePath();
+          ctx.fillStyle = SELECT_STROKE;
+          ctx.fill();
+        }
       }
+      ctx.restore();
     },
     [scale],
   );
@@ -505,6 +632,11 @@ export function InkLayer({
    *  about how fast the HAND is moving, which is a screen-space question,
    *  not a PDF-space one: the same hand at 400% zoom is not writing faster. */
   const lastSampleRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  /** 笔尖诊断: read through a ref inside the gesture handlers, so switching it
+   *  on does not rebind them (and abandon a stroke) mid-writing. */
+  const penDebugRef = useRef(inkPenDebug);
+  penDebugRef.current = inkPenDebug;
+  const probeAtRef = useRef(0);
   /** rAF handle for the laser's hold-then-fade loop; 0 = none in flight. */
   const laserFadeRef = useRef(0);
   /**
@@ -806,10 +938,22 @@ export function InkLayer({
     [inkEraserSize],
   );
 
-  /** Empty the wet layer (hover cursor gone, gesture ghost gone). */
+  /** Wipe the live-wash canvas. Called on EVERY `paintWet`, not only when a
+   *  wash is being drawn: it is a second canvas that nothing else clears, so
+   *  a wash left on it would stay under the page until the next wash. */
+  const clearWetWater = useCallback(() => {
+    const c = wetWaterRef.current;
+    if (!c) return;
+    c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+  }, []);
+
+  /** Empty BOTH wet layers (hover cursor gone, gesture ghost gone, live wash
+   *  gone). One function, because a caller that cleared only the top one left
+   *  the last wash sitting under the page with nothing to remove it. */
   const clearWet = useCallback(() => {
     wetRef.current?.getContext("2d")?.clearRect(0, 0, wetRef.current.width, wetRef.current.height);
-  }, []);
+    clearWetWater();
+  }, [clearWetWater]);
 
   /** The 七彩 sweep: a gradient down the mark's own longest axis, so a long
    *  stroke runs the spectrum instead of ending up one muddy average. */
@@ -897,9 +1041,11 @@ export function InkLayer({
 
   /** Repaint the wet layer, by gesture kind:
    *  - erase: the reach preview (or nothing while a touch erases without hover);
-   *  - draw: the live outline, plus the predicted tail;
+   *  - draw: the live outline, plus the predicted tail — on the blended wash
+   *    canvas when the colour is a 水彩笔 tone, so it is a colour底 from the
+   *    first sample rather than only after the pen lifts;
    *  - lasso: the dashed loop;
-   *  - move: the carried strokes at their live offset, selection ants over them. */
+   *  - move: the carried strokes at their live offset, the frame over them. */
   const paintWet = useCallback(
     (session: Session, predicted: InkPoint[]) => {
       const wet = wetRef.current;
@@ -907,6 +1053,7 @@ export function InkLayer({
       const sized = prepare(wet);
       if (!sized) return;
       clearInSpace(wet, sized.w);
+      clearWetWater();
       const ctx = wet.getContext("2d")!;
       const colorOf = colorResolver(wet);
       if (session.lasso) {
@@ -979,26 +1126,35 @@ export function InkLayer({
       // blinks out the moment the next sweep starts.
       if (inkMode === "laser") paintLaserMarks(ctx, 1);
       const live = [...session.points, ...predicted];
-      const width = inkMode === "laser" ? LASER_WIDTH : inkWidth;
-      const outline = strokeOutline(live, width, true);
-      if (outline.length >= 3) {
-        if (inkMode === "laser") {
-          // 炫一点: a 七彩 gradient with a glow, not a flat fill — the pointer
-          // is meant to catch the eye for the seconds it lives, unlike ink
-          // meant to be read calmly afterward.
+      if (inkMode === "laser") {
+        // 炫一点: a 七彩 gradient with a glow, not a flat fill — the pointer
+        // is meant to catch the eye for the seconds it lives, unlike ink
+        // meant to be read calmly afterward.
+        const outline = strokeOutline(live, LASER_WIDTH, true);
+        if (outline.length >= 3) {
           ctx.save();
           ctx.shadowColor = LASER_STOPS[0]!;
           ctx.shadowBlur = 14 / scale;
           paintOutline(ctx, outline, laserGradient(ctx, live));
           ctx.restore();
-        } else {
-          paintOutline(ctx, outline, colorOf(inkColor));
         }
+        return;
       }
+      // A wash goes on the blended canvas below the ink, exactly where its
+      // committed self will land; a pen stroke stays on the wet canvas above.
+      // Same painter either way — `paintInk` is where "a tap is a dot" lives,
+      // and the preview must not be the one place that forgets it.
+      let target = ctx;
+      if (isWaterColor(inkColor)) {
+        const wetWater = wetWaterRef.current;
+        if (wetWater && prepare(wetWater)) target = wetWater.getContext("2d")!;
+      }
+      paintInk(target, live, inkWidth, colorOf(inkColor), true);
     },
     [
       prepare,
       clearInSpace,
+      clearWetWater,
       colorResolver,
       inkWidth,
       inkColor,
@@ -1013,19 +1169,37 @@ export function InkLayer({
 
   /* --------------------------------------------------- selection overlays */
 
-  /** Marching ants follow the zoom; also repaint on selection/stroke changes. */
-  useEffect(() => {
-    if (!selection || selection.rows.length + selection.tapes.length === 0) return;
+  /**
+   * Draw the selection's frame and handles onto the (cleared) wet canvas.
+   *
+   * A callback rather than only an effect, because the chrome has to be
+   * restored as well as painted: the wet canvas doubles as the hover-preview
+   * surface, and anything that wipes it — most obviously `pointerleave` when
+   * the reader moves off the page toward the selection's own toolbar — takes
+   * the frame with it. Reaching for 更改风格 made the box you were acting on
+   * disappear, which is a good half of "套索工具不好用".
+   *
+   * Reads `selRef`, not `selection`, so it stays stable and the gesture
+   * effect can depend on it without rebinding every time a selection changes.
+   */
+  const repaintSelectionChrome = useCallback((): boolean => {
+    const sel = selRef.current;
     const wet = wetRef.current;
-    if (!wet) return;
+    if (!sel || sel.rows.length + sel.tapes.length === 0 || !wet) return false;
     const sized = prepare(wet);
-    if (!sized) return;
+    if (!sized) return false;
     clearInSpace(wet, sized.w);
     const ctx = wet.getContext("2d")!;
-    const box = selectionBox(selection.rows, selection.tapes);
+    const box = selectionBox(sel.rows, sel.tapes);
     paintSelection(ctx, box);
     paintSelectionHandles(ctx, box);
-  }, [selection, prepare, clearInSpace, paintSelection, paintSelectionHandles]);
+    return true;
+  }, [prepare, clearInSpace, paintSelection, paintSelectionHandles]);
+
+  /** The frame follows the zoom; also repaints on selection/stroke changes. */
+  useEffect(() => {
+    repaintSelectionChrome();
+  }, [selection, repaintSelectionChrome]);
 
   /* Clear a selection the tool no longer supports — and when the strokes it
      holds have gone from the cache (another view deleted them). */
@@ -1171,30 +1345,30 @@ export function InkLayer({
       return pointToPdf(clientX, clientY, origin, scale, pageHeight, pressure);
     };
 
-    /** Does (x, y) in PDF space sit inside any selected stroke's bounds? */
+    /**
+     * Is (x, y) inside the selection's frame?
+     *
+     * The FRAME — the rectangle the reader can see — not each caught stroke's
+     * own bounds, which is what it tested before. Those are two different
+     * shapes: press inside the frame but in the gap between two strokes and
+     * nothing happened, so the box you were plainly holding did not move.
+     * What is drawn as one object behaves as one object.
+     */
     const overSelection = (x: number, y: number): boolean => {
       const sel = selRef.current;
-      if (!sel) return false;
-      for (const stroke of sel.rows) {
-        if (stroke.points.length === 0) continue;
-        const b = strokeBounds(stroke.points);
-        const pad = stroke.width / 2 + 4;
-        if (x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad) return true;
-      }
-      for (const t of sel.tapes) {
-        const b = tapeBox(t);
-        if (x >= b.x0 - 4 && x <= b.x1 + 4 && y >= b.y0 - 4 && y <= b.y1 + 4) return true;
-      }
-      return false;
+      if (!sel || sel.rows.length + sel.tapes.length === 0) return false;
+      const b = paddedBox(selectionBox(sel.rows, sel.tapes), scale);
+      return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
     };
 
     /** Which resize/rotate handle (x, y) is over, checked BEFORE a plain
      *  drag-to-move so a touch near a corner grabs the handle, not the
-     *  stroke under it. */
+     *  stroke under it. Against the PADDED box — the same rectangle the
+     *  handles are painted on. */
     const handleAt = (x: number, y: number): { kind: HandleKind; x: number; y: number } | null => {
       const sel = selRef.current;
       if (!sel || sel.rows.length + sel.tapes.length === 0) return null;
-      const box = selectionBox(sel.rows, sel.tapes);
+      const box = paddedBox(selectionBox(sel.rows, sel.tapes), scale);
       const reach = HANDLE_HIT_PX / scale;
       for (const h of selectionHandles(box, scale)) {
         if (Math.hypot(x - h.x, y - h.y) <= reach) return h;
@@ -1233,7 +1407,11 @@ export function InkLayer({
         if (handle && sel) {
           const ids = new Set([...sel.rows, ...sel.tapes].map((r) => r.id));
           setInkCarried(sel.tapes.map((t) => t.id));
-          const box = selectionBox(sel.rows, sel.tapes);
+          // The padded box, matching what was painted and what `handleAt`
+          // just hit: a resize must pivot on the corner the reader can see
+          // opposite the one under their pen, not on an unpadded corner a few
+          // points inside it.
+          const box = paddedBox(selectionBox(sel.rows, sel.tapes), scale);
           const center = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
           const corner = handle.kind === "rotate" ? null : OPPOSITE_CORNER[handle.kind];
           const pivot =
@@ -1360,7 +1538,10 @@ export function InkLayer({
      * the tip landed", which is the case that actually matters).
      */
     const syncPenButton = (e: PointerEvent): void => {
-      if (e.pointerType !== "pen") return;
+      // `isStylus`, not `pointerType === "pen"`: on Android a barrel-held
+      // S Pen arrives as pointerType "eraser", and this gate was rejecting
+      // exactly the events it exists to react to.
+      if (!isStylus(e)) return;
       if (strokeRef.current !== null) return; // mid-gesture: see above
       const held = penEraseHeld(e);
       if (held && barrelPrevModeRef.current === null && inkMode !== "erase") {
@@ -1372,12 +1553,33 @@ export function InkLayer({
       }
     };
 
+    /**
+     * Feed the 笔尖诊断 readout, when it is switched on.
+     *
+     * What the device actually reports is the one thing three attempts at the
+     * S Pen button have all had to guess at, and it is not guessable from
+     * here: Android's stylus-button mapping differs by OEM and by Chromium
+     * version. Rate-limited because a `pointermove` arrives at digitiser rate
+     * and each write re-renders the toolbar; the interesting transitions
+     * (down, up, a button appearing) are never the ones dropped.
+     */
+    const reportPen = (e: PointerEvent, phase: string): void => {
+      if (!penDebugRef.current || e.pointerType === "touch") return;
+      const now = e.timeStamp;
+      if (phase === "移动" && now - probeAtRef.current < 150) return;
+      probeAtRef.current = now;
+      setPenProbe(
+        `${phase} · ${e.pointerType} · button ${e.button} · buttons ${e.buttons} · 压力 ${e.pressure.toFixed(2)}`,
+      );
+    };
+
     const onDown = (e: PointerEvent): void => {
       e.preventDefault();
       if (e.pointerType === "touch") {
         onTouchDown(e);
         return;
       }
+      reportPen(e, "按下");
       if (debug) {
         console.debug(
           "[ink] down",
@@ -1395,19 +1597,41 @@ export function InkLayer({
       // gate let such an event through to `startSession` whenever bit 32 was
       // set, and rejected a barrel-held tip-down outright because its
       // `button` is not 0.)
-      const isPen = e.pointerType === "pen";
-      if (isPen) {
-        syncPenButton(e);
+      if (isStylus(e)) {
         // `button === 0` is the tip transition; `buttons & 1` is the tip being
         // held. Either will do: a driver that under-reports `buttons` on
         // pointerdown would otherwise stop the pen drawing AT ALL, which is a
         // far worse failure than the side button not being noticed.
-        const tipDown = e.button === 0 || (e.buttons & PEN_TIP_BUTTON) !== 0;
-        if (!tipDown) return; // a button pressed in mid-air: mode only
+        //
+        // An `"eraser"` pointer is always contact — Android only reports that
+        // tool type for a stylus that is touching or hovering with the button
+        // held, and the barrel-button events it sends carry `button: -1` and
+        // no tip bit, so demanding one would throw the whole gesture away.
+        const tipDown =
+          e.pointerType === "eraser" || e.button === 0 || (e.buttons & PEN_TIP_BUTTON) !== 0;
+        if (!tipDown) {
+          // A button pressed in MID-AIR: flip the tool and stop there, never
+          // mint a zero-length gesture.
+          syncPenButton(e);
+          return;
+        }
         penRef.current = e.pointerId;
+        // NOT `syncPenButton` here, and this is the bug that made the previous
+        // fix useless even where the pointer type was right: `setInkMode` is a
+        // React state change, `inkMode` is a dependency of this whole effect,
+        // and so the rebind's cleanup ran — killing `strokeRef` — one render
+        // after the gesture started. The result was an eraser cursor that
+        // followed the pen and erased nothing. `startSession` reads the button
+        // itself (`eraserButton` below) and erases for this gesture without
+        // touching the mode at all; the toolbar catches up on the next hover
+        // or pen-up.
       } else if (e.button !== 0) {
         return; // a mouse's right/middle click is not a stroke
       }
+      // Build the audio graph HERE, in a real user gesture. A pointermove is
+      // not one, so a context created there starts (and stays) suspended —
+      // which is the other half of "音效失败，没有出现音效".
+      if (inkSound) penSound().arm();
       startSession(e);
       if (debug) console.debug("[ink] mode", inkMode, "color", inkColor, "width", inkWidth);
     };
@@ -1437,9 +1661,11 @@ export function InkLayer({
 
       const session = strokeRef.current;
       if (session === null || session.pointerId !== e.pointerId) {
-        // Hover is still the NICEST moment to borrow the eraser (the tool is
-        // already switched by the time the tip lands), it just is not the
-        // only one any more — `syncPenButton` is called from down/up too.
+        // Hover is the ONE safe moment to move the toolbar to the eraser and
+        // back: nothing is in flight, so the effect rebind `setInkMode`
+        // triggers costs nothing. (Doing it on pointerdown killed the gesture
+        // it had just started — see `onDown`.)
+        reportPen(e, "移动");
         syncPenButton(e);
         // Hover (pen/mouse) with the eraser active: keep the reach preview on
         // screen even when nothing is being erased. Touch has no hover.
@@ -1581,21 +1807,13 @@ export function InkLayer({
           clearWet();
           return;
         }
-        const rect = wet.getBoundingClientRect();
-        const last = session.points[session.points.length - 1]!;
-        // Anchor in CSS page pixels, clamped so the toolbar stays on the page.
-        const ax = Math.min(Math.max((last.x * scale), 8), Math.max(8, rect.width - 8));
-        const ay = Math.min(Math.max((pageHeight - last.y) * scale, 8), Math.max(8, rect.height - 8));
-        setSelection({ rows: caught, tapes: caughtTape, ax, ay });
+        setSelection({ rows: caught, tapes: caughtTape });
         paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
-        // Repaint the ants for the fresh selection.
-        const sized = prepare(wet);
-        if (sized) {
-          const ctx = wet.getContext("2d")!;
-          const box = selectionBox(caught, caughtTape);
-          paintSelection(ctx, box);
-          paintSelectionHandles(ctx, box);
-        }
+        // Paint the chrome now rather than waiting a render for the effect —
+        // `selRef` is assigned during render, and `setSelection` has not
+        // re-rendered yet, so feed it the fresh selection directly.
+        selRef.current = { rows: caught, tapes: caughtTape };
+        repaintSelectionChrome();
         return;
       }
 
@@ -1745,22 +1963,37 @@ export function InkLayer({
         });
     };
 
+    /**
+     * Give back a tool the barrel button borrowed — never take one.
+     *
+     * The asymmetry is deliberate. BORROWING on pen-up would set `inkMode` and
+     * rebind this effect for a stroke that has already finished, for no gain:
+     * the next hover (or the next pointerdown's own `eraserButton` check) will
+     * do it in time. RELEASING has to happen here, because the button may well
+     * have been let go DURING the stroke, and on a tablet there may be no
+     * hover event afterward to notice it — leaving the reader stuck in an
+     * eraser they never chose.
+     */
+    const releasePenButton = (e: PointerEvent): void => {
+      if (!isStylus(e)) return;
+      if (barrelPrevModeRef.current === null) return;
+      if (penEraseHeld(e)) return; // still held: keep erasing
+      setInkMode(barrelPrevModeRef.current);
+      barrelPrevModeRef.current = null;
+    };
+
     const onUp = (e: PointerEvent): void => {
       lastSampleRef.current = null;
       if (inkSound) penSound().lift();
+      reportPen(e, "抬起");
       finish(e, false);
-      // After the gesture is closed out, not before: `syncPenButton` refuses
-      // to act while one is in flight, and on pointerup the button bits are
-      // already whatever they will be for the next stroke. This is what
-      // releases the borrowed eraser when the button was let go DURING a
-      // stroke rather than while hovering.
-      syncPenButton(e);
+      releasePenButton(e);
     };
     const onCancel = (e: PointerEvent): void => {
       lastSampleRef.current = null;
       if (inkSound) penSound().lift();
       finish(e, true);
-      syncPenButton(e);
+      releasePenButton(e);
     };
     // Pen drags emit compatibility mouse events that would bubble to the
     // viewport's pan handler mid-stroke; the wet canvas is the target, so
@@ -1776,6 +2009,12 @@ export function InkLayer({
         barrelPrevModeRef.current = null;
       }
       clearWet();
+      // …but put the selection's frame back. The wet canvas is shared between
+      // the hover preview and the selection chrome, and moving the pointer off
+      // the page is the single most common way to reach the selection's own
+      // toolbar — so wiping the canvas here used to erase the box the reader
+      // was about to act on.
+      repaintSelectionChrome();
     };
 
     wet.addEventListener("pointerdown", onDown);
@@ -1831,10 +2070,12 @@ export function InkLayer({
     clearWet,
     paintSelection,
     paintSelectionHandles,
+    repaintSelectionChrome,
     paintLaserMarks,
     clearLaser,
     closeInkTray,
     setInkCarried,
+    setPenProbe,
     commitMove,
     commitTransform,
     pushInkOps,
@@ -1846,12 +2087,190 @@ export function InkLayer({
     qc,
   ]);
 
+  /* ------------------------------------------------- selection commands */
+
+  /** Delete everything the loop caught — strokes and 胶带 together, one undo
+   *  entry whatever the mix. */
+  const deleteSelection = useCallback(
+    (rows: InkStrokeRow[], tapes: TapeRow[]) => {
+      setSelection(null);
+      const ops: InkOp[] = [];
+      if (rows.length > 0) {
+        const gone = new Set(rows.map((r) => r.id));
+        updateCache((prev) => prev.filter((s) => !gone.has(s.id)));
+        ops.push({ kind: "remove", strokes: rows });
+        for (const row of rows) {
+          if (row.id.startsWith("temp-")) continue;
+          void api.ink.remove(row.id).catch(() => {
+            void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+          });
+        }
+      }
+      for (const t of tapes) {
+        ops.push({ kind: "tape-remove", tape: t });
+        qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
+          (prev ?? []).filter((row) => row.id !== t.id),
+        );
+        void api.tape.remove(t.id).catch(() => {
+          void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
+        });
+      }
+      // One gesture, one undo — the same rule the lasso's drag follows.
+      if (ops.length > 0) pushInkOps(key, batchOps(ops));
+    },
+    [key, kind, paperId, pushInkOps, qc, updateCache],
+  );
+
+  /** 复制 / 剪切 — the same snapshot; 剪切 also removes what it took. */
+  const copySelection = useCallback(
+    (rows: InkStrokeRow[], tapes: TapeRow[], cut: boolean) => {
+      setClipboard({
+        strokes: rows.map((r) => ({ points: r.points, color: r.color, width: r.width })),
+        tapes: tapes.map((t) => ({
+          x: t.x,
+          y: t.y,
+          w: t.w,
+          h: t.h,
+          angle: t.angle,
+          points: t.points,
+          revealed: t.revealed,
+        })),
+      });
+      if (cut) deleteSelection(rows, tapes);
+      else setSelection(null);
+    },
+    [deleteSelection, setClipboard],
+  );
+
+  /**
+   * 粘贴 — new rows on THIS page, nudged clear of whatever they were copied
+   * from, and selected so the obvious next move (drag them somewhere) needs
+   * no extra step.
+   *
+   * Clamped onto the page rather than pasted at the raw offset: a selection
+   * copied from the bottom of one page and pasted onto a shorter one would
+   * otherwise land past its edge, where it is invisible and unselectable.
+   */
+  const pasteClipboard = useCallback(
+    (clip: InkClipboard) => {
+      const wet = wetRef.current;
+      if (!wet) return;
+      const pageWidth = wet.clientWidth / scale;
+      const NUDGE = 14;
+      const boxes = [
+        ...clip.strokes.map((s) => strokeBounds(s.points)),
+        ...clip.tapes.map((t) => tapeBox(t as TapeRow)),
+      ];
+      if (boxes.length === 0) return;
+      const b = unionBounds(boxes);
+      let dx = NUDGE;
+      let dy = -NUDGE;
+      // Keep the whole paste on the paper.
+      dx = Math.min(dx, pageWidth - 4 - b.x1);
+      dx = Math.max(dx, 4 - b.x0);
+      dy = Math.min(dy, pageHeight - 4 - b.y1);
+      dy = Math.max(dy, 4 - b.y0);
+
+      // Optimistic, like every other write here: the copies appear under the
+      // pen immediately and the server's rows replace the temps as they land.
+      const temps: InkStrokeRow[] = clip.strokes.map((s) => ({
+        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        paper_id: paperId,
+        kind,
+        page,
+        points: translatePoints(s.points, dx, dy),
+        color: s.color,
+        width: s.width,
+        created_at: new Date().toISOString(),
+      }));
+      if (temps.length > 0) updateCache((prev) => [...prev, ...temps]);
+      setSelection({ rows: temps, tapes: [] });
+
+      void (async () => {
+        // The undo ops are built HERE, from the rows the server actually
+        // returned — never from the temps. An op pushed with a temp id could
+        // not be repaired afterwards: `remapInkRow` rewrites the two history
+        // stacks, and an op that is not on one yet is not there to rewrite.
+        // Undo would then DELETE `temp-1234…`, get a 404, and leave the paste
+        // sitting on the page as something the reader could not take back.
+        const ops: InkOp[] = [];
+        for (const temp of temps) {
+          try {
+            const row = await api.ink.create(paperId, {
+              kind,
+              page,
+              points: temp.points,
+              color: temp.color,
+              width: temp.width,
+            });
+            updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
+            setSelection((sel) =>
+              sel ? { ...sel, rows: sel.rows.map((r) => (r.id === temp.id ? row : r)) } : sel,
+            );
+            ops.push({ kind: "add", stroke: row });
+          } catch {
+            updateCache((prev) => prev.filter((s) => s.id !== temp.id));
+            setSelection((sel) =>
+              sel ? { ...sel, rows: sel.rows.filter((r) => r.id !== temp.id) } : sel,
+            );
+          }
+        }
+        for (const t of clip.tapes) {
+          const moved = translateTape({ ...t }, dx, dy);
+          try {
+            const row = await api.tape.create(paperId, {
+              kind,
+              page,
+              x: moved.x,
+              y: moved.y,
+              w: clampTapeSize(moved.w),
+              h: clampTapeSize(moved.h),
+              angle: moved.angle,
+              ...(moved.points ? { points: moved.points } : {}),
+            });
+            qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) => [...(prev ?? []), row]);
+            setSelection((sel) => (sel ? { ...sel, tapes: [...sel.tapes, row] } : sel));
+            ops.push({ kind: "tape-add", tape: row });
+          } catch {
+            /* the server refused this strip; the rest of the paste stands */
+          }
+        }
+        // One paste, one undo — and pushed only once everything that will
+        // exist does, so the batch never names a row the server refused.
+        if (ops.length > 0) pushInkOps(key, batchOps(ops));
+      })();
+    },
+    [key, kind, page, pageHeight, paperId, pushInkOps, qc, scale, updateCache],
+  );
+
   /* ----------------------------------------------------------------- view */
 
   const interactive = inkMode !== "off";
+  /**
+   * Where the command bar sits: centred over the selection's own frame, just
+   * above the rotate handle — the placement in the reference, and the one that
+   * does not cover the marks the buttons act on. It used to be anchored
+   * wherever the lasso happened to stop, which is an arbitrary point on the
+   * loop and very often right on top of what was caught.
+   *
+   * It flips below the frame when there is no room above, so a selection near
+   * the top of a page still has reachable buttons.
+   */
+  const selChrome = useMemo(() => {
+    if (!selection || selection.rows.length + selection.tapes.length === 0) return null;
+    const box = paddedBox(selectionBox(selection.rows, selection.tapes), scale);
+    const left = ((box.x0 + box.x1) / 2) * scale;
+    const above = (pageHeight - box.y1) * scale - ROTATE_GAP_PX - 14;
+    const below = (pageHeight - box.y0) * scale + 14;
+    const flip = above < 8;
+    return { left, top: flip ? below : above, flip };
+  }, [selection, scale, pageHeight]);
+  const selCount = (selection?.rows.length ?? 0) + (selection?.tapes.length ?? 0);
+
   return (
     <>
       <canvas ref={waterRef} className="ph-ink-water" aria-hidden="true" />
+      <canvas ref={wetWaterRef} className="ph-ink-water ph-ink-water--wet" aria-hidden="true" />
       <canvas ref={dryRef} className="ph-ink" aria-hidden="true" />
       <canvas
         ref={wetRef}
@@ -1863,66 +2282,55 @@ export function InkLayer({
         }
         aria-hidden="true"
       />
-      {selection && selection.rows.length > 0 && (
+      {selection && selChrome && (
         <div
-          className="ph-ink-selbar"
+          className={`ph-ink-selbar${selChrome.flip ? " is-below" : ""}`}
           role="toolbar"
           aria-label="选中的笔迹"
-          style={{ left: selection.ax, top: selection.ay + 10 }}
+          style={{ left: selChrome.left, top: selChrome.top }}
           // Buttons are HTML, not canvas: clicks here must not start a lasso.
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <span className="ph-ink-sel-n">{selection.rows.length + selection.tapes.length}</span>
-          {selColors.map((c) => (
-            <button
-              key={c.key}
-              className={`ph-ink-sel-color${selection.rows.every((r) => r.color === c.key) ? " is-on" : ""}`}
-              style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
-              title={c.label}
-              aria-label={`改为${c.label}`}
-              disabled={selection.rows.length === 0}
-              onClick={() => {
-                const rows = selection.rows;
-                setSelection(null);
-                commitReplace(
-                  rows,
-                  rows.map((r) => ({ points: r.points, color: c.key, width: r.width })),
-                );
-              }}
-            />
-          ))}
           <button
-            className="ph-ink-sel-btn is-danger"
-            title="删除选中的笔迹"
-            aria-label="删除选中的笔迹"
-            onClick={() => {
-              const rows = selection.rows;
-              const tapes = selection.tapes;
-              setSelection(null);
-              const gone = new Set(rows.map((r) => r.id));
-              updateCache((prev) => prev.filter((s) => !gone.has(s.id)));
-              if (rows.length > 0) pushInkOps(key, [{ kind: "remove", strokes: rows }]);
-              for (const row of rows) {
-                if (row.id.startsWith("temp-")) continue;
-                void api.ink.remove(row.id).catch(() => {
-                  void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
-                });
-              }
-              // 胶带 caught by the same loop goes with it — one delete, one
-              // undo, whatever mix of marks was selected.
-              for (const t of tapes) {
-                pushInkOps(key, [{ kind: "tape-remove", tape: t }]);
-                qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
-                  (prev ?? []).filter((row) => row.id !== t.id),
-                );
-                void api.tape.remove(t.id).catch(() => {
-                  void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
-                });
-              }
-            }}
+            className="ph-ink-sel-cmd"
+            onClick={() => copySelection(selection.rows, selection.tapes, true)}
           >
-            <Icons.trash size={13} />
+            剪切
           </button>
+          <button
+            className="ph-ink-sel-cmd"
+            onClick={() => copySelection(selection.rows, selection.tapes, false)}
+          >
+            复制
+          </button>
+          <button
+            className="ph-ink-sel-cmd"
+            disabled={clipboard === null}
+            title={clipboard === null ? "还没有剪切或复制过东西" : "粘贴到这一页"}
+            onClick={() => clipboard && pasteClipboard(clipboard)}
+          >
+            粘贴
+          </button>
+          <button
+            className="ph-ink-sel-cmd"
+            onClick={() => deleteSelection(selection.rows, selection.tapes)}
+          >
+            删除
+          </button>
+          <button
+            className={`ph-ink-sel-cmd${styleOpen ? " is-on" : ""}`}
+            aria-pressed={styleOpen}
+            disabled={selection.rows.length === 0}
+            title={
+              selection.rows.length === 0
+                ? "只选中了胶带，没有可改样式的笔迹"
+                : "改颜色和粗细"
+            }
+            onClick={() => setStyleOpen((v) => !v)}
+          >
+            更改风格
+          </button>
+          <span className="ph-ink-sel-n">{selCount}</span>
           <button
             className="ph-ink-sel-btn"
             title="取消选择"
@@ -1931,6 +2339,52 @@ export function InkLayer({
           >
             <Icons.close size={11} />
           </button>
+          {styleOpen && selection.rows.length > 0 && (
+            <div className="ph-ink-sel-style" role="group" aria-label="更改风格">
+              {selStyleColors.map((c) => (
+                <button
+                  key={c.key}
+                  className={`ph-ink-sel-color${
+                    selection.rows.every((r) => r.color === c.key) ? " is-on" : ""
+                  }`}
+                  style={{ background: `var(--c-ink-${c.key}, var(--c-tx))` }}
+                  title={c.label}
+                  aria-label={`改为${c.label}`}
+                  onClick={() => {
+                    const rows = selection.rows;
+                    setStyleOpen(false);
+                    setSelection(null);
+                    commitReplace(
+                      rows,
+                      rows.map((r) => ({ points: r.points, color: c.key, width: r.width })),
+                    );
+                  }}
+                />
+              ))}
+              <input
+                type="range"
+                className="ph-ink-sel-width"
+                min={MIN_INK_WIDTH}
+                max={MAX_INK_WIDTH}
+                step={1}
+                defaultValue={Math.round(selection.rows[0]?.width ?? 2)}
+                aria-label="笔画粗细"
+                // Committed on release, not on every input event: dragging a
+                // slider that rewrites every selected row per pixel would post
+                // a hundred replacements and a hundred undo entries.
+                onPointerUp={(e) => {
+                  const width = clampInkWidth(Number((e.target as HTMLInputElement).value));
+                  const rows = selection.rows;
+                  setStyleOpen(false);
+                  setSelection(null);
+                  commitReplace(
+                    rows,
+                    rows.map((r) => ({ points: r.points, color: r.color, width })),
+                  );
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
     </>

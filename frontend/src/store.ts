@@ -183,6 +183,33 @@ export function batchOps(ops: InkOp[]): InkOp[] {
 /** How the eraser takes ink away. */
 export type EraseMode = "stroke" | "pixel";
 
+/**
+ * What a 剪切/复制 of a lasso selection holds, ready for 粘贴.
+ *
+ * Payloads rather than rows: pasting creates new rows on whatever page is
+ * under the reader now, so the ids, timestamps and page numbers of the source
+ * would all be wrong on the copy. Coordinates are the source's own PDF-space
+ * ones; the paste translates them (and clamps the result onto the target
+ * page), so a copy can be pasted onto a different page — or the same one —
+ * without the clipboard having to know where it will land.
+ */
+export interface InkClipboard {
+  strokes: {
+    points: { x: number; y: number; p: number }[];
+    color: string;
+    width: number;
+  }[];
+  tapes: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    angle: number;
+    points: { x: number; y: number }[] | null;
+    revealed: boolean;
+  }[];
+}
+
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
 export const RAIL_MAX_WIDTH = 280;
@@ -471,6 +498,42 @@ interface UIState {
   tapeFreehand: boolean;
   toggleTapeFreehand: () => void;
 
+  /**
+   * What 剪切/复制 put aside, ready for 粘贴.
+   *
+   * In the store, not in a component: the lasso's toolbar unmounts the moment
+   * the selection clears — which is exactly what 剪切 does — so anything held
+   * in its own state would be gone before there was anything to paste it
+   * into. Held as payloads (points, colours, paths), never as ids: a paste
+   * makes NEW rows, and may well make them on a different page from the one
+   * the copy came off.
+   *
+   * Coordinates are relative to the copied selection's own top-left corner,
+   * so a paste can be placed anywhere without having to remember where it was
+   * cut from.
+   */
+  inkClipboard: InkClipboard | null;
+  setInkClipboard: (c: InkClipboard | null) => void;
+
+  /**
+   * Show what the stylus is actually reporting, live, on the page.
+   *
+   * A debugging affordance in shipped UI, and deliberately so: the S Pen's
+   * button has now failed twice on a device none of this code can be run
+   * against, and every fix has been a guess at what Android hands the WebView.
+   * `pointerType`, `button`, `buttons` and `pressure` on screen turn a third
+   * guess into a reading. Off by default and tucked into the eraser's own
+   * popover, where someone looking for "why doesn't my pen erase" will be.
+   */
+  inkPenDebug: boolean;
+  toggleInkPenDebug: () => void;
+  /** The last stylus event, formatted for that readout. Written by `InkLayer`
+   *  (which sees the events) and rendered by `ReadingView` (which has the
+   *  toolbar) — and only while `inkPenDebug` is on, so the write rate is a
+   *  non-issue the rest of the time. */
+  inkPenProbe: string | null;
+  setInkPenProbe: (probe: string | null) => void;
+
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
   settingsTab: SettingsTab;
@@ -711,6 +774,14 @@ export const useUI = create<UIState>((set) => ({
   toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
   tapeFreehand: false,
   toggleTapeFreehand: () => set((s) => ({ tapeFreehand: !s.tapeFreehand })),
+
+  inkClipboard: null,
+  setInkClipboard: (inkClipboard) => set({ inkClipboard }),
+  inkPenDebug: false,
+  toggleInkPenDebug: () =>
+    set((s) => ({ inkPenDebug: !s.inkPenDebug, inkPenProbe: null })),
+  inkPenProbe: null,
+  setInkPenProbe: (inkPenProbe) => set({ inkPenProbe }),
 
   settingsOpen: false,
   settingsTab: "account",

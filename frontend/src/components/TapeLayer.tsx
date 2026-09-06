@@ -38,7 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { TapeRow } from "../api/types";
-import { tapeBoundsOfPath, tapeFromDrag, type TapeRect } from "../lib/tape";
+import { clampTapeSize, tapeFromPath, tapeFromDrag, type TapeRect } from "../lib/tape";
 import { isDrawingPointer } from "../lib/pointer";
 import { Icons } from "../design/icons";
 import { useUI } from "../store";
@@ -91,9 +91,7 @@ export function TapeLayer({
 
   const inkMode = useUI((s) => s.inkMode);
   const tapeAutoThickness = useUI((s) => s.tapeAutoThickness);
-  const toggleTapeAutoThickness = useUI((s) => s.toggleTapeAutoThickness);
   const tapeFreehand = useUI((s) => s.tapeFreehand);
-  const toggleTapeFreehand = useUI((s) => s.toggleTapeFreehand);
   const inkFingerDraw = useUI((s) => s.inkFingerDraw);
   const setInkTray = useUI((s) => s.setInkTray);
   /** Strips the lasso is carrying: painted on the ink layer's wet canvas
@@ -213,14 +211,17 @@ export function TapeLayer({
     let start: { x: number; y: number; clientX: number; clientY: number } | null = null;
     let path: { x: number; y: number }[] = [];
     let moved = false;
+    const rafRef = { current: 0 };
 
     /** The thickness a strip laid down right here should get: the text line's
      *  own height when 自动粗细 is on and there IS a line under the pen, the
-     *  fixed default otherwise. */
+     *  fixed default otherwise. Clamped into the server's own size range —
+     *  a small line measured at high zoom really can come out under
+     *  `MIN_TAPE_SIZE`, and the POST that follows is a 422. */
     const thicknessAt = (clientX: number, clientY: number): number => {
       if (!tapeAutoThickness) return DEFAULT_THICKNESS;
       const measured = textLineHeightAt(el.parentElement!, clientX, clientY);
-      return measured ? measured / scale : DEFAULT_THICKNESS;
+      return clampTapeSize(measured ? measured / scale : DEFAULT_THICKNESS);
     };
 
     /** Thin the path the same way ink thins a long stroke: a cover has no
@@ -253,20 +254,35 @@ export function TapeLayer({
       if (Math.hypot(dx, dy) > 4) moved = true;
       const pt = toPage(e.clientX, e.clientY);
       path.push(pt);
-      if (!moved) return;
-      const thickness = thicknessAt(e.clientX, e.clientY);
-      setDragPreview(
-        tapeFreehand
-          ? { rect: tapeBoundsOfPath(path, thickness), path: [...path] }
-          : { rect: tapeFromDrag(start.x, start.y, pt.x, pt.y, thickness), path: null },
-      );
       e.preventDefault();
+      if (!moved) return;
+      // One preview per FRAME, not one per sample. `setDragPreview` re-renders
+      // this whole layer — every strip on the page — and a stylus delivers
+      // samples several times faster than the display can show them, so the
+      // unthrottled version spent the whole 随手 drag re-rendering work nobody
+      // could see. That is most of why drawing a freehand strip felt wrong
+      // even where the geometry was right.
+      if (rafRef.current !== 0) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        if (!start) return;
+        const thickness = thicknessAt(e.clientX, e.clientY);
+        setDragPreview(
+          tapeFreehand
+            ? { rect: tapeFromPath(path, thickness), path: [...path] }
+            : { rect: tapeFromDrag(start.x, start.y, pt.x, pt.y, thickness), path: null },
+        );
+      });
     };
 
     const onUp = async (e: PointerEvent) => {
       if (!start) return;
       const s = start;
       start = null;
+      if (rafRef.current !== 0) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
       const drawn = thinned(path);
       path = [];
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
@@ -275,11 +291,13 @@ export function TapeLayer({
       const pt = toPage(e.clientX, e.clientY);
       const thickness = thicknessAt(e.clientX, e.clientY);
       // Freehand follows the pen; straight runs corner to corner. Either way
-      // the bounding box goes on the wire, so nothing downstream has to know
-      // which kind it is before it can place a popover or hit-test a tap.
+      // the row carries the same five fields meaning the same five things —
+      // centre, length, THICKNESS, angle — so nothing downstream has to know
+      // which kind it is before it can draw it, place a popover, or hit-test
+      // a tap.
       const freehand = tapeFreehand && drawn.length >= 2;
       const rect = freehand
-        ? tapeBoundsOfPath(drawn, thickness)
+        ? tapeFromPath(drawn, thickness)
         : tapeFromDrag(s.x, s.y, pt.x, pt.y, thickness);
       try {
         const row = await api.tape.create(paperId, {
@@ -303,6 +321,7 @@ export function TapeLayer({
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
+      if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
     };
   }, [
     inkMode,
@@ -328,6 +347,11 @@ export function TapeLayer({
       className={`ph-tape${wrapLive ? " ph-tape--live" : ""}`}
       aria-hidden="true"
     >
+      {/* The surface a new strip is dragged out on, present only while the
+          tool is. First child, so every existing strip stays tappable on top
+          of it. See `.ph-tape-catch` for why the wrap cannot carry this
+          itself any more. */}
+      {wrapLive && <div className="ph-tape-catch" />}
       {/* Straight runs are one rotated box each; freehand strips are paths and
           share a single SVG below. Both answer a tap the same way. */}
       {mine
@@ -387,16 +411,22 @@ export function TapeLayer({
             {selected.revealed ? <Icons.eyeOff /> : <Icons.eye />}
           </button>
           <span className="ph-tape-pop-sep" />
+          {/* 长 is the run of tape. A freehand strip's run is its path, and
+              stretching the number without stretching the path would say one
+              thing and draw another — so those two steppers are for straight
+              strips only. 宽 is the thickness for both kinds alike. */}
           <button
             className="ph-tape-pop-btn"
-            title="变短"
+            title={selected.points ? "随手画的胶带请用套索拉伸" : "变短"}
+            disabled={selected.points !== null}
             onClick={() => patchTape(selected, { w: Math.max(4, selected.w - 8) })}
           >
             −长
           </button>
           <button
             className="ph-tape-pop-btn"
-            title="变长"
+            title={selected.points ? "随手画的胶带请用套索拉伸" : "变长"}
+            disabled={selected.points !== null}
             onClick={() => patchTape(selected, { w: Math.min(2000, selected.w + 8) })}
           >
             +长
@@ -428,22 +458,6 @@ export function TapeLayer({
           >
             拉直
           </button>
-          <button
-            className={`ph-tape-pop-btn${tapeFreehand ? " is-on" : ""}`}
-            title="随手画：下一条胶带跟着笔走，而不是拉成直的（新胶带生效）"
-            aria-pressed={tapeFreehand}
-            onClick={toggleTapeFreehand}
-          >
-            {tapeFreehand ? "随手" : "直条"}
-          </button>
-          <button
-            className={`ph-tape-pop-btn${tapeAutoThickness ? " is-on" : ""}`}
-            title="根据字体大小自动调整粗细（新胶带生效）"
-            aria-pressed={tapeAutoThickness}
-            onClick={toggleTapeAutoThickness}
-          >
-            自动粗细
-          </button>
           <span className="ph-tape-pop-sep" />
           <button className="ph-tape-pop-btn is-danger" title="删除" onClick={() => deleteTape(selected)}>
             <Icons.trash size={13} />
@@ -455,7 +469,7 @@ export function TapeLayer({
 }
 
 /**
- * Every freehand strip on this page, as one SVG of stroked paths.
+ * Every freehand strip on this page, as stroked SVG paths.
  *
  * SVG rather than more `<div>`s because a strip that follows the pen is a
  * path with a thickness, which is exactly what a stroked path IS — and
@@ -463,6 +477,12 @@ export function TapeLayer({
  * without any geometry of our own. `pointer-events: stroke` makes the hit
  * area follow the visible strip instead of its bounding box, so a tap in the
  * hollow of a curve falls through to the page underneath the way it should.
+ *
+ * TWO svgs, not one: covered strips composite normally (they must hide what is
+ * under them) while revealed strips multiply (they must let it through). A
+ * blend mode has to sit on an element whose ancestors do not isolate, and a
+ * positioned, z-indexed `<svg>` isolates — so the split is between the svgs,
+ * not between paths inside one. See `.ph-tape-svg--wash`.
  */
 function TapePaths({
   strips,
@@ -490,36 +510,58 @@ function TapePaths({
       .map((p, i) => `${i === 0 ? "M" : "L"}${(p.x * scale).toFixed(2)} ${((pageHeight - p.y) * scale).toFixed(2)}`)
       .join(" ");
 
+  /** One strip, in whichever svg its compositing belongs to. */
+  const strip = (t: TapeRow): JSX.Element => (
+    <path
+      key={t.id}
+      className={`ph-tape-path${t.revealed ? " is-revealed" : ""}${dormant ? " is-dormant" : ""}`}
+      d={d(t.points ?? [])}
+      strokeWidth={t.h * scale}
+      onPointerDown={(e) => {
+        downRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        const down = downRef.current;
+        downRef.current = null;
+        if (!down) return;
+        if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return; // a drag
+        onTap(t);
+      }}
+    />
+  );
+
+  const revealed = strips.filter((t) => t.revealed);
+
   return (
-    <svg className="ph-tape-svg" aria-hidden="true">
-      {strips.map((t) => (
-        <path
-          key={t.id}
-          className={`ph-tape-path${t.revealed ? " is-revealed" : ""}${
-            selectedId === t.id ? " is-selected" : ""
-          }${dormant ? " is-dormant" : ""}`}
-          d={d(t.points ?? [])}
-          strokeWidth={t.h * scale}
-          onPointerDown={(e) => {
-            downRef.current = { x: e.clientX, y: e.clientY };
-          }}
-          onPointerUp={(e) => {
-            const down = downRef.current;
-            downRef.current = null;
-            if (!down) return;
-            if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return; // a drag
-            onTap(t);
-          }}
-        />
-      ))}
-      {draft?.path && (
-        <path
-          className="ph-tape-path is-preview"
-          d={d(draft.path)}
-          strokeWidth={draft.rect.h * scale}
-        />
+    <>
+      <svg className="ph-tape-svg" aria-hidden="true">
+        {/* The selection halo goes in its own pass, and in the UNBLENDED svg,
+            so it sits under every strip and is not multiplied away. */}
+        {strips
+          .filter((t) => selectedId === t.id)
+          .map((t) => (
+            <path
+              key={`halo-${t.id}`}
+              className="ph-tape-halo"
+              d={d(t.points ?? [])}
+              strokeWidth={t.h * scale + 5}
+            />
+          ))}
+        {strips.filter((t) => !t.revealed).map(strip)}
+        {draft?.path && (
+          <path
+            className="ph-tape-path is-preview"
+            d={d(draft.path)}
+            strokeWidth={draft.rect.h * scale}
+          />
+        )}
+      </svg>
+      {revealed.length > 0 && (
+        <svg className="ph-tape-svg ph-tape-svg--wash" aria-hidden="true">
+          {revealed.map(strip)}
+        </svg>
       )}
-    </svg>
+    </>
   );
 }
 

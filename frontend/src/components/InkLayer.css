@@ -23,16 +23,28 @@
    wash canvas is a SIBLING of `.ph-ink`, so neither sees a variable declared
    only on `.ph-ink`.
 
-   Both omissions have now been shipped as bugs, which is why the list is
-   spelled out rather than kept "obvious": missing the toolbar made every
-   swatch fall back to the text colour ("the colour picker shows the wrong
-   colours"), and missing `.ph-ink-water` made every watercolour stroke paint
-   near-black ("水彩笔写过后就变黑了") — the wash tokens resolved to nothing
-   and fell through to `--c-tx`. A test that only asserts a stroke has
-   non-zero alpha cannot catch either one; assert the COLOUR.
+   THREE omissions have now been shipped as bugs, which is why the list is
+   spelled out rather than kept "obvious":
+
+   - missing `.ph-rv-inkbar` made every toolbar swatch fall back to the text
+     colour ("the colour picker shows the wrong colours");
+   - missing `.ph-ink-water` made every watercolour stroke paint near-black
+     ("水彩笔写过后就变黑了");
+   - missing `.ph-ink-selbar` did the same to the lasso bar's 更改风格 row —
+     ten identical navy squares where ten colours should be. That one went
+     unnoticed for two rounds because nothing rendered the bar in a
+     screenshot; the structural tests all passed, since the markup was right
+     and only the resolved value was wrong.
+
+   Every one of them is the same mistake: a custom property only inherits
+   DOWN the tree, and each of these roots is a SIBLING of `.ph-ink`, not a
+   child. A test that only asserts a stroke has non-zero alpha, or that a
+   swatch exists, cannot catch any of them; assert the COLOUR.
 */
 .ph-ink,
 .ph-ink-water,
+.ph-ink-water--wet,
+.ph-ink-selbar,
 .ph-rv-inkbar {
   --c-ink-ink: oklch(0.25 0.03 259);
   --c-ink-red: oklch(0.5 0.16 25);
@@ -97,6 +109,23 @@
   mix-blend-mode: multiply;
 }
 
+/*
+   The wash being drawn RIGHT NOW. Same class, same blend, same place in the
+   stack — the live stroke and the committed one have to be the same thing to
+   look at, and the only way to guarantee that is for them to share every
+   property that decides how they look.
+
+   Its own canvas rather than a flag on the shared wet canvas, because
+   `mix-blend-mode` belongs to an element and not to a draw call: with the
+   preview on the (unblended, above-the-ink) wet layer, a wash covered the
+   glyphs while the pen was down and only dropped behind them when the pen
+   lifted and the commit moved it here. "水彩笔画的时候先盖住字，然后再作为色底
+   于字后，这不对，应该直接作为色底."
+*/
+.ph-ink-water--wet {
+  z-index: 3;
+}
+
 .ph-ink--live {
   pointer-events: auto;
   /* The browser's own touch handling is replaced here: touch pointers are
@@ -114,24 +143,66 @@
 
 /* ------------------------------------------------ the lasso selection bar */
 /*
-   A floating toolbar for the caught strokes, anchored near where the lasso
-   ended. Sits above the wet canvas (z 4) so it stays clickable while the
-   tool is on — the same relationship HighlightLayer's popup has with the
-   text layer. Palette shared with `.ph-ink` above, and the swatch colours
-   are the same tokens the strokes themselves resolve, so what you pick is
-   what you get.
+   The command bar over a lasso selection — 剪切 / 复制 / 粘贴 / 删除 /
+   更改风格, the row from the reference.
+
+   Centred over the selection's own frame and floated ABOVE it (flipping below
+   when a selection sits near the top of the page), not anchored wherever the
+   lasso loop happened to stop: that point is arbitrary, and it very often
+   landed the toolbar right on top of the marks its buttons act on.
+
+   Sits above the wet canvas (z 4) so it stays clickable while the tool is on —
+   the same relationship HighlightLayer's popup has with the text layer.
+   Palette shared with `.ph-ink` above, and the swatch colours are the same
+   tokens the strokes themselves resolve, so what you pick is what you get.
 */
 .ph-ink-selbar {
   position: absolute;
   z-index: 6;
+  /* The anchor is the frame's horizontal centre; the bar hangs from it. */
+  transform: translate(-50%, -100%);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 8px;
+  justify-content: center;
+  gap: 2px;
+  max-width: 340px;
+  padding: 3px 4px;
+  border-radius: 10px;
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
+}
+
+/* Flipped under the selection: hangs DOWN from the anchor instead of up. */
+.ph-ink-selbar.is-below {
+  transform: translate(-50%, 0);
+}
+
+/* One command. Text, not an icon: these are the seven words in the reference,
+   and "剪切" is unambiguous in a way that any glyph for it is not. */
+.ph-ink-sel-cmd {
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-tx, #1e222a);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ph-ink-sel-cmd:hover:not(:disabled) {
+  background: var(--c-hv, #f1f2f4);
+}
+.ph-ink-sel-cmd:disabled {
+  color: var(--c-tx3, #8b93a1);
+  cursor: default;
+}
+.ph-ink-sel-cmd.is-on {
+  background: var(--c-acs, #eef);
+  color: var(--c-ac, #5b53d6);
 }
 
 .ph-ink-sel-n {
@@ -141,6 +212,22 @@
   font-size: 10.5px;
   font-weight: 600;
   text-align: center;
+}
+
+/* 更改风格's tray. A second row on the same bar rather than a popover of its
+   own: one floating thing over the page at a time is already plenty. */
+.ph-ink-sel-style {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px 1px;
+  border-top: 1px solid var(--c-bd, #e6e8ec);
+}
+
+.ph-ink-sel-width {
+  flex: 1;
+  min-width: 80px;
 }
 
 .ph-ink-sel-color {
