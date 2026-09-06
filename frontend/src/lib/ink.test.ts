@@ -5,6 +5,9 @@ import {
   WATER_COLORS,
   distToSegment,
   isWaterColor,
+  outlineArea,
+  paintInk,
+  pathLength,
   pointInPolygon,
   pointToCss,
   pointToPdf,
@@ -16,6 +19,7 @@ import {
   strokeBounds,
   strokeCaughtBy,
   strokeNear,
+  strokeOutline,
   strokeSegments,
   translatePoints,
   unionBounds,
@@ -388,5 +392,161 @@ describe("rankInkColors (the quick-bar ranking)", () => {
     const usage = { red: { count: 5, last: NOW }, amber: { count: 5, last: NOW } };
     const ranked = rankInkColors(INK_COLORS, usage, NOW);
     expect(new Set(ranked).size).toBe(ranked.length);
+  });
+});
+
+/* ---------------------------------------------------------------- dots */
+/*
+   "画点的时候容易识别不出来" — a dot drawn with the pen very often did not
+   appear. Not a capture bug: the tap WAS recorded and stored. It was a
+   rendering bug, and a precisely measurable one.
+
+   `perfect-freehand`'s start/end tapers are lengths along the stroke. A dot
+   is a stroke of length ~0, the round-3 tapers were 2 and 4 points, and so
+   the whole mark was tapered away — leaving a polygon with three vertices
+   and an area of exactly zero. Three vertices sails past a `length >= 3`
+   guard, so the renderer dutifully filled nothing at all.
+
+   The two fixes are tested separately below because they fail separately:
+   the tapers are now capped against the stroke's own length, and the
+   fallback to a dab triggers on AREA rather than on vertex count.
+*/
+
+/** A minimal 2d context recorder — enough to see which primitive was used
+ *  and how big it was. jsdom has no canvas, and this needs no pixels.
+ *  Counters live on an object, not as destructured numbers: a number is
+ *  copied out and would report whatever it was before the call under test. */
+function recordingCtx(): {
+  ctx: CanvasRenderingContext2D;
+  arcs: { x: number; y: number; r: number }[];
+  n: { fills: number; lineTos: number };
+} {
+  const arcs: { x: number; y: number; r: number }[] = [];
+  const n = { fills: 0, lineTos: 0 };
+  const ctx = {
+    fillStyle: "",
+    beginPath: () => undefined,
+    closePath: () => undefined,
+    moveTo: () => undefined,
+    lineTo: () => {
+      n.lineTos++;
+    },
+    arc: (x: number, y: number, r: number) => {
+      arcs.push({ x, y, r });
+    },
+    fill: () => {
+      n.fills++;
+    },
+  } as unknown as CanvasRenderingContext2D;
+  return { ctx, arcs, n };
+}
+
+describe("pathLength", () => {
+  it("is zero for a single sample", () => {
+    expect(pathLength([{ x: 5, y: 5, p: 0.5 }])).toBe(0);
+  });
+
+  it("sums the polyline, not the straight-line distance end to end", () => {
+    const l = pathLength([
+      { x: 0, y: 0, p: 0.5 },
+      { x: 3, y: 0, p: 0.5 },
+      { x: 3, y: 4, p: 0.5 },
+    ]);
+    expect(l).toBeCloseTo(7); // 3 + 4, not the 5 of the hypotenuse
+  });
+});
+
+describe("outlineArea", () => {
+  it("is zero for a degenerate outline, whatever its vertex count", () => {
+    // The exact shape a tap produced: three vertices, no area. This is the
+    // value the old `length >= 3` guard could not see.
+    expect(outlineArea([[0, 0], [1, 1], [2, 2]])).toBeCloseTo(0);
+  });
+
+  it("measures a real polygon regardless of winding direction", () => {
+    const square: [number, number][] = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    const reversed = [...square].reverse();
+    expect(outlineArea(square)).toBeCloseTo(100);
+    // The canvas transform flips y, which reverses winding; a fill does not
+    // care, so neither does this.
+    expect(outlineArea(reversed)).toBeCloseTo(100);
+  });
+});
+
+describe("strokeOutline taper capping", () => {
+  it("leaves a tap with a real, fillable outline", () => {
+    // Before: 3 vertices, area 0.000. The taper could consume the whole
+    // stroke because nothing bounded it by the stroke's own length.
+    const outline = strokeOutline([{ x: 100, y: 100, p: 0.5 }], 2);
+    expect(outlineArea(outline)).toBeGreaterThan(0);
+  });
+
+  it("still tapers a long stroke — the ends are what make it read as ink", () => {
+    const long = Array.from({ length: 20 }, (_, i) => ({ x: 100 + i * 3, y: 100, p: 0.5 }));
+    const outline = strokeOutline(long, 2);
+    // A 57pt run at width 2 would be ~114 if it were a plain bar; the tapers
+    // take a visible bite out of it without erasing it.
+    const area = outlineArea(outline);
+    expect(area).toBeGreaterThan(100);
+    expect(area).toBeLessThan(200);
+  });
+});
+
+describe("paintInk (the one place a stroke's appearance is decided)", () => {
+  it("draws a tap as a dab of the nib's own width", () => {
+    const { ctx, arcs, n } = recordingCtx();
+    paintInk(ctx, [{ x: 30, y: 40, p: 0.5 }], 2, "#000");
+    expect(n.fills).toBe(1);
+    expect(arcs).toHaveLength(1);
+    expect(arcs[0]!.x).toBeCloseTo(30);
+    expect(arcs[0]!.y).toBeCloseTo(40);
+    // sampleWidth(2, 0.5) / 2 = 1. NOT perfect-freehand's own single-point
+    // circle, which measures radius 2.5 for the same 2pt nib — a dot has to
+    // be exactly as wide as the line the same pen draws.
+    expect(arcs[0]!.r).toBeCloseTo(1);
+  });
+
+  it("draws a wash dab at the wash's own width", () => {
+    const { ctx, arcs } = recordingCtx();
+    paintInk(ctx, [{ x: 0, y: 0, p: 0.5 }], 14, "#fc0");
+    expect(arcs[0]!.r).toBeCloseTo(7);
+  });
+
+  it("centres the dab on a jittered tap rather than on its first sample", () => {
+    const { ctx, arcs } = recordingCtx();
+    paintInk(
+      ctx,
+      [
+        { x: 10, y: 10, p: 0.5 },
+        { x: 10.4, y: 10.2, p: 0.5 },
+        { x: 10.6, y: 10.1, p: 0.5 },
+      ],
+      2,
+      "#000",
+    );
+    expect(arcs).toHaveLength(1);
+    expect(arcs[0]!.x).toBeCloseTo(10.3);
+  });
+
+  it("draws a real stroke as an outline, not a dab", () => {
+    const { ctx, arcs, n } = recordingCtx();
+    const long = Array.from({ length: 20 }, (_, i) => ({ x: 100 + i * 3, y: 100, p: 0.5 }));
+    paintInk(ctx, long, 2, "#000");
+    expect(arcs).toHaveLength(0);
+    expect(n.lineTos).toBeGreaterThan(10);
+  });
+
+  it("draws nothing at all for no samples", () => {
+    const { ctx, n } = recordingCtx();
+    paintInk(ctx, [], 2, "#000");
+    expect(n.fills).toBe(0);
+  });
+
+  it("honours pressure in the dab's size", () => {
+    const light = recordingCtx();
+    const heavy = recordingCtx();
+    paintInk(light.ctx, [{ x: 0, y: 0, p: 0.1 }], 4, "#000");
+    paintInk(heavy.ctx, [{ x: 0, y: 0, p: 1 }], 4, "#000");
+    expect(heavy.arcs[0]!.r).toBeGreaterThan(light.arcs[0]!.r);
   });
 });

@@ -15,6 +15,7 @@ selection does for ink.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 
@@ -33,14 +34,24 @@ from pharos.services.annotate import (
 )
 
 __all__ = [
+    "MAX_PATH_POINTS",
     "MAX_SIZE",
     "MIN_SIZE",
     "TapeSpec",
     "create_tape",
     "delete_tape",
+    "dump_path",
     "list_tapes",
+    "load_path",
     "update_tape",
 ]
+
+#: Samples in a freehand strip's path. A cover laid over a line or two of text
+#: is tens of points; the ceiling is here for the same reason ink has one —
+#: so a hostile client cannot post a megabyte per strip and make every page
+#: load carry it. Lower than ink's, because tape is a broad cover rather than
+#: handwriting and has no fine detail to lose.
+MAX_PATH_POINTS = 600
 
 #: A tape strip's own width/height bounds, in PDF points at scale 1. The floor
 #: keeps a mis-tap from minting an invisible sliver; the ceiling is a shade
@@ -107,6 +118,55 @@ def _clean_revealed(value: object) -> bool:
     return value
 
 
+def clean_path(value: object) -> list[tuple[float, float]]:
+    """Validate a freehand strip's path, the way ``ink.clean_points`` does.
+
+    Rejects the whole path on the first bad sample rather than truncating: a
+    strip is one visual object, and half a cover is not a cover. Two points is
+    the floor — one point is a dot, which the straight-strip fields already
+    describe better.
+    """
+    if not isinstance(value, list):
+        raise Invalid("points must be a list")
+    if len(value) < 2:
+        raise Invalid("a freehand strip needs at least two points")
+    if len(value) > MAX_PATH_POINTS:
+        raise Invalid(f"a strip may have at most {MAX_PATH_POINTS} points")
+    out: list[tuple[float, float]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise Invalid("each point must be an object with x and y")
+        unknown = set(item) - {"x", "y"}
+        if unknown:
+            raise Invalid(f"unexpected point keys: {sorted(unknown)}")
+        if {"x", "y"} - set(item):
+            raise Invalid("point is missing x or y")
+        out.append((_clean_coord(item["x"], "point.x"), _clean_coord(item["y"], "point.y")))
+    return out
+
+
+def dump_path(path: list[tuple[float, float]]) -> str:
+    """Serialise a validated path. ``allow_nan=False`` is belt and braces over
+    ``clean_path``: one ``NaN`` token would make ``JSON.parse`` throw in the
+    browser and cost the reader every strip on the page, not just this one."""
+    return json.dumps(
+        [{"x": x, "y": y} for x, y in path], separators=(",", ":"), allow_nan=False
+    )
+
+
+def load_path(raw: str | None) -> list[tuple[float, float]] | None:
+    """Read a stored path back, tolerating a row we did not write. ``None``
+    means "straight strip" — both for a NULL column and for an unreadable one,
+    since a strip that still has its bounding box is better shown straight
+    than not shown at all."""
+    if not raw:
+        return None
+    try:
+        return clean_path(json.loads(raw))
+    except (TypeError, ValueError, Invalid):
+        return None
+
+
 def _require_tape(session: Session, tape_id: str, *, user_id: str) -> TapeMark:
     if not user_id:
         raise ValueError("user_id is required: every tape query must be owner-scoped")
@@ -138,8 +198,15 @@ def create_tape(
     h: object,
     angle: object = None,
     revealed: object = None,
+    points: object = None,
 ) -> TapeMark:
-    """Place one tape strip — covered by default, exactly a fresh piece of tape."""
+    """Place one tape strip — covered by default, exactly a fresh piece of tape.
+
+    ``points`` present means a freehand strip that follows the pen's own path;
+    absent (or None) means a straight run described by ``(x, y, w, h, angle)``.
+    Either way those five carry the bounding box, so nothing downstream has to
+    know which kind it got before it can place a popover or hit-test a tap.
+    """
     paper = _require_paper(session, paper_id, user_id=user_id)
     tape = TapeMark(
         user_id=user_id,
@@ -152,6 +219,7 @@ def create_tape(
         h=_clean_size(h, "h"),
         angle=_clean_angle(angle),
         revealed=_clean_revealed(revealed),
+        points=None if points is None else dump_path(clean_path(points)),
     )
     session.add(tape)
     session.flush()
@@ -169,6 +237,7 @@ def update_tape(
     h: object = ...,
     angle: object = ...,
     revealed: object = ...,
+    points: object = ...,
 ) -> TapeMark:
     """Change any subset of a tape mark's fields — a resize, a straighten, or a
     reveal/cover tap are all just "some of these fields changed", not three
@@ -191,6 +260,12 @@ def update_tape(
         tape.angle = _clean_angle(angle)
     if revealed is not ...:
         tape.revealed = _clean_revealed(revealed)
+    if points is not ...:
+        # `None` clears the path — a freehand strip straightened back into a
+        # plain run — while a list replaces it. A lasso transform rewrites the
+        # path because a moved/scaled/rotated strip is not the same curve in
+        # page space any more.
+        tape.points = None if points is None else dump_path(clean_path(points))
     tape.updated_at = _now()
     session.flush()
     return tape

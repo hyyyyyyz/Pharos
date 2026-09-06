@@ -5,21 +5,68 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Above ink (3/4) and the highlight toolbar (4) — tape covers either. Below
-     its own popover, which needs z-index higher still to stay clickable. */
-  z-index: 5;
   pointer-events: none;
+
+  /* DELIBERATELY no `z-index` here, and this is load-bearing.
+     `position: absolute` plus a z-index makes an element a STACKING CONTEXT,
+     and a stacking context ISOLATES its children's `mix-blend-mode`: a
+     revealed strip inside one can only blend with its own (empty, transparent)
+     wrapper, never with the PDF page underneath. The wash appeared, and the
+     text stayed hidden — a colour底 with nothing behind it.
+     So the layering moved down onto the individual strips, which are then in
+     the same stacking context as the page canvas and can blend against it.
+     `.ph-ink-water` has always worked for exactly this reason: it carries its
+     own blend as a direct child of a `.ph-pc-page` that is `position:
+     relative` with NO z-index, and is therefore not a stacking context. */
+
+  /* ------------------------------------------------------------ palette */
+  /* Fixed across themes, for the same reason ink's is (see InkLayer.css): a
+     PDF page is white paper in light and dark alike. Declared here, on the
+     wrap, because every consumer is a DOM child of it and inherits — unlike
+     ink's canvases, which are siblings and each had to be named. */
+
+  /* Covered: real tape, opaque enough to hide what is under it. */
+  --c-tape: #e8dcb8;
+  /* The hairline around a covered strip. Warm and faint — it says "edge of a
+     piece of tape", not "border of a box". */
+  --c-tape-edge: rgba(120, 100, 40, 0.28);
+  /* Revealed: the strip stops covering and becomes a colour底. Light enough
+     that glyphs read straight through it under `mix-blend-mode: multiply` —
+     the same lightness band the highlight washes live in. */
+  --c-tape-wash: oklch(0.93 0.05 88);
+  /* Selection. Deliberately a TINT, not the full accent: this frame sits on
+     top of the page you are reading. */
+  --c-tape-sel: rgba(91, 141, 239, 0.55);
 }
 
-/* Only "off" and "tape" ever let this layer own a touch — see the
-   component's own doc comment for why. */
 .ph-tape--live {
-  pointer-events: auto;
   touch-action: none;
+}
+
+/*
+   The drag surface for placing a NEW strip, present only while the 胶带 tool
+   is active.
+
+   Its own element rather than `pointer-events: auto` on the wrap, because the
+   wrap can no longer carry a z-index (see above) and without one it would sit
+   below pdf.js's text layer — so a drag that started over a line of text would
+   be swallowed by the glyphs instead of laying down tape. Events on it bubble
+   to the wrap, which is where the handlers live; a `pointer-events: none`
+   parent does not stop that.
+
+   First in DOM order, so every strip stays tappable on top of it.
+*/
+.ph-tape-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: auto;
 }
 
 .ph-tape-strip {
   position: absolute;
+  /* Above ink (3/4) and the highlight toolbar (4) — tape covers either. */
+  z-index: 5;
   pointer-events: auto;
   cursor: pointer;
   border-radius: 2px;
@@ -39,21 +86,40 @@
       transparent 7px
     ),
     var(--c-tape, #e8dcb8);
-  border: 1px solid rgba(120, 100, 40, 0.35);
+  border: 1px solid var(--c-tape-edge, rgba(120, 100, 40, 0.28));
   box-shadow: var(--sh-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
 }
 
-/* Revealed: whatever was under it is showing, so the strip itself becomes
-   just a thin dashed outline — present enough to tap again, not present
-   enough to compete with the content it is no longer hiding. */
+/*
+   Revealed: the strip stops covering and becomes a **colour底 behind the
+   text** — "而且作成色底，在字后".
+
+   `mix-blend-mode: multiply` over a light wash is what puts it behind the
+   glyphs: the same technique the highlight marks use, and the same one the
+   watercolour canvas uses. The strip is still on top in the stacking order —
+   it has to be, it is the thing you tap — but multiplying a light colour with
+   the page underneath leaves every dark glyph exactly as dark as it was, so
+   what you see is a tinted band with the text sitting on it.
+
+   Two rounds of "还是有黑框" came from here. First the strip kept a dashed
+   rule right across the text it had just uncovered. Then that was replaced
+   with nothing at all plus a grip — but `.is-selected` still stacked a solid
+   accent outline over the top, and a tap in 胶带 mode both reveals AND
+   selects, so the box came back the instant the text did. The rule now is
+   simply that nothing dark is ever drawn over uncovered text.
+*/
 .ph-tape-strip.is-revealed {
-  background: transparent;
-  border: 1.5px dashed rgba(120, 100, 40, 0.55);
+  background: var(--c-tape-wash, oklch(0.93 0.05 88));
+  mix-blend-mode: multiply;
+  border: none;
+  box-shadow: none;
 }
 
+/* Selection is a light hairline OUTSIDE the strip (`outline-offset`), never a
+   rule across it: this sits on the page you are reading. */
 .ph-tape-strip.is-selected {
-  outline: 2px solid var(--c-ac, #5b53d6);
-  outline-offset: 1px;
+  outline: 1.5px solid var(--c-tape-sel, rgba(91, 141, 239, 0.55));
+  outline-offset: 2px;
 }
 
 .ph-tape-strip.is-preview {
@@ -67,6 +133,77 @@
    itself (`.ph-tape`) is already `pointer-events: none` outside "tape" mode
    for the same reason on a bigger scale — see the component's own comment. */
 .ph-tape-strip.is-dormant {
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------ freehand strips */
+/*
+   A strip that followed the pen is a stroked path, not a box. One SVG holds
+   all of them (plus the live draft), laid out over the same page box as the
+   straight strips so both kinds share one coordinate space.
+*/
+.ph-tape-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/*
+   Revealed freehand strips live in a SECOND svg that carries the blend on
+   ITSELF, rather than on each path.
+
+   Same isolation problem as the wrap: this `<svg>` is positioned with a
+   z-index and is therefore a stacking context, so a `mix-blend-mode` on a
+   path INSIDE it would blend with the svg's own transparent canvas and
+   nothing else. Put the blend on the element whose parent does not isolate —
+   which is the svg — and split covered from revealed so the two kinds of
+   strip can have different compositing without special-casing either.
+*/
+.ph-tape-svg--wash {
+  mix-blend-mode: multiply;
+}
+
+.ph-tape-path {
+  fill: none;
+  stroke: var(--c-tape, #e8dcb8);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* The hit area follows the visible strip rather than its bounding box, so a
+     tap in the hollow of a curve reaches the page underneath. */
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Revealed: same as a straight strip — a light wash, multiplied over the page
+   by the `.ph-tape-svg--wash` element these paths live in, so the strip is
+   still visibly there and the glyphs read straight through it. */
+.ph-tape-path.is-revealed {
+  stroke: var(--c-tape-wash, oklch(0.93 0.05 88));
+}
+
+/* A path has no "outside" for an `outline` to sit on, so its selection cue is
+   a slightly fatter copy of itself drawn UNDERNEATH, in the same light tint
+   the boxes outline themselves with — the SVG equivalent of `outline-offset`.
+   Recolouring the strip itself would have been simpler and wrong: a covered
+   strip would stop covering the moment it was selected. */
+.ph-tape-halo {
+  fill: none;
+  stroke: var(--c-tape-sel, rgba(91, 141, 239, 0.55));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.ph-tape-path.is-preview {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.ph-tape-path.is-dormant {
   pointer-events: none;
 }
 

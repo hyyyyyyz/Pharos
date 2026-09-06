@@ -66,17 +66,71 @@ export function sampleWidth(baseWidth: number, pressure: number): number {
 
 /* ------------------------------------------------------------------ outline */
 
-/** Tuning of the outline generator. Values are perfect-freehand defaults-ish,
- *  chosen so pressure dominates the width and input jitter is absorbed. */
+/**
+ * Tuning of the outline generator — the "手感" of the pen.
+ *
+ * Each of these was moved off the round-1 defaults for a reason:
+ *
+ * - **`streamline` 0.45 → 0.32.** This is the input-lag knob: it pulls the
+ *   drawn point toward a lagging average, so a high value smooths a shaky
+ *   hand at the cost of the line trailing behind the nib. At 0.45 a fast
+ *   stroke visibly rubber-bands after the pen. 0.32 still absorbs digitiser
+ *   jitter while keeping the ink under the tip, which is most of what makes
+ *   writing feel direct rather than sluggish.
+ * - **`smoothing` 0.5 → 0.62.** Curve fitting between samples, which costs
+ *   nothing in latency (it is geometry, not history). Raising it is the way
+ *   to buy back the softness that lowering `streamline` gives up.
+ * - **`easing`.** Pressure now runs through a sine ease-out rather than
+ *   straight through. A real nib bites early and then compresses: most of the
+ *   width appears in the first half of the press, and leaning harder past
+ *   that changes little. Linear pressure feels sponge-like by comparison.
+ * - **`thinning` 0.6 → 0.55.** With the easing above, 0.6 over-swung into
+ *   very thin hairlines at a light touch.
+ * - **`start`/`end` taper.** A short taper at both ends is what makes a
+ *   stroke read as a pen mark rather than a rounded bar; the end taper only
+ *   applies to a finished stroke (`last: true`), so the live line never
+ *   appears to shrink away from the tip while it is still being drawn.
+ *
+ *   The tapers are lengths ALONG the stroke, and that is exactly how they
+ *   erased every short mark on the page ("画点的时候容易识别不出来"): a dot is
+ *   a stroke of length ~0, a 2 + 4 point taper consumes all of it, and
+ *   `getStroke` duly returns a three-vertex polygon of **area zero** — which
+ *   sails past a `length >= 3` guard and fills nothing at all. Measured at the
+ *   round-3 settings: a tap = 3 verts / 0.000 area, a 3pt flick = 0.060 where
+ *   its ink should be ~6. So the tapers are capped against the stroke's own
+ *   length below (`taperFor`), and the renderer falls back to a dot on area
+ *   rather than on vertex count — see `paintInk`.
+ */
 const OUTLINE_OPTIONS = {
   size: 2, // overridden per call
-  thinning: 0.6,
-  smoothing: 0.5,
-  streamline: 0.45,
-  easing: (t: number): number => t,
+  thinning: 0.55,
+  smoothing: 0.62,
+  streamline: 0.32,
+  easing: (t: number): number => Math.sin((t * Math.PI) / 2),
   simulatePressure: false, // real digitiser pressure only
   cap: true,
 };
+
+const START_TAPER = 2;
+const END_TAPER = 4;
+
+/** Total length of the sample polyline, in PDF points — what the tapers have
+ *  to be measured against to stay a *fraction* of the mark rather than all
+ *  of it. */
+export function pathLength(points: InkPoint[] | { x: number; y: number }[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
+  }
+  return total;
+}
+
+/** A taper that never eats more than `share` of the stroke it is tapering.
+ *  A long stroke gets the full nominal taper; a dot gets none, and so keeps
+ *  its round cap — which IS the dot. */
+function taperFor(nominal: number, length: number, share: number): number {
+  return Math.min(nominal, length * share);
+}
 
 /**
  * The filled outline of a stroke, in PDF space — `getStroke` over the samples.
@@ -91,10 +145,29 @@ export function strokeOutline(
   live = false,
 ): [number, number][] {
   if (points.length === 0) return [];
+  const length = pathLength(points);
   return getStroke(
     points.map((p) => [p.x, p.y, p.p]),
-    { ...OUTLINE_OPTIONS, size: width, last: !live },
+    {
+      ...OUTLINE_OPTIONS,
+      size: width,
+      last: !live,
+      start: { taper: taperFor(START_TAPER, length, 0.2), cap: true },
+      end: { taper: taperFor(END_TAPER, length, 0.3), cap: true },
+    },
   );
+}
+
+/** The area a filled outline actually covers (shoelace, sign discarded — the
+ *  y-flip in the canvas transform reverses winding and a fill does not care).
+ *  This, not the vertex count, is what says whether there is anything to see. */
+export function outlineArea(outline: [number, number][]): number {
+  if (outline.length < 3) return 0;
+  let twice = 0;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    twice += (outline[j]![0] + outline[i]![0]) * (outline[j]![1] - outline[i]![1]);
+  }
+  return Math.abs(twice / 2);
 }
 
 /** Fill one outline. The transform owns scale and the y-flip; winding order
@@ -102,7 +175,9 @@ export function strokeOutline(
 export function paintOutline(
   ctx: CanvasRenderingContext2D,
   outline: [number, number][],
-  color: string,
+  /** A resolved colour, or a gradient for the laser's 七彩 sweep — both are
+   *  valid `fillStyle` values, and the laser needs the second. */
+  color: string | CanvasGradient,
 ): void {
   if (outline.length < 3) return;
   ctx.fillStyle = color;
@@ -110,6 +185,57 @@ export function paintOutline(
   ctx.moveTo(outline[0]![0], outline[0]![1]);
   for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i]![0], outline[i]![1]);
   ctx.closePath();
+  ctx.fill();
+}
+
+/**
+ * Paint a set of samples as ink — the ONE place "what does this stroke look
+ * like" is decided, so the live preview under the pen and the committed
+ * stroke that replaces it a frame later cannot disagree.
+ *
+ * The dot fallback triggers on **area**, not on vertex count. That distinction
+ * is the whole of "画点的时候容易识别不出来": a tap's outline has three
+ * vertices and encloses nothing, so a `length >= 3` test declares it a real
+ * outline and fills a polygon of area zero. Anything that covers less ground
+ * than a plain dab of the same nib gets the dab instead.
+ *
+ * The dab is drawn here rather than left to `getStroke`'s own single-point
+ * circle, which is measurably the wrong size: asked for a 2pt nib it returns
+ * a disc of area 19.5 (radius 2.5, so 2× the nib), and for a 14pt wash a disc
+ * of radius 14. A dot must be exactly as wide as the line the same pen draws.
+ */
+export function paintInk(
+  ctx: CanvasRenderingContext2D,
+  points: InkPoint[],
+  width: number,
+  color: string | CanvasGradient,
+  live = false,
+): void {
+  if (points.length === 0) return;
+  // Below half a nib-width of travel there is no line to outline — this is a
+  // dab. (`streamline` also pulls samples that close together onto each other,
+  // so what comes back is degenerate whatever the tapers do.)
+  if (pathLength(points) >= width * 0.5) {
+    const outline = strokeOutline(points, width, live);
+    // A dab of this nib covers ~π(w/2)²; a quarter of that is the point below
+    // which drawing the outline is strictly worse than drawing the dab.
+    if (outlineArea(outline) >= width * width * 0.25) {
+      paintOutline(ctx, outline, color);
+      return;
+    }
+  }
+  const b = strokeBounds(points);
+  let pressure = 0;
+  for (const p of points) pressure += p.p;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(
+    (b.x0 + b.x1) / 2,
+    (b.y0 + b.y1) / 2,
+    Math.max(0.3, sampleWidth(width, pressure / points.length) / 2),
+    0,
+    Math.PI * 2,
+  );
   ctx.fill();
 }
 
@@ -122,19 +248,7 @@ export function paintStroke(
   stroke: Pick<InkStrokeRow, "points" | "width" | "color">,
   colorResolve: (token: string) => string,
 ): void {
-  if (stroke.points.length === 0) return;
-  const color = colorResolve(stroke.color);
-  const outline = strokeOutline(stroke.points, stroke.width);
-  if (outline.length >= 3) {
-    paintOutline(ctx, outline, color);
-    return;
-  }
-  // Degenerate outline (a tap, or samples too close): a dot.
-  const p = stroke.points[0]!;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, Math.max(0.3, stroke.width / 2), 0, Math.PI * 2);
-  ctx.fill();
+  paintInk(ctx, stroke.points, stroke.width, colorResolve(stroke.color));
 }
 
 /* --------------------------------------------------------------- eraser hit */

@@ -41,5 +41,176 @@ export function tapeFromDrag(
   const dy = by - ay;
   const w = Math.max(MIN_DRAG_LENGTH, Math.hypot(dx, dy));
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  return { x: (ax + bx) / 2, y: (ay + by) / 2, w, h: thickness, angle };
+  // Clamped into the server's own [MIN_SIZE, MAX_SIZE] rather than sent as
+  // measured. A drag qualifies as a drag after 4 CSS pixels, which at a
+  // typical zoom is under 3 PDF points — below `MIN_TAPE_SIZE`, so the POST
+  // came back 422 and the strip the reader had just watched appear vanished
+  // with no explanation. The same goes for a thickness measured off a small
+  // text line at high zoom.
+  return {
+    x: (ax + bx) / 2,
+    y: (ay + by) / 2,
+    w: clampTapeSize(w),
+    h: clampTapeSize(thickness),
+    angle,
+  };
+}
+
+/**
+ * The row descriptor for a FREEHAND strip — one that follows the pen's own
+ * path rather than running straight ("可以直，也可以跟画笔画出来的一样不直").
+ *
+ * The fields mean the SAME things they mean for a straight strip, which is
+ * the whole point and is what the first version got wrong:
+ *
+ * - `w` is **how much tape was laid down** — the path's own length, exactly
+ *   as a straight strip's `w` is the drag's distance;
+ * - `h` is the strip's **thickness**, exactly as it is for a straight strip;
+ * - `(x, y)` is the path's bounding-box centre;
+ * - `angle` is 0 by definition — a path carries its own direction, and
+ *   rotating a box under it would say something different from what is drawn.
+ *
+ * The previous version put the path's bounding-box HEIGHT in `h`, which every
+ * consumer then read as the thickness it is documented to be. `TapePaths`
+ * strokes at `t.h * scale`, so a squiggle 100pt tall came out as a 100pt-wide
+ * bar instead of a 14pt ribbon — "随意涂功能有问题，不对". Nothing needs a
+ * bounding box out of the row anyway: a freehand strip's geometry IS its path,
+ * and `tapeOutline` hands that straight to the hit tests.
+ */
+export function tapeFromPath(
+  path: { x: number; y: number }[],
+  thickness: number,
+): TapeRect {
+  if (path.length === 0) {
+    return { x: 0, y: 0, w: MIN_DRAG_LENGTH, h: clampTapeSize(thickness), angle: 0 };
+  }
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  let length = 0;
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i]!;
+    if (p.x < x0) x0 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.x > x1) x1 = p.x;
+    if (p.y > y1) y1 = p.y;
+    if (i > 0) length += Math.hypot(p.x - path[i - 1]!.x, p.y - path[i - 1]!.y);
+  }
+  return {
+    x: (x0 + x1) / 2,
+    y: (y0 + y1) / 2,
+    // Clamped here rather than left for the server to refuse: a long squiggle
+    // really can run past MAX_SIZE, and the strip is drawn from its path, so
+    // a clamped `w` costs nothing but a rejected POST costs the whole strip.
+    w: clampTapeSize(Math.max(MIN_DRAG_LENGTH, length)),
+    h: clampTapeSize(thickness),
+    angle: 0,
+  };
+}
+
+/* ------------------------------------------------------ lasso transforms */
+/*
+   A tape strip caught by the lasso is transformed by the same drag as the
+   strokes around it ("所有对象可以跟框选一样，可以被调大小、旋转"). The maths
+   lives here rather than in the layer so the preview and the commit cannot
+   disagree about where the strip ends up — the same class of split that made
+   a moved stroke's marching ants sit in the old place.
+*/
+
+/** Move a strip by (dx, dy). A freehand path moves with it. */
+export function translateTape<T extends TapeRect & { points?: { x: number; y: number }[] | null }>(
+  t: T,
+  dx: number,
+  dy: number,
+): TapeRect & { points?: { x: number; y: number }[] | null } {
+  return {
+    x: t.x + dx,
+    y: t.y + dy,
+    w: t.w,
+    h: t.h,
+    angle: t.angle,
+    ...(t.points ? { points: t.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : {}),
+  };
+}
+
+/** Scale a strip about a pivot — its centre moves, and so do its own size and
+ *  path. Thickness scales too, or a strip resized to twice the length would
+ *  come out looking like a different, thinner piece of tape. */
+export function scaleTape<T extends TapeRect & { points?: { x: number; y: number }[] | null }>(
+  t: T,
+  cx: number,
+  cy: number,
+  factor: number,
+): TapeRect & { points?: { x: number; y: number }[] | null } {
+  const f = Math.max(0.05, factor);
+  return {
+    x: cx + (t.x - cx) * f,
+    y: cy + (t.y - cy) * f,
+    w: t.w * f,
+    h: t.h * f,
+    angle: t.angle,
+    ...(t.points
+      ? { points: t.points.map((p) => ({ x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f })) }
+      : {}),
+  };
+}
+
+/** Rotate a strip about a pivot. The centre swings around it and the strip's
+ *  own `angle` turns by the same amount, so a straight run stays straight and
+ *  points the new way; a freehand path has every sample swung too. */
+export function rotateTape<T extends TapeRect & { points?: { x: number; y: number }[] | null }>(
+  t: T,
+  cx: number,
+  cy: number,
+  radians: number,
+): TapeRect & { points?: { x: number; y: number }[] | null } {
+  const sin = Math.sin(radians);
+  const cos = Math.cos(radians);
+  const spin = (px: number, py: number): { x: number; y: number } => {
+    const dx = px - cx;
+    const dy = py - cy;
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+  };
+  const c = spin(t.x, t.y);
+  return {
+    x: c.x,
+    y: c.y,
+    w: t.w,
+    h: t.h,
+    // Degrees on the wire, radians in the gesture — the one place they meet.
+    angle: t.angle + (radians * 180) / Math.PI,
+    ...(t.points ? { points: t.points.map((p) => spin(p.x, p.y)) } : {}),
+  };
+}
+
+/** The outline the lasso hit-tests a strip against: its own path when it has
+ *  one, otherwise the four corners of its rotated box. */
+export function tapeOutline(t: TapeRect & { points?: { x: number; y: number }[] | null }): {
+  x: number;
+  y: number;
+}[] {
+  if (t.points && t.points.length >= 2) return t.points;
+  const rad = (t.angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const hw = t.w / 2;
+  const hh = t.h / 2;
+  return [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ].map(([lx, ly]) => ({ x: t.x + lx! * cos - ly! * sin, y: t.y + lx! * sin + ly! * cos }));
+}
+
+/** Mirrors `services/tape.MIN_SIZE`/`MAX_SIZE`: a strip resized by a lasso
+ *  drag must land inside the bounds the server will accept, or the PATCH is
+ *  refused and the preview the reader just watched turns out to be a lie. */
+export const MIN_TAPE_SIZE = 4;
+export const MAX_TAPE_SIZE = 2000;
+
+export function clampTapeSize(v: number): number {
+  if (!Number.isFinite(v)) return MIN_TAPE_SIZE;
+  return Math.min(MAX_TAPE_SIZE, Math.max(MIN_TAPE_SIZE, v));
 }

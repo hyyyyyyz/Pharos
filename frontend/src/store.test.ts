@@ -7,6 +7,7 @@ import {
   MIN_INK_WIDTH,
   capHistory,
   clampInkWidth,
+  remapOp,
   isAiOpen,
   isDetailOverlay,
   useUI,
@@ -78,6 +79,46 @@ describe("capHistory (bounded ink undo/redo)", () => {
     expect(capped.length).toBe(MAX_INK_HISTORY);
     expect(capped[0]).toBe(10);
     expect(capped[capped.length - 1]).toBe(MAX_INK_HISTORY + 9);
+  });
+});
+
+describe("remapOp (a recreated row's new id must reach the WHOLE history)", () => {
+  const oldRow = { id: "old", points: [], color: "ink", width: 2 } as never;
+  const newRow = { id: "new", points: [], color: "ink", width: 2 } as never;
+
+  it("repoints an add op at the recreated stroke", () => {
+    const out = remapOp({ kind: "add", stroke: oldRow }, "old", newRow);
+    expect(out).toEqual({ kind: "add", stroke: newRow });
+  });
+
+  it("repoints only the matching stroke inside a remove op", () => {
+    const other = { id: "other" } as never;
+    const out = remapOp({ kind: "remove", strokes: [oldRow, other] }, "old", newRow);
+    expect(out).toEqual({ kind: "remove", strokes: [newRow, other] });
+  });
+
+  it("repoints both sides of an edit op", () => {
+    const out = remapOp({ kind: "edit", removed: [oldRow], added: [oldRow] }, "old", newRow);
+    expect(out).toEqual({ kind: "edit", removed: [newRow], added: [newRow] });
+  });
+
+  it("repoints a tape placement — the case that duplicated a strip", () => {
+    const out = remapOp({ kind: "tape-add", tape: oldRow }, "old", newRow);
+    expect(out).toEqual({ kind: "tape-add", tape: newRow });
+  });
+
+  it("repoints a tape edit's bare id", () => {
+    const out = remapOp(
+      { kind: "tape-edit", id: "old", before: { w: 1 }, after: { w: 2 } },
+      "old",
+      newRow,
+    );
+    expect(out).toEqual({ kind: "tape-edit", id: "new", before: { w: 1 }, after: { w: 2 } });
+  });
+
+  it("leaves an op that never mentioned the old id untouched", () => {
+    const op = { kind: "add", stroke: { id: "other" } } as never;
+    expect(remapOp(op, "old", newRow)).toBe(op);
   });
 });
 

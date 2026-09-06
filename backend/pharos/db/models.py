@@ -518,6 +518,14 @@ class TapeMark(Base):
     h: Mapped[float] = mapped_column(Float)
     angle: Mapped[float] = mapped_column(Float, default=0.0)
     revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: A freehand strip's own path: JSON array of {x, y} in PDF points, laid
+    #: down the way the pen actually moved. NULL means the strip is a straight
+    #: run and ``(x, y, w, h, angle)`` above describes it completely — tape can
+    #: be either ("可以直，也可以跟画笔画出来的一样不直"), and a straight strip
+    #: has no reason to carry a path. When a path IS present those five numbers
+    #: still hold its bounding box, so hit-testing and the popover's anchor do
+    #: not have to special-case which kind of strip they are looking at.
+    points: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 

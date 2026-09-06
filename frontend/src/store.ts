@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { resolveTheme } from "./design/tokens";
 import type { AccentKey, ThemeMode, ThemePref } from "./design/tokens";
-import type { AuthUser, InkStrokeRow, ZoteroOAuthResult } from "./api/types";
+import type { AuthUser, InkStrokeRow, TapeRow, ZoteroOAuthResult } from "./api/types";
 import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
 
@@ -40,7 +40,40 @@ export type InkMode = "off" | "draw" | "water" | "laser" | "style" | "erase" | "
 export type InkOp =
   | { kind: "add"; stroke: InkStrokeRow }
   | { kind: "remove"; strokes: InkStrokeRow[] }
-  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] };
+  | { kind: "edit"; removed: InkStrokeRow[]; added: InkStrokeRow[] }
+  /* 胶带 shares the reader's ONE undo stack rather than keeping its own:
+     "撤回操作应包括…胶带粘贴", and a reader who has just laid down a strip and
+     hits undo means that strip, whatever kind of mark it happened to be.
+     Same id protocol as the stroke ops — a row recreated by an undo carries a
+     fresh id, so the op that crosses to the other stack is rewritten with
+     what the network returned. */
+  | { kind: "tape-add"; tape: TapeRow }
+  | { kind: "tape-remove"; tape: TapeRow }
+  | { kind: "tape-edit"; id: string; before: TapePatch; after: TapePatch }
+  /* One gesture, one undo. A lasso drag over a mixed selection changes
+     strokes AND strips, and pushing those as separate entries meant undoing
+     "that drag" took several presses, with the page half-restored in between.
+     A batch is applied in order and undone in reverse, like any transaction. */
+  | { kind: "batch"; ops: InkOp[] };
+
+/**
+ * The fields a 胶带 edit can change — everything a resize, a straighten, or a
+ * lasso move/scale/rotate touches. A freehand strip's `points` are in here
+ * too: rotating one rewrites its path, and an undo that restored only the box
+ * would leave the strip drawn along the OLD curve in a new place.
+ *
+ * Deliberately NOT `revealed`: covering and uncovering is its own undo (tap
+ * it again), and filling a capped history with reveal toggles would push real
+ * edits out of it.
+ */
+export interface TapePatch {
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  angle?: number;
+  points?: { x: number; y: number }[] | null;
+}
 
 /** Undo/redo ops carry full stroke payloads (points and all), so an
  *  all-day note-taking session cannot be let grow the stack forever — the
@@ -64,12 +97,118 @@ export function clampInkWidth(width: number): number {
  *  水彩笔 mode suggests, if the reader has not already picked one of their own. */
 export const DEFAULT_WATER_WIDTH = 14;
 
+/**
+ * What each drawing tool remembers between visits.
+ *
+ * One thickness control and one palette serve every tool ("粗细统一拉出来设定
+ * 大小，不要单独列开"), but the VALUE each tool wants is different: a pen
+ * writes thin, a watercolour wash has to be broad to be a wash at all, and
+ * their palettes do not even overlap (opaque inks vs light washes). Sharing a
+ * single `inkWidth`/`inkColor` across tools meant every switch either carried
+ * the wrong value over — a 2pt "wash", a wash colour on the pen that the
+ * water canvas then painted — or had to be papered over with a reset on each
+ * toolbar button, which is what round 2 did.
+ *
+ * So the live `inkColor`/`inkWidth` stay exactly as every consumer already
+ * reads them, and `setInkMode` swaps them out to and in from these slots.
+ * Nothing downstream had to learn about tools.
+ */
+export interface ToolPref {
+  color: string;
+  width: number;
+}
+
+export const DEFAULT_TOOL_PREFS: Record<string, ToolPref> = {
+  draw: { color: "ink", width: 2 },
+  water: { color: "wc-amber", width: DEFAULT_WATER_WIDTH },
+  // The style brush paints an existing stroke's colour/width onto it, so it
+  // starts from the pen's own habits rather than a third set.
+  style: { color: "ink", width: 2 },
+};
+
+/** Tools that carry a colour/width of their own. The eraser, lasso, laser and
+ *  tape do not — nothing they do is coloured by `inkColor`. */
+export function toolRemembers(mode: InkMode): boolean {
+  return mode === "draw" || mode === "water" || mode === "style";
+}
+
 export function capHistory<T>(ops: T[]): T[] {
   return ops.length > MAX_INK_HISTORY ? ops.slice(ops.length - MAX_INK_HISTORY) : ops;
 }
 
+/** Rewrite one op so any reference to `oldId` names the recreated row
+ *  instead. Exported for its own test — the shape is easy to get subtly
+ *  wrong, and the failure it prevents (a duplicated strip) only shows up
+ *  two undos later. */
+export function remapOp(op: InkOp, oldId: string, next: InkStrokeRow | TapeRow): InkOp {
+  const stroke = next as InkStrokeRow;
+  const tape = next as TapeRow;
+  switch (op.kind) {
+    case "add":
+      return op.stroke.id === oldId ? { ...op, stroke } : op;
+    case "remove":
+      return op.strokes.some((s) => s.id === oldId)
+        ? { ...op, strokes: op.strokes.map((s) => (s.id === oldId ? stroke : s)) }
+        : op;
+    case "edit": {
+      const hit =
+        op.removed.some((s) => s.id === oldId) || op.added.some((s) => s.id === oldId);
+      return hit
+        ? {
+            ...op,
+            removed: op.removed.map((s) => (s.id === oldId ? stroke : s)),
+            added: op.added.map((s) => (s.id === oldId ? stroke : s)),
+          }
+        : op;
+    }
+    case "tape-add":
+      return op.tape.id === oldId ? { ...op, tape } : op;
+    case "tape-remove":
+      return op.tape.id === oldId ? { ...op, tape } : op;
+    case "tape-edit":
+      return op.id === oldId ? { ...op, id: next.id } : op;
+    case "batch":
+      return { ...op, ops: op.ops.map((inner) => remapOp(inner, oldId, next)) };
+  }
+}
+
+/** Fold several ops from ONE gesture into a single history entry. A lone op
+ *  stays as it is — a batch of one would only make the stacks harder to read
+ *  in a debugger for no behavioural gain. */
+export function batchOps(ops: InkOp[]): InkOp[] {
+  if (ops.length <= 1) return ops;
+  return [{ kind: "batch", ops }];
+}
+
 /** How the eraser takes ink away. */
 export type EraseMode = "stroke" | "pixel";
+
+/**
+ * What a 剪切/复制 of a lasso selection holds, ready for 粘贴.
+ *
+ * Payloads rather than rows: pasting creates new rows on whatever page is
+ * under the reader now, so the ids, timestamps and page numbers of the source
+ * would all be wrong on the copy. Coordinates are the source's own PDF-space
+ * ones; the paste translates them (and clamps the result onto the target
+ * page), so a copy can be pasted onto a different page — or the same one —
+ * without the clipboard having to know where it will land.
+ */
+export interface InkClipboard {
+  strokes: {
+    points: { x: number; y: number; p: number }[];
+    color: string;
+    width: number;
+  }[];
+  tapes: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    angle: number;
+    points: { x: number; y: number }[] | null;
+    revealed: boolean;
+  }[];
+}
 
 export const RAIL_MIN_WIDTH = 144;
 export const RAIL_DEFAULT_WIDTH = 178;
@@ -152,6 +291,7 @@ function initialRailWidth(): number {
 }
 
 const INK_COLOR_USAGE_KEY = "ph-ink-color-usage-v1";
+const INK_SOUND_KEY = "ph-ink-sound";
 
 function initialInkColorUsage(): Record<string, InkColorUsage> {
   const raw = ls(INK_COLOR_USAGE_KEY);
@@ -263,6 +403,32 @@ interface UIState {
    *  until asked, so selection/pan/scroll behave exactly as before. */
   inkMode: InkMode;
   setInkMode: (m: InkMode) => void;
+  /** Per-tool colour/width memory — see `DEFAULT_TOOL_PREFS`. Read through
+   *  `inkColor`/`inkWidth`; this is only where the values a tool is not
+   *  currently using are parked. */
+  toolPrefs: Record<string, ToolPref>;
+  /**
+   * Which collapsible tray under the active tool's popover is open — 调色盘,
+   * 粗细, or neither. At most one at a time ("每次只启用一个，不然会重叠").
+   *
+   * In the store rather than in `ReadingView`'s own state because the thing
+   * that most needs to close it is the furthest from it: the moment a stroke
+   * starts, the tray should get out of the way ("开始书写后，折叠栏应该自动收
+   * 起来"), and that gesture is detected down in `InkLayer`/`TapeLayer`.
+   */
+  inkTray: "color" | "width" | null;
+  setInkTray: (tray: "color" | "width" | null) => void;
+  /**
+   * Ids currently being previewed by a lasso drag in `InkLayer`.
+   *
+   * `TapeLayer` hides these while the drag is in flight, because the moving
+   * copy is painted on the ink layer's wet canvas — without this the reader
+   * sees the strip twice, once where it was and once where it is going. The
+   * ink layer already does the same for strokes through a ref; tape needs it
+   * in the store because the two live in different components.
+   */
+  inkCarried: string[];
+  setInkCarried: (ids: string[]) => void;
   /** Token name from `INK_COLORS`; the backend stores names, never hexes. */
   inkColor: string;
   setInkColor: (c: string) => void;
@@ -277,6 +443,13 @@ interface UIState {
   /** Draw with a finger, not just a stylus. Off = palm rejection on touch. */
   inkFingerDraw: boolean;
   toggleInkFingerDraw: () => void;
+  /** 书写音效: a synthesised nib-on-paper texture that follows the pen's own
+   *  speed (`lib/penSound`). Off by default and persisted — a reader in a
+   *  library does not want a surprise noise out of a page, and a feature you
+   *  have to find in order to silence it is a worse default than one you have
+   *  to find in order to hear it. */
+  inkSound: boolean;
+  toggleInkSound: () => void;
   /** Eraser radius in CSS pixels — what the on-page preview circle shows. */
   inkEraserSize: number;
   setInkEraserSize: (s: number) => void;
@@ -292,6 +465,22 @@ interface UIState {
   inkOpsKey: string;
   /** Record finished operations; a key change discards the old document's stacks. */
   pushInkOps: (key: string, ops: InkOp[]) => void;
+  /**
+   * Point every op in BOTH stacks at a row that has just been recreated.
+   *
+   * Undo/redo re-creates rows through the API, and the row that comes back
+   * has a new id. The op being moved between stacks is rewritten with it
+   * (that much always worked), but any OTHER op still holding the old id is
+   * left naming a row the server has never heard of — and its delete then
+   * silently 404s while its redo happily creates a SECOND copy.
+   *
+   * Concretely: place a strip, delete it, undo (it comes back with a new id),
+   * undo again — the placement op still names the original id, so the strip
+   * does not go away, and redo duplicates it. Same shape applies to strokes
+   * recreated by an eraser undo. So the rename is applied across the whole
+   * history, not just to the op in flight.
+   */
+  remapInkRow: (oldId: string, next: InkStrokeRow | TapeRow) => void;
   /** Drop the stacks on document switch or when the cache is invalidated away. */
   resetInkOps: () => void;
 
@@ -300,6 +489,50 @@ interface UIState {
    *  only ever affects strips placed while it is on. */
   tapeAutoThickness: boolean;
   toggleTapeAutoThickness: () => void;
+  /** 胶带: lay a NEW strip along the pen's own path instead of running it
+   *  straight from where the drag started to where it ended. Straight is the
+   *  default because covering a line of text is the common case, but a strip
+   *  that curves with the hand is what an actual piece of tape does, so it is
+   *  a choice rather than an assumption. Per-strip once placed — this only
+   *  decides what the NEXT one is. */
+  tapeFreehand: boolean;
+  toggleTapeFreehand: () => void;
+
+  /**
+   * What 剪切/复制 put aside, ready for 粘贴.
+   *
+   * In the store, not in a component: the lasso's toolbar unmounts the moment
+   * the selection clears — which is exactly what 剪切 does — so anything held
+   * in its own state would be gone before there was anything to paste it
+   * into. Held as payloads (points, colours, paths), never as ids: a paste
+   * makes NEW rows, and may well make them on a different page from the one
+   * the copy came off.
+   *
+   * Coordinates are relative to the copied selection's own top-left corner,
+   * so a paste can be placed anywhere without having to remember where it was
+   * cut from.
+   */
+  inkClipboard: InkClipboard | null;
+  setInkClipboard: (c: InkClipboard | null) => void;
+
+  /**
+   * Show what the stylus is actually reporting, live, on the page.
+   *
+   * A debugging affordance in shipped UI, and deliberately so: the S Pen's
+   * button has now failed twice on a device none of this code can be run
+   * against, and every fix has been a guess at what Android hands the WebView.
+   * `pointerType`, `button`, `buttons` and `pressure` on screen turn a third
+   * guess into a reading. Off by default and tucked into the eraser's own
+   * popover, where someone looking for "why doesn't my pen erase" will be.
+   */
+  inkPenDebug: boolean;
+  toggleInkPenDebug: () => void;
+  /** The last stylus event, formatted for that readout. Written by `InkLayer`
+   *  (which sees the events) and rendered by `ReadingView` (which has the
+   *  toolbar) — and only while `inkPenDebug` is on, so the write rate is a
+   *  non-issue the rest of the time. */
+  inkPenProbe: string | null;
+  setInkPenProbe: (probe: string | null) => void;
 
   /* ------------------------------------------------------------ settings */
   settingsOpen: boolean;
@@ -472,9 +705,27 @@ export const useUI = create<UIState>((set) => ({
   pointerCoarse: hasCoarsePointer(),
 
   inkMode: "off",
+  toolPrefs: { ...DEFAULT_TOOL_PREFS },
+  inkTray: null,
+  setInkTray: (inkTray) => set({ inkTray }),
+  inkCarried: [],
+  setInkCarried: (inkCarried) => set({ inkCarried }),
   // The pen is the point of the feature, but a mouse should also be able to
   // draw when the tool is on — defaulting to erase would be a trap.
-  setInkMode: (inkMode) => set({ inkMode }),
+  //
+  // Switching tools parks the outgoing tool's colour/width and loads the
+  // incoming one's, so a pen stays thin and a wash stays broad without either
+  // toolbar button having to "fix up" the other's leftovers.
+  setInkMode: (inkMode) =>
+    set((s) => {
+      if (inkMode === s.inkMode) return { inkMode };
+      const toolPrefs = toolRemembers(s.inkMode)
+        ? { ...s.toolPrefs, [s.inkMode]: { color: s.inkColor, width: s.inkWidth } }
+        : s.toolPrefs;
+      if (!toolRemembers(inkMode)) return { inkMode, toolPrefs };
+      const next = toolPrefs[inkMode] ?? DEFAULT_TOOL_PREFS[inkMode]!;
+      return { inkMode, toolPrefs, inkColor: next.color, inkWidth: next.width };
+    }),
   inkColor: "ink",
   // Picking a colour IS the usage signal the quick-bar ranking runs on — no
   // separate "log this" call for every caller to remember to make.
@@ -493,6 +744,13 @@ export const useUI = create<UIState>((set) => ({
   setInkWidth: (inkWidth) => set({ inkWidth: clampInkWidth(inkWidth) }),
   inkFingerDraw: false,
   toggleInkFingerDraw: () => set((s) => ({ inkFingerDraw: !s.inkFingerDraw })),
+  inkSound: ls(INK_SOUND_KEY) === "1",
+  toggleInkSound: () =>
+    set((s) => {
+      const inkSound = !s.inkSound;
+      save(INK_SOUND_KEY, inkSound ? "1" : "0");
+      return { inkSound };
+    }),
   inkEraserSize: 16,
   setInkEraserSize: (inkEraserSize) => set({ inkEraserSize }),
   inkEraseMode: "stroke",
@@ -505,10 +763,25 @@ export const useUI = create<UIState>((set) => ({
       if (s.inkOpsKey !== inkOpsKey) return { inkOpsKey, inkPast: capHistory(ops), inkFuture: [] };
       return { inkPast: capHistory([...s.inkPast, ...ops]), inkFuture: [] };
     }),
+  remapInkRow: (oldId, next) =>
+    set((s) => ({
+      inkPast: s.inkPast.map((op) => remapOp(op, oldId, next)),
+      inkFuture: s.inkFuture.map((op) => remapOp(op, oldId, next)),
+    })),
   resetInkOps: () => set({ inkPast: [], inkFuture: [], inkOpsKey: "" }),
 
   tapeAutoThickness: false,
   toggleTapeAutoThickness: () => set((s) => ({ tapeAutoThickness: !s.tapeAutoThickness })),
+  tapeFreehand: false,
+  toggleTapeFreehand: () => set((s) => ({ tapeFreehand: !s.tapeFreehand })),
+
+  inkClipboard: null,
+  setInkClipboard: (inkClipboard) => set({ inkClipboard }),
+  inkPenDebug: false,
+  toggleInkPenDebug: () =>
+    set((s) => ({ inkPenDebug: !s.inkPenDebug, inkPenProbe: null })),
+  inkPenProbe: null,
+  setInkPenProbe: (inkPenProbe) => set({ inkPenProbe }),
 
   settingsOpen: false,
   settingsTab: "account",
