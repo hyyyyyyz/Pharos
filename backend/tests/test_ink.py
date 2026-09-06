@@ -17,6 +17,7 @@ in the column would make ``JSON.parse`` throw in the browser and cost the user
 from __future__ import annotations
 
 from collections.abc import Iterator
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -210,6 +211,43 @@ def test_kind_filter_returns_only_that_rendition() -> None:
     with session_scope() as s:
         rows = ink.list_strokes(s, user_id=OWNER, paper_id=OWNER_PAPER, kind="dual")
     assert [r.kind for r in rows] == ["dual"]
+
+
+def test_list_with_points_parses_each_stroke_exactly_once() -> None:
+    """The list endpoint decoded every stroke's JSON twice.
+
+    Once to decide the row was non-empty, once again in the API layer to
+    serialise it — on the single request that carries a whole paper's
+    annotations, where a densely marked-up paper is thousands of strokes and
+    over a million samples. Counting the decodes is the only way to keep it
+    that way: the duplicate cost nothing visible in a test, only a second of
+    the reader's time on a tablet.
+    """
+    _make(points=[{"x": 1.0, "y": 2.0, "p": 0.5}])
+    _make(points=[{"x": 3.0, "y": 4.0, "p": 0.5}])
+
+    calls = 0
+    real = ink.load_points
+
+    def counting(raw: str | None) -> list[ink.Point]:
+        nonlocal calls
+        calls += 1
+        return real(raw)
+
+    with session_scope() as s, patch.object(ink, "load_points", counting):
+        pairs = ink.list_strokes_with_points(s, user_id=OWNER, paper_id=OWNER_PAPER)
+
+    assert [len(points) for _, points in pairs] == [1, 1]
+    assert calls == 2  # two strokes, two decodes — not four
+
+
+def test_list_with_points_still_drops_unreadable_rows() -> None:
+    """The parse-once path keeps the filter it replaced."""
+    sid = _make()
+    with session_scope() as s:
+        s.get(InkStroke, sid).points = "{not json"
+    with session_scope() as s:
+        assert ink.list_strokes_with_points(s, user_id=OWNER, paper_id=OWNER_PAPER) == []
 
 
 # ------------------------------------------------------------------ endpoints

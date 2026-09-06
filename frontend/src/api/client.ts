@@ -809,6 +809,7 @@ export const api = {
         color?: string;
         size?: number;
         body?: string;
+        collapsed?: boolean;
       },
     ): Promise<PageNoteRow> =>
       json<PageNoteRow>(`/papers/${encodeURIComponent(paperId)}/notes`, {
@@ -829,6 +830,7 @@ export const api = {
         color?: string;
         size?: number;
         body?: string;
+        collapsed?: boolean;
       },
     ): Promise<PageNoteRow> =>
       json<PageNoteRow>(`/notes/${encodeURIComponent(noteId)}`, {

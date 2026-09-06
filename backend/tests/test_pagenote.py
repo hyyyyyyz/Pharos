@@ -249,6 +249,24 @@ def test_moving_a_note_rewrites_it_in_place() -> None:
     assert row.updated_at is not None
 
 
+def test_a_note_starts_expanded_and_folds_on_request() -> None:
+    """便签应支持收起 — a long note is useful to have written and often in the
+    way afterwards, so folding is a property of the note, not of the session."""
+    nid = _make(style="note", body="a long remark")
+    with session_scope() as s:
+        assert bool(s.get(PageNote, nid).collapsed) is False
+        pagenote.update_note(s, user_id=OWNER, note_id=nid, collapsed=True)
+    with session_scope() as s:
+        row = s.get(PageNote, nid)
+    assert row.collapsed is True
+    assert row.body == "a long remark"  # folding is not deleting
+
+
+def test_a_non_boolean_collapsed_is_refused() -> None:
+    with session_scope() as s, pytest.raises(Invalid):
+        pagenote.update_note(s, user_id=OWNER, note_id=_make(), collapsed="yes")
+
+
 def test_listing_is_scoped_by_rendition() -> None:
     _make(kind="original")
     _make(kind="dual")
@@ -285,6 +303,11 @@ def test_api_round_trips_a_note(client: TestClient) -> None:
     assert typed.json()["body"] == "见第 3 节"
     # Typing must not have moved it.
     assert typed.json()["x"] == BOX["x"]
+
+    folded = client.patch(f"/api/notes/{note['id']}", json={"collapsed": True})
+    assert folded.status_code == 200, folded.text
+    assert folded.json()["collapsed"] is True
+    assert folded.json()["body"] == "见第 3 节"  # folding did not touch the text
 
     listed = client.get(f"/api/papers/{OWNER_PAPER}/notes")
     assert [n["id"] for n in listed.json()] == [note["id"]]

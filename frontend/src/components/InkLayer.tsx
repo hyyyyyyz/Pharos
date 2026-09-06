@@ -82,6 +82,7 @@ import {
 import { Icons } from "../design/icons";
 import { NEW_NOTE_H, NEW_NOTE_W } from "./NoteLayer";
 import { isDrawingPointer, isStylus } from "../lib/pointer";
+import { removeRow, settleInto, tempId, trackCreate } from "../lib/optimistic";
 import { penSound } from "../lib/penSound";
 import { clampTapeSize, rotateTape, scaleTape, tapeOutline, translateTape } from "../lib/tape";
 import {
@@ -111,7 +112,17 @@ const THIN_THRESHOLD = 1900;
  * drew first.
  */
 const LASER_STOPS = ["#ff2d55", "#ff9500", "#ffd60a", "#34c759", "#00c7ff", "#5e5ce6", "#bf5af2"];
-const LASER_WIDTH = 3;
+/**
+ * 激光笔 width, in SCREEN pixels — divided by the zoom at every use.
+ *
+ * Every other mark on the page is measured in PDF points, because a pen stroke
+ * is part of the document and has to grow and shrink with it. A laser pointer
+ * is the opposite: it is a gesture, it is never stored, and it exists to be
+ * seen right now. So its width belongs to the SCREEN, and at 400% zoom a
+ * 3-point line came out 12 screen pixels thick while at 40% it was barely more
+ * than one — "无论画布放大还是缩小，屏幕上显示的笔迹粗细都应保持一致".
+ */
+const LASER_SCREEN_WIDTH = 3;
 /**
  * The mark holds at full brightness until the pen has been QUIET this long,
  * then fades. Not "this long after the stroke ended": while you are still
@@ -182,6 +193,52 @@ const penEraseHeld = (e: PointerEvent): boolean => {
   // button and 5 the eraser end, per the spec's button-value table.
   return e.button === 2 || e.button === 5;
 };
+
+/**
+ * Give a canvas's pixels back.
+ *
+ * Setting a dimension to 0 is what frees the backing store — and, on an
+ * accelerated compositor, the GPU texture behind it. `clearRect` only paints
+ * over the pixels; they stay allocated, and a blank canvas costs exactly as
+ * much 显存 as a full one.
+ */
+function release(canvas: HTMLCanvasElement | null): void {
+  if (canvas && canvas.width !== 0) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+  blend(canvas, false);
+}
+
+/**
+ * Turn a wash canvas's `mix-blend-mode` on or off.
+ *
+ * A blend mode is not free and is not conditional on having content: an
+ * element that declares one forces the compositor to rasterise everything
+ * BEHIND it into a texture so it can be read back, every frame, even if the
+ * element itself is empty. Measured on a page with no watercolour at all,
+ * that showed up as page-sized backdrop layers — 25 MiB and 12 MiB apiece at
+ * zoom — for two canvases holding nothing.
+ *
+ * So the blend is applied only while a wash is actually on the canvas. Done by
+ * `classList` on a ref rather than through React state on purpose: this is
+ * called from the paint path, and a re-render per stroke to toggle a class
+ * would cost more than the class saves.
+ */
+function blend(canvas: HTMLCanvasElement | null, on: boolean): void {
+  canvas?.classList.toggle("is-blending", on);
+}
+
+/**
+ * A hard ceiling on any one canvas, in device pixels.
+ *
+ * The dpr cap already stops the backing store growing with zoom, but it is
+ * proportional to the PAGE, and a page is not a bounded thing: an A3 preprint
+ * or a fold-out figure is several times a Letter page. 16 megapixels is 64 MiB
+ * at 4 bytes each — generous for one layer, and low enough that a poster-sized
+ * page cannot on its own exhaust a tablet's GPU memory.
+ */
+const MAX_CANVAS_PX = 16_000_000;
 
 /** Gesture state — refs, because it changes at digitiser rate. */
 interface Session {
@@ -477,14 +534,35 @@ export function InkLayer({
 
   /* ------------------------------------------------------------- painting */
 
-  /** Size a canvas's backing store to its CSS box × dpr, and return the
-   *  PDF-space transform factor. Null when the canvas is not laid out yet. */
+
+  /**
+   * Size a canvas's backing store to its CSS box × dpr, and return the
+   * PDF-space transform factor. Null when the canvas is not laid out yet.
+   *
+   * The dpr cap is the important line, and it was missing here while its
+   * sibling had it. A canvas's CSS box is already `pageSize × zoom`, so
+   * multiplying by a fixed 2.5 makes the backing store grow as **zoom
+   * squared**: at zoom 4 on a Letter page that is 6120 × 7920 device pixels,
+   * 184 MiB, for ONE canvas — and this layer owns up to four of them per
+   * page, on every page of the document at once. Nearly five gigabytes of
+   * canvas on a twelve-page paper, which an Android WebView does not survive.
+   * `PdfCanvas` has capped the same product since it was written (see its
+   * "Very large canvases blow up memory" comment); this is the same cap.
+   *
+   * What it costs is real and small: strokes rasterise at 2.5 device pixels
+   * per PDF point rather than 10 — still above the panel's own resolution,
+   * and exactly what the printed page underneath is already drawn at.
+   */
   const prepare = useCallback(
     (canvas: HTMLCanvasElement): { k: number; w: number } | null => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      let dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       if (w === 0 || h === 0) return null;
+      // …and a hard area ceiling on top of the ratio cap, because the cap is
+      // proportional to the PAGE and a page is not a bounded thing.
+      const area = w * h * dpr * dpr;
+      if (area > MAX_CANVAS_PX) dpr *= Math.sqrt(MAX_CANVAS_PX / area);
       const bw = Math.floor(w * dpr);
       const bh = Math.floor(h * dpr);
       if (canvas.width !== bw || canvas.height !== bh) {
@@ -532,21 +610,32 @@ export function InkLayer({
     const dry = dryRef.current;
     const water = waterRef.current;
     if (!dry || !water) return;
-    const dryReady = prepare(dry);
-    const waterReady = prepare(water);
-    if (!dryReady || !waterReady) return;
-    clearInSpace(dry, dryReady.w);
-    clearInSpace(water, waterReady.w);
-    const colorOfDry = colorResolver(dry);
-    const colorOfWater = colorResolver(water);
     const carried = movingRef.current?.ids;
-    for (const stroke of mineRef.current) {
-      if (carried?.has(stroke.id)) continue; // being dragged; the wet layer shows it
-      if (isWaterColor(stroke.color)) {
-        paintStroke(water.getContext("2d")!, stroke, colorOfWater);
-      } else {
-        paintStroke(dry.getContext("2d")!, stroke, colorOfDry);
-      }
+    const rows = mineRef.current.filter((s) => !carried?.has(s.id));
+    // Allocate only what actually has something on it.
+    //
+    // Every sized canvas is a GPU texture whether or not a single pixel was
+    // ever drawn into it, and a page in READING mode has nothing in any of
+    // these. Measured before this: 15 live canvases and 67 MiB with no ink on
+    // the document at all — five per page, four of them blank. On a paper
+    // annotated on two pages out of twelve, the blank ones were most of the
+    // 显存 the reader was paying for.
+    const wet = rows.some((s) => isWaterColor(s.color));
+    const dryInk = rows.some((s) => !isWaterColor(s.color));
+    const dryReady = dryInk ? prepare(dry) : (release(dry), null);
+    const waterReady = wet ? prepare(water) : (release(water), null);
+    if (dryReady) {
+      clearInSpace(dry, dryReady.w);
+      const colorOf = colorResolver(dry);
+      const ctx = dry.getContext("2d")!;
+      for (const stroke of rows) if (!isWaterColor(stroke.color)) paintStroke(ctx, stroke, colorOf);
+    }
+    blend(water, wet);
+    if (waterReady) {
+      clearInSpace(water, waterReady.w);
+      const colorOf = colorResolver(water);
+      const ctx = water.getContext("2d")!;
+      for (const stroke of rows) if (isWaterColor(stroke.color)) paintStroke(ctx, stroke, colorOf);
     }
   }, [prepare, clearInSpace, colorResolver]);
 
@@ -693,6 +782,9 @@ export function InkLayer({
     y: number;
   } | null>(null);
   const pressTimerRef = useRef(0);
+  /** Where the pen landed, in client pixels — the anchor the slop is measured
+   *  from. See the note in `onMove`. */
+  const pressAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const cancelLongPress = useCallback(() => {
     if (pressTimerRef.current !== 0) {
       clearTimeout(pressTimerRef.current);
@@ -729,9 +821,19 @@ export function InkLayer({
   /** Functional cache write: safe against mid-gesture staleness. */
   const updateCache = useCallback(
     (updater: (prev: InkStrokeRow[]) => InkStrokeRow[]) => {
-      qc.setQueryData<InkStrokeRow[]>(["ink", paperId, kind], (prev) =>
-        updater(prev ?? []),
-      );
+      // A list GET still in flight would resolve AFTER this write and replace
+      // the whole array with the server's older copy — every mark made since
+      // the request left simply gone from the page, though the POSTs
+      // succeeded and the server has them. The window is small but it is
+      // exactly the wrong one: it opens when the paper is first opened and
+      // again after any failed write invalidates the list, which is precisely
+      // when a reader is drawing. Cancelling makes the in-flight result be
+      // discarded instead of applied.
+      const queryKey = ["ink", paperId, kind];
+      if (qc.isFetching({ queryKey, exact: true }) > 0) {
+        void qc.cancelQueries({ queryKey, exact: true });
+      }
+      qc.setQueryData<InkStrokeRow[]>(queryKey, (prev) => updater(prev ?? []));
     },
     [qc, paperId, kind],
   );
@@ -761,7 +863,7 @@ export function InkLayer({
       alsoOps: InkOp[] = [],
     ): InkStrokeRow[] => {
       const temps: InkStrokeRow[] = specs.map((s) => ({
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -783,50 +885,76 @@ export function InkLayer({
       /** Point one settled row at its temp — in the cache, in the undo op, and
        *  in the SELECTION, so a selection kept alive across an edit ends up
        *  holding server rows rather than ids the server has never heard of. */
-      const settle = (tempId: string, row: InkStrokeRow): void => {
+      const settle = (temp: string, row: InkStrokeRow): void => {
         // Recorded FIRST, and synchronously: `updateCache` notifies TanStack
         // subscribers immediately, so the very next render can already see the
         // temp gone — and the selection resync effect needs to be able to
         // follow it to `row` at that moment, not one batched state update
         // later.
         if (settledRef.current.size > 200) settledRef.current.clear();
-        settledRef.current.set(tempId, row);
-        updateCache((prev) => prev.map((s) => (s.id === tempId ? row : s)));
-        useUI.setState((s) => {
-          if (s.inkOpsKey !== key) return s;
-          for (let i = s.inkPast.length - 1; i >= 0; i--) {
-            const op = s.inkPast[i];
-            if (op.kind !== "edit") continue;
-            const idx = op.added.findIndex((a) => a.id === tempId);
-            if (idx === -1) continue;
-            const added = op.added.slice();
-            added[idx] = row;
-            const past = s.inkPast.slice();
-            past[i] = { ...op, added };
-            return { inkPast: past };
-          }
-          return s;
-        });
+        settledRef.current.set(temp, row);
+        // A gesture IN FLIGHT is holding this id too, and it must follow the
+        // rename or it silently loses the reader's work.
+        //
+        // The id sets in `session.moving` / `session.transform` and in
+        // `movingRef` are captured once at pointerdown and were never remapped.
+        // If a POST lands while the pen is still down — which it routinely
+        // does, because the reader is invited to drag a selection repeatedly
+        // and each drag fires a round trip per stroke — then: the carried
+        // preview filters to nothing and VANISHES mid-drag; `repaintDry` stops
+        // recognising the row as carried and paints it back at its old
+        // position, so the ink appears to snap out from under the pen; and at
+        // pen-up the commit filter is empty, so the whole drag is discarded and
+        // the selection dies. Entirely network-timed, which is exactly why it
+        // reads as erratic rather than as a bug with a shape.
+        const swap = (ids: Set<string>): void => {
+          if (!ids.delete(temp)) return;
+          ids.add(row.id);
+        };
+        const live = strokeRef.current;
+        if (live?.moving) swap(live.moving.ids);
+        if (live?.transform) swap(live.transform.ids);
+        if (movingRef.current) swap(movingRef.current.ids);
+        updateCache((prev) => settleInto(prev, temp, row));
+        // `remapInkRow` rather than a walk of our own. It recurses into
+        // `batch` and it covers `inkFuture` as well as `inkPast`, and this
+        // gesture produces exactly the op neither of those was optional for:
+        // a lasso drag over ink AND 胶带 folds its edit inside a batch (see
+        // `alsoOps` above), where a scan that skips anything not `kind ===
+        // "edit"` never finds it. The temp id then survives on the undo
+        // stack, and undoing re-adds a stroke the server already holds under
+        // its real id — one drag, two copies of the ink, and no way back.
+        useUI.getState().remapInkRow(temp, row);
       };
 
       void (async () => {
         let failed = false;
         for (const row of removedRows) {
-          if (row.id.startsWith("temp-")) continue; // never reached the server
-          await api.ink.remove(row.id).catch(() => {
+          // NOT `if (isTempId) continue`. A temp id means the create has not
+          // landed YET, not that there is nothing to delete — and this very
+          // function POSTs one round trip per stroke, so dragging a five-stroke
+          // selection twice in quick succession reliably asks us to remove rows
+          // whose creates are still in the air. Skipping them leaves the server
+          // holding strokes this session will never show again and undo can
+          // never reach: the reader drags, sees one copy, reopens the paper and
+          // finds the ink duplicated at both positions.
+          await removeRow(row.id, (id) => api.ink.remove(id)).catch(() => {
             failed = true;
           });
         }
         const settled: InkStrokeRow[] = [];
         for (let i = 0; i < specs.length; i++) {
           try {
-            const row = await api.ink.create(paperId, {
-              kind,
-              page,
-              points: specs[i]!.points,
-              color: specs[i]!.color,
-              width: specs[i]!.width,
-            });
+            const row = await trackCreate(
+              temps[i]!.id,
+              api.ink.create(paperId, {
+                kind,
+                page,
+                points: specs[i]!.points,
+                color: specs[i]!.color,
+                width: specs[i]!.width,
+              }),
+            );
             settled.push(row);
             settle(temps[i]!.id, row);
           } catch {
@@ -872,9 +1000,9 @@ export function InkLayer({
         if (!strokeNear(stroke.points, stroke.width, x, y, inkEraserSize / scale)) continue;
         erasedRef.current.push(stroke);
         updateCache((prev) => prev.filter((s) => s.id !== stroke.id));
-        void api.ink.remove(stroke.id).catch(() => {
-          void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
-        });
+        void removeRow(stroke.id, (id) => api.ink.remove(id)).catch(() => {
+            void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+          });
       }
     },
     [scale, inkEraserSize, updateCache, qc, paperId, kind],
@@ -891,7 +1019,7 @@ export function InkLayer({
         if (parts.length === 1 && parts[0]!.length === stroke.points.length) continue;
         const kept = parts.filter((p) => p.length >= 2); // specks are noise
         const temps: InkStrokeRow[] = kept.map((points) => ({
-          id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          id: tempId(),
           paper_id: paperId,
           kind,
           page,
@@ -906,8 +1034,16 @@ export function InkLayer({
         // only — the server half of the gesture commits at gesture end, as
         // one edit op.
         updateCache((prev) => [...prev.filter((s) => s.id !== goneId), ...temps]);
+        // "Did THIS gesture mint it", not "does the id look temporary". A part
+        // split twice in one pass leaves the account and its children take its
+        // place — but a stroke drawn a second ago also still carries a temp id
+        // while its POST flies, and that one the server very much does hold.
+        // Judging by the id shape lumped the two together and let the second
+        // kind fall out of `removed` entirely: the fragment stayed on the
+        // server, so the erased stroke came back whole on the next open.
+        const ourOwn = pixelAddedRef.current.some((a) => a.id === stroke.id);
         pixelAddedRef.current = pixelAddedRef.current.filter((a) => a.id !== stroke.id);
-        if (!stroke.id.startsWith("temp-")) pixelRemovedRef.current.push(stroke);
+        if (!ourOwn) pixelRemovedRef.current.push(stroke);
         pixelAddedRef.current.push(...temps);
       }
     },
@@ -948,7 +1084,7 @@ export function InkLayer({
         if (stroke.color === inkColor && stroke.width === inkWidth) continue;
         if (!strokeNear(stroke.points, stroke.width, x, y, reach)) continue;
         const temp: InkStrokeRow = {
-          id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          id: tempId(),
           paper_id: paperId,
           kind,
           page,
@@ -958,7 +1094,11 @@ export function InkLayer({
           created_at: new Date().toISOString(),
         };
         updateCache((prev) => prev.map((s) => (s.id === stroke.id ? temp : s)));
-        if (!stroke.id.startsWith("temp-")) styleRemovedRef.current.push(stroke);
+        // Ours, or merely still in flight? Only the first is safe to drop from
+        // `removed` — see the matching note in `eraseAtPixel`.
+        const ourOwn = styleAddedRef.current.some((a) => a.id === stroke.id);
+        styleAddedRef.current = styleAddedRef.current.filter((a) => a.id !== stroke.id);
+        if (!ourOwn) styleRemovedRef.current.push(stroke);
         styleAddedRef.current.push(temp);
       }
     },
@@ -987,7 +1127,10 @@ export function InkLayer({
     (clientX: number, clientY: number) => {
       const wet = wetRef.current;
       if (!wet) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      // The SAME cap as `prepare`, and it has to be: this function sizes the
+      // very same canvas, so a different dpr here would resize (and therefore
+      // clear) it on every hover, fighting `prepare` for the backing store.
+      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 2.5 / scale));
       const w = wet.clientWidth;
       const h = wet.clientHeight;
       if (w === 0 || h === 0) return;
@@ -1016,8 +1159,22 @@ export function InkLayer({
       ctx.strokeStyle = "rgba(28, 32, 40, 0.95)";
       ctx.stroke();
     },
-    [inkEraserSize],
+    [inkEraserSize, scale],
   );
+
+  const paintFrameRef = useRef(0);
+  const pendingPaintRef = useRef<{ session: Session; predicted: InkPoint[] } | null>(null);
+
+
+  /** Drop a frame that has not run yet — the gesture it belonged to is over,
+   *  and painting it now would put a ghost back on a canvas just cleared. */
+  const cancelPendingPaint = useCallback(() => {
+    if (paintFrameRef.current !== 0) {
+      cancelAnimationFrame(paintFrameRef.current);
+      paintFrameRef.current = 0;
+    }
+    pendingPaintRef.current = null;
+  }, []);
 
   /** Wipe the live-wash canvas. Called on EVERY `paintWet`, not only when a
    *  wash is being drawn: it is a second canvas that nothing else clears, so
@@ -1026,15 +1183,26 @@ export function InkLayer({
     const c = wetWaterRef.current;
     if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    // Nothing on it any more, so it must stop asking the compositor to read
+    // back the page behind it.
+    blend(c, false);
   }, []);
 
   /** Empty BOTH wet layers (hover cursor gone, gesture ghost gone, live wash
    *  gone). One function, because a caller that cleared only the top one left
    *  the last wash sitting under the page with nothing to remove it. */
   const clearWet = useCallback(() => {
+    // Drop any frame the scheduler still owes FIRST. A queued repaint that
+    // lands after a clear puts back exactly what the clear removed — a lasso
+    // loop, a carried preview, a selection frame — a frame or two later, at a
+    // moment decided by rAF rather than by the reader. Four of this
+    // function's nine call sites used to forget the cancel individually, and
+    // that intermittency is what "显示时间不一致" describes. Doing it here
+    // makes every clear correct by construction instead of by memory.
+    cancelPendingPaint();
     wetRef.current?.getContext("2d")?.clearRect(0, 0, wetRef.current.width, wetRef.current.height);
     clearWetWater();
-  }, [clearWetWater]);
+  }, [clearWetWater, cancelPendingPaint]);
 
   /** The 七彩 sweep: a gradient down the mark's own longest axis, so a long
    *  stroke runs the spectrum instead of ending up one muddy average. */
@@ -1059,7 +1227,7 @@ export function InkLayer({
     (ctx: CanvasRenderingContext2D, alpha: number) => {
       if (alpha <= 0) return;
       for (const points of laserMarksRef.current) {
-        const outline = strokeOutline(points, LASER_WIDTH);
+        const outline = strokeOutline(points, LASER_SCREEN_WIDTH / scale);
         if (outline.length < 3) continue;
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -1213,7 +1381,7 @@ export function InkLayer({
         // 炫一点: a 七彩 gradient with a glow, not a flat fill — the pointer
         // is meant to catch the eye for the seconds it lives, unlike ink
         // meant to be read calmly afterward.
-        const outline = strokeOutline(live, LASER_WIDTH, true);
+        const outline = strokeOutline(live, LASER_SCREEN_WIDTH / scale, true);
         if (outline.length >= 3) {
           ctx.save();
           ctx.shadowColor = LASER_STOPS[0]!;
@@ -1230,7 +1398,10 @@ export function InkLayer({
       let target = ctx;
       if (isWaterColor(inkColor)) {
         const wetWater = wetWaterRef.current;
-        if (wetWater && prepare(wetWater)) target = wetWater.getContext("2d")!;
+        if (wetWater && prepare(wetWater)) {
+          blend(wetWater, true);
+          target = wetWater.getContext("2d")!;
+        }
       }
       paintInk(target, live, inkWidth, colorOf(inkColor), true);
     },
@@ -1250,6 +1421,20 @@ export function InkLayer({
     ],
   );
 
+  const schedulePaintWet = useCallback(
+    (session: Session, predicted: InkPoint[]) => {
+      pendingPaintRef.current = { session, predicted };
+      if (paintFrameRef.current !== 0) return;
+      paintFrameRef.current = requestAnimationFrame(() => {
+        paintFrameRef.current = 0;
+        const next = pendingPaintRef.current;
+        pendingPaintRef.current = null;
+        if (next) paintWet(next.session, next.predicted);
+      });
+    },
+    [paintWet],
+  );
+
   /**
    * One wet repaint per FRAME, whatever rate the digitiser delivers at.
    *
@@ -1265,31 +1450,6 @@ export function InkLayer({
    * coalesced point into the session before asking for a repaint, so the stroke
    * that gets committed has full resolution. Only the drawing is coalesced.
    */
-  const paintFrameRef = useRef(0);
-  const pendingPaintRef = useRef<{ session: Session; predicted: InkPoint[] } | null>(null);
-  const schedulePaintWet = useCallback(
-    (session: Session, predicted: InkPoint[]) => {
-      pendingPaintRef.current = { session, predicted };
-      if (paintFrameRef.current !== 0) return;
-      paintFrameRef.current = requestAnimationFrame(() => {
-        paintFrameRef.current = 0;
-        const next = pendingPaintRef.current;
-        pendingPaintRef.current = null;
-        if (next) paintWet(next.session, next.predicted);
-      });
-    },
-    [paintWet],
-  );
-
-  /** Drop a frame that has not run yet — the gesture it belonged to is over,
-   *  and painting it now would put a ghost back on a canvas just cleared. */
-  const cancelPendingPaint = useCallback(() => {
-    if (paintFrameRef.current !== 0) {
-      cancelAnimationFrame(paintFrameRef.current);
-      paintFrameRef.current = 0;
-    }
-    pendingPaintRef.current = null;
-  }, []);
 
   /* --------------------------------------------------- selection overlays */
 
@@ -1320,10 +1480,48 @@ export function InkLayer({
     return true;
   }, [prepare, clearInSpace, paintSelection, paintSelectionHandles]);
 
-  /** The frame follows the zoom; also repaints on selection/stroke changes. */
+  /**
+   * Does this layer claim the pointer at all?
+   *
+   * NOT simply "a tool is selected": in 胶带 and 文本 mode the gesture effect
+   * above returns immediately, so a live canvas would sit over the page
+   * swallowing pointers and suppressing touch scrolling on behalf of code that
+   * does nothing. That is the shape of bug that made 锁定画布 look broken, and
+   * it is cheap to not have twice.
+   */
+  const interactive = inkMode !== "off" && inkMode !== "tape" && inkMode !== "text";
+
+  /**
+   * Hand back the two gesture canvases whenever nothing is using them.
+   *
+   * They are full-page and, unlike the committed layers, hold something only
+   * during a gesture or while a selection frame is up. Left allocated they are
+   * two more GPU textures per live page for a reader who is only reading —
+   * which, with the page window, is still four textures across the viewport
+   * doing nothing.
+   *
+   * The cost of giving them back is one reallocation when the next gesture
+   * starts, which `prepare` already does on its first paint.
+   */
   useEffect(() => {
-    repaintSelectionChrome();
-  }, [selection, repaintSelectionChrome]);
+    if (interactive || selection !== null) return;
+    release(wetRef.current);
+    release(wetWaterRef.current);
+  }, [interactive, selection]);
+
+  /** The frame follows the zoom; also repaints on selection/stroke changes —
+   *  and CLEARS when the selection goes.
+   *
+   *  `repaintSelectionChrome` returns false and paints nothing when there is
+   *  no selection, which is right for it and was wrong here: dismissing a
+   *  selection from a DOM button (删除, 复制, ✕, 更改风格) left the blue frame
+   *  and its five handles sitting on the page until something else happened to
+   *  wipe the canvas — a pointerleave, or the next gesture. Chrome outliving
+   *  the thing it describes is half of "显示时间不一致". */
+  useEffect(() => {
+    if (repaintSelectionChrome()) return;
+    if (selection === null) clearWet();
+  }, [selection, repaintSelectionChrome, clearWet]);
 
   /**
    * Keep the selection pointing at rows that exist — RESYNC it, do not drop it.
@@ -1655,17 +1853,29 @@ export function InkLayer({
           }
         }
       }
-      // Arm the long press. Any real movement disarms it (see `onMove`), so it
-      // can only ever fire on a pen that has genuinely been held still.
+      // Arm the long press. MOVEMENT disarms it (see `onMove`) — and only
+      // movement, which is the whole correction here.
+      //
+      // The first version also bailed if the session had accumulated more than
+      // a couple of sample points, on the reasoning that a stroke is not a
+      // press. That reasoning silently assumed a mouse. A stationary mouse
+      // emits no `pointermove` at all, so its point count stays at 1 and the
+      // menu appeared. A stylus resting on glass emits `pointermove`
+      // continuously at 120-240Hz — pressure noise alone is enough — so after
+      // one second the count is in the hundreds even though the pen has not
+      // travelled a single pixel. The count test therefore could not fail on
+      // the desktop and could not succeed on the tablet: "用笔尖在同一位置长按
+      // 1 秒后，仍然不会弹出对应的功能菜单".
       cancelLongPress();
       const downAt = { x: e.clientX, y: e.clientY };
+      pressAnchorRef.current = downAt;
       const rect = wet.getBoundingClientRect();
       pressTimerRef.current = window.setTimeout(() => {
         pressTimerRef.current = 0;
-        // A gesture that has become a stroke, a lasso or a drag is no longer a
-        // press — bail rather than interrupt it.
+        // A gesture that started as a drag or a transform was never a press —
+        // those are decided at pointerdown, not by what happens after.
         const session = strokeRef.current;
-        if (!session || session.points.length > 2 || session.moving || session.transform) return;
+        if (!session || session.moving || session.transform) return;
         strokeRef.current = null;
         cancelPendingPaint();
         clearWet();
@@ -1877,11 +2087,15 @@ export function InkLayer({
       // stroke, a lasso loop and a selection drag all cancel it alike, without
       // each branch having to remember to.
       if (pressTimerRef.current !== 0 && session && session.pointerId === e.pointerId) {
-        const from = session.points[0];
-        const origin = wet.getBoundingClientRect();
-        const cx0 = from ? from.x * scale + origin.left : e.clientX;
-        const cy0 = from ? (pageHeight - from.y) * scale + origin.top : e.clientY;
-        if (Math.hypot(e.clientX - cx0, e.clientY - cy0) > LONG_PRESS_SLOP_PX) cancelLongPress();
+        // Measured against the anchor recorded at pointerdown, in CLIENT
+        // pixels. Reconstructing the origin from the first PDF-space sample
+        // (as this used to) round-trips through `scale` and `pageHeight` and
+        // can drift by a pixel or two at high zoom — enough, against an 8px
+        // slop, to disarm a press that never moved.
+        const from = pressAnchorRef.current;
+        if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > LONG_PRESS_SLOP_PX) {
+          cancelLongPress();
+        }
       }
       if (session === null || session.pointerId !== e.pointerId) {
         // Hover is the ONE safe moment to move the toolbar to the eraser and
@@ -2148,7 +2362,7 @@ export function InkLayer({
       // swap is invisible; the only visible difference is the end taper,
       // which the temp already carries (last:true outline).
       const temp: InkStrokeRow = {
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -2161,22 +2375,20 @@ export function InkLayer({
       pushInkOps(key, [{ kind: "add", stroke: temp }]);
       cancelPendingPaint();
       paintWet({ pointerId: -1, points: [], erasing: true, lasso: false, moving: null, transform: null }, []);
-      const settleStack = (row: InkStrokeRow): void => {
-        useUI.setState((s) => {
-          if (s.inkOpsKey !== key) return s;
-          const past = s.inkPast.slice();
-          const last = past[past.length - 1];
-          if (last && last.kind === "add" && last.stroke.id === temp.id) {
-            past[past.length - 1] = { kind: "add", stroke: row };
-          }
-          return { inkPast: past };
-        });
-      };
-      void api.ink
-        .create(paperId, { kind, page, points, color: inkColor, width: inkWidth })
+      void trackCreate(
+        temp.id,
+        api.ink.create(paperId, { kind, page, points, color: inkColor, width: inkWidth }),
+      )
         .then((row) => {
-          updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
-          settleStack(row);
+          updateCache((prev) => settleInto(prev, temp.id, row));
+          // Was a hand-rolled patch of `past[past.length - 1]` only. Writing
+          // fast — which is the normal way to write — puts the NEXT stroke's
+          // op on top before this POST returns, and then the top is not ours:
+          // the repair silently does nothing and `temp-…` stays on the undo
+          // stack. Undo that far back deletes an id the server 404s on, so the
+          // stroke never goes away. `remapInkRow` finds the op wherever it has
+          // sunk to, in either stack, including inside a batch.
+          useUI.getState().remapInkRow(temp.id, row);
         })
         .catch(() => {
           // The server refused it: roll the optimistic stroke back out of the
@@ -2274,6 +2486,17 @@ export function InkLayer({
         if (inkMode === "style") abandonStyleGesture();
         movingRef.current = null;
       }
+      // Carried 胶带 goes back to being visible.
+      //
+      // `inkCarried` is how a drag tells `TapeLayer` "I am painting these
+      // strips myself, do not draw them" — so a gesture that dies without
+      // committing leaves its strips hidden by a flag nothing will clear.
+      // Zooming mid-drag rebinds these handlers, which is exactly how a reader
+      // reaches it: the tape is not deleted, not undoable, and does not come
+      // back until the page is reloaded. Guarded rather than unconditional
+      // because a rebind happens on every zoom step and an empty array is
+      // still a new identity to every subscriber.
+      if (useUI.getState().inkCarried.length > 0) setInkCarried([]);
       // A frame queued by `schedulePaintWet` would repaint a gesture that no
       // longer exists, onto a canvas about to be cleared.
       cancelPendingPaint();
@@ -2341,10 +2564,11 @@ export function InkLayer({
         updateCache((prev) => prev.filter((s) => !gone.has(s.id)));
         ops.push({ kind: "remove", strokes: rows });
         for (const row of rows) {
-          if (row.id.startsWith("temp-")) continue;
-          void api.ink.remove(row.id).catch(() => {
-            void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
-          });
+          // Await the create rather than skipping the row: lasso, drag, delete
+          // is a two-second sequence and the drag's POSTs are still landing.
+          void removeRow(row.id, (id) => api.ink.remove(id)).catch(() => {
+              void qc.invalidateQueries({ queryKey: ["ink", paperId, kind] });
+            });
         }
       }
       for (const t of tapes) {
@@ -2352,9 +2576,9 @@ export function InkLayer({
         qc.setQueryData<TapeRow[]>(["tape", paperId, kind], (prev) =>
           (prev ?? []).filter((row) => row.id !== t.id),
         );
-        void api.tape.remove(t.id).catch(() => {
-          void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
-        });
+        void removeRow(t.id, (id) => api.tape.remove(id)).catch(() => {
+            void qc.invalidateQueries({ queryKey: ["tape", paperId, kind] });
+          });
       }
       // One gesture, one undo — the same rule the lasso's drag follows.
       if (ops.length > 0) pushInkOps(key, batchOps(ops));
@@ -2402,23 +2626,62 @@ export function InkLayer({
    * component that does not render it.
    */
   const addNoteAt = useCallback(
-    async (x: number, y: number, style: PageNoteStyle) => {
-      try {
-        const row = await api.note.create(paperId, {
-          kind,
-          page,
-          x,
-          y,
-          w: NEW_NOTE_W,
-          h: NEW_NOTE_H,
-          style,
-          color: noteColor,
-        });
-        qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => [...(prev ?? []), row]);
-        setNoteFocus(row.id);
-      } catch {
-        /* refused — nothing was optimistically added, so nothing to undo */
-      }
+    (x: number, y: number, style: PageNoteStyle) => {
+      // Optimistic and SYNCHRONOUS, for the same reason `NoteLayer.addAt` is:
+      // Android raises the soft keyboard only when the focus change is
+      // attributable to a user activation, and awaiting the POST first ends
+      // the activation the menu tap provided. The box has to exist, and be
+      // asking for the caret, before this call stack unwinds.
+      const temp: PageNoteRow = {
+        id: tempId(),
+        paper_id: paperId,
+        kind,
+        page,
+        x,
+        y,
+        w: NEW_NOTE_W,
+        h: NEW_NOTE_H,
+        style,
+        color: noteColor,
+        size: 12,
+        body: "",
+        collapsed: false,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      };
+      qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => [...(prev ?? []), temp]);
+      setNoteFocus(temp.id);
+      void (async () => {
+        try {
+          const row = await trackCreate(
+            temp.id,
+            api.note.create(paperId, {
+              kind,
+              page,
+              x,
+              y,
+              w: NEW_NOTE_W,
+              h: NEW_NOTE_H,
+              style,
+              color: noteColor,
+            }),
+          );
+          const hadCaret =
+            document.activeElement?.closest?.(`[data-note="${temp.id}"]`) != null;
+          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => {
+            const rows = prev ?? [];
+            // Whatever has been typed since the POST left wins over the empty
+            // body the note was created with.
+            const mine = rows.find((n) => n.id === temp.id);
+            return settleInto(rows, temp.id, { ...row, body: mine?.body ?? row.body });
+          });
+          if (hadCaret) setNoteFocus(row.id);
+        } catch {
+          qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) =>
+            (prev ?? []).filter((n) => n.id !== temp.id),
+          );
+        }
+      })();
     },
     [paperId, kind, page, noteColor, qc, setNoteFocus],
   );
@@ -2452,7 +2715,7 @@ export function InkLayer({
       // Optimistic, like every other write here: the copies appear under the
       // pen immediately and the server's rows replace the temps as they land.
       const temps: InkStrokeRow[] = clip.strokes.map((s) => ({
-        id: `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        id: tempId(),
         paper_id: paperId,
         kind,
         page,
@@ -2474,14 +2737,17 @@ export function InkLayer({
         const ops: InkOp[] = [];
         for (const temp of temps) {
           try {
-            const row = await api.ink.create(paperId, {
-              kind,
-              page,
-              points: temp.points,
-              color: temp.color,
-              width: temp.width,
-            });
-            updateCache((prev) => prev.map((s) => (s.id === temp.id ? row : s)));
+            const row = await trackCreate(
+              temp.id,
+              api.ink.create(paperId, {
+                kind,
+                page,
+                points: temp.points,
+                color: temp.color,
+                width: temp.width,
+              }),
+            );
+            updateCache((prev) => settleInto(prev, temp.id, row));
             setSelection((sel) =>
               sel ? { ...sel, rows: sel.rows.map((r) => (r.id === temp.id ? row : r)) } : sel,
             );
@@ -2523,16 +2789,6 @@ export function InkLayer({
 
   /* ----------------------------------------------------------------- view */
 
-  /**
-   * Does this layer claim the pointer at all?
-   *
-   * NOT simply "a tool is selected": in 胶带 and 文本 mode the gesture effect
-   * above returns immediately, so a live canvas would sit over the page
-   * swallowing pointers and suppressing touch scrolling on behalf of code that
-   * does nothing. That is the shape of bug that made 锁定画布 look broken, and
-   * it is cheap to not have twice.
-   */
-  const interactive = inkMode !== "off" && inkMode !== "tape" && inkMode !== "text";
   /**
    * Where the command bar sits: centred over the selection's own frame, just
    * above the rotate handle — the placement in the reference, and the one that
@@ -2609,7 +2865,7 @@ export function InkLayer({
               onClick={() => {
                 const at = pressMenu;
                 setPressMenu(null);
-                void addNoteAt(at.x, at.y, "text");
+                addNoteAt(at.x, at.y, "text");
               }}
             >
               文本框
@@ -2620,7 +2876,7 @@ export function InkLayer({
               onClick={() => {
                 const at = pressMenu;
                 setPressMenu(null);
-                void addNoteAt(at.x, at.y, "note");
+                addNoteAt(at.x, at.y, "note");
               }}
             >
               便利贴

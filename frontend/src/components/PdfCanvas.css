@@ -54,6 +54,27 @@
   min-width: 100%;
 }
 
+/*
+   A page outside the live window: skip rendering it entirely.
+
+   Its canvas is already released and its annotation layers unmounted, but the
+   page still carries pdf.js's text layer — hundreds of absolutely positioned
+   spans, kept because the search index is built from them and windowing that
+   would break find-in-document. `content-visibility` gets the same saving
+   without touching the DOM: the browser stops laying out and painting the
+   subtree while it is off screen, and picks it up again when it is not.
+
+   Safe here specifically because a dormant page has no `mix-blend-mode`
+   children — the containment this implies would create a stacking context and
+   isolate them, which is exactly the bug that made a revealed tape strip's
+   colour底 stop reaching the page behind it. The box's own size is an inline
+   width/height, so the scroll height does not collapse and no
+   `contain-intrinsic-size` is needed.
+*/
+.ph-pc-page.is-dormant {
+  content-visibility: auto;
+}
+
 .ph-pc-page {
   position: relative;
   /* A PDF page is white paper — not a themed surface. */

@@ -36,6 +36,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { PageNoteRow, PageNoteStyle, PdfKind } from "../api/types";
 import { Icons } from "../design/icons";
+import { removeRow, serverId, settleInto, tempId, trackCreate } from "../lib/optimistic";
 import { useUI } from "../store";
 import "./NoteLayer.css";
 
@@ -48,6 +49,8 @@ export const NEW_NOTE_H = 44;
  *  a size the server will refuse. */
 const MIN_SIZE = 8;
 const MAX_SIZE = 2000;
+/** Mirrors `services/pagenote.MAX_BODY`, for the same reason. */
+const MAX_NOTE_BODY = 4000;
 
 const clampSize = (v: number): number =>
   !Number.isFinite(v) ? MIN_SIZE : Math.min(MAX_SIZE, Math.max(MIN_SIZE, v));
@@ -91,7 +94,19 @@ export function NoteLayer({
 
   const updateCache = useCallback(
     (updater: (prev: PageNoteRow[]) => PageNoteRow[]) => {
-      qc.setQueryData<PageNoteRow[]>(["note", paperId, kind], (prev) => updater(prev ?? []));
+      // A list GET still in flight would resolve AFTER this write and replace
+      // the whole array with the server's older copy — every mark made since
+      // the request left simply gone from the page, though the POSTs
+      // succeeded and the server has them. The window is small but it is
+      // exactly the wrong one: it opens when the paper is first opened and
+      // again after any failed write invalidates the list, which is precisely
+      // when a reader is drawing. Cancelling makes the in-flight result be
+      // discarded instead of applied.
+      const queryKey = ["note", paperId, kind];
+      if (qc.isFetching({ queryKey, exact: true }) > 0) {
+        void qc.cancelQueries({ queryKey, exact: true });
+      }
+      qc.setQueryData<PageNoteRow[]>(queryKey, (prev) => updater(prev ?? []));
     },
     [qc, paperId, kind],
   );
@@ -99,17 +114,44 @@ export function NoteLayer({
   const patch = useCallback(
     (id: string, fields: Partial<PageNoteRow>) => {
       updateCache((prev) => prev.map((n) => (n.id === id ? { ...n, ...fields } : n)));
-      void api.note.update(id, fields).catch(() => {
-        void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
-      });
+      // Through `serverId`, because a note is at its most editable in the
+      // second right after it is made — that is when the reader types into it,
+      // drags it somewhere better, folds it up. All of those PATCH, and until
+      // the POST returns the only id we have is one the server 404s on. The
+      // 404 then invalidated the list, and the refetch overwrote the cache with
+      // the server's copy: the note snapped back to its old spot, and anything
+      // typed inside that window was simply gone.
+      void serverId(id)
+        .then((real) => (real === null ? null : api.note.update(real, fields)))
+        .catch(() => {
+          void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
+        });
     },
     [updateCache, qc, paperId, kind],
+  );
+
+  /**
+   * Keystrokes into the cache immediately, with no network call.
+   *
+   * The network save stays debounced — one PATCH per burst of typing, not per
+   * character — but the CACHE cannot wait for it. A note created optimistically
+   * has its id replaced when the server's row arrives, and that changes the
+   * React key, which unmounts the textarea and takes its local state with it.
+   * Anything typed inside the debounce window would simply be gone: measured,
+   * "插入的文字" came back as "文字". Mirroring each keystroke into the cache
+   * means the row being swapped in already carries what was typed.
+   */
+  const localBody = useCallback(
+    (id: string, body: string) => {
+      updateCache((prev) => prev.map((n) => (n.id === id ? { ...n, body } : n)));
+    },
+    [updateCache],
   );
 
   const remove = useCallback(
     (id: string) => {
       updateCache((prev) => prev.filter((n) => n.id !== id));
-      void api.note.remove(id).catch(() => {
+      void removeRow(id, (real) => api.note.remove(real)).catch(() => {
         void qc.invalidateQueries({ queryKey: ["note", paperId, kind] });
       });
     },
@@ -120,27 +162,74 @@ export function NoteLayer({
 
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Put a note down and give it the caret — SYNCHRONOUSLY.
+   *
+   * The box appears optimistically and asks for focus in the same task as the
+   * gesture that created it; the server row swaps in later. That ordering is
+   * the whole point, not an optimisation. Android raises the soft keyboard
+   * only when a focus change is attributable to a user activation, and an
+   * `await` on a POST ends the activation — so the previous version got DOM
+   * focus and no keyboard, which is a text box you cannot type into.
+   */
   const addAt = useCallback(
-    async (pageX: number, pageY: number, style: PageNoteStyle) => {
-      try {
-        const row = await api.note.create(paperId, {
-          kind,
-          page,
-          x: pageX,
-          y: pageY,
-          w: NEW_NOTE_W,
-          h: NEW_NOTE_H,
-          style,
-          color: noteColor,
-        });
-        updateCache((prev) => [...prev, row]);
-        setPendingFocus(row.id);
-      } catch {
-        /* refused (hostile geometry, or the paper is not this user's) —
-           nothing was optimistically added, so nothing to roll back. */
-      }
+    (pageX: number, pageY: number, style: PageNoteStyle) => {
+      const temp: PageNoteRow = {
+        id: tempId(),
+        paper_id: paperId,
+        kind,
+        page,
+        x: pageX,
+        y: pageY,
+        w: NEW_NOTE_W,
+        h: NEW_NOTE_H,
+        style,
+        color: noteColor,
+        size: 12,
+        body: "",
+        collapsed: false,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      };
+      updateCache((prev) => [...prev, temp]);
+      setPendingFocus(temp.id);
+      void (async () => {
+        try {
+          const row = await trackCreate(
+            temp.id,
+            api.note.create(paperId, {
+              kind,
+              page,
+              x: pageX,
+              y: pageY,
+              w: NEW_NOTE_W,
+              h: NEW_NOTE_H,
+              style,
+              color: noteColor,
+            }),
+          );
+          // Swapping the id changes the React key, which UNMOUNTS the
+          // textarea and takes the caret with it — the reader would be typing
+          // and then suddenly not be. So ask for it back, but only if it was
+          // ours to begin with: re-focusing unconditionally would yank the
+          // caret out of whatever the reader moved on to in the meantime.
+          const hadCaret =
+            document.activeElement?.closest?.(`[data-note="${temp.id}"]`) != null;
+          updateCache((prev) =>
+            settleInto(prev, temp.id, { ...row, body: prev.find((n) => n.id === temp.id)?.body ?? row.body }),
+          );
+          if (hadCaret) setPendingFocus(row.id);
+          // Anything typed before the row existed has to be sent now.
+          const typed = qc
+            .getQueryData<PageNoteRow[]>(["note", paperId, kind])
+            ?.find((n) => n.id === row.id)?.body;
+          if (typed) void api.note.update(row.id, { body: typed }).catch(() => undefined);
+        } catch {
+          updateCache((prev) => prev.filter((n) => n.id !== temp.id));
+        }
+      })();
     },
-    [paperId, kind, page, noteColor, updateCache, setPendingFocus],
+    [paperId, kind, page, noteColor, updateCache, setPendingFocus, qc],
   );
 
   /**
@@ -165,7 +254,7 @@ export function NoteLayer({
       if (!from) return;
       if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return; // a drag
       const origin = el.getBoundingClientRect();
-      void addAt(
+      addAt(
         (e.clientX - origin.left) / scale,
         pageHeight - (e.clientY - origin.top) / scale,
         noteStyle,
@@ -192,11 +281,21 @@ export function NoteLayer({
           note={n}
           scale={scale}
           pageHeight={pageHeight}
-          editable={inkMode === "text" || inkMode === "off"}
+          /*
+            Typable under EVERY tool except 胶带, whose whole job is covering
+            things up. The old gate — text mode or reading mode only — is the
+            main reason "文本框无法正常输入文字": every note the pen's long-press
+            menu creates is born while a PEN tool is selected, so it arrived
+            `readOnly`, with no placeholder and (for style "text") no visible
+            outline either. An invisible read-only box is indistinguishable
+            from nothing having happened.
+          */
+          editable={inkMode !== "tape"}
           chrome={inkMode === "text"}
           autoFocus={pendingFocus === n.id}
           onFocused={() => setPendingFocus(null)}
           onPatch={(fields) => patch(n.id, fields)}
+          onLocalBody={(body) => localBody(n.id, body)}
           onRemove={() => remove(n.id)}
         />
       ))}
@@ -221,6 +320,7 @@ function NoteBox({
   autoFocus,
   onFocused,
   onPatch,
+  onLocalBody,
   onRemove,
 }: {
   note: PageNoteRow;
@@ -234,11 +334,17 @@ function NoteBox({
   autoFocus: boolean;
   onFocused: () => void;
   onPatch: (fields: Partial<PageNoteRow>) => void;
+  /** Mirror a keystroke into the cache without a network call — see
+   *  `localBody`. */
+  onLocalBody: (body: string) => void;
   onRemove: () => void;
 }): JSX.Element {
   const [text, setText] = useState(note.body);
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const savedRef = useRef(note.body);
+  /** Has this box ever actually held the caret? Only then can leaving it mean
+   *  the reader is done with it. */
+  const touchedRef = useRef(false);
   /** Live geometry during a drag/resize, so the box follows the finger without
    *  a network round trip per frame. Null = whatever the row says. */
   const [live, setLive] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -253,7 +359,13 @@ function NoteBox({
 
   useEffect(() => {
     if (!autoFocus) return;
-    areaRef.current?.focus();
+    const el = areaRef.current;
+    if (!el) return;
+    el.focus();
+    // Put the caret at the END, not at offset 0 — a box created by the pen
+    // menu is usually empty, but one re-focused after its id settled already
+    // holds whatever was typed while the POST was in flight.
+    el.setSelectionRange(el.value.length, el.value.length);
     onFocused();
   }, [autoFocus, onFocused]);
 
@@ -309,9 +421,48 @@ function NoteBox({
     el.addEventListener("pointerup", onUp);
   };
 
+  /**
+   * Folded: the card shrinks to a single line showing the start of its text.
+   *
+   * "便签应支持收起，将展开时较大的便签缩小显示" — a sticky note is worth
+   * writing at length and then usually in the way, and the two wants are not
+   * in conflict if it can be put away without being deleted. The fold is a
+   * property of the note (it is stored), not of the session, because a reader
+   * who tidied a page expects it to still be tidy tomorrow.
+   *
+   * Only 便利贴 folds. A 文本框 is characters ON the page — folding it would
+   * hide part of the document's own content behind a control, which is a
+   * different and worse thing than tucking away an object laid on top.
+   */
+  const foldable = note.style === "note";
+  const folded = foldable && note.collapsed;
+  const firstLine = text.split("\n")[0]?.trim() ?? "";
+
+  if (folded) {
+    return (
+      <button
+        className="ph-note-box is-note is-folded"
+        data-note={note.id}
+        style={{
+          left,
+          top,
+          maxWidth: box.w * scale,
+          "--c-note": `var(--c-ink-${note.color}, var(--c-tx))`,
+        } as React.CSSProperties}
+        title="展开这张便签"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => onPatch({ collapsed: false })}
+      >
+        <span className="ph-note-fold-dot" aria-hidden="true" />
+        <span className="ph-note-fold-txt">{firstLine || "便签"}</span>
+      </button>
+    );
+  }
+
   return (
     <div
       className={`ph-note-box is-${note.style}${chrome ? " has-chrome" : ""}`}
+      data-note={note.id}
       style={{
         left,
         top,
@@ -322,18 +473,55 @@ function NoteBox({
         "--c-note": `var(--c-ink-${note.color}, var(--c-tx))`,
       } as React.CSSProperties}
     >
+      {foldable && (
+        <button
+          className="ph-note-fold"
+          title="收起这张便签"
+          aria-label="收起这张便签"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            if (text !== savedRef.current) {
+              savedRef.current = text;
+              onPatch({ body: text, collapsed: true });
+            } else {
+              onPatch({ collapsed: true });
+            }
+          }}
+        >
+          <span aria-hidden="true" />
+        </button>
+      )}
       <textarea
         ref={areaRef}
         className="ph-note-text"
         style={{ fontSize: note.size * scale }}
         value={text}
         readOnly={!editable}
+        // Mirrors `services/pagenote.MAX_BODY`. Without it the server refuses
+        // the save with a 422 that nothing surfaces: the note keeps showing
+        // what was typed, the reader has no reason to think it was not saved,
+        // and the overflow is gone at the next reload. The textarea simply
+        // stops accepting characters at the limit instead — the one place the
+        // reader can actually see it happen.
+        maxLength={MAX_NOTE_BODY}
         placeholder={editable ? "输入文字…" : ""}
-        onChange={(e) => setText(e.target.value)}
+        onFocus={() => {
+          touchedRef.current = true;
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          onLocalBody(e.target.value);
+        }}
         onBlur={() => {
           // Empty and abandoned: take it away rather than leave an invisible
           // rectangle on the page that still catches the pointer.
-          if (text.trim() === "" && note.body.trim() === "") {
+          //
+          // Guarded by `touched`, because blur is not only the reader walking
+          // away — anything that steals focus fires it too, and the reader
+          // viewport used to do exactly that on the very tap meant to type
+          // into the box. A note that has never been focused at all cannot
+          // have been abandoned.
+          if (touchedRef.current && text.trim() === "" && note.body.trim() === "") {
             onRemove();
             return;
           }

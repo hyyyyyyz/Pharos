@@ -135,6 +135,14 @@ def _clean_color(value: object) -> str:
     return value
 
 
+def _clean_collapsed(value: object) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise Invalid("collapsed must be a boolean")
+    return value
+
+
 def _clean_body(value: object) -> str:
     if value is None:
         return ""
@@ -184,6 +192,7 @@ def create_note(
     color: object = None,
     size: object = None,
     body: object = None,
+    collapsed: object = None,
 ) -> PageNote:
     """Place one text box or sticky note.
 
@@ -205,6 +214,7 @@ def create_note(
         color=_clean_color(color),
         size=_clean_font(size),
         body=_clean_body(body),
+        collapsed=_clean_collapsed(collapsed),
     )
     session.add(note)
     session.flush()
@@ -224,6 +234,7 @@ def update_note(
     color: object = ...,
     size: object = ...,
     body: object = ...,
+    collapsed: object = ...,
 ) -> PageNote:
     """Change any subset of a note's fields.
 
@@ -248,6 +259,8 @@ def update_note(
         note.size = _clean_font(size)
     if body is not ...:
         note.body = _clean_body(body)
+    if collapsed is not ...:
+        note.collapsed = _clean_collapsed(collapsed)
     note.updated_at = _now()
     session.flush()
     return note

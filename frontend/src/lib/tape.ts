@@ -111,17 +111,27 @@ export function tapeAlongAxis(
 ): { rect: TapeRect; axis: TapeAxis } {
   const dx = bx - ax;
   const dy = by - ay;
+  const ex = Math.abs(dx);
+  const ey = Math.abs(dy);
   const half = clampTapeSize(thickness) / 2;
 
-  // Does the existing lock still hold? It breaks only when the pen tip leaves
-  // the strip's own width — the reader's "超出胶条宽边界".
-  let next: TapeAxis = axis;
-  if (next === "x" && Math.abs(dy) > half) next = null;
-  if (next === "y" && Math.abs(dx) > half) next = null;
+  // Has the pen left the strip's own width? That is the reader's
+  // "笔尖超出胶带宽度范围" — and the trigger to reconsider the direction.
+  const escaped = (axis === "x" && ey > half) || (axis === "y" && ex > half);
 
-  if (next === null && Math.hypot(dx, dy) >= AXIS_MIN_TRAVEL) {
-    const ex = Math.abs(dx);
-    const ey = Math.abs(dy);
+  let next: TapeAxis = axis;
+  if (escaped) {
+    // "应改变胶带的绘制方向" — once outside, the direction follows wherever the
+    // hand is actually going, decided by the DOMINANT component with no
+    // tolerance band. The first version re-applied the 20° snap test here,
+    // which is why the direction never actually changed: a drag 100 right and
+    // 40 down is nowhere near vertical by that test, so it re-locked to
+    // horizontal and the strip stayed stubbornly level. The escape IS the
+    // permission to switch; the only question left is which way.
+    next = ey > ex ? "y" : "x";
+  } else if (next === null && Math.hypot(dx, dy) >= AXIS_MIN_TRAVEL) {
+    // Not locked yet: snap onto an axis only if the drag is genuinely near
+    // one, so a deliberately diagonal strip keeps its own angle.
     if (ey <= ex * AXIS_SNAP_TAN) next = "x";
     else if (ex <= ey * AXIS_SNAP_TAN) next = "y";
   }
