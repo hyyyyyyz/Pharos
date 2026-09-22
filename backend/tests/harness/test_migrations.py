@@ -2116,3 +2116,33 @@ def test_definition_binding_constraints_reject_invalid_values_and_fks(
                 "UPDATE harness_attempts SET attempt_no = 99 "
                 "WHERE id = 'binding-attempt'"
             )
+
+
+def test_usage_reconciliation_receipts_are_additive_and_immutable(tmp_path: Path) -> None:
+    db = tmp_path / "usage-reconciliation.sqlite"
+    run_migrations(db)
+    with sqlite3.connect(db) as conn:
+        columns = {row[1] for row in conn.execute(
+            "PRAGMA table_info(harness_usage_reconciliations)"
+        )}
+        assert {
+            "reservation_id", "delivery_state", "outcome", "amount", "input_amount",
+            "cost_micros", "evidence_code", "provider_request_id",
+        } <= columns
+        conn.execute(
+            "INSERT INTO harness_usage_reconciliations "
+            "(id, reservation_id, run_id, scope_type, scope_id, delivery_state, outcome, "
+            "amount, input_amount, cost_micros, evidence_code, created_at) "
+            "VALUES ('receipt-1', 'reservation-1', 'run-1', 'user', 'owner', 'unknown', "
+            "'settled', 2, 3, 4, 'provider_receipt', 1)"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            conn.execute(
+                "UPDATE harness_usage_reconciliations SET amount = 9 "
+                "WHERE reservation_id = 'reservation-1'"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            conn.execute(
+                "DELETE FROM harness_usage_reconciliations "
+                "WHERE reservation_id = 'reservation-1'"
+            )

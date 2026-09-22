@@ -987,6 +987,51 @@ usage_events = Table(
     CheckConstraint("op IN ('reserve','settle','release')", name="ck_harness_usage_op"),
 )
 
+# A provider request can cross the delivery boundary while its usage receipt
+# is unavailable.  Keep the resolution evidence in a separate, narrow table:
+# usage events remain the accounting source of truth, while this receipt makes
+# the one reconciliation decision auditable without retaining provider errors,
+# response bodies, or credentials.
+usage_reconciliations = Table(
+    "harness_usage_reconciliations",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("reservation_id", Text, nullable=False),
+    Column("run_id", Text, nullable=False),
+    Column("step_id", Text, nullable=True),
+    Column("attempt_id", Text, nullable=True),
+    Column("scope_type", Text, nullable=False),
+    Column("scope_id", Text, nullable=False),
+    Column("delivery_state", Text, nullable=False),
+    Column("outcome", Text, nullable=False),
+    Column("amount", Integer, nullable=False),
+    Column("input_amount", Integer, nullable=False, default=0),
+    Column("cost_micros", Integer, nullable=False, default=0),
+    Column("evidence_code", Text, nullable=False),
+    Column("provider_request_id", Text, nullable=True),
+    Column("created_at", Integer, nullable=False),
+    CheckConstraint(
+        "delivery_state IN ('unknown','sent','acknowledged')",
+        name="ck_harness_usage_reconciliations_delivery",
+    ),
+    CheckConstraint(
+        "outcome IN ('settled','released')",
+        name="ck_harness_usage_reconciliations_outcome",
+    ),
+    CheckConstraint("amount >= 0", name="ck_harness_usage_reconciliations_amount"),
+    CheckConstraint("input_amount >= 0", name="ck_harness_usage_reconciliations_input"),
+    CheckConstraint("cost_micros >= 0", name="ck_harness_usage_reconciliations_cost"),
+    CheckConstraint(
+        "evidence_code IN ('provider_receipt','provider_not_found','operator_confirmed')",
+        name="ck_harness_usage_reconciliations_evidence",
+    ),
+    CheckConstraint(
+        "provider_request_id IS NULL OR length(provider_request_id) BETWEEN 1 AND 256",
+        name="ck_harness_usage_reconciliations_request_id",
+    ),
+    UniqueConstraint("reservation_id", name="uq_harness_usage_reconciliations_reservation"),
+)
+
 Index("ix_harness_events_run_seq", events.c.run_id, events.c.seq)
 Index("ix_harness_events_scope_seq", events.c.scope_type, events.c.scope_id, events.c.seq)
 Index("ix_harness_artifacts_run", artifacts.c.run_id)
@@ -998,6 +1043,14 @@ Index(
 )
 Index("ix_harness_approvals_state", approvals.c.state, approvals.c.expires_at)
 Index("ix_harness_usage_run", usage_events.c.run_id)
+Index(
+    "ix_harness_usage_reconciliation_pending",
+    usage_events.c.attempt_id,
+    usage_events.c.reservation_id,
+    unique=False,
+    sqlite_where=(usage_events.c.op == "reserve"),
+)
+Index("ix_harness_usage_reconciliations_attempt", usage_reconciliations.c.attempt_id)
 Index(
     "ux_harness_usage_reservation_reserve",
     usage_events.c.reservation_id,

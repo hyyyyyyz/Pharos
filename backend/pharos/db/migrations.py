@@ -1553,6 +1553,58 @@ MIGRATIONS: tuple[Migration, ...] = (
             "WHERE producer_attempt_id IS NOT NULL",
         ),
     ),
+    Migration(
+        revision="0016_harness_usage_reconciliation",
+        description="Record secret-free, idempotent provider usage reconciliation receipts",
+        statements=(
+            """
+            CREATE TABLE harness_usage_reconciliations (
+                id TEXT PRIMARY KEY,
+                reservation_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                step_id TEXT,
+                attempt_id TEXT,
+                scope_type TEXT NOT NULL CHECK (scope_type IN ('user','system')),
+                scope_id TEXT NOT NULL,
+                delivery_state TEXT NOT NULL
+                    CHECK (delivery_state IN ('unknown','sent','acknowledged')),
+                outcome TEXT NOT NULL CHECK (outcome IN ('settled','released')),
+                amount INTEGER NOT NULL CHECK (amount >= 0),
+                input_amount INTEGER NOT NULL DEFAULT 0 CHECK (input_amount >= 0),
+                cost_micros INTEGER NOT NULL DEFAULT 0 CHECK (cost_micros >= 0),
+                evidence_code TEXT NOT NULL CHECK (
+                    evidence_code IN ('provider_receipt','provider_not_found',
+                                      'operator_confirmed')
+                ),
+                provider_request_id TEXT CHECK (
+                    provider_request_id IS NULL OR
+                    length(provider_request_id) BETWEEN 1 AND 256
+                ),
+                created_at INTEGER NOT NULL,
+                UNIQUE (reservation_id)
+            )
+            """,
+            "CREATE INDEX ix_harness_usage_reconciliation_pending "
+            "ON harness_usage_events (attempt_id, reservation_id) "
+            "WHERE op = 'reserve'",
+            "CREATE INDEX ix_harness_usage_reconciliations_attempt "
+            "ON harness_usage_reconciliations (attempt_id)",
+            """
+            CREATE TRIGGER ck_harness_usage_reconciliations_immutable_update
+            BEFORE UPDATE ON harness_usage_reconciliations
+            BEGIN
+                SELECT RAISE(ABORT, 'usage reconciliation receipts are immutable');
+            END
+            """,
+            """
+            CREATE TRIGGER ck_harness_usage_reconciliations_immutable_delete
+            BEFORE DELETE ON harness_usage_reconciliations
+            BEGIN
+                SELECT RAISE(ABORT, 'usage reconciliation receipts are immutable');
+            END
+            """,
+        ),
+    ),
 )
 
 

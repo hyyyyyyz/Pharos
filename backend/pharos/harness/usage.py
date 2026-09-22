@@ -14,12 +14,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, insert, literal, select
 from sqlalchemy.orm import Session
 
 from pharos.harness.contracts import NotFoundError
 from pharos.harness.repository import Scope, new_id
-from pharos.harness.tables import attempts, runs, steps, usage_events
+from pharos.harness.tables import (
+    attempts,
+    runs,
+    steps,
+    usage_events,
+    usage_reconciliations,
+)
 
 
 class LedgerConflict(NotFoundError):
@@ -89,6 +95,10 @@ class UsageBudgetStatus:
 
 class UsageLedger:
     _INPUT_SUFFIX = ":input"
+    _RECONCILIABLE_DELIVERY = frozenset({"unknown", "sent", "acknowledged"})
+    _RECONCILIATION_EVIDENCE = frozenset(
+        {"provider_receipt", "provider_not_found", "operator_confirmed"}
+    )
 
     def budget_status(
         self,
@@ -305,9 +315,6 @@ class UsageLedger:
         self._assert_paired_identity(reservation, input_reservation)
         if input_reservation is not None and actual_input is None:
             raise LedgerConflict("input usage is required to settle a multidimensional reservation")
-        self._require_unspent(session, reservation_id)
-        if input_reservation is not None:
-            self._require_unspent(session, reservation_id + self._INPUT_SUFFIX)
         self._append_outcome(
             session,
             reservation=reservation,
@@ -349,9 +356,11 @@ class UsageLedger:
         )
         input_reservation = self._paired_reservation(session, reservation_id)
         self._assert_paired_identity(reservation, input_reservation)
-        self._require_unspent(session, reservation_id)
-        if input_reservation is not None:
-            self._require_unspent(session, reservation_id + self._INPUT_SUFFIX)
+        # Replaying an already released reservation is safe even if an
+        # external recovery write has since advanced the Attempt observation;
+        # only a first release must prove that delivery never crossed over.
+        if self._outcome(session, reservation_id) is None:
+            self._ensure_release_is_safe(session, reservation)
         self._append_outcome(
             session,
             reservation=reservation,
@@ -371,6 +380,225 @@ class UsageLedger:
                 cost_micros=0,
                 now_us=now_us,
             )
+
+    def reconcile(
+        self,
+        session: Session,
+        *,
+        reservation_id: str,
+        delivery_state: str,
+        now_us: int,
+        scope: Scope,
+        run_id: str,
+        step_id: str | None = None,
+        attempt_id: str | None = None,
+        actual: int | None = None,
+        actual_input: int | None = None,
+        actual_cost_micros: int | None = None,
+        delivered: bool | None = None,
+        outcome: str | None = None,
+        evidence_code: str = "provider_receipt",
+        provider_request_id: str | None = None,
+    ) -> str:
+        """Close a reservation after provider-delivery reconciliation.
+
+        ``unknown``, ``sent`` and ``acknowledged`` are all conservative
+        delivery states: none may be released merely because a response is
+        absent.  A trusted usage receipt closes the reservation as ``settled``
+        (with ``actual`` tokens), while an explicit not-found/unsent decision
+        closes it as ``released``.  The receipt and ledger terminal rows are
+        written in the caller's transaction.  Replaying the exact decision is
+        a no-op; a different decision for the same reservation is a conflict.
+        """
+        if delivery_state not in self._RECONCILIABLE_DELIVERY:
+            raise ValueError("reconciliation requires unknown, sent, or acknowledged delivery")
+        if evidence_code not in self._RECONCILIATION_EVIDENCE:
+            raise ValueError("unknown reconciliation evidence code")
+        if provider_request_id is not None and (
+            type(provider_request_id) is not str
+            or not 0 < len(provider_request_id) <= 256
+            or "\x00" in provider_request_id
+        ):
+            raise ValueError("provider request id is invalid")
+        if outcome is not None and outcome not in {"settled", "released"}:
+            raise ValueError("reconciliation outcome must be settled or released")
+        if outcome is not None:
+            requested_delivered = outcome == "settled"
+            if delivered is not None and delivered != requested_delivered:
+                raise ValueError("delivered and outcome disagree")
+            delivered = requested_delivered
+        if delivered is None:
+            delivered = actual is not None
+        if type(delivered) is not bool:
+            raise ValueError("delivered must be a boolean when supplied")
+        outcome = "settled" if delivered else "released"
+        if outcome == "settled" and actual is None:
+            raise ValueError("settlement reconciliation requires actual usage")
+        if outcome == "released" and actual not in (None, 0):
+            raise ValueError("released reconciliation cannot include usage")
+        reservation = self._require_reservation(
+            session,
+            reservation_id,
+            scope=scope,
+            run_id=run_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+        )
+        input_reservation = self._paired_reservation(session, reservation_id)
+        self._assert_paired_identity(reservation, input_reservation)
+        if input_reservation is not None and delivered and actual_input is None:
+            raise LedgerConflict("input usage is required to settle a multidimensional reservation")
+        if delivered and actual_cost_micros is None and reservation["cost_micros"]:
+            raise LedgerConflict("cost usage is required to settle a paid reservation")
+        self._mark_delivery_reconciled(
+            session,
+            reservation=reservation,
+            delivery_state=delivery_state,
+        )
+        resolved_input = actual_input or 0
+        resolved_amount = actual or 0
+        resolved_cost = actual_cost_micros or 0
+        for value, label in (
+            (resolved_amount, "actual usage"),
+            (resolved_input, "actual input usage"),
+            (resolved_cost, "actual cost"),
+        ):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{label} must be a non-negative integer")
+        if not delivered:
+            resolved_input = resolved_amount = resolved_cost = 0
+
+        self._append_outcome(
+            session,
+            reservation=reservation,
+            reservation_id=reservation_id,
+            op="settle" if delivered else "release",
+            amount=resolved_amount,
+            cost_micros=resolved_cost,
+            now_us=now_us,
+        )
+        if input_reservation is not None:
+            self._append_outcome(
+                session,
+                reservation=input_reservation,
+                reservation_id=reservation_id + self._INPUT_SUFFIX,
+                op="settle" if delivered else "release",
+                amount=resolved_input,
+                cost_micros=0,
+                now_us=now_us,
+            )
+
+        receipt = self._reconciliation_receipt(session, reservation_id)
+        if receipt is not None:
+            self._assert_reconciliation_match(
+                receipt,
+                delivery_state=delivery_state,
+                outcome=outcome,
+                amount=resolved_amount,
+                input_amount=resolved_input,
+                cost_micros=resolved_cost,
+                evidence_code=evidence_code,
+                provider_request_id=provider_request_id,
+            )
+            return str(receipt["id"])
+
+        # The unique reservation key is the reconciliation CAS.  The
+        # conditional insert keeps a concurrent retry from creating a second
+        # decision; the subsequent read gives the winner's receipt to the
+        # loser, which can then validate that the replay is identical.
+        receipt_id = new_id()
+        receipt_columns = [
+            "id", "reservation_id", "run_id", "step_id", "attempt_id",
+            "scope_type", "scope_id", "delivery_state", "outcome", "amount",
+            "input_amount", "cost_micros", "evidence_code", "provider_request_id",
+            "created_at",
+        ]
+        receipt_values = select(
+            literal(receipt_id),
+            literal(reservation_id),
+            literal(reservation["run_id"]),
+            literal(reservation["step_id"]),
+            literal(reservation["attempt_id"]),
+            literal(reservation["scope_type"]),
+            literal(reservation["scope_id"]),
+            literal(delivery_state),
+            literal(outcome),
+            literal(resolved_amount),
+            literal(resolved_input),
+            literal(resolved_cost),
+            literal(evidence_code),
+            literal(provider_request_id),
+            literal(now_us),
+        ).where(
+            ~exists(
+                select(1).where(
+                    usage_reconciliations.c.reservation_id == reservation_id
+                )
+            )
+        )
+        result = session.execute(
+            insert(usage_reconciliations).from_select(receipt_columns, receipt_values)
+        )
+        if result.rowcount != 1:
+            receipt = self._reconciliation_receipt(session, reservation_id)
+            if receipt is None:
+                raise LedgerConflict("reconciliation CAS lost without a receipt")
+            self._assert_reconciliation_match(
+                receipt,
+                delivery_state=delivery_state,
+                outcome=outcome,
+                amount=resolved_amount,
+                input_amount=resolved_input,
+                cost_micros=resolved_cost,
+                evidence_code=evidence_code,
+                provider_request_id=provider_request_id,
+            )
+            return str(receipt["id"])
+        return receipt_id
+
+    def list_pending_reconciliation(
+        self,
+        session: Session,
+        *,
+        scope: Scope,
+        run_id: str | None = None,
+        attempt_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List open Attempt reservations whose delivery may have occurred."""
+        spent = usage_events.alias("spent_reconciliation")
+        predicates = [
+            usage_events.c.scope_type == scope.scope_type.value,
+            usage_events.c.scope_id == scope.scope_id,
+            usage_events.c.op == "reserve",
+            ~usage_events.c.reservation_id.like("%" + self._INPUT_SUFFIX),
+            attempts.c.run_id == usage_events.c.run_id,
+            attempts.c.scope_type == usage_events.c.scope_type,
+            attempts.c.scope_id == usage_events.c.scope_id,
+            attempts.c.delivery_state.in_(self._RECONCILIABLE_DELIVERY),
+            ~exists(
+                select(1)
+                .select_from(spent)
+                .where(
+                    spent.c.reservation_id == usage_events.c.reservation_id,
+                    spent.c.op.in_(("settle", "release")),
+                )
+            ),
+        ]
+        if run_id is not None:
+            predicates.append(usage_events.c.run_id == run_id)
+        if attempt_id is not None:
+            predicates.append(usage_events.c.attempt_id == attempt_id)
+        rows = session.execute(
+            select(usage_events, attempts.c.delivery_state)
+            .join(attempts, attempts.c.id == usage_events.c.attempt_id)
+            .where(*predicates)
+            .order_by(usage_events.c.created_at, usage_events.c.id)
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    # A short alias is convenient for a reconciliation coordinator and keeps
+    # the accounting vocabulary symmetrical with ``totals``.
+    pending_reconciliation = list_pending_reconciliation
 
     def totals(
         self, session: Session, *, run_id: str, scope: Scope | None = None
@@ -409,9 +637,11 @@ class UsageLedger:
                     settled_amount += row["amount"]
                     settled_cost += row["cost_micros"]
                     settled_count += 1
-            else:
+            elif row["op"] == "release":
                 if not self._is_input_reservation(row["reservation_id"]):
                     released_count += 1
+            else:
+                raise LedgerConflict("usage row has an unknown operation")
         model_status = self.budget_status(
             session, run_id=run_id, kind="model_tokens", scope=scope
         )
@@ -589,30 +819,190 @@ class UsageLedger:
         amount: int,
         cost_micros: int,
         now_us: int,
-    ) -> None:
+    ) -> bool:
         if type(amount) is not int or amount < 0:
             raise ValueError("usage amount must be a non-negative integer")
         if type(cost_micros) is not int or cost_micros < 0:
             raise ValueError("usage cost must be a non-negative integer")
-        session.execute(
-            usage_events.insert().values(
-                id=new_id(),
-                run_id=reservation["run_id"],
-                step_id=reservation["step_id"],
-                attempt_id=reservation["attempt_id"],
-                scope_type=reservation["scope_type"],
-                scope_id=reservation["scope_id"],
-                source=reservation["source"],
-                kind=reservation["kind"],
-                reservation_id=reservation_id,
-                op=op,
-                amount=amount,
-                cost_micros=cost_micros,
-                provider=reservation["provider"],
-                model=reservation["model"],
-                created_at=now_us,
+        existing = self._outcome(session, reservation_id)
+        if existing is not None:
+            if (
+                existing["op"] != op
+                or existing["amount"] != amount
+                or existing["cost_micros"] != cost_micros
+            ):
+                raise LedgerConflict(f"reservation {reservation_id} already {existing['op']}(ed)")
+            return False
+
+        # Conditional INSERT is the write fence.  A concurrent settle/release
+        # cannot both observe an open reservation and append an outcome: the
+        # unique partial index is backed by this NOT EXISTS CAS predicate.
+        outcome_values = select(
+            literal(new_id()),
+            literal(reservation["run_id"]),
+            literal(reservation["step_id"]),
+            literal(reservation["attempt_id"]),
+            literal(reservation["scope_type"]),
+            literal(reservation["scope_id"]),
+            literal(reservation["source"]),
+            literal(reservation["kind"]),
+            literal(reservation_id),
+            literal(op),
+            literal(amount),
+            literal(cost_micros),
+            literal(reservation["provider"]),
+            literal(reservation["model"]),
+            literal(now_us),
+        ).where(
+            ~exists(
+                select(1).where(
+                    usage_events.c.reservation_id == reservation_id,
+                    usage_events.c.op.in_(("settle", "release")),
+                )
             )
         )
+        result = session.execute(
+            insert(usage_events).from_select(
+                [
+                    "id", "run_id", "step_id", "attempt_id", "scope_type", "scope_id",
+                    "source", "kind", "reservation_id", "op", "amount", "cost_micros",
+                    "provider", "model", "created_at",
+                ],
+                outcome_values,
+            )
+        )
+        if result.rowcount == 1:
+            return True
+        existing = self._outcome(session, reservation_id)
+        if existing is None:
+            raise LedgerConflict("usage outcome CAS lost without a terminal row")
+        if (
+            existing["op"] != op
+            or existing["amount"] != amount
+            or existing["cost_micros"] != cost_micros
+        ):
+            raise LedgerConflict(f"reservation {reservation_id} already {existing['op']}(ed)")
+        return False
+
+    @staticmethod
+    def _outcome(session: Session, reservation_id: str) -> dict | None:
+        rows = (
+            session.execute(
+                select(usage_events).where(
+                    usage_events.c.reservation_id == reservation_id,
+                    usage_events.c.op.in_(("settle", "release")),
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(rows) > 1:
+            raise LedgerConflict("usage reservation has multiple outcomes")
+        return dict(rows[0]) if rows else None
+
+    @staticmethod
+    def _reconciliation_receipt(session: Session, reservation_id: str) -> dict | None:
+        row = session.execute(
+            select(usage_reconciliations).where(
+                usage_reconciliations.c.reservation_id == reservation_id
+            )
+        ).mappings().first()
+        return dict(row) if row is not None else None
+
+    @staticmethod
+    def _assert_reconciliation_match(
+        receipt: dict,
+        *,
+        delivery_state: str,
+        outcome: str,
+        amount: int,
+        input_amount: int,
+        cost_micros: int,
+        evidence_code: str,
+        provider_request_id: str | None,
+    ) -> None:
+        expected = {
+            "delivery_state": delivery_state,
+            "outcome": outcome,
+            "amount": amount,
+            "input_amount": input_amount,
+            "cost_micros": cost_micros,
+            "evidence_code": evidence_code,
+            "provider_request_id": provider_request_id,
+        }
+        if any(receipt[field] != value for field, value in expected.items()):
+            raise LedgerConflict("reconciliation decision does not match the existing receipt")
+
+    @staticmethod
+    def _mark_delivery_reconciled(
+        session: Session,
+        *,
+        reservation: dict,
+        delivery_state: str,
+    ) -> None:
+        """Advance the Attempt delivery observation with a narrow CAS.
+
+        Reconciliation is the one service allowed to close the delivery
+        observation.  A stale worker cannot turn a newer delivery observation
+        into ``reconciled`` or close a reservation belonging to another
+        Attempt generation.
+        """
+        attempt_id = reservation.get("attempt_id")
+        if attempt_id is None:
+            return
+        predicates = [
+            attempts.c.id == attempt_id,
+            attempts.c.run_id == reservation["run_id"],
+            attempts.c.step_id == reservation["step_id"],
+            attempts.c.scope_type == reservation["scope_type"],
+            attempts.c.scope_id == reservation["scope_id"],
+        ]
+        current = session.execute(
+            select(attempts.c.delivery_state).where(*predicates)
+        ).scalar_one_or_none()
+        if current is None:
+            raise LedgerConflict("reconciliation Attempt has no delivery evidence")
+        if current == "reconciled":
+            return
+        if current != delivery_state:
+            raise LedgerConflict("reconciliation delivery state is stale")
+        result = session.execute(
+            attempts.update()
+            .where(*predicates, attempts.c.delivery_state == delivery_state)
+            .values(delivery_state="reconciled")
+        )
+        if result.rowcount != 1:
+            raise LedgerConflict("reconciliation delivery CAS lost")
+
+    @classmethod
+    def _ensure_release_is_safe(cls, session: Session, reservation: dict) -> None:
+        """Never release a reservation after the provider boundary."""
+        attempt_id = reservation.get("attempt_id")
+        if attempt_id is None:
+            return
+        row = session.execute(
+            select(
+                attempts.c.delivery_state,
+                attempts.c.runtime_session_id,
+                attempts.c.child_pid,
+                attempts.c.runtime_message_id,
+            ).where(
+                attempts.c.id == attempt_id,
+                attempts.c.run_id == reservation["run_id"],
+                attempts.c.step_id == reservation["step_id"],
+                attempts.c.scope_type == reservation["scope_type"],
+                attempts.c.scope_id == reservation["scope_id"],
+            )
+        ).mappings().first()
+        if row is None:
+            raise LedgerConflict("release Attempt is missing its owner fence")
+        delivery = row["delivery_state"]
+        runtime_evidence = any(
+            row[field] is not None
+            for field in ("runtime_session_id", "child_pid", "runtime_message_id")
+        )
+        if delivery in cls._RECONCILIABLE_DELIVERY or runtime_evidence:
+            raise LedgerConflict("provider-delivered usage requires reconciliation")
 
     def _require_unspent(self, session: Session, reservation_id: str) -> None:
         spent = (

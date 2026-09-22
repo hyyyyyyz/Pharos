@@ -142,6 +142,58 @@ def test_usage_settlement_requires_matching_owner_fence(app: Any, owner: Scope) 
             )
 
 
+def test_usage_terminal_operations_are_idempotent_and_conflict_safe(app: Any, owner: Scope) -> None:
+    enable_canary(app)
+    run = app.create_run(
+        scope=owner,
+        workflow_key="harness.canary",
+        input=canary_input("success"),
+        idempotency_key="usage-idempotent-terminal-ops",
+        initiator="operator",
+    )
+    with session_scope() as session:
+        reservation = app.usage.reserve(
+            session,
+            scope=owner,
+            run_id=run["id"],
+            kind="model_tokens",
+            source="system_shared",
+            amount=10,
+            cost_micros=20,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        app.usage.settle(
+            session,
+            reservation_id=reservation,
+            scope=owner,
+            run_id=run["id"],
+            actual=3,
+            actual_cost_micros=4,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        # A replay of the same terminal fact is a no-op, not a second spend.
+        app.usage.settle(
+            session,
+            reservation_id=reservation,
+            scope=owner,
+            run_id=run["id"],
+            actual=3,
+            actual_cost_micros=4,
+            now_us=app.clock.utc_epoch_us(),
+        )
+        with pytest.raises(LedgerConflict):
+            app.usage.release(
+                session,
+                reservation_id=reservation,
+                scope=owner,
+                run_id=run["id"],
+                now_us=app.clock.utc_epoch_us(),
+            )
+        totals = app.usage.totals(session, run_id=run["id"])
+        assert totals["settled_reservations"] == 1
+        assert totals["pending_reservations"] == 0
+
+
 def test_runner_downshifts_context_to_the_atomic_remaining_budget(
     app: Any,
     owner: Scope,
