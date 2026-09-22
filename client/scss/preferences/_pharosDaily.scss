@@ -29,12 +29,12 @@
 	}
 
 	.pharos-daily-prefs-error {
-		color: var(--color-critical);
+		color: var(--accent-red);
 		margin-block: 4px;
 	}
 
 	.pharos-daily-prefs-warn {
-		color: var(--color-critical);
+		color: var(--accent-red);
 		font-size: 11px;
 		margin-block: 4px;
 	}
@@ -142,8 +142,8 @@
 	}
 
 	.pharos-daily-prefs-chip-bad {
-		border-color: var(--color-critical);
-		color: var(--color-critical);
+		border-color: var(--accent-red);
+		color: var(--accent-red);
 	}
 
 	.pharos-daily-prefs-empty-title {
@@ -152,7 +152,7 @@
 	}
 
 	.pharos-daily-prefs-danger {
-		color: var(--color-critical);
+		color: var(--accent-red);
 	}
 
 	//
