@@ -13,23 +13,32 @@
 
 @import "themes/light";
 @import "themes/dark";
+@import "abstracts/pharosScale";
+@import "abstracts/pharosShell";
 
 @import "base/base";
 @import "components/button";
 @import "components/window";
 
 #pharos-admin-root {
-	padding: 12px;
-	background: var(--material-background);
-	color: var(--fill-primary);
+	padding: 0;
+	background: var(--c-sf);
+	color: var(--c-tx);
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	font-variant-numeric: tabular-nums;
 	// The overlay is positioned against this, so the dialog covers the console
 	// and nothing else.
 	position: relative;
 }
 
 #pharos-admin-toolbar {
-	gap: 8px;
-	margin-block-end: 8px;
+	// The 48px page header, as .pharos-pagehead.
+	flex: none;
+	height: 48px;
+	gap: 12px;
+	padding: 0 24px;
+	border-block-end: 1px solid var(--c-bd);
 }
 
 #pharos-admin-tabs {
@@ -37,17 +46,31 @@
 	gap: 4px;
 
 	button {
+		max-height: none;
+		margin: 0;
+		height: 28px;
+		padding: 0 12px;
 		background: none;
-		border: var(--material-border-transparent);
-		border-radius: 5px;
-		padding: 4px 12px;
-		color: var(--fill-secondary);
+		border: 1px solid transparent;
+		border-radius: var(--r-sm);
+		color: var(--c-tx2);
+		font: inherit;
+		font-size: var(--fs-base);
+		transition:
+			background-color var(--dur-fast) var(--ease),
+			color var(--dur-fast) var(--ease);
+
+		@media (hover: hover) {
+			&:hover:not(.is-on) {
+				background: var(--c-hv);
+				color: var(--c-tx);
+			}
+		}
 
 		&.is-on {
-			background: var(--material-mix-quarternary);
-			border: var(--material-border);
-			color: var(--fill-primary);
-			font-weight: 600;
+			background: var(--c-hv);
+			color: var(--c-tx);
+			font-weight: 500;
 		}
 	}
 }
@@ -61,8 +84,10 @@
 }
 
 #pharos-admin-status {
-	color: var(--fill-secondary);
-	margin-block-end: 8px;
+	padding: 8px 24px 0;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx2);
 
 	&[hidden] {
 		display: none;
@@ -70,32 +95,38 @@
 }
 
 #pharos-admin-body {
-	// The console scrolls; the toolbar stays put.
+	// The console scrolls; the header stays put.
 	overflow-y: auto;
 	flex: 1;
 	min-height: 0;
+	padding: 16px 24px 24px;
 }
 
 .pharos-admin-empty,
 .pharos-admin-note {
-	color: var(--fill-secondary);
-	margin-block: 8px;
+	padding: 8px 12px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-hv);
+	font-size: var(--fs-sm);
 }
 
 .pharos-admin-note {
-	padding: 8px 10px;
-	border: var(--material-border);
-	border-radius: 6px;
+	padding: 8px 8px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
 	background: var(--material-mix-quinary);
-	font-size: 11px;
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-warning {
-	padding: 8px 10px;
+	padding: 8px 12px;
 	margin-block-end: 8px;
-	border: 1px solid var(--accent-orange);
-	border-radius: 6px;
-	color: var(--fill-primary);
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-hv);
+	color: var(--c-tx);
+	font-size: var(--fs-sm);
 }
 
 //
@@ -103,37 +134,45 @@
 //
 
 .pharos-admin-stats {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
-	margin-block-end: 12px;
+	// Plain number cards: one row of equal-height tiles.
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 16px;
+	margin-block-end: 24px;
 }
 
 .pharos-admin-stat {
-	flex: 1 1 120px;
-	padding: 8px 12px;
-	border: var(--material-border);
-	border-radius: 6px;
-	background: var(--color-background);
+	// The label sits above the number although the script writes it second.
+	display: flex;
+	flex-direction: column-reverse;
+	justify-content: flex-end;
+	gap: 4px;
+	padding: 16px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-md);
+	background: var(--c-sf);
 }
 
 .pharos-admin-stat-value {
-	font-size: 20px;
-	font-weight: 600;
+	font-size: var(--fs-xl);
+	line-height: var(--lh-xl);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 .pharos-admin-stat-label {
-	color: var(--fill-secondary);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx3);
 }
 
 .pharos-admin-registration {
-	color: var(--fill-secondary);
-	font-size: 11px;
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-registration-hint {
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 	margin-inline-start: 4px;
 }
 
@@ -147,16 +186,18 @@
 
 	th {
 		text-align: start;
-		font-weight: 600;
-		color: var(--fill-secondary);
-		padding: 4px 8px;
-		border-block-end: var(--material-border);
+		font-size: var(--fs-sm);
+		line-height: var(--lh-sm);
+		font-weight: 400;
+		color: var(--c-tx3);
+		padding: 8px;
+		border-block-end: 1px solid var(--c-bd);
 		white-space: nowrap;
 	}
 
 	td {
-		padding: 6px 8px;
-		border-block-end: var(--material-border50);
+		padding: 12px 8px;
+		border-block-end: 1px solid var(--c-bd);
 		vertical-align: top;
 	}
 
@@ -168,56 +209,56 @@
 }
 
 .pharos-admin-date {
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	white-space: nowrap;
 	font-variant-numeric: tabular-nums;
 }
 
 .pharos-admin-username {
-	font-weight: 600;
+	font-weight: 500;
 }
 
 .pharos-admin-useremail {
-	color: var(--fill-secondary);
-	font-size: 11px;
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-self {
-	margin-inline-start: 6px;
-	padding: 0 5px;
-	border-radius: 8px;
-	background: var(--fill-quarternary);
-	color: var(--fill-secondary);
-	font-size: 10px;
+	margin-inline-start: 4px;
+	padding: 0 4px;
+	border-radius: var(--r-sm);
+	background: var(--c-hv);
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 	font-weight: 400;
 }
 
 .pharos-admin-selfnote {
-	color: var(--fill-tertiary);
-	font-style: italic;
+	color: var(--c-tx3);
 }
 
 .pharos-admin-badge {
 	display: inline-block;
 	margin-inline-end: 4px;
-	padding: 1px 7px;
-	border-radius: 9px;
-	font-size: 11px;
+	padding: 0 8px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-xs);
+	font-size: var(--fs-meta);
+	line-height: var(--lh-meta);
 	white-space: nowrap;
-	background: var(--fill-quarternary);
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 
 	&.is-admin {
-		background: var(--accent-blue10);
-		color: var(--accent-blue);
+		color: var(--c-tx);
+		border-color: var(--c-bds);
 	}
 
 	&.is-ready {
-		color: var(--accent-teal);
+		color: var(--c-ok);
 	}
 
 	&.is-suspended {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 }
 
@@ -231,7 +272,7 @@
 // Destructive actions read as destructive whether they sit in a row or in the
 // confirmation dialog.
 .pharos-admin-danger:not(:disabled) {
-	color: var(--accent-red);
+	color: var(--c-err);
 }
 
 //
@@ -253,14 +294,15 @@
 	max-width: 90%;
 	padding: 16px;
 	border: var(--material-panedivider);
-	border-radius: 8px;
-	background: var(--material-background);
-	box-shadow: 0 8px 24px #0000002e;
+	border-radius: var(--r-lg);
+	background: var(--c-sf);
+	box-shadow: var(--sh-pop);
+
 }
 
 .pharos-admin-dialog-title {
-	font-size: 14px;
-	font-weight: 600;
+	font-size: var(--fs-md);
+	font-weight: 500;
 	margin-block-end: 8px;
 }
 
@@ -269,19 +311,19 @@
 }
 
 .pharos-admin-dialog-local {
-	color: var(--fill-secondary);
-	margin-block: 6px 12px;
+	color: var(--c-tx2);
+	margin-block: 4px 12px;
 }
 
 .pharos-admin-dialog-warning {
-	color: var(--accent-red);
-	font-weight: 600;
+	color: var(--c-err);
+	font-weight: 500;
 	margin-block-end: 12px;
 }
 
 .pharos-admin-dialog-prompt {
 	display: block;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	margin-block-end: 12px;
 }
 
@@ -292,7 +334,7 @@
 }
 
 .pharos-admin-dialog-error {
-	color: var(--accent-red);
+	color: var(--c-err);
 	margin-block-end: 8px;
 
 	&[hidden] {
@@ -303,7 +345,7 @@
 .pharos-admin-dialog-actions {
 	display: flex;
 	justify-content: flex-end;
-	gap: 6px;
+	gap: 4px;
 }
 
 //
@@ -319,20 +361,20 @@
 
 .pharos-admin-role {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	align-items: baseline;
-	padding: 4px 10px;
-	border: var(--material-border);
-	border-radius: 6px;
+	padding: 4px 8px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
 }
 
 .pharos-admin-role-label {
-	color: var(--fill-secondary);
-	font-size: 11px;
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-role-value {
-	font-weight: 600;
+	font-weight: 500;
 }
 
 .pharos-admin-providers {
@@ -343,9 +385,9 @@
 
 .pharos-admin-provider {
 	flex: 1 1 260px;
-	padding: 10px 12px;
-	border: var(--material-border);
-	border-radius: 6px;
+	padding: 8px 12px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
 	background: var(--color-background);
 	opacity: 0.7;
 
@@ -359,11 +401,11 @@
 	justify-content: space-between;
 	align-items: center;
 	gap: 8px;
-	margin-block-end: 6px;
+	margin-block-end: 4px;
 }
 
 .pharos-admin-provider-name {
-	font-weight: 600;
+	font-weight: 500;
 }
 
 .pharos-admin-kv {
@@ -373,8 +415,8 @@
 	margin: 0 0 8px;
 
 	dt {
-		color: var(--fill-secondary);
-		font-size: 11px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 	}
 
 	dd {
@@ -386,7 +428,7 @@
 }
 
 .pharos-admin-url {
-	font-size: 11px;
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-provider-roles {
@@ -397,11 +439,11 @@
 }
 
 .pharos-admin-rolechip {
-	padding: 1px 7px;
-	border-radius: 9px;
-	background: var(--fill-quarternary);
-	color: var(--fill-secondary);
-	font-size: 11px;
+	padding: 1px 8px;
+	border-radius: var(--r-md);
+	background: var(--c-hv);
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 }
 
 .pharos-admin-provider-foot {
@@ -411,14 +453,14 @@
 }
 
 .pharos-admin-probe {
-	font-size: 11px;
-	color: var(--fill-secondary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx2);
 
 	&.is-ok {
-		color: var(--accent-teal);
+		color: var(--c-ok);
 	}
 
 	&.is-bad {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 }

@@ -1,17 +1,70 @@
-// The model console: one form, one provider, nothing else yet.
+// The model console: one form, one provider.
 //
-// Lives in the rail deck beside the other Pharos modules, so it inherits the
-// module chrome. The form is deliberately narrow-column: the pane surface is
-// a configuration screen, not a dashboard.
+// Lives in the rail deck beside the other Pharos modules. It is a settings
+// surface, so it follows the shared frame (abstracts/pharosShell): a 48px page
+// header, then a form that stops at 880 and sits against the left edge. Each
+// setting is one row, label on the left and control on the right.
+
+@import "abstracts/pharosScale";
+@import "abstracts/pharosShell";
 
 #pharos-models-root {
-	padding: 16px 20px;
-	max-width: 560px;
-	font-size: 13px;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--c-sf);
+	color: var(--c-tx);
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
 
-	.pharos-models-intro {
-		color: var(--fill-secondary);
-		margin-block-end: 12px;
+	[hidden] {
+		display: none;
+	}
+}
+
+.pharos-models-form {
+	padding: 24px;
+
+	.pharos-models-intro,
+	#pharos-models-intro {
+		color: var(--c-tx2);
+		margin-block-end: 16px;
+	}
+
+	button {
+		max-height: none;
+		margin: 0 8px 0 0;
+		height: 28px;
+		padding: 0 12px;
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
+		color: var(--c-tx);
+		font-size: var(--fs-base);
+		font-weight: 500;
+		line-height: 26px;
+		box-sizing: border-box;
+		-moz-appearance: none;
+		appearance: none;
+
+		&:hover:not(:disabled) {
+			background: var(--c-hv);
+		}
+
+		&:disabled {
+			opacity: 0.5;
+		}
+	}
+
+	#pharos-models-save {
+		border-color: var(--c-ac);
+		background: var(--c-ac);
+		color: var(--c-acc);
+
+		&:hover:not(:disabled) {
+			background: var(--c-ac);
+			opacity: 0.9;
+		}
 	}
 }
 
@@ -19,32 +72,33 @@
 	display: flex;
 	align-items: baseline;
 	gap: 8px;
-	border: 1px solid var(--color-border);
-	border-radius: 8px;
-	background: var(--material-background);
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-hv);
 	padding: 8px 12px;
-	margin-block-end: 14px;
+	margin-block-end: 16px;
 
 	strong {
-		color: var(--fill-primary);
+		font-weight: 500;
+		color: var(--c-tx);
 	}
 
 	.pharos-models-current-source {
-		color: var(--fill-tertiary);
-		font-size: 11px;
+		color: var(--c-tx3);
+		font-size: var(--fs-sm);
 		margin-inline-start: auto;
 	}
 }
 
 .pharos-models-field {
 	display: grid;
-	grid-template-columns: 9em 1fr;
+	grid-template-columns: 200px 1fr;
 	align-items: center;
-	gap: 8px;
-	margin-block-end: 8px;
+	gap: 16px;
+	margin-block-end: 12px;
 
 	label {
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 	}
 
 	input {
@@ -54,24 +108,25 @@
 
 .pharos-models-field--row {
 	grid-template-columns: 1fr 1fr;
-	gap: 12px;
+	gap: 24px;
 
 	.pharos-models-subfield {
 		display: grid;
-		grid-template-columns: 9em 1fr;
+		grid-template-columns: 200px 1fr;
 		align-items: center;
-		gap: 8px;
+		gap: 16px;
 	}
 }
 
 .pharos-models-help {
-	color: var(--fill-tertiary);
-	font-size: 11px;
-	margin-block-end: 10px;
+	color: var(--c-tx3);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-base);
+	margin-block-end: 12px;
 }
 
 .pharos-models-message {
 	margin-inline-start: 8px;
-	color: var(--fill-secondary);
-	font-size: 12px;
+	color: var(--c-tx2);
+	font-size: var(--fs-sm);
 }
