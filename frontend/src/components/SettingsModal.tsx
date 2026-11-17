@@ -14,7 +14,7 @@ type IconComponent = (typeof Icons)["user"];
 
 const TABS: { key: SettingsTab; label: string; Icon: IconComponent }[] = [
   { key: "account", label: "账户", Icon: Icons.user },
-  { key: "ai", label: "AI 对话", Icon: Icons.spark },
+  { key: "ai", label: "AI 对话", Icon: Icons.sliders },
   { key: "appearance", label: "外观", Icon: Icons.palette },
   // Last, and using the rail's own 每日论文 icon so the tab is recognisable as
   // the settings for that module rather than a third appearance-like section.
@@ -30,9 +30,9 @@ const THEMES: { key: ThemePref; label: string; Icon: IconComponent }[] = [
 ];
 
 /** The 整篇 PDF 翻译 control, shaped exactly like the 主题 buttons above it. */
-const PDF_TX: { on: boolean; label: string; Icon: IconComponent }[] = [
-  { on: true, label: "开启", Icon: Icons.check },
-  { on: false, label: "关闭", Icon: Icons.close },
+const PDF_TX: { on: boolean; label: string }[] = [
+  { on: true, label: "开启" },
+  { on: false, label: "关闭" },
 ];
 
 const cx = (...parts: (string | false)[]): string => parts.filter(Boolean).join(" ");
@@ -504,44 +504,34 @@ export function SettingsModal(): JSX.Element | null {
                   whereas everything on 外观 is a property of this screen. A
                   whole tab for one control would also read thin. */}
               <div className="ph-set-sec">
-                <div className="ph-set-sec-head">
-                  <span className="ph-set-ic ph-set-ic--tx2">
-                    <Icons.spark />
-                  </span>
-                  <div className="ph-set-sec-title">阅读</div>
-                </div>
-                <div className="ph-set-label">整篇 PDF 翻译</div>
-                <div className="ph-set-seg">
-                  {PDF_TX.map(({ on, label, Icon }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      disabled={setPdfTx.isPending}
-                      onClick={() => setPdfTx.mutate(on)}
-                      className={cx("ph-set-seg-btn", pdfTx === on && "ph-set-seg-btn--on")}
-                    >
-                      {/* Explicit size: Icons.check and Icons.close carry
-                          different intrinsic ones (16 vs 12) and would sit
-                          visibly uneven beside each other. */}
-                      <span className="ph-set-ic">
-                        <Icon size={14} />
-                      </span>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="ph-set-sec-desc">
-                  开启后整篇论文会译成中文并保留原排版，读起来省力，但要等，也要花 API
-                  额度；关闭后你直接读原文，遇到读不懂的段落再用 AI 对话。已经译好的论文不会消失，仍然可以切到中文对照。
+                <div className="ph-set-sec-title">阅读</div>
+                <div className="ph-set-row">
+                  <div className="ph-set-row-text">
+                    <div className="ph-set-label">整篇 PDF 翻译</div>
+                    <div className="ph-set-sec-desc">
+                      开启后整篇论文会译成中文并保留原排版，读起来省力，但要等，也要花 API
+                      额度；关闭后你直接读原文，遇到读不懂的段落再用 AI 对话。已经译好的论文不会消失，仍然可以切到中文对照。
+                    </div>
+                  </div>
+                  <div className="ph-set-seg">
+                    {PDF_TX.map(({ on, label }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        disabled={setPdfTx.isPending}
+                        onClick={() => setPdfTx.mutate(on)}
+                        className={cx("ph-set-seg-btn", pdfTx === on && "ph-set-seg-btn--on")}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {setPdfTx.isError && <div className="ph-set-err">{errText(setPdfTx.error)}</div>}
               </div>
 
               <div className="ph-set-zot">
                 <div className="ph-set-zot-head">
-                  <span className="ph-set-ic ph-set-ic--tx2">
-                    <Icons.library />
-                  </span>
                   <div className="ph-set-zot-title">Zotero</div>
                 </div>
 
@@ -770,24 +760,32 @@ export function SettingsModal(): JSX.Element | null {
           {settingsTab === "appearance" && (
             <>
               <div className="ph-set-h">外观</div>
-              <div className="ph-set-label">主题</div>
-              <div className="ph-set-themes">
-                {THEMES.map(({ key, label, Icon }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTheme(key)}
-                    className={cx("ph-set-theme", themePref === key && "ph-set-theme--on")}
-                  >
-                    <span className="ph-set-ic">
-                      <Icon />
-                    </span>
-                    {label}
-                  </button>
-                ))}
+              <div className="ph-set-row">
+                <div className="ph-set-row-text">
+                  <div className="ph-set-label">主题</div>
+                  <div className="ph-set-sec-desc">浅色、深色，或跟随系统</div>
+                </div>
+                <div className="ph-set-themes">
+                  {THEMES.map(({ key, label, Icon }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTheme(key)}
+                      className={cx("ph-set-theme", themePref === key && "ph-set-theme--on")}
+                    >
+                      <span className="ph-set-ic">
+                        <Icon />
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="ph-set-label">
-                强调色 <span className="ph-set-label-sub">· 仅用于关键处</span>
+              <div className="ph-set-row is-stacked">
+                <div className="ph-set-row-text">
+                  <div className="ph-set-label">强调色</div>
+                  <div className="ph-set-sec-desc">用于主按钮、链接、选中项和焦点环</div>
+                </div>
               </div>
               <div className="ph-set-accents">
                 {ACCENTS.map(({ key, name }) => {
@@ -801,15 +799,7 @@ export function SettingsModal(): JSX.Element | null {
                       onClick={() => setAccent(key)}
                       className={cx("ph-set-acc", on && "ph-set-acc--on")}
                     >
-                      <span
-                        className="ph-set-acc-dot"
-                        style={{
-                          background: colour,
-                          boxShadow: on
-                            ? `0 0 0 2px var(--c-sf),0 0 0 3.5px ${colour}`
-                            : "inset 0 0 0 1px rgba(0,0,0,.06)",
-                        }}
-                      />
+                      <span className="ph-set-acc-dot" style={{ background: colour }} />
                       <span className="ph-set-acc-name">{name}</span>
                     </button>
                   );
