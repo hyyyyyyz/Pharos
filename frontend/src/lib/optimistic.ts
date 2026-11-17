@@ -35,10 +35,14 @@ const discarded = new Set<string>();
 /** Is this a client-minted id that the server has never seen under that name? */
 export const isTempId = (id: string): boolean => id.startsWith("temp-");
 
-/** Mint one. Time plus randomness: two strokes finished in the same
- *  millisecond must not collide, and they can be. */
+/** Per-page-load counter: uniqueness within this tab is guaranteed, not
+ *  probable. The random part only keeps ids from two tabs apart. */
+let tempSeq = 0;
+
+/** Mint one. Two strokes finished in the same millisecond must not collide, and
+ *  a lasso commit mints many at once, so a counter carries the uniqueness. */
 export const tempId = (): string =>
-  `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  `temp-${Date.now()}-${++tempSeq}-${Math.floor(Math.random() * 1e6)}`;
 
 /**
  * Register a create that is on its way, and hand back the same promise.

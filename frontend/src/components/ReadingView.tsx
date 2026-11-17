@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { InkStrokeRow, Paper, PdfKind, TapeRow } from "../api/types";
 import { Icons } from "../design/icons";
 import { INK_COLORS, WATER_COLORS, rankInkColors } from "../lib/ink";
@@ -110,6 +110,14 @@ async function flattenOutline(doc: PDFDocumentProxy): Promise<OutlineEntry[]> {
   };
   await walk(raw, 0);
   return out;
+}
+
+/** 409 = this paper already has a job for different pages, or has no PDF.
+ *  (Re-submitting the same pages returns 202 with the existing job, which the
+ *  paper poll picks up like any other.) */
+function translateErrorText(e: unknown): string {
+  if (e instanceof ApiError && e.status === 409) return `无法开始翻译：${e.message}`;
+  return e instanceof Error ? e.message : "翻译请求失败";
 }
 
 export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
@@ -1148,6 +1156,11 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   >
                     重新翻译
                   </button>
+                  {translate.isError && (
+                    <div className="ph-rv-note" role="alert">
+                      {translateErrorText(translate.error)}
+                    </div>
+                  )}
                   <button className="ph-rv-btn-outline" onClick={() => setReadMode("original")}>
                     查看原文
                   </button>
@@ -1188,6 +1201,11 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   </span>
                   翻译此篇 · 保留排版
                 </button>
+                {translate.isError && (
+                  <div className="ph-rv-note" role="alert">
+                    {translateErrorText(translate.error)}
+                  </div>
+                )}
                 <div className="ph-rv-note">分栏、公式、图表将全部原位保留</div>
                 <button className="ph-rv-ghost" onClick={() => setReadMode("original")}>
                   先看原文

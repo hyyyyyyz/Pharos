@@ -5,7 +5,7 @@ import { Icons } from "../design/icons";
 import { themeStyle } from "../design/tokens";
 import { useSession, useUI } from "../store";
 import { POSTER_ALT, POSTER_SRC } from "./poster";
-import wordmark from "../assets/pharos-wordmark.png";
+import wordmark from "../assets/pharos-wordmark.webp";
 import "./AuthGate.css";
 
 type Mode = "login" | "register";

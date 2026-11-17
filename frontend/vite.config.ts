@@ -22,6 +22,18 @@ export default defineConfig(({ mode }) => ({
       "/api": { target: "http://127.0.0.1:8848", changeOrigin: true },
     },
   },
+  test: {
+    // Node >= 25 ships an experimental global `localStorage` that throws on
+    // use unless --localstorage-file is given, shadowing the test shims in
+    // store.test.ts. Turn it off so tests behave the same on every Node.
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        // The flag only exists on Node >= 22; older Nodes reject unknown options.
+        execArgv: Number(process.versions.node.split(".")[0]) >= 22 ? ["--no-experimental-webstorage"] : [],
+      },
+    },
+  },
   build: {
     outDir: "dist",
     sourcemap: false,

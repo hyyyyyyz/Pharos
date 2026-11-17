@@ -10,6 +10,11 @@ import type {
 } from "./api/types";
 import type { InkColorUsage } from "./lib/ink";
 import { getSession, subscribe as subscribeSession } from "./auth/session";
+import type { WorkspaceSnapshot } from "./lib/workspaceState";
+import { DEFAULT_WORKSPACE, clearWorkspace, loadWorkspace, saveWorkspace } from "./lib/workspaceState";
+
+// Restored once at boot: the open module and paper tabs survive a reload.
+const initialWorkspace = loadWorkspace();
 
 export type ModuleKey = "library" | "daily" | "search" | "kb" | "writing" | "runs" | "admin";
 /** Modules that are actually built. Everything else falls through to <ComingSoon />. */
@@ -704,7 +709,7 @@ export const useUI = create<UIState>((set) => ({
     set({ accent });
   },
 
-  activeModule: "library",
+  activeModule: initialWorkspace.activeModule,
   setModule: (activeModule) => set({ activeModule }),
   // Versioned once to retire the old collapsed-by-default preference. Every
   // existing browser receives the corrected expanded state on this release;
@@ -782,8 +787,8 @@ export const useUI = create<UIState>((set) => ({
   activeProjectId: null,
   setActiveProject: (activeProjectId) => set({ activeProjectId }),
 
-  tabs: [{ id: "library", kind: "library" }],
-  activeTabId: "library",
+  tabs: initialWorkspace.tabs as Tab[],
+  activeTabId: initialWorkspace.activeTabId,
   openPaper: (paperId) =>
     set((s) => {
       const tabId = `t-${paperId}`;
@@ -1003,3 +1008,25 @@ export const useSession = create<SessionState>(() => sessionSnapshot());
 // session — sign-in, sign-out, a 401 handled deep inside client.ts, or another
 // tab signing out — pushes into the store and re-renders the gate.
 subscribeSession(() => useSession.setState(sessionSnapshot()));
+
+// Persist the workspace on change; wipe it (and reset in memory) when the
+// session ends so the next account starts from the library, not our tabs.
+let lastWorkspace = "";
+useUI.subscribe((s) => {
+  if (useSession.getState().token === null) return;
+  const key = `${s.activeModule}|${s.activeTabId}|${s.tabs.map((t) => t.id).join(",")}`;
+  if (key === lastWorkspace) return;
+  lastWorkspace = key;
+  saveWorkspace({
+    activeModule: s.activeModule as WorkspaceSnapshot["activeModule"], // "writing" is rejected on reload
+    tabs: s.tabs,
+    activeTabId: s.activeTabId,
+  });
+});
+useSession.subscribe((s, prev) => {
+  if (prev.token !== null && s.token === null) {
+    clearWorkspace();
+    lastWorkspace = "";
+    useUI.setState({ ...DEFAULT_WORKSPACE, tabs: DEFAULT_WORKSPACE.tabs as Tab[] });
+  }
+});

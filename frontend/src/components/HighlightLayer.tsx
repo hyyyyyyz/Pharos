@@ -1,19 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { authHeaders } from "../api/client";
+import { body as jsonBody, empty, json } from "../api/transport";
 import { Icons } from "../design/icons";
 import { useUI } from "../store";
 import "./HighlightLayer.css";
-
-/**
- * Base URL for the API.
- *
- * Duplicated from `api/client.ts` rather than imported because that module does
- * not export it and is not part of this slice. It is the one thing here that
- * can drift: fold these calls into `api` (as `api.highlights.*`) the next time
- * that file is opened, and delete this constant.
- */
-const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 /** Must not exceed `annotate.MAX_RECTS`, or the POST is rejected outright. */
 const MAX_RECTS = 400;
@@ -89,21 +79,6 @@ export interface HighlightLayerProps {
   /** Page height in PDF points, for flipping PDF's origin to CSS's. */
   pageHeight: number;
 }
-
-/* ------------------------------------------------------------------ transport */
-
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  for (const [k, v] of Object.entries(authHeaders())) headers.set(k, v);
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
-}
-
-const jsonBody = (data: unknown): RequestInit => ({
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(data),
-});
 
 /* ---------------------------------------------------------------- coordinates */
 
@@ -357,7 +332,7 @@ export function HighlightLayer({
      query key, so react-query collapses them into a single fetch. */
   const { data: all } = useQuery({
     queryKey: ["highlights", paperId, kind],
-    queryFn: () => req<ApiHighlight[]>(`/papers/${paperId}/highlights?kind=${kind}`),
+    queryFn: () => json<ApiHighlight[]>(`/papers/${paperId}/highlights?kind=${kind}`),
   });
 
   const mine = useMemo(
@@ -371,7 +346,7 @@ export function HighlightLayer({
 
   const create = useMutation({
     mutationFn: (h: { color: string; rects: PdfRect[]; text: string }) =>
-      req<ApiHighlight>(`/papers/${paperId}/highlights`, {
+      json<ApiHighlight>(`/papers/${paperId}/highlights`, {
         method: "POST",
         ...jsonBody({
           kind,
@@ -387,7 +362,7 @@ export function HighlightLayer({
 
   const update = useMutation({
     mutationFn: (p: { id: string; color?: string; note?: string | null }) =>
-      req<ApiHighlight>(`/highlights/${p.id}`, {
+      json<ApiHighlight>(`/highlights/${p.id}`, {
         method: "PATCH",
         ...jsonBody(p.color !== undefined ? { color: p.color } : { note: p.note }),
       }),
@@ -396,7 +371,7 @@ export function HighlightLayer({
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => req<void>(`/highlights/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => empty(`/highlights/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
     onError: () => setSaveErr("删除失败，请重试"),
   });

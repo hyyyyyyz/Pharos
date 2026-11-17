@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type {
   DailyDate,
   DailyHighlights,
@@ -62,7 +62,7 @@ import {
   type DailyVaultManifest,
 } from "../lib/dailyVault";
 import { dash } from "../lib/model";
-import { useUI, type SettingsTab } from "../store";
+import { useSession, useUI, type SettingsTab } from "../store";
 import "./DailyView.css";
 
 /** Poll cadence while a sweep is running, matching the translation job poll. */
@@ -220,6 +220,9 @@ export function DailyView(): JSX.Element {
 
   // Declared before the queries because the status poll reads `isPending` to
   // keep polling across the gap between "POST accepted" and "run row says running".
+  // Manual refresh is admin-only on the backend (403 otherwise); the scheduled
+  // sweep still fills the page for everyone.
+  const isAdmin = useSession((s) => s.user?.is_admin === true);
   const refresh = useMutation({
     mutationFn: () => api.daily.refresh(),
     // A sweep changes dates, counts and papers at once; one prefix invalidate
@@ -768,6 +771,7 @@ export function DailyView(): JSX.Element {
               <span className="ph-dv-vault-dot" aria-label="已连接" />
             )}
           </button>
+          {isAdmin && (
           <button
             className="ph-dv-refresh"
             disabled={busy}
@@ -787,6 +791,7 @@ export function DailyView(): JSX.Element {
             </span>
             {busy ? "更新中" : "更新"}
           </button>
+          )}
         </div>
 
         {/* Live counters while a sweep runs — the reason the poll exists. See
@@ -811,7 +816,12 @@ export function DailyView(): JSX.Element {
 
         {refresh.isError && (
           <div className="ph-dv-note is-err">
-            更新失败：{refresh.error instanceof Error ? refresh.error.message : "未知错误"}
+            更新失败：
+            {refresh.error instanceof ApiError && refresh.error.status === 403
+              ? "手动更新仅管理员可用"
+              : refresh.error instanceof Error
+                ? refresh.error.message
+                : "未知错误"}
           </div>
         )}
 
@@ -904,17 +914,19 @@ export function DailyView(): JSX.Element {
                   每天自动扫描 arXiv，按你在设置里定义的研究方向筛出相关论文，
                   逐篇生成中文速览、要点与评分。
                   <br />
-                  点「更新」抓取第一份日报。
+                  {isAdmin ? "点「更新」抓取第一份日报。" : "日报由管理员或定时任务生成，稍后再来看看。"}
                 </div>
                 <DirectionList names={directions} />
                 <div className="ph-dv-firstuse-btns">
-                  <button
-                    className="ph-dv-cta"
-                    disabled={busy}
-                    onClick={() => refresh.mutate()}
-                  >
-                    {busy ? "更新中…" : "更新"}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="ph-dv-cta"
+                      disabled={busy}
+                      onClick={() => refresh.mutate()}
+                    >
+                      {busy ? "更新中…" : "更新"}
+                    </button>
+                  )}
                   <button className="ph-dv-cta-ghost" onClick={toSettings}>
                     调整方向
                   </button>
@@ -942,13 +954,15 @@ export function DailyView(): JSX.Element {
                   <button className="ph-dv-cta" onClick={toSettings}>
                     调整方向
                   </button>
-                  <button
-                    className="ph-dv-cta-ghost"
-                    disabled={busy}
-                    onClick={() => refresh.mutate()}
-                  >
-                    {busy ? "更新中…" : "重新抓取"}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="ph-dv-cta-ghost"
+                      disabled={busy}
+                      onClick={() => refresh.mutate()}
+                    >
+                      {busy ? "更新中…" : "重新抓取"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
