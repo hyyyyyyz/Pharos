@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { isDetailOverlay, useUI } from "./store";
 import { themeStyle } from "./design/tokens";
 import { Rail } from "./components/Rail";
@@ -6,15 +6,23 @@ import { TabBar } from "./components/TabBar";
 import { CollectionTree } from "./components/CollectionTree";
 import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
-import { ReadingView } from "./components/ReadingView";
-import { DailyView } from "./components/DailyView";
-import { DiscoveryView } from "./components/DiscoveryView";
-import { ProjectsView } from "./components/ProjectsView";
-import { HarnessRunCenter } from "./components/HarnessRunCenter";
-import { AdminView } from "./components/AdminView";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
 import "./App.css";
+
+// Everything below the library shell loads on demand. ReadingView drags in
+// pdf.js, the four annotation layers and their canvas code, which is by far the
+// heaviest part of the bundle and is not needed to show the library list.
+const lazyNamed = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+const ReadingView = lazyNamed(() => import("./components/ReadingView"), "ReadingView") as React.ComponentType<{
+  paperId: string;
+}>;
+const DailyView = lazyNamed(() => import("./components/DailyView"), "DailyView");
+const DiscoveryView = lazyNamed(() => import("./components/DiscoveryView"), "DiscoveryView");
+const ProjectsView = lazyNamed(() => import("./components/ProjectsView"), "ProjectsView");
+const HarnessRunCenter = lazyNamed(() => import("./components/HarnessRunCenter"), "HarnessRunCenter");
+const AdminView = lazyNamed(() => import("./components/AdminView"), "AdminView");
 
 /**
  * The single workbench shell: module rail | tabbed module pane.
@@ -57,6 +65,7 @@ export default function App() {
     <div className="ph-root" style={themeStyle(theme, accent)}>
       <Rail />
       <main className="ph-main">
+        <Suspense fallback={<div className="ph-lazy-fallback" aria-busy="true" />}>
         {activeModule === "library" ? (
           <>
             <TabBar />
@@ -97,6 +106,7 @@ export default function App() {
         ) : (
           <ComingSoon module={activeModule} />
         )}
+        </Suspense>
       </main>
       <SettingsModal />
     </div>
