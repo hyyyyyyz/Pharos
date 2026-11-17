@@ -252,22 +252,27 @@ jobs:
           test -d artifacts/pharos-linux
           find artifacts -maxdepth 2 -type f | sort
 
-      # The release is only created for a tag, so the version is always the
-      # tag's own. Deriving the title from it keeps the page from advertising a
-      # version nobody tagged; release-specific notes belong in the GitHub
-      # release editor or a CHANGELOG, not in this shared template.
-      - name: Resolve version
-        id: version
-        run: echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
-
       - uses: softprops/action-gh-release@v2
         with:
-          name: Pharos Desktop ${{ steps.version.outputs.value }}
           files: artifacts/**/*
           # A tag is the decision to release. Since the job gate and artifact
           # check above require every platform, publish it outright.
           draft: false
           body: |
+            ## Pharos Desktop 1.3.1
+
+            - Starting with 1.3.1, official Pharos builds connect to the hosted product at
+              `https://pharos.selab.top`. The editable server-address field has
+              been removed from Settings so an installed client has one clear
+              account and service boundary.
+            - Credentials remain bound to the service that issued them. Since
+              older releases did not record a trustworthy token origin, 1.3.1
+              discards every legacy Pharos token and cached account identity
+              before that token can be attached to an official-service request.
+              Sign in again once after upgrading.
+            - The local Zotero library, PDF Reader, notes and annotations are not
+              affected by this account migration and remain available offline.
+
             ## Install
 
             **macOS** — open the `.dmg` and drag Pharos to Applications. These

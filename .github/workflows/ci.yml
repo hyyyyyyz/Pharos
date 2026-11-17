@@ -83,7 +83,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[dev]"
           # Current Starlette's TestClient imports httpx2, which `[dev]` does not
-          # list. Remove this line once backend/pyproject.toml declares it.
+          # list. TEMPORARY: remove this line after the Backend branch (which fixes
+          # the test dependency) is merged.
           pip install httpx2
 
       - name: Ruff (blocking rules)
