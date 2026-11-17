@@ -250,7 +250,7 @@
 
 .ph-ai-composer { flex: none; padding: 8px 12px 12px; border-top: 1px solid var(--c-bd); }
 .ph-ai-box { padding: 8px 8px; border: 1px solid var(--c-bd); border-radius: var(--r-sm); background: var(--c-sf); }
-.ph-ai-box:focus-within { border-color: var(--c-acsb); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-ac) 10%, transparent); }
+.ph-ai-box:focus-within { border-color: var(--c-acsb); outline: 2px solid var(--c-ring); outline-offset: 0; }
 .ph-ai-ta {
   width: 100%;
   min-height: 22px;

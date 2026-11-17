@@ -181,7 +181,7 @@ html.ph-rail-resizing * {
   top: 6px;
   bottom: 6px;
   width: 2px;
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--c-beam);
 }
 .ph-rail--col .ph-rail-item-bar {

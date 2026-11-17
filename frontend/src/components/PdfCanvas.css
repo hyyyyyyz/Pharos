@@ -153,6 +153,7 @@
 }
 .ph-pc-hit.is-on {
   background: color-mix(in oklch, var(--c-ac) 55%, transparent);
+  outline: 1px solid var(--c-ac);
 }
 
 /* ---------------------------------------------------------------- find bar */
@@ -183,7 +184,7 @@
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 30px;
   padding: 0 12px;
   border-radius: var(--r-lg);
@@ -205,9 +206,9 @@
 .ph-pc-find {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 32px;
-  padding: 0 5px 0 8px;
+  padding: 0 4px 0 8px;
 }
 
 .ph-pc-find-open {
@@ -233,7 +234,7 @@
 .ph-pc-find-in {
   width: 150px;
   height: 24px;
-  padding: 0 7px;
+  padding: 0 8px;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-bg, #fafbfc);
@@ -247,7 +248,7 @@
 }
 .ph-pc-find-in:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring); outline-offset: 0;
 }
 
 .ph-pc-find-n {

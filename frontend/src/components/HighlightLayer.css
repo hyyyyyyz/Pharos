@@ -51,6 +51,7 @@
 
 /* The mark whose toolbar is open, so it is obvious which one is being edited. */
 .ph-hl-mark.is-on {
+  outline: 1px solid var(--c-ac);
 }
 
 /* A highlight carrying a note gets a marginal rule — the only affordance that
@@ -71,8 +72,8 @@
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
+  gap: 8px;
+  padding: 8px;
   background: var(--c-sf);
   border: 1px solid var(--c-bd);
   border-radius: var(--r-sm);
@@ -100,7 +101,7 @@
 .ph-hl-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .ph-hl-sw {
@@ -119,6 +120,7 @@
 }
 .ph-hl-sw.is-on {
   border-color: var(--c-ac);
+  outline: 2px solid var(--c-ring);
 }
 
 .ph-hl-sep {
@@ -133,7 +135,7 @@
   align-items: center;
   gap: 4px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 8px;
   border: none;
   border-radius: var(--r-xs);
   background: transparent;
@@ -180,13 +182,13 @@
 .ph-hl-note {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-hl-ta {
   width: 220px;
   height: 76px;
-  padding: 6px 7px;
+  padding: 8px 8px;
   resize: none;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
@@ -202,19 +204,19 @@
 }
 .ph-hl-ta:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring); outline-offset: 0;
 }
 
 .ph-hl-note-row {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-hl-ghost,
 .ph-hl-primary {
   height: 24px;
-  padding: 0 10px;
+  padding: 0 12px;
   border-radius: var(--r-sm);
   font-size: var(--fs-meta);
   cursor: pointer;

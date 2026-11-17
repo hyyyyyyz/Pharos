@@ -114,6 +114,7 @@
 
 .ph-outline-thumb.is-on {
   border-color: var(--c-ac);
+  outline: 2px solid var(--c-ring);
 }
 
 .ph-outline-thumb-img {

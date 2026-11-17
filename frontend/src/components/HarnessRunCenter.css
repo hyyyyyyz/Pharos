@@ -85,7 +85,7 @@
   color: var(--c-err);
 }
 .ph-run-state--failed .ph-run-state-dot {
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--c-err);
 }
 .ph-run-state--cancelled .ph-run-state-dot {
@@ -203,7 +203,7 @@
   background: var(--c-ok);
 }
 .ph-run-step-dot--failed {
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--c-err);
 }
 .ph-run-step-dot--running,

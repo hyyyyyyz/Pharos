@@ -167,12 +167,12 @@
   }
   .ph-rv-ink-finger {
     height: 30px;
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .ph-rv-ink-seg-btn {
     height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
+    padding: 0 12px;
+    font-size: var(--fs-sm);
   }
   /* the lasso selection bar follows the caught strokes */
   .ph-ink-sel-color {
@@ -190,14 +190,14 @@
   }
   .ph-hl-btn {
     height: 32px;
-    padding: 0 10px;
-    font-size: 12.5px;
+    padding: 0 12px;
+    font-size: var(--fs-base);
   }
   /* the back pill is already 30px; a touch device gets a little more */
   .ph-pos-back {
     height: 38px;
     padding: 0 16px;
-    font-size: 13px;
+    font-size: var(--fs-base);
     bottom: max(14px, env(safe-area-inset-bottom));
   }
   /* The hint names mouse-only gestures (Ctrl+滚轮); on a digitiser it is
@@ -222,7 +222,7 @@
     flex-wrap: wrap;
     height: auto;
     min-height: 44px;
-    padding: 3px 8px;
+    padding: 4px 8px;
   }
   .ph-rv-spacer {
     display: none;

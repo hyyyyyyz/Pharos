@@ -435,7 +435,7 @@ export function AiPanel({
             icon={Icons.sliders}
             title="连接你的模型"
             description="支持 OpenAI 兼容接口。API Key 由 Pharos 后端加密保存，不会进入浏览器存储"
-            primary={{ label: "配置模型", onClick: onOpenSettings }}
+            primary={onOpenSettings ? { label: "配置模型", onClick: onOpenSettings } : undefined}
           />
         ) : empty ? (
           <div className="ph-ai-empty">

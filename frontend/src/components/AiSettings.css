@@ -26,7 +26,7 @@
   font: inherit;
   font-size: var(--fs-sm);
 }
-.ph-native-field input:focus { border-color: var(--c-ac); box-shadow: 0 0 0 2px var(--c-ring); }
+.ph-native-field input:focus { border-color: var(--c-ac); outline: 2px solid var(--c-ring); outline-offset: 0; }
 .ph-native-field input:disabled { opacity: 0.55; cursor: not-allowed; }
 .ph-native-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ph-native-security { margin: 1px 0 12px; padding: 8px 8px; border-radius: var(--r-sm); background: var(--c-acs); color: var(--c-aclink, var(--c-ac)); font-size: var(--fs-meta); line-height: 1.55; }

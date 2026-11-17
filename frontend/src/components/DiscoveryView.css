@@ -57,7 +57,7 @@
   box-shadow: inset 0 0 0 1px var(--c-tx2);
 }
 .ph-disc-status-dot.is-error {
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--c-err);
 }
 

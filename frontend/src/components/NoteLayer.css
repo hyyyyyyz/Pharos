@@ -138,10 +138,10 @@
 .ph-note-box.is-folded {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: auto;
   height: auto;
-  padding: 3px 9px 3px 7px;
+  padding: 4px 8px 4px 8px;
   border-radius: var(--r-md);
   font: inherit;
   font-size: var(--fs-sm);
@@ -210,14 +210,14 @@
   color: var(--c-tx, #1e222a);
   /* Clear of the fold chevron (top-right) and, when it is showing, the
      turned corner (bottom-right), so neither ever sits on a glyph. */
-  padding: 4px 20px 11px 7px;
+  padding: 4px 20px 12px 8px;
 }
 
 .ph-note-text {
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 3px 5px;
+  padding: 4px 4px;
   border: 0;
   background: transparent;
   color: var(--c-note, var(--c-tx, #1e222a));

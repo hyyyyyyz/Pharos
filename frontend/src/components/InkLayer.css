@@ -182,7 +182,7 @@
   justify-content: center;
   gap: 2px;
   max-width: 340px;
-  padding: 3px 4px;
+  padding: 4px 4px;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
@@ -222,7 +222,7 @@
 
 .ph-ink-sel-n {
   min-width: 14px;
-  padding: 0 3px;
+  padding: 0 4px;
   color: var(--c-tx3, #8b93a1);
   font-size: var(--fs-meta);
   font-weight: 500;
@@ -307,7 +307,7 @@
   transform: translate(-8px, -100%);
   display: flex;
   gap: 2px;
-  padding: 3px;
+  padding: 4px;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
@@ -317,7 +317,7 @@
 
 .ph-ink-press-btn {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;

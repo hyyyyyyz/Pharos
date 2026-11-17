@@ -213,7 +213,7 @@
 }
 .ph-dir-textarea:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring); outline-offset: 0;
 }
 
 .ph-dir-parsed {
