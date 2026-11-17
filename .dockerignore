@@ -14,9 +14,26 @@ backend/.venv
 
 **/node_modules
 **/dist
-desktop/src-tauri/target
 
 *.dmg
 *.msi
 *.exe
 *.log
+
+# deploy/Dockerfile copies only README.md, LICENSE, backend/ and frontend/.
+# Everything below is therefore dead weight in the build context (client/ alone
+# is ~320 MB uploaded to the builder on every build) and cannot reach the image.
+client
+site
+zotero-connector
+docs
+assets
+figures
+schemas
+scripts
+.github
+.claude
+# The image runs the app, not its test suite; `pip install ./backend` does not
+# package tests either, but `COPY backend /app/backend` would.
+backend/tests
+**/*.pyc

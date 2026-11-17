@@ -1,6 +1,6 @@
 # Pharos Research Harness — architecture
 
-> 状态：**目标架构，尚未实现。** 本文是 Harness 的 source of truth。任何代码提交不得把本文中的
+> 状态：**目标架构；H0/H1 内核代码已入库（`backend/pharos/harness/`），H0/H1 的 operational gate 尚未通过，H2 起均为 Planned。** 本文是 Harness 的 source of truth。任何代码提交不得把本文中的
 > Planned 能力描述成已上线能力；分阶段落实顺序与验收门槛见
 > [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md)。
 

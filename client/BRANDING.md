@@ -44,9 +44,8 @@ AGPL-3.0-or-later 发布。Pharos 本身也采用 AGPL-3.0-or-later，二者一�
 `CFBundleExecutable` 保持 `zotero`，那是 `Contents/MacOS` 里启动器二进制的**文件名**，
 不是用户可见字符串，改名需连带改 Gecko 构建产物名。
 
-面向用户的文档链接（`SUPPORT_URL`、`FEEDBACK_URL`、`CHANGELOG_URL` 等）目前仍指向
-Zotero 官方支持页与论坛。发布前需改掉——否则 Pharos 用户会被引导去 Zotero 论坛提
-我们的 bug。列为阶段 3 收尾项。
+面向用户的文档链接（`SUPPORT_URL`、`TROUBLESHOOTING_URL`、`FEEDBACK_URL`、
+`CHANGELOG_URL`）已在 `resource/config.mjs` 改为指向 Pharos 的 GitHub 仓库。
 
 ## 应用隔离与共享文库（重要）
 
@@ -160,7 +159,6 @@ Zotero 的样式层用标准 CSS 变量（`scss/abstracts/_variables.scss` 及�
 
 - ~~应用图标仍是 Zotero 的~~ → 阶段 2 已换（见下）
 - 调试日志前缀仍是 `zotero(N)`，仅开发者控制台可见
-- `SUPPORT_URL` 等面向用户的链接仍指向 zotero.org，见上文
 - `.ftl` / `.dtd` 中仍有少量直接写死 `Zotero` 的文案（未走 `brandShortName`），
   需在阶段 3 逐条排查——注意其中一部分是**正当引用**（如 Zotero 同步、
   Zotero Connector），不能无差别替换

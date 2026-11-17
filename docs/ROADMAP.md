@@ -103,7 +103,7 @@ In rough order. Each is a workstream, not a ticket.
    selections retain rectangles, while ambiguous or cross-page selections safely
    degrade to quote-only evidence. Grounded Q&A and claim-level bindings remain
    downstream work.
-5. **Build the Pharos Research Harness.** **Planned, not implemented.** H0 freezes
+5. **Build the Pharos Research Harness.** **H0/H1 kernel code is in the repository** (`backend/pharos/harness/`; the operational gates are not yet passed, so neither phase is Done); H2 onward is Planned. H0 freezes
    contracts and migrations; H1 delivers a restart-safe kernel and canary; H2
    migrates Literature Discovery; H3 migrates Daily Papers; H4 adds Project
    suggestions with human approval; H5 adds selected full-text reading plus an
