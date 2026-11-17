@@ -6,6 +6,7 @@ import { TabBar } from "./components/TabBar";
 import { CollectionTree } from "./components/CollectionTree";
 import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
+import { ModuleShell } from "./components/shell";
 import { ComingSoon } from "./components/ComingSoon";
 import { SettingsModal } from "./components/SettingsModal";
 import "./App.css";
@@ -72,23 +73,16 @@ export default function App() {
             {activeTab && activeTab.kind === "paper" ? (
               <ReadingView key={activeTab.id} paperId={activeTab.paperId} />
             ) : (
-              <div className="ph-libview">
-                <CollectionTree />
+              <ModuleShell
+                side={<CollectionTree />}
+                detail={<DetailPanel />}
+                detailKey="library"
+                detailOverlay={detailOverlay}
+                detailOpen={libDetailOpen}
+                onDetailClose={() => setLibDetail(false)}
+              >
                 <ItemList />
-                {detailOverlay ? (
-                  libDetailOpen && (
-                    <>
-                      <div
-                        className="ph-libview-backdrop"
-                        onClick={() => setLibDetail(false)}
-                      />
-                      <DetailPanel />
-                    </>
-                  )
-                ) : (
-                  <DetailPanel />
-                )}
-              </div>
+              </ModuleShell>
             )}
           </>
         ) : activeModule === "daily" ? (

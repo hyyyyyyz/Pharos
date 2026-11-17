@@ -39,61 +39,79 @@
    a blanket bump would distort the icon-only marks that are sized by their
    width on desktop too. */
 @media (pointer: coarse) {
-  /* shell + rail */
+  /* shell + rail: 44px rows, 44px buttons */
   .ph-rail-item--exp,
   .ph-rail-item--col {
     min-height: 44px;
   }
   .ph-rail-toggle {
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
   }
-  .ph-rail-acct {
-    height: 48px;
-  }
-  .ph-rail-acct-mini {
-    width: 40px;
-    height: 40px;
+  .ph-rail--col {
+    width: 64px !important;
   }
   .ph-rail-resize-handle {
-    /* dragging a 4px separator with a finger is not a thing; keep the handle
+    /* dragging a thin separator with a finger is not a thing; keep the handle
        but make it graspable */
-    width: 12px;
-    margin-left: -6px;
+    width: 16px;
+    right: -8px;
+  }
+  .ph-sp-resize {
+    width: 16px;
+    right: -8px;
+  }
+  .ph-btn,
+  .ph-iconbtn {
+    min-height: 44px;
+  }
+  .ph-iconbtn {
+    min-width: 44px;
+  }
+  .ph-input {
+    height: 44px;
+  }
+  .ph-sp-row,
+  .ph-tree-row,
+  .ph-tree-menu-item {
+    min-height: 44px;
   }
 
   /* tab strip */
   .ph-tabbar {
-    height: 40px;
+    height: 44px;
   }
   .ph-tabbar-tab {
     height: 40px;
-    padding: 0 14px;
+    padding: 0 16px;
+  }
+  .ph-tabbar-tab.is-active {
+    height: 41px;
   }
   .ph-tabbar-close {
-    width: 20px;
-    height: 20px;
+    width: 28px;
+    height: 28px;
   }
 
   /* library */
   .ph-il-row {
-    min-height: 44px;
+    min-height: 60px;
   }
-  .ph-il-search {
-    height: 36px;
+  .ph-il-sortbar {
+    height: 44px;
   }
-  .ph-il-btn-ghost,
-  .ph-il-btn-primary {
-    height: 36px;
-  }
-  .ph-il-arxiv {
+  .ph-il-sortsel {
     height: 36px;
   }
 
   /* detail panel */
   .ph-dp-primary,
   .ph-dp-secondary {
-    height: 38px;
+    height: 44px;
+  }
+  .ph-dp-close {
+    width: 44px;
+    height: 44px;
   }
 
   /* reader */

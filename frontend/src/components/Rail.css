@@ -1,4 +1,6 @@
-/* Far-left module rail — collapsed 44px / expanded 144–280px (178px default). */
+/* Far-left module rail — 220 expanded (176–280 when dragged), 56 collapsed.
+   Rows are 32 tall with a 2px gap; icon column, label and the account row all
+   share the same left edge. */
 
 .ph-rail {
   position: relative;
@@ -8,57 +10,48 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  transition: width 0.16s ease;
   overflow: visible;
 }
-.ph-rail--resizing { transition: none; }
+.ph-rail--resizing {
+  transition: none;
+}
 .ph-rail--exp {
-  width: 178px;
+  width: 220px;
   align-items: stretch;
-  padding: 9px 8px 8px;
+  padding: 12px 8px;
 }
 .ph-rail--col {
-  width: 44px !important;
+  width: 56px !important;
   align-items: center;
-  padding: 9px 0 8px;
+  padding: 12px 8px;
 }
 
 /* A full-height hit target with only a short visible notch: discoverable at
-   the boundary, but quieter than any navigation icon. */
+   the boundary, quieter than any navigation icon. */
 .ph-rail-resize-handle {
   position: absolute;
   z-index: 20;
   top: 0;
-  right: -5px;
+  right: -4px;
   bottom: 0;
-  width: 10px;
+  width: 8px;
   cursor: col-resize;
   touch-action: none;
   outline: none;
 }
 .ph-rail-resize-handle span {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: 0;
+  bottom: 0;
+  left: 3px;
   width: 2px;
-  height: 34px;
-  border-radius: 2px;
-  background: var(--c-bds);
-  opacity: 0.48;
-  transform: translate(-50%, -50%);
-  transition:
-    height 0.12s,
-    opacity 0.12s,
-    background 0.12s,
-    box-shadow 0.12s;
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
 }
 .ph-rail-resize-handle:hover span,
 .ph-rail-resize-handle:focus-visible span,
 .ph-rail--resizing .ph-rail-resize-handle span {
-  height: 48px;
-  background: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-acs);
-  opacity: 0.9;
+  background: var(--c-bds);
 }
 
 html.ph-rail-resizing,
@@ -72,73 +65,62 @@ html.ph-rail-resizing * {
 
 .ph-rail-brand {
   display: flex;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .ph-rail-brand--exp {
   align-items: center;
-  gap: 7px;
-  padding: 0 0 0 4px;
-  height: 34px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 0 0 12px;
 }
 .ph-rail-brand--col {
   justify-content: center;
 }
-
 .ph-rail-brand-mark {
-  width: 24px;
-  height: 30px;
-  flex: none;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-ac);
+  flex: none;
+  color: var(--c-tx);
+}
+.ph-rail-wordmark {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  color: var(--c-tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ph-rail-toggle {
   flex: none;
-  border: none;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  color: var(--c-ac);
-  transition:
-    background 0.12s,
-    color 0.12s;
-}
-.ph-rail-toggle--exp {
-  width: 26px;
-  height: 26px;
-  margin-left: auto;
-  margin-right: -5px;
-  border-radius: 6px;
-  color: var(--c-tx3);
-}
-.ph-rail-toggle--col {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx3);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
-.ph-rail-toggle:hover {
-  background: var(--c-hv);
-  color: var(--c-tx2);
+.ph-rail-toggle--exp {
+  margin-left: auto;
 }
 .ph-rail-toggle:focus-visible {
   outline: 2px solid var(--c-ac);
   outline-offset: 1px;
 }
-
-.ph-rail-wordmark {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--c-tx);
-  letter-spacing: 0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+@media (hover: hover) {
+  .ph-rail-toggle:hover {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
 }
 
 /* ------------------------------------------------------------- nav list */
@@ -160,73 +142,70 @@ html.ph-rail-resizing * {
   border: none;
   cursor: pointer;
   display: flex;
+  align-items: center;
   background: transparent;
   color: var(--c-tx2);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  font-weight: 400;
   transition:
-    background 0.13s,
-    color 0.13s;
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .ph-rail-item--exp {
-  align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   height: 32px;
-  padding: 0 9px;
-  border-radius: 7px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
   text-align: left;
-  font-size: 12.5px;
-  font-weight: 500;
 }
 .ph-rail-item--col {
-  width: 32px;
+  width: 40px;
   height: 32px;
-  border-radius: 8px;
-  align-items: center;
+  border-radius: var(--r-sm);
   justify-content: center;
 }
 .ph-rail-item--cs {
   color: var(--c-tx3);
 }
-.ph-rail-item--exp.ph-rail-item--cs {
-  opacity: 0.8;
-}
-.ph-rail-item--col.ph-rail-item--cs {
-  opacity: 0.7;
-}
+/* Current module: a surface step, and the beam. Exactly one row ever has this. */
 .ph-rail-item--active {
-  background: var(--c-acs);
-  color: var(--c-ac);
-}
-.ph-rail-item--exp.ph-rail-item--active {
-  font-weight: 600;
-}
-
-/* Excluded from hover rather than ordered after it: `--active` is a single
-   class, so a bare `:hover` out-specifies it and the current module would lose
-   its accent tint the moment the pointer crossed it.
-   The text colour carries this as much as the fill does: --c-hv sits within a
-   few RGB points of --c-rail in the light theme, so a background swap alone is
-   not perceptible feedback on this surface, only on --c-sf. */
-.ph-rail-item:hover:not(.ph-rail-item--active) {
   background: var(--c-hv);
   color: var(--c-tx);
+  font-weight: 500;
 }
-/* A not-yet-built entry stays dimmed under the pointer. The dimming is the
-   thing telling the user it will not do anything; hover must not undo it. */
-.ph-rail-item--cs:hover:not(.ph-rail-item--active) {
-  color: var(--c-tx3);
+.ph-rail-item-bar {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--c-beam);
 }
-/* Keyboard users had nothing at all here: no focus ring, so tabbing through the
-   rail moved an invisible selection. Matches .ph-rail-toggle's ring so the two
-   controls in this column focus alike. */
+.ph-rail--col .ph-rail-item-bar {
+  left: -8px;
+}
+
+/* Hover is a colour change only, and only where there is a pointer that can
+   leave: on a touch screen :hover sticks to the last row tapped, which showed
+   up as two highlighted rows after switching module. */
+@media (hover: hover) {
+  .ph-rail-item:hover:not(.ph-rail-item--active) {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
 .ph-rail-item:focus-visible {
   outline: 2px solid var(--c-ac);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .ph-rail-item-ic {
   display: flex;
   flex: none;
+  width: 16px;
 }
 .ph-rail-item-label {
   flex: 1;
@@ -237,10 +216,8 @@ html.ph-rail-resizing * {
 }
 .ph-rail-item-pill {
   flex: none;
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 10px;
-  background: var(--c-hv);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--c-tx3);
 }
 .ph-rail-item-dot {
@@ -252,15 +229,6 @@ html.ph-rail-resizing * {
   border-radius: 50%;
   background: var(--c-tx3);
 }
-.ph-rail-item-bar {
-  position: absolute;
-  left: -9px;
-  top: 7px;
-  width: 2.5px;
-  height: 20px;
-  border-radius: 0 2px 2px 0;
-  background: var(--c-ac);
-}
 
 .ph-rail-spacer {
   flex: 1;
@@ -269,64 +237,10 @@ html.ph-rail-resizing * {
 /* -------------------------------------------------------------- account */
 
 .ph-rail-acct {
+  color: var(--c-tx2);
+}
+.ph-rail-acct-gear {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  height: 40px;
-  padding: 0 6px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-.ph-rail-acct:hover {
-  background: var(--c-hv);
-}
-.ph-rail-acct-avatar {
-  width: 28px;
-  height: 28px;
   flex: none;
-  border-radius: 50%;
-  background: var(--c-acs);
-  color: var(--c-ac);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ph-rail-acct-text {
-  flex: 1;
-  min-width: 0;
-}
-.ph-rail-acct-name {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--c-tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ph-rail-acct-sub {
-  display: block;
-  font-size: 10.5px;
   color: var(--c-tx3);
-}
-
-.ph-rail-acct-mini {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  background: var(--c-acs);
-  color: var(--c-ac);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ph-rail-acct-mini:hover {
-  filter: brightness(0.97);
 }

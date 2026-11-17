@@ -305,8 +305,8 @@ export interface InkClipboard {
   }[];
 }
 
-export const RAIL_MIN_WIDTH = 144;
-export const RAIL_DEFAULT_WIDTH = 178;
+export const RAIL_MIN_WIDTH = 176;
+export const RAIL_DEFAULT_WIDTH = 220;
 export const RAIL_MAX_WIDTH = 280;
 const RAIL_EXPANDED_KEY = "ph-rail-expanded-v2";
 const RAIL_WIDTH_KEY = "ph-rail-width";

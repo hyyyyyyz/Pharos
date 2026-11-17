@@ -1,244 +1,209 @@
-/* 文库 view — 280px right-hand detail panel. Ported 1:1 from Pharos.dc.html (lines 154-194). */
+/* 详情 — the right-hand column of the library. Width, border and the
+   slide-over behaviour belong to ModuleShell; this is only the content. */
 
 .ph-dp {
-  width: 280px;
-  flex: none;
-  background: var(--c-sf, #fff);
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
 }
 
-/* Tablet slide-over. Rendered only when `isDetailOverlay` says the viewport is
-   touch-sized, so the desktop panel keeps its static three-pane layout. */
-.ph-dp--overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  width: min(320px, 88vw);
-  border-left: 1px solid var(--c-bd, #e6e8ec);
-  box-shadow: -12px 0 28px rgba(11, 21, 36, 0.14);
-  animation: ph-fade 0.16s ease-out;
-}
-
-/* Sticky inside the panel's own scroll box, so it stays reachable when a long
-   abstract is being scrolled, and right-aligned by margin so it does not
-   overlay the title text beneath it. */
 .ph-dp-close {
-  position: sticky;
+  position: absolute;
   top: 8px;
-  z-index: 1;
-  margin: 8px 8px 0 auto;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  border: 1px solid var(--c-bd, #e6e8ec);
-  background: var(--c-sf, #fff);
-  color: var(--c-tx2, #5a616e);
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx3);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
+  z-index: 2;
 }
-.ph-dp-close:hover {
-  background: var(--c-hv);
-  color: var(--c-tx);
+.ph-dp-close:focus-visible {
+  outline: 2px solid var(--c-ac);
 }
-
-/* ------------------------------------------------------------ empty state */
-
-.ph-dp-empty {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  text-align: center;
-  color: var(--c-tx3, #8b93a1);
-  font-size: 12.5px;
-  line-height: 1.7;
-}
-
-/* ----------------------------------------------------------------- header */
 
 .ph-dp-body {
-  padding: 14px 16px;
+  padding: 20px 20px 24px;
 }
 
 .ph-dp-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
   font-weight: 600;
-  color: var(--c-tx, #1e222a);
-  line-height: 1.4;
-  margin-bottom: 2px;
+  color: var(--c-tx);
+  overflow-wrap: anywhere;
 }
-
 .ph-dp-sub {
-  font-size: 11.5px;
-  color: var(--c-tx3, #8b93a1);
-  line-height: 1.4;
-  margin-bottom: 12px;
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
+  overflow-wrap: anywhere;
 }
-
-/* ------------------------------------------------------------- action row */
 
 .ph-dp-actions {
   display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-top: 16px;
 }
-
-.ph-dp-primary {
-  flex: 1;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: none;
-  background: var(--c-ac, #5b53d6);
-  color: var(--c-acc, #fff);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
+.ph-dp-primary,
+.ph-dp-secondary {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-}
-
-.ph-dp-secondary {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--c-bd, #e6e8ec);
-  background: var(--c-sf, #fff);
-  color: var(--c-tx2, #5a616e);
-  font-size: 12px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
-
-/* The prototype has no disabled state; the real translate call needs one. */
+.ph-dp-primary {
+  border: 1px solid var(--c-ac);
+  background: var(--c-ac);
+  color: var(--c-acc);
+}
+.ph-dp-secondary {
+  border: 1px solid var(--c-bd);
+  background: var(--c-sf);
+  color: var(--c-tx);
+}
+.ph-dp-primary:active:not(:disabled),
+.ph-dp-secondary:active {
+  transform: scale(0.98);
+}
 .ph-dp-primary:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: default;
 }
-
-.ph-dp-secondary:disabled {
-  opacity: 0.6;
-  cursor: default;
+.ph-dp-primary:focus-visible,
+.ph-dp-secondary:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .ph-dp-primary:hover:not(:disabled) {
+    background: var(--c-ach);
+    border-color: var(--c-ach);
+  }
+  .ph-dp-secondary:hover {
+    background: var(--c-hv);
+    border-color: var(--c-bds);
+  }
 }
 
-.ph-dp-ic {
-  display: flex;
-}
-
-/* ---------------------------------------------------------------- progress */
-
+/* Translation in flight is "work in progress": the beam. */
 .ph-dp-prog {
-  margin-bottom: 14px;
+  margin-top: 16px;
 }
-
 .ph-dp-track {
   height: 4px;
-  border-radius: 3px;
-  background: var(--c-bd, #e6e8ec);
+  border-radius: var(--r-xs);
+  background: var(--c-hv);
   overflow: hidden;
 }
-
 .ph-dp-bar {
   display: block;
   height: 100%;
-  background: var(--c-ac, #5b53d6);
-  border-radius: 3px;
+  background: var(--c-beam);
 }
-
 .ph-dp-prog-label {
-  font-size: 11px;
-  color: var(--c-ac, #5b53d6);
-  margin-top: 5px;
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx2);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Real backend jobs can fail; the prototype had no such branch. */
 .ph-dp-error {
-  font-size: 11.5px;
-  color: var(--c-err, #d93a3a);
-  line-height: 1.5;
-  margin-bottom: 14px;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--c-err-soft);
+  color: var(--c-err);
+  font-size: var(--fs-sm);
+  line-height: 20px;
 }
-
-/* --------------------------------------------------------- metadata grid */
 
 .ph-dp-grid {
   display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 6px 10px;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 12px 0;
-  border-top: 1px solid var(--c-bd, #e6e8ec);
+  grid-template-columns: 48px 1fr;
+  gap: 8px 12px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--c-bd);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
 }
-
 .ph-dp-k {
-  color: var(--c-tx3, #8b93a1);
+  font-size: var(--fs-sm);
+  color: var(--c-tx3);
 }
-
-.ph-dp-v {
-  color: var(--c-tx, #1e222a);
-}
-
+.ph-dp-v,
 .ph-dp-v-doi {
-  color: var(--c-aclink, #4f46e5);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--c-tx);
+  overflow-wrap: anywhere;
 }
-
-/* ---------------------------------------------------------------- sections */
+.ph-dp-v-doi {
+  font-size: var(--fs-sm);
+}
 
 .ph-dp-sec {
-  padding: 12px 0;
-  border-top: 1px solid var(--c-bd, #e6e8ec);
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--c-bd);
 }
-
 .ph-dp-sec-last {
-  padding: 12px 0 0;
-  border-top: 1px solid var(--c-bd, #e6e8ec);
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--c-bd);
 }
-
 .ph-dp-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--c-tx3, #8b93a1);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
 }
-
-/* 附件 / 标签 / 笔记 labels sit 1px lower than 摘要 in the prototype. */
-.ph-dp-label-7 {
-  margin-bottom: 7px;
+.ph-dp-abstract {
+  font-size: var(--fs-base);
+  line-height: 22px;
+  color: var(--c-tx2);
+  overflow-wrap: anywhere;
+}
+.ph-dp-muted {
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx3);
 }
 
 .ph-dp-file {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--c-bg, #fafbfc);
-  border: 1px solid var(--c-bd, #e6e8ec);
+  color: var(--c-tx2);
+  font-size: var(--fs-sm);
 }
-
 .ph-dp-file-ic {
   display: flex;
-  color: var(--c-tx3, #8b93a1);
+  flex: none;
+  color: var(--c-tx3);
 }
-
 .ph-dp-file-name {
-  flex: 1;
-  font-size: 12px;
-  color: var(--c-tx, #1e222a);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -247,34 +212,12 @@
 .ph-dp-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
-
 .ph-dp-tag {
-  font-size: 11px;
   padding: 2px 8px;
-  border-radius: 20px;
-  background: var(--c-hv, #f0f2f5);
-  color: var(--c-tx2, #5a616e);
-}
-
-/* Placeholders for data the backend cannot supply yet (摘要 / 标签 / 笔记). */
-.ph-dp-muted {
-  font-size: 12px;
-  color: var(--c-tx3, #8b93a1);
-  font-style: italic;
-}
-
-.ph-dp-muted-ab {
-  line-height: 1.65;
-}
-
-/* Real abstract text: same metrics as the muted placeholder it replaces, but
-   upright and readable. `overflow-wrap` keeps an unbroken DOI/URL inside a
-   PDF-extracted abstract from widening the fixed 280px panel. */
-.ph-dp-abstract {
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--c-tx2, #5a616e);
-  overflow-wrap: anywhere;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-sm);
+  color: var(--c-tx2);
 }

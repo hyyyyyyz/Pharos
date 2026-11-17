@@ -1,0 +1,360 @@
+/* Shared frame and primitives. Sizes, radii, easing come from the variables in
+   design/tokens.ts; nothing in this file writes a font size or radius by hand. */
+
+/* ------------------------------------------------------------ primitives */
+
+.ph-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-sm);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+.ph-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.ph-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ph-btn.is-on {
+  background: var(--c-hv);
+  border-color: var(--c-bds);
+}
+.ph-btn.is-primary {
+  background: var(--c-ac);
+  border-color: var(--c-ac);
+  color: var(--c-acc);
+}
+.ph-btn.is-lg {
+  height: 32px;
+}
+.ph-btn:focus-visible,
+.ph-iconbtn:focus-visible,
+.ph-input:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .ph-btn:hover:not(:disabled) {
+    background: var(--c-hv);
+    border-color: var(--c-bds);
+  }
+  .ph-btn.is-primary:hover:not(:disabled) {
+    background: var(--c-ach);
+    border-color: var(--c-ach);
+  }
+}
+
+.ph-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx3);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.ph-iconbtn[aria-pressed="true"],
+.ph-iconbtn.is-on {
+  color: var(--c-tx2);
+}
+@media (hover: hover) {
+  .ph-iconbtn:hover {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+
+.ph-input {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-sm);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  min-width: 0;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.ph-input::placeholder {
+  color: var(--c-tx3);
+}
+.ph-input:hover {
+  border-color: var(--c-bds);
+}
+
+/* ---------------------------------------------------------------- frame */
+
+.ph-ms {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  /* the slide-over detail and its backdrop are positioned against this box */
+  position: relative;
+}
+.ph-ms-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-sf);
+}
+.ph-ms-detail {
+  flex: none;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--c-sf);
+  border-left: 1px solid var(--c-bd);
+}
+.ph-ms-detail.is-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: min(360px, 92vw);
+  box-shadow: var(--sh-pop);
+  animation: ph-fade var(--dur-pop) var(--ease);
+}
+.ph-ms-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: var(--c-overlay);
+  animation: ph-fade var(--dur-pop) var(--ease);
+}
+
+/* ---------------------------------------------------------- page header */
+
+.ph-pageheader {
+  flex: none;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--c-bd);
+  background: var(--c-sf);
+}
+.ph-pageheader-title {
+  margin: 0;
+  flex: none;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+  color: var(--c-tx);
+  white-space: nowrap;
+}
+.ph-pageheader-lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+.ph-pageheader-meta {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ph-pageheader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+
+/* ------------------------------------------------------------ side panel */
+
+.ph-sp {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--c-bg);
+  border-right: 1px solid var(--c-bd);
+}
+.ph-sp-head {
+  flex: none;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 16px;
+}
+.ph-sp-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
+}
+.ph-sp-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ph-sp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 16px;
+}
+.ph-sp-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 10;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.ph-sp-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.ph-sp-resize:hover::after,
+.ph-sp-resize:focus-visible::after {
+  background: var(--c-bds);
+}
+
+/* A side-panel row: 36 tall, icon column 16 + 8 gap, one line. */
+.ph-sp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx2);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.ph-sp-row.is-active {
+  background: var(--c-hv);
+  color: var(--c-tx);
+}
+.ph-sp-row:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .ph-sp-row:hover:not(.is-active) {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+
+/* ---------------------------------------------------------- empty state */
+
+.ph-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  min-height: 0;
+}
+.ph-empty.is-inline {
+  flex: none;
+  justify-content: flex-start;
+  padding-top: 64px;
+}
+.ph-empty-icon {
+  display: flex;
+  color: var(--c-tx3);
+  margin-bottom: 4px;
+}
+.ph-empty-title {
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  font-weight: 500;
+  color: var(--c-tx);
+}
+.ph-empty-title.is-error {
+  color: var(--c-err);
+}
+.ph-empty-desc {
+  max-width: 360px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx3);
+}
+.ph-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------- skeleton */
+
+.ph-skel {
+  padding: 8px 24px;
+}
+.ph-skel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+}
+.ph-skel-line {
+  display: block;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--c-hv);
+}
+.ph-skel-line.is-short {
+  width: 32%;
+  height: 8px;
+}
