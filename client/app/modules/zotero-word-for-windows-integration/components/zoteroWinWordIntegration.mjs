@@ -75,7 +75,7 @@ function init() {
 			ctypes.jschar.ptr, document_t.ptr.ptr),
 		
 		// void freeDocument(Document *doc);
-		freeDocument: lib.declare("freeDocument", ctypes.stdcall_abi, statusCode, document_t.ptr),
+		freeDocument: lib.declare("freeDocument", ctypes.stdcall_abi, ctypes.void_t, document_t.ptr),
 		
 		// statusCode displayAlert(jschar const dialogText[], unsigned short icon,
 		//						   unsigned short buttons, unsigned short* returnValue);
@@ -175,8 +175,8 @@ function init() {
 		isAdjacentToNextField: lib.declare("isAdjacentToNextField", ctypes.stdcall_abi, statusCode,
 			field_t.ptr, ctypes.bool.ptr),
 		
-		// statusCode freeData(void* ptr);
-		freeData: lib.declare("freeData", ctypes.stdcall_abi, statusCode, ctypes.void_t.ptr)
+		// void freeData(void* ptr);
+		freeData: lib.declare("freeData", ctypes.stdcall_abi, ctypes.void_t, ctypes.void_t.ptr)
 	};
 	
 	fieldPtr = new ctypes.PointerType(field_t);

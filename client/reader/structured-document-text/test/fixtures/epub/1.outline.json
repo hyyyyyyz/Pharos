@@ -1,0 +1,100 @@
+[
+  {
+    "title": "Titlepage",
+    "startRef": "0"
+  },
+  {
+    "title": "Imprint",
+    "startRef": "3"
+  },
+  {
+    "title": "Introductory",
+    "startRef": "9",
+    "children": [
+      {
+        "title": "The Family of Mendoza",
+        "startRef": "10"
+      },
+      {
+        "title": "Don Diego Hurtado de Mendoza, Author of Lazarillo de Tormes",
+        "startRef": "32"
+      },
+      {
+        "title": "The Book, Lazarillo de Tormes",
+        "startRef": "42",
+        "children": [
+          {
+            "title": "English Translations",
+            "startRef": "48"
+          }
+        ]
+      },
+      {
+        "title": "Notes on the Character of Lazaro",
+        "startRef": "55"
+      }
+    ]
+  },
+  {
+    "title": "The Life of Lazarillo de Tormes",
+    "startRef": "67",
+    "children": [
+      {
+        "title": "Prologue",
+        "startRef": "68"
+      },
+      {
+        "title": "I: Lazaro Relates the Way of His Birth and Tells Whose Son He Is",
+        "startRef": "73"
+      },
+      {
+        "title": "First Master",
+        "startRef": "83"
+      },
+      {
+        "title": "Second Master",
+        "startRef": "108"
+      },
+      {
+        "title": "Third Master",
+        "startRef": "128"
+      },
+      {
+        "title": "Fourth Master",
+        "startRef": "168"
+      },
+      {
+        "title": "Fifth Master",
+        "startRef": "171"
+      },
+      {
+        "title": "Sixth Master",
+        "startRef": "183"
+      },
+      {
+        "title": "Seventh Master",
+        "startRef": "186"
+      }
+    ]
+  },
+  {
+    "title": "Sketch Map of the Route from Salamanca to Toledo",
+    "startRef": "194"
+  },
+  {
+    "title": "Endnotes",
+    "startRef": "196"
+  },
+  {
+    "title": "List of Illustrations",
+    "startRef": "226"
+  },
+  {
+    "title": "Colophon",
+    "startRef": "228"
+  },
+  {
+    "title": "Uncopyright",
+    "startRef": "235"
+  }
+]

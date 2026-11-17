@@ -1,6 +1,6 @@
 import { isFirefox, isWin } from "../../../common/lib/utilities";
-import { closestElement, iterateWalker } from "./nodes";
-import { getBoundingRect, isPageRectVisible, rectIntersects } from "./rect";
+import { closestElement } from "./nodes";
+import { getBoundingRect, isErrorRect, isPageRectVisible, rectsIntersect } from "./rect";
 
 /**
  * Wraps the properties of a Range object in a static structure so that they don't change when the DOM changes.
@@ -36,10 +36,14 @@ export class PersistentRange {
 	}
 
 	toRange(): Range {
-		let range = new Range();
+		let range = this.startContainer.ownerDocument!.createRange();
 		range.setStart(this.startContainer, this.startOffset);
 		range.setEnd(this.endContainer, this.endOffset);
 		return range;
+	}
+
+	clone() {
+		return new PersistentRange(this);
 	}
 
 	toString(): string {
@@ -130,17 +134,28 @@ export function moveRangeEndsIntoTextNodes(range: Range): Range {
 }
 
 /**
+ * Create a TreeWalker that walks only the nodes intersecting a range.
+ */
+export function createRangeWalker(
+	range: Range,
+	whatToShow?: number,
+	filter: ((node: Node) => number) = () => NodeFilter.FILTER_ACCEPT
+): TreeWalker {
+	let doc = range.commonAncestorContainer.ownerDocument!;
+	return doc.createTreeWalker(
+		range.commonAncestorContainer,
+		whatToShow,
+		node => (range.intersectsNode(node) ? filter(node) : NodeFilter.FILTER_SKIP)
+	);
+}
+
+/**
  * Given a range, return an array of ranges spanning the selected portions of the text nodes it contains.
  * This ensures that the rects returned from {@link Range#getClientRects} will include a rect per line of text
  * instead of one rect for the entire block element.
  */
 export function splitRangeToTextNodes(range: Range): Range[] {
-	let doc = range.commonAncestorContainer.ownerDocument;
-	if (!doc) {
-		return [];
-	}
-	let treeWalker = doc.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT,
-		node => (range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP));
+	let treeWalker = createRangeWalker(range, NodeFilter.SHOW_TEXT);
 	let ranges = [];
 	let node: Node | null = treeWalker.currentNode;
 	while (node) {
@@ -148,7 +163,7 @@ export function splitRangeToTextNodes(range: Range): Range[] {
 			node = treeWalker.nextNode();
 			continue;
 		}
-		let subRange = document.createRange();
+		let subRange = node.ownerDocument!.createRange();
 		subRange.setStart(node, range.startContainer == node ? range.startOffset : 0);
 		subRange.setEnd(node, range.endContainer == node ? range.endOffset : node.nodeValue.length);
 		ranges.push(subRange);
@@ -163,10 +178,17 @@ export function splitRangeToTextNodes(range: Range): Range[] {
  * at offset 0 to nodeD at offset 9, the output of makeRangeSpanning(rangeA, rangeB) would be a
  * range from nodeA at offset 5 to nodeD at offset 9.
  */
-export function makeRangeSpanning(...ranges: Range[]): Range {
+export function makeRangeSpanning(ranges: Range[], sorted = false, doc = document): Range {
 	if (!ranges.length) {
-		return document.createRange();
+		return doc.createRange();
 	}
+	if (sorted) {
+		let range = ranges[0].cloneRange();
+		let lastRange = ranges[ranges.length - 1];
+		range.setEnd(lastRange.endContainer, lastRange.endOffset);
+		return range;
+	}
+
 	let result = ranges[0].cloneRange();
 	for (let i = 1; i < ranges.length; i++) {
 		let range = ranges[i];
@@ -184,13 +206,46 @@ export function makeRangeSpanning(...ranges: Range[]): Range {
  * Collapse the range to its start, leaving a single character if possible. This prevents the range's bounding box from
  * moving to the previous line if its start is on the soft-wrap point between two lines.
  */
-export function collapseToOneCharacterAtStart(range: Range) {
-	if (range.startContainer.nodeValue && range.startContainer.nodeValue?.length > range.startOffset) {
-		range.setEnd(range.startContainer, range.startOffset + 1);
+export function collapseToOneCharacter(range: Range, toEnd = false) {
+	if (toEnd) {
+		if (range.endOffset > 0 && range.endContainer.nodeValue != null) {
+			range.setStart(range.endContainer, range.endOffset - 1);
+		}
+		else {
+			range.collapse(false);
+		}
 	}
 	else {
-		range.collapse(true);
+		if (range.startContainer.nodeValue && range.startContainer.nodeValue?.length > range.startOffset) {
+			range.setEnd(range.startContainer, range.startOffset + 1);
+		}
+		else {
+			range.collapse(true);
+		}
 	}
+}
+
+/**
+ * Get a bounding rect ({@link Range#getBoundingClientRect()}) for the range,
+ * measuring an adjacent character if a collapsed range returns a zero rect.
+ */
+export function getVisibleRect(range: Range): DOMRect {
+	let rect = range.getBoundingClientRect();
+	if (!isErrorRect(rect)) {
+		return rect;
+	}
+	// Try one character after the start, then one before the end
+	for (let toEnd of [false, true]) {
+		let probe = range.cloneRange();
+		collapseToOneCharacter(probe, toEnd);
+		if (!probe.collapsed) {
+			let probeRect = probe.getBoundingClientRect();
+			if (!isErrorRect(probeRect)) {
+				return probeRect;
+			}
+		}
+	}
+	return rect;
 }
 
 export function supportsCaretPositionFromPoint(): boolean {
@@ -213,7 +268,7 @@ export function caretPositionFromPoint(doc: Document, x: number, y: number): Car
 			};
 		}
 		else if (typeof doc.caretRangeFromPoint == 'function') {
-			const range = doc.caretRangeFromPoint(x, y);
+			let range = doc.caretRangeFromPoint(x, y);
 			if (!range) {
 				return null;
 			}
@@ -282,7 +337,7 @@ export function getColumnSeparatedPageRects(range: Range, visibleOnly = true): D
 		// are within this column
 		let rangeRectsWithinColumn = [];
 		for (let rangeRect of rangeRects) {
-			if (rectIntersects(rangeRect, columnRect)) {
+			if (rectsIntersect(rangeRect, columnRect)) {
 				rangeRectsWithinColumn.push(rangeRect);
 				rangeRects.delete(rangeRect);
 			}

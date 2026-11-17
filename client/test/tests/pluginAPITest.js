@@ -543,6 +543,24 @@ describe("Plugin API", function () {
 			await waitForUnregister(columnKey);
 		});
 
+		it("should finish column refresh in an item tree with no collection selected", async function () {
+			let CollectionViewItemTree = win.require('zotero/collectionViewItemTree');
+			let elem = doc.createElement('div');
+			doc.documentElement.append(elem);
+			let itemsView = await CollectionViewItemTree.init(elem, { id: "plugin-api-test" });
+			try {
+				let result = await Promise.race([
+					Zotero.Notifier.trigger('refresh', 'itemtree', [], {}).then(() => "done"),
+					Zotero.Promise.delay(5000).then(() => "timeout")
+				]);
+				assert.equal(result, "done");
+			}
+			finally {
+				itemsView.unregister();
+				elem.remove();
+			}
+		});
+
 		it("should not break ui when hooks throw error", async function () {
 			let option = Object.assign({}, defaultOption, {
 				dataProvider: () => {
@@ -943,7 +961,7 @@ describe("Plugin API", function () {
 					contextKeys: [
 						...defaultContextKeys,
 						"items",
-						"collectionTreeRow",
+						"collectionTreeRows",
 					]
 				},
 				"main/library/collection": {
@@ -953,7 +971,7 @@ describe("Plugin API", function () {
 					},
 					contextKeys: [
 						...defaultContextKeys,
-						"collectionTreeRow",
+						"collectionTreeRows",
 					]
 				},
 				"main/library/addAttachment": {
@@ -997,6 +1015,7 @@ describe("Plugin API", function () {
 						let itemDetails = ZoteroPane.itemPane._itemDetails;
 						let infoBox = itemDetails.getPane("info");
 						let row = infoBox.querySelector("#itembox-field-value-title");
+						row.focus();
 						let event = new MouseEvent("contextmenu", {
 							bubbles: true,
 							cancelable: true,
@@ -1106,6 +1125,33 @@ describe("Plugin API", function () {
 			}
 
 			reader.close();
+		});
+
+		it("should remove menu DOM elements on plugin shutdown", async function () {
+			let pluginID = "test-plugin@zotero.org";
+			let option = Object.assign({}, defaultOption, {
+				pluginID,
+				target: "main/menubar/file",
+			});
+
+			initCache("onShowing");
+			let menuID = Zotero.MenuManager.registerMenu(option);
+			assert.isString(menuID);
+
+			let popup = doc.querySelector("#menu_FilePopup");
+			await simulateMenuOpen(popup);
+			await getCache("onShowing");
+
+			let menuSelector = `.zotero-custom-menu-item.${CSS.escape(menuID)}`;
+			assert.exists(popup.querySelector(menuSelector),
+				"Menu element should exist after registration");
+
+			await simulateMenuClosed(popup);
+
+			await Zotero.MenuManager._menuManager._unregisterByPluginID(pluginID);
+
+			assert.notExists(popup.querySelector(menuSelector),
+				"Menu element should be removed after plugin shutdown");
 		});
 
 		it("should group custom menus", async function () {

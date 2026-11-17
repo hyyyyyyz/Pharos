@@ -17,6 +17,8 @@ import { DecodeStream } from "./decode_stream.js";
 import { isWhiteSpace } from "./core_utils.js";
 
 class Ascii85Stream extends DecodeStream {
+  #input = new Uint8Array(5);
+
   constructor(str, maybeLength) {
     // Most streams increase in size when decoded, but Ascii85 streams
     // typically shrink by ~20%.
@@ -25,9 +27,8 @@ class Ascii85Stream extends DecodeStream {
     }
     super(maybeLength);
 
-    this.str = str;
+    this.stream = str;
     this.dict = str.dict;
-    this.input = new Uint8Array(5);
   }
 
   readBlock() {
@@ -35,7 +36,7 @@ class Ascii85Stream extends DecodeStream {
     const Z_LOWER_CHAR = 0x7a; // 'z'
     const EOF = -1;
 
-    const str = this.str;
+    const str = this.stream;
 
     let c = str.getByte();
     while (isWhiteSpace(c)) {
@@ -53,12 +54,10 @@ class Ascii85Stream extends DecodeStream {
     // special code for z
     if (c === Z_LOWER_CHAR) {
       buffer = this.ensureBuffer(bufferLength + 4);
-      for (i = 0; i < 4; ++i) {
-        buffer[bufferLength + i] = 0;
-      }
+      buffer.fill(0, bufferLength, bufferLength + 4);
       this.bufferLength += 4;
     } else {
-      const input = this.input;
+      const input = this.#input;
       input[0] = c;
       for (i = 1; i < 5; ++i) {
         c = str.getByte();
@@ -77,9 +76,7 @@ class Ascii85Stream extends DecodeStream {
 
       // partial ending;
       if (i < 5) {
-        for (; i < 5; ++i) {
-          input[i] = 0x21 + 84;
-        }
+        input.fill(0x21 + 84, i, 5);
         this.eof = true;
       }
       let t = 0;

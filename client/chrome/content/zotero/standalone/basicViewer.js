@@ -32,31 +32,31 @@ const SANDBOXED_SCRIPTS = 0x80;
 var browser;
 
 window.addEventListener("load", /*async */function () {
+	let { uri, options } = window.arguments[0].wrappedJSObject;
+
 	browser = document.querySelector('browser');
+	if (options?.userContextId) {
+		// Set usercontextid on new <browser> so it takes effect
+		let newBrowser = document.createXULElement('browser');
+		for (let { name, value } of browser.attributes) {
+			newBrowser.setAttribute(name, value);
+		}
+		newBrowser.setAttribute('usercontextid', String(options.userContextId));
+		browser.replaceWith(newBrowser);
+		browser = newBrowser;
+	}
 	window.gBrowser = browser; // For ZoomManager
 	
 	browser.addEventListener('pagetitlechanged', () => {
 		document.title = browser.contentTitle || browser.currentURI.spec;
 	});
-	
-	/*
-	browser.setAttribute("remote", "true");
-	//browser.setAttribute("remoteType", E10SUtils.EXTENSION_REMOTE_TYPE);
-	
-	await new Promise((resolve) => {
-		browser.addEventListener("XULFrameLoaderCreated", () => resolve());
-	});
-	*/
-	
-	/*browser.messageManager.loadFrameScript(
-		'chrome://zotero/content/standalone/basicViewerContent.js',
-		false
-	);*/
-	//browser.docShellIsActive = false;
 
-	// Get URI and options passed in via openWindow()
-	let { uri, options } = window.arguments[0].wrappedJSObject;
+	if (options?.customUserAgent) {
+		browser.browsingContext.customUserAgent = options.customUserAgent;
+	}
+
 	window.viewerOriginalURI = uri;
+	window.viewerUserContextId = options?.userContextId;
 	loadURI(Services.io.newURI(uri), options);
 }, false);
 
@@ -82,9 +82,6 @@ function loadURI(uri, options = {}) {
 	}
 	else {
 		browser.browsingContext.sandboxFlags |= SANDBOXED_SCRIPTS;
-	}
-	if (options.cookieSandbox) {
-		options.cookieSandbox.attachToBrowser(browser);
 	}
 	browser.loadURI(
 		uri,

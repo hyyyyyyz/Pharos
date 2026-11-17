@@ -15,13 +15,8 @@
 
 import { BasePDFPageView } from "./base_pdf_page_view.js";
 import { OutputScale } from "pdfjs-lib";
-import { RenderingStates } from "./ui_utils.js";
+import { RenderingStates } from "./renderable_view.js";
 
-/** @typedef {import("./interfaces").IRenderableView} IRenderableView */
-
-/**
- * @implements {IRenderableView}
- */
 class PDFPageDetailView extends BasePDFPageView {
   #detailArea = null;
 
@@ -58,9 +53,9 @@ class PDFPageDetailView extends BasePDFPageView {
     return super.renderingState;
   }
 
-  set renderingState(value) {
+  set renderingState(state) {
     this.renderingCancelled = false;
-    super.renderingState = value;
+    super.renderingState = state;
   }
 
   reset({ keepCanvas = false } = {}) {
@@ -190,6 +185,49 @@ class PDFPageDetailView extends BasePDFPageView {
     this.reset({ keepCanvas: true });
   }
 
+  _getRenderingContext(canvas, transform) {
+    const baseContext = this.pageView._getRenderingContext(
+      canvas,
+      transform,
+      false
+    );
+    const recordedBBoxes = this.pdfPage.recordedBBoxes;
+
+    if (!recordedBBoxes || !this.enableOptimizedPartialRendering) {
+      return baseContext;
+    }
+
+    const {
+      viewport: { width: vWidth, height: vHeight },
+    } = this.pageView;
+    const {
+      width: aWidth,
+      height: aHeight,
+      minX: aMinX,
+      minY: aMinY,
+    } = this.#detailArea;
+
+    const detailMinX = aMinX / vWidth;
+    const detailMinY = aMinY / vHeight;
+    const detailMaxX = (aMinX + aWidth) / vWidth;
+    const detailMaxY = (aMinY + aHeight) / vHeight;
+
+    return {
+      ...baseContext,
+      operationsFilter(index) {
+        if (recordedBBoxes.isEmpty(index)) {
+          return false;
+        }
+        return (
+          recordedBBoxes.minX(index) <= detailMaxX &&
+          recordedBBoxes.maxX(index) >= detailMinX &&
+          recordedBBoxes.minY(index) <= detailMaxY &&
+          recordedBBoxes.maxY(index) >= detailMinY
+        );
+      },
+    };
+  }
+
   async draw() {
     // The PDFPageView might have already dropped this PDFPageDetailView. In
     // that case, simply do nothing.
@@ -228,7 +266,10 @@ class PDFPageDetailView extends BasePDFPageView {
         canvasWrapper.prepend(newCanvas);
       }
     }, hideUntilComplete);
-    canvas.setAttribute("aria-hidden", "true");
+    canvas.ariaHidden = true;
+    if (this.enableOptimizedPartialRendering) {
+      canvas.className = "detailView";
+    }
 
     const { width, height } = viewport;
 
@@ -253,7 +294,7 @@ class PDFPageDetailView extends BasePDFPageView {
     style.left = `${(area.minX * 100) / width}%`;
 
     const renderingPromise = this._drawCanvas(
-      this.pageView._getRenderingContext(canvas, transform),
+      this._getRenderingContext(canvas, transform),
       () => {
         // If the rendering is cancelled, keep the old canvas visible.
         this.canvas?.remove();

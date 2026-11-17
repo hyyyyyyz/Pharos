@@ -28,7 +28,6 @@ import {
   ISOAdobeCharset,
 } from "./charsets.js";
 import { ExpertEncoding, StandardEncoding } from "./encodings.js";
-import { readInt16 } from "./core_utils.js";
 
 // Maximum subroutine call depth of type 2 charstrings. Matches OTS.
 const MAX_SUBR_NESTING = 10;
@@ -119,8 +118,8 @@ const CharstringValidationData = [
   /*  7 */ { id: "vlineto", min: 1, resetStack: true },
   /*  8 */ { id: "rrcurveto", min: 6, resetStack: true },
   /*  9 */ null,
-  /* 10 */ { id: "callsubr", min: 1, undefStack: true },
-  /* 11 */ { id: "return", min: 0, undefStack: true },
+  /* 10 */ { id: "callsubr", min: 1 },
+  /* 11 */ { id: "return", min: 0 },
   /* 12 */ null,
   /* 13 */ null,
   /* 14 */ { id: "endchar", min: 0, stackClearing: true },
@@ -138,7 +137,7 @@ const CharstringValidationData = [
   /* 26 */ { id: "vvcurveto", min: 4, resetStack: true },
   /* 27 */ { id: "hhcurveto", min: 4, resetStack: true },
   /* 28 */ null, // shortint
-  /* 29 */ { id: "callgsubr", min: 1, undefStack: true },
+  /* 29 */ { id: "callgsubr", min: 1 },
   /* 30 */ { id: "vhcurveto", min: 4, resetStack: true },
   /* 31 */ { id: "hvcurveto", min: 4, resetStack: true },
 ];
@@ -228,7 +227,7 @@ class CFFParser {
 
   parse() {
     const properties = this.properties;
-    const cff = new CFF();
+    const cff = new CFF(this.bytes.length);
     this.cff = cff;
 
     // The first five sections must be in order, all the others are reached
@@ -254,6 +253,8 @@ class CFFParser {
 
     const charStringOffset = topDict.getByName("CharStrings");
     const charStringIndex = this.parseIndex(charStringOffset).obj;
+
+    cff.charStringCount = charStringIndex.count;
 
     const fontMatrix = topDict.getByName("FontMatrix");
     if (fontMatrix) {
@@ -353,6 +354,7 @@ class CFFParser {
   }
 
   parseDict(dict) {
+    const view = new DataView(dict.buffer, dict.byteOffset, dict.bytesLength);
     let pos = 0;
 
     function parseOperand() {
@@ -360,14 +362,12 @@ class CFFParser {
       if (value === 30) {
         return parseFloatOperand();
       } else if (value === 28) {
-        value = readInt16(dict, pos);
+        value = view.getInt16(pos);
         pos += 2;
         return value;
       } else if (value === 29) {
-        value = dict[pos++];
-        value = (value << 8) | dict[pos++];
-        value = (value << 8) | dict[pos++];
-        value = (value << 8) | dict[pos++];
+        value = view.getInt32(pos);
+        pos += 4;
         return value;
       } else if (value >= 32 && value <= 246) {
         return value - 139;
@@ -376,7 +376,7 @@ class CFFParser {
       } else if (value >= 251 && value <= 254) {
         return -((value - 251) * 256) - dict[pos++] - 108;
       }
-      warn('CFFParser_parseDict: "' + value + '" is a reserved command.');
+      warn(`CFFParser.parseDict: "${value}" is a reserved command.`);
       return NaN;
     }
 
@@ -487,6 +487,7 @@ class CFFParser {
     if (!data || state.callDepth > MAX_SUBR_NESTING) {
       return false;
     }
+    const view = new DataView(data.buffer, data.byteOffset, data.bytesLength);
     let stackSize = state.stackSize;
     const stack = state.stack;
 
@@ -511,7 +512,7 @@ class CFFParser {
         }
       } else if (value === 28) {
         // number (16 bit)
-        stack[stackSize] = readInt16(data, j);
+        stack[stackSize] = view.getInt16(j);
         j += 2;
         stackSize++;
       } else if (value === 14) {
@@ -537,12 +538,7 @@ class CFFParser {
         stackSize++;
       } else if (value === 255) {
         // number (32 bit)
-        stack[stackSize] =
-          ((data[j] << 24) |
-            (data[j + 1] << 16) |
-            (data[j + 2] << 8) |
-            data[j + 3]) /
-          65536;
+        stack[stackSize] = view.getInt32(j) / 65536;
         j += 4;
         stackSize++;
       } else if (value === 19 || value === 20) {
@@ -627,26 +623,24 @@ class CFFParser {
             data[j - 1] = value === 1 ? 3 : 23;
           }
         }
-        if ("min" in validationCommand) {
-          if (!state.undefStack && stackSize < validationCommand.min) {
-            warn(
-              "Not enough parameters for " +
-                validationCommand.id +
-                "; actual: " +
-                stackSize +
-                ", expected: " +
-                validationCommand.min
-            );
+        if (stackSize < validationCommand.min) {
+          warn(
+            "Not enough parameters for " +
+              validationCommand.id +
+              "; actual: " +
+              stackSize +
+              ", expected: " +
+              validationCommand.min
+          );
 
-            if (stackSize === 0) {
-              // Just "fix" the outline in replacing command by a endchar:
-              // it could lead to wrong rendering of some glyphs or not.
-              // For example, the pdf in #6132 is well-rendered.
-              data[j - 1] = 14;
-              return true;
-            }
-            return false;
+          if (stackSize === 0) {
+            // Just "fix" the outline in replacing command by a endchar:
+            // it could lead to wrong rendering of some glyphs or not.
+            // For example, the pdf in #6132 is well-rendered.
+            data[j - 1] = 14;
+            return true;
           }
+          return false;
         }
         if (state.firstStackClearing && validationCommand.stackClearing) {
           state.firstStackClearing = false;
@@ -670,15 +664,11 @@ class CFFParser {
             validationCommand.stackFn(stack, stackSize);
           }
           stackSize += validationCommand.stackDelta;
-        } else if (validationCommand.stackClearing) {
+        } else if (
+          validationCommand.stackClearing ||
+          validationCommand.resetStack
+        ) {
           stackSize = 0;
-        } else if (validationCommand.resetStack) {
-          stackSize = 0;
-          state.undefStack = false;
-        } else if (validationCommand.undefStack) {
-          stackSize = 0;
-          state.undefStack = true;
-          state.firstStackClearing = false;
         }
       }
     }
@@ -706,7 +696,6 @@ class CFFParser {
         callDepth: 0,
         stackSize: 0,
         stack: [],
-        undefStack: true,
         hints: 0,
         firstStackClearing: true,
         seac: null,
@@ -996,22 +985,34 @@ class CFFParser {
 
 // Compact Font Format
 class CFF {
-  constructor() {
-    this.header = null;
-    this.names = [];
-    this.topDict = null;
-    this.strings = new CFFStrings();
-    this.globalSubrIndex = null;
+  header = null;
 
-    // The following could really be per font, but since we only have one font
-    // store them here.
-    this.encoding = null;
-    this.charset = null;
-    this.charStrings = null;
-    this.fdArray = [];
-    this.fdSelect = null;
+  names = [];
 
-    this.isCIDFont = false;
+  topDict = null;
+
+  strings = new CFFStrings();
+
+  globalSubrIndex = null;
+
+  // The following could really be per font, but since we only have one font
+  // store them here.
+  encoding = null;
+
+  charset = null;
+
+  charStrings = null;
+
+  fdArray = [];
+
+  fdSelect = null;
+
+  isCIDFont = false;
+
+  charStringCount = 0;
+
+  constructor(rawFileLength = 0) {
+    this.rawFileLength = rawFileLength;
   }
 
   duplicateFirstGlyph() {
@@ -1048,9 +1049,7 @@ class CFFHeader {
 }
 
 class CFFStrings {
-  constructor() {
-    this.strings = [];
-  }
+  strings = [];
 
   get(index) {
     if (index >= 0 && index <= NUM_STANDARD_CFF_STRINGS - 1) {
@@ -1084,10 +1083,9 @@ class CFFStrings {
 }
 
 class CFFIndex {
-  constructor() {
-    this.objects = [];
-    this.length = 0;
-  }
+  objects = [];
+
+  length = 0;
 
   add(data) {
     this.length += data.length;
@@ -1320,9 +1318,7 @@ class CFFFDSelect {
 // Helper class to keep track of where an offset is within the data and helps
 // filling in that offset once it's known.
 class CFFOffsetTracker {
-  constructor() {
-    this.offsets = Object.create(null);
-  }
+  offsets = Object.create(null);
 
   isTracking(key) {
     return key in this.offsets;
@@ -1374,6 +1370,57 @@ class CFFOffsetTracker {
   }
 }
 
+class CompilerOutput {
+  #buf;
+
+  #bufLength = 1024;
+
+  #pos = 0;
+
+  constructor(minLength) {
+    // Note: Usually the compiled size is smaller than the initial data,
+    //       however in some cases it may increase slightly.
+    this.#initBuf(minLength);
+  }
+
+  #initBuf(minLength) {
+    // Compute the first power of two that is as big as the `minLength`.
+    while (this.#bufLength < minLength) {
+      this.#bufLength *= 2;
+    }
+    const newBuf = new Uint8Array(this.#bufLength);
+
+    if (this.#buf) {
+      newBuf.set(this.#buf, 0);
+    }
+    this.#buf = newBuf;
+  }
+
+  get data() {
+    return this.#buf.subarray(0, this.#pos);
+  }
+
+  get finalData() {
+    const data = this.#buf.slice(0, this.#pos);
+    this.#buf = null;
+    return data;
+  }
+
+  get length() {
+    return this.#pos;
+  }
+
+  add(data) {
+    const newPos = this.#pos + data.length;
+    if (newPos > this.#bufLength) {
+      // It should be very rare that the buffer needs to grow.
+      this.#initBuf(newPos);
+    }
+    this.#buf.set(data, this.#pos);
+    this.#pos = newPos;
+  }
+}
+
 // Takes a CFF and converts it to the binary representation.
 class CFFCompiler {
   constructor(cff) {
@@ -1382,21 +1429,7 @@ class CFFCompiler {
 
   compile() {
     const cff = this.cff;
-    const output = {
-      data: [],
-      length: 0,
-      add(data) {
-        try {
-          // It's possible to exceed the call stack maximum size when trying
-          // to push too much elements.
-          // In case of failure, we fallback to the `concat` method.
-          this.data.push(...data);
-        } catch {
-          this.data = this.data.concat(data);
-        }
-        this.length = this.data.length;
-      },
-    };
+    const output = new CompilerOutput(cff.rawFileLength);
 
     // Compile the five entries that must be in order.
     const header = this.compileHeader(cff.header);
@@ -1501,7 +1534,7 @@ class CFFCompiler {
     // the sanitizer will bail out. Add a dummy byte to avoid that.
     output.add([0]);
 
-    return output.data;
+    return output.finalData;
   }
 
   encodeNumber(value) {
@@ -1783,7 +1816,7 @@ class CFFCompiler {
     } else {
       const length = 1 + numGlyphsLessNotDef * 2;
       out = new Uint8Array(length);
-      out[0] = 0; // format 0
+      // format 0, skip redundant `out[0] = 0;` assignment.
       let charsetIndex = 0;
       const numCharsets = charset.charset.length;
       let warned = false;
@@ -1804,11 +1837,11 @@ class CFFCompiler {
         out[i + 1] = sid & 0xff;
       }
     }
-    return this.compileTypedArray(out);
+    return out;
   }
 
   compileEncoding(encoding) {
-    return this.compileTypedArray(encoding.raw);
+    return encoding.raw;
   }
 
   compileFDSelect(fdSelect) {
@@ -1849,11 +1882,7 @@ class CFFCompiler {
         out = new Uint8Array(ranges);
         break;
     }
-    return this.compileTypedArray(out);
-  }
-
-  compileTypedArray(data) {
-    return Array.from(data);
+    return out;
   }
 
   compileIndex(index, trackers = []) {
@@ -1863,10 +1892,8 @@ class CFFCompiler {
 
     // If there is no object, just create an index.
     if (count === 0) {
-      return [0, 0];
+      return new Uint8Array(2);
     }
-
-    const data = [(count >> 8) & 0xff, count & 0xff];
 
     let lastOffset = 1,
       i;
@@ -1885,29 +1912,32 @@ class CFFCompiler {
       offsetSize = 4;
     }
 
+    const data = new Uint8Array(2 + offsetSize * (count + 1) + lastOffset);
+    let pos = 0;
+
+    data[pos++] = (count >> 8) & 0xff;
+    data[pos++] = count & 0xff;
+
     // Next byte contains the offset size use to reference object in the file
-    data.push(offsetSize);
+    data[pos++] = offsetSize;
 
     // Add another offset after this one because we need a new offset
     let relativeOffset = 1;
     for (i = 0; i < count + 1; i++) {
       if (offsetSize === 1) {
-        data.push(relativeOffset & 0xff);
+        data[pos++] = relativeOffset & 0xff;
       } else if (offsetSize === 2) {
-        data.push((relativeOffset >> 8) & 0xff, relativeOffset & 0xff);
+        data[pos++] = (relativeOffset >> 8) & 0xff;
+        data[pos++] = relativeOffset & 0xff;
       } else if (offsetSize === 3) {
-        data.push(
-          (relativeOffset >> 16) & 0xff,
-          (relativeOffset >> 8) & 0xff,
-          relativeOffset & 0xff
-        );
+        data[pos++] = (relativeOffset >> 16) & 0xff;
+        data[pos++] = (relativeOffset >> 8) & 0xff;
+        data[pos++] = relativeOffset & 0xff;
       } else {
-        data.push(
-          (relativeOffset >>> 24) & 0xff,
-          (relativeOffset >> 16) & 0xff,
-          (relativeOffset >> 8) & 0xff,
-          relativeOffset & 0xff
-        );
+        data[pos++] = (relativeOffset >>> 24) & 0xff;
+        data[pos++] = (relativeOffset >> 16) & 0xff;
+        data[pos++] = (relativeOffset >> 8) & 0xff;
+        data[pos++] = relativeOffset & 0xff;
       }
 
       if (objects[i]) {
@@ -1917,10 +1947,10 @@ class CFFCompiler {
 
     for (i = 0; i < count; i++) {
       // Notify the tracker where the object will be offset in the data.
-      if (trackers[i]) {
-        trackers[i].offset(data.length);
-      }
-      data.push(...objects[i]);
+      trackers[i]?.offset(pos);
+
+      data.set(objects[i], pos);
+      pos += objects[i].length;
     }
     return data;
   }

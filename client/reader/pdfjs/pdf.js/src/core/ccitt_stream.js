@@ -13,47 +13,72 @@
  * limitations under the License.
  */
 
-import { CCITTFaxDecoder } from "./ccitt.js";
+import { shadow, unreachable } from "../shared/util.js";
 import { DecodeStream } from "./decode_stream.js";
 import { Dict } from "./primitives.js";
+import { JBig2CCITTFaxImage } from "./jbig2_ccittFax.js";
 
 class CCITTFaxStream extends DecodeStream {
   constructor(str, maybeLength, params) {
     super(maybeLength);
 
-    this.str = str;
+    this.stream = str;
+    this.maybeLength = maybeLength;
     this.dict = str.dict;
 
     if (!(params instanceof Dict)) {
       params = Dict.empty;
     }
 
-    const source = {
-      next() {
-        return str.getByte();
-      },
+    this.params = {
+      K: params.get("K") || 0,
+      EndOfLine: !!params.get("EndOfLine"),
+      EncodedByteAlign: !!params.get("EncodedByteAlign"),
+      Columns: params.get("Columns") || 1728,
+      Rows: params.get("Rows") || 0,
+      EndOfBlock: !!(params.get("EndOfBlock") ?? true),
+      BlackIs1: !!params.get("BlackIs1"),
     };
-    this.ccittFaxDecoder = new CCITTFaxDecoder(source, {
-      K: params.get("K"),
-      EndOfLine: params.get("EndOfLine"),
-      EncodedByteAlign: params.get("EncodedByteAlign"),
-      Columns: params.get("Columns"),
-      Rows: params.get("Rows"),
-      EndOfBlock: params.get("EndOfBlock"),
-      BlackIs1: params.get("BlackIs1"),
-    });
+  }
+
+  get bytes() {
+    // If `this.maybeLength` is null, we'll get the entire stream.
+    return shadow(this, "bytes", this.stream.getBytes(this.maybeLength));
   }
 
   readBlock() {
-    while (!this.eof) {
-      const c = this.ccittFaxDecoder.readNextChar();
-      if (c === -1) {
-        this.eof = true;
-        return;
-      }
-      this.ensureBuffer(this.bufferLength + 1);
-      this.buffer[this.bufferLength++] = c;
+    unreachable("CCITTFaxStream.readBlock");
+  }
+
+  get isImageStream() {
+    return true;
+  }
+
+  get isAsyncDecoder() {
+    return true;
+  }
+
+  async decodeImage(bytes, length, _decoderOptions) {
+    if (this.eof) {
+      return this.buffer;
     }
+    if (!bytes) {
+      bytes = this.stream.isAsync
+        ? (await this.stream.asyncGetBytes()) || this.bytes
+        : this.bytes;
+    }
+
+    this.buffer = await JBig2CCITTFaxImage.decode(
+      bytes,
+      this.dict.get("W", "Width"),
+      this.dict.get("H", "Height"),
+      null,
+      this.params
+    );
+    this.bufferLength = this.buffer.length;
+    this.eof = true;
+
+    return this.buffer;
   }
 }
 

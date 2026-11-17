@@ -39,14 +39,10 @@ Zotero.Schema = new function () {
 	const REPOSITORY_CHECK_INTERVAL = 86400;
 	const REPOSITORY_RETRY_INTERVAL = 3600;
 	
-	// If updating from this userdata version or later, don't show "Upgrading database…" and don't make
-	// DB backup first. This should be set to false when breaking compatibility or making major changes.
-	const minorUpdateFrom = 112;
-	
 	var _dbVersions = [];
 	var _schemaVersions = [];
 	// Update when adding _updateCompatibility() line to schema update step
-	var _maxCompatibility = 7;
+	var _maxCompatibility = 9;
 	
 	var _repositoryTimerID;
 	var _repositoryNotificationTimerID;
@@ -183,15 +179,32 @@ Zotero.Schema = new function () {
 		
 		// Check whether bundled userdata schema has been updated
 		var userdataVersion = await _getSchemaSQLVersion('userdata');
-		options.minor = minorUpdateFrom && userdata >= minorUpdateFrom;
 		
-		// If non-minor userdata upgrade, make backup of database first
-		if (userdata < userdataVersion && !options.minor) {
-			await Zotero.DB.backUpDatabase({ force: true, suffix: userdata });
+		// Notify the caller before the backup, which can also be slow for a large database
+		if (userdata < userdataVersion && options.onBeforeUpdate) {
+			await options.onBeforeUpdate();
 		}
-		// Automatic backup
-		else if (integrityCheckRequired || bundledGlobalSchemaVersionCompare === 1) {
-			await Zotero.DB.backUpDatabase({ force: true });
+		
+		// Force a backup before a userdata upgrade, an integrity check, or a global schema
+		// update, unless one was already made for the same target versions on a previous startup
+		// (i.e., a previous attempt failed partway through), so that repeated attempts can't
+		// rotate out the pre-update backup
+		if (userdata < userdataVersion
+				|| integrityCheckRequired
+				|| bundledGlobalSchemaVersionCompare === 1) {
+			let backupState = userdataVersion + '/' + bundledGlobalSchema.version;
+			let lastBackupState = await Zotero.DB.valueQueryAsync(
+				"SELECT value FROM settings WHERE setting='backup' AND key='lastSchemaUpdateState'"
+			);
+			if (backupState !== lastBackupState
+					|| !(await IOUtils.exists(Zotero.DB.path + '.bak'))) {
+				if (await Zotero.DB.backUpDatabase({ force: true })) {
+					await Zotero.DB.queryAsync(
+						"REPLACE INTO settings VALUES ('backup', 'lastSchemaUpdateState', ?)",
+						backupState
+					);
+				}
+			}
 		}
 		
 		var logLines = [];
@@ -231,7 +244,7 @@ Zotero.Schema = new function () {
 					await _updateCustomTables();
 				}
 				
-				updated = await _migrateUserDataSchema(userdata, options);
+				updated = await _migrateUserDataSchema(userdata);
 				await _updateSchema('triggers');
 				
 				// Populate combined tables for custom types and fields -- this is likely temporary
@@ -293,9 +306,14 @@ Zotero.Schema = new function () {
 			}
 		}
 		
+		// The update succeeded, so any new pending state should make a fresh forced backup
+		await Zotero.DB.queryAsync(
+			"DELETE FROM settings WHERE setting='backup' AND key='lastSchemaUpdateState'"
+		);
+		
 		if (updated) {
-			// Upgrade seems to have been a success -- delete any previous backups
-			var maxPrevious = userdata - 1;
+			// Upgrade seems to have been a success -- delete any versioned backups
+			// (zotero.sqlite.<userdata version>.bak) from upgrades in previous versions
 			var file = Zotero.File.pathToFile(Zotero.DataDirectory.dir);
 			var toDelete = [];
 			try {
@@ -306,11 +324,12 @@ Zotero.Schema = new function () {
 					if (file.isDirectory()) {
 						continue;
 					}
-					var matches = file.leafName.match(/zotero\.sqlite\.([0-9]{2,})\.bak/);
+					var matches = file.leafName.match(/^zotero\.sqlite\.([0-9]{2,})\.bak$/);
 					if (!matches) {
 						continue;
 					}
-					if (matches[1]>=28 && matches[1]<=maxPrevious) {
+					// Rotation backups (zotero.sqlite.<n>.bak) only go up to 24
+					if (matches[1] >= 28) {
 						toDelete.push(file);
 					}
 				}
@@ -325,12 +344,22 @@ Zotero.Schema = new function () {
 		}
 		
 		// Reset sync queue tries if new version
-		await _checkClientVersion();
+		var clientVersionChanged = await _checkClientVersion();
 		
 		// See above
 		(!Zotero.test ? Zotero.uiReadyPromise : Zotero.initializationPromise)
 		.then(() => {
 			setTimeout(async function () {
+				// Keep Safari from blocking the bundled extension after an update
+				if (clientVersionChanged) {
+					try {
+						await Zotero.Utilities.Internal.assessAppBundle();
+					}
+					catch (e) {
+						Zotero.logError(e);
+					}
+				}
+				
 				try {
 					await this.updateBundledFiles();
 					if (Zotero.Prefs.get('automaticScraperUpdates')) {
@@ -732,11 +761,28 @@ Zotero.Schema = new function () {
 		
 		var items = await Zotero.Items.getAsync(itemIDs);
 		
-		Zotero.debug(`${items.length} items to migrate`);
-		
 		if (items.length) {
 			await Zotero.Items.loadDataTypes(items);
 			
+			// Skip items that the migration won't actually change (e.g., items whose extracted
+			// fields aren't valid for the item type or already have values) -- keep the
+			// extractExtraFields() call in sync with Zotero.Item::migrateExtraFields()
+			items = items.filter((item) => {
+				if (!item.isEditable()) {
+					return false;
+				}
+				let originalExtra = item.getField('extra');
+				let { itemType, fields, creators, extra }
+					= Zotero.Utilities.Internal.extractExtraFields(
+						originalExtra, item, ['place', 'date']
+					);
+				return itemType || fields.size || creators.length || extra != originalExtra;
+			});
+		}
+		
+		Zotero.debug(`${items.length} items to migrate`);
+		
+		if (items.length) {
 			let progress = 0;
 			let progressMax = items.length;
 			if (onProgress) {
@@ -778,8 +824,136 @@ Zotero.Schema = new function () {
 		
 		Zotero.debug(`Migrated fields from Extra for ${items.length} items in ${new Date() - t} ms`);
 	};
-	
-	
+
+
+	/**
+	 * Populate the normalized search columns added by the userdata 126 migration
+	 *
+	 * Resumable across restarts: a cursor is persisted to the 'normalizeBackfill' setting
+	 * after each chunk, and the setting is only cleared once every table is done. New rows are
+	 * populated at insert time by the data layer, so only pre-existing rows are handled here.
+	 *
+	 * @param {Function} [onProgress] - Called with { progress, progressMax } as rows are processed
+	 */
+	this.populateNormalizedSearchColumns = async function ({ onProgress } = {}) {
+		var flag = await Zotero.DB.valueQueryAsync(
+			"SELECT value FROM settings WHERE setting='search' AND key='normalizeBackfill'"
+		);
+		if (flag === false) {
+			return;
+		}
+
+		Zotero.debug("Populating normalized search columns");
+		var startTime = new Date();
+		var normalize = Zotero.Utilities.Internal.normalizeForSearchStorage;
+
+		// Each table's primary key and the [source, target] column pairs to normalize
+		var tables = [
+			{
+				table: 'itemDataValues',
+				idColumn: 'valueID',
+				columns: [['value', 'valueNormalized']]
+			},
+			{
+				table: 'tags',
+				idColumn: 'tagID',
+				columns: [['name', 'nameNormalized']]
+			},
+			{
+				table: 'creators',
+				idColumn: 'creatorID',
+				columns: [['firstName', 'firstNameNormalized'], ['lastName', 'lastNameNormalized']]
+			},
+			{
+				table: 'itemAnnotations',
+				idColumn: 'itemID',
+				columns: [['text', 'textNormalized'], ['comment', 'commentNormalized']]
+			}
+		];
+
+		// Resume from a persisted cursor, if any
+		var startTableIndex = 0;
+		var startCursor = 0;
+		try {
+			let parsed = JSON.parse(flag);
+			if (parsed && Number.isInteger(parsed.ti)) {
+				startTableIndex = parsed.ti;
+				startCursor = parsed.id || 0;
+			}
+		}
+		catch (e) {}
+
+		const CHUNK_SIZE = 1000;
+		var progress = 0;
+		var progressMax = 0;
+		for (let { table } of tables) {
+			progressMax += await Zotero.DB.valueQueryAsync(`SELECT COUNT(*) FROM ${table}`);
+		}
+		if (onProgress) {
+			onProgress({ progress, progressMax });
+		}
+
+		for (let ti = startTableIndex; ti < tables.length; ti++) {
+			let { table, idColumn, columns } = tables[ti];
+			let sourceColumns = columns.map(c => c[0]);
+			let cursor = ti == startTableIndex ? startCursor : 0;
+
+			while (true) {
+				let rows = await Zotero.DB.queryAsync(
+					`SELECT ${idColumn}, ${sourceColumns.join(', ')} FROM ${table} `
+						+ `WHERE ${idColumn} > ? ORDER BY ${idColumn} LIMIT ?`,
+					[cursor, CHUNK_SIZE]
+				);
+				if (!rows.length) {
+					break;
+				}
+
+				await Zotero.DB.executeTransaction(async function () {
+					for (let row of rows) {
+						let sets = [];
+						let params = [];
+						for (let [source, target] of columns) {
+							let value = normalize(row[source]);
+							// Skip columns that don't need a normalized form
+							if (value !== null) {
+								sets.push(`${target}=?`);
+								params.push(value);
+							}
+						}
+						// Most rows are plain ASCII and need no update at all
+						if (sets.length) {
+							params.push(row[idColumn]);
+							// Skip logging the params, which include the full normalized value
+							await Zotero.DB.queryAsync(
+								`UPDATE ${table} SET ${sets.join(', ')} WHERE ${idColumn}=?`,
+								params,
+								{ debugParams: false }
+							);
+						}
+						cursor = row[idColumn];
+					}
+
+					// Persist the cursor in the same transaction as the updates
+					await Zotero.DB.queryAsync(
+						"REPLACE INTO settings VALUES ('search', 'normalizeBackfill', ?)",
+						JSON.stringify({ ti, id: cursor })
+					);
+				});
+
+				progress += rows.length;
+				if (onProgress) {
+					onProgress({ progress, progressMax });
+				}
+			}
+		}
+
+		await Zotero.DB.queryAsync(
+			"DELETE FROM settings WHERE setting='search' AND key='normalizeBackfill'"
+		);
+		Zotero.debug(`Populated normalized search columns in ${new Date() - startTime} ms`);
+	};
+
+
 	// https://www.zotero.org/support/nsf
 	//
 	// This is mostly temporary
@@ -1966,6 +2140,11 @@ Zotero.Schema = new function () {
 				`SELECT COUNT(*) > 0 FROM items WHERE itemTypeID=${attachmentID} AND itemID NOT IN (SELECT itemID FROM itemAttachments)`,
 				`INSERT INTO itemAttachments (itemID, linkMode) SELECT itemID, 0 FROM items WHERE itemTypeID=${attachmentID} AND itemID NOT IN (SELECT itemID FROM itemAttachments)`,
 			],
+			// Missing itemAnnotations rows
+			[
+				`SELECT COUNT(*) > 0 FROM items WHERE itemTypeID=${annotationID} AND itemID NOT IN (SELECT itemID FROM itemAnnotations)`,
+				`DELETE FROM items WHERE itemTypeID=${annotationID} AND itemID NOT IN (SELECT itemID FROM itemAnnotations)`,
+			],
 			// Attachments with note parents, unless they're embedded-image attachments
 			[
 				`SELECT COUNT(*) > 0 FROM itemAttachments `
@@ -1995,12 +2174,7 @@ Zotero.Schema = new function () {
 				"SELECT COUNT(*) > 0 FROM creators WHERE firstName='' AND lastName=''",
 				"DELETE FROM creators WHERE firstName='' AND lastName=''"
 			],
-			
-			// Non-attachment items in the full-text index
-			[
-				`SELECT COUNT(*) > 0 FROM fulltextItemWords WHERE itemID NOT IN (SELECT itemID FROM items WHERE itemTypeID=${attachmentID})`,
-				`DELETE FROM fulltextItemWords WHERE itemID NOT IN (SELECT itemID FROM items WHERE itemTypeID=${attachmentID})`
-			],
+
 			// Full-text items must be attachments
 			[
 				`SELECT COUNT(*) > 0 FROM fulltextItems WHERE itemID NOT IN (SELECT itemID FROM items WHERE itemTypeID=${attachmentID})`,
@@ -2236,11 +2410,9 @@ Zotero.Schema = new function () {
 			try {
 				var userLibraryID = 1;
 				
-				// Enable auto-vacuuming
 				await Zotero.DB.queryAsync("PRAGMA page_size = 4096");
 				await Zotero.DB.queryAsync("PRAGMA encoding = 'UTF-8'");
-				await Zotero.DB.queryAsync("PRAGMA auto_vacuum = 1");
-				
+
 				var sql = await _getSchemaSQL('system');
 				await Zotero.DB.executeSQLFile(sql);
 				
@@ -2763,21 +2935,14 @@ Zotero.Schema = new function () {
 	//
 	// If libraryID set, make sure no relations still use a local user key, and then remove on-error code in sync.js
 	
-	var _migrateUserDataSchema = async function (fromVersion, options = {}) {
+	var _migrateUserDataSchema = async function (fromVersion) {
 		var toVersion = await _getSchemaSQLVersion('userdata');
 		
 		if (fromVersion >= toVersion) {
 			return false;
 		}
 		
-		Zotero.debug('Updating user data tables from version ' + fromVersion + ' to ' + toVersion);
-		
-		if (options.onBeforeUpdate) {
-			let maybePromise = options.onBeforeUpdate({ minor: options.minor });
-			if (maybePromise && maybePromise.then) {
-				await maybePromise;
-			}
-		}
+		Zotero.debug('Migrating user data tables from version ' + fromVersion + ' to ' + toVersion);
 		
 		Zotero.DB.requireTransaction();
 		
@@ -3536,18 +3701,97 @@ Zotero.Schema = new function () {
 				}
 			}
 			
-			else if (i == 122) {
+			else if (i == 130) {
+				// Replaces steps 122-129 (added in Zotero 7, 9, and 10), checking for each change
+				// before making it, since a transaction timeout could have rolled back some of those
+				// steps after the database was marked as upgraded
+				
+				await _updateCompatibility(9);
+				
+				// 122
 				await Zotero.DB.queryAsync("REPLACE INTO fileTypes VALUES(8, 'ebook')");
 				await Zotero.DB.queryAsync("REPLACE INTO fileTypeMIMETypes VALUES(8, 'application/epub+zip')");
 				// Incorrect, for compatibility
 				await Zotero.DB.queryAsync("REPLACE INTO fileTypeMIMETypes VALUES(8, 'application/epub')");
+				
+				// 123
+				await Zotero.DB.queryAsync("CREATE INDEX IF NOT EXISTS itemData_valueID ON itemData(valueID)");
+				
+				// 124
+				if (!(await Zotero.DB.columnExists('itemAttachments', 'lastRead'))) {
+					await Zotero.DB.queryAsync("ALTER TABLE itemAttachments ADD COLUMN lastRead INT");
+				}
+				await Zotero.DB.queryAsync("CREATE INDEX IF NOT EXISTS itemAttachments_lastRead ON itemAttachments(lastRead)");
+				
+				// 125
+				if (!(await Zotero.DB.columnExists('libraries', 'isAdmin'))) {
+					await Zotero.DB.queryAsync("ALTER TABLE libraries ADD COLUMN isAdmin INT NOT NULL DEFAULT 0");
+					// Force all groups to resync so isAdmin is populated from the API
+					await Zotero.DB.queryAsync("UPDATE groups SET version = 0");
+				}
+				
+				// 126
+				let normalizedColumns = [
+					['itemDataValues', 'valueNormalized'],
+					['tags', 'nameNormalized'],
+					['creators', 'firstNameNormalized'],
+					['creators', 'lastNameNormalized'],
+					['itemAnnotations', 'textNormalized'],
+					['itemAnnotations', 'commentNormalized']
+				];
+				let normalizedColumnAdded = false;
+				for (let [table, column] of normalizedColumns) {
+					if (!(await Zotero.DB.columnExists(table, column))) {
+						await Zotero.DB.queryAsync(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+						normalizedColumnAdded = true;
+					}
+				}
+				if (normalizedColumnAdded) {
+					await Zotero.DB.queryAsync("REPLACE INTO settings VALUES ('search', 'normalizeBackfill', 1)");
+				}
+				
+				// 127
+				//
+				// Don't overwrite the freed pages, which makes dropping a large index much slower.
+				// The words are also in the full-text cache files and will be rewritten into
+				// fulltext.sqlite.
+				await Zotero.DB.queryAsync("PRAGMA secure_delete=false");
+				try {
+					await Zotero.DB.queryAsync("DROP TABLE IF EXISTS fulltextItemWords");
+					await Zotero.DB.queryAsync("DROP TABLE IF EXISTS fulltextWords");
+				}
+				finally {
+					await Zotero.DB.queryAsync("PRAGMA secure_delete=true");
+				}
+				Zotero.Prefs.clear('vacuum.lastTime');
+				if (await Zotero.DB.columnExists('savedSearchConditions', 'required')) {
+					await Zotero.DB.queryAsync("ALTER TABLE savedSearchConditions RENAME TO savedSearchConditionsOld");
+					await Zotero.DB.queryAsync("CREATE TABLE savedSearchConditions (\n    savedSearchID INT NOT NULL,\n    searchConditionID INT NOT NULL,\n    condition TEXT NOT NULL,\n    operator TEXT,\n    value TEXT,\n    PRIMARY KEY (savedSearchID, searchConditionID),\n    FOREIGN KEY (savedSearchID) REFERENCES savedSearches(savedSearchID) ON DELETE CASCADE\n)");
+					await Zotero.DB.queryAsync("INSERT INTO savedSearchConditions SELECT savedSearchID, searchConditionID, condition, operator, value FROM savedSearchConditionsOld");
+					await Zotero.DB.queryAsync("DROP TABLE savedSearchConditionsOld");
+				}
+				
+				// 128
+				let rows = await Zotero.DB.queryAsync("SELECT itemID, path FROM itemAttachments WHERE linkMode IN (0, 1) AND (path LIKE ? OR path LIKE ?)", ['storage:%/%', 'storage:%\\%']);
+				for (let row of rows) {
+					let rel = row.path.substr(8);
+					if (!(rel.includes('/') || /^[a-zA-Z]:[\\/]/.test(rel) || rel.startsWith('\\\\'))) {
+						continue;
+					}
+					let filename = rel.split(/[/\\]/).pop();
+					if (!filename) {
+						continue;
+					}
+					await Zotero.DB.queryAsync("UPDATE itemAttachments SET path=? WHERE itemID=?", ['storage:' + filename, row.itemID]);
+				}
+				
+				// 129
+				for (let table of ['items', 'collections', 'savedSearches', 'libraries']) {
+					if (!(await Zotero.DB.columnExists(table, 'clientVersion'))) {
+						await Zotero.DB.queryAsync(`ALTER TABLE ${table} ADD COLUMN clientVersion INT NOT NULL DEFAULT 0`);
+					}
+				}
 			}
-			
-			else if (i == 123) {
-				await Zotero.DB.queryAsync("CREATE INDEX itemData_valueID ON itemData(valueID)");
-			}
-			
-			// If breaking compatibility or doing anything dangerous, clear minorUpdateFrom
 		}
 		
 		await _updateDBVersion('userdata', toVersion);

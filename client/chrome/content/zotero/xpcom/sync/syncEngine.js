@@ -92,6 +92,32 @@ Zotero.Sync.Data.Engine.prototype.UPLOAD_RESULT_RESTART = 5;
 Zotero.Sync.Data.Engine.prototype.UPLOAD_RESULT_CANCEL = 6;
 
 Zotero.Sync.Data.Engine.prototype.start = async function () {
+	let resetAttempted = false;
+	while (true) {
+		try {
+			return await this._runSync();
+		}
+		catch (e) {
+			// If the server's library version has gone backwards (e.g., because the user's
+			// account was deleted and undeleted, leaving a fresh shardLibraries row on the
+			// dataserver), reset the local library version and storage version to -1 and
+			// restart, which will run the full-sync path in _runSync().
+			if (!resetAttempted && e.name === 'ZoteroLibraryVersionDecreaseError') {
+				resetAttempted = true;
+				Zotero.warn(`Library version went backward for ${this.library.name} `
+					+ `(${e.message}) -- resetting for full sync`);
+				this.library.libraryVersion = -1;
+				this.library.storageVersion = -1;
+				await this.library.saveTx();
+				continue;
+			}
+			throw e;
+		}
+	}
+};
+
+
+Zotero.Sync.Data.Engine.prototype._runSync = async function () {
 	Zotero.debug("Starting data sync for " + this.library.name);
 	
 	// TODO: Handle new/changed user when setting key
@@ -778,6 +804,7 @@ Zotero.Sync.Data.Engine.prototype._restoreRestoredCollectionItems = async functi
 					if (o.deleted) {
 						o.deleted = false
 						await o.saveTx();
+						Zotero.Sync.Data.Local.markRemoteChangesApplied();
 					}
 				}
 				else {
@@ -790,6 +817,7 @@ Zotero.Sync.Data.Engine.prototype._restoreRestoredCollectionItems = async functi
 					+ `to restored collection ${collection.libraryKey}`);
 				await Zotero.DB.executeTransaction(async function () {
 					await collection.addItems(addToCollection);
+					Zotero.Sync.Data.Local.markRemoteChangesApplied();
 				}.bind(this));
 			}
 			if (addToQueue.length) {
@@ -885,6 +913,7 @@ Zotero.Sync.Data.Engine.prototype._downloadDeletions = async function (since, ne
 					await obj.eraseTx({
 						skipDeleteLog: true
 					});
+					Zotero.Sync.Data.Local.markRemoteChangesApplied();
 					continue;
 				}
 				conflicts.push({
@@ -934,12 +963,13 @@ Zotero.Sync.Data.Engine.prototype._downloadDeletions = async function (since, ne
 							await obj.erase({
 								skipEditCheck: true
 							});
+							Zotero.Sync.Data.Local.markRemoteChangesApplied();
 						}
 					}.bind(this));
 				}.bind(this)
 			);
 		}
-		
+
 		if (toDelete.length) {
 			await Zotero.Utilities.Internal.forEachChunkAsync(
 				toDelete,
@@ -951,6 +981,7 @@ Zotero.Sync.Data.Engine.prototype._downloadDeletions = async function (since, ne
 								skipEditCheck: true,
 								skipDeleteLog: true
 							});
+							Zotero.Sync.Data.Local.markRemoteChangesApplied();
 						}
 					});
 				}
@@ -1013,7 +1044,35 @@ Zotero.Sync.Data.Engine.prototype._startUpload = async function () {
 	catch (e) {
 		return this._handleUploadError(e);
 	}
-	
+
+	// Upload setting deletions
+	try {
+		let keys = await Zotero.Sync.Data.Local.getDeleted('setting', this.libraryID);
+		while (keys.length) {
+			let batch = keys.slice(0, this.uploadDeletionBatchSize);
+			libraryVersion = await this.apiClient.deleteSettings(
+				this.library.libraryType,
+				this.libraryTypeID,
+				libraryVersion,
+				batch
+			);
+			await Zotero.Sync.Data.Local.removeObjectsFromDeleteLog(
+				'setting', this.libraryID, batch
+			);
+			keys.splice(0, batch.length);
+
+			if (this.library.libraryVersion == this.library.storageVersion) {
+				this.library.storageVersion = libraryVersion;
+			}
+			this.library.libraryVersion = libraryVersion;
+			await this.library.saveTx({ skipNotifier: true });
+			settingsUploaded = true;
+		}
+	}
+	catch (e) {
+		return this._handleUploadError(e);
+	}
+
 	// Get unsynced local objects for each object type
 	for (let objectType of Zotero.DataObjectUtilities.getTypesForLibrary(this.libraryID)) {
 		this._statusCheck();
@@ -1124,18 +1183,50 @@ Zotero.Sync.Data.Engine.prototype._uploadSettings = async function (settings, li
 					value: settings[key]
 				};
 			}
-			libraryVersion = await this.apiClient.uploadSettings(
+			let response = await this.apiClient.uploadSettings(
 				this.library.libraryType,
 				this.libraryTypeID,
 				libraryVersion,
 				json
 			);
-			await Zotero.SyncedSettings.markAsSynced(
-				this.libraryID,
-				keys,
-				libraryVersion
-			);
-			
+			libraryVersion = response.libraryVersion;
+
+			if (response.results) {
+				// Write report -- some settings may have been rejected
+				let failedKeys = [];
+				for (let index in response.results.failed) {
+					let { code } = response.results.failed[index];
+					let settingKey = keys[index];
+					Zotero.logError(`Error ${code} for setting ${settingKey} in `
+						+ this.library.name);
+					if (code == 403) {
+						failedKeys.push(settingKey);
+					}
+				}
+
+				let successKeys = keys.filter(k => !failedKeys.includes(k));
+				if (successKeys.length) {
+					await Zotero.SyncedSettings.markAsSynced(
+						this.libraryID,
+						successKeys,
+						libraryVersion
+					);
+				}
+
+				// Reset rejected settings to remote version
+				if (failedKeys.length) {
+					await this._resetUnsyncedSettings(failedKeys);
+				}
+			}
+			else {
+				// 204 -- all settings succeeded
+				await Zotero.SyncedSettings.markAsSynced(
+					this.libraryID,
+					keys,
+					libraryVersion
+				);
+			}
+
 			if (this.library.libraryVersion == this.library.storageVersion) {
 				this.library.storageVersion = libraryVersion;
 			}
@@ -1147,6 +1238,43 @@ Zotero.Sync.Data.Engine.prototype._uploadSettings = async function (settings, li
 	);
 	Zotero.debug("Done uploading settings in " + this.library.name);
 	return libraryVersion;
+};
+
+
+/**
+ * Download current remote values for the given settings and overwrite local versions
+ */
+Zotero.Sync.Data.Engine.prototype._resetUnsyncedSettings = async function (keys) {
+	Zotero.debug(`Resetting ${keys.length} setting(s) to remote version in ${this.library.name}`);
+
+	let results = await this.apiClient.getSettings(
+		this.library.libraryType,
+		this.libraryTypeID,
+		0 // Get all settings
+	);
+
+	if (!results || !results.settings) {
+		Zotero.logError("Couldn't download settings to reset after 403");
+		return;
+	}
+
+	for (let key of keys) {
+		if (results.settings[key]) {
+			await Zotero.SyncedSettings.set(
+				this.libraryID,
+				key,
+				results.settings[key].value,
+				results.settings[key].version,
+				true // synced
+			);
+			Zotero.debug(`Reset setting '${key}' to remote version`);
+		}
+		else {
+			// Setting doesn't exist on server -- remove locally
+			await Zotero.SyncedSettings.clear(this.libraryID, key, { skipDeleteLog: true });
+			Zotero.debug(`Removed local setting '${key}' (not on server)`);
+		}
+	}
 };
 
 
@@ -1300,7 +1428,7 @@ Zotero.Sync.Data.Engine.prototype._uploadObjects = async function (objectType, i
 						// in batches and we only get the final version, but it will guarantee that
 						// the object won't be redownloaded unnecessarily in the case of a full sync,
 						// because the version will be higher than whatever version is on the server.
-						let hasCacheObject = !!Zotero.Sync.Data.Local.getCacheObject(
+						let hasCacheObject = !!await Zotero.Sync.Data.Local.getCacheObject(
 							objectType, obj.libraryID, obj.key, obj.version
 						);
 						if (!hasCacheObject) {
@@ -1466,52 +1594,84 @@ Zotero.Sync.Data.Engine.prototype._uploadDeletions = async function (objectType,
 /**
  * Update createdByUserID/lastModifiedByUserID for previously downloaded group items
  *
- * TEMP: Currently only processes one batch of items, but before we start displaying the names,
- * we'll need to update it to fetch all
+ * This is a one-time backfill for items synced before user tracking was added.
+ * Once complete, a flag is set so it doesn't run again.
  */
 Zotero.Sync.Data.Engine.prototype._updateGroupItemUsers = async function () {
-	// TODO: Do more at once when we actually start showing these names
-	var max = this.apiClient.MAX_OBJECTS_PER_REQUEST;
-	
-	var sql = "SELECT key FROM items LEFT JOIN groupItems GI USING (itemID) "
-		+ `WHERE libraryID=? AND GI.itemID IS NULL ORDER BY itemID LIMIT ${max}`;
-	var keys = await Zotero.DB.columnQueryAsync(sql, this.libraryID);
+	let settingKey = 'groupItemUsersBackfilled-' + this.libraryID;
+	let backfilled = await Zotero.DB.valueQueryAsync(
+		"SELECT value FROM settings WHERE setting='sync' AND key=?",
+		settingKey
+	);
+	if (backfilled) {
+		return;
+	}
+
+	let max = this.apiClient.MAX_OBJECTS_PER_REQUEST;
+	let sql = "SELECT key FROM items LEFT JOIN groupItems GI USING (itemID) "
+		+ "WHERE libraryID=? AND (GI.itemID IS NULL OR GI.createdByUserID IS NULL) "
+		+ `AND items.itemID > ? ORDER BY items.itemID LIMIT ${max}`;
+	let minItemID = 0;
+	let keys = await Zotero.DB.columnQueryAsync(sql, [this.libraryID, minItemID]);
 	if (!keys.length) {
+		await Zotero.DB.queryAsync(
+			"REPLACE INTO settings VALUES ('sync', ?, 1)",
+			settingKey
+		);
 		return;
 	}
-	
+
 	Zotero.debug(`Updating item users in ${this.library.name}`);
-	
-	var { json: jsonItems, error } = await this.apiClient.downloadObjects(
-		this.library.libraryType, this.libraryTypeID, 'item', keys
-	)[0];
-	
-	if (error) {
-		Zotero.logError(error);
-		return;
-	}
-	
-	for (let jsonItem of jsonItems) {
-		let item = Zotero.Items.getByLibraryAndKey(this.libraryID, jsonItem.key);
-		let params = [null, null];
-		
-		// This should almost always exist, but maybe doesn't for some old items?
-		if (jsonItem.meta.createdByUser) {
-			let { id: userID, username, name } = jsonItem.meta.createdByUser;
-			await Zotero.Users.setName(userID, name !== '' ? name : username);
-			params[0] = userID;
+
+	let updatedItemIDs = [];
+	while (keys.length) {
+		let { json: jsonItems, error } = await this.apiClient.downloadObjects(
+			this.library.libraryType, this.libraryTypeID, 'item', keys
+		)[0];
+
+		if (error) {
+			Zotero.logError(error);
+			// Don't set backfilled flag -- retry next sync
+			if (updatedItemIDs.length) {
+				await Zotero.Notifier.trigger('modify', 'item', updatedItemIDs, {});
+			}
+			return;
 		}
-		
-		if (jsonItem.meta.lastModifiedByUser) {
-			let { id: userID, username, name } = jsonItem.meta.lastModifiedByUser;
-			await Zotero.Users.setName(userID, name !== '' ? name : username);
-			params[1] = userID;
+
+		for (let jsonItem of jsonItems) {
+			let item = Zotero.Items.getByLibraryAndKey(this.libraryID, jsonItem.key);
+			let params = [null, null];
+
+			if (jsonItem.meta.createdByUser) {
+				let { id: userID, username, name } = jsonItem.meta.createdByUser;
+				await Zotero.Users.setName(userID, name !== '' ? name : username);
+				params[0] = userID;
+			}
+
+			if (jsonItem.meta.lastModifiedByUser) {
+				let { id: userID, username, name } = jsonItem.meta.lastModifiedByUser;
+				await Zotero.Users.setName(userID, name !== '' ? name : username);
+				params[1] = userID;
+			}
+
+			await item.updateCreatedByUser.apply(item, params);
+			updatedItemIDs.push(item.id);
 		}
-		
-		await item.updateCreatedByUser.apply(item, params);
+
+		// Advance past this batch using the last key from the query
+		let lastItem = Zotero.Items.getByLibraryAndKey(
+			this.libraryID, keys[keys.length - 1]
+		);
+		minItemID = lastItem.id;
+		keys = await Zotero.DB.columnQueryAsync(sql, [this.libraryID, minItemID]);
 	}
-	
-	return;
+
+	await Zotero.DB.queryAsync("REPLACE INTO settings VALUES ('sync', ?, 1)", settingKey);
+
+	// Refresh item tree to show updated user names
+	if (updatedItemIDs.length) {
+		await Zotero.Notifier.trigger('modify', 'item', updatedItemIDs, {});
+	}
 };
 
 
@@ -1885,11 +2045,13 @@ Zotero.Sync.Data.Engine.prototype._restoreToServer = async function () {
 		let ObjectType = Zotero.Utilities.capitalize(objectType);
 		let objectsClass = Zotero.DataObjectUtilities.getObjectsClassForObjectType(objectType);
 		
-		// Get all object versions from the API
+		// Get all object versions from the API, marking the first request so that restores can
+		// be identified in server logs
 		let results = await this.apiClient.getVersions(
 			this.library.libraryType,
 			this.libraryTypeID,
-			objectType
+			objectType,
+			libraryVersion ? undefined : { restoreToServer: 1 }
 		);
 		if (libraryVersion && libraryVersion != results.libraryVersion) {
 			throw new Error(remoteUpdatedError

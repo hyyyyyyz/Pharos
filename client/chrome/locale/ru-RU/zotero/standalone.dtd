@@ -51,9 +51,9 @@
 <!ENTITY standardView.label "По умолчанию">
 <!ENTITY stackedView.label "Стопками">
 <!ENTITY collectionsPane.label "Панель коллекций">
-<!ENTITY itemPane.label "Панель записей">
+<!ENTITY itemPane.label "Панель элементов">
 <!ENTITY tagSelector.label "Селектор тегов">
-<!ENTITY recursiveCollections.label "Показывать записи из вложенных коллекций">
+<!ENTITY recursiveCollections.label "Показывать элементы из вложенных коллекций">
 <!ENTITY fontSize.label "Размер шрифта">
 <!ENTITY noteFontSize.label "Размер шрифта заметок">
 <!ENTITY columns.label "Колонки">
@@ -61,7 +61,7 @@
 
 <!ENTITY toolsMenu.label "Инструменты">
 <!ENTITY toolsMenu.accesskey "T">
-<!ENTITY installConnector.label "Установить Connector для браузера...">
+<!ENTITY installConnector.label "Установить коннектор для браузера...">
 <!ENTITY installConnector.accesskey "C">
 <!ENTITY addons.label "Плагины">
 <!ENTITY developer.label "Разработчик">

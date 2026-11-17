@@ -101,7 +101,9 @@ class TempImageFactory {
 class PDFThumbnails {
 	constructor(options) {
 		this._pdfView = options.pdfView;
+		this._onInit = options.onInit || options.onUpdate;
 		this._onUpdate = options.onUpdate;
+		this._onRender = options.onRender;
 		this._window = options.window;
 		this._thumbnails = [];
 		this._initialized = false;
@@ -135,12 +137,15 @@ class PDFThumbnails {
 				height: canvasHeight
 			});
 		}
-		this._onUpdate(this._thumbnails);
+		this._onInit(this._thumbnails);
 	}
 
 	async _render(pageIndex) {
 		let thumbnail = this._thumbnails[pageIndex];
 		if (thumbnail?.image && !thumbnail.forceRerender) {
+			if (this._onRender) {
+				this._onRender(thumbnail);
+			}
 			return;
 		}
 		let { pdfDocument } = this._window.PDFViewerApplication;
@@ -189,6 +194,7 @@ class PDFThumbnails {
 		};
 		const renderTask = pdfPage.render(renderContext);
 
+		let renderedThumbnail;
 		try {
 			await renderTask.promise;
 		}
@@ -198,13 +204,14 @@ class PDFThumbnails {
 		finally {
 			await this._pdfView.renderPageAnnotationsOnCanvas(canvas, drawViewport, pageIndex);
 			const reducedCanvas = this._reduceImage(canvas, canvasWidth, canvasHeight);
-			this._thumbnails = this._thumbnails.slice();
-			this._thumbnails[pageIndex] = {
+			renderedThumbnail = {
 				pageIndex,
 				width: canvasWidth,
 				height: canvasHeight,
 				image: reducedCanvas.toDataURL()
 			};
+			this._thumbnails = this._thumbnails.slice();
+			this._thumbnails[pageIndex] = renderedThumbnail;
 
 			// Zeroing the width and height causes Firefox to release graphics
 			// resources immediately, which can greatly reduce memory consumption.
@@ -217,7 +224,12 @@ class PDFThumbnails {
 				pdfPage: this.pdfPage,
 			});
 		}
-		this._onUpdate(this._thumbnails);
+		if (this._onRender && renderedThumbnail) {
+			this._onRender(renderedThumbnail);
+		}
+		else {
+			this._onUpdate(this._thumbnails);
+		}
 	}
 
 	async render(pageIndexes = [], rerenderOnly) {

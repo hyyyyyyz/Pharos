@@ -13,16 +13,16 @@
  * limitations under the License.
  */
 
-// eslint-disable-next-line max-len
-/** @typedef {import("./interfaces.js").IPDFPrintServiceFactory} IPDFPrintServiceFactory */
-
 import {
   AnnotationMode,
   PixelsPerInch,
   RenderingCancelledException,
   shadow,
 } from "pdfjs-lib";
-import { getXfaHtmlForPrinting } from "./print_utils.js";
+import {
+  BasePrintServiceFactory,
+  getXfaHtmlForPrinting,
+} from "./print_utils.js";
 
 let activeService = null;
 let dialog = null;
@@ -144,6 +144,12 @@ class PDFPrintService {
       this.pageStyleSheet.remove();
       this.pageStyleSheet = null;
     }
+    if (this._blobURLs) {
+      for (const url of this._blobURLs) {
+        URL.revokeObjectURL(url);
+      }
+      this._blobURLs = null;
+    }
     this.scratchCanvas.width = this.scratchCanvas.height = 0;
     this.scratchCanvas = null;
     activeService = null;
@@ -189,7 +195,13 @@ class PDFPrintService {
     this.throwIfInactive();
     const img = document.createElement("img");
     this.scratchCanvas.toBlob(blob => {
-      img.src = URL.createObjectURL(blob);
+      const blobURL = URL.createObjectURL(blob);
+      img.src = blobURL;
+      // Defer revocation until after printing completes (in destroy()) to avoid
+      // broken print images in Firefox when a service worker is registered,
+      // since Firefox re-fetches blob URLs when rendering the print dialog.
+      // See https://github.com/mozilla/pdf.js/issues/19988
+      (this._blobURLs ??= []).push(blobURL);
     });
 
     const wrapper = document.createElement("div");
@@ -201,13 +213,9 @@ class PDFPrintService {
     img.onload = resolve;
     img.onerror = reject;
 
-    promise
-      .catch(() => {
-        // Avoid "Uncaught promise" messages in the console.
-      })
-      .then(() => {
-        URL.revokeObjectURL(img.src);
-      });
+    promise.catch(() => {
+      // Avoid "Uncaught promise" messages in the console.
+    });
     return promise;
   }
 
@@ -256,6 +264,10 @@ window.print = function () {
     dispatchEvent("beforeprint");
   } finally {
     if (!activeService) {
+      if (typeof PDFJSDev !== "undefined" && PDFJSDev.test("TESTING")) {
+        // eslint-disable-next-line no-unsafe-finally
+        throw new Error("window.print() is not supported");
+      }
       console.error("Expected print service to be initialized.");
       ensureOverlay().then(function () {
         overlayManager.closeIfActive(dialog);
@@ -368,10 +380,7 @@ function ensureOverlay() {
   return overlayPromise;
 }
 
-/**
- * @implements {IPDFPrintServiceFactory}
- */
-class PDFPrintServiceFactory {
+class PDFPrintServiceFactory extends BasePrintServiceFactory {
   static initGlobals(app) {
     viewerApp = app;
   }

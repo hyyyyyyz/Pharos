@@ -1,0 +1,1006 @@
+{
+  "$id": "https://raw.githubusercontent.com/zotero/structured-document-text/main/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "structured-document-text",
+  "description": "Structured document representation for Zotero. Defines a semantic content tree of block nodes (paragraphs, headings, lists, tables, images, math, code, captions, notes, blockquotes) with inline text styling, cross-references, source anchors, page geometry, and a document outline. Supports PDF, EPUB, and snapshot sources.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "metadata",
+    "catalog",
+    "content"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/SemVer",
+      "description": "Semantic version of this schema (major/minor/patch)."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Document-level extraction and source metadata.",
+      "additionalProperties": false,
+      "required": ["processor", "dateCreated", "source"],
+      "properties": {
+        "processor": {
+          "type": "object",
+          "description": "Processor that generated this document.",
+          "additionalProperties": false,
+          "required": ["type", "version"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["pdf", "epub", "snapshot"],
+              "description": "Processor type."
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Processor output version. Exact matches are used for cache freshness."
+            }
+          }
+        },
+        "dateCreated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation time in ISO 8601."
+        },
+        "characterCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total character count of extracted text content (sum over all text nodes)."
+        },
+        "source": {
+          "type": "object",
+          "description": "Source document identity and source-specific properties.",
+          "additionalProperties": false,
+          "required": ["contentType", "hash"],
+          "properties": {
+            "contentType": {
+              "type": "string",
+              "enum": ["application/pdf", "application/epub+zip", "text/html", "application/xhtml+xml"],
+              "description": "MIME type of the source."
+            },
+            "hash": {
+              "type": "string",
+              "description": "MD5 hash of the source file (32-char hex string) used to detect changes.",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "fileSize": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Size of the original source file in bytes."
+            },
+            "properties": {
+              "type": "object",
+              "description": "Source-specific document properties. For PDF: PDFFormatVersion, Title, Author, Subject, Keywords, Creator, Producer, CreationDate, ModDate, Language, and any custom properties. For EPUB: dc:title, dc:creator, dc:language, etc. For snapshot: title, url, charset. Shape is open-ended.",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "description": "Document-level catalog structures that point into content.",
+      "additionalProperties": false,
+      "required": ["pages", "outline"],
+      "properties": {
+        "outline": {
+          "type": "array",
+          "description": "Document outline (table of contents).",
+          "items": {
+            "$ref": "#/$defs/OutlineItem"
+          }
+        },
+        "pages": {
+          "type": "array",
+          "description": "Per-page info. For PDF: physical pages. For EPUB: page mappings (physical page numbers or EPUB locations).",
+          "items": {
+            "$ref": "#/$defs/PageInfo"
+          }
+        },
+        "pageMappingType": {
+          "type": "string",
+          "enum": ["physical", "locations"],
+          "description": "For EPUB: whether pages represent physical page numbers from the source or synthetic EPUB locations."
+        },
+        "domMap": {
+          "type": "array",
+          "description": "For snapshots: skeleton of the source DOM - every element containing extracted text, plus its ancestors - with body text offsets. Lets consumers resolve and generate CssSelector/TextPositionSelector positions rooted at arbitrary elements without access to the source DOM.",
+          "items": {
+            "$ref": "#/$defs/DomMapNode"
+          }
+        }
+      }
+    },
+    "content": {
+      "type": "array",
+      "description": "Top-level block nodes (headings, paragraphs, lists, tables, etc.).",
+      "items": {
+        "$ref": "#/$defs/ContentBlockNode"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "source": {
+                "properties": {
+                  "contentType": { "const": "application/pdf" }
+                },
+                "required": ["contentType"]
+              }
+            },
+            "required": ["source"]
+          }
+        },
+        "required": ["metadata"]
+      },
+      "then": {
+        "properties": {
+          "catalog": {
+            "properties": {
+              "pages": {
+                "items": {
+                  "required": ["viewRect"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "SemVer": {
+      "type": "string",
+      "description": "Version string in major.minor.patch form.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "RefsArray": {
+      "description": "Referenced target nodes. Array because one mention can resolve to multiple targets (e.g. \"[2-5]\" -> multiple bibliography entries, or ambiguous author-name citations).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RefPath"
+      }
+    },
+    "BackRefsArray": {
+      "description": "Nodes that reference this one (inverse of refs).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RefPath"
+      }
+    },
+    "PartRef": {
+      "description": "Reference to the adjacent physical block that is part of the same logical block.",
+      "$ref": "#/$defs/RefPath"
+    },
+    "FlowClass": {
+      "type": "string",
+      "description": "Semantic flow classification assigned by layout extraction on top-level content blocks. Missing means body; new producers omit body.",
+      "enum": ["auxiliary", "excluded"]
+    },
+    "PageRect": {
+      "description": "Block bounding box: [pageIndex, x1, y1, x2, y2] (page coordinates).",
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "type": "integer",
+          "description": "0-based page index."
+        },
+        {
+          "type": "number",
+          "description": "x1"
+        },
+        {
+          "type": "number",
+          "description": "y1"
+        },
+        {
+          "type": "number",
+          "description": "x2"
+        },
+        {
+          "type": "number",
+          "description": "y2"
+        }
+      ]
+    },
+    "RefPath": {
+      "description": "Path to a node in the content tree as an array of child indices. E.g. [2, 0, 1] -> content[2].content[0].content[1].",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "minItems": 1
+    },
+    "Anchor": {
+      "description": "Link from this node back to the source document. PDF uses PdfAnchor (pageRects/textMap). EPUB and snapshot use DomAnchor: a selectorMap field that compactly encodes source locations (blocks, EPUB text nodes), or a body text-stream offset (snapshot text nodes, resolved against catalog.domMap). Use the dom/epub decode and dom/snapshot dommap modules to expand and resolve.",
+      "oneOf": [
+        { "$ref": "#/$defs/PdfAnchor" },
+        { "$ref": "#/$defs/DomAnchor" }
+      ]
+    },
+    "DomAnchor": {
+      "type": "object",
+      "description": "Compact anchor for EPUB and snapshot blocks and text nodes. For blocks, selectorMap is an absolute location: EPUB CFI path (starts with '/') or snapshot CSS selector. For EPUB text nodes, selectorMap is a CFI suffix relative to the parent block; multi-entry selectorMaps (from merged adjacent text nodes) are newline-separated 'charLen selectorMap' entries starting with a digit. Snapshot text nodes store `stream` instead: the raw character offset of the DOM text node's start within the body text stream, located via catalog.domMap.",
+      "additionalProperties": false,
+      "properties": {
+        "selectorMap": {
+          "type": "string",
+          "description": "Compact location string. Blocks: absolute (EPUB CFI path starting with '/', or snapshot CSS selector). EPUB text nodes: CFI suffix relative to the parent block."
+        },
+        "stream": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Snapshot text nodes: offset of the DOM text node's first character within the body text stream (raw original characters, counted like a NodeIterator text walk over <body>). Element positions in the same stream are recorded in catalog.domMap."
+        },
+        "deltaMap": {
+          "type": "string",
+          "description": "Position map between the node's text and the original DOM text it was extracted from (covers whitespace collapsing and NFC normalization). Space-separated 'nfcPos delta' pairs recorded where delta = nfcIdx - origIdx changes. Absent when all positions are 1:1. Decode: origPos = nfcPos - getDelta(deltaMap, nfcPos)."
+        }
+      },
+      "anyOf": [
+        { "required": ["selectorMap"] },
+        { "required": ["stream"] }
+      ],
+      "examples": [
+        { "selectorMap": "/6/2[titlepage.xhtml]!/2[titlepage]/4" },
+        { "selectorMap": "/1" },
+        { "selectorMap": "p:first-of-type" },
+        { "stream": 1042 },
+        { "stream": 0, "deltaMap": "4 -2" }
+      ]
+    },
+    "DomMapNode": {
+      "type": "object",
+      "description": "One element in the snapshot DOM skeleton (catalog.domMap). `index` is the element's 0-based position among its parent's element children in the full source DOM (not just skeleton nodes). `textStart`/`textLength` locate the element's subtree text within the body text stream. `flags` holds sibling-position bits used for selector generation and matching: 1 = first of its tag, 2 = last of its tag, 4 = last element child.",
+      "additionalProperties": false,
+      "required": ["tag", "index", "textStart", "textLength"],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Lowercase tag name."
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based index among the parent's element children."
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "DOM_MAP_* sibling-position bits. Omitted when 0."
+        },
+        "id": {
+          "type": "string",
+          "description": "Element id attribute (unescaped)."
+        },
+        "prevId": {
+          "type": "string",
+          "description": "id of the previous element sibling, for matching '#id + tag' selectors."
+        },
+        "textStart": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Body text-stream offset at element entry."
+        },
+        "textLength": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Raw character length of the element's subtree text."
+        },
+        "children": {
+          "type": "array",
+          "description": "Skeleton children, in document order. Omitted when empty.",
+          "items": {
+            "$ref": "#/$defs/DomMapNode"
+          }
+        }
+      }
+    },
+    "PdfAnchor": {
+      "type": "object",
+      "description": "PDF source anchor with page geometry and/or text layout map. `textMap` validation is intentionally permissive (string-only); consumers should parse and validate decoded run structure at runtime.",
+      "additionalProperties": false,
+      "properties": {
+        "pageRects": {
+          "description": "Bounding boxes on source pages.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/PageRect" }
+        },
+        "textMap": {
+          "description": "Packed text layout encoded as a JSON string. Decoded value is an array of runs; each run is `[header, pageIndex, minX, minY, maxX, maxY, ...widths]`. Header bits: bit 0 = trailing soft hyphen marker, bits 1-2 = axis direction, bit 3 = right-to-left flag. Width entries are either numeric widths or `[delta, width]` pairs.",
+          "type": "string"
+        }
+      },
+      "anyOf": [
+        { "required": ["pageRects"] },
+        { "required": ["textMap"] }
+      ],
+      "examples": [
+        { "pageRects": [[0, 100, 100, 200, 200]] },
+        { "textMap": "[[0,0,100,200,120,210,5,5,5,5]]" },
+        { "pageRects": [[3, 10.5, 20, 80.25, 32.5]], "textMap": "[[1,3,10.5,20,80.25,32.5,4.2,[0.3,4.1]]]" }
+      ]
+    },
+    "FragmentSelector": {
+      "type": "object",
+      "description": "W3C Web Annotation Data Model FragmentSelector. Used for EPUB CFI anchors.",
+      "additionalProperties": false,
+      "required": ["type", "conformsTo", "value"],
+      "properties": {
+        "type": { "const": "FragmentSelector" },
+        "conformsTo": {
+          "type": "string",
+          "enum": ["http://www.idpf.org/epub/linking/cfi/epub-cfi.html"],
+          "description": "Fragment specification URI."
+        },
+        "value": {
+          "type": "string",
+          "description": "Fragment identifier (e.g. EPUB CFI string).",
+          "pattern": "^epubcfi\\("
+        }
+      },
+      "examples": [
+        {
+          "type": "FragmentSelector",
+          "conformsTo": "http://www.idpf.org/epub/linking/cfi/epub-cfi.html",
+          "value": "epubcfi(/6/2[titlepage.xhtml]!/2/4)"
+        }
+      ]
+    },
+    "TextPositionSelector": {
+      "type": "object",
+      "description": "W3C Web Annotation Data Model TextPositionSelector. Identifies a text range by character offsets within a parent element.",
+      "additionalProperties": false,
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": { "const": "TextPositionSelector" },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Start character offset (inclusive)."
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "End character offset (exclusive)."
+        }
+      }
+    },
+    "CssSelector": {
+      "type": "object",
+      "description": "W3C Web Annotation Data Model CssSelector. Identifies an element via a CSS selector, optionally refined by a TextPositionSelector for sub-element targeting.",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "CssSelector" },
+        "value": {
+          "type": "string",
+          "description": "CSS selector string targeting a unique element relative to body."
+        },
+        "refinedBy": {
+          "$ref": "#/$defs/TextPositionSelector",
+          "description": "Optional TextPositionSelector refinement for sub-element text ranges."
+        }
+      },
+      "examples": [
+        {
+          "type": "CssSelector",
+          "value": "h1"
+        },
+        {
+          "type": "CssSelector",
+          "value": "p:first-of-type",
+          "refinedBy": { "type": "TextPositionSelector", "start": 0, "end": 21 }
+        }
+      ]
+    },
+    "Target": {
+      "type": "object",
+      "description": "Target location in the source or an external URL.",
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "type": "object",
+          "description": "Position in the source document.",
+          "additionalProperties": false,
+          "properties": {
+            "pageIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rect": {
+              "description": "Page rect: [x1, y1, x2, y2].",
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "External URL."
+        }
+      },
+      "anyOf": [
+        { "required": ["position"] },
+        { "required": ["url"] }
+      ]
+    },
+    "TextStyle": {
+      "type": "object",
+      "description": "Inline text style flags.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "bold": { "type": "boolean" },
+        "italic": { "type": "boolean" },
+        "sub": { "type": "boolean" },
+        "sup": { "type": "boolean" },
+        "monospace": { "type": "boolean" }
+      }
+    },
+    "TextNode": {
+      "type": "object",
+      "description": "Inline text node with optional styling and references.",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Plain text, including whitespace and newlines as-is."
+        },
+        "style": {
+          "$ref": "#/$defs/TextStyle"
+        },
+        "refs": {
+          "$ref": "#/$defs/RefsArray"
+        },
+        "backRefs": {
+          "$ref": "#/$defs/BackRefsArray"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        }
+      }
+    },
+    "ParagraphNode": {
+      "type": "object",
+      "description": "Paragraph block (inline text only).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "paragraph",
+          "description": "Discriminator for paragraphs."
+        },
+        "content": {
+          "description": "Inline content of the paragraph.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "reference": {
+          "type": "boolean",
+          "description": "True if this block is a reference entry (e.g. bibliography item)."
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "HeadingNode": {
+      "type": "object",
+      "description": "Heading block (inline text only).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "heading",
+          "description": "Discriminator for headings."
+        },
+        "content": {
+          "description": "Inline content of the heading.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "MathNode": {
+      "type": "object",
+      "description": "Math block represented as inline text nodes.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "math",
+          "description": "Discriminator for math blocks."
+        },
+        "content": {
+          "description": "Inline content of the math block.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "ImageNode": {
+      "type": "object",
+      "description": "Image block with optional inline text (alt text, labels).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "image",
+          "description": "Discriminator for images."
+        },
+        "content": {
+          "description": "Inline text associated with the image.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "BlockquoteNode": {
+      "type": "object",
+      "description": "Blockquote block that contains other blocks.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "blockquote",
+          "description": "Discriminator for blockquotes."
+        },
+        "content": {
+          "description": "Block content inside the blockquote.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentBlockNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "ListItemNode": {
+      "type": "object",
+      "description": "Single list item: contains either inline text (simple items) or block children (items with nested structure).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "listitem",
+          "description": "Block type discriminator for list items."
+        },
+        "content": {
+          "description": "Either inline text (TextNode[]) for simple items, or block children (ContentBlockNode[]) for items with nested structure.",
+          "oneOf": [
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/TextNode" } },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlockNode" } }
+          ]
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "reference": {
+          "type": "boolean",
+          "description": "True if this block is a reference entry (e.g. bibliography item)."
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" }
+      }
+    },
+    "ListNode": {
+      "type": "object",
+      "description": "List block containing list items.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "list",
+          "description": "Discriminator for lists."
+        },
+        "ordered": {
+          "type": "boolean",
+          "default": false,
+          "description": "True for ordered lists, false for unordered. Defaults to false if omitted."
+        },
+        "startIndex": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Start index for ordered lists (defaults to 1)."
+        },
+        "content": {
+          "description": "Items in this list.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ListItemNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "CaptionNode": {
+      "type": "object",
+      "description": "Shared caption block (for tables, figures, images, groups, etc.).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "caption",
+          "description": "Block type discriminator for captions."
+        },
+        "content": {
+          "description": "Inline content of the caption.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": {
+          "description": "Associated content block(s) that this caption describes (e.g. an image, table, math, or preformatted block). Caption refs indicate a 'belongs-to' relationship rather than a citation.",
+          "$ref": "#/$defs/RefsArray"
+        },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "NoteNode": {
+      "type": "object",
+      "description": "Note block used across the document (including table-local notes).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "note",
+          "description": "Block type discriminator for notes."
+        },
+        "content": {
+          "description": "Inline content of the note body.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": {
+          "description": "Associated content block(s) that this note belongs to (e.g. a table, image, or math block). Note refs indicate a 'belongs-to' relationship rather than a citation.",
+          "$ref": "#/$defs/RefsArray"
+        },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" },
+        "reference": {
+          "type": "boolean",
+          "description": "True if this block is a reference entry (e.g. bibliography item)."
+        }
+      }
+    },
+    "TableCellNode": {
+      "type": "object",
+      "description": "Table cell container (header or data cell).",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "tablecell",
+          "description": "Block type discriminator for table cells."
+        },
+        "header": {
+          "type": "boolean",
+          "description": "If true, this is a header cell (<th>); otherwise a data cell (<td>)."
+        },
+        "axis": {
+          "type": "string",
+          "enum": ["row", "column"],
+          "description": "Axis for header cells: 'row' or 'column'."
+        },
+        "colspan": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Horizontal span of this cell. Default is 1 if omitted."
+        },
+        "rowspan": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Vertical span of this cell. Default is 1 if omitted."
+        },
+        "content": {
+          "description": "Block content of the cell (paragraphs, lists, nested tables, etc.). Inline text must live inside those blocks.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentBlockNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" }
+      }
+    },
+    "TableRowNode": {
+      "type": "object",
+      "description": "Single table row.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "tablerow",
+          "description": "Block type discriminator for table rows."
+        },
+        "content": {
+          "description": "Cells in this row. No raw text directly under a row.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/TableCellNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" }
+      }
+    },
+    "TableNode": {
+      "type": "object",
+      "description": "Top-level table block.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "table",
+          "description": "Block type discriminator for tables."
+        },
+        "content": {
+          "description": "Either inline text (TextNode[]) for simple/flat tables, or structured rows (TableRowNode[]) for fully parsed tables.",
+          "oneOf": [
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/TextNode" } },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/TableRowNode" } }
+          ]
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "PreformattedNode": {
+      "type": "object",
+      "description": "Preformatted block with whitespace-significant text.",
+      "additionalProperties": false,
+      "required": ["type", "content", "anchor"],
+      "properties": {
+        "type": {
+          "const": "preformatted",
+          "description": "Discriminator for preformatted blocks."
+        },
+        "content": {
+          "description": "Inline content of the preformatted block.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextNode"
+          }
+        },
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "refs": { "$ref": "#/$defs/RefsArray" },
+        "backRefs": { "$ref": "#/$defs/BackRefsArray" },
+        "previousPart": { "$ref": "#/$defs/PartRef" },
+        "nextPart": { "$ref": "#/$defs/PartRef" },
+        "flowClass": { "$ref": "#/$defs/FlowClass" }
+      }
+    },
+    "ContentBlockNode": {
+      "description": "Block nodes valid as document content, inside containers, and at top level. Excludes structural-only children (ListItemNode, TableRowNode, TableCellNode) that only appear inside their parent containers.",
+      "oneOf": [
+        { "$ref": "#/$defs/ParagraphNode" },
+        { "$ref": "#/$defs/HeadingNode" },
+        { "$ref": "#/$defs/MathNode" },
+        { "$ref": "#/$defs/ImageNode" },
+        { "$ref": "#/$defs/BlockquoteNode" },
+        { "$ref": "#/$defs/ListNode" },
+        { "$ref": "#/$defs/TableNode" },
+        { "$ref": "#/$defs/CaptionNode" },
+        { "$ref": "#/$defs/NoteNode" },
+        { "$ref": "#/$defs/PreformattedNode" }
+      ]
+    },
+    "BlockNode": {
+      "description": "Discriminated union of all block-level node types, including structural children.",
+      "oneOf": [
+        { "$ref": "#/$defs/ParagraphNode" },
+        { "$ref": "#/$defs/HeadingNode" },
+        { "$ref": "#/$defs/MathNode" },
+        { "$ref": "#/$defs/ImageNode" },
+        { "$ref": "#/$defs/BlockquoteNode" },
+        { "$ref": "#/$defs/ListNode" },
+        { "$ref": "#/$defs/ListItemNode" },
+        { "$ref": "#/$defs/TableNode" },
+        { "$ref": "#/$defs/TableRowNode" },
+        { "$ref": "#/$defs/TableCellNode" },
+        { "$ref": "#/$defs/CaptionNode" },
+        { "$ref": "#/$defs/NoteNode" },
+        { "$ref": "#/$defs/PreformattedNode" }
+      ]
+    },
+    "OutlineItem": {
+      "type": "object",
+      "description": "Single outline entry.",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Outline item title."
+        },
+        "ref": {
+          "description": "Path to the corresponding heading or block in the content tree.",
+          "$ref": "#/$defs/RefPath"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutlineItem"
+          }
+        }
+      }
+    },
+    "PageContentBoundary": {
+      "type": "array",
+      "description": "Boundary position in document content. A top-level value equal to content.length is valid and means document end; deeper paths may include a terminal text offset.",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "PageContentRange": {
+      "type": "array",
+      "description": "Half-open logical content range on a page: [startBoundary, endBoundary). Empty pages use equal boundaries.",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/PageContentBoundary"
+      }
+    },
+    "PageInfo": {
+      "type": "object",
+      "description": "Per-page metadata for the source document.",
+      "additionalProperties": false,
+      "required": ["contentRange"],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "description": "Page fingerprint for change detection."
+        },
+        "injected": {
+          "type": "boolean",
+          "description": "True if the page was injected by the publisher."
+        },
+        "viewRect": {
+          "description": "Effective PDF page view box in default user-space coordinates, before page rotation and UserUnit scaling: [x1, y1, x2, y2]. When CropBox and MediaBox differ and have a non-empty intersection, this is their intersection; otherwise it is MediaBox. Values can be negative when the effective box has a non-zero origin (e.g. [-50, -50, 562, 742]).",
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number"
+          }
+        },
+        "rotation": {
+          "type": "integer",
+          "enum": [0, 90, 180, 270],
+          "description": "Effective intrinsic clockwise PDF page rotation, in degrees. In schema 1.1.0 and later, producers omit this property when 0; in earlier schemas, absence does not imply 0."
+        },
+        "userUnit": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Effective PDF UserUnit multiplier; one default user-space unit equals userUnit / 72 inch. In schema 1.1.0 and later, producers omit this property when 1; in earlier schemas, absence does not imply 1."
+        },
+        "textSource": {
+          "type": "string",
+          "enum": ["born-digital", "ocr"],
+          "description": "Source of text on this page."
+        },
+        "extractionDegraded": {
+          "type": "boolean",
+          "description": "True if this page's SDT extraction used a degraded path or should be treated as lower confidence due to text, layout, or structure extraction issues."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable page label (e.g. 'i', '15', 'A-3')."
+        },
+        "contentRange": {
+          "description": "Half-open content boundary range covered by this page. Empty pages use equal boundaries.",
+          "$ref": "#/$defs/PageContentRange"
+        }
+      }
+    }
+  }
+}

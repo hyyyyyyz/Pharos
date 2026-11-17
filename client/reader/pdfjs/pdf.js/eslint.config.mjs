@@ -1,10 +1,11 @@
 import globals from "globals";
 
-import import_ from "eslint-plugin-import";
+import import_ from "eslint-plugin-import-x";
 import jasmine from "eslint-plugin-jasmine";
-import json from "eslint-plugin-json";
+import json from "@eslint/json";
 import noUnsanitized from "eslint-plugin-no-unsanitized";
 import perfectionist from "eslint-plugin-perfectionist";
+import preferMathClamp from "./external/eslint_plugins/prefer-math-clamp.mjs";
 import prettierRecommended from "eslint-plugin-prettier/recommended";
 import unicorn from "eslint-plugin-unicorn";
 
@@ -26,15 +27,18 @@ const chromiumExtensionServiceWorkerFiles = [
 export default [
   {
     ignores: [
+      "package-lock.json",
       "**/build/",
       "**/l10n/",
       "**/docs/",
       "**/node_modules/",
       "external/bcmaps/",
+      "external/brotli/",
       "external/builder/fixtures/",
       "external/builder/fixtures_babel/",
       "external/openjpeg/",
       "external/qcms/",
+      "external/jbig2/",
       "external/quickjs/",
       "test/stats/results/",
       "test/tmp/",
@@ -42,6 +46,7 @@ export default [
       "web/locale/",
       "web/wasm/",
       "**/*~/",
+      ".{claude,codex,cursor}/",
     ],
   },
 
@@ -51,7 +56,8 @@ export default [
 
   prettierRecommended,
   {
-    files: ["**/*.json"],
+    files: ["**/*.json", "**/.*.json"],
+    language: "json/json",
     ...json.configs.recommended,
   },
   {
@@ -65,11 +71,16 @@ export default [
     files: jsFiles("."),
 
     plugins: {
-      import: import_.flatConfigs.recommended.plugins.import,
+      import: import_.flatConfigs.recommended.plugins["import-x"],
       json,
       "no-unsanitized": noUnsanitized,
       perfectionist,
+      "prefer-math-clamp": preferMathClamp,
       unicorn,
+    },
+
+    settings: {
+      "import-x/resolver-next": [import_.createNodeResolver()],
     },
 
     languageOptions: {
@@ -77,6 +88,7 @@ export default [
         ...globals.worker,
         PDFJSDev: "readonly",
         __raw_import__: "readonly",
+        __eager_import__: "readonly",
       },
 
       ecmaVersion: 2025,
@@ -114,8 +126,13 @@ export default [
             "pdfjs-lib",
             "pdfjs-web",
             "web",
+            "@csstools/postcss-light-dark-function",
             "fluent-bundle",
             "fluent-dom",
+            "postcss-dir-pseudo-class",
+            "postcss-nesting",
+            "postcss-values-parser",
+            "stylelint",
             // See https://github.com/firebase/firebase-admin-node/discussions/1359.
             "eslint-plugin-perfectionist",
           ],
@@ -136,6 +153,7 @@ export default [
       "unicorn/no-unnecessary-array-flat-depth": "error",
       "unicorn/no-unnecessary-array-splice-count": "error",
       "unicorn/no-unnecessary-slice-end": "error",
+      "unicorn/no-useless-collection-argument": "error",
       "unicorn/no-useless-promise-resolve-reject": "error",
       "unicorn/no-useless-spread": "error",
       "unicorn/prefer-array-find": "error",
@@ -144,6 +162,8 @@ export default [
       "unicorn/prefer-array-index-of": "error",
       "unicorn/prefer-array-some": "error",
       "unicorn/prefer-at": "error",
+      "unicorn/prefer-class-fields": "error",
+      "unicorn/prefer-classlist-toggle": "error",
       "unicorn/prefer-date-now": "error",
       "unicorn/prefer-dom-node-append": "error",
       "unicorn/prefer-dom-node-remove": "error",
@@ -160,6 +180,8 @@ export default [
       "unicorn/prefer-string-starts-ends-with": "error",
       "unicorn/prefer-ternary": ["error", "only-single-line"],
       "unicorn/throw-new-error": "error",
+
+      "prefer-math-clamp/prefer-math-clamp": "error",
 
       // Possible errors
       "for-direction": "error",
@@ -244,8 +266,10 @@ export default [
       "no-useless-concat": "error",
       "no-useless-escape": "error",
       "no-useless-return": "error",
+      "prefer-object-has-own": "error",
       "prefer-promise-reject-errors": "error",
       "prefer-spread": "error",
+      radix: "error",
       "wrap-iife": ["error", "any"],
       yoda: ["error", "never", { exceptRange: true }],
 
@@ -279,6 +303,11 @@ export default [
           selector:
             "BinaryExpression[operator='instanceof'][right.name='Object']",
           message: "Use `typeof` rather than `instanceof Object`.",
+        },
+        {
+          selector: "MemberExpression[property.name='hasOwnProperty']",
+          message:
+            "Use `Object.hasOwn` rather than `Object.prototype.hasOwnProperty`.",
         },
         {
           selector: "CallExpression[callee.name='assert'][arguments.length!=2]",

@@ -14,12 +14,17 @@
  */
 
 import {
+  applyOpacity,
+  findContrastColor,
   getFilenameFromUrl,
   getPdfFilenameFromUrl,
+  getRGB,
+  getRGBA,
   isValidFetchUrl,
   PDFDateString,
+  renderRichText,
 } from "../../src/display/display_utils.js";
-import { toBase64Util } from "../../src/shared/util.js";
+import { isNodeJS } from "../../src/shared/util.js";
 
 describe("display_utils", function () {
   describe("getFilenameFromUrl", function () {
@@ -180,9 +185,7 @@ describe("display_utils", function () {
 
     it('gets fallback filename from query string appended to "data:" URL', function () {
       const typedArray = new Uint8Array([1, 2, 3, 4, 5]);
-      const dataUrl = `data:application/pdf;base64,${toBase64Util(typedArray)}`;
-      // Sanity check to ensure that a "data:" URL was returned.
-      expect(dataUrl.startsWith("data:")).toEqual(true);
+      const dataUrl = `data:application/pdf;base64,${typedArray.toBase64()}`;
 
       expect(getPdfFilenameFromUrl(dataUrl + "?file1.pdf")).toEqual(
         "document.pdf"
@@ -298,6 +301,141 @@ describe("display_utils", function () {
         const now = new Date();
         expect(PDFDateString.toDateObject(now)).toEqual(now);
       });
+    });
+  });
+
+  describe("getRGBA", function () {
+    it("parses a 6-digit hex color as fully opaque", function () {
+      expect(getRGBA("#ff0000")).toEqual([255, 0, 0, 1]);
+      expect(getRGBA("#00ff00")).toEqual([0, 255, 0, 1]);
+      expect(getRGBA("#1a2b3c")).toEqual([26, 43, 60, 1]);
+    });
+
+    it("parses an 8-digit hex color with alpha", function () {
+      expect(getRGBA("#ff000080")).toEqual([255, 0, 0, 128 / 255]);
+      expect(getRGBA("#00ff00ff")).toEqual([0, 255, 0, 1]);
+      expect(getRGBA("#00000000")).toEqual([0, 0, 0, 0]);
+    });
+
+    it("parses an rgb() color as fully opaque", function () {
+      expect(getRGBA("rgb(255, 0, 0)")).toEqual([255, 0, 0, 1]);
+      expect(getRGBA("rgb(0, 128, 64)")).toEqual([0, 128, 64, 1]);
+    });
+
+    it("parses an rgba() color with alpha", function () {
+      expect(getRGBA("rgba(255, 0, 0, 0.5)")).toEqual([255, 0, 0, 0.5]);
+      expect(getRGBA("rgba(0, 0, 0, 0)")).toEqual([0, 0, 0, 0]);
+      expect(getRGBA("rgba(1, 2, 3, 1)")).toEqual([1, 2, 3, 1]);
+    });
+
+    it("parses a color(srgb) value as fully opaque when no alpha", function () {
+      expect(getRGBA("color(srgb 1 0 0)")).toEqual([255, 0, 0, 1]);
+      expect(getRGBA("color(srgb 0 0.5 0.25)")).toEqual([0, 128, 64, 1]);
+    });
+
+    it("parses a color(srgb) value with alpha", function () {
+      expect(getRGBA("color(srgb 1 0 0 / 0.5)")).toEqual([255, 0, 0, 0.5]);
+      expect(getRGBA("color(srgb 0 0 0 / 0)")).toEqual([0, 0, 0, 0]);
+    });
+
+    it("treats 'none' alpha in color(srgb) as fully opaque", function () {
+      expect(getRGBA("color(srgb 1 0 0 / none)")).toEqual([255, 0, 0, 1]);
+    });
+  });
+
+  describe("getRGB", function () {
+    it("returns only the RGB components, dropping alpha", function () {
+      expect(getRGB("#ff000080")).toEqual([255, 0, 0]);
+      expect(getRGB("rgba(0, 128, 64, 0.5)")).toEqual([0, 128, 64]);
+      expect(getRGB("color(srgb 0 0.5 0.25 / 0.8)")).toEqual([0, 128, 64]);
+    });
+  });
+
+  describe("findContrastColor", function () {
+    it("Check that the lightness is changed correctly", function () {
+      expect(findContrastColor([210, 98, 76], [197, 113, 89])).toEqual(
+        "#260e09"
+      );
+    });
+  });
+
+  describe("applyOpacity", function () {
+    it("Check that the opacity is applied correctly", function () {
+      if (isNodeJS) {
+        pending("OffscreenCanvas is not supported in Node.js.");
+      }
+      const canvas = new OffscreenCanvas(1, 1);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, 1, 1);
+      ctx.fillStyle = "rgb(123, 45, 67)";
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      expect(applyOpacity([123, 45, 67], ctx.globalAlpha)).toEqual([r, g, b]);
+    });
+  });
+
+  describe("renderRichText", function () {
+    // Unlike other tests we cannot simply compare the HTML-strings since
+    // Chrome and Firefox produce different results. Instead we compare sets
+    // containing the individual parts of the HTML-strings.
+    const splitParts = s => new Set(s.split(/[<>/ ]+/).filter(x => x));
+
+    it("should render plain text", function () {
+      if (isNodeJS) {
+        pending("DOM is not supported in Node.js.");
+      }
+      const container = document.createElement("div");
+      renderRichText(
+        {
+          html: "Hello world!\nThis is a test.",
+          dir: "ltr",
+          className: "foo",
+        },
+        container
+      );
+      expect(splitParts(container.innerHTML)).toEqual(
+        splitParts(
+          '<p dir="ltr" class="richText foo">Hello world!<br>This is a test.</p>'
+        )
+      );
+    });
+
+    it("should render XFA rich text", function () {
+      if (isNodeJS) {
+        pending("DOM is not supported in Node.js.");
+      }
+      const container = document.createElement("div");
+      const xfaHtml = {
+        name: "div",
+        attributes: { style: { color: "red" } },
+        children: [
+          {
+            name: "p",
+            attributes: { style: { fontSize: "20px" } },
+            children: [
+              {
+                name: "span",
+                attributes: { style: { fontWeight: "bold" } },
+                value: "Hello",
+              },
+              { name: "#text", value: " world!" },
+            ],
+          },
+        ],
+      };
+      renderRichText(
+        { html: xfaHtml, dir: "ltr", className: "foo" },
+        container
+      );
+      expect(splitParts(container.innerHTML)).toEqual(
+        splitParts(
+          '<div style="color: red;" class="richText foo">' +
+            '<p style="font-size: 20px;">' +
+            '<span style="font-weight: bold;">Hello</span> world!</p></div>'
+        )
+      );
     });
   });
 });

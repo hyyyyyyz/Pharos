@@ -15,6 +15,7 @@
 
 import { DateFormats, TimeFormats } from "../shared/scripting_utils.js";
 import { GlobalConstants } from "./constants.js";
+import { MathClamp } from "../shared/math_clamp.js";
 
 class AForm {
   constructor(document, app, util, color) {
@@ -139,7 +140,7 @@ class AForm {
     }
 
     // sepStyle is an integer in [0;4]
-    sepStyle = Math.min(Math.max(0, Math.floor(sepStyle)), 4);
+    sepStyle = MathClamp(Math.floor(sepStyle), 0, 4);
 
     buf.push("%,", sepStyle, ".", nDec.toString(), "f");
 
@@ -226,7 +227,7 @@ class AForm {
     nDec = Math.floor(nDec);
 
     // sepStyle is an integer in [0;4]
-    sepStyle = Math.min(Math.max(0, Math.floor(sepStyle)), 4);
+    sepStyle = MathClamp(Math.floor(sepStyle), 0, 4);
 
     let value = this.AFMakeNumber(event.value);
     if (value === null) {
@@ -368,8 +369,8 @@ class AForm {
 
   AFSimple_Calculate(cFunction, cFields) {
     const actions = {
-      AVG: args => args.reduce((acc, value) => acc + value, 0) / args.length,
-      SUM: args => args.reduce((acc, value) => acc + value, 0),
+      AVG: args => Math.sumPrecise(args) / args.length,
+      SUM: args => Math.sumPrecise(args),
       PRD: args => args.reduce((acc, value) => acc * value, 1),
       MIN: args => Math.min(...args),
       MAX: args => Math.max(...args),

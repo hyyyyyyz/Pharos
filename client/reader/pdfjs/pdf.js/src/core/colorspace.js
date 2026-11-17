@@ -18,13 +18,13 @@ import {
   FeatureTest,
   FormatError,
   info,
-  MathClamp,
   shadow,
   unreachable,
   Util,
   warn,
 } from "../shared/util.js";
 import { BaseStream } from "./base_stream.js";
+import { MathClamp } from "../shared/math_clamp.js";
 
 /**
  * Resizes an RGB image with 3 components.
@@ -116,6 +116,23 @@ function copyRgbaImage(src, dest, alpha01) {
   }
 }
 
+function isDefaultDecodeHelper(decode, expectedLen) {
+  if (!Array.isArray(decode)) {
+    return true;
+  }
+  const decodeLen = decode.length;
+
+  if (decodeLen < expectedLen) {
+    warn("Decode map length is too short.");
+    return true;
+  }
+  if (decodeLen > expectedLen) {
+    info("Truncating too long decode map.");
+    decode.length = expectedLen;
+  }
+  return false;
+}
+
 class ColorSpace {
   static #rgbBuf = new Uint8ClampedArray(3);
 
@@ -185,8 +202,8 @@ class ColorSpace {
   /**
    * Refer to the static `ColorSpace.isDefaultDecode` method below.
    */
-  isDefaultDecode(decodeMap, bpc) {
-    return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
+  isDefaultDecode(decode, bpc) {
+    return ColorSpace.isDefaultDecode(decode, this.numComps);
   }
 
   /**
@@ -322,11 +339,7 @@ class ColorSpace {
    * @param {number} numComps - Number of components the color space has.
    */
   static isDefaultDecode(decode, numComps) {
-    if (!Array.isArray(decode)) {
-      return true;
-    }
-    if (numComps * 2 !== decode.length) {
-      warn("The decode map is not the correct length");
+    if (isDefaultDecodeHelper(decode, numComps * 2)) {
       return true;
     }
     for (let i = 0, ii = decode.length; i < ii; i += 2) {
@@ -424,7 +437,7 @@ class PatternCS extends ColorSpace {
     this.base = baseCS;
   }
 
-  isDefaultDecode(decodeMap, bpc) {
+  isDefaultDecode(decode, bpc) {
     unreachable("Should not call PatternCS.isDefaultDecode");
   }
 }
@@ -489,19 +502,15 @@ class IndexedCS extends ColorSpace {
     return this.base.getOutputLength(inputLength * this.base.numComps, alpha01);
   }
 
-  isDefaultDecode(decodeMap, bpc) {
-    if (!Array.isArray(decodeMap)) {
-      return true;
-    }
-    if (decodeMap.length !== 2) {
-      warn("Decode map length is not correct");
+  isDefaultDecode(decode, bpc) {
+    if (isDefaultDecodeHelper(decode, 2)) {
       return true;
     }
     if (!Number.isInteger(bpc) || bpc < 1) {
       warn("Bits per component is not correct");
       return true;
     }
-    return decodeMap[0] === 0 && decodeMap[1] === (1 << bpc) - 1;
+    return decode[0] === 0 && decode[1] === (1 << bpc) - 1;
   }
 }
 
@@ -1282,7 +1291,7 @@ class LabCS extends ColorSpace {
     return ((inputLength * (3 + alpha01)) / 3) | 0;
   }
 
-  isDefaultDecode(decodeMap, bpc) {
+  isDefaultDecode(decode, bpc) {
     // XXX: Decoding is handled with the lab conversion because of the strange
     // ranges that are used.
     return true;

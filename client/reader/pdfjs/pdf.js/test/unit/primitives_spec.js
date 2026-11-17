@@ -276,7 +276,7 @@ describe("primitives", function () {
 
     it("should get all key names", function () {
       const expectedKeys = ["FontFile", "FontFile2", "FontFile3"];
-      const keys = dictWithManyKeys.getKeys();
+      const keys = [...dictWithManyKeys.getKeys()];
 
       expect(keys.sort()).toEqual(expectedKeys);
     });
@@ -284,7 +284,7 @@ describe("primitives", function () {
     it("should get all raw values", function () {
       // Test direct objects:
       const expectedRawValues1 = [testFontFile, testFontFile2, testFontFile3];
-      const rawValues1 = dictWithManyKeys.getRawValues();
+      const rawValues1 = [...dictWithManyKeys.getRawValues()];
 
       expect(rawValues1.sort()).toEqual(expectedRawValues1);
 
@@ -305,9 +305,19 @@ describe("primitives", function () {
       dict.set("Contents", contentsRef);
 
       const expectedRawValues2 = [contentsRef, resourcesRef, typeName];
-      const rawValues2 = dict.getRawValues();
+      const rawValues2 = [...dict.getRawValues()];
 
       expect(rawValues2.sort()).toEqual(expectedRawValues2);
+    });
+
+    it("should get all raw entries", function () {
+      const expectedRawEntries = [
+        ["FontFile", testFontFile],
+        ["FontFile2", testFontFile2],
+        ["FontFile3", testFontFile3],
+      ];
+      const rawEntries = Array.from(dictWithManyKeys.getRawEntries());
+      expect(rawEntries.sort()).toEqual(expectedRawEntries);
     });
 
     it("should create only one object for Dict.empty", function () {
@@ -327,7 +337,7 @@ describe("primitives", function () {
         xref: null,
         dictArray: [dictWithManyKeys, dictWithSizeKey, fontFileDict],
       });
-      const mergedKeys = mergedDict.getKeys();
+      const mergedKeys = [...mergedDict.getKeys()];
 
       expect(mergedKeys.sort()).toEqual(expectedKeys);
       expect(mergedDict.get("FontFile")).toEqual(testFontFile);
@@ -361,17 +371,17 @@ describe("primitives", function () {
       const mergedFontDict = mergedDict.get("Font");
       const mergedSubFontDict = mergedSubDict.get("Font");
 
-      expect(mergedFontDict instanceof Dict).toEqual(true);
-      expect(mergedSubFontDict instanceof Dict).toEqual(true);
+      expect(mergedFontDict).toBeInstanceOf(Dict);
+      expect(mergedSubFontDict).toBeInstanceOf(Dict);
 
-      const mergedFontDictKeys = mergedFontDict.getKeys();
-      const mergedSubFontDictKeys = mergedSubFontDict.getKeys();
+      const mergedFontDictKeys = [...mergedFontDict.getKeys()];
+      const mergedSubFontDictKeys = [...mergedSubFontDict.getKeys()];
 
       expect(mergedFontDictKeys).toEqual(["F1"]);
       expect(mergedSubFontDictKeys).toEqual(["F1", "F2", "F3"]);
 
-      const mergedFontDictValues = mergedFontDict.getRawValues();
-      const mergedSubFontDictValues = mergedSubFontDict.getRawValues();
+      const mergedFontDictValues = [...mergedFontDict.getRawValues()];
+      const mergedSubFontDictValues = [...mergedSubFontDict.getRawValues()];
 
       expect(mergedFontDictValues).toEqual(["Local font one"]);
       expect(mergedSubFontDictValues).toEqual([
@@ -423,6 +433,12 @@ describe("primitives", function () {
 
       dict.setIfName("k", 1234);
       expect(dict.has("k")).toBeFalse();
+
+      dict.setIfDict("l", new Dict());
+      expect(dict.get("l")).toEqual(new Dict());
+
+      dict.setIfDict("m", "not a dict");
+      expect(dict.has("m")).toBeFalse();
     });
   });
 
@@ -545,6 +561,12 @@ describe("primitives", function () {
         [ref1, obj1],
         [ref2, obj2],
       ]);
+    });
+
+    it("should support iteration over keys", function () {
+      cache.put(ref1, obj1);
+      cache.put(ref2, obj2);
+      expect([...cache.keys()]).toEqual([ref1, ref2]);
     });
   });
 

@@ -22,6 +22,8 @@ integration-editBibliography-wrapper =
 integration-citationDialog = Zitations-Dialog
 integration-citationDialog-section-open = Öffne Dokumente  ({ $count })
 integration-citationDialog-section-selected = Ausgewählte Einträge ({ $count }/{ $total })
+integration-citationDialog-section-selectedAnnotations = Ausgewählte Anmerkungen
+integration-citationDialog-section-selectedItems = Ausgewählte Einträge
 integration-citationDialog-section-cited =
     { $count ->
         [0] Cited Items
@@ -30,6 +32,8 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = Suffix
 integration-citationDialog-details-prefix = Präfix
 integration-citationDialog-details-suppressAuthor = Autor auslassen
+integration-citationDialog-details-locator-info = Tip: You can also type page numbers and other locators directly into the main field. <a data-l10n-name="docs-link">Learn more</a>
+integration-citationDialog-details-includeComments = Kommentare miteinbeziehen
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -37,15 +41,23 @@ integration-citationDialog-details-showInLibrary = { general-show-in-library }
 integration-citationDialog-settings-title = Zitationseinstellungen
 integration-citationDialog-lib-message-citation =
     { $search ->
-        [true] No selected, open, or cited items match the current search
-       *[other] No selected or open items
+        [true] Kein ausgewählter, geöffneter oder zitierter Eintrag entspricht der aktuellen Suche
+       *[other] Keine Einträge ausgewählt oder geöffnet
     }
 integration-citationDialog-lib-message-add-note =
     { $search ->
-        [true] No selected notes match the current search
-       *[other] No notes are selected
+        [true] No selected or open notes match the current search
+       *[other] No selected or open notes
+    }
+integration-citationDialog-lib-message-annotations =
+    { $search ->
+        [true] Kein Eintrag mit Anmerkungen entspricht der aktuellen Suche
+       *[other] Kein Eintrag mit Anmerkungen ausgewählt oder geöffnet
     }
 integration-citationDialog-settings-keepSorted = Quellen sortiert lassen
+integration-citationDialog-preview-error = Vorschau nicht verfügbar
+integration-citationDialog-btn-displayPreview =
+    .title = Zitationsvorschau anzeigen
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = Bibliothek
@@ -54,6 +66,8 @@ integration-citationDialog-btn-type-citation =
     .title = Zitation hinzufügen/ändern
 integration-citationDialog-btn-type-add-note =
     .title = Notiz hinzufügen
+integration-citationDialog-btn-type-annotations =
+    .title = Anmerkungen hinzufügen
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -62,15 +76,22 @@ integration-citationDialog-general-instructions = Pfeiltasten verwenden, um zwis
 integration-citationDialog-enter-to-add-item = { return-or-enter } drücken, um den Eintrag zur Zitation hinzuzufügen
 integration-citationDialog-search-for-items = Suchen, um Einträge zur Zitation hinzuzufügen
 integration-citationDialog-aria-bubble =
-    .aria-description = This item is included in the citation. Press space bar to customize the item. { integration-citationDialog-general-instructions }
+    .aria-description = Dieser Eintrag ist Teil der Zitation. Mit der Leertaste lässt sich der Eintrag anpassen. { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
-    .aria-description = Press Tab to select items to add to this citation. Press Escape to discard the changes and close the dialog.
+    .aria-description = Drücken Sie die Tabulatortaste, um Elemente auszuwählen, die Sie zu diesem Zitat hinzufügen möchten. Drücken Sie die Escape-Taste, um die Änderungen zu verwerfen und das Dialogfeld zu schließen.
+integration-citationDialog-just-added-input-placeholder = „10-15“ eintippen, um Seiten zu zitieren, oder weitere Einträge suchen
+integration-citationDialog-just-added-input-citation =
+    .placeholder = { $placeholder }
+    .title = { $title }
+    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = Eine Notiz suchen, um sie ins Dokument einzufügen
+integration-citationDialog-single-input-annotations =
+    .placeholder = Nach Anmerkungen suchen, die in das Dokument eingefügt werden sollen
 integration-citationDialog-aria-item-list =
     .aria-description = Mit Aufwärts-/Abwärts-Pfeiltaste die Eintragsauswahl wechseln. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -79,14 +100,24 @@ integration-citationDialog-collections-table =
     .aria-label = Sammlungen.
     .aria-description = Sammlung auswählen und mit Tab durch die Einträge navigieren
 integration-citationDialog-items-table =
+    .title = { integration-citationDialog-add-to-citation-tooltip }
     .aria-label = { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-items-table-added =
+    .title = { integration-citationDialog-add-to-citation-tooltip }
     .aria-label = Dieser Eintrag wurde der Zitation hinzugefügt.  { return-or-enter } drücken, um ihn erneut hinzuzufügen oder { delete-or-backspace } drücken, um ihn zu entfernen.
+integration-citationDialog-add-to-citation-tooltip =
+    { $count ->
+        [one] Add to Citation
+       *[other] Add { $count } Items to Citation
+    }
 integration-citationDialog-add-all = Alle hinzufügen
 integration-citationDialog-collapse-section =
     .title = Abschnitt einklappen
 integration-citationDialog-bubble-empty = (Kein Titel)
 integration-citationDialog-add-to-citation = Zur Zitation hinzufügen
+integration-citationDialog-annotations-filter =
+    .placeholder = Anmerkungen filtern
+integration-citationDialog-annotations-empty = Wählen Sie ein Element, einen Anhang oder eine Anmerkung aus, um die Details der Anmerkung anzuzeigen
 integration-prefs-displayAs-label = Literaturangaben anzeigen als:
 integration-prefs-footnotes =
     .label = Fußnoten
@@ -114,10 +145,8 @@ integration-warning-citation-changes-will-be-lost = Sie haben Änderungen an ein
 integration-warning-bibliography-changes-will-be-lost = Sie haben Änderungen am Literaturverzeichnis vorgenommen, die beim Fortfahren verloren gehen werden.
 integration-warning-documentPreferences-changes-will-be-lost = An den Dokumenteneinstellungen vorgenommene Änderungen gehen beim Fortfahren verloren.
 integration-warning-discard-changes = Änderungen verwerfen
-integration-warning-command-is-running = A word processor integration command is already running.
+integration-warning-command-is-running = Ein Befehl der Integration des Textverarbeitungsprogramms wird bereits ausgeführt.
 first-run-guidance-citationDialog =
-    Type a title, author, and/or year to search for a reference.
-    
-    After you’ve made your selection, click the bubble or select it via the keyboard and press ↓/Space to show citation options such as page number, prefix, and suffix.
+    Click the bubble or use the ← and ↓ keys to view the citation details and customize options such as page number, prefix, and suffix.
     
     You can also add a page number or other locator by including it with your search terms (e.g., “history { $locator }”) or by typing it after the bubble and pressing { return-or-enter }.

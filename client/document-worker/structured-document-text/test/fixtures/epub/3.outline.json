@@ -1,0 +1,176 @@
+[
+  {
+    "title": "Cover",
+    "startRef": "0",
+    "position": {
+      "pageIndex": 0
+    }
+  },
+  {
+    "title": "Half Title",
+    "startRef": "1",
+    "position": {
+      "pageIndex": 0
+    }
+  },
+  {
+    "title": "Title Page",
+    "startRef": "4",
+    "position": {
+      "pageIndex": 2
+    }
+  },
+  {
+    "title": "Copyright Page",
+    "startRef": "8",
+    "position": {
+      "pageIndex": 2
+    }
+  },
+  {
+    "title": "Dedication",
+    "startRef": "29",
+    "position": {
+      "pageIndex": 5
+    }
+  },
+  {
+    "title": "Table of Contents",
+    "startRef": "30",
+    "position": {
+      "pageIndex": 6
+    }
+  },
+  {
+    "title": "Acknowledgements",
+    "startRef": "33",
+    "position": {
+      "pageIndex": 8
+    }
+  },
+  {
+    "title": "Introduction: The Joys of Forgetting, Reinventing and Coping with the Archive Fever",
+    "startRef": "37",
+    "position": {
+      "pageIndex": 10
+    }
+  },
+  {
+    "title": "I New Frontiers? Between Absence and Presence of Archives",
+    "startRef": "86",
+    "position": {
+      "pageIndex": 20
+    },
+    "children": [
+      {
+        "title": "1 What Are Film Archives For? (and Why We Need Them to Change), or: Adventures in the Archive World",
+        "startRef": "89",
+        "position": {
+          "pageIndex": 22
+        }
+      },
+      {
+        "title": "2 Viewing the Ottoman Lands in Early Travel Films",
+        "startRef": "160",
+        "position": {
+          "pageIndex": 38
+        }
+      },
+      {
+        "title": "3 How Social Media Platforms Replace Film Archives When There Are No Archives",
+        "startRef": "253",
+        "position": {
+          "pageIndex": 56
+        }
+      },
+      {
+        "title": "4 The Intersecting Paths of Eveline T. Scott and Traugott Fuchs: How Do Private Collections Speak to Us?",
+        "startRef": "353",
+        "position": {
+          "pageIndex": 76
+        }
+      }
+    ]
+  },
+  {
+    "title": "II The God of Small Films, or what you Have Found is not what you Have Lost",
+    "startRef": "452",
+    "position": {
+      "pageIndex": 98
+    },
+    "children": [
+      {
+        "title": "5 The Ethics of Appropriation: Found Footage between Archive and Internet",
+        "startRef": "455",
+        "position": {
+          "pageIndex": 100
+        }
+      },
+      {
+        "title": "6 The Infra-ordinary Archive: On Turkish 8 mm Home Movies",
+        "startRef": "509",
+        "position": {
+          "pageIndex": 114
+        }
+      },
+      {
+        "title": "7 Interview with Gustav Deutsch: “Categorisation Limits”",
+        "startRef": "571",
+        "position": {
+          "pageIndex": 130
+        }
+      },
+      {
+        "title": "8 Old Footage, New Meanings: The Case of The Atomic Cafe",
+        "startRef": "738",
+        "position": {
+          "pageIndex": 148
+        }
+      }
+    ]
+  },
+  {
+    "title": "III What the Prints (don’t) Tell",
+    "startRef": "917",
+    "position": {
+      "pageIndex": 178
+    },
+    "children": [
+      {
+        "title": "9 Preservation and Resignation: A Study of Survival",
+        "startRef": "920",
+        "position": {
+          "pageIndex": 180
+        }
+      },
+      {
+        "title": "10 Memory and Trust in a Time of Un-framing Film Heritage",
+        "startRef": "999",
+        "position": {
+          "pageIndex": 198
+        }
+      },
+      {
+        "title": "11 “Uncontained” Archives of Cinema",
+        "startRef": "1073",
+        "position": {
+          "pageIndex": 214
+        }
+      }
+    ]
+  },
+  {
+    "title": "Bibliography",
+    "startRef": "1172",
+    "position": {
+      "pageIndex": 234
+    }
+  },
+  {
+    "title": "Index",
+    "startRef": "1175",
+    "position": {
+      "pageIndex": 246
+    }
+  }
+]

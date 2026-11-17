@@ -16,7 +16,8 @@
 // eslint-disable-next-line max-len
 /** @typedef {import("./annotation_storage").AnnotationStorage} AnnotationStorage */
 /** @typedef {import("./display_utils").PageViewport} PageViewport */
-/** @typedef {import("../../web/interfaces").IPDFLinkService} IPDFLinkService */
+// eslint-disable-next-line max-len
+/** @typedef {import("../../web/pdf_link_service.js").PDFLinkService} PDFLinkService */
 
 import { XfaText } from "./xfa_text.js";
 
@@ -26,7 +27,7 @@ import { XfaText } from "./xfa_text.js";
  * @property {HTMLDivElement} div
  * @property {Object} xfaHtml
  * @property {AnnotationStorage} [annotationStorage]
- * @property {IPDFLinkService} linkService
+ * @property {PDFLinkService} linkService
  * @property {string} [intent] - (default value is 'display').
  */
 
@@ -85,7 +86,7 @@ class XfaLayer {
           for (const option of element.children) {
             if (option.attributes.value === storedData.value) {
               option.attributes.selected = true;
-            } else if (option.attributes.hasOwnProperty("selected")) {
+            } else if (Object.hasOwn(option.attributes, "selected")) {
               delete option.attributes.selected;
             }
           }

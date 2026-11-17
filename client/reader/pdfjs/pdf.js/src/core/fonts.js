@@ -20,7 +20,7 @@ import {
   FormatError,
   info,
   shadow,
-  string32,
+  stringToBytes,
   warn,
 } from "../shared/util.js";
 import { CFFCompiler, CFFParser } from "./cff_parser.js";
@@ -57,12 +57,12 @@ import {
 } from "./standard_fonts.js";
 import { IdentityToUnicodeMap, ToUnicodeMap } from "./to_unicode_map.js";
 import { CFFFont } from "./cff_font.js";
+import { compileFontInfo } from "./obj_bin_transform_core.js";
 import { FontRendererFactory } from "./font_renderer.js";
 import { getFontBasicMetrics } from "./metrics.js";
 import { GlyfTable } from "./glyf.js";
-import { IdentityCMap } from "./cmap.js";
+import { MathClamp } from "../shared/math_clamp.js";
 import { OpenTypeFileBuilder } from "./opentype_file_builder.js";
-import { readUint32 } from "./core_utils.js";
 import { Stream } from "./stream.js";
 import { Type1Font } from "./type1_font.js";
 
@@ -81,7 +81,7 @@ const EXPORT_DATA_PROPERTIES = [
   "bbox",
   "black",
   "bold",
-  "charProcOperatorList",
+  // "charProcOperatorList" is handled separately, since it's not compiled.
   "cssFontInfo",
   "data",
   "defaultVMetrics",
@@ -302,41 +302,116 @@ function writeUint32(bytes, index, value) {
   bytes[index] = value >>> 24;
 }
 
-function int32(b0, b1, b2, b3) {
-  return (b0 << 24) + (b1 << 16) + (b2 << 8) + b3;
-}
+class TrueTypeTableBuilder {
+  #buf;
 
-function string16(value) {
-  if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
-    assert(
-      typeof value === "number" && Math.abs(value) < 2 ** 16,
-      `string16: Unexpected input "${value}".`
-    );
-  }
-  return String.fromCharCode((value >> 8) & 0xff, value & 0xff);
-}
+  #bufLength = 1024;
 
-function safeString16(value) {
-  if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
-    assert(
-      typeof value === "number" && !Number.isNaN(value),
-      `safeString16: Unexpected input "${value}".`
-    );
+  #hasExactLength = false;
+
+  #pos = 0;
+
+  #view;
+
+  constructor({ exactLength, minLength }) {
+    this.#hasExactLength = !!exactLength;
+    this.#initBuf(exactLength || minLength);
   }
-  // clamp value to the 16-bit int range
-  if (value > 0x7fff) {
-    value = 0x7fff;
-  } else if (value < -0x8000) {
-    value = -0x8000;
+
+  #initBuf(minLength) {
+    if (this.#hasExactLength) {
+      this.#bufLength = minLength;
+    } else {
+      // Compute the first power of two that is as big as the `minLength`.
+      while (this.#bufLength < minLength) {
+        this.#bufLength *= 2;
+      }
+    }
+    const newBuf = new Uint8Array(this.#bufLength);
+
+    if (this.#buf) {
+      newBuf.set(this.#buf, 0);
+    }
+    this.#buf = newBuf;
+    this.#view = new DataView(newBuf.buffer);
   }
-  return String.fromCharCode((value >> 8) & 0xff, value & 0xff);
+
+  get data() {
+    return this.#buf.subarray(0, this.#pos);
+  }
+
+  get length() {
+    return this.#pos;
+  }
+
+  skip(n) {
+    this.#pos += n;
+  }
+
+  setArray(arr) {
+    const newPos = this.#pos + arr.length;
+
+    if (!this.#hasExactLength && newPos > this.#bufLength) {
+      this.#initBuf(newPos);
+    }
+    this.#buf.set(arr, this.#pos);
+    this.#pos = newPos;
+  }
+
+  setInt16(val) {
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
+      assert(
+        typeof val === "number" && Math.abs(val) < 2 ** 16,
+        `setInt16: Unexpected input "${val}".`
+      );
+    }
+    const newPos = this.#pos + 2;
+
+    if (!this.#hasExactLength && newPos > this.#bufLength) {
+      this.#initBuf(newPos);
+    }
+    this.#view.setInt16(this.#pos, val);
+    this.#pos = newPos;
+  }
+
+  setSafeInt16(val) {
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
+      assert(
+        typeof val === "number" && !Number.isNaN(val),
+        `safeString16: Unexpected input "${val}".`
+      );
+    }
+    const newPos = this.#pos + 2;
+
+    if (!this.#hasExactLength && newPos > this.#bufLength) {
+      this.#initBuf(newPos);
+    }
+    // clamp value to the 16-bit int range
+    this.#view.setInt16(this.#pos, MathClamp(val, -0x8000, 0x7fff));
+    this.#pos = newPos;
+  }
+
+  setInt32(val) {
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
+      assert(
+        typeof val === "number" && Math.abs(val) < 2 ** 32,
+        `setInt32: Unexpected input "${val}".`
+      );
+    }
+    const newPos = this.#pos + 4;
+
+    if (!this.#hasExactLength && newPos > this.#bufLength) {
+      this.#initBuf(newPos);
+    }
+    this.#view.setInt32(this.#pos, val);
+    this.#pos = newPos;
+  }
 }
 
 function isTrueTypeFile(file) {
-  const header = file.peekBytes(4);
-  return (
-    readUint32(header, 0) === 0x00010000 || bytesToString(header) === "true"
-  );
+  const header = file.peekBytes(4),
+    str = bytesToString(header);
+  return str === "\x00\x01\x00\x00" || str === "true";
 }
 
 function isTrueTypeCollectionFile(file) {
@@ -603,12 +678,13 @@ function getRanges(glyphs, toUnicodeExtraMap, numGlyphs) {
 function createCmapTable(glyphs, toUnicodeExtraMap, numGlyphs) {
   const ranges = getRanges(glyphs, toUnicodeExtraMap, numGlyphs);
   const numTables = ranges.at(-1)[1] > 0xffff ? 2 : 1;
-  let cmap =
-    "\x00\x00" + // version
-    string16(numTables) + // numTables
-    "\x00\x03" + // platformID
-    "\x00\x01" + // encodingID
-    string32(4 + numTables * 8); // start of the table record
+
+  const cmap = new TrueTypeTableBuilder({ exactLength: 12 });
+  cmap.skip(2); // version, skip redundant "\x00\x00"
+  cmap.setInt16(numTables); // numTables
+  cmap.setArray([0x00, 0x03]); // platformID
+  cmap.setArray([0x00, 0x01]); // encodingID
+  cmap.setInt32(4 + numTables * 8); // start of the table record
 
   let i, ii, j, jj;
   for (i = ranges.length - 1; i >= 0; --i) {
@@ -626,21 +702,18 @@ function createCmapTable(glyphs, toUnicodeExtraMap, numGlyphs) {
   const searchParams = OpenTypeFileBuilder.getSearchParams(segCount, 2);
 
   // Fill up the 4 parallel arrays describing the segments.
-  let startCount = "";
-  let endCount = "";
-  let idDeltas = "";
-  let idRangeOffsets = "";
-  let glyphsIds = "";
+  const segmentsLength = bmpLength * 2 + trailingRangesCount * 2;
+  const startCount = new TrueTypeTableBuilder({ exactLength: segmentsLength }),
+    endCount = new TrueTypeTableBuilder({ exactLength: segmentsLength }),
+    idDeltas = new TrueTypeTableBuilder({ exactLength: segmentsLength }),
+    idRangeOffsets = new TrueTypeTableBuilder({ exactLength: segmentsLength }),
+    glyphsIds = new TrueTypeTableBuilder({});
   let bias = 0;
 
-  let range, start, end, codes;
   for (i = 0, ii = bmpLength; i < ii; i++) {
-    range = ranges[i];
-    start = range[0];
-    end = range[1];
-    startCount += string16(start);
-    endCount += string16(end);
-    codes = range[2];
+    const [start, end, codes] = ranges[i];
+    startCount.setInt16(start);
+    endCount.setInt16(end);
     let contiguous = true;
     for (j = 1, jj = codes.length; j < jj; ++j) {
       if (codes[j] !== codes[j - 1] + 1) {
@@ -652,85 +725,102 @@ function createCmapTable(glyphs, toUnicodeExtraMap, numGlyphs) {
       const offset = (segCount - i) * 2 + bias * 2;
       bias += end - start + 1;
 
-      idDeltas += string16(0);
-      idRangeOffsets += string16(offset);
+      idDeltas.skip(2); // Skip redundant "\x00\x00"
+      idRangeOffsets.setInt16(offset);
 
       for (j = 0, jj = codes.length; j < jj; ++j) {
-        glyphsIds += string16(codes[j]);
+        glyphsIds.setInt16(codes[j]);
       }
     } else {
       const startCode = codes[0];
 
-      idDeltas += string16((startCode - start) & 0xffff);
-      idRangeOffsets += string16(0);
+      idDeltas.setInt16((startCode - start) & 0xffff);
+      idRangeOffsets.skip(2); // Skip redundant "\x00\x00"
     }
   }
 
   if (trailingRangesCount > 0) {
-    endCount += "\xFF\xFF";
-    startCount += "\xFF\xFF";
-    idDeltas += "\x00\x01";
-    idRangeOffsets += "\x00\x00";
+    endCount.setArray([0xff, 0xff]);
+    startCount.setArray([0xff, 0xff]);
+    idDeltas.setArray([0x00, 0x01]);
+    idRangeOffsets.skip(2); // Skip redundant "\x00\x00"
   }
 
-  const format314 =
-    "\x00\x00" + // language
-    string16(2 * segCount) +
-    string16(searchParams.range) +
-    string16(searchParams.entry) +
-    string16(searchParams.rangeShift) +
-    endCount +
-    "\x00\x00" +
-    startCount +
-    idDeltas +
-    idRangeOffsets +
-    glyphsIds;
+  const format314 = new TrueTypeTableBuilder({
+    exactLength:
+      12 +
+      startCount.length +
+      endCount.length +
+      idDeltas.length +
+      idRangeOffsets.length +
+      glyphsIds.length,
+  });
+  format314.skip(2); // language, skip redundant "\x00\x00"
+  format314.setInt16(2 * segCount);
+  format314.setInt16(searchParams.range);
+  format314.setInt16(searchParams.entry);
+  format314.setInt16(searchParams.rangeShift);
+  format314.setArray(endCount.data);
+  format314.skip(2); // Skip redundant "\x00\x00"
+  format314.setArray(startCount.data);
+  format314.setArray(idDeltas.data);
+  format314.setArray(idRangeOffsets.data);
+  format314.setArray(glyphsIds.data);
 
-  let format31012 = "";
-  let header31012 = "";
+  let cmap31012 = null,
+    format31012 = null,
+    header31012 = null;
   if (numTables > 1) {
-    cmap +=
-      "\x00\x03" + // platformID
-      "\x00\x0A" + // encodingID
-      string32(4 + numTables * 8 + 4 + format314.length); // start of the table record
-    format31012 = "";
-    for (i = 0, ii = ranges.length; i < ii; i++) {
-      range = ranges[i];
-      start = range[0];
-      codes = range[2];
+    cmap31012 = new TrueTypeTableBuilder({ exactLength: 8 });
+    cmap31012.setArray([0x00, 0x03]); // platformID
+    cmap31012.setArray([0x00, 0x0a]); // encodingID
+    cmap31012.setInt32(4 + numTables * 8 + 4 + format314.length); // start of the table record
+
+    format31012 = new TrueTypeTableBuilder({});
+    for (const range of ranges) {
+      let start = range[0];
+      const codes = range[2];
       let code = codes[0];
       for (j = 1, jj = codes.length; j < jj; ++j) {
         if (codes[j] !== codes[j - 1] + 1) {
-          end = range[0] + j - 1;
-          format31012 +=
-            string32(start) + // startCharCode
-            string32(end) + // endCharCode
-            string32(code); // startGlyphID
+          const end = range[0] + j - 1;
+          format31012.setInt32(start); // startCharCode
+          format31012.setInt32(end); // endCharCode
+          format31012.setInt32(code); // startGlyphID
           start = end + 1;
           code = codes[j];
         }
       }
-      format31012 +=
-        string32(start) + // startCharCode
-        string32(range[1]) + // endCharCode
-        string32(code); // startGlyphID
+      format31012.setInt32(start); // startCharCode
+      format31012.setInt32(range[1]); // endCharCode
+      format31012.setInt32(code); // startGlyphID
     }
-    header31012 =
-      "\x00\x0C" + // format
-      "\x00\x00" + // reserved
-      string32(format31012.length + 16) + // length
-      "\x00\x00\x00\x00" + // language
-      string32(format31012.length / 12); // nGroups
+
+    header31012 = new TrueTypeTableBuilder({ exactLength: 16 });
+    header31012.setArray([0x00, 0x0c]); // format
+    header31012.skip(2); // reserved, skip redundant "\x00\x00"
+    header31012.setInt32(format31012.length + 16); // length
+    header31012.skip(4); // language, skip redundant "\x00\x00\x00\x00"
+    header31012.setInt32(format31012.length / 12); // nGroups
   }
 
-  return (
-    cmap +
-    "\x00\x04" + // format
-    string16(format314.length + 4) + // length
-    format314 +
-    header31012 +
-    format31012
-  );
+  const table = new TrueTypeTableBuilder({
+    exactLength:
+      4 +
+      cmap.length +
+      (cmap31012?.length ?? 0) +
+      format314.length +
+      (header31012?.length ?? 0) +
+      (format31012?.length ?? 0),
+  });
+  table.setArray(cmap.data);
+  table.setArray(cmap31012?.data ?? []);
+  table.setArray([0x00, 0x04]); // format
+  table.setInt16(format314.length + 4); // length
+  table.setArray(format314.data);
+  table.setArray(header31012?.data ?? []);
+  table.setArray(format31012?.data ?? []);
+  return table.data;
 }
 
 function validateOS2Table(os2, file) {
@@ -837,62 +927,76 @@ function createOS2Table(properties, charstrings, override) {
   const winAscent = override.yMax || typoAscent;
   const winDescent = -override.yMin || -typoDescent;
 
-  return (
-    "\x00\x03" + // version
-    "\x02\x24" + // xAvgCharWidth
-    "\x01\xF4" + // usWeightClass
-    "\x00\x05" + // usWidthClass
-    "\x00\x00" + // fstype (0 to let the font loads via font-face on IE)
-    "\x02\x8A" + // ySubscriptXSize
-    "\x02\xBB" + // ySubscriptYSize
-    "\x00\x00" + // ySubscriptXOffset
-    "\x00\x8C" + // ySubscriptYOffset
-    "\x02\x8A" + // ySuperScriptXSize
-    "\x02\xBB" + // ySuperScriptYSize
-    "\x00\x00" + // ySuperScriptXOffset
-    "\x01\xDF" + // ySuperScriptYOffset
-    "\x00\x31" + // yStrikeOutSize
-    "\x01\x02" + // yStrikeOutPosition
-    "\x00\x00" + // sFamilyClass
-    "\x00\x00\x06" +
-    String.fromCharCode(properties.fixedPitch ? 0x09 : 0x00) +
-    "\x00\x00\x00\x00\x00\x00" + // Panose
-    string32(ulUnicodeRange1) + // ulUnicodeRange1 (Bits 0-31)
-    string32(ulUnicodeRange2) + // ulUnicodeRange2 (Bits 32-63)
-    string32(ulUnicodeRange3) + // ulUnicodeRange3 (Bits 64-95)
-    string32(ulUnicodeRange4) + // ulUnicodeRange4 (Bits 96-127)
-    "\x2A\x32\x31\x2A" + // achVendID
-    string16(properties.italicAngle ? 1 : 0) + // fsSelection
-    string16(firstCharIndex || properties.firstChar) + // usFirstCharIndex
-    string16(lastCharIndex || properties.lastChar) + // usLastCharIndex
-    string16(typoAscent) + // sTypoAscender
-    string16(typoDescent) + // sTypoDescender
-    "\x00\x64" + // sTypoLineGap (7%-10% of the unitsPerEM value)
-    string16(winAscent) + // usWinAscent
-    string16(winDescent) + // usWinDescent
-    "\x00\x00\x00\x00" + // ulCodePageRange1 (Bits 0-31)
-    "\x00\x00\x00\x00" + // ulCodePageRange2 (Bits 32-63)
-    string16(properties.xHeight) + // sxHeight
-    string16(properties.capHeight) + // sCapHeight
-    string16(0) + // usDefaultChar
-    string16(firstCharIndex || properties.firstChar) + // usBreakChar
-    "\x00\x03"
-  ); // usMaxContext
+  const os2 = new TrueTypeTableBuilder({ exactLength: 96 });
+  os2.setArray([0x00, 0x03]); // version
+  os2.setArray([0x02, 0x24]); // xAvgCharWidth
+  os2.setArray([0x01, 0xf4]); // usWeightClass
+  os2.setArray([0x00, 0x05]); // usWidthClass
+  os2.skip(2); // fstype (0 to improve browser compatibility), skip redundant "\x00\x00"
+  os2.setArray([0x02, 0x8a]); // ySubscriptXSize
+  os2.setArray([0x02, 0xbb]); // ySubscriptYSize
+  os2.skip(2); // ySubscriptXOffset, skip redundant "\x00\x00"
+  os2.setArray([0x00, 0x8c]); // ySubscriptYOffset
+  os2.setArray([0x02, 0x8a]); // ySuperScriptXSize
+  os2.setArray([0x02, 0xbb]); // ySuperScriptYSize
+  os2.skip(2); // ySuperScriptXOffset, skip redundant "\x00\x00"
+  os2.setArray([0x01, 0xdf]); // ySuperScriptYOffset
+  os2.setArray([0x00, 0x31]); // yStrikeOutSize
+  os2.setArray([0x01, 0x02]); // yStrikeOutPosition
+  os2.skip(2); // sFamilyClass, skip redundant "\x00\x00"
+  os2.setArray([
+    0x00,
+    0x00,
+    0x06,
+    properties.fixedPitch ? 0x09 : 0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ]); // Panose
+  os2.setInt32(ulUnicodeRange1); // ulUnicodeRange1 (Bits 0-31)
+  os2.setInt32(ulUnicodeRange2); // ulUnicodeRange2 (Bits 32-63)
+  os2.setInt32(ulUnicodeRange3); // ulUnicodeRange3 (Bits 64-95)
+  os2.setInt32(ulUnicodeRange4); // ulUnicodeRange4 (Bits 96-127)
+  os2.setArray([0x2a, 0x32, 0x31, 0x2a]); // achVendID
+  os2.setInt16(properties.italicAngle ? 1 : 0); // fsSelection
+  os2.setInt16(firstCharIndex || properties.firstChar); // usFirstCharIndex
+  os2.setInt16(lastCharIndex || properties.lastChar); // usLastCharIndex
+  os2.setInt16(typoAscent); // sTypoAscender
+  os2.setInt16(typoDescent); // sTypoDescender
+  os2.setArray([0x00, 0x64]); // sTypoLineGap (7%-10% of the unitsPerEM value)
+  os2.setInt16(winAscent); // usWinAscent
+  os2.setInt16(winDescent); // usWinDescent
+  os2.skip(
+    4 + // ulCodePageRange1 (Bits 0-31), skip redundant "\x00\x00\x00\x00"
+      4 // ulCodePageRange2 (Bits 32-63), skip redundant "\x00\x00\x00\x00"
+  );
+  os2.setInt16(properties.xHeight); // sxHeight
+  os2.setInt16(properties.capHeight); // sCapHeight
+  os2.skip(2); // usDefaultChar, skip redundant "\x00\x00"
+  os2.setInt16(firstCharIndex || properties.firstChar); // usBreakChar
+  os2.setArray([0x00, 0x03]); // usMaxContext
+  return os2.data;
 }
 
 function createPostTable(properties) {
-  const angle = Math.floor(properties.italicAngle * 2 ** 16);
-  return (
-    "\x00\x03\x00\x00" + // Version number
-    string32(angle) + // italicAngle
-    "\x00\x00" + // underlinePosition
-    "\x00\x00" + // underlineThickness
-    string32(properties.fixedPitch ? 1 : 0) + // isFixedPitch
-    "\x00\x00\x00\x00" + // minMemType42
-    "\x00\x00\x00\x00" + // maxMemType42
-    "\x00\x00\x00\x00" + // minMemType1
-    "\x00\x00\x00\x00"
-  ); // maxMemType1
+  const post = new TrueTypeTableBuilder({ exactLength: 32 });
+  post.setArray([0x00, 0x03, 0x00, 0x00]); // Version number
+  post.setInt32(Math.floor(properties.italicAngle * 2 ** 16)); // italicAngle
+  post.skip(
+    2 + // underlinePosition, skip redundant "\x00\x00"
+      2 // underlineThickness, skip redundant "\x00\x00"
+  );
+  post.setInt32(properties.fixedPitch ? 1 : 0); // isFixedPitch
+  post.skip(
+    4 + // minMemType42, skip redundant "\x00\x00\x00\x00"
+      4 + // maxMemType42, skip redundant "\x00\x00\x00\x00"
+      4 + // minMemType1, skip redundant "\x00\x00\x00\x00"
+      4 // maxMemType1, skip redundant "\x00\x00\x00\x00"
+  );
+  return post.data;
 }
 
 function createPostscriptName(name) {
@@ -901,9 +1005,7 @@ function createPostscriptName(name) {
 }
 
 function createNameTable(name, proto) {
-  if (!proto) {
-    proto = [[], []]; // no strings and unicode strings
-  }
+  proto ||= [[], []]; // no strings and unicode strings
 
   const strings = [
     proto[0][0] || "Original licence", // 0.Copyright
@@ -917,52 +1019,85 @@ function createNameTable(name, proto) {
     proto[0][8] || "Unknown", // 8.Manufacturer
     proto[0][9] || "Unknown", // 9.Designer
   ];
+  const stringsBytes = strings.map(s => stringToBytes(s));
 
   // Mac want 1-byte per character strings while Windows want
   // 2-bytes per character, so duplicate the names table
-  const stringsUnicode = [];
+  const stringsUnicodeBytes = new Array(strings.length);
   let i, ii, j, jj, str;
   for (i = 0, ii = strings.length; i < ii; i++) {
     str = proto[1][i] || strings[i];
 
-    const strBufUnicode = [];
+    const strUnicode = new TrueTypeTableBuilder({
+      exactLength: str.length * 2,
+    });
     for (j = 0, jj = str.length; j < jj; j++) {
-      strBufUnicode.push(string16(str.charCodeAt(j)));
+      strUnicode.setInt16(str.charCodeAt(j));
     }
-    stringsUnicode.push(strBufUnicode.join(""));
+    stringsUnicodeBytes[i] = strUnicode.data;
   }
 
-  const names = [strings, stringsUnicode];
-  const platforms = ["\x00\x01", "\x00\x03"];
-  const encodings = ["\x00\x00", "\x00\x01"];
-  const languages = ["\x00\x00", "\x04\x09"];
-
-  const namesRecordCount = strings.length * platforms.length;
-  let nameTable =
-    "\x00\x00" + // format
-    string16(namesRecordCount) + // Number of names Record
-    string16(namesRecordCount * 12 + 6); // Storage
+  const namesBytes = [stringsBytes, stringsUnicodeBytes];
+  const platformsBytes = [
+    [0x00, 0x01],
+    [0x00, 0x03],
+  ];
+  const encodingsBytes = [
+    [0x00, 0x00],
+    [0x00, 0x01],
+  ];
+  const languagesBytes = [
+    [0x00, 0x00],
+    [0x04, 0x09],
+  ];
 
   // Build the name records field
+  const nameRecords = [];
   let strOffset = 0;
-  for (i = 0, ii = platforms.length; i < ii; i++) {
-    const strs = names[i];
+  for (i = 0, ii = platformsBytes.length; i < ii; i++) {
+    const strs = namesBytes[i];
     for (j = 0, jj = strs.length; j < jj; j++) {
       str = strs[j];
-      const nameRecord =
-        platforms[i] + // platform ID
-        encodings[i] + // encoding ID
-        languages[i] + // language ID
-        string16(j) + // name ID
-        string16(str.length) +
-        string16(strOffset);
-      nameTable += nameRecord;
+      const nameRecord = new TrueTypeTableBuilder({
+        exactLength:
+          6 +
+          platformsBytes[i].length +
+          encodingsBytes[i].length +
+          languagesBytes[i].length,
+      });
+      nameRecord.setArray(platformsBytes[i]); // platform ID
+      nameRecord.setArray(encodingsBytes[i]); // encoding ID
+      nameRecord.setArray(languagesBytes[i]); // language ID
+      nameRecord.setInt16(j); // name ID
+      nameRecord.setInt16(str.length);
+      nameRecord.setInt16(strOffset);
+
+      nameRecords.push(nameRecord.data);
       strOffset += str.length;
     }
   }
 
-  nameTable += strings.join("") + stringsUnicode.join("");
-  return nameTable;
+  const namesRecordCount = stringsBytes.length * platformsBytes.length;
+  const nameTable = new TrueTypeTableBuilder({
+    exactLength:
+      6 +
+      Math.sumPrecise(nameRecords.map(arr => arr.length)) +
+      Math.sumPrecise(stringsBytes.map(arr => arr.length)) +
+      Math.sumPrecise(stringsUnicodeBytes.map(arr => arr.length)),
+  });
+  nameTable.skip(2); // format, skip redundant "\x00\x00"
+  nameTable.setInt16(namesRecordCount); // Number of names Record
+  nameTable.setInt16(namesRecordCount * 12 + 6); // Storage
+  for (const arr of nameRecords) {
+    nameTable.setArray(arr);
+  }
+  for (const arr of stringsBytes) {
+    nameTable.setArray(arr);
+  }
+  for (const arr of stringsUnicodeBytes) {
+    nameTable.setArray(arr);
+  }
+  return nameTable.data;
 }
 
 /**
@@ -970,6 +1105,12 @@ function createNameTable(name, proto) {
  * decoding logics whatever type it is (assuming the font type is supported).
  */
 class Font {
+  #charsCache = new Map();
+
+  #glyphCache = new Map();
+
+  charProcOperatorList;
+
   constructor(name, file, properties, evaluatorOptions) {
     this.name = name;
     this.psName = null;
@@ -982,17 +1123,21 @@ class Font {
     this.missingFile = false;
     this.cssFontInfo = properties.cssFontInfo;
 
-    this._charsCache = Object.create(null);
-    this._glyphCache = Object.create(null);
-
     let isSerifFont = !!(properties.flags & FontFlags.Serif);
     // Fallback to checking the font name, in order to improve text-selection,
-    // since the /Flags-entry is often wrong (fixes issue13845.pdf).
-    if (!isSerifFont && !properties.isSimulatedFlags) {
-      const baseName = name.replaceAll(/[,_]/g, "-").split("-", 1)[0],
+    // since the /Flags-entry is often wrong (fixes issue13845.pdf). When the
+    // font file is missing, the family also affects canvas fallback rendering.
+    if (!isSerifFont && (!properties.isSimulatedFlags || !file)) {
+      const stdFontMap = getStdFontMap(),
+        nonStdFontMap = getNonStdFontMap(),
         serifFonts = getSerifFonts();
-      for (const namePart of baseName.split("+")) {
-        if (serifFonts[namePart]) {
+      for (const namePart of name.split("+")) {
+        let fontName = normalizeFontName(namePart);
+        fontName = stdFontMap[fontName] || nonStdFontMap[fontName] || fontName;
+        fontName = fontName.split("-", 1)[0];
+        // TeX fonts commonly append the design size, e.g. CMR8.
+        fontName = fontName.replace(/\d+$/, "");
+        if (serifFonts[fontName]) {
           isSerifFont = true;
           break;
         }
@@ -1143,13 +1288,9 @@ class Font {
     return shadow(this, "renderer", renderer);
   }
 
-  exportData() {
-    const exportDataProps = this.fontExtraProperties
-      ? [...EXPORT_DATA_PROPERTIES, ...EXPORT_DATA_EXTRA_PROPERTIES]
-      : EXPORT_DATA_PROPERTIES;
-
+  #getExportData(props) {
     const data = Object.create(null);
-    for (const prop of exportDataProps) {
+    for (const prop of props) {
       const value = this[prop];
       // Ignore properties that haven't been explicitly set.
       if (value !== undefined) {
@@ -1157,6 +1298,16 @@ class Font {
       }
     }
     return data;
+  }
+
+  exportData() {
+    return {
+      buffer: compileFontInfo(this.#getExportData(EXPORT_DATA_PROPERTIES)),
+      charProcOperatorList: this.charProcOperatorList,
+      extra: this.fontExtraProperties
+        ? this.#getExportData(EXPORT_DATA_EXTRA_PROPERTIES)
+        : undefined,
+    };
   }
 
   fallbackToSystemFont(properties) {
@@ -1378,6 +1529,7 @@ class Font {
         length,
         offset,
         data,
+        view: new DataView(data.buffer, data.byteOffset, data.byteLength),
       };
     }
 
@@ -2003,20 +2155,17 @@ class Font {
     }
 
     function sanitizeHead(head, numGlyphs, locaLength) {
-      const data = head.data;
+      const { data, view } = head;
 
       // Validate version:
       // Should always be 0x00010000
-      const version = int32(data[0], data[1], data[2], data[3]);
+      const version = view.getInt32(0);
       if (version >> 16 !== 1) {
         info("Attempting to fix invalid version in head table: " + version);
-        data[0] = 0;
-        data[1] = 1;
-        data[2] = 0;
-        data[3] = 0;
+        view.setInt32(0, 0x00010000);
       }
 
-      const indexToLocFormat = int16(data[50], data[51]);
+      const indexToLocFormat = signedInt16(data[50], data[51]);
       if (indexToLocFormat < 0 || indexToLocFormat > 1) {
         info(
           "Attempting to fix invalid indexToLocFormat in head table: " +
@@ -2244,15 +2393,11 @@ class Font {
           if (!valid) {
             break;
           }
-          const customNames = [],
-            strBuf = [];
+          const customNames = [];
           while (font.pos < end) {
-            const stringLength = font.getByte();
-            strBuf.length = stringLength;
-            for (i = 0; i < stringLength; ++i) {
-              strBuf[i] = String.fromCharCode(font.getByte());
-            }
-            customNames.push(strBuf.join(""));
+            const strLen = font.getByte(),
+              str = font.getString(strLen);
+            customNames.push(str);
           }
           glyphNames = [];
           for (i = 0; i < numGlyphs; ++i) {
@@ -2388,7 +2533,7 @@ class Font {
           } else {
             for (j = 0; j < n; j++) {
               b = data[i++];
-              stack.push((b << 8) | data[i++]);
+              stack.push(signedInt16(b, data[i++]));
             }
           }
         } else if ((op & 0xf8) === 0xb0) {
@@ -2626,27 +2771,23 @@ class Font {
       header = readOpenTypeHeader(font);
       tables = readTables(font, header.numTables);
     }
-    let cff, cffFile;
 
     const isTrueType = !tables["CFF "];
     if (!isTrueType) {
-      const isComposite =
-        properties.composite &&
-        (properties.cidToGidMap?.length > 0 ||
-          !(properties.cMap instanceof IdentityCMap));
       // OpenType font (skip composite fonts with non-default glyph mapping).
       if (
-        (header.version === "OTTO" && !isComposite) ||
+        (header.version === "OTTO" && !properties.composite) ||
         !tables.head ||
         !tables.hhea ||
         !tables.maxp ||
         !tables.post
       ) {
         // No major tables: throwing everything at `CFFFont`.
-        cffFile = new Stream(tables["CFF "].data);
-        cff = new CFFFont(cffFile, properties);
-
-        return this.convert(name, cff, properties);
+        return this.convert(
+          name,
+          new CFFFont(new Stream(tables["CFF "].data), properties),
+          properties
+        );
       }
 
       delete tables.glyf;
@@ -2674,9 +2815,32 @@ class Font {
       throw new FormatError('Required "maxp" table is not found');
     }
 
+    let numGlyphsFromCFF;
+    if (!isTrueType) {
+      try {
+        // Trying to repair CFF file
+        const parser = new CFFParser(
+          new Stream(tables["CFF "].data),
+          properties,
+          SEAC_ANALYSIS_ENABLED
+        );
+        const cff = parser.parse();
+        cff.duplicateFirstGlyph();
+        const compiler = new CFFCompiler(cff);
+        tables["CFF "].data = compiler.compile();
+        numGlyphsFromCFF = cff.charStringCount;
+      } catch {
+        warn("Failed to compile font " + properties.loadedName);
+      }
+    }
+
     font.pos = (font.start || 0) + tables.maxp.offset;
     let version = font.getInt32();
-    const numGlyphs = font.getUint16();
+    const numGlyphs = numGlyphsFromCFF ?? font.getUint16();
+    if (version === 0x00005000 && tables.maxp.length !== 6) {
+      tables.maxp.data = tables.maxp.data.subarray(0, 6);
+      tables.maxp.length = 6;
+    }
 
     if (version !== 0x00010000 && version !== 0x00005000) {
       // https://learn.microsoft.com/en-us/typography/opentype/spec/maxp
@@ -2690,13 +2854,36 @@ class Font {
       writeUint32(tables.maxp.data, 0, version);
     }
 
+    let isGlyphLocationsLong = int16(
+      tables.head.data[50],
+      tables.head.data[51]
+    );
+    if (tables.loca) {
+      const locaLength = isGlyphLocationsLong
+        ? (numGlyphs + 1) * 4
+        : (numGlyphs + 1) * 2;
+      if (tables.loca.length !== locaLength) {
+        warn("Incorrect 'loca' table length -- attempting to fix it.");
+        // The length of the loca table is wrong (see #13425), so we check if we
+        // have enough space to fix it.
+        const sortedTables = Object.values(tables)
+          .filter(Boolean)
+          .sort((a, b) => a.offset - b.offset);
+        const locaIndex = sortedTables.indexOf(tables.loca);
+        const nextTable = sortedTables[locaIndex + 1] || null;
+        if (nextTable && tables.loca.offset + locaLength < nextTable.offset) {
+          const previousPos = font.pos;
+          font.pos = font.start || 0;
+          font.skip(tables.loca.offset);
+          tables.loca.data = font.getBytes(locaLength);
+          tables.loca.length = locaLength;
+          font.pos = previousPos;
+        }
+      }
+    }
+
     if (properties.scaleFactors?.length === numGlyphs && isTrueType) {
       const { scaleFactors } = properties;
-      const isGlyphLocationsLong = int16(
-        tables.head.data[50],
-        tables.head.data[51]
-      );
-
       const glyphs = new GlyfTable({
         glyfTable: tables.glyf.data,
         isGlyphLocationsLong,
@@ -2711,7 +2898,7 @@ class Font {
 
       if (isLocationLong !== !!isGlyphLocationsLong) {
         tables.head.data[50] = 0;
-        tables.head.data[51] = isLocationLong ? 1 : 0;
+        isGlyphLocationsLong = tables.head.data[51] = isLocationLong ? 1 : 0;
       }
 
       const metrics = tables.hmtx.data;
@@ -2789,10 +2976,6 @@ class Font {
 
     let missingGlyphs = Object.create(null);
     if (isTrueType) {
-      const isGlyphLocationsLong = int16(
-        tables.head.data[50],
-        tables.head.data[51]
-      );
       const glyphsInfo = sanitizeGlyphLocations(
         tables.loca,
         tables.glyf,
@@ -3068,24 +3251,6 @@ class Font {
       }
     }
 
-    if (!isTrueType) {
-      try {
-        // Trying to repair CFF file
-        cffFile = new Stream(tables["CFF "].data);
-        const parser = new CFFParser(
-          cffFile,
-          properties,
-          SEAC_ANALYSIS_ENABLED
-        );
-        cff = parser.parse();
-        cff.duplicateFirstGlyph();
-        const compiler = new CFFCompiler(cff);
-        tables["CFF "].data = compiler.compile();
-      } catch {
-        warn("Failed to compile font " + properties.loadedName);
-      }
-    }
-
     // Re-creating 'name' table
     if (!tables.name) {
       tables.name = {
@@ -3236,73 +3401,100 @@ class Font {
     // Font header
     builder.addTable(
       "head",
-      "\x00\x01\x00\x00" + // Version number
-        "\x00\x00\x10\x00" + // fontRevision
-        "\x00\x00\x00\x00" + // checksumAdjustement
-        "\x5F\x0F\x3C\xF5" + // magicNumber
-        "\x00\x00" + // Flags
-        safeString16(unitsPerEm) + // unitsPerEM
-        "\x00\x00\x00\x00\x9e\x0b\x7e\x27" + // creation date
-        "\x00\x00\x00\x00\x9e\x0b\x7e\x27" + // modifification date
-        "\x00\x00" + // xMin
-        safeString16(properties.descent) + // yMin
-        "\x0F\xFF" + // xMax
-        safeString16(properties.ascent) + // yMax
-        string16(properties.italicAngle ? 2 : 0) + // macStyle
-        "\x00\x11" + // lowestRecPPEM
-        "\x00\x00" + // fontDirectionHint
-        "\x00\x00" + // indexToLocFormat
-        "\x00\x00"
-    ); // glyphDataFormat
+      (function fontTableHead() {
+        const dateArr = [0x00, 0x00, 0x00, 0x00, 0x9e, 0x0b, 0x7e, 0x27];
+
+        const head = new TrueTypeTableBuilder({ exactLength: 54 });
+        head.setArray([0x00, 0x01, 0x00, 0x00]); // Version number
+        head.setArray([0x00, 0x00, 0x10, 0x00]); // fontRevision
+        head.skip(4); // checksumAdjustement, skip redundant "\x00\x00\x00\x00"
+        head.setArray([0x5f, 0x0f, 0x3c, 0xf5]); // magicNumber
+        head.skip(2); // Flags, skip redundant "\x00\x00"
+        head.setSafeInt16(unitsPerEm); // unitsPerEM
+        head.setArray(dateArr); // creation date
+        head.setArray(dateArr); // modifification date
+        head.skip(2); // xMin, skip redundant "\x00\x00"
+        head.setSafeInt16(properties.descent); // yMin
+        head.setArray([0x0f, 0xff]); // xMax
+        head.setSafeInt16(properties.ascent); // yMax
+        head.setInt16(properties.italicAngle ? 2 : 0); // macStyle
+        head.setArray([0x00, 0x11]); // lowestRecPPEM
+        head.skip(
+          2 + // fontDirectionHint, skip redundant "\x00\x00"
+            2 + // indexToLocFormat, skip redundant "\x00\x00"
+            2 // glyphDataFormat, skip redundant "\x00\x00"
+        );
+        return head.data;
+      })()
+    );
 
     // Horizontal header
     builder.addTable(
       "hhea",
-      "\x00\x01\x00\x00" + // Version number
-        safeString16(properties.ascent) + // Typographic Ascent
-        safeString16(properties.descent) + // Typographic Descent
-        "\x00\x00" + // Line Gap
-        "\xFF\xFF" + // advanceWidthMax
-        "\x00\x00" + // minLeftSidebearing
-        "\x00\x00" + // minRightSidebearing
-        "\x00\x00" + // xMaxExtent
-        safeString16(properties.capHeight) + // caretSlopeRise
-        safeString16(Math.tan(properties.italicAngle) * properties.xHeight) + // caretSlopeRun
-        "\x00\x00" + // caretOffset
-        "\x00\x00" + // -reserved-
-        "\x00\x00" + // -reserved-
-        "\x00\x00" + // -reserved-
-        "\x00\x00" + // -reserved-
-        "\x00\x00" + // metricDataFormat
-        string16(numGlyphs)
-    ); // Number of HMetrics
+      (function fontTableHhea() {
+        const hhea = new TrueTypeTableBuilder({ exactLength: 36 });
+        hhea.setArray([0x00, 0x01, 0x00, 0x00]); // Version number
+        hhea.setSafeInt16(properties.ascent); // Typographic Ascent
+        hhea.setSafeInt16(properties.descent); // Typographic Descent
+        hhea.skip(2); // Line Gap, skip redundant "\x00\x00"
+        hhea.setArray([0xff, 0xff]); // advanceWidthMax
+        hhea.skip(
+          2 + // minLeftSidebearing, skip redundant "\x00\x00"
+            2 + // minRightSidebearing, skip redundant "\x00\x00"
+            2 // xMaxExtent, skip redundant "\x00\x00"
+        );
+        hhea.setSafeInt16(properties.capHeight); // caretSlopeRise
+        hhea.setSafeInt16(
+          Math.tan(properties.italicAngle) * properties.xHeight
+        ); // caretSlopeRun
+        hhea.skip(
+          2 + // caretOffset, skip redundant "\x00\x00"
+            2 + // -reserved-, skip redundant "\x00\x00"
+            2 + // -reserved-, skip redundant "\x00\x00"
+            2 + // -reserved-, skip redundant "\x00\x00"
+            2 + // -reserved-, skip redundant "\x00\x00"
+            2 // metricDataFormat, skip redundant "\x00\x00"
+        );
+        hhea.setInt16(numGlyphs); // Number of HMetrics
+        return hhea.data;
+      })()
+    );
 
     // Horizontal metrics
     builder.addTable(
       "hmtx",
-      (function fontFieldsHmtx() {
+      (function fontTableHmtx() {
         const charstrings = font.charstrings;
-        const cffWidths = font.cff ? font.cff.widths : null;
-        let hmtx = "\x00\x00\x00\x00"; // Fake .notdef
+        const cffWidths = font.cff?.widths ?? null;
+
+        const hmtx = new TrueTypeTableBuilder({ exactLength: numGlyphs * 4 });
+        // Fake .notdef (width=0 and lsb=0) first, skip redundant assignment.
+        hmtx.skip(4);
+
         for (let i = 1, ii = numGlyphs; i < ii; i++) {
           let width = 0;
           if (charstrings) {
-            const charstring = charstrings[i - 1];
-            width = "width" in charstring ? charstring.width : 0;
+            width = charstrings[i - 1].width || 0;
           } else if (cffWidths) {
             width = Math.ceil(cffWidths[i] || 0);
           }
-          hmtx += string16(width) + string16(0);
+          hmtx.setInt16(width);
+          hmtx.skip(2); // Use lsb=0, skip redundant assignment.
         }
-        return hmtx;
+        return hmtx.data;
       })()
     );
 
     // Maximum profile
     builder.addTable(
       "maxp",
-      "\x00\x00\x50\x00" + string16(numGlyphs) // Version number
-    ); // Num of glyphs
+      (function fontTableMaxp() {
+        const maxp = new TrueTypeTableBuilder({ exactLength: 6 });
+        maxp.setArray([0x00, 0x00, 0x50, 0x00]); // Version number
+        maxp.setInt16(numGlyphs); // Num of glyphs
+        return maxp.data;
+      })()
+    );
 
     // Naming tables
     builder.addTable("name", createNameTable(fontName));
@@ -3358,7 +3550,7 @@ class Font {
    * @private
    */
   _charToGlyph(charcode, isSpace = false) {
-    let glyph = this._glyphCache[charcode];
+    let glyph = this.#glyphCache.get(charcode);
     // All `Glyph`-properties, except `isSpace` in multi-byte strings,
     // depend indirectly on the `charcode`.
     if (glyph?.isSpace === isSpace) {
@@ -3378,7 +3570,7 @@ class Font {
     if (typeof width !== "number") {
       width = this.defaultWidth;
     }
-    const vmetric = this.vmetrics?.[widthCode];
+    const vmetric = this.vmetrics?.[widthCode] || this.defaultVMetrics;
 
     let unicode = this.toUnicode.get(charcode) || charcode;
     if (typeof unicode === "number") {
@@ -3453,12 +3645,13 @@ class Font {
       isSpace,
       isInFont
     );
-    return (this._glyphCache[charcode] = glyph);
+    this.#glyphCache.set(charcode, glyph);
+    return glyph;
   }
 
   charsToGlyphs(chars) {
     // If we translated this string before, just grab it from the cache.
-    let glyphs = this._charsCache[chars];
+    let glyphs = this.#charsCache.get(chars);
     if (glyphs) {
       return glyphs;
     }
@@ -3490,7 +3683,8 @@ class Font {
     }
 
     // Enter the translated string into the cache.
-    return (this._charsCache[chars] = glyphs);
+    this.#charsCache.set(chars, glyphs);
+    return glyphs;
   }
 
   /**
@@ -3522,7 +3716,7 @@ class Font {
   }
 
   get glyphCacheValues() {
-    return Object.values(this._glyphCache);
+    return this.#glyphCache.values();
   }
 
   /**

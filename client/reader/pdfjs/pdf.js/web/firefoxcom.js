@@ -13,8 +13,9 @@
  * limitations under the License.
  */
 
-import { isPdfFile, PDFDataRangeTransport } from "pdfjs-lib";
+import { MathClamp, PDFDataRangeTransport } from "pdfjs-lib";
 import { AppOptions } from "./app_options.js";
+import { BaseDownloadManager } from "./base_download_manager.js";
 import { BaseExternalServices } from "./external_services.js";
 import { BasePreferences } from "./preferences.js";
 import { DEFAULT_SCALE_VALUE } from "./ui_utils.js";
@@ -80,69 +81,25 @@ class FirefoxCom {
   }
 }
 
-class DownloadManager {
-  #openBlobUrls = new WeakMap();
-
-  downloadData(data, filename, contentType) {
-    const blobUrl = URL.createObjectURL(
-      new Blob([data], { type: contentType })
-    );
-
+class DownloadManager extends BaseDownloadManager {
+  _triggerDownload(blobUrl, originalUrl, filename, isAttachment = false) {
     FirefoxCom.request("download", {
       blobUrl,
-      originalUrl: blobUrl,
+      originalUrl,
       filename,
-      isAttachment: true,
+      isAttachment,
     });
   }
 
-  /**
-   * @returns {boolean} Indicating if the data was opened.
-   */
-  openOrDownloadData(data, filename, dest = null) {
-    const isPdfData = isPdfFile(filename);
-    const contentType = isPdfData ? "application/pdf" : "";
-
-    if (isPdfData) {
-      let blobUrl = this.#openBlobUrls.get(data);
-      if (!blobUrl) {
-        blobUrl = URL.createObjectURL(new Blob([data], { type: contentType }));
-        this.#openBlobUrls.set(data, blobUrl);
-      }
-      // Let Firefox's content handler catch the URL and display the PDF.
-      // NOTE: This cannot use a query string for the filename, see
-      //       https://bugzilla.mozilla.org/show_bug.cgi?id=1632644#c5
-      let viewerUrl = blobUrl + "#filename=" + encodeURIComponent(filename);
-      if (dest) {
-        viewerUrl += `&filedest=${escape(dest)}`;
-      }
-
-      try {
-        window.open(viewerUrl);
-        return true;
-      } catch (ex) {
-        console.error("openOrDownloadData:", ex);
-        // Release the `blobUrl`, since opening it failed, and fallback to
-        // downloading the PDF file.
-        URL.revokeObjectURL(blobUrl);
-        this.#openBlobUrls.delete(data);
-      }
+  _getOpenDataUrl(blobUrl, filename, dest = null) {
+    // Let Firefox's content handler catch the URL and display the PDF.
+    // NOTE: This cannot use a query string for the filename, see
+    //       https://bugzilla.mozilla.org/show_bug.cgi?id=1632644#c5
+    let url = blobUrl + "#filename=" + encodeURIComponent(filename);
+    if (dest) {
+      url += `&filedest=${escape(dest)}`;
     }
-
-    this.downloadData(data, filename, contentType);
-    return false;
-  }
-
-  download(data, url, filename) {
-    const blobUrl = data
-      ? URL.createObjectURL(new Blob([data], { type: "application/pdf" }))
-      : null;
-
-    FirefoxCom.request("download", {
-      blobUrl,
-      originalUrl: url,
-      filename,
-    });
+    return url;
   }
 }
 
@@ -613,21 +570,18 @@ class ExternalServices extends BaseExternalServices {
         case "range":
           pdfDataRangeTransport.onDataRange(args.begin, args.chunk);
           break;
-        case "rangeProgress":
-          pdfDataRangeTransport.onDataProgress(args.loaded);
-          break;
         case "progressiveRead":
           pdfDataRangeTransport.onDataProgressiveRead(args.chunk);
-
-          // Don't forget to report loading progress as well, since otherwise
-          // the loadingBar won't update when `disableRange=true` is set.
-          pdfDataRangeTransport.onDataProgress(args.loaded, args.total);
           break;
         case "progressiveDone":
           pdfDataRangeTransport?.onDataProgressiveDone();
           break;
         case "progress":
-          viewerApp.progress(args.loaded / args.total);
+          const percent = args.total
+            ? MathClamp(Math.round((args.loaded / args.total) * 100), 0, 100)
+            : NaN;
+
+          viewerApp.progress(percent);
           break;
         case "complete":
           if (!args.data) {
@@ -643,6 +597,10 @@ class ExternalServices extends BaseExternalServices {
 
   reportTelemetry(data) {
     FirefoxCom.request("reportTelemetry", data);
+  }
+
+  reportText(data) {
+    FirefoxCom.request("reportText", data);
   }
 
   updateEditorStates(data) {

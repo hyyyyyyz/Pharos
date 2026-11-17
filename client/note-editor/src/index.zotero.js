@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { addFTL, getLocalizedString } from './fluent';
 import { randomString } from './core/utils';
 import { schema } from './core/schema';
+import { undoCommand, redoCommand } from './core/history-commands';
 import Editor from './ui/editor';
 import EditorCore from './core/editor-core';
 
@@ -85,6 +86,31 @@ class EditorInstance {
 
 	getDataSync(onlyChanged) {
 		return this._editorCore.getData(onlyChanged);
+	}
+
+	_getHistoryView() {
+		let editorCore = this._editorCore;
+		return editorCore?.view && !editorCore.readOnly ? editorCore.view : null;
+	}
+
+	canUndo() {
+		let view = this._getHistoryView();
+		return view ? undoCommand(view.state) : false;
+	}
+
+	canRedo() {
+		let view = this._getHistoryView();
+		return view ? redoCommand(view.state) : false;
+	}
+
+	doUndo() {
+		let view = this._getHistoryView();
+		return view ? undoCommand(view.state, view.dispatch) : false;
+	}
+
+	doRedo() {
+		let view = this._getHistoryView();
+		return view ? redoCommand(view.state, view.dispatch) : false;
 	}
 
 	_setFont(font) {
@@ -281,6 +307,10 @@ class EditorInstance {
 			}
 			case 'focusToolbar': {
 				this._focusToolbar();
+				return;
+			}
+			case 'openFindBar': {
+				this._editorCore.openFindbar();
 				return;
 			}
 			case 'setFont': {
@@ -613,6 +643,22 @@ window.getDataSync = (onlyChanged) => {
 		return currentInstance.getDataSync(onlyChanged);
 	}
 	return null;
+};
+
+window.canUndo = () => {
+	return currentInstance?.canUndo() ?? false;
+};
+
+window.canRedo = () => {
+	return currentInstance?.canRedo() ?? false;
+};
+
+window.doUndo = () => {
+	return currentInstance?.doUndo() ?? false;
+};
+
+window.doRedo = () => {
+	return currentInstance?.doRedo() ?? false;
 };
 
 // Called from Zotero, because file picker can only be opened from user-triggered event or privileged code

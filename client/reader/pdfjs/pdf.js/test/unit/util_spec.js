@@ -19,7 +19,6 @@ import {
   createValidAbsoluteUrl,
   getModificationDate,
   getUuid,
-  string32,
   stringToBytes,
   stringToPDFString,
 } from "../../src/shared/util.js";
@@ -35,8 +34,8 @@ describe("util", function () {
       }
 
       const exception = new DerivedException("Something went wrong");
-      expect(exception instanceof DerivedException).toEqual(true);
-      expect(exception instanceof BaseException).toEqual(true);
+      expect(exception).toBeInstanceOf(DerivedException);
+      expect(exception).toBeInstanceOf(BaseException);
       expect(exception.message).toEqual("Something went wrong");
       expect(exception.name).toEqual("DerivedException");
       expect(exception.foo).toEqual("bar");
@@ -69,14 +68,6 @@ describe("util", function () {
       const string = "a".repeat(length);
 
       expect(bytesToString(bytes)).toEqual(string);
-    });
-  });
-
-  describe("string32", function () {
-    it("converts unsigned 32-bit integers to strings", function () {
-      expect(string32(0x74727565)).toEqual("true");
-      expect(string32(0x74797031)).toEqual("typ1");
-      expect(string32(0x4f54544f)).toEqual("OTTO");
     });
   });
 
@@ -164,30 +155,6 @@ describe("util", function () {
       const str3 =
         "\xFF\xFEh\x00e\x00l\x00l\x00o\x00 \x00\x1b\x00e\x00n\x00U\x00S\x00\x1b\x00w\x00o\x00r\x00l\x00d\x00";
       expect(stringToPDFString(str3)).toEqual("hello world");
-    });
-  });
-
-  describe("ReadableStream", function () {
-    it("should return an Object", function () {
-      const readable = new ReadableStream();
-      expect(typeof readable).toEqual("object");
-    });
-
-    it("should have property getReader", function () {
-      const readable = new ReadableStream();
-      expect(typeof readable.getReader).toEqual("function");
-    });
-  });
-
-  describe("URL", function () {
-    it("should return an Object", function () {
-      const url = new URL("https://example.com");
-      expect(typeof url).toEqual("object");
-    });
-
-    it("should have property `href`", function () {
-      const url = new URL("https://example.com");
-      expect(typeof url.href).toEqual("string");
     });
   });
 

@@ -27,10 +27,7 @@ function decodeString(str) {
 }
 
 class DatasetXMLParser extends SimpleXMLParser {
-  constructor(options) {
-    super(options);
-    this.node = null;
-  }
+  node = null;
 
   onEndElement(name) {
     const node = super.onEndElement(name);

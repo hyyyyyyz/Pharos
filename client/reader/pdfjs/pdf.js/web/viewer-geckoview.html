@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <!--
 Copyright 2012 Mozilla Foundation
 
@@ -22,26 +22,26 @@ See https://github.com/adobe-type-tools/cmap-resources
 -->
 <html dir="ltr" mozdisallowselectionprint>
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>PDF.js viewer</title>
 
-<!--#if MOZCENTRAL-->
-<!--#include viewer-snippet-firefox-extension.html-->
-<!--#endif-->
+    <!--#if MOZCENTRAL-->
+    <!--#include viewer-snippet-firefox-extension.html-->
+    <!--#endif-->
 
-<!--#if MOZCENTRAL-->
-<!--<link rel="stylesheet" href="resource://pdf.js/web/viewer.css">-->
-<!--<link rel="localization" href="toolkit/pdfviewer/viewer.ftl"/>-->
-<!--#else-->
-<link rel="stylesheet" href="viewer-geckoview.css">
-<!--#endif-->
+    <!--#if MOZCENTRAL-->
+    <!--<link rel="stylesheet" href="resource://pdf.js/web/viewer.css">-->
+    <!--<link rel="localization" href="toolkit/pdfviewer/viewer.ftl"/>-->
+    <!--#else-->
+    <link rel="stylesheet" href="viewer-geckoview.css" />
+    <!--#endif-->
 
-<!--#if !MOZCENTRAL-->
-    <link rel="resource" type="application/l10n" href="locale/locale.json">
-<!--#endif-->
+    <!--#if !MOZCENTRAL-->
+    <link rel="resource" type="application/l10n" href="locale/locale.json" />
+    <!--#endif-->
 
-<!--#if !MOZCENTRAL-->
+    <!--#if !MOZCENTRAL-->
     <script>
       if (typeof PDFJSDev === "undefined") {
         window.isGECKOVIEW = true;
@@ -59,12 +59,8 @@ See https://github.com/adobe-type-tools/cmap-resources
           "fluent-dom": "../node_modules/@fluent/dom/esm/index.js",
           "cached-iterable": "../node_modules/cached-iterable/src/index.mjs",
 
-          "display-cmap_reader_factory": "../src/display/cmap_reader_factory.js",
-          "display-standard_fontdata_factory": "../src/display/standard_fontdata_factory.js",
-          "display-wasm_factory": "../src/display/wasm_factory.js",
-          "display-fetch_stream": "../src/display/fetch_stream.js",
-          "display-network": "../src/display/network.js",
-          "display-node_stream": "../src/display/stubs.js",
+          "display-binary_data_factory": "../src/display/binary_data_factory.js",
+          "display-network_stream": "../src/display/network_stream.js",
           "display-node_utils": "../src/display/stubs.js",
 
           "web-alt_text_manager": "./stubs-geckoview.js",
@@ -80,28 +76,25 @@ See https://github.com/adobe-type-tools/cmap-resources
           "web-pdf_layer_viewer": "./stubs-geckoview.js",
           "web-pdf_outline_viewer": "./stubs-geckoview.js",
           "web-pdf_presentation_mode": "./stubs-geckoview.js",
-          "web-pdf_sidebar": "./stubs-geckoview.js",
           "web-pdf_thumbnail_viewer": "./stubs-geckoview.js",
           "web-preferences": "./genericcom.js",
           "web-print_service": "./pdf_print_service.js",
           "web-secondary_toolbar": "./stubs-geckoview.js",
           "web-signature_manager": "./stubs-geckoview.js",
-          "web-toolbar": "./toolbar-geckoview.js"
+          "web-toolbar": "./toolbar-geckoview.js",
+          "web-views_manager": "./stubs-geckoview.js"
         }
       }
     </script>
     <script src="viewer-geckoview.js" type="module"></script>
-<!--#else-->
-<!--<script src="resource://pdf.js/web/viewer.mjs" type="module"></script>-->
-<!--#endif-->
-
+    <!--#else-->
+    <!--<script src="resource://pdf.js/web/viewer.mjs" type="module"></script>-->
+    <!--#endif-->
   </head>
 
   <body tabindex="0">
     <div id="outerContainer">
-
       <div id="mainContainer">
-
         <div id="floatingToolbar">
           <button id="download" class="toolbarButton" type="button" tabindex="0" data-l10n-id="pdfjs-download-button">
             <span data-l10n-id="pdfjs-download-button-label"></span>
@@ -111,7 +104,8 @@ See https://github.com/adobe-type-tools/cmap-resources
         <div id="viewerContainer" tabindex="0">
           <div id="viewer" class="pdfViewer"></div>
         </div>
-      </div> <!-- mainContainer -->
+      </div>
+      <!-- mainContainer -->
 
       <div id="dialogContainer">
         <dialog id="passwordDialog">
@@ -119,16 +113,21 @@ See https://github.com/adobe-type-tools/cmap-resources
             <label for="password" id="passwordText" data-l10n-id="pdfjs-password-label"></label>
           </div>
           <div class="row">
-            <input type="password" id="password" class="toolbarField">
+            <input type="password" id="password" class="toolbarField" />
           </div>
           <div class="buttonRow">
-            <button id="passwordCancel" class="dialogButton" type="button"><span data-l10n-id="pdfjs-password-cancel-button"></span></button>
-            <button id="passwordSubmit" class="dialogButton" type="button"><span data-l10n-id="pdfjs-password-ok-button"></span></button>
+            <button id="passwordCancel" class="dialogButton" type="button">
+              <span data-l10n-id="pdfjs-password-cancel-button"></span>
+            </button>
+            <button id="passwordSubmit" class="dialogButton" type="button">
+              <span data-l10n-id="pdfjs-password-ok-button"></span>
+            </button>
           </div>
         </dialog>
-      </div>  <!-- dialogContainer -->
-
-    </div> <!-- outerContainer -->
+      </div>
+      <!-- dialogContainer -->
+    </div>
+    <!-- outerContainer -->
     <div id="printContainer"></div>
   </body>
 </html>

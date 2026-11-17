@@ -184,6 +184,10 @@ ConcurrentCaller.prototype.stop = function () {
 	this._log("Clearing queue");
 	while (this._queue.length) {
 		let task = this._queue.shift();
+		// Attach a no-op handler so the runtime doesn't report these as
+		// unhandled rejections -- they'll be handled later via
+		// Promise.allSettled in the caller
+		task.deferred.promise.catch(() => {});
 		task.deferred.reject(new CanceledException);
 	}
 };
@@ -200,7 +204,7 @@ ConcurrentCaller.prototype._processNext = function () {
 	if (!task) {
 		if (this._numRunning == 0 && !this._pausing) {
 			this._log("All tasks are done");
-			this._deferred.resolve();
+			this._deferred?.resolve();
 		}
 		else {
 			this._log("Nothing left to run -- waiting for running tasks to complete");
@@ -241,12 +245,11 @@ ConcurrentCaller.prototype._processNext = function () {
 				this._oldQueue = this._queue;
 				this._queue = [];
 				for (let o of this._oldQueue) {
-					//this._log("Rejecting promise");
-					o.deferred.reject();
+					o.deferred.promise.catch(() => {});
+					o.deferred.reject(new CanceledException());
 				}
 			}
 			
-			e.handledRejection = true;
 			task.deferred.reject(e);
 		}
 	};

@@ -29,9 +29,9 @@ class PDFFindBar {
 
   #resizeObserver = new ResizeObserver(this.#resizeObserverCallback.bind(this));
 
-  constructor(options, mainContainer, eventBus) {
-    this.opened = false;
+  opened = false;
 
+  constructor(options, mainContainer, eventBus) {
     this.bar = options.bar;
     this.toggleButton = options.toggleButton;
     this.findField = options.findField;

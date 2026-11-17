@@ -141,6 +141,38 @@ describe("Zotero.Server", function () {
 				});
 			});
 			
+			describe("application/x-www-form-urlencoded", function () {
+				it("should decode + as a space", async function () {
+					var data;
+					
+					var endpoint = "/test/" + Zotero.Utilities.randomString();
+					var handler = function () {};
+					handler.prototype = {
+						supportedMethods: ["POST"],
+						supportedDataTypes: ["application/x-www-form-urlencoded"],
+						
+						init: function (options) {
+							data = options.data;
+							return 204;
+						}
+					};
+					Zotero.Server.Endpoints[endpoint] = handler;
+					
+					await Zotero.HTTP.request(
+						"POST",
+						serverPath + endpoint,
+						{
+							headers: {
+								"Content-Type": "application/x-www-form-urlencoded"
+							},
+							body: "file+name=a+b%2Bc%20d.pdf"
+						}
+					);
+					
+					assert.deepEqual(data, { "file name": "a b+c d.pdf" });
+				});
+			});
+			
 			describe("multipart/form-data", function () {
 				it("should support text", async function () {
 					var called = false;
@@ -224,6 +256,45 @@ describe("Zotero.Server", function () {
 					let image = await File.createFromFileName(OS.Path.join(getTestDataDirectory().path, 'test.png'));
 					let formData = new FormData();
 					formData.append("image", image);
+
+					let req = await Zotero.HTTP.request(
+						"POST",
+						serverPath + endpoint,
+						{
+							headers: {
+								"Content-Type": "multipart/form-data"
+							},
+							body: formData
+						}
+					);
+
+					assert.ok(called);
+					assert.equal(req.status, 204);
+				});
+
+				it("should not trim whitespace bytes from a binary part body", async function () {
+					let called = false;
+					let endpoint = "/test/" + Zotero.Utilities.randomString();
+					// Begins and ends with whitespace bytes, which trimming would strip
+					let raw = new Uint8Array([0x0a, 0x20, 0x25, 0x50, 0x44, 0x46, 0xff, 0x0d, 0x0a]);
+					let expected = String.fromCharCode(...raw);
+
+					Zotero.Server.Endpoints[endpoint] = function () {};
+					Zotero.Server.Endpoints[endpoint].prototype = {
+						supportedMethods: ["POST"],
+						supportedDataTypes: ["multipart/form-data"],
+
+						init: function (options) {
+							called = true;
+							assert.isArray(options.data);
+							assert.equal(options.data.length, 1);
+							assert.equal(options.data[0].body, expected);
+							return 204;
+						}
+					};
+
+					let formData = new FormData();
+					formData.append("file", new Blob([raw]), "f.bin");
 
 					let req = await Zotero.HTTP.request(
 						"POST",

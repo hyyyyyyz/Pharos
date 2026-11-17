@@ -593,7 +593,7 @@ $pharos-rail-item-collapsed: 32px;
 	// Shorthand first, as with the toggle: written after background-image it
 	// resets it and the glyph disappears.
 	background: var(--accent-blue10)
-		url("chrome://zotero/skin/20/universal/account.svg") no-repeat center / 17px 17px;
+		url("chrome://zotero/skin/20/universal/pharos-account.svg") no-repeat center / 17px 17px;
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;

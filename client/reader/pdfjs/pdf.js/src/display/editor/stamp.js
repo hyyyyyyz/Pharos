@@ -15,6 +15,7 @@
 
 import { AnnotationEditorType, AnnotationPrefix } from "../../shared/util.js";
 import {
+  ColorScheme,
   OutputScale,
   PixelsPerInch,
   SupportedImageMimeTypes,
@@ -442,11 +443,6 @@ class StampEditor extends AnnotationEditor {
       width *= factor;
       height *= factor;
     }
-    const [parentWidth, parentHeight] = this.parentDimensions;
-    this.setDims(
-      (width * parentWidth) / pageWidth,
-      (height * parentHeight) / pageHeight
-    );
 
     this._uiManager.enableWaiting(false);
     const canvas = (this.#canvas = document.createElement("canvas"));
@@ -455,6 +451,8 @@ class StampEditor extends AnnotationEditor {
 
     this.width = width / pageWidth;
     this.height = height / pageHeight;
+    this.setDims();
+
     if (this._initialOptions?.isCentered) {
       this.center();
     } else {
@@ -535,7 +533,7 @@ class StampEditor extends AnnotationEditor {
         black = "#cfcfd8";
       if (this._uiManager.hcmFilter !== "none") {
         black = "black";
-      } else if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+      } else if (ColorScheme.isDarkMode) {
         white = "#8f8f9d";
         black = "#42414d";
       }
@@ -626,19 +624,10 @@ class StampEditor extends AnnotationEditor {
       const prevHeight = newHeight;
 
       if (newWidth > 2 * width) {
-        // See bug 1820511 (Windows specific bug).
-        // TODO: once the above bug is fixed we could revert to:
-        // newWidth = Math.ceil(newWidth / 2);
-        newWidth =
-          newWidth >= 16384
-            ? Math.floor(newWidth / 2) - 1
-            : Math.ceil(newWidth / 2);
+        newWidth = Math.ceil(newWidth / 2);
       }
       if (newHeight > 2 * height) {
-        newHeight =
-          newHeight >= 16384
-            ? Math.floor(newHeight / 2) - 1
-            : Math.ceil(newHeight / 2);
+        newHeight = Math.ceil(newHeight / 2);
       }
 
       const offscreen = new OffscreenCanvas(newWidth, newHeight);
@@ -750,7 +739,17 @@ class StampEditor extends AnnotationEditor {
     let missingCanvas = false;
     if (data instanceof StampAnnotationElement) {
       const {
-        data: { rect, rotation, id, structParent, popupRef, contentsObj },
+        data: {
+          rect,
+          rotation,
+          id,
+          structParent,
+          popupRef,
+          richText,
+          contentsObj,
+          creationDate,
+          modificationDate,
+        },
         container,
         parent: {
           page: { pageNumber },
@@ -794,7 +793,10 @@ class StampEditor extends AnnotationEditor {
         isSvg: false,
         structParent,
         popupRef,
+        richText,
         comment: contentsObj?.str || null,
+        creationDate,
+        modificationDate,
       };
     }
     const editor = await super.deserialize(data, parent, uiManager);
@@ -822,7 +824,7 @@ class StampEditor extends AnnotationEditor {
     }
     editor._initialData = initialData;
     if (data.comment) {
-      editor.setCommentData(data.comment);
+      editor.setCommentData(data);
     }
     // No need to be add in the undo stack if the editor is created from an
     // existing one.
@@ -841,15 +843,10 @@ class StampEditor extends AnnotationEditor {
       return this.serializeDeleted();
     }
 
-    const serialized = {
-      annotationType: AnnotationEditorType.STAMP,
+    const serialized = Object.assign(super.serialize(isForCopying), {
       bitmapId: this.#bitmapId,
-      pageIndex: this.pageIndex,
-      rect: this.getRect(0, 0),
-      rotation: this.rotation,
       isSvg: this.#isSvg,
-      structTreeParentId: this._structTreeParentId,
-    };
+    });
     this.addComment(serialized);
 
     if (isForCopying) {
@@ -878,8 +875,10 @@ class StampEditor extends AnnotationEditor {
         serialized.accessibilityData.structParent =
           this._initialData.structParent ?? -1;
       }
+      serialized.id = this.annotationElementId;
+      delete serialized.bitmapId;
+      return serialized;
     }
-    serialized.id = this.annotationElementId;
 
     if (context === null) {
       return serialized;
@@ -930,13 +929,14 @@ class StampEditor extends AnnotationEditor {
 
   /** @inheritdoc */
   renderAnnotationElement(annotation) {
-    const params = {
-      rect: this.getRect(0, 0),
-    };
-    if (this.hasEditedComment) {
-      params.popup = this.comment;
+    if (this.deleted) {
+      annotation.hide();
+      return null;
     }
-    annotation.updateEdited(params);
+    annotation.updateEdited({
+      rect: this.getPDFRect(),
+      popup: this.comment,
+    });
 
     return null;
   }

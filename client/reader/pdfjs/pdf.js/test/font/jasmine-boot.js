@@ -66,69 +66,19 @@ async function initializePDFJS(callback) {
   extend(window, jasmineInterface);
 
   // Runner Parameters
-  const queryString = new jasmine.QueryString({
-    getWindowLocation() {
-      return window.location;
-    },
-  });
+  const urls = new jasmine.HtmlReporterV2Urls();
 
-  const config = {
-    failFast: queryString.getParam("failFast"),
-    oneFailurePerSpec: queryString.getParam("oneFailurePerSpec"),
-    hideDisabled: queryString.getParam("hideDisabled"),
-  };
-
-  const random = queryString.getParam("random");
-  if (random !== undefined && random !== "") {
-    config.random = random;
-  }
-
-  const seed = queryString.getParam("seed");
-  if (seed) {
-    config.seed = seed;
-  }
+  env.configure(urls.configFromCurrentUrl());
 
   // Reporters
-  const htmlReporter = new jasmine.HtmlReporter({
-    env,
-    navigateWithNewParam(key, value) {
-      return queryString.navigateWithNewParam(key, value);
-    },
-    addToExistingQueryString(key, value) {
-      return queryString.fullStringWithNewParam(key, value);
-    },
-    getContainer() {
-      return document.body;
-    },
-    createElement() {
-      return document.createElement(...arguments);
-    },
-    createTextNode() {
-      return document.createTextNode(...arguments);
-    },
-    timer: new jasmine.Timer(),
-  });
+  const htmlReporter = new jasmine.HtmlReporterV2({ env, urls });
 
   env.addReporter(htmlReporter);
 
-  if (queryString.getParam("browser")) {
-    const testReporter = new TestReporter(queryString.getParam("browser"));
+  if (urls.queryString.getParam("browser")) {
+    const testReporter = new TestReporter(urls.queryString.getParam("browser"));
     env.addReporter(testReporter);
   }
-
-  // Filter which specs will be run by matching the start of the full name
-  // against the `spec` query param.
-  const specFilter = new jasmine.HtmlSpecFilter({
-    filterString() {
-      return queryString.getParam("spec");
-    },
-  });
-
-  config.specFilter = function (spec) {
-    return specFilter.matches(spec.getFullName());
-  };
-
-  env.configure(config);
 
   // Sets longer timeout.
   jasmine.DEFAULT_TIMEOUT_INTERVAL = 30000;
@@ -142,7 +92,6 @@ async function initializePDFJS(callback) {
 
   function fontTestInit() {
     initializePDFJS(function () {
-      htmlReporter.initialize();
       env.execute();
     });
   }

@@ -23,10 +23,12 @@ async function getReader(signatures) {
 	async function buildFromSource(targetDir) {
 		let npmOptions = npmExecOptions(modulePath);
 		await exec('npm ci', npmOptions);
-		await exec('npm run build', {
-			...npmOptions,
-			env: { ...npmOptions.env, PDFJS_CONFIG: 'zotero' },
-		});
+		// Zotero 10 selects the pdf.js flavour through a dedicated script
+		// (it sets PDFJS_CONFIG itself) instead of an environment variable.
+		await exec('npm run build:zotero', npmOptions);
+		if (!await fs.pathExists(path.join(modulePath, 'build', 'zotero', 'pdf', 'build', 'pdf.mjs'))) {
+			throw new Error('pdf.js build failed to produce output');
+		}
 		await fs.copy(path.join(modulePath, 'build', 'zotero'), targetDir);
 	}
 	

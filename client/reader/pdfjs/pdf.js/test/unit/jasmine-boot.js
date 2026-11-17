@@ -69,21 +69,27 @@ async function initializePDFJS(callback) {
       "pdfjs-test/unit/event_utils_spec.js",
       "pdfjs-test/unit/fetch_stream_spec.js",
       "pdfjs-test/unit/font_substitutions_spec.js",
-      "pdfjs-test/unit/function_spec.js",
+      "pdfjs-test/unit/image_utils_spec.js",
       "pdfjs-test/unit/message_handler_spec.js",
       "pdfjs-test/unit/metadata_spec.js",
       "pdfjs-test/unit/murmurhash3_spec.js",
+      "pdfjs-test/unit/name_number_tree_spec.js",
       "pdfjs-test/unit/network_spec.js",
       "pdfjs-test/unit/network_utils_spec.js",
+      "pdfjs-test/unit/obj_bin_transform_spec.js",
+      "pdfjs-test/unit/operator_list_dependencies_spec.js",
       "pdfjs-test/unit/parser_spec.js",
+      "pdfjs-test/unit/pattern_spec.js",
       "pdfjs-test/unit/pdf.image_decoders_spec.js",
       "pdfjs-test/unit/pdf.worker_spec.js",
       "pdfjs-test/unit/pdf_find_controller_spec.js",
       "pdfjs-test/unit/pdf_find_utils_spec.js",
       "pdfjs-test/unit/pdf_history_spec.js",
+      "pdfjs-test/unit/pdf_link_service_spec.js",
       "pdfjs-test/unit/pdf_spec.js",
       "pdfjs-test/unit/pdf_viewer.component_spec.js",
       "pdfjs-test/unit/pdf_viewer_spec.js",
+      "pdfjs-test/unit/postscript_spec.js",
       "pdfjs-test/unit/primitives_spec.js",
       "pdfjs-test/unit/scripting_spec.js",
       "pdfjs-test/unit/stream_spec.js",
@@ -125,69 +131,19 @@ async function initializePDFJS(callback) {
   extend(window, jasmineInterface);
 
   // Runner Parameters
-  const queryString = new jasmine.QueryString({
-    getWindowLocation() {
-      return window.location;
-    },
-  });
+  const urls = new jasmine.HtmlReporterV2Urls();
 
-  const config = {
-    failFast: queryString.getParam("failFast"),
-    oneFailurePerSpec: queryString.getParam("oneFailurePerSpec"),
-    hideDisabled: queryString.getParam("hideDisabled"),
-  };
-
-  const random = queryString.getParam("random");
-  if (random !== undefined && random !== "") {
-    config.random = random;
-  }
-
-  const seed = queryString.getParam("seed");
-  if (seed) {
-    config.seed = seed;
-  }
+  env.configure(urls.configFromCurrentUrl());
 
   // Reporters
-  const htmlReporter = new jasmine.HtmlReporter({
-    env,
-    navigateWithNewParam(key, value) {
-      return queryString.navigateWithNewParam(key, value);
-    },
-    addToExistingQueryString(key, value) {
-      return queryString.fullStringWithNewParam(key, value);
-    },
-    getContainer() {
-      return document.body;
-    },
-    createElement() {
-      return document.createElement(...arguments);
-    },
-    createTextNode() {
-      return document.createTextNode(...arguments);
-    },
-    timer: new jasmine.Timer(),
-  });
+  const htmlReporter = new jasmine.HtmlReporterV2({ env, urls });
 
   env.addReporter(htmlReporter);
 
-  if (queryString.getParam("browser")) {
-    const testReporter = new TestReporter(queryString.getParam("browser"));
+  if (urls.queryString.getParam("browser")) {
+    const testReporter = new TestReporter(urls.queryString.getParam("browser"));
     env.addReporter(testReporter);
   }
-
-  // Filter which specs will be run by matching the start of the full name
-  // against the `spec` query param.
-  const specFilter = new jasmine.HtmlSpecFilter({
-    filterString() {
-      return queryString.getParam("spec");
-    },
-  });
-
-  config.specFilter = function (spec) {
-    return specFilter.matches(spec.getFullName());
-  };
-
-  env.configure(config);
 
   // Sets longer timeout.
   jasmine.DEFAULT_TIMEOUT_INTERVAL = 30000;
@@ -201,7 +157,6 @@ async function initializePDFJS(callback) {
 
   function unitTestInit() {
     initializePDFJS(function () {
-      htmlReporter.initialize();
       env.execute();
     });
   }

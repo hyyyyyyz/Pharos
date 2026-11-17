@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2025-12-22 18:11:41"
+	"lastUpdated": "2026-10-01 19:44:01"
 }
 
 /*
@@ -119,18 +119,49 @@ async function scrape(doc, url = doc.location.href) {
 
 	let pdfURL;
 	try {
-		let [{ result }] = await requestJSON(`/api/viewer/v6/htmlfulltext/${recordId}?opid=${opid}`);
+		let [{ result }] = await requestJSON(`/api/viewer/v6/details/${recordId}?opid=${opid}&includeHbrRestrictedLinks=true`);
 		let { links } = result;
 		Z.debug('Links:');
 		Z.debug(links);
-		let downloadLink = links['v2-downloadLinks']?.find(link => link.type === 'pdf');
+		
+		let downloadLink = links?.['v2-downloadLinks']?.find(link => link.type === 'pdf');
 		if (!downloadLink) downloadLink = links.downloadLinks.find(link => link.type === 'pdf');
-		pdfURL = downloadLink.url;
+		
+		let externalLink = links?.['v2-fullTextAndCustomLinks']?.find(link => link.category === 'fullText');
+
+		if (downloadLink) {
+			pdfURL = downloadLink.url;
+			if (pdfURL.includes('/api/')) {
+				// Returns JSON with the URL
+				Zotero.debug('Trying to fetch PDF download link');
+				try {
+					pdfURL = (await requestJSON(pdfURL)).url;
+				}
+				catch (e) {
+					Zotero.debug('Error while fetching PDF download link: ' + e);
+				}
+			}
+			Zotero.debug('Trying v2-downloadLinks[type == pdf]: ' + pdfURL);
+		}
+		else if (externalLink) {
+			Zotero.debug('Trying v2-fullTextAndCustomLinks[category == fullText] via web translation: ' + externalLink.url);
+			let translate = Zotero.loadTranslator('web');
+			let externalDoc = await requestDocument(externalLink.url);
+			translate.setDocument(externalDoc);
+			translate.setHandler('translators', () => {});
+			translate.setHandler('itemDone', (_obj, item) => {
+				pdfURL = item.attachments?.[0]?.url;
+			});
+			translate.setHandler('error', () => {});
+			translate.setTranslator(await translate.getTranslators());
+			await translate.translate();
+		}
 	}
 	catch (e) {
 		Zotero.debug('Error while locating PDF download link: ' + e);
-		pdfURL = `/linkprocessor/v2-pdf?recordId=${recordId}&sourceRecordId=${recordId}&profileIdentifier=${opid}&intent=download&lang=en`
 	}
+
+	pdfURL ||= `/linkprocessor/v2-pdf?recordId=${recordId}&sourceRecordId=${recordId}&profileIdentifier=${opid}&intent=download&lang=en`;
 
 	let risText = await requestText(risURL);
 	// Z.debug(risText)
@@ -148,6 +179,8 @@ async function scrape(doc, url = doc.location.href) {
 			}
 		}
 		item.attachments.push({ url: pdfURL, title: "Full text PDF", mimeType: "application/pdf" });
+		// EBSCO now emits N1 tags with taxonomies ("Article", "Academic Journal")
+		item.notes = [];
 		item.complete();
 	});
 	await translator.translate();

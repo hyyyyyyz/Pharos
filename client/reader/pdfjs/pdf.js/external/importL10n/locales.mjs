@@ -91,7 +91,7 @@ async function downloadL10n(root) {
     await downloadLanguageFiles(root, langCode);
   }
 
-  const removeCodes = [];
+  const rmCodes = [];
   for (const entry of fs.readdirSync(root)) {
     const dirPath = path.join(root, entry),
       stat = fs.lstatSync(dirPath);
@@ -101,14 +101,13 @@ async function downloadL10n(root) {
       entry !== DEFAULT_LOCALE &&
       !langCodes.includes(entry)
     ) {
-      removeCodes.push(entry);
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      rmCodes.push(entry);
     }
   }
-  if (removeCodes.length) {
+  if (rmCodes.length) {
     console.log(
-      "\nConsider removing the following unmaintained locales:\n" +
-        removeCodes.join(", ") +
-        "\n"
+      `\nRemoved the following unmaintained locales: ${rmCodes.join(", ")}\n`
     );
   }
 }

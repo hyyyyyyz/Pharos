@@ -15,12 +15,17 @@
 
 import {
   getVerbosityLevel,
+  isNodeJS,
   setVerbosityLevel,
   VerbosityLevel,
 } from "../../src/shared/util.js";
-import { Jbig2Error, Jbig2Image } from "../../src/core/jbig2.js";
+import {
+  Jbig2Error,
+  JBig2CCITTFaxImage as Jbig2Image,
+} from "../../src/core/jbig2_ccittFax.js";
 import { JpegError, JpegImage } from "../../src/core/jpg.js";
 import { JpxError, JpxImage } from "../../src/core/jpx.js";
+import { DefaultFileReaderFactory } from "./test_utils.js";
 
 const expectedAPI = Object.freeze({
   getVerbosityLevel,
@@ -35,6 +40,17 @@ const expectedAPI = Object.freeze({
 });
 
 describe("pdfimage_api", function () {
+  it("compiles the bundled OpenJPEG decoder without using the JavaScript fallback", async function () {
+    // Rendering can succeed through the fallback even when the runtime cannot
+    // compile the bundled WASM decoder.
+    const bytes = await DefaultFileReaderFactory.fetch({
+      path: isNodeJS
+        ? "./build/generic-legacy/web/wasm/openjpeg.wasm"
+        : "../../build/generic/web/wasm/openjpeg.wasm",
+    });
+    await expectAsync(WebAssembly.compile(bytes)).toBeResolved();
+  });
+
   it("checks that the *official* PDF.js-image decoders API exposes the expected functionality", async function () {
     // eslint-disable-next-line no-unsanitized/method
     const pdfimageAPI = await import(

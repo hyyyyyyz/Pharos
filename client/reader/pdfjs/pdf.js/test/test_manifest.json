@@ -46,6 +46,32 @@
     "type": "eq"
   },
   {
+    "id": "tracemonkey-partial",
+    "file": "pdfs/tracemonkey.pdf",
+    "md5": "9a192d8b1a7dc652a19835f6f08098bd",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
+    "id": "tracemonkey-partial-2",
+    "file": "pdfs/tracemonkey.pdf",
+    "md5": "9a192d8b1a7dc652a19835f6f08098bd",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.5,
+      "maxX": 0.75,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "tracemonkey-renderTaskOnContinue",
     "file": "pdfs/tracemonkey.pdf",
     "md5": "9a192d8b1a7dc652a19835f6f08098bd",
@@ -61,6 +87,19 @@
     "type": "eq"
   },
   {
+    "id": "issue17147-partial",
+    "file": "pdfs/issue17147.pdf",
+    "md5": "47012ba13ee819ec0af278c9d943f010",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue13130",
     "file": "pdfs/issue13130.pdf",
     "md5": "318518299132fe3b52252ca43a69a23e",
@@ -71,6 +110,22 @@
     "type": "eq"
   },
   {
+    "id": "issue13130-partial",
+    "file": "pdfs/issue13130.pdf",
+    "md5": "318518299132fe3b52252ca43a69a23e",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 2,
+    "lastPage": 2,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue16395",
     "file": "pdfs/issue16395.pdf",
     "md5": "a5de985711ec27cd2a2ed97d5f1c536c",
@@ -79,6 +134,22 @@
     "firstPage": 3,
     "lastPage": 3,
     "type": "eq"
+  },
+  {
+    "id": "issue16395-partial",
+    "file": "pdfs/issue16395.pdf",
+    "md5": "a5de985711ec27cd2a2ed97d5f1c536c",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 3,
+    "lastPage": 3,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue16432",
@@ -97,6 +168,21 @@
     "link": true,
     "lastPage": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue16464-partial",
+    "file": "pdfs/issue16464.pdf",
+    "md5": "2bd97ff909e2185605788daa70de38ee",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "tracemonkey-fbf",
@@ -190,6 +276,22 @@
     "firstPage": 2,
     "lastPage": 2,
     "type": "eq"
+  },
+  {
+    "id": "issue11532-partial",
+    "file": "pdfs/issue11532.pdf",
+    "md5": "9216481d259ae2b8d747236e745cbc80",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 2,
+    "lastPage": 2,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue14256",
@@ -321,6 +423,23 @@
     "annotations": true
   },
   {
+    "id": "issue13915-partial",
+    "file": "pdfs/issue13915.pdf",
+    "md5": "fef3108733bbf80ea8551feedb427b1c",
+    "rounds": 1,
+    "firstPage": 51,
+    "lastPage": 51,
+    "link": true,
+    "type": "eq",
+    "annotations": true,
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue15516",
     "file": "pdfs/issue15516_reduced.pdf",
     "md5": "a30be78c73d13aa6ff890834ce69adc1",
@@ -366,6 +485,20 @@
     "type": "eq"
   },
   {
+    "id": "bug911034-partial",
+    "file": "pdfs/bug911034.pdf",
+    "md5": "54ee432a4e16b26b242fbf549cdad177",
+    "rounds": 1,
+    "link": false,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "bug920426",
     "file": "pdfs/bug920426.pdf",
     "md5": "2fd118b44513afb22509c3584388cc29",
@@ -396,6 +529,21 @@
     "type": "eq"
   },
   {
+    "id": "bug1734802-partial",
+    "file": "pdfs/bug1734802.pdf",
+    "md5": "a23ad8af95ffca3876e110a5f4dec9bc",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 3,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "bug1753983",
     "file": "pdfs/bug1753983.pdf",
     "md5": "432be86262e5071176c49713ce458031",
@@ -410,6 +558,20 @@
     "rounds": 1,
     "link": true,
     "type": "eq"
+  },
+  {
+    "id": "issue15604-partial",
+    "file": "pdfs/issue15604.pdf",
+    "md5": "505040e5634434ae97118a4c39bf27e5",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "bug921760",
@@ -497,6 +659,22 @@
     "type": "eq"
   },
   {
+    "id": "bug1443140-partial",
+    "file": "pdfs/bug1443140.pdf",
+    "md5": "8f9347b0d5620537850b24b8385b0982",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 4,
+    "lastPage": 4,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "bug1473809",
     "file": "pdfs/bug1473809.pdf",
     "md5": "4b1ca51cf8cad58a1ce0618667341c76",
@@ -568,6 +746,39 @@
     "lastPage": 100,
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "intelisa-partial",
+    "file": "pdfs/intelisa.pdf",
+    "md5": "24643ebe348a568cfe6a532055c71493",
+    "link": true,
+    "firstPage": 22,
+    "lastPage": 22,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "Two one-bit differences at the bottom edge of page 22"
+  },
+  {
+    "id": "intelisa-84-partial",
+    "file": "pdfs/intelisa.pdf",
+    "md5": "24643ebe348a568cfe6a532055c71493",
+    "link": true,
+    "firstPage": 84,
+    "lastPage": 84,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue2128",
@@ -836,6 +1047,20 @@
     "type": "eq"
   },
   {
+    "id": "wnv_chinese-pdf-partial",
+    "file": "pdfs/wnv_chinese.pdf",
+    "md5": "db682638e68391125e8982d3c984841e",
+    "link": true,
+    "rounds": 1,
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "type": "eq"
+  },
+  {
     "id": "i9-pdf",
     "file": "pdfs/i9.pdf",
     "md5": "ba7cd54fdff083bb389295bc0415f6c5",
@@ -849,6 +1074,19 @@
     "md5": "f4c3e91c181b510929ade67c1e34c5c5",
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue12798_page1_reduced-partial",
+    "file": "pdfs/issue12798_page1_reduced.pdf",
+    "md5": "f4c3e91c181b510929ade67c1e34c5c5",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue15557",
@@ -1002,6 +1240,21 @@
     "type": "eq"
   },
   {
+    "id": "artofwar-partial",
+    "file": "pdfs/artofwar.pdf",
+    "md5": "7bdd51c327b74f1f7abdd90eedb2f912",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "TODO: I cannot figure out what the mismatch is. 'Circle differences' circles something, but then with the 'big pixels' view there are no differences."
+  },
+  {
     "id": "issue3371",
     "file": "pdfs/issue3371.pdf",
     "password": "ELXRTQWS",
@@ -1082,6 +1335,21 @@
     "type": "eq"
   },
   {
+    "id": "wdsg_fitc-partial",
+    "file": "pdfs/wdsg_fitc.pdf",
+    "md5": "5bb1c2b83705d4cdfc43197ee74f07f9",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "Two one-bit differences at the bottom edge of page 11"
+  },
+  {
     "id": "issue6769_no_matrix",
     "file": "pdfs/issue6769_no_matrix.pdf",
     "md5": "f88806137fb4592975052ff3508d7b1e",
@@ -1095,6 +1363,21 @@
     "link": true,
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "unix01-partial",
+    "file": "pdfs/unix01.pdf",
+    "md5": "2742999f0bf9b9c035dbb0736096e220",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "A one-bit difference at the bottom edge of page 29"
   },
   {
     "id": "issue4909",
@@ -1144,6 +1427,20 @@
     "link": true,
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "fit11-talk-partial",
+    "file": "pdfs/fit11-talk.pdf",
+    "md5": "eb7b224107205db4fea9f7df0185f77d",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "fips197",
@@ -1242,6 +1539,21 @@
     "rounds": 1,
     "lastPage": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue8078-partial",
+    "file": "pdfs/issue8078.pdf",
+    "md5": "8b7d74bc24b4157393e4e88a511c05f1",
+    "link": true,
+    "rounds": 1,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "bug1811668",
@@ -1370,6 +1682,19 @@
     "md5": "e68c315d6349530180dd90f93027147e",
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue13561_reduced-partial",
+    "file": "pdfs/issue13561_reduced.pdf",
+    "md5": "e68c315d6349530180dd90f93027147e",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue5202",
@@ -1622,6 +1947,14 @@
     "link": true,
     "type": "eq",
     "forms": true
+  },
+  {
+    "id": "issue20426",
+    "file": "pdfs/issue20426.pdf",
+    "md5": "b9a753df595f1dd30505a67c96373dd8",
+    "link": true,
+    "rounds": 1,
+    "type": "eq"
   },
   {
     "id": "issue13845",
@@ -1992,6 +2325,20 @@
     "type": "eq"
   },
   {
+    "id": "issue9458-partial",
+    "file": "pdfs/issue9458.pdf",
+    "md5": "ee54358d8b2fdc75dc8da5220cf8e8da",
+    "rounds": 1,
+    "link": false,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue5501",
     "file": "pdfs/issue5501.pdf",
     "md5": "55a60699728fc92f491a2d7d490474e4",
@@ -2177,6 +2524,20 @@
     "about": "Optional marked content."
   },
   {
+    "id": "issue269_1-partial",
+    "file": "pdfs/issue269_1.pdf",
+    "md5": "ab932f697b4d2e2bf700de15a8efea9c",
+    "rounds": 1,
+    "type": "eq",
+    "about": "Optional marked content.",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue269_2",
     "file": "pdfs/issue269_2.pdf",
     "md5": "0f553510850ee17c87fbab3fac564165",
@@ -2225,6 +2586,21 @@
     "type": "eq"
   },
   {
+    "id": "issue10491-partial",
+    "file": "pdfs/issue10491.pdf",
+    "md5": "0759ec46739b13bb0b66170a18d33d4f",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 13,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue10542",
     "file": "pdfs/issue10542_reduced.pdf",
     "md5": "92406cb903be6c7a63221ba61fcb8eaf",
@@ -2261,6 +2637,15 @@
     "type": "load"
   },
   {
+    "id": "pr5134",
+    "file": "pdfs/pr5134.pdf",
+    "md5": "6a701a163472e071a2519348b55cbac1",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 2,
+    "type": "eq"
+  },
+  {
     "id": "pr8808",
     "file": "pdfs/pr8808.pdf",
     "md5": "bdac6051a98fd8dcfc5344b05fed06f4",
@@ -2268,6 +2653,21 @@
     "link": true,
     "lastPage": 1,
     "type": "eq"
+  },
+  {
+    "id": "pr8808-partial",
+    "file": "pdfs/pr8808.pdf",
+    "md5": "bdac6051a98fd8dcfc5344b05fed06f4",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue5599",
@@ -2427,6 +2827,13 @@
     "type": "eq"
   },
   {
+    "id": "issue20439",
+    "file": "pdfs/issue20439.pdf",
+    "md5": "3c7e888b26ff00943ec1610d93235efc",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
     "id": "issue15942",
     "file": "pdfs/issue15942.pdf",
     "md5": "d690e16e6a3a8486ebf7289a9c43ba39",
@@ -2434,6 +2841,21 @@
     "link": true,
     "lastPage": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue15942-partial",
+    "file": "pdfs/issue15942.pdf",
+    "md5": "d690e16e6a3a8486ebf7289a9c43ba39",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "bug1046314",
@@ -2490,6 +2912,19 @@
     "md5": "c534f74866ba8ada56010d19b57231ec",
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue12295-partial",
+    "file": "pdfs/issue12295.pdf",
+    "md5": "c534f74866ba8ada56010d19b57231ec",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "bug1245391-text",
@@ -2588,6 +3023,19 @@
     "type": "eq"
   },
   {
+    "id": "issue14953-partial",
+    "file": "pdfs/issue14953.pdf",
+    "md5": "dd7d6cb92e58d75a0eb8c0476a3bc64a",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue14990",
     "file": "pdfs/issue14990.pdf",
     "md5": "0fb397e1506acc4ab8e68c18212a1362",
@@ -2596,6 +3044,22 @@
     "firstPage": 25,
     "lastPage": 25,
     "type": "eq"
+  },
+  {
+    "id": "issue14990-partial",
+    "file": "pdfs/issue14990.pdf",
+    "md5": "0fb397e1506acc4ab8e68c18212a1362",
+    "link": true,
+    "rounds": 1,
+    "firstPage": 25,
+    "lastPage": 25,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "extgstate-text",
@@ -2795,6 +3259,19 @@
     "type": "eq"
   },
   {
+    "id": "bug1365930-partial",
+    "file": "pdfs/bug1365930.pdf",
+    "md5": "0db06efce060d82da16a79e8bd762a1c",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "bug1337429",
     "file": "pdfs/bug1337429.pdf",
     "md5": "4e6e4dfdab884e9465bdce657b590028",
@@ -2852,12 +3329,41 @@
     "type": "eq"
   },
   {
+    "id": "bug810214-partial",
+    "file": "pdfs/bug810214.pdf",
+    "md5": "2b7243178f5dd5fd3edc7b6649e4bdf3",
+    "link": true,
+    "rounds": 1,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "Type3WordSpacing",
     "file": "pdfs/Type3WordSpacing.pdf",
     "md5": "8c75440e5b95cf521d186f862b404516",
     "link": false,
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "Type3WordSpacing-partial",
+    "file": "pdfs/Type3WordSpacing.pdf",
+    "md5": "8c75440e5b95cf521d186f862b404516",
+    "link": false,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue19954",
@@ -2928,6 +3434,22 @@
     "lastPage": 2,
     "type": "eq",
     "about": "Type3 fonts with pattern resources; both pages need to be tested, otherwise the bug won't manifest."
+  },
+  {
+    "id": "issue16127-partial",
+    "file": "pdfs/issue16127.pdf",
+    "md5": "42714567a818876f51ef960df21600f5",
+    "link": true,
+    "rounds": 1,
+    "firstPage": 1,
+    "lastPage": 2,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "doc_actions",
@@ -3313,6 +3835,21 @@
     "type": "eq"
   },
   {
+    "id": "tutorial-partial",
+    "file": "pdfs/tutorial.pdf",
+    "md5": "6e122f618c27f3aa9a689423e3be6b8d",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "Text antialiasing is rendered differently, but only in headless firefox (used in the bots)"
+  },
+  {
     "id": "geothermal.pdf",
     "file": "pdfs/geothermal.pdf",
     "md5": "ecffc0ce38ffdf1e90dc952f186e9a91",
@@ -3419,6 +3956,20 @@
     "md5": "b1bbd72ca6522ae1502aa26320f81994",
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue1905-partial",
+    "file": "pdfs/issue1905.pdf",
+    "md5": "b1bbd72ca6522ae1502aa26320f81994",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": true
   },
   {
     "id": "issue918",
@@ -3589,6 +4140,20 @@
     "rounds": 1,
     "link": false,
     "type": "eq"
+  },
+  {
+    "id": "issue5804-partial",
+    "file": "pdfs/issue5804.pdf",
+    "md5": "442f27939edb6aaf173ceff38d69bb14",
+    "rounds": 1,
+    "link": false,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue7446",
@@ -4001,6 +4566,13 @@
     "type": "eq"
   },
   {
+    "id": "issue20453",
+    "file": "pdfs/issue20453.pdf",
+    "md5": "20b5f2a2ea2933328edf023ef48a0759",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
     "id": "issue19611",
     "file": "pdfs/issue19611.pdf",
     "md5": "169dc6df1c43dcb4659b2ddb6a4b39e4",
@@ -4323,6 +4895,7 @@
     "type": "eq"
   },
   {
+    "TODO": "Very slow when recording",
     "id": "issue12810",
     "file": "pdfs/issue12810.pdf",
     "md5": "585e19781308603dd706f941b1ace774",
@@ -4521,6 +5094,23 @@
     "type": "eq",
     "optionalContent": {
       "37R": false
+    }
+  },
+  {
+    "id": "issue15719-partial",
+    "file": "pdfs/issue15719.pdf",
+    "md5": "4a58dbe725897e787a93e26abc621191",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "optionalContent": {
+      "37R": false
+    },
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
     }
   },
   {
@@ -4845,6 +5435,19 @@
     "type": "eq"
   },
   {
+    "id": "issue7891_bc0-partial",
+    "file": "pdfs/issue7891_bc0.pdf",
+    "md5": "744a22244a4e4708b7f1691eec155fc8",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue14821",
     "file": "pdfs/issue14821.pdf",
     "md5": "ae77afb0f98c62e6b7fe7f912c84a75c",
@@ -4984,6 +5587,20 @@
     "rounds": 1,
     "link": true,
     "type": "eq"
+  },
+  {
+    "id": "issue4244-partial",
+    "file": "pdfs/issue4244.pdf",
+    "md5": "26845274a32a537182ced1fd693a38b2",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue14462",
@@ -5237,6 +5854,21 @@
     "type": "eq"
   },
   {
+    "id": "issue1466-partial",
+    "file": "pdfs/issue1466.pdf",
+    "md5": "8a8877432e5bb10cfd50d60488d947bb",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "Slightly different (not visible) partial pixel color at the edge of the image"
+  },
+  {
     "id": "bug1064894",
     "file": "pdfs/bug1064894.pdf",
     "md5": "22971b6a24912bca9c773379c10ef18a",
@@ -5337,6 +5969,22 @@
     "firstPage": 6,
     "lastPage": 6,
     "type": "eq"
+  },
+  {
+    "id": "issue6117-partial",
+    "file": "pdfs/issue6117.pdf",
+    "md5": "691f5f8268e07f3831e8293258a68da7",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 6,
+    "lastPage": 6,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue6238",
@@ -5719,6 +6367,22 @@
     "type": "eq"
   },
   {
+    "id": "bug1898802-partial",
+    "file": "pdfs/bug1898802.pdf",
+    "md5": "65c3af306253faa8967982812aff523e",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "knownPartialMismatch": "Slightly different (not visible) single pixel color at the edge of the image"
+  },
+  {
     "id": "issue4890",
     "file": "pdfs/issue4890.pdf",
     "md5": "1666feb4cd26318c2bdbea6a175dce87",
@@ -5970,6 +6634,19 @@
     "type": "eq"
   },
   {
+    "id": "pattern_text_embedded_font-partial",
+    "file": "pdfs/pattern_text_embedded_font.pdf",
+    "md5": "763b1b9efaecb2b5aefea71c39233f56",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue6113",
     "file": "pdfs/issue6113.pdf",
     "md5": "365fa2d369c51ee3ff195dae907b6e25",
@@ -6048,6 +6725,20 @@
     "rounds": 1,
     "type": "eq",
     "about": "Rotated transparency group with blend mode."
+  },
+  {
+    "id": "transparency_group-partial",
+    "file": "pdfs/transparency_group.pdf",
+    "md5": "10391f76434128e5da70cff5fc485ff0",
+    "rounds": 1,
+    "type": "eq",
+    "about": "Rotated transparency group with blend mode.",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue6010_1",
@@ -6343,6 +7034,20 @@
     "about": "CFF font that is drawn with clipping."
   },
   {
+    "id": "issue3584-partial",
+    "file": "pdfs/issue3584.pdf",
+    "md5": "7a00646865a840eefc76f05c588b60ce",
+    "rounds": 1,
+    "type": "eq",
+    "about": "CFF font that is drawn with clipping.",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "prefilled_f1040",
     "file": "pdfs/prefilled_f1040.pdf",
     "md5": "2335da66fb7c2c3b84971597f27785e2",
@@ -6529,6 +7234,23 @@
     "lastPage": 1,
     "link": true,
     "type": "eq"
+  },
+  {
+    "id": "bug887152-partial",
+    "file": "pdfs/bug887152.pdf",
+    "md5": "783a3e7b1de2cf40a47ffe1f36a41d4f",
+    "rounds": 1,
+    "lastPage": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    },
+    "TODO": "There are a ton of one-bit differences in pixel colors",
+    "knownPartialMismatch": true
   },
   {
     "id": "issue11473",
@@ -7372,6 +8094,20 @@
     "type": "eq"
   },
   {
+    "id": "issue4926-partial",
+    "file": "pdfs/issue4926.pdf",
+    "md5": "ed881c8ea2f9bc4be94ecb7f2b2c149b",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue16454",
     "file": "pdfs/issue16454.pdf",
     "md5": "82fe0c54a96667472ce999be7a789199",
@@ -7997,6 +8733,14 @@
     "type": "eq"
   },
   {
+    "id": "ccitt_EndOfBlock_false_nowasm",
+    "file": "pdfs/ccitt_EndOfBlock_false.pdf",
+    "md5": "ce718efe601cd7491dd00651b4790329",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
     "id": "issue9940",
     "file": "pdfs/issue9940.pdf",
     "md5": "6ffef210c4b6cfe423e20430d8af168a",
@@ -8186,6 +8930,22 @@
     "type": "eq"
   },
   {
+    "id": "bug1749563-partial",
+    "file": "pdfs/bug1749563.pdf",
+    "md5": "11294f6071a8dcc25b0e18953cee68fa",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 1,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "issue9186",
     "file": "pdfs/issue9186.pdf",
     "md5": "d151857bb724ab9a291704a45a0b5d7f",
@@ -8302,6 +9062,21 @@
     "link": true,
     "lastPage": 1,
     "type": "eq"
+  },
+  {
+    "id": "issue12306-partial",
+    "file": "pdfs/issue12306.pdf",
+    "md5": "7fd05ba56791238b5a60adc6cc0e7a22",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue3351.1",
@@ -8789,6 +9564,20 @@
     "type": "eq"
   },
   {
+    "id": "bug1791583-partial",
+    "file": "pdfs/bug1791583.pdf",
+    "md5": "1ff6badc865c9a5e9a0dc0b7131ffe28",
+    "link": true,
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
+  },
+  {
     "id": "bug1795263",
     "file": "pdfs/bug1795263.pdf",
     "md5": "af708acbb22c6c9d268240dcf4a39809",
@@ -8959,6 +9748,19 @@
     "md5": "1dc519c06f1dc6f6e594f168080dcde9",
     "rounds": 1,
     "type": "eq"
+  },
+  {
+    "id": "freetext_no_appearance-partial",
+    "file": "pdfs/freetext_no_appearance.pdf",
+    "md5": "1dc519c06f1dc6f6e594f168080dcde9",
+    "rounds": 1,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "freetext_print_no_appearance",
@@ -9176,6 +9978,20 @@
     "rounds": 1,
     "link": true,
     "type": "eq"
+  },
+  {
+    "id": "issue16114-partial",
+    "file": "pdfs/issue16114.pdf",
+    "md5": "c04827ea33692e0f94a5e51716d9aa2e",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue16114-disable-isOffscreenCanvasSupported",
@@ -10472,6 +11288,21 @@
     "rounds": 1,
     "link": true,
     "type": "eq"
+  },
+  {
+    "id": "issue17779-partial",
+    "file": "pdfs/issue17779.pdf",
+    "md5": "764b72e8e56e22662b321b308254fd2b",
+    "talos": false,
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "partial": {
+      "minX": 0.25,
+      "maxX": 0.5,
+      "minY": 0.25,
+      "maxY": 0.5
+    }
   },
   {
     "id": "issue14724",
@@ -12228,5 +13059,1114 @@
     "md5": "ae4f643ee9bb0fd725277a9d1e0fb1df",
     "rounds": 1,
     "type": "load"
+  },
+  {
+    "id": "issue20232",
+    "file": "pdfs/issue20232.pdf",
+    "md5": "cc53e96a8fd9eafbfbb74de564f37047",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20302-save-print",
+    "file": "pdfs/issue20302.pdf",
+    "md5": "d8db2fa1889fd14effcfa5b597b6fe7b",
+    "rounds": 1,
+    "lastPage": 1,
+    "type": "eq",
+    "link": true,
+    "save": true,
+    "print": true,
+    "annotationStorage": {
+      "pdfjs_internal_editor_0": {
+        "annotationType": 3,
+        "color": [0, 0, 0],
+        "fontSize": 10,
+        "value": "Hello World",
+        "pageIndex": 0,
+        "rect": [115, 325, 171, 342],
+        "rotation": 0
+      }
+    }
+  },
+  {
+    "id": "tracemonkey-extract_0_2_12",
+    "file": "pdfs/tracemonkey.pdf",
+    "md5": "9a192d8b1a7dc652a19835f6f08098bd",
+    "rounds": 1,
+    "type": "extract",
+    "includePages": [0, 2, 12],
+    "pageMapping": {
+      "1": 1,
+      "3": 2,
+      "13": 3
+    }
+  },
+  {
+    "id": "bug900822-encrypted-extract_0",
+    "file": "pdfs/bug900822.pdf",
+    "md5": "70e2a3c5922574eeda169c955cf9d084",
+    "rounds": 1,
+    "type": "extract",
+    "includePages": [0],
+    "pageMapping": {
+      "1": 1
+    }
+  },
+  {
+    "id": "xfa_bug1998843",
+    "file": "pdfs/xfa_bug1998843.pdf",
+    "md5": "b7b25e5b05b2b903d0a6727c9f962a91",
+    "link": true,
+    "rounds": 1,
+    "enableXfa": true,
+    "lastPage": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20513",
+    "file": "pdfs/issue20513.pdf",
+    "md5": "19a3a347773518242fa3cf1c04a9a1e4",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20489",
+    "file": "pdfs/issue20489.pdf",
+    "md5": "b85c798b9a4cc2cd4337d335321cc612",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue13425",
+    "file": "pdfs/issue13425.pdf",
+    "md5": "36854e6ad43b8e0446d3d64e8f2950bf",
+    "rounds": 1,
+    "link": true,
+    "type": "eq"
+  },
+  {
+    "id": "issue18062",
+    "file": "pdfs/issue18062.pdf",
+    "md5": "b8fb6d5622f0a2f45be8e26da7de969c",
+    "rounds": 1,
+    "link": true,
+    "type": "eq"
+  },
+  {
+    "id": "JBIG2Globals",
+    "file": "pdfs/JBIG2Globals.pdf",
+    "md5": "78ee015a604678a4efbdcd993e0d77aa",
+    "rounds": 1,
+    "link": true,
+    "type": "eq"
+  },
+  {
+    "id": "JBIG2Globals_nowasm",
+    "file": "pdfs/JBIG2Globals.pdf",
+    "md5": "78ee015a604678a4efbdcd993e0d77aa",
+    "rounds": 1,
+    "link": true,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_and_xnor_halftone",
+    "file": "pdfs/bitmap-composite-and-xnor-halftone.pdf",
+    "md5": "a77d3da5d6c91d6cc655471c038da2f0",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_and_xnor_refine",
+    "file": "pdfs/bitmap-composite-and-xnor-refine.pdf",
+    "md5": "e0c09e61d4a7724f2e1308f187a4c414",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_and_xnor_text",
+    "file": "pdfs/bitmap-composite-and-xnor-text.pdf",
+    "md5": "a6d69e1860c25b0b4e9c424668005e4e",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_and_xnor",
+    "file": "pdfs/bitmap-composite-and-xnor.pdf",
+    "md5": "12c6ada861fd8e421b7d0d6348574341",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_or_xor_replace_halftone",
+    "file": "pdfs/bitmap-composite-or-xor-replace-halftone.pdf",
+    "md5": "8adf5710547917a2d3986e3e610651c8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_or_xor_replace_refine",
+    "file": "pdfs/bitmap-composite-or-xor-replace-refine.pdf",
+    "md5": "03f601e7fe85e0bfcca7089efa40b831",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_or_xor_replace_text",
+    "file": "pdfs/bitmap-composite-or-xor-replace-text.pdf",
+    "md5": "b3e37786c4cfc98923829454f0ec7f21",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_composite_or_xor_replace",
+    "file": "pdfs/bitmap-composite-or-xor-replace.pdf",
+    "md5": "24677d71c5df2d27da552e65805553e2",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_customat_tpgdon",
+    "file": "pdfs/bitmap-customat-tpgdon.pdf",
+    "md5": "da567101b5f54e439d110997fef344de",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_customat",
+    "file": "pdfs/bitmap-customat.pdf",
+    "md5": "f4f1a5dfd6cd95a237e05b72f19762fe",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_10bpp_mmr",
+    "file": "pdfs/bitmap-halftone-10bpp-mmr.pdf",
+    "md5": "1cad7f6f560df2a0111d3593fbc51ebd",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_10bpp",
+    "file": "pdfs/bitmap-halftone-10bpp.pdf",
+    "md5": "4a7857edfb67c241947e4780e65b74b2",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_composite",
+    "file": "pdfs/bitmap-halftone-composite.pdf",
+    "md5": "a46ef5da5687b8a2800ca3555af7d66a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_grid",
+    "file": "pdfs/bitmap-halftone-grid.pdf",
+    "md5": "0efdf0b9d397c52cc4bb68fb51d7f16a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_refine",
+    "file": "pdfs/bitmap-halftone-refine.pdf",
+    "md5": "5cea98829b0d42eb4948e61a1de0b6bc",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_skip_dummy",
+    "file": "pdfs/bitmap-halftone-skip-dummy.pdf",
+    "md5": "46359ae6a5863ad20ba5b4cea3f398d2",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_skip_grid_template1",
+    "file": "pdfs/bitmap-halftone-skip-grid-template1.pdf",
+    "md5": "d21fb5040dca82e703ffb9904cdd25e3",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_skip_grid_template2",
+    "file": "pdfs/bitmap-halftone-skip-grid-template2.pdf",
+    "md5": "ed0e16b55692114dc7fb31aeb16b87c8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_skip_grid_template3",
+    "file": "pdfs/bitmap-halftone-skip-grid-template3.pdf",
+    "md5": "93f9dc98185ea945e9b59f9a151168ff",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_skip_grid",
+    "file": "pdfs/bitmap-halftone-skip-grid.pdf",
+    "md5": "e0452decae31de349addd4e7049885e1",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_template1",
+    "file": "pdfs/bitmap-halftone-template1.pdf",
+    "md5": "63054038653d317330145eb13cfad258",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_template2",
+    "file": "pdfs/bitmap-halftone-template2.pdf",
+    "md5": "0fcb87492a7f214a119688b8032a1023",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone_template3",
+    "file": "pdfs/bitmap-halftone-template3.pdf",
+    "md5": "158d8d260d9307cd68f8bafcf75eaa88",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_halftone",
+    "file": "pdfs/bitmap-halftone.pdf",
+    "md5": "4791f79b95cc89ff85ccb3bfddba8c96",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_initially_unknown_size",
+    "file": "pdfs/bitmap-initially-unknown-size.pdf",
+    "md5": "2841f0d2d16ec8357c7b1908dbbaf351",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_mmr",
+    "file": "pdfs/bitmap-mmr.pdf",
+    "md5": "1a7c5fd82f677a1dc59cdffed59137e6",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_p32_eof",
+    "file": "pdfs/bitmap-p32-eof.pdf",
+    "md5": "7088483fbe20e574d9b27237df59858b",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_randomaccess",
+    "file": "pdfs/bitmap-randomaccess.pdf",
+    "md5": "11a3e831c4a5bc86e3bbdbf8fbd4d68e",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_customat_tpgron",
+    "file": "pdfs/bitmap-refine-customat-tpgron.pdf",
+    "md5": "0a996e86abf30eb4164dba726a57ec1d",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_customat",
+    "file": "pdfs/bitmap-refine-customat.pdf",
+    "md5": "04f33f12b957c270d1d3d75cf13986b3",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_lossless",
+    "file": "pdfs/bitmap-refine-lossless.pdf",
+    "md5": "2d9b2e9254cbf4faf0c4213e5765c269",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_page_subrect",
+    "file": "pdfs/bitmap-refine-page-subrect.pdf",
+    "md5": "2d377f293fc8294737d38cc6f93223e2",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_page",
+    "file": "pdfs/bitmap-refine-page.pdf",
+    "md5": "567edcc44c4b7a97cd6934d126937db0",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_refine",
+    "file": "pdfs/bitmap-refine-refine.pdf",
+    "md5": "ea6ce30d00d2f8830f631a7148a341e7",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_template1_tpgron",
+    "file": "pdfs/bitmap-refine-template1-tpgron.pdf",
+    "md5": "79fde0d9f427bc97df2aabb85fee7ffc",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_template1",
+    "file": "pdfs/bitmap-refine-template1.pdf",
+    "md5": "28d6b6ed08bc11a4e04d0f08cffff475",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine_tpgron",
+    "file": "pdfs/bitmap-refine-tpgron.pdf",
+    "md5": "f2a6d11f7bd2661fda927403fae49e4f",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_refine",
+    "file": "pdfs/bitmap-refine.pdf",
+    "md5": "ea12446bec650af20aa323b12a65e1a0",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_stripe_initially_unknown_height",
+    "file": "pdfs/bitmap-stripe-initially-unknown-height.pdf",
+    "md5": "994f24e1a2342021d96dd4983431360d",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_stripe_last_implicit",
+    "file": "pdfs/bitmap-stripe-last-implicit.pdf",
+    "md5": "43837c2415655455ca65d4b53e213dd8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_stripe_single_no_end_of_stripe",
+    "file": "pdfs/bitmap-stripe-single-no-end-of-stripe.pdf",
+    "md5": "d80a71a28272583170e0a7f914ea9069",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_stripe_single",
+    "file": "pdfs/bitmap-stripe-single.pdf",
+    "md5": "2237ef0a6eaae86581eb5ebe9430af32",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_stripe",
+    "file": "pdfs/bitmap-stripe.pdf",
+    "md5": "0ffde3ed882e92cdbc4b9aa18db24b08",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_big_segmentid",
+    "file": "pdfs/bitmap-symbol-big-segmentid.pdf",
+    "md5": "c8bf7ee5a479c1ee1adf9b1032257b37",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_context_reuse",
+    "file": "pdfs/bitmap-symbol-context-reuse.pdf",
+    "md5": "3d79e2d087515c2fdbed6fec0ad86e91",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_empty",
+    "file": "pdfs/bitmap-symbol-empty.pdf",
+    "md5": "16ff6f22b1d59a7f7bc0ad31ddabfc25",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_manyrefs",
+    "file": "pdfs/issue20439.pdf",
+    "md5": "3c7e888b26ff00943ec1610d93235efc",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_negative_sbdsoffset",
+    "file": "pdfs/bitmap-symbol-negative-sbdsoffset.pdf",
+    "md5": "5169c0dd1f26e79237a65c028d4b580e",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_refine",
+    "file": "pdfs/bitmap-symbol-refine.pdf",
+    "md5": "3322963ec3c2b3652c90af5aac3b58f8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symbolrefine_textrefine",
+    "file": "pdfs/bitmap-symbol-symbolrefine-textrefine.pdf",
+    "md5": "bda5cf6a3dc876de5ac2bc076371b2a7",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symbolrefineone_customat",
+    "file": "pdfs/bitmap-symbol-symbolrefineone-customat.pdf",
+    "md5": "d67f45685e34f20c7fa07e150097f3a0",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symbolrefineone_template1",
+    "file": "pdfs/bitmap-symbol-symbolrefineone-template1.pdf",
+    "md5": "15a39ecea87de8ed1c78c0930aab4bef",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symbolrefineone",
+    "file": "pdfs/bitmap-symbol-symbolrefineone.pdf",
+    "md5": "3746d882563237e2393c71dc7f2e8166",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symbolrefineseveral",
+    "file": "pdfs/bitmap-symbol-symbolrefineseveral.pdf",
+    "md5": "ca9e4e311153891efeb96fe3feb99d04",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuff_texthuff",
+    "file": "pdfs/bitmap-symbol-symhuff-texthuff.pdf",
+    "md5": "ee1856f1df3cf10714580399bb46a625",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuff_texthuffB10B13",
+    "file": "pdfs/bitmap-symbol-symhuff-texthuffB10B13.pdf",
+    "md5": "4350b99f5ead4b659643dffbe272643b",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffB5B3_texthuffB7B9B12",
+    "file": "pdfs/bitmap-symbol-symhuffB5B3-texthuffB7B9B12.pdf",
+    "md5": "ddaba35e1fc50fe5efb4856b56ddd9ac",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffcustom_texthuffcustom",
+    "file": "pdfs/bitmap-symbol-symhuffcustom-texthuffcustom.pdf",
+    "md5": "f263eb271c15cf6e45ca3a5d349b85ab",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffrefine_textrefine",
+    "file": "pdfs/bitmap-symbol-symhuffrefine-textrefine.pdf",
+    "md5": "b08310fef3bc6fb135ae2476222aa7ac",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffrefineone",
+    "file": "pdfs/bitmap-symbol-symhuffrefineone.pdf",
+    "md5": "4ec0a1801baeaaacf92789b80a09bbfd",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffrefineseveral",
+    "file": "pdfs/bitmap-symbol-symhuffrefineseveral.pdf",
+    "md5": "d799afc007ca54c13119a86e71e12023",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_symhuffuncompressed_texthuff",
+    "file": "pdfs/bitmap-symbol-symhuffuncompressed-texthuff.pdf",
+    "md5": "e552a77516645faeb4adda60340337ac",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textbottomleft",
+    "file": "pdfs/bitmap-symbol-textbottomleft.pdf",
+    "md5": "3b8f453aa05baffec624291d4e17f97a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textbottomlefttranspose",
+    "file": "pdfs/bitmap-symbol-textbottomlefttranspose.pdf",
+    "md5": "214e98a76d189932bb912b9031d68446",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textbottomright",
+    "file": "pdfs/bitmap-symbol-textbottomright.pdf",
+    "md5": "e8354ea479cc578aaf62f5105dffb848",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textbottomrighttranspose",
+    "file": "pdfs/bitmap-symbol-textbottomrighttranspose.pdf",
+    "md5": "bbd7f1822bb4da7b4fc9d52ac390a062",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textcomposite",
+    "file": "pdfs/bitmap-symbol-textcomposite.pdf",
+    "md5": "6cb309575ed177c00a12a45f04a7d086",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefine",
+    "file": "pdfs/bitmap-symbol-texthuffrefine.pdf",
+    "md5": "3302283333e831b36e08fbb15a0842fa",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefineB15",
+    "file": "pdfs/bitmap-symbol-texthuffrefineB15.pdf",
+    "md5": "b6d491848685401795404b630561d4db",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefinecustom",
+    "file": "pdfs/bitmap-symbol-texthuffrefinecustom.pdf",
+    "md5": "a9b54b635b9267ae2327ea7803d2abbc",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefinecustomdims",
+    "file": "pdfs/bitmap-symbol-texthuffrefinecustomdims.pdf",
+    "md5": "f0cb756069702611ee77e1c695d5b18a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefinecustompos",
+    "file": "pdfs/bitmap-symbol-texthuffrefinecustompos.pdf",
+    "md5": "ad22f4d6703fd83ededf5d356bcc673b",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefinecustomposdims",
+    "file": "pdfs/bitmap-symbol-texthuffrefinecustomposdims.pdf",
+    "md5": "ca4a404744f6efed9b5016d94d14b0bb",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texthuffrefinecustomsize",
+    "file": "pdfs/bitmap-symbol-texthuffrefinecustomsize.pdf",
+    "md5": "e5568f865bf1f294d67dc7f199871f29",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textrefine_customat",
+    "file": "pdfs/bitmap-symbol-textrefine-customat.pdf",
+    "md5": "1d3aff50c775034420e02cdbfcca0d7c",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textrefine_negative_delta_width",
+    "file": "pdfs/bitmap-symbol-textrefine-negative-delta-width.pdf",
+    "md5": "b5f5825e6fa8bdada571c58df860a727",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_textrefine",
+    "file": "pdfs/bitmap-symbol-textrefine.pdf",
+    "md5": "4a242bf4b85f515d19b53fd3ebb65c8f",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texttopright",
+    "file": "pdfs/bitmap-symbol-texttopright.pdf",
+    "md5": "a69cba023f5abf3c2a6e5626ba56ab44",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texttoprighttranspose",
+    "file": "pdfs/bitmap-symbol-texttoprighttranspose.pdf",
+    "md5": "e0b1fc022bf507a1ccd53d475f1886f4",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol_texttranspose",
+    "file": "pdfs/bitmap-symbol-texttranspose.pdf",
+    "md5": "a23a2c40403d539d4262481bc8e1cd90",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_symbol",
+    "file": "pdfs/bitmap-symbol.pdf",
+    "md5": "0cc955e37519f779444c84a4a4bc6f0b",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template1_customat_tpgdon",
+    "file": "pdfs/bitmap-template1-customat-tpgdon.pdf",
+    "md5": "256d406fd2fab60747d900619245e35c",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template1_customat",
+    "file": "pdfs/bitmap-template1-customat.pdf",
+    "md5": "8a2ac48d97b5042192d2b4a2106f918d",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template1_tpgdon",
+    "file": "pdfs/bitmap-template1-tpgdon.pdf",
+    "md5": "4014fcdc5c263f6174bdd08ce564068a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template1",
+    "file": "pdfs/bitmap-template1.pdf",
+    "md5": "a63bcf2f545950139d3753b1bc0e02de",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template2_customat_tpgdon",
+    "file": "pdfs/bitmap-template2-customat-tpgdon.pdf",
+    "md5": "28e16035900ea4a8e7b3ba32fd71c51b",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template2_customat",
+    "file": "pdfs/bitmap-template2-customat.pdf",
+    "md5": "17f2e6c4968257e94237a1218bccc6fb",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template2_tpgdon",
+    "file": "pdfs/bitmap-template2-tpgdon.pdf",
+    "md5": "648a4345fad43da9e52c190aa61d89b3",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template2",
+    "file": "pdfs/bitmap-template2.pdf",
+    "md5": "809f22283f3d5d2c26ab9de64caf681a",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template3_customat_tpgdon",
+    "file": "pdfs/bitmap-template3-customat-tpgdon.pdf",
+    "md5": "8441c64ded69dea250543ea6cc01f5e1",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template3_customat",
+    "file": "pdfs/bitmap-template3-customat.pdf",
+    "md5": "3a920c2115c751f2bfeff198c04ca6a8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template3_tpgdon",
+    "file": "pdfs/bitmap-template3-tpgdon.pdf",
+    "md5": "11cc6b7f7ae109211c0b7a3d9c7bdee8",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_template3",
+    "file": "pdfs/bitmap-template3.pdf",
+    "md5": "d91f1c341817b8c20a6e8e7fb5c5aaa6",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_tpgdon",
+    "file": "pdfs/bitmap-tpgdon.pdf",
+    "md5": "6bcf8f02d776d87a4972316863f593b3",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_trailing_7fff_stripped_harder_refine",
+    "file": "pdfs/bitmap-trailing-7fff-stripped-harder-refine.pdf",
+    "md5": "38bbef1a67579625ad159ac6634ba79d",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_trailing_7fff_stripped_harder",
+    "file": "pdfs/bitmap-trailing-7fff-stripped-harder.pdf",
+    "md5": "7eadf55c6689431a162fb084fd3970ba",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "jbig2_bitmap_trailing_7fff_stripped",
+    "file": "pdfs/bitmap-trailing-7fff-stripped.pdf",
+    "md5": "157322e2f6b83743635d9994607c1c57",
+    "rounds": 1,
+    "type": "eq",
+    "useWasm": false
+  },
+  {
+    "id": "bomb_giant_contents_image_stream",
+    "file": "pdfs/bomb_giant.pdf",
+    "md5": "e515a9abb11ab74332e57e371bfae61e",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "Brotli-Prototype-FileA",
+    "file": "pdfs/Brotli-Prototype-FileA.pdf",
+    "md5": "9113370932798776ba91c807ce95082e",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20246",
+    "file": "pdfs/issue20246.pdf",
+    "md5": "4ec1d6b41c7a919ca2de8174ba300233",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20668",
+    "file": "pdfs/issue20668.pdf",
+    "md5": "70233922a9354c3708637902a8e22e70",
+    "rounds": 1,
+    "link": true,
+    "lastPage": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20722",
+    "file": "pdfs/issue20722.pdf",
+    "md5": "4a2e58e60973af3004dcfe1ff0be833c",
+    "rounds": 1,
+    "link": true,
+    "firstPage": 171,
+    "lastPage": 171,
+    "type": "eq"
+  },
+  {
+    "id": "sci-notation",
+    "file": "pdfs/sci-notation.pdf",
+    "md5": "ead167e0328f1a1f4f8901cee501a9c4",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "SimFang-variant",
+    "file": "pdfs/SimFang-variant.pdf",
+    "md5": "d412460812cd940917091e8975620faf",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "XiaoBiaoSong",
+    "file": "pdfs/XiaoBiaoSong.pdf",
+    "md5": "7072f6763bf2f0d6df14d5fc86962c5a",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "radial_gradients",
+    "file": "pdfs/radial_gradients.pdf",
+    "md5": "80e8bed66b83928698f008c33de47edd",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "mesh_shading_empty",
+    "file": "pdfs/mesh_shading_empty.pdf",
+    "md5": "5a1bf9cb73010d84b47d91bb66bae27d",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue20930-text",
+    "file": "pdfs/issue20930.pdf",
+    "md5": "321f0901af604a6052baa7b2855a7e3e",
+    "rounds": 1,
+    "type": "text"
+  },
+  {
+    "id": "issue20872",
+    "file": "pdfs/issue20872.pdf",
+    "md5": "2394eea595990d0148b209fe49f035e5",
+    "rounds": 1,
+    "link": true,
+    "type": "eq"
+  },
+  {
+    "id": "issue20914",
+    "file": "pdfs/issue20914.pdf",
+    "md5": "5740b4600e40c6fc920d38f96a74c6a5",
+    "rounds": 1,
+    "link": true,
+    "type": "eq"
+  },
+  {
+    "id": "tiling_patterns_variations",
+    "file": "pdfs/tiling_patterns_variations.pdf",
+    "md5": "2870c3136be00ddd975149b2c7d1e6df",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "function-based-shading",
+    "file": "pdfs/function_based_shading.pdf",
+    "md5": "7796f0131e7d6428c1bf24a73ff13f95",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "pdfspec-radial-gradient",
+    "file": "pdfs/pdf.pdf",
+    "md5": "dbdb23c939d2be09b43126c3c56060c7",
+    "link": true,
+    "firstPage": 1144,
+    "lastPage": 1144,
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue16091",
+    "file": "pdfs/issue16091.pdf",
+    "md5": "ac6b2b69d9b3675b317708ec00aaf56c",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue7821",
+    "file": "pdfs/issue7821.pdf",
+    "md5": "7f0f390a70228fffe95835518ec266c5",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue21068",
+    "file": "pdfs/issue21068.pdf",
+    "md5": "69558d166186923ad9d639d91884dbd6",
+    "rounds": 1,
+    "type": "eq",
+    "print": true,
+    "annotationStorage": {
+      "27R": {
+        "value": "123"
+      },
+      "28R": {
+        "value": "123"
+      },
+      "29R": {
+        "value": "1234"
+      },
+      "30R": {
+        "value": "123"
+      }
+    }
+  },
+  {
+    "id": "issue21089",
+    "file": "pdfs/issue21089.pdf",
+    "md5": "0ae3954d2f24151dfc36ef717c8afbde",
+    "link": true,
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "recursiveCompositGlyf",
+    "file": "pdfs/recursiveCompositGlyf.pdf",
+    "md5": "e4e106d20e4af10d7a5f1a5da02db66f",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue19634",
+    "file": "pdfs/issue19634.pdf",
+    "md5": "ae33892db2a2421ec7c9c3e2aee07205",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue13520",
+    "file": "pdfs/issue13520.pdf",
+    "md5": "5a690e2303604441308f808b5fc33e22",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "issue17784",
+    "file": "pdfs/issue17784.pdf",
+    "md5": "e92178bb5ca8d6cd6f79868470adbe1d",
+    "link": true,
+    "rounds": 1,
+    "firstPage": 3,
+    "lastPage": 3,
+    "type": "eq"
+  },
+  {
+    "id": "issue21126",
+    "file": "pdfs/issue21126.pdf",
+    "md5": "29c23022ab3d983733e1ee37fd0bc785",
+    "rounds": 1,
+    "type": "eq"
+  },
+  {
+    "id": "bug2022700",
+    "file": "pdfs/bug2022700.pdf",
+    "md5": "27c147191aa76a9f9916b3ede76a9523",
+    "link": true,
+    "rounds": 1,
+    "firstPage": 1,
+    "lastPage": 1,
+    "save": true,
+    "print": true,
+    "annotationStorage": {
+      "35R": {
+        "value": true
+      }
+    },
+    "type": "eq"
   }
 ]

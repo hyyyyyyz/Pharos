@@ -14,12 +14,10 @@
  */
 
 class ProxyHandler {
-  constructor() {
-    // Don't dispatch an event for those properties.
-    //  - delay: allow to delay field redraw until delay is set to false.
-    //    Likely it's useless to implement that stuff.
-    this.nosend = new Set(["delay"]);
-  }
+  // Don't dispatch an event for those properties.
+  //  - delay: allow to delay field redraw until delay is set to false.
+  //    Likely it's useless to implement that stuff.
+  nosend = new Set(["delay"]);
 
   get(obj, prop) {
     // script may add some properties to the object

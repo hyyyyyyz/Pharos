@@ -1,4 +1,5 @@
 import View from './common/view';
+import pdf from '../demo/pdf';
 import epub from '../demo/epub';
 import snapshot from '../demo/snapshot';
 
@@ -8,6 +9,9 @@ window.createView = (options) => {
 	let view = new View({
 		...options,
 		container: document.getElementById('view'),
+		onInitialized: () => {
+			console.log('Initialized view');
+		},
 		onSaveAnnotations: (annotations) => {
 			// New annotation was created or existing was modified. Although, view, probably, won't need
 			// to modify existing annotations for now
@@ -17,6 +21,18 @@ window.createView = (options) => {
 		// will happen outside the view
 		onSetOutline: (outline) => {
 			console.log('Set outline', outline);
+		},
+		onRequestPassword: () => {
+			console.log('Request password');
+		},
+		onSetThumbnails: (thumbnails) => {
+			console.log('Set thumbnails', thumbnails);
+		},
+		onSetPageLabels: (pageLabels) => {
+			console.log('Set page labels', pageLabels);
+		},
+		onDeleteAnnotations: (ids) => {
+			console.log('Delete annotations', ids);
 		},
 		onSelectAnnotations: (ids) => {
 			console.log('Select annotations', ids);
@@ -80,8 +96,12 @@ async function main() {
 	let queryString = window.location.search;
 	let urlParams = new URLSearchParams(queryString);
 	let type = urlParams.get('type') || 'snapshot';
+	let platform = urlParams.get('platform') || (/Android/.test(navigator.userAgent) ? 'android' : undefined);
 	let demo;
-	if (type === 'epub') {
+	if (type === 'pdf') {
+		demo = pdf;
+	}
+	else if (type === 'epub') {
 		demo = epub;
 	}
 	else if (type === 'snapshot') {
@@ -90,10 +110,12 @@ async function main() {
 	let res = await fetch(demo.fileName);
 	window.createView({
 		type,
+		platform,
 		data: {
 			buf: new Uint8Array(await res.arrayBuffer()),
 		},
 		annotations: demo.annotations,
+		viewState: demo.state,
 		// location: {
 		// 	annotationID: 123
 		// },

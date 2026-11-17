@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Main Title",
+    "startRef": "0",
+    "children": [
+      {
+        "title": "Section One",
+        "startRef": "2"
+      },
+      {
+        "title": "Section Two",
+        "startRef": "5",
+        "children": [
+          {
+            "title": "Subsection",
+            "startRef": "7"
+          }
+        ]
+      },
+      {
+        "title": "Navigation Heading",
+        "startRef": "11"
+      },
+      {
+        "title": "NFC Stress Tests",
+        "startRef": "14"
+      }
+    ]
+  }
+]

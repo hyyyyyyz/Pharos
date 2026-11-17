@@ -52,18 +52,14 @@ class App extends PDFObject {
     );
 
     this._timeoutIds = new WeakMap();
-    if (typeof FinalizationRegistry !== "undefined") {
-      // About setTimeOut/setInterval return values (specs):
-      //   The return value of this method must be held in a
-      //   JavaScript variable.
-      //   Otherwise, the timeout object is subject to garbage-collection,
-      //   which would cause the clock to stop.
-      this._timeoutIdsRegistry = new FinalizationRegistry(
-        this._cleanTimeout.bind(this)
-      );
-    } else {
-      this._timeoutIdsRegistry = null;
-    }
+    // About setTimeOut/setInterval return values (specs):
+    //   The return value of this method must be held in a
+    //   JavaScript variable.
+    //   Otherwise, the timeout object is subject to garbage-collection,
+    //   which would cause the clock to stop.
+    this._timeoutIdsRegistry = new FinalizationRegistry(
+      this._cleanTimeout.bind(this)
+    );
 
     this._timeoutCallbackIds = new Map();
     this._timeoutCallbackId = USERACTIVATION_CALLBACKID + 1;
@@ -113,12 +109,12 @@ class App extends PDFObject {
     const timeout = Object.create(null);
     const id = { callbackId, interval };
     this._timeoutIds.set(timeout, id);
-    this._timeoutIdsRegistry?.register(timeout, id);
+    this._timeoutIdsRegistry.register(timeout, id);
     return timeout;
   }
 
   _unregisterTimeout(timeout) {
-    this._timeoutIdsRegistry?.unregister(timeout);
+    this._timeoutIdsRegistry.unregister(timeout);
 
     const data = this._timeoutIds.get(timeout);
     if (!data) {
@@ -152,13 +148,10 @@ class App extends PDFObject {
   }
 
   static _getLanguage(language) {
-    const [main, sub] = language.toLowerCase().split(/[-_]/);
+    const [main, sub] = language.toLowerCase().split(/[-_]/, 2);
     switch (main) {
       case "zh":
-        if (sub === "cn" || sub === "sg") {
-          return "CHS";
-        }
-        return "CHT";
+        return sub === "cn" || sub === "sg" ? "CHS" : "CHT";
       case "da":
         return "DAN";
       case "de":
@@ -178,10 +171,7 @@ class App extends PDFObject {
       case "no":
         return "NOR";
       case "pt":
-        if (sub === "br") {
-          return "PTB";
-        }
-        return "ENU";
+        return sub === "br" ? "PTB" : "ENU";
       case "fi":
         return "SUO";
       case "SV":
@@ -249,13 +239,10 @@ class App extends PDFObject {
   }
 
   get fs() {
-    if (this._fs === null) {
-      this._fs = new Proxy(
-        new FullScreen({ send: this._send }),
-        this._proxyHandler
-      );
-    }
-    return this._fs;
+    return (this._fs ??= new Proxy(
+      new FullScreen({ send: this._send }),
+      this._proxyHandler
+    ));
   }
 
   set fs(_) {
@@ -356,13 +343,10 @@ class App extends PDFObject {
   }
 
   get thermometer() {
-    if (this._thermometer === null) {
-      this._thermometer = new Proxy(
-        new Thermometer({ send: this._send }),
-        this._proxyHandler
-      );
-    }
-    return this._thermometer;
+    return (this._thermometer ??= new Proxy(
+      new Thermometer({ send: this._send }),
+      this._proxyHandler
+    ));
   }
 
   set thermometer(_) {

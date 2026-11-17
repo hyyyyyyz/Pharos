@@ -15,6 +15,7 @@
 
 /** @typedef {import("../src/display/api").PDFPageProxy} PDFPageProxy */
 
+import { FeatureTest, makeMap, shadow } from "pdfjs-lib";
 import { removeNullCharacters } from "./ui_utils.js";
 
 const PDF_ROLE_TO_HTML_ROLE = {
@@ -60,8 +61,8 @@ const PDF_ROLE_TO_HTML_ROLE = {
   TR: "row",
   TH: "columnheader",
   TD: "cell",
-  THead: "columnheader",
-  TBody: null,
+  THead: "rowgroup",
+  TBody: "rowgroup",
   TFoot: null,
   // Standard structure type Caption
   Caption: null,
@@ -72,6 +73,94 @@ const PDF_ROLE_TO_HTML_ROLE = {
   // standard structure type Artifact
   Artifact: null,
 };
+
+const MathMLElements = new Set([
+  "math",
+  "merror",
+  "mfrac",
+  "mi",
+  "mmultiscripts",
+  "mn",
+  "mo",
+  "mover",
+  "mpadded",
+  "mprescripts",
+  "mroot",
+  "mrow",
+  "ms",
+  "mspace",
+  "msqrt",
+  "mstyle",
+  "msub",
+  "msubsup",
+  "msup",
+  "mtable",
+  "mtd",
+  "mtext",
+  "mtr",
+  "munder",
+  "munderover",
+  "semantics",
+]);
+const MathMLNamespace = "http://www.w3.org/1998/Math/MathML";
+
+class MathMLSanitizer {
+  static get sanitizer() {
+    // From https://w3c.github.io/mathml-docs/mathml-safe-list.
+
+    return shadow(
+      this,
+      "sanitizer",
+      FeatureTest.isSanitizerSupported
+        ? new Sanitizer({
+            elements: [...MathMLElements].map(name => ({
+              name,
+              namespace: MathMLNamespace,
+            })),
+            replaceWithChildrenElements: [
+              {
+                name: "maction",
+                namespace: MathMLNamespace,
+              },
+            ],
+            attributes: [
+              "dir",
+              "displaystyle",
+              "mathbackground",
+              "mathcolor",
+              "mathsize",
+              "scriptlevel",
+              "encoding",
+              "display",
+              "linethickness",
+              "intent",
+              "arg",
+              "form",
+              "fence",
+              "separator",
+              "lspace",
+              "rspace",
+              "stretchy",
+              "symmetric",
+              "maxsize",
+              "minsize",
+              "largeop",
+              "movablelimits",
+              "width",
+              "height",
+              "depth",
+              "voffset",
+              "accent",
+              "accentunder",
+              "columnspan",
+              "rowspan",
+            ],
+            comments: false,
+          })
+        : null
+    );
+  }
+}
 
 const HEADING_PATTERN = /^H(\d+)$/;
 
@@ -93,6 +182,10 @@ class StructTreeLayerBuilder {
   #rawDims;
 
   #elementsToAddToTextLayer = null;
+
+  #elementsToHideInTextLayer = null;
+
+  #elementsToStealFromTextLayer = null;
 
   /**
    * @param {StructTreeLayerBuilderOptions} options
@@ -157,12 +250,9 @@ class StructTreeLayerBuilder {
       const label = removeNullCharacters(alt);
       for (const child of structElement.children) {
         if (child.type === "annotation") {
-          let attrs = this.#elementAttributes.get(child.id);
-          if (!attrs) {
-            attrs = new Map();
-            this.#elementAttributes.set(child.id, attrs);
-          }
-          attrs.set("aria-label", label);
+          this.#elementAttributes
+            .getOrInsertComputed(child.id, makeMap)
+            .set("aria-label", label);
           added = true;
         }
       }
@@ -214,36 +304,128 @@ class StructTreeLayerBuilder {
     return true;
   }
 
-  addElementsToTextLayer() {
-    if (!this.#elementsToAddToTextLayer) {
-      return;
+  updateTextLayer() {
+    if (this.#elementsToAddToTextLayer) {
+      for (const [id, img] of this.#elementsToAddToTextLayer) {
+        document.getElementById(id)?.append(img);
+      }
+      this.#elementsToAddToTextLayer.clear();
+      this.#elementsToAddToTextLayer = null;
     }
-    for (const [id, img] of this.#elementsToAddToTextLayer) {
-      document.getElementById(id)?.append(img);
+    if (this.#elementsToHideInTextLayer) {
+      for (const id of this.#elementsToHideInTextLayer) {
+        const elem = document.getElementById(id);
+        if (elem) {
+          elem.ariaHidden = true;
+        }
+      }
+      this.#elementsToHideInTextLayer.length = 0;
+      this.#elementsToHideInTextLayer = null;
     }
-    this.#elementsToAddToTextLayer.clear();
-    this.#elementsToAddToTextLayer = null;
+    if (this.#elementsToStealFromTextLayer) {
+      for (
+        let i = 0, ii = this.#elementsToStealFromTextLayer.length;
+        i < ii;
+        i += 2
+      ) {
+        const element = this.#elementsToStealFromTextLayer[i];
+        const ids = this.#elementsToStealFromTextLayer[i + 1];
+        let textContent = "";
+        for (const id of ids) {
+          const elem = document.getElementById(id);
+          if (elem) {
+            textContent += elem.textContent.trim() || "";
+            // Aria-hide the element in order to avoid duplicate reading of the
+            // math content by screen readers.
+            elem.ariaHidden = "true";
+          }
+        }
+        if (textContent) {
+          element.textContent = textContent;
+        }
+      }
+      this.#elementsToStealFromTextLayer.length = 0;
+      this.#elementsToStealFromTextLayer = null;
+    }
   }
 
-  #walk(node) {
+  #collectIds(node, ids) {
+    if (!node) {
+      return;
+    }
+    if ("id" in node) {
+      ids.push(node.id);
+    }
+    for (const kid of node.children || []) {
+      this.#collectIds(kid, ids);
+    }
+  }
+
+  #walk(node, parentNodes = []) {
     if (!node) {
       return null;
     }
 
-    const element = document.createElement("span");
+    let element;
+    let visitChildren = true;
     if ("role" in node) {
       const { role } = node;
+      if (MathMLElements.has(role)) {
+        element = document.createElementNS(MathMLNamespace, role);
+        const ids = [];
+        (this.#elementsToStealFromTextLayer ||= []).push(element, ids);
+        for (const { type, id } of node.children || []) {
+          if (type === "content" && id) {
+            ids.push(id);
+          }
+        }
+      } else {
+        element = document.createElement("span");
+      }
       const match = role.match(HEADING_PATTERN);
       if (match) {
         element.setAttribute("role", "heading");
         element.setAttribute("aria-level", match[1]);
       } else if (PDF_ROLE_TO_HTML_ROLE[role]) {
-        element.setAttribute("role", PDF_ROLE_TO_HTML_ROLE[role]);
+        element.setAttribute(
+          "role",
+          role === "TH" &&
+            parentNodes.at(-1)?.role === "TR" &&
+            parentNodes.at(-2)?.role === "TBody"
+            ? "rowheader" // TH inside TR itself in TBody is a rowheader.
+            : PDF_ROLE_TO_HTML_ROLE[role]
+        );
       }
       if (role === "Figure" && this.#addImageInTextLayer(node, element)) {
         return element;
       }
+      if (role === "Formula") {
+        if (node.mathML && MathMLSanitizer.sanitizer) {
+          visitChildren = false;
+          element.setHTML(node.mathML, {
+            sanitizer: MathMLSanitizer.sanitizer,
+          });
+          // Hide all the corresponding content elements in the text layer in
+          // order to avoid screen readers reading both the MathML and the
+          // text content.
+          this.#collectIds(node, (this.#elementsToHideInTextLayer ||= []));
+          // For now, we don't want to keep the alt text if there's valid
+          // MathML (see https://github.com/w3c/mathml-aam/issues/37).
+          // TODO: Revisit this decision in the future.
+          delete node.alt;
+        }
+        if (
+          !node.mathML &&
+          node.children.length === 1 &&
+          node.children[0].role !== "math"
+        ) {
+          element = document.createElementNS(MathMLNamespace, "math");
+          delete node.alt;
+        }
+      }
     }
+
+    element ||= document.createElement("span");
 
     this.#setAttributes(node, element);
 
@@ -252,10 +434,12 @@ class StructTreeLayerBuilder {
         // Often there is only one content node so just set the values on the
         // parent node to avoid creating an extra span.
         this.#setAttributes(node.children[0], element);
-      } else {
+      } else if (visitChildren) {
+        parentNodes.push(node);
         for (const kid of node.children) {
-          element.append(this.#walk(kid));
+          element.append(this.#walk(kid, parentNodes));
         }
+        parentNodes.pop();
       }
     }
     return element;

@@ -13,10 +13,10 @@
  * limitations under the License.
  */
 
-import { fromBase64Util, toBase64Util, warn } from "../../../shared/util.js";
 import { ContourDrawOutline } from "./contour.js";
 import { InkDrawOutline } from "./inkdraw.js";
 import { Outline } from "./outline.js";
+import { warn } from "../../../shared/util.js";
 
 const BASE_HEADER_LENGTH = 8;
 const POINTS_PROPERTIES_NUMBER = 3;
@@ -746,15 +746,13 @@ class SignatureExtractor {
 
     writer.close();
 
-    const buf = await new Response(cs.readable).arrayBuffer();
-    const bytes = new Uint8Array(buf);
-
-    return toBase64Util(bytes);
+    const bytes = await new Response(cs.readable).bytes();
+    return bytes.toBase64();
   }
 
   static async decompressSignature(signatureData) {
     try {
-      const bytes = fromBase64Util(signatureData);
+      const bytes = Uint8Array.fromBase64(signatureData);
       const { readable, writable } = new DecompressionStream("deflate-raw");
       const writer = writable.getWriter();
       await writer.ready;

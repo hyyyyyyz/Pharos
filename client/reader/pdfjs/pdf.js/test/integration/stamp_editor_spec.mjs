@@ -43,6 +43,7 @@ import {
   unselectEditor,
   waitForAnnotationEditorLayer,
   waitForAnnotationModeChanged,
+  waitForBrowserTrip,
   waitForEntryInStorage,
   waitForPageRendered,
   waitForSelectedEditor,
@@ -83,14 +84,6 @@ const copyImage = async (page, imagePath, selector) => {
 
   await waitForImage(page, selector);
 };
-
-async function waitForTranslation(page) {
-  return page.evaluate(async () => {
-    await new Promise(resolve => {
-      window.requestAnimationFrame(resolve);
-    });
-  });
-}
 
 const switchToStamp = switchToEditor.bind(null, "Stamp");
 
@@ -183,8 +176,8 @@ describe("Stamp Editor", () => {
           await waitForImage(page, editorSelector);
           await waitForSerialized(page, 1);
 
-          await page.waitForSelector(`${editorSelector} button.delete`);
-          await page.click(`${editorSelector} button.delete`);
+          await page.waitForSelector(`${editorSelector} button.deleteButton`);
+          await page.click(`${editorSelector} button.deleteButton`);
           await waitForSerialized(page, 0);
 
           await kbUndo(page);
@@ -677,8 +670,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
 
         await kbUndo(page);
@@ -709,8 +702,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
 
         const twoToFourteen = Array.from(new Array(13).keys(), n => n + 2);
@@ -754,8 +747,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
 
         const twoToOne = Array.from(new Array(13).keys(), n => n + 2).concat(
@@ -1007,7 +1000,7 @@ describe("Stamp Editor", () => {
         const buttonSelector = `${editorSelector} button.altText.new`;
         await page.waitForSelector(buttonSelector, { visible: true });
 
-        await waitForTranslation(page);
+        await waitForBrowserTrip(page);
         // Check the text in the button.
         let text = await page.evaluate(
           sel => document.querySelector(sel).textContent,
@@ -1056,7 +1049,7 @@ describe("Stamp Editor", () => {
         await waitForSelectedEditor(page, editorSelector);
         await page.waitForSelector(buttonSelector, { visible: true });
 
-        await waitForTranslation(page);
+        await waitForBrowserTrip(page);
         // Check the text in the button.
         text = await page.evaluate(
           sel => document.querySelector(sel).textContent,
@@ -1098,7 +1091,7 @@ describe("Stamp Editor", () => {
         await page.click("#newAltTextSave");
         await page.waitForSelector("#newAltTextDialog", { visible: false });
 
-        await waitForTranslation(page);
+        await waitForBrowserTrip(page);
         // Check the text in the button.
         text = await page.evaluate(
           sel => document.querySelector(sel).firstChild.textContent,
@@ -1174,7 +1167,9 @@ describe("Stamp Editor", () => {
       // Run sequentially to avoid clipboard issues.
       for (const [, page] of pages) {
         await page.evaluate(() => {
-          window.PDFViewerApplication.mlManager.enableAltTextModelDownload = false;
+          const { mlManager } = window.PDFViewerApplication;
+          mlManager.enableGuessAltText =
+            mlManager.enableAltTextModelDownload = false;
         });
 
         await switchToStamp(page);
@@ -1197,7 +1192,9 @@ describe("Stamp Editor", () => {
       // Run sequentially to avoid clipboard issues.
       for (const [browserName, page] of pages) {
         await page.evaluate(() => {
-          window.PDFViewerApplication.mlManager.enableAltTextModelDownload = true;
+          const { mlManager } = window.PDFViewerApplication;
+          mlManager.enableGuessAltText =
+            mlManager.enableAltTextModelDownload = true;
         });
         await switchToStamp(page);
 
@@ -1532,8 +1529,8 @@ describe("Stamp Editor", () => {
           let serialized = await getSerialized(page);
           expect(serialized).withContext(`In ${browserName}`).toEqual([]);
 
-          await page.waitForSelector(`${editorSelector} button.delete`);
-          await page.click(`${editorSelector} button.delete`);
+          await page.waitForSelector(`${editorSelector} button.deleteButton`);
+          await page.click(`${editorSelector} button.deleteButton`);
 
           await waitForSerialized(page, 1);
           serialized = await getSerialized(page);
@@ -1606,8 +1603,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
         await page.waitForSelector("#editorUndoBar", { visible: true });
 
@@ -1631,8 +1628,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
 
         await page.waitForFunction(() => {
@@ -1657,8 +1654,8 @@ describe("Stamp Editor", () => {
         await page.waitForSelector(editorSelector);
         await waitForSerialized(page, 1);
 
-        await page.waitForSelector(`${editorSelector} button.delete`);
-        await page.click(`${editorSelector} button.delete`);
+        await page.waitForSelector(`${editorSelector} button.deleteButton`);
+        await page.click(`${editorSelector} button.deleteButton`);
         await waitForSerialized(page, 0);
 
         await page.waitForSelector("#editorUndoBar", { visible: true });
@@ -1820,6 +1817,73 @@ describe("Stamp Editor", () => {
           expect(
             await isCanvasMonochrome(page, 1, null, 0xff0000ff)
           ).toBeTrue();
+        })
+      );
+    });
+  });
+
+  describe("Stamp (move between pages)", () => {
+    let pages;
+
+    beforeEach(async () => {
+      pages = await loadAndWait(
+        "firefox_stamp.pdf",
+        getAnnotationSelector("24R"),
+        "50"
+      );
+    });
+
+    afterEach(async () => {
+      await closePages(pages);
+    });
+
+    it("must move a stamp annotation from page 1 to page 2", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          await waitForPageRendered(page, 1);
+          await waitForPageRendered(page, 2);
+          await waitForAnnotationEditorLayer(page, 1);
+          await waitForAnnotationEditorLayer(page, 2);
+
+          const modeChangedHandle = await waitForAnnotationModeChanged(page);
+
+          await page.click(getAnnotationSelector("24R"), { count: 2 });
+          await awaitPromise(modeChangedHandle);
+
+          const editorSelector = getEditorSelector(0);
+          await waitForSelectedEditor(page, editorSelector);
+
+          await scrollIntoView(
+            page,
+            `.page[data-page-number="2"] .annotationEditorLayer`
+          );
+
+          const editorRect = await getRect(page, editorSelector);
+          const page2Rect = await getRect(
+            page,
+            `.page[data-page-number="2"] .annotationEditorLayer`
+          );
+
+          const deltaX =
+            page2Rect.x +
+            page2Rect.width / 2 -
+            (editorRect.x + editorRect.width / 2);
+          const deltaY =
+            page2Rect.y +
+            page2Rect.height / 3 -
+            (editorRect.y + editorRect.height / 2);
+
+          await dragAndDrop(page, editorSelector, [[deltaX, deltaY]], 10);
+
+          await page.waitForFunction(
+            sel => {
+              const editorDiv = document.querySelector(sel);
+              const pageDiv = editorDiv?.closest(".page");
+              return pageDiv?.getAttribute("data-page-number") === "2";
+            },
+            {},
+            editorSelector
+          );
         })
       );
     });

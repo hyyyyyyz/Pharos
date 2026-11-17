@@ -13,7 +13,13 @@
  * limitations under the License.
  */
 
-import { closePages, FSI, loadAndWait, PDI } from "./test_utils.mjs";
+import {
+  closePages,
+  FSI,
+  loadAndWait,
+  PDI,
+  waitForTextToBe,
+} from "./test_utils.mjs";
 
 function fuzzyMatch(a, b, browserName, pixelFuzz = 3) {
   expect(a)
@@ -105,12 +111,11 @@ describe("find bar", () => {
           await page.type("#findInput", "preferences");
           await page.waitForSelector("#findInput[data-status='']");
           await page.waitForSelector(".xfaLayer .highlight");
-          await page.waitForFunction(
-            () => !!document.querySelector("#findResultsCount")?.textContent
+          await waitForTextToBe(
+            page,
+            "#findResultsCount",
+            `${FSI}1${PDI} of ${FSI}1${PDI} match`
           );
-          const resultElement = await page.waitForSelector("#findResultsCount");
-          const resultText = await resultElement.evaluate(el => el.textContent);
-          expect(resultText).toEqual(`${FSI}1${PDI} of ${FSI}1${PDI} match`);
           const selectedElement = await page.waitForSelector(
             ".highlight.selected"
           );
@@ -145,6 +150,83 @@ describe("find bar", () => {
           const highlight = await page.waitForSelector(".textLayer .highlight");
 
           expect(await highlight.isIntersectingViewport()).toBeTrue();
+        })
+      );
+    });
+  });
+
+  describe("scrolls to the search result text for smaller viewports", () => {
+    let pages;
+
+    beforeEach(async () => {
+      pages = await loadAndWait("tracemonkey.pdf", ".textLayer", 100);
+    });
+
+    afterEach(async () => {
+      await closePages(pages);
+    });
+
+    it("must scroll to the search result text", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          // Set a smaller viewport to simulate a mobile device
+          await page.setViewport({ width: 350, height: 600 });
+          await page.click("#viewFindButton");
+          await page.waitForSelector("#findInput", { visible: true });
+          await page.type("#findInput", "productivity");
+
+          const highlight = await page.waitForSelector(".textLayer .highlight");
+
+          expect(await highlight.isIntersectingViewport()).toBeTrue();
+        })
+      );
+    });
+  });
+
+  describe("Check that the search results are correctly visible in rotated PDFs (bug 2021392)", () => {
+    let pages;
+
+    beforeEach(async () => {
+      pages = await loadAndWait(
+        "hello_world_rotated.pdf",
+        ".textLayer",
+        "page-fit"
+      );
+    });
+
+    afterEach(async () => {
+      await closePages(pages);
+    });
+
+    it("must scroll each match into the viewport when navigating search results", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          await page.click("#viewFindButton");
+          await page.waitForSelector("#findInput", { visible: true });
+          await page.type("#findInput", "hello");
+          await page.waitForSelector("#findInput[data-status='']");
+
+          for (let i = 0; i < 5; i++) {
+            if (i > 0) {
+              await page.click("#findNextButton");
+              await page.waitForSelector("#findInput[data-status='']");
+            }
+
+            // Verify we are on the expected match number.
+            await waitForTextToBe(
+              page,
+              "#findResultsCount",
+              `${FSI}${i + 1}${PDI} of ${FSI}5${PDI} matches`
+            );
+
+            // The selected highlight must be visible in the viewport.
+            const selected = await page.waitForSelector(
+              ".textLayer .highlight.selected"
+            );
+            expect(await selected.isIntersectingViewport())
+              .withContext(`In ${browserName}, match ${i + 1}`)
+              .toBeTrue();
+          }
         })
       );
     });

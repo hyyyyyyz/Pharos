@@ -19,7 +19,7 @@ import {
   $getChildrenByName,
   $getParent,
 } from "./symbol_utils.js";
-import { warn } from "../../shared/util.js";
+import { makeMap, warn } from "../../shared/util.js";
 
 const namePattern = /^[^.[]+/;
 const indexPattern = /^[^\]]+/;
@@ -193,11 +193,7 @@ function searchNode(
       let children, cached;
 
       if (useCache) {
-        cached = somCache.get(node);
-        if (!cached) {
-          cached = new Map();
-          somCache.set(node, cached);
-        }
+        cached = somCache.getOrInsertComputed(node, makeMap);
         children = cached.get(cacheName);
       }
 

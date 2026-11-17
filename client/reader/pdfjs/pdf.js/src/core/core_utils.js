@@ -17,7 +17,7 @@ import {
   AnnotationEditorPrefix,
   assert,
   BaseException,
-  hexNumbers,
+  makeArr,
   objectSize,
   stringToPDFString,
   Util,
@@ -28,7 +28,6 @@ import { BaseStream } from "./base_stream.js";
 
 const PDF_VERSION_REGEXP = /^[1-9]\.\d$/;
 const MAX_INT_32 = 2 ** 31 - 1;
-const MIN_INT_32 = -(2 ** 31);
 
 const IDENTITY_MATRIX = [1, 0, 0, 1, 0, 0];
 
@@ -129,7 +128,7 @@ async function fetchBinaryData(url) {
       `Failed to fetch file "${url}" with "${response.statusText}".`
     );
   }
-  return new Uint8Array(await response.arrayBuffer());
+  return response.bytes();
 }
 
 /**
@@ -207,6 +206,38 @@ function getParentToUpdate(dict, ref, xref) {
   return result;
 }
 
+function deepCompare(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (a instanceof Dict && b instanceof Dict) {
+    if (a.size !== b.size) {
+      return false;
+    }
+    for (const [key, value1] of a.getRawEntries()) {
+      const value2 = b.getRaw(key);
+      if (value2 === undefined || !deepCompare(value1, value2)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0, ii = a.length; i < ii; i++) {
+      if (!deepCompare(a[i], b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 // prettier-ignore
 const ROMAN_NUMBER_MAP = [
   "", "C", "CC", "CCC", "CD", "D", "DC", "DCC", "DCCC", "CM",
@@ -233,35 +264,6 @@ function toRomanNumerals(number, lowerCase = false) {
     ROMAN_NUMBER_MAP[10 + (((number % 100) / 10) | 0)] +
     ROMAN_NUMBER_MAP[20 + (number % 10)];
   return lowerCase ? roman.toLowerCase() : roman;
-}
-
-// Calculate the base 2 logarithm of the number `x`. This differs from the
-// native function in the sense that it returns the ceiling value and that it
-// returns 0 instead of `Infinity`/`NaN` for `x` values smaller than/equal to 0.
-function log2(x) {
-  return x > 0 ? Math.ceil(Math.log2(x)) : 0;
-}
-
-function readInt8(data, offset) {
-  return (data[offset] << 24) >> 24;
-}
-
-function readInt16(data, offset) {
-  return ((data[offset] << 24) | (data[offset + 1] << 16)) >> 16;
-}
-
-function readUint16(data, offset) {
-  return (data[offset] << 8) | data[offset + 1];
-}
-
-function readUint32(data, offset) {
-  return (
-    ((data[offset] << 24) |
-      (data[offset + 1] << 16) |
-      (data[offset + 2] << 8) |
-      data[offset + 3]) >>>
-    0
-  );
 }
 
 // Checks if ch is one of the following characters: SPACE, TAB, CR or LF.
@@ -458,15 +460,14 @@ function collectActions(xref, dict, eventType) {
       if (!(additionalActions instanceof Dict)) {
         continue;
       }
-      for (const key of additionalActions.getKeys()) {
+      for (const [key, rawActionDict] of additionalActions.getRawEntries()) {
         const action = eventType[key];
         if (!action) {
           continue;
         }
-        const actionDict = additionalActions.getRaw(key);
         const parents = new RefSet();
         const list = [];
-        _collectJS(actionDict, xref, list, parents);
+        _collectJS(rawActionDict, xref, list, parents);
         if (list.length > 0) {
           actions[action] = list;
         }
@@ -669,12 +670,9 @@ function getNewAnnotationsMap(annotationStorage) {
     if (!key.startsWith(AnnotationEditorPrefix)) {
       continue;
     }
-    let annotations = newAnnotationsByPage.get(value.pageIndex);
-    if (!annotations) {
-      annotations = [];
-      newAnnotationsByPage.set(value.pageIndex, annotations);
-    }
-    annotations.push(value);
+    newAnnotationsByPage
+      .getOrInsertComputed(value.pageIndex, makeArr)
+      .push(value);
   }
   return newAnnotationsByPage.size > 0 ? newAnnotationsByPage : null;
 }
@@ -698,7 +696,7 @@ function stringToUTF16HexString(str) {
   const buf = [];
   for (let i = 0, ii = str.length; i < ii; i++) {
     const char = str.charCodeAt(i);
-    buf.push(hexNumbers[(char >> 8) & 0xff], hexNumbers[char & 0xff]);
+    buf.push(Util.hexNums[(char >> 8) & 0xff], Util.hexNums[char & 0xff]);
   }
   return buf.join("");
 }
@@ -748,6 +746,7 @@ export {
   arrayBuffersToBytes,
   codePointIter,
   collectActions,
+  deepCompare,
   encodeToXmlString,
   escapePDFName,
   escapeString,
@@ -763,21 +762,15 @@ export {
   isBooleanArray,
   isNumberArray,
   isWhiteSpace,
-  log2,
   lookupMatrix,
   lookupNormalRect,
   lookupRect,
   MAX_INT_32,
-  MIN_INT_32,
   MissingDataException,
   numberToString,
   ParserEOFException,
   parseXFAPath,
   PDF_VERSION_REGEXP,
-  readInt16,
-  readInt8,
-  readUint16,
-  readUint32,
   recoverJsURL,
   RESOURCES_KEYS_OPERATOR_LIST,
   RESOURCES_KEYS_TEXT_CONTENT,

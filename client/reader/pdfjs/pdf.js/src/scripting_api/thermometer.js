@@ -16,14 +16,13 @@
 import { PDFObject } from "./pdf_object.js";
 
 class Thermometer extends PDFObject {
-  constructor(data) {
-    super(data);
+  _cancelled = false;
 
-    this._cancelled = false;
-    this._duration = 100;
-    this._text = "";
-    this._value = 0;
-  }
+  _duration = 100;
+
+  _text = "";
+
+  _value = 0;
 
   get cancelled() {
     return this._cancelled;

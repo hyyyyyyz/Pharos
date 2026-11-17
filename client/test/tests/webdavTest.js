@@ -171,10 +171,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 	}
 	
 	beforeEach(async function () {
-		await resetDB({
-			thisArg: this,
-			skipBundledFiles: true
-		});
+		await resetData();
 		
 		var port;
 		({ httpd, port } = await startHTTPServer());
@@ -253,6 +250,88 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 	//
 	// Tests
 	//
+	describe("#getPassword()", function () {
+		it("should return a stored password with non-ASCII characters", async function () {
+			if (!Zotero.OSKeyStore.available) {
+				this.skip();
+			}
+			var password = "p\u00e4ssw\u20acrd";
+			await controller.setPassword(password);
+			assert.equal(await controller.getPassword(), password);
+		})
+		
+		
+		it("should report a keystore read failure with a usable message", async function () {
+			if (!Zotero.OSKeyStore.available) {
+				this.skip();
+			}
+			await controller.setPassword("password");
+			var decryptStub = sinon.stub(Zotero.OSKeyStore._module, "decrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var encryptStub = sinon.stub(Zotero.OSKeyStore._module, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			try {
+				let e = await getPromiseError(controller.getPassword());
+				assert.equal(e.message, Zotero.getString('os-keystore-read-failed'));
+			}
+			finally {
+				decryptStub.restore();
+				encryptStub.restore();
+			}
+		})
+		
+		
+		it("should tell the user to reenter a password the keystore can't decrypt", async function () {
+			if (!Zotero.OSKeyStore.available) {
+				this.skip();
+			}
+			await controller.setPassword("password");
+			var stub = sinon.stub(Zotero.OSKeyStore._module, "decrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			try {
+				let e = await getPromiseError(controller.getPassword());
+				assert.equal(e.message, Zotero.getString('os-keystore-read-unrecoverable'));
+			}
+			finally {
+				stub.restore();
+			}
+		})
+		
+		
+		it("shouldn't store a password that would read back as encrypted", async function () {
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var confirmStub = sinon.stub(Zotero.OSKeyStore, "confirmUnencryptedFallback")
+				.returns(true);
+			try {
+				var e = await getPromiseError(controller.setPassword("oskv1:example"));
+				assert.ok(e);
+			}
+			finally {
+				encryptStub.restore();
+				confirmStub.restore();
+			}
+		})
+		
+		
+		it("should return a password stored without encryption after a keystore failure", async function () {
+			var password = "p\u00e4ssw\u20acrd";
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var confirmStub = sinon.stub(Zotero.OSKeyStore, "confirmUnencryptedFallback")
+				.returns(true);
+			try {
+				await controller.setPassword(password);
+				assert.ok(confirmStub.called);
+				assert.equal(await controller.getPassword(), password);
+			}
+			finally {
+				encryptStub.restore();
+				confirmStub.restore();
+			}
+		})
+	})
+	
 	describe("Syncing", function () {
 		it("should skip downloads if not marked as needed", async function () {
 			var engine = await setup();
@@ -301,6 +380,10 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			
 			assert.isFalse(library.storageDownloadNeeded);
 			assert.equal(library.storageVersion, library.libraryVersion);
+			assert.equal(
+				item.attachmentSyncState,
+				Zotero.Sync.Storage.Local.SYNC_STATE_IN_SYNC
+			);
 		})
 		
 		it("should handle a remotely failing .prop file", async function () {
@@ -894,7 +977,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			Zotero.Prefs.set("sync.storage.url", "127.0.0.1:9999");
 			
 			// Begin install procedure
-			var win = await loadPrefPane('sync');
+			var win = await loadPrefPane('account');
 			var button = win.document.getElementById('storage-verify');
 			
 			var spy = sinon.spy(win.Zotero_Preferences.Sync, "verifyStorageServer");
@@ -934,7 +1017,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			);
 			
 			// Begin install procedure
-			var win = await loadPrefPane('sync');
+			var win = await loadPrefPane('account');
 			var button = win.document.getElementById('storage-verify');
 			
 			var spy = sinon.spy(win.Zotero_Preferences.Sync, "verifyStorageServer");
@@ -970,7 +1053,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			Zotero.Prefs.set("sync.storage.url", davHostPath);
 			
 			// Begin install procedure
-			var win = await loadPrefPane('sync');
+			var win = await loadPrefPane('account');
 			var button = win.document.getElementById('storage-verify');
 			
 			var spy = sinon.spy(win.Zotero_Preferences.Sync, "verifyStorageServer");
@@ -1025,7 +1108,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			);
 			
 			// Begin verify procedure
-			var win = await loadPrefPane('sync');
+			var win = await loadPrefPane('account');
 			var button = win.document.getElementById('storage-verify');
 			
 			var spy = sinon.spy(win.Zotero_Preferences.Sync, "verifyStorageServer");
@@ -1080,7 +1163,7 @@ describe("Zotero.Sync.Storage.Mode.WebDAV", function () {
 			Zotero.Prefs.set("sync.storage.url", davHostPath);
 			
 			// Begin install procedure
-			var win = await loadPrefPane('sync');
+			var win = await loadPrefPane('account');
 			var button = win.document.getElementById('storage-verify');
 			
 			var spy = sinon.spy(win.Zotero_Preferences.Sync, "verifyStorageServer");

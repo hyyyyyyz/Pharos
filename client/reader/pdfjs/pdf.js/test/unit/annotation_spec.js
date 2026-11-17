@@ -35,8 +35,8 @@ import {
 import {
   CMAP_URL,
   createIdFactory,
-  DefaultCMapReaderFactory,
-  DefaultStandardFontDataFactory,
+  DefaultBinaryDataFactory,
+  fetchBuiltInCMapHelper,
   STANDARD_FONT_DATA_URL,
   XRefMock,
 } from "./test_utils.js";
@@ -57,7 +57,6 @@ describe("annotation", function () {
         },
       };
       this.evaluatorOptions = {
-        isEvalSupported: true,
         isOffscreenCanvasSupported: false,
       };
     }
@@ -82,9 +81,13 @@ describe("annotation", function () {
     }
   }
 
-  const fontDataReader = new DefaultStandardFontDataFactory({
-    baseUrl: STANDARD_FONT_DATA_URL,
+  const binaryDataFactory = new DefaultBinaryDataFactory({
+    cMapUrl: CMAP_URL,
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
   });
+
+  const fetchBuiltInCMap = name =>
+    fetchBuiltInCMapHelper(binaryDataFactory, /* cMapPacked = */ true, name);
 
   class HandlerMock {
     constructor() {
@@ -95,11 +98,11 @@ describe("annotation", function () {
       this.inputs.push({ name, data });
     }
 
-    sendWithPromise(name, data) {
-      if (name !== "FetchStandardFontData") {
-        return Promise.reject(new Error(`Unsupported mock ${name}.`));
+    async sendWithPromise(name, data) {
+      if (name === "FetchBinaryData") {
+        return binaryDataFactory.fetch(data);
       }
-      return fontDataReader.fetch(data);
+      throw new Error(`Unsupported mock ${name}.`);
     }
   }
 
@@ -113,19 +116,10 @@ describe("annotation", function () {
     annotationGlobalsMock =
       await AnnotationFactory.createGlobals(pdfManagerMock);
 
-    const CMapReaderFactory = new DefaultCMapReaderFactory({
-      baseUrl: CMAP_URL,
-    });
-
     const builtInCMapCache = new Map();
-    builtInCMapCache.set(
-      "UniJIS-UTF16-H",
-      await CMapReaderFactory.fetch({ name: "UniJIS-UTF16-H" })
-    );
-    builtInCMapCache.set(
-      "Adobe-Japan1-UCS2",
-      await CMapReaderFactory.fetch({ name: "Adobe-Japan1-UCS2" })
-    );
+    for (const name of ["UniJIS-UTF16-H", "Adobe-Japan1-UCS2"]) {
+      builtInCMapCache.set(name, await fetchBuiltInCMap(name));
+    }
 
     idFactoryMock = createIdFactory(/* pageIndex = */ 0);
     partialEvaluator = new PartialEvaluator({
@@ -2936,10 +2930,11 @@ describe("annotation", function () {
 
     it("should handle radio buttons with a field value that's not an ASCII string", async function () {
       const parentDict = new Dict();
-      parentDict.set("V", Name.get("\x91I=\x91\xf0\x93\xe0\x97e3"));
+      const name = "\x91I=\x91\xf0\x93\xe0\x97e3";
+      parentDict.set("V", Name.get(name));
 
       const normalAppearanceStateDict = new Dict();
-      normalAppearanceStateDict.set("\x91I=\x91\xf0\x93\xe0\x97e3", null);
+      normalAppearanceStateDict.set(name, null);
 
       const appearanceStatesDict = new Dict();
       appearanceStatesDict.set("N", normalAppearanceStateDict);
@@ -2962,8 +2957,8 @@ describe("annotation", function () {
       expect(data.annotationType).toEqual(AnnotationType.WIDGET);
       expect(data.checkBox).toEqual(false);
       expect(data.radioButton).toEqual(true);
-      expect(data.fieldValue).toEqual("‚I=‚ðﬁàŠe3");
-      expect(data.buttonValue).toEqual("‚I=‚ðﬁàŠe3");
+      expect(data.fieldValue).toEqual(name);
+      expect(data.buttonValue).toEqual(name);
     });
 
     it("should handle radio buttons without a field value", async function () {
@@ -4203,6 +4198,7 @@ describe("annotation", function () {
       const changes = new RefSetCache();
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4320,6 +4316,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test FreeText update");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4435,6 +4432,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test Ink creation");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4532,6 +4530,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test Ink creation");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4764,6 +4763,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test Highlight creation");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4857,6 +4857,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test free Highlight creation");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4988,6 +4989,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test Highlight update");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
@@ -4995,6 +4997,7 @@ describe("annotation", function () {
             rotation: 90,
             popup: {
               contents: "Hello PDF.js World !",
+              rect: [1, 2, 3, 4],
             },
             id: "143R",
             ref: highlightRef,
@@ -5010,7 +5013,7 @@ describe("annotation", function () {
       const popup = data[0];
       expect(popup.data).toEqual(
         "1 0 obj\n" +
-          "<< /Type /Annot /Subtype /Popup /Open false /Parent 143 0 R>>\n" +
+          "<< /Type /Annot /Subtype /Popup /Open false /Rect [1 2 3 4] /Parent 143 0 R>>\n" +
           "endobj\n"
       );
 
@@ -5019,6 +5022,64 @@ describe("annotation", function () {
         "143 0 obj\n" +
           "<< /Type /Annot /Subtype /Highlight /Rotate 90 /CreationDate (date) /M (date) " +
           "/F 4 /Contents (Hello PDF.js World !) /Popup 1 0 R>>\n" +
+          "endobj\n"
+      );
+    });
+
+    it("should update an existing Highlight annotation in removing its popup", async function () {
+      const popupRef = Ref.get(111, 0);
+      const highlightDict = new Dict();
+      highlightDict.set("Type", Name.get("Annot"));
+      highlightDict.set("Subtype", Name.get("Highlight"));
+      highlightDict.set("Rotate", 0);
+      highlightDict.set("CreationDate", "D:20190423");
+      highlightDict.set("Contents", "Hello PDF.js World !");
+      highlightDict.set("Popup", popupRef);
+      const highlightRef = Ref.get(143, 0);
+
+      const highlightPopupDict = new Dict();
+      highlightPopupDict.set("Type", Name.get("Annot"));
+      highlightPopupDict.set("Subtype", Name.get("Popup"));
+      highlightPopupDict.set("Open", false);
+      highlightPopupDict.set("Rect", [1, 2, 3, 4]);
+      highlightPopupDict.set("Parent", highlightRef);
+
+      const xref = (partialEvaluator.xref = new XRefMock([
+        { ref: highlightRef, data: highlightDict },
+        { ref: popupRef, data: highlightPopupDict },
+      ]));
+      const changes = new RefSetCache();
+
+      const task = new WorkerTask("test Highlight update");
+      await AnnotationFactory.saveNewAnnotations(
+        partialEvaluator,
+        xref,
+        task,
+        [
+          {
+            annotationType: AnnotationEditorType.HIGHLIGHT,
+            rotation: 90,
+            popup: {
+              contents: "",
+              deleted: true,
+              rect: [1, 2, 3, 4],
+            },
+            id: "143R",
+            ref: highlightRef,
+            oldAnnotation: highlightDict,
+            popupRef,
+          },
+        ],
+        null,
+        changes
+      );
+
+      const data = await writeChanges(changes, xref);
+      const base = data[0].data.replaceAll(/\(D:\d+\)/g, "(date)");
+      expect(base).toEqual(
+        "143 0 obj\n" +
+          "<< /Type /Annot /Subtype /Highlight /Rotate 90 /CreationDate (date) /M (date) " +
+          "/F 4>>\n" +
           "endobj\n"
       );
     });
@@ -5157,6 +5218,7 @@ describe("annotation", function () {
       const task = new WorkerTask("test Stamp creation");
       await AnnotationFactory.saveNewAnnotations(
         partialEvaluator,
+        xref,
         task,
         [
           {
