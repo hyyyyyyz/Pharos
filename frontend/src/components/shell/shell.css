@@ -42,6 +42,16 @@
   border-color: var(--c-ac);
   color: var(--c-acc);
 }
+.ph-btn.is-danger {
+  border-color: var(--c-err);
+  background: var(--c-err);
+  color: #fff;
+}
+.ph-btn.is-danger-text {
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-err);
+}
 .ph-btn.is-lg {
   height: 32px;
 }
