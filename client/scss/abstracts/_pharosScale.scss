@@ -1,0 +1,135 @@
+// The Pharos design scale: type, radius, motion and the lighthouse beam.
+//
+// Same numbers as the web client's design/tokens.ts (SCALE_VARS, --c-beam,
+// --c-mark-ring), which is the one reference both products are drawn from.
+// Every Pharos stylesheet imports this file and refers to these variables
+// instead of writing a size, radius or duration by hand, so a value can only
+// be changed here.
+//
+// Colour roles. The web client names eight roles; the desktop already has a
+// theme layer (scss/themes/), so the roles map onto it rather than adding a
+// second palette. The primary colour is untouched. Pharos styles use the
+// --c-* names on the right and nothing else for colour.
+//
+//   web role   meaning                    desktop variable
+//   --c-bg     page ground                --color-background
+//   --c-sf     cards, inputs, main area   --color-button
+//   --c-rail   rail and side panel        --color-sidepane
+//   --c-hdr    page header                --color-toolbar
+//   --c-bd     hairline                   --color-border
+//   --c-bds    stronger hairline          --color-panedivider
+//   --c-hv     hover / selected surface   --fill-quarternary
+//   --c-tx     text                       --fill-primary
+//   --c-tx2    secondary text             --fill-secondary
+//   --c-tx3    meta text only             --fill-tertiary
+//   --c-ac     accent (buttons, links)    --color-accent
+//   --c-acc    label on the accent        --color-accent-text
+//   --c-acs    soft accent surface        --accent-blue10
+//   --c-ok     success                    --accent-teal
+//   --c-err    error                      --color-invalid
+//   --c-err-soft  error surface           --color-invalid-background
+//   --sh-pop   popover / dialog shadow     (defined below, per theme)
+//
+// Type is in px, the web client's own numbers. It was written in rem first, so
+// that it would follow the font-size preference, and measured wrong: the module
+// views are separate documents whose root is the browser default 16px, not the
+// 13px main window root, so a rem rendered 23% too large there. Pharos's
+// views were already in px before this scale existed.
+//
+// Sizes: 11, 12, 13, 15, 18, 22 and nothing else. Weights: 400 and 500, with
+// 600 reserved for a page title. Radii: 4, 8, 12, 16. Spacing sits on the 4px
+// grid (4 8 12 16 20 24 32 40 48 64), with 2px allowed inside a control.
+
+// <button> carries a macOS-only max-height and negative margins
+// (components/_button.scss). These are controls with their own heights, so the
+// cap is undone wherever one is declared.
+@mixin pharos-button-reset {
+	max-height: none;
+	margin: 0;
+	-moz-appearance: none;
+	appearance: none;
+	font: inherit;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+}
+
+@mixin pharos-focus-ring {
+	&:focus-visible {
+		outline: 2px solid var(--c-ac);
+		outline-offset: 1px;
+	}
+}
+
+// A 16px icon from Zotero's SVG set, following the text colour.
+@mixin pharos-icon($url, $size: 16px) {
+	width: $size;
+	height: $size;
+	flex: 0 0 $size;
+	background: url($url) no-repeat center / $size $size;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+@mixin pharos-scale-vars {
+	--fs-meta: 11px;
+	--lh-meta: 16px;
+	--fs-sm: 12px;
+	--lh-sm: 16px;
+	--fs-base: 13px;
+	--lh-base: 20px;
+	--fs-md: 15px;
+	--lh-md: 22px;
+	--fs-lg: 18px;
+	--lh-lg: 26px;
+	--fs-xl: 22px;
+	--lh-xl: 30px;
+	--r-xs: 4px;
+	--r-sm: 8px;
+	--r-md: 12px;
+	--r-lg: 16px;
+	--ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--dur-fast: 140ms;
+	--dur-pop: 180ms;
+	--dur-enter: 320ms;
+
+	--c-bg: var(--color-background);
+	--c-sf: var(--color-button);
+	--c-rail: var(--color-sidepane);
+	--c-hdr: var(--color-toolbar);
+	--c-bd: var(--color-border);
+	--c-bds: var(--color-panedivider);
+	--c-hv: var(--fill-quarternary);
+	--c-tx: var(--fill-primary);
+	--c-tx2: var(--fill-secondary);
+	--c-tx3: var(--fill-tertiary);
+	--c-ac: var(--color-accent);
+	--c-acc: var(--color-accent-text);
+	--c-acs: var(--accent-blue10);
+	--c-ok: var(--accent-teal);
+	--c-err: var(--color-invalid);
+	--c-err-soft: var(--color-invalid-background);
+}
+
+@media (prefers-color-scheme: light) {
+	:root {
+		@include pharos-scale-vars;
+		// The logo's gold, #F8C040. Fixed: it never follows the accent, and marks
+		// only "what to look at now" -- the current module, today's top paper,
+		// work in progress.
+		--c-beam: oklch(0.837 0.151 84);
+		--c-mark-ring: transparent;
+		// Navy-tinted rather than black, so depth reads on cream and not as dirt.
+		--sh-pop: 0 12px 34px rgba(12, 32, 64, 0.16);
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		@include pharos-scale-vars;
+		--c-beam: oklch(0.82 0.15 84);
+		// The mark's navy disc nearly matches the dark rail, so it gets a hairline.
+		--c-mark-ring: var(--color-panedivider);
+		--sh-pop: 0 12px 34px rgba(0, 0, 0, 0.65);
+	}
+}
