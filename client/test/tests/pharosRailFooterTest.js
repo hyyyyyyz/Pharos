@@ -208,7 +208,7 @@ describe("Pharos module rail account footer", function () {
 			assert.deepEqual(opened, ['zotero-prefpane-pharos']);
 		});
 
-		it("should become a square the size of a collapsed module", function () {
+		it("should become the size of a collapsed module", function () {
 			// The web client swaps in a bare 30px circle here. This keeps one
 			// element in both states so the tooltip, the l10n ids and the click
 			// handler stay on a single node -- which is what the tests above
@@ -223,8 +223,9 @@ describe("Pharos module rail account footer", function () {
 			// column's spare height. As ordinary flex items they were compressed
 			// instead, and a 32px row rendering at 25px looks like a slightly
 			// tight rail rather than like a bug.
-			assert.equal(Math.round(box.width), Math.round(box.height),
-				"square, so it centres like the modules do");
+			assert.equal(Math.round(box.height),
+				Math.round(module.getBoundingClientRect().height),
+				"and the same height, so it centres like the modules do");
 		});
 	});
 

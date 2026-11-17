@@ -216,24 +216,21 @@ describe("Pharos module rail", function () {
 			rail.style.removeProperty('transition');
 		});
 
-		it("should paint the active module with the chosen accent", function () {
-			// The rail used --color-quarternary-on-sidepane, a pure neutral mix,
-			// which made the one surface that is visible at all times the single
-			// place the accent picker had no effect. --accent-blue10 is the
-			// theme's soft-accent surface and xpcom/pharos/theme.js rewrites it
-			// when the accent changes, so pinning it here pins the whole chain.
+		it("should paint the active module as a surface step with the beam", function () {
+			// The web rail's current module is the hover surface and a 2px beam
+			// bar; the accent no longer paints the row (it keeps the focus ring
+			// and the primary buttons), so the icon follows the text colour.
 			rail.module = 'daily';
 			var active = rail.querySelector('.pharos-rail-item.is-active');
 			assert.equal(
 				win.getComputedStyle(active).backgroundColor,
-				token('--accent-blue10'),
-				"the active row is the accent at low opacity"
+				token('--fill-quarternary'),
+				"the active row is the hover surface"
 			);
-			assert.equal(
-				win.getComputedStyle(active.querySelector('.pharos-rail-icon')).color,
-				token('--color-accent'),
-				"and its icon is the accent itself"
-			);
+			var bar = win.getComputedStyle(active, '::before');
+			assert.equal(bar.content, '""', "the beam bar is drawn");
+			assert.equal(bar.backgroundColor, token('--c-beam'));
+			assert.equal(parseFloat(bar.width), 2);
 		});
 
 		it("should mark the active module when collapsed", function () {
@@ -245,7 +242,7 @@ describe("Pharos module rail", function () {
 			var active = rail.querySelector('.pharos-rail-item.is-active');
 			var bar = win.getComputedStyle(active, '::before');
 			assert.equal(bar.content, '""', "the bar is drawn");
-			assert.equal(bar.backgroundColor, token('--color-accent'));
+			assert.equal(bar.backgroundColor, token('--c-beam'));
 			assert.isAbove(parseFloat(bar.width), 0);
 			// Inside the rail, not beside it. Rail.css offsets its own bar by the
 			// expanded row's padding, which lands 3px outside a collapsed rail and
@@ -277,13 +274,13 @@ describe("Pharos module rail", function () {
 			assert.equal(
 				Math.round(rail.querySelector('.pharos-rail-acct')
 					.getBoundingClientRect().height),
-				40,
-				"the account row"
+				32,
+				"the account row, the same height as a module row"
 			);
 			assert.equal(
 				Math.round(rail.querySelector('.pharos-rail-toggle')
 					.getBoundingClientRect().height),
-				26,
+				32,
 				"the collapse toggle"
 			);
 		});
@@ -339,11 +336,11 @@ describe("Pharos module rail", function () {
 		});
 
 		it("should not drag narrower than the minimum", function () {
-			// 44px is the COLLAPSED width, and it used to be the minimum too:
-			// between 44 and 144 the labels are clipped by the rail's overflow
+			// 56px is the COLLAPSED width, and it used to be the minimum too:
+			// between 56 and 176 the labels are clipped by the rail's overflow
 			// while the rail is not actually collapsed, which the web client
-			// cannot reach because its drag clamps at 144.
-			rail.style.width = '60px';
+			// cannot reach because its drag clamps at 176.
+			rail.style.width = '100px';
 			assert.equal(Math.round(rail.getBoundingClientRect().width),
 				PharosRail.MIN_WIDTH);
 		});
@@ -351,7 +348,7 @@ describe("Pharos module rail", function () {
 		it("should still collapse below the minimum", function () {
 			rail.style.width = '260px';
 			rail.railCollapsed = true;
-			assert.equal(Math.round(rail.getBoundingClientRect().width), 44,
+			assert.equal(Math.round(rail.getBoundingClientRect().width), 56,
 				"the collapsed width is not subject to the drag minimum");
 		});
 
@@ -400,7 +397,7 @@ describe("Pharos module rail", function () {
 			rail.resetRailWidth();
 			assert.isNotOk(rail.getAttribute('width'));
 			assert.isNotOk(rail.style.width, "nothing is left in the inline style");
-			assert.equal(Math.round(rail.getBoundingClientRect().width), 178,
+			assert.equal(Math.round(rail.getBoundingClientRect().width), 220,
 				"the stylesheet's own width is what is left");
 			win.ZoteroPane.serializePersist();
 			var stored = JSON.parse(Zotero.Prefs.get('pane.persist'));
@@ -420,7 +417,7 @@ describe("Pharos module rail", function () {
 			rail.railCollapsed = true;
 			splitter.dispatchEvent(new win.MouseEvent('mouseup', { bubbles: true }));
 			assert.equal(rail.getAttribute('width'), '200',
-				"the collapsed 44px must not become the persisted width");
+				"the collapsed 56px must not become the persisted width");
 		});
 
 		describe("the splitter", function () {
@@ -459,7 +456,7 @@ describe("Pharos module rail", function () {
 				rail.railWidth = 250;
 				splitter.dispatchEvent(new win.MouseEvent('dblclick', { bubbles: true }));
 				assert.isNotOk(rail.getAttribute('width'));
-				assert.equal(rail.railWidth, 178);
+				assert.equal(rail.railWidth, 220);
 			});
 
 			it("should report the width it is resizing", function () {
@@ -474,7 +471,7 @@ describe("Pharos module rail", function () {
 			});
 
 			it("should go away when the rail is collapsed", function () {
-				// A collapsed rail is a fixed 44px, so a drag beside it can only
+				// A collapsed rail is a fixed 56px, so a drag beside it can only
 				// write a width nothing will honour -- and that width is then
 				// what gets persisted. The web client renders its handle only
 				// while expanded for the same reason.

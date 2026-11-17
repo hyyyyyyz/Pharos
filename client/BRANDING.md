@@ -34,6 +34,7 @@ AGPL-3.0-or-later 发布。Pharos 本身也采用 AGPL-3.0-or-later，二者一�
 | `app/mac/Contents/Info.plist` → `CFBundleSignature` | `ZOTR` | `PHRS` |
 | `chrome/.../zotero.js` → `_initDB` | `DBConnection('zotero')` | `DBConnection(ZOTERO_CONFIG.ID)` |
 | 应用图标 | Zotero 图标 | Pharos 圆形 P 标（**未做**） |
+| 左栏品牌标 | 灯塔线稿 `pharos-mark.svg`（已删除） | 项目 logo 的大写 P 标 `skin/pharos-mark-72.png`，由 `assets/brand/mark.png` 导出，与网页端 `pharos-mark-72.png` 同源；20px、不加滤镜，深色下加 1px 描边 |
 
 **刻意保留未改**：`config.mjs` 里的 `API_URL` / `STREAMING_URL` / `SERVICES_URL` /
 `BASE_URI` / `REPOSITORY_URL` 仍指向 zotero.org。这些是接 Zotero Web API 账号、
@@ -81,6 +82,14 @@ bundle ID、协议、凭据或用户可见品牌伪装成 Zotero。完整约束�
 开发期一律用 `app/scripts/run_pharos_dev` 启动：它强制传 `-datadir`（默认
 `~/PharosDev`），并在路径等于 `~/Zotero` 时直接拒绝运行。正式版共享文库与开发版
 隔离并不矛盾；后者是在一次不可逆 schema 事故之前保住真实数据的安全线。
+
+## 界面设计规范（Pharos 自己的界面）
+
+Pharos 的左栏、模块视图、登录窗、偏好面板与条目面板章节按网页端定稿复刻，规范见
+`scss/abstracts/_pharosScale.scss`（字号、圆角、动效、光束色、颜色角色到主题变量的映射表）
+与 `scss/abstracts/_pharosShell.scss`（模块视图共用的框架样式类）。Pharos 的样式只引用这两层，
+不写裸的字号、圆角或 700 以上的字重。字号用 px（11/12/13/15/18/22）：模块视图是独立文档，其根字号是浏览器默认的 16px，
+用 rem 会比主窗口大一截。金色只用于光束（当前模块、每日论文第一名、进行中的进度）。
 
 ## 配色映射
 
