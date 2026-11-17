@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     #: Origins allowed to call the API. "*" is only tolerable while there is no
     #: auth; once tokens exist, list the real frontend origins.
     cors_origins: str = "*"
+    #: Comma-separated emails of accounts to promote to administrator at startup.
+    #: This is the bootstrap path for the first admin (``/api/admin`` only lets an
+    #: existing admin promote someone). It promotes accounts that ALREADY exist;
+    #: it never confers admin at registration, because with open registration
+    #: that would let whoever signs up first with a listed address become admin.
+    #: Register normally, then restart with this set (or use
+    #: ``python -m pharos.cli promote EMAIL``).
+    admin_emails: str = ""
 
     # --- encrypted third-party credentials -------------------------------
     #: Stable secret used to encrypt bearer credentials stored in SQLite.
@@ -110,6 +118,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        return [e.strip().casefold() for e in self.admin_emails.split(",") if e.strip()]
 
     @property
     def stable_credential_secret(self) -> str | None:

@@ -34,6 +34,7 @@ from pharos.api import (
     updates,
     zotero,
 )
+from pharos.auth.bootstrap import apply_configured_admins
 from pharos.config import get_settings
 from pharos.daily.scheduler import DailyScheduler
 from pharos.daily.service import DailySweeper
@@ -52,6 +53,8 @@ def create_app() -> FastAPI:
     # credential secret is available, upgrade them before any background sync
     # can read one; the migration is idempotent and also completes key rotation.
     zotero.migrate_stored_credentials(settings)
+    # Operator-declared administrators (PHAROS_ADMIN_EMAILS); see auth/bootstrap.
+    apply_configured_admins(settings.admin_email_list)
 
     blobs = BlobStore(settings.files_dir)
     engine = BabelDocEngine(
