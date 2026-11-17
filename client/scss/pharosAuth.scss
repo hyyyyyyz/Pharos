@@ -17,6 +17,8 @@
 
 @import "themes/light";
 @import "themes/dark";
+@import "abstracts/pharosScale";
+@import "abstracts/pharosShell";
 
 @import "base/base";
 @import "components/window";
@@ -36,9 +38,10 @@
 	// to the window's height first.
 	align-items: stretch;
 	min-height: 0;
-	background: var(--material-background);
-	color: var(--fill-primary);
-	font-size: 12px;
+	background: var(--c-sf);
+	color: var(--c-tx);
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
 }
 
 //
@@ -52,9 +55,7 @@
 	overflow: hidden;
 	// Shown until the artwork loads, and left showing if it never does. Reads
 	// as a deliberate brand panel rather than as a missing image.
-	background:
-		radial-gradient(120% 90% at 28% 18%, var(--accent-gold), transparent 62%),
-		linear-gradient(155deg, var(--color-background) 10%, var(--fill-quarternary) 100%);
+	background: var(--c-bg);
 }
 
 #pharos-auth-poster-img {
@@ -83,20 +84,18 @@
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 10px;
+	gap: 8px;
 }
 
 #pharos-auth-poster-title {
-	font-size: 26px;
-	font-weight: 600;
-	letter-spacing: 0.02em;
-	color: var(--fill-primary);
+	font-size: var(--fs-xl);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 #pharos-auth-poster-sub {
-	font-size: 12.5px;
-	letter-spacing: 0.18em;
-	color: var(--fill-secondary);
+	font-size: var(--fs-sm);
+	color: var(--c-tx2);
 }
 
 // Below this the poster would be a useless sliver, so the form takes the whole
@@ -119,19 +118,20 @@
 
 #pharos-auth-side {
 	flex: none;
-	width: 360px;
+	// A 360 column of form plus 32 either side.
+	width: 424px;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 18px;
-	padding: 24px;
-	background: var(--material-sidepane);
-	border-inline-start: var(--material-border);
+	gap: 16px;
+	padding: 32px;
+	background: var(--c-sf);
+	border-inline-start: 1px solid var(--c-bd);
 }
 
 #pharos-auth-panel {
-	width: 320px;
+	width: 360px;
 	max-width: 100%;
 }
 
@@ -143,18 +143,18 @@
 }
 
 #pharos-auth-wordmark {
-	font-size: 22px;
+	font-size: var(--fs-xl);
+	line-height: var(--lh-xl);
 	font-weight: 600;
-	letter-spacing: 0.04em;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 }
 
 #pharos-auth-tagline {
-	margin: 6px 0 20px;
+	margin: 4px 0 24px;
 	text-align: center;
-	font-size: 11.5px;
-	line-height: 1.5;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx3);
 }
 
 //
@@ -162,12 +162,12 @@
 //
 
 #pharos-auth-modes {
+	// Underlined segments, not two buttons.
 	display: flex;
-	gap: 8px;
-	margin-bottom: 18px;
+	gap: 0;
+	margin-bottom: 24px;
+	border-bottom: 1px solid var(--c-bd);
 
-	// Invisible rather than absent while the registration probe is in flight,
-	// so the panel does not jump when the answer arrives.
 	&[data-probing="true"] {
 		visibility: hidden;
 	}
@@ -175,27 +175,33 @@
 
 .pharos-auth-mode {
 	flex: 1;
-	height: 30px;
-	border-radius: 7px;
+	height: 36px;
+	margin: 0 0 -1px;
+	max-height: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: var(--c-tx3);
 	cursor: pointer;
 	font: inherit;
-	font-size: 12px;
-	font-weight: 500;
-	border: var(--material-border);
-	background: transparent;
-	color: var(--fill-secondary);
+	font-size: var(--fs-base);
+	transition:
+		color var(--dur-fast) var(--ease),
+		border-color var(--dur-fast) var(--ease);
 
 	@include focus-ring;
 
-	&:hover {
-		background: var(--fill-quinary);
+	@media (hover: hover) {
+		&:hover:not(.is-active) {
+			color: var(--c-tx);
+		}
 	}
 
 	&.is-active {
-		border-color: var(--color-accent);
-		background: var(--fill-quarternary);
-		color: var(--color-accent);
-		font-weight: 600;
+		border-bottom-color: var(--c-ac);
+		color: var(--c-tx);
+		font-weight: 500;
 	}
 }
 
@@ -205,45 +211,51 @@
 
 .pharos-auth-label {
 	display: block;
-	margin-bottom: 6px;
-	font-size: 12px;
-	font-weight: 600;
-	color: var(--fill-secondary);
+	margin-bottom: 4px;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx2);
 }
 
 .pharos-auth-label-sub {
 	font-weight: 400;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 .pharos-auth-input {
 	width: 100%;
-	height: 30px;
-	padding: 0 10px;
-	margin-bottom: 12px;
-	border-radius: 6px;
-	border: var(--material-border);
-	background: var(--color-background);
-	color: var(--fill-primary);
+	height: 36px;
+	padding: 0 12px;
+	margin: 0 0 12px;
+	max-height: none;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--c-bd);
+	background: var(--c-sf);
+	color: var(--c-tx);
 	font: inherit;
-	font-size: 12px;
+	font-size: var(--fs-base);
+	transition: border-color var(--dur-fast) var(--ease);
 
 	@include focus-ring;
 
+	&:hover {
+		border-color: var(--c-bds);
+	}
+
 	&::placeholder {
-		color: var(--fill-tertiary);
+		color: var(--c-tx3);
 	}
 
 	&[aria-invalid="true"] {
-		border-color: var(--accent-red);
+		border-color: var(--c-err);
 	}
 }
 
 .pharos-auth-err {
 	margin-bottom: 12px;
-	font-size: 11px;
+	font-size: var(--fs-meta);
 	line-height: 1.5;
-	color: var(--accent-red);
+	color: var(--c-err);
 }
 
 // Inline validation sits directly under its field, so it replaces the input's
@@ -254,21 +266,21 @@
 
 // Louder than a field error, because it is the whole reason the attempt failed.
 .pharos-auth-alert {
-	margin-bottom: 14px;
-	padding: 8px 10px;
-	border-radius: 6px;
-	border: 1px solid var(--accent-red);
-	color: var(--accent-red);
-	font-size: 11.5px;
+	margin-bottom: 12px;
+	padding: 8px 8px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--c-err);
+	color: var(--c-err);
+	font-size: var(--fs-meta);
 	line-height: 1.55;
 	overflow-wrap: anywhere;
 }
 
 .pharos-auth-note {
 	margin-top: 12px;
-	font-size: 11px;
+	font-size: var(--fs-meta);
 	line-height: 1.6;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 // When it explains a closed registration it leads the form instead of trailing
@@ -284,53 +296,59 @@
 
 .pharos-auth-submit {
 	width: 100%;
-	height: 32px;
+	height: 40px;
 	padding: 0 16px;
-	border-radius: 6px;
+	margin: 8px 0 0;
+	max-height: none;
+	border-radius: var(--r-sm);
 	border: none;
-	background: var(--color-accent);
-	color: var(--color-accent-text);
+	background: var(--c-ac);
+	color: var(--c-acc);
 	font: inherit;
-	font-size: 12.5px;
-	font-weight: 600;
+	font-size: var(--fs-base);
+	font-weight: 500;
 	cursor: pointer;
+	transition: opacity var(--dur-fast) var(--ease);
 
 	@include focus-ring;
 
 	&:disabled {
-		opacity: 0.55;
+		opacity: 0.5;
 		cursor: not-allowed;
 	}
 }
 
 #pharos-auth-skip-row {
 	display: flex;
-	margin-top: 18px;
-	padding-top: 14px;
-	border-top: var(--material-border);
+	margin-top: 16px;
+	padding-top: 12px;
+	border-top: 1px solid var(--c-bd);
 }
 
 .pharos-auth-ghost {
 	flex: 1;
-	height: 30px;
+	height: 32px;
 	padding: 0 16px;
-	border-radius: 6px;
-	border: var(--material-border);
+	max-height: none;
+	margin: 0;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--c-bd);
 	background: transparent;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	font: inherit;
-	font-size: 12.5px;
+	font-size: var(--fs-base);
 	font-weight: 500;
 	cursor: pointer;
+	transition: background-color var(--dur-fast) var(--ease);
 
 	@include focus-ring;
 
 	&:hover:not(:disabled) {
-		background: var(--fill-quinary);
+		background: var(--c-hv);
 	}
 
 	&:disabled {
-		opacity: 0.55;
+		opacity: 0.5;
 		cursor: not-allowed;
 	}
 }
@@ -344,8 +362,8 @@
 //
 
 #pharos-auth-foot {
-	font-size: 10.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.5;
 	text-align: center;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }

@@ -34,17 +34,17 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-phase {
 		display: flex;
 		align-items: baseline;
-		gap: 6px;
+		gap: 4px;
 		margin-block-end: 8px;
-		color: var(--fill-secondary);
-		font-size: 11px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 
 		&.is-ready .pharos-chat-phase-label {
-			color: var(--accent-teal);
+			color: var(--c-ok);
 		}
 
 		&.is-error .pharos-chat-phase-label {
-			color: var(--accent-red);
+			color: var(--c-err);
 		}
 	}
 
@@ -57,7 +57,7 @@ $pharos-chat-pane-min-width: 200px;
 
 	.pharos-chat-phase-chars {
 		flex: none;
-		color: var(--fill-tertiary);
+		color: var(--c-tx3);
 		font-variant-numeric: tabular-nums;
 
 		&[hidden] {
@@ -77,12 +77,12 @@ $pharos-chat-pane-min-width: 200px;
 		width: 100%;
 		height: 24px;
 		padding: 0 4px;
-		border: var(--material-border);
-		border-radius: 5px;
-		background: var(--material-background);
-		color: var(--fill-primary);
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
+		color: var(--c-tx);
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-meta);
 	}
 
 	// The header's "…" opens this rather than a XUL menupopup: everything else
@@ -100,7 +100,7 @@ $pharos-chat-pane-min-width: 200px;
 	}
 
 	.pharos-chat-menu-delete {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 
 	// Both blocked states -- signed out, and no model configured. A card rather
@@ -110,12 +110,12 @@ $pharos-chat-pane-min-width: 200px;
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 6px;
-		padding: 10px;
+		gap: 4px;
+		padding: 8px;
 		margin-block-end: 8px;
-		border: var(--material-border);
-		border-radius: 8px;
-		background: var(--material-background);
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
 
 		&[hidden] {
 			display: none;
@@ -123,13 +123,13 @@ $pharos-chat-pane-min-width: 200px;
 	}
 
 	.pharos-chat-notice-title {
-		color: var(--fill-primary);
-		font-weight: 600;
+		color: var(--c-tx);
+		font-weight: 500;
 	}
 
 	.pharos-chat-notice-detail {
-		color: var(--fill-secondary);
-		font-size: 11px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 		line-height: 1.6;
 	}
 
@@ -145,16 +145,16 @@ $pharos-chat-pane-min-width: 200px;
 	}
 
 	.pharos-chat-empty-headline {
-		color: var(--fill-secondary);
-		font-size: 12px;
+		color: var(--c-tx2);
+		font-size: var(--fs-sm);
 	}
 
 	.pharos-chat-empty-paper {
 		// One line: a paper title can be longer than the pane is tall, and the
 		// title attribute carries the rest.
 		overflow: hidden;
-		color: var(--fill-tertiary);
-		font-size: 11px;
+		color: var(--c-tx3);
+		font-size: var(--fs-meta);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 
@@ -170,25 +170,25 @@ $pharos-chat-pane-min-width: 200px;
 	}
 
 	.pharos-chat-starter {
-		padding: 6px 8px;
-		border: var(--material-border);
-		border-radius: 6px;
-		background: var(--material-background);
-		color: var(--fill-primary);
+		padding: 4px 8px;
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
+		color: var(--c-tx);
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-meta);
 		line-height: 1.45;
 		text-align: start;
 
 		&:hover {
-			background: var(--fill-quinary);
+			background: var(--c-hv);
 		}
 	}
 
 	.pharos-chat-messages {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 4px;
 		// Bounded so the composer stays reachable without scrolling the whole
 		// item pane. No min-height: the empty state above now fills that space,
 		// and reserving a second block for it left a gap under the chips.
@@ -201,15 +201,15 @@ $pharos-chat-pane-min-width: 200px;
 	}
 
 	.pharos-chat-message {
-		padding: 6px 8px;
-		border-radius: 6px;
+		padding: 4px 8px;
+		border-radius: var(--r-sm);
 		// Long identifiers, URLs and formulae are common in papers and must not
 		// widen the pane.
 		overflow-wrap: anywhere;
 		white-space: pre-wrap;
 
 		&.is-user {
-			background: var(--fill-quinary);
+			background: var(--c-hv);
 			// Indented rather than right-aligned: at this width a floated bubble
 			// leaves too little room for the text itself.
 			margin-inline-start: 16px;
@@ -223,14 +223,14 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-confirm {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 4px;
 		padding: 8px;
 		margin-block-end: 8px;
-		border: var(--material-border);
-		border-radius: 6px;
-		background: var(--material-background);
-		color: var(--fill-secondary);
-		font-size: 11px;
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 		line-height: 1.5;
 
 		&[hidden] {
@@ -240,11 +240,11 @@ $pharos-chat-pane-min-width: 200px;
 
 	.pharos-chat-confirm-actions {
 		display: flex;
-		gap: 6px;
+		gap: 4px;
 	}
 
 	.pharos-chat-confirm-go {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 
 	// Failures stay until they are dismissed. The status line above cannot hold
@@ -253,14 +253,14 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-banner {
 		display: flex;
 		align-items: flex-start;
-		gap: 6px;
-		padding: 6px 8px;
+		gap: 4px;
+		padding: 4px 8px;
 		margin-block-end: 8px;
-		border: 1px solid var(--accent-red);
-		border-radius: 6px;
+		border: 1px solid var(--c-err);
+		border-radius: var(--r-sm);
 		background: var(--color-quarternary-on-background);
-		color: var(--fill-primary);
-		font-size: 11px;
+		color: var(--c-tx);
+		font-size: var(--fs-meta);
 		line-height: 1.5;
 
 		&[hidden] {
@@ -276,14 +276,14 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-banner-dismiss {
 		flex: none;
 		min-width: 0;
-		padding: 0 6px;
+		padding: 0 4px;
 		margin: 0;
 	}
 
 	.pharos-chat-status {
-		color: var(--fill-secondary);
-		font-size: 11px;
-		margin-block-end: 6px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
+		margin-block-end: 4px;
 
 		&[hidden] {
 			display: none;
@@ -293,7 +293,7 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-composer {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 4px;
 	}
 
 	.pharos-chat-input {
@@ -310,7 +310,7 @@ $pharos-chat-pane-min-width: 200px;
 	.pharos-chat-actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: 6px;
+		gap: 4px;
 	}
 
 	.pharos-chat-send[hidden],
@@ -340,8 +340,8 @@ $pharos-chat-pane-min-width: 200px;
 // hint-then-actions, and quiet enough not to compete with them.
 .pharos-chat-hint {
 	flex: 1;
-	color: var(--fill-tertiary);
-	font-size: 0.85em;
+	color: var(--c-tx3);
+	font-size: var(--fs-meta);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -363,7 +363,7 @@ $pharos-chat-pane-min-width: 200px;
 
 	.zotero-view-item {
 		min-height: 0;
-		padding: 0 10px 10px;
+		padding: 0 8px 8px;
 		overflow: hidden;
 		gap: 0;
 
@@ -388,7 +388,7 @@ $pharos-chat-pane-min-width: 200px;
 				flex: none;
 				min-height: 40px;
 				padding-inline: 2px;
-				border-bottom: 1px solid var(--fill-quinary);
+				border-bottom: 1px solid var(--c-hv);
 			}
 
 			> .body {
@@ -397,7 +397,7 @@ $pharos-chat-pane-min-width: 200px;
 				flex-direction: column;
 				min-height: 0;
 				max-height: none;
-				padding-block: 10px 0;
+				padding-block: 8px 0;
 				overflow: hidden;
 				opacity: 1;
 				visibility: visible;
