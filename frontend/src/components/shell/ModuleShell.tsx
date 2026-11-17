@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import "./shell.css";
 
 /**
@@ -44,6 +44,11 @@ const read = (key: string): boolean => {
   }
 };
 
+/** Below this window width the detail column no longer fits beside the list. */
+export const DETAIL_NARROW_MAX = 1200;
+
+const isNarrow = (): boolean => typeof window !== "undefined" && window.innerWidth < DETAIL_NARROW_MAX;
+
 interface ModuleShellProps {
   /** A `SidePanel`. Omit for a module with no in-module list. */
   side?: ReactNode;
@@ -69,7 +74,25 @@ export function ModuleShell({
   children,
 }: ModuleShellProps): JSX.Element {
   const [collapsed, setCollapsed] = useState(() => (detailKey ? read(`ph-detail-${detailKey}`) : false));
+
+  // A desktop window narrower than the three columns need: the detail becomes a
+  // slide-over too, closed until asked for, instead of starving the list.
+  const [narrow, setNarrow] = useState(isNarrow);
+  const [narrowOpen, setNarrowOpen] = useState(false);
+  useEffect(() => {
+    const on = (): void => setNarrow(isNarrow());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const slideOver = detailOverlay || narrow;
+  const open = detailOverlay ? detailOpen : narrowOpen;
+  const close = detailOverlay ? onDetailClose : () => setNarrowOpen(false);
+
   const toggleDetail = useCallback(() => {
+    if (slideOver) {
+      setNarrowOpen((o) => !o);
+      return;
+    }
     setCollapsed((c) => {
       const next = !c;
       if (detailKey) {
@@ -81,23 +104,29 @@ export function ModuleShell({
       }
       return next;
     });
-  }, [detailKey]);
+  }, [detailKey, slideOver]);
 
   const ctx = useMemo<ShellState>(
-    () => ({ collapsible: detail !== undefined && !detailOverlay, collapsed, toggleDetail }),
-    [detail, detailOverlay, collapsed, toggleDetail],
+    () => ({
+      // On a touch device the parent opens the slide-over from a row tap, so
+      // the header toggle is only for the in-place and narrow-desktop cases.
+      collapsible: detail !== undefined && !detailOverlay,
+      collapsed: slideOver ? !narrowOpen : collapsed,
+      toggleDetail,
+    }),
+    [detail, detailOverlay, slideOver, narrowOpen, collapsed, toggleDetail],
   );
 
-  const showDetail = detail !== undefined && (detailOverlay ? detailOpen : !collapsed);
+  const showDetail = detail !== undefined && (slideOver ? open : !collapsed);
 
   return (
     <ShellContext.Provider value={ctx}>
       <div className="ph-ms">
         {side}
         <div className="ph-ms-main">{children}</div>
-        {showDetail && detailOverlay && <div className="ph-ms-backdrop" onClick={onDetailClose} />}
+        {showDetail && slideOver && <div className="ph-ms-backdrop" onClick={close} />}
         {showDetail && (
-          <aside className={detailOverlay ? "ph-ms-detail is-overlay" : "ph-ms-detail"}>{detail}</aside>
+          <aside className={slideOver ? "ph-ms-detail is-overlay" : "ph-ms-detail"}>{detail}</aside>
         )}
       </div>
     </ShellContext.Provider>

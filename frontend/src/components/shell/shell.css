@@ -358,3 +358,10 @@
   width: 32%;
   height: 8px;
 }
+
+/* Narrow windows: the count is the first thing to give way. */
+@media (max-width: 1200px) {
+  .ph-pageheader-meta {
+    display: none;
+  }
+}
