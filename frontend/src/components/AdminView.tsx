@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { AdminProbeResult, AdminStats, AdminUser } from "../api/types";
 import { Icons } from "../design/icons";
 import { useSession } from "../store";
+import { EmptyState, ModuleShell, PageHeader, SidePanel, SkeletonRows } from "./shell";
 import "./AdminView.css";
 import { isTranslationDegraded } from "../lib/providers";
 
@@ -29,38 +30,32 @@ export function AdminView(): JSX.Element {
   const [tab, setTab] = useState<Tab>("users");
 
   return (
-    <div className="ph-admin">
-      <header className="ph-admin-head">
-        <div className="ph-admin-title">
-          <span className="ph-admin-title-icon">
-            <Icons.shield />
-          </span>
-          管理员后台
-        </div>
-        <nav className="ph-admin-tabs" role="tablist">
+    <ModuleShell
+      side={
+        <SidePanel storageKey="admin" title="管理">
           <button
-            role="tab"
-            aria-selected={tab === "users"}
-            className={cx("ph-admin-tab", tab === "users" && "is-on")}
+            type="button"
+            className={cx("ph-sp-row", tab === "users" && "is-active")}
+            aria-current={tab === "users" ? "page" : undefined}
             onClick={() => setTab("users")}
           >
+            <Icons.user />
             账号管理
           </button>
           <button
-            role="tab"
-            aria-selected={tab === "providers"}
-            className={cx("ph-admin-tab", tab === "providers" && "is-on")}
+            type="button"
+            className={cx("ph-sp-row", tab === "providers" && "is-active")}
+            aria-current={tab === "providers" ? "page" : undefined}
             onClick={() => setTab("providers")}
           >
+            <Icons.sliders />
             API 配置
           </button>
-        </nav>
-      </header>
-
-      <div className="ph-admin-body ph-scroll">
-        {tab === "users" ? <UsersPanel /> : <ProvidersPanel />}
-      </div>
-    </div>
+        </SidePanel>
+      }
+    >
+      {tab === "users" ? <UsersPanel /> : <ProvidersPanel />}
+    </ModuleShell>
   );
 }
 
@@ -108,57 +103,62 @@ function UsersPanel(): JSX.Element {
   const s = stats.data;
 
   return (
-    <div className="ph-admin-panel">
-      {s && <AccountSummary stats={s} />}
+    <>
+      <PageHeader
+        title="账号管理"
+        meta={users.data ? `共 ${users.data.total} 个账号` : undefined}
+        lead={
+          <div className="ph-admin-searchwrap">
+            <span className="ph-admin-searchicon">
+              <Icons.search />
+            </span>
+            <input
+              className="ph-input ph-admin-search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索邮箱或名称"
+              aria-label="搜索用户"
+            />
+          </div>
+        }
+      />
+      <div className="ph-admin-body ph-scroll">
+        {s && <AccountSummary stats={s} />}
 
-      <div className="ph-admin-toolbar">
-        <div className="ph-admin-searchwrap">
-          <span className="ph-admin-searchicon">
-            <Icons.search size={14} />
-          </span>
-          <input
-            className="ph-admin-search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索邮箱或名称…"
-            aria-label="搜索用户"
-          />
-        </div>
+        {error && <div className="ph-admin-error">{error}</div>}
+
+        {users.isLoading ? (
+          <SkeletonRows rows={4} />
+        ) : users.isError ? (
+          <EmptyState inline icon={Icons.user} tone="error" title="无法载入用户" description={errText(users.error)} />
+        ) : !users.data?.users.length ? (
+          <EmptyState inline icon={Icons.user} title={q ? "没有匹配的用户" : "还没有用户"} />
+        ) : (
+          <table className="ph-admin-table">
+            <thead>
+              <tr>
+                <th>账号</th>
+                <th>注册</th>
+                <th>最近登录</th>
+                <th>角色</th>
+                <th className="is-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.data.users.map((u) => (
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  isSelf={u.id === me?.id}
+                  busy={patch.isPending || remove.isPending}
+                  onPatch={(body) => patch.mutate({ id: u.id, ...body })}
+                  onDelete={() => setPendingDelete(u)}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-
-      {error && <div className="ph-admin-error">{error}</div>}
-
-      {users.isLoading ? (
-        <p className="ph-admin-empty">载入中…</p>
-      ) : users.isError ? (
-        <p className="ph-admin-error">{errText(users.error)}</p>
-      ) : !users.data?.users.length ? (
-        <p className="ph-admin-empty">{q ? "没有匹配的用户" : "还没有用户"}</p>
-      ) : (
-        <table className="ph-admin-table">
-          <thead>
-            <tr>
-              <th>账号</th>
-              <th>注册</th>
-              <th>最近登录</th>
-              <th>角色</th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.data.users.map((u) => (
-              <UserRow
-                key={u.id}
-                user={u}
-                isSelf={u.id === me?.id}
-                busy={patch.isPending || remove.isPending}
-                onPatch={(body) => patch.mutate({ id: u.id, ...body })}
-                onDelete={() => setPendingDelete(u)}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
 
       {pendingDelete && (
         <DeleteDialog
@@ -170,18 +170,10 @@ function UsersPanel(): JSX.Element {
           }
         />
       )}
-    </div>
+    </>
   );
 }
 
-/**
- * Deleting an account destroys its server-side Pharos account data, and that
- * cannot be undone. The confirmation asks the operator to type the address
- * rather than to click a second button: retyping is the cheapest available
- * proof that they read *which* account they are about to erase, and it is the
- * same string the backend independently verifies. Local Zotero/Pharos data is
- * not inventoried by this console and is not part of the request.
- */
 function DeleteDialog({
   user,
   busy,
@@ -220,7 +212,7 @@ function DeleteDialog({
         </p>
         <p className="ph-admin-dialog-hint">请输入该用户的邮箱以确认：</p>
         <input
-          className="ph-admin-dialog-input"
+          className="ph-input ph-admin-dialog-input"
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder={user.email}
@@ -231,15 +223,15 @@ function DeleteDialog({
           }}
         />
         <div className="ph-admin-dialog-actions">
-          <button className="ph-admin-act" onClick={onCancel} disabled={busy}>
+          <button className="ph-btn" onClick={onCancel} disabled={busy}>
             取消
           </button>
           <button
-            className="ph-admin-act is-destructive"
+            className="ph-btn is-danger"
             onClick={onConfirm}
             disabled={!matches || busy}
           >
-            {busy ? "删除中…" : "永久删除"}
+            {busy ? "删除中" : "永久删除"}
           </button>
         </div>
       </div>
@@ -247,26 +239,28 @@ function DeleteDialog({
   );
 }
 
-function AccountSummary({
-  stats,
-}: {
-  stats: AdminStats;
-}): JSX.Element {
+function AccountSummary({ stats }: { stats: AdminStats }): JSX.Element {
+  const share = (n: number): string =>
+    stats.users === 0 ? "—" : `占账号 ${Math.round((n / stats.users) * 100)}%`;
+  const cards: { label: string; value: string; note: string }[] = [
+    { label: "账号", value: String(stats.users), note: "全部已注册账号" },
+    { label: "管理员", value: String(stats.admins), note: share(stats.admins) },
+    { label: "已停用", value: String(stats.inactive_users), note: share(stats.inactive_users) },
+    {
+      label: "注册",
+      value: stats.allow_registration ? "开放" : "关闭",
+      note: "由服务器 .env 控制",
+    },
+  ];
   return (
-    <div className="ph-admin-account-summary" aria-label="账号概览">
-      <span className="ph-admin-summary-item">
-        <strong>{stats.users}</strong> 个账号
-      </span>
-      <span className="ph-admin-summary-item">
-        <strong>{stats.admins}</strong> 位管理员
-      </span>
-      <span className="ph-admin-summary-item">
-        <strong>{stats.inactive_users}</strong> 个已停用
-      </span>
-      <span className="ph-admin-reg">
-        注册{stats.allow_registration ? "开放中" : "已关闭"}
-        <span className="ph-admin-reg-hint">· 由服务器 .env 控制</span>
-      </span>
+    <div className="ph-admin-stats" aria-label="账号概览">
+      {cards.map((c) => (
+        <div key={c.label} className="ph-admin-stat">
+          <span className="ph-admin-stat-label">{c.label}</span>
+          <span className="ph-admin-stat-value">{c.value}</span>
+          <span className="ph-admin-stat-note">{c.note}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -289,9 +283,6 @@ function UserRow({
     <tr className={cx(!user.is_active && "is-suspended")}>
       <td>
         <div className="ph-admin-user">
-          <span className="ph-admin-avatar" aria-hidden>
-            <Icons.user size={14} />
-          </span>
           <div className="ph-admin-userinfo">
             <div className="ph-admin-username">
               {name}
@@ -304,8 +295,9 @@ function UserRow({
       <td className="ph-admin-date">{day(user.created_at)}</td>
       <td className="ph-admin-date">{day(user.last_login_at)}</td>
       <td>
-        <span className={cx("ph-admin-badge", user.is_admin ? "is-admin" : "is-plain")}>
+        <span className={cx("ph-admin-role-text", user.is_admin && "is-admin")}>
           {user.is_admin ? "管理员" : "普通用户"}
+          {!user.is_active && " · 已停用"}
         </span>
       </td>
       <td>
@@ -336,7 +328,7 @@ function UserRow({
                 title={`删除 ${user.email}`}
                 aria-label={`删除用户 ${user.email}`}
               >
-                <Icons.trash size={15} />
+                <Icons.trash />
               </button>
             </>
           )}
@@ -371,13 +363,26 @@ function ProvidersPanel(): JSX.Element {
 
   const degraded = useMemo(() => isTranslationDegraded(providers.data), [providers.data]);
 
-  if (providers.isLoading) return <p className="ph-admin-empty">载入中…</p>;
+  if (providers.isLoading)
+    return (
+      <>
+        <PageHeader title="API 配置" />
+        <SkeletonRows rows={4} />
+      </>
+    );
   if (providers.isError)
-    return <p className="ph-admin-error">{errText(providers.error)}</p>;
+    return (
+      <>
+        <PageHeader title="API 配置" />
+        <EmptyState icon={Icons.sliders} tone="error" title="无法载入配置" description={errText(providers.error)} />
+      </>
+    );
   const d = providers.data!;
 
   return (
-    <div className="ph-admin-panel">
+    <>
+      <PageHeader title="API 配置" meta="只读 · 由服务器 .env 配置" />
+      <div className="ph-admin-body ph-scroll">
       <div className="ph-admin-note">
         API 密钥由服务器的 <code>.env</code> 统一配置，所有用户共享，无需各自填写。
         本页只读——修改密钥需在服务器上编辑 <code>.env</code> 并重启。密钥本身不会传到浏览器。
@@ -402,12 +407,7 @@ function ProvidersPanel(): JSX.Element {
             <div key={p.name} className={cx("ph-admin-provider", p.configured && "is-on")}>
               <div className="ph-admin-provider-head">
                 <span className="ph-admin-provider-name">{p.label}</span>
-                <span
-                  className={cx(
-                    "ph-admin-badge",
-                    p.configured ? "is-ready" : "is-plain",
-                  )}
-                >
+                <span className={cx("ph-admin-role-text", p.configured && "is-ready")}>
                   {p.configured ? "已配置" : "未配置"}
                 </span>
               </div>
@@ -430,11 +430,11 @@ function ProvidersPanel(): JSX.Element {
               )}
               <div className="ph-admin-provider-foot">
                 <button
-                  className="ph-admin-act"
+                  className="ph-btn"
                   disabled={!p.configured || probed === "running"}
                   onClick={() => probe(p.name)}
                 >
-                  {probed === "running" ? "测试中…" : "测试连通性"}
+                  {probed === "running" ? "测试中" : "测试连通性"}
                 </button>
                 {probed && probed !== "running" && (
                   <span className={cx("ph-admin-probe", probed.ok ? "is-ok" : "is-bad")}>
@@ -446,7 +446,8 @@ function ProvidersPanel(): JSX.Element {
           );
         })}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
