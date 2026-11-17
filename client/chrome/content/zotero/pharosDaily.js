@@ -609,6 +609,7 @@ var Zotero_Pharos_Daily = new function () {
 			note: document.getElementById('pharos-daily-status'),
 			banner: document.getElementById('pharos-dv-banner'),
 			bannerText: document.getElementById('pharos-dv-banner-text'),
+			bannerLink: document.getElementById('pharos-dv-banner-link'),
 			list: document.getElementById('pharos-dv-list'),
 			detail: document.getElementById('pharos-dv-detail'),
 			vault: document.getElementById('pharos-dv-vault'),
@@ -630,6 +631,9 @@ var Zotero_Pharos_Daily = new function () {
 		// `click` only. This is an html:button, which has no `command` event;
 		// the XUL button it replaced needed both and rendered a blank label.
 		_el.refresh.addEventListener('click', () => this.refresh());
+		_el.bannerLink.addEventListener('click', () => {
+			Zotero.getMainWindow()?.ZoteroPane.setPharosModule('models');
+		});
 
 		_el.vault.addEventListener('click', () => this.openVault());
 		_el.vaultClose.addEventListener('click', () => this.closeVault());

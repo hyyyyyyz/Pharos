@@ -71,18 +71,24 @@
 			<html:div id="pharos-ds-main" class="pharos-ds-main pharos-main">
 				<html:div id="pharos-ds-head" class="pharos-ds-head pharos-pagehead">
 					<html:div class="pharos-ds-head-text">
-						<html:h1 class="pharos-ds-title"
+						<html:h1 class="pharos-ds-title pharos-pagehead-title"
 							data-l10n-id="pharos-discovery-heading"/>
-						<html:p class="pharos-ds-sub"
+						<!-- Kept for the strings and the scripts that write to them,
+						     but not shown: the page header carries the title and the
+						     one action, as the web client's does. -->
+						<html:p class="pharos-ds-sub" hidden="hidden"
 							data-l10n-id="pharos-discovery-subheading"/>
 					</html:div>
-					<html:div id="pharos-ds-context" class="pharos-ds-context">
+					<html:div id="pharos-ds-context" class="pharos-ds-context" hidden="hidden">
 						<html:span class="pharos-ds-context-k"
 							data-l10n-id="pharos-discovery-current-project"/>
 						<html:span id="pharos-ds-context-name" class="pharos-ds-context-v"/>
 					</html:div>
+					<html:div class="pharos-pagehead-actions">
+						<html:button id="pharos-ds-reuse" class="pharos-ds-ghost pharos-btn"
+							type="button" data-l10n-id="pharos-discovery-reuse" hidden="hidden"/>
+					</html:div>
 				</html:div>
-
 				<!-- A form so that Enter submits and the fields are one group to
 				     a screen reader. Every button inside it states type=button:
 				     the default is submit, which would fire both the click
@@ -92,7 +98,7 @@
 						<html:span class="pharos-ds-field-k"
 							data-l10n-id="pharos-discovery-query-label"/>
 						<html:textarea id="pharos-discovery-query" class="pharos-ds-query"
-							rows="3" maxlength="500"
+							rows="1" maxlength="500"
 							data-l10n-id="pharos-discovery-placeholder"
 							data-l10n-attrs="placeholder"/>
 						<html:small class="pharos-ds-fieldnote"
@@ -161,8 +167,6 @@
 							<html:h2 id="pharos-ds-run-query" class="pharos-ds-run-query"/>
 							<html:p id="pharos-ds-run-meta" class="pharos-ds-run-meta"/>
 						</html:div>
-						<html:button id="pharos-ds-reuse" class="pharos-ds-ghost"
-							type="button" data-l10n-id="pharos-discovery-reuse"/>
 					</html:div>
 
 					<!-- Shown only for a persisted `running` row, which means an

@@ -76,6 +76,7 @@
 						<html:span class="pharos-rail-acct-name"/>
 						<html:span class="pharos-rail-acct-sub"/>
 					</html:span>
+					<html:span class="pharos-rail-acct-gear"/>
 				</html:button>
 			</html:div>
 		`);

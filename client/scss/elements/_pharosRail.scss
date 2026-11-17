@@ -454,7 +454,7 @@ $pharos-rail-item-collapsed: 40px;
 }
 
 // The account row: the same height, icon column and left edge as a module row.
-// Name over a one-line subtitle, 16 + 16 = 32.
+// A person glyph, the name, and a gear on the right.
 .pharos-rail-acct {
 	display: flex;
 	align-items: center;
@@ -498,6 +498,18 @@ $pharos-rail-item-collapsed: 40px;
 	stroke: currentColor;
 }
 
+// The settings gear at the row's end.
+.pharos-rail-acct-gear {
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+	color: var(--c-tx3);
+	background: url("chrome://zotero/skin/16/universal/pharos-nav-settings.svg") no-repeat center / 16px 16px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
 .pharos-rail-acct-text {
 	display: flex;
 	flex-direction: column;
@@ -506,31 +518,27 @@ $pharos-rail-item-collapsed: 40px;
 	min-width: 0;
 }
 
-.pharos-rail-acct-name,
-.pharos-rail-acct-sub {
-	// An address is longer than this column will ever be.
+.pharos-rail-acct-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	min-width: 0;
-	line-height: var(--lh-sm);
-}
-
-.pharos-rail-acct-name {
-	font-size: var(--fs-sm);
-	font-weight: 500;
-	color: var(--c-tx);
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	color: var(--c-tx2);
 }
 
 .pharos-rail-acct-sub {
-	font-size: var(--fs-meta);
-	color: var(--c-tx3);
+	// Kept in the DOM (it carries the settings label for assistive technology
+	// and the tests), but the row is one line: the gear says it.
+	display: none;
 }
 
 // Collapsed: the glyph alone, centred, as the modules keep only their icons.
 // The button stays -- it is the only route from here to signing in.
 #pharos-rail[rail-collapsed="true"] {
-	.pharos-rail-acct-text {
+	.pharos-rail-acct-text,
+	.pharos-rail-acct-gear {
 		display: none;
 	}
 

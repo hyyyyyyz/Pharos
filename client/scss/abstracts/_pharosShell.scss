@@ -32,6 +32,12 @@ $pharos-head-height: 48px;
 	font-variant-numeric: tabular-nums;
 }
 
+// Native checkboxes take the accent, not the operating system's.
+.pharos-shell input[type="checkbox"],
+.pharos-content input[type="checkbox"] {
+	accent-color: var(--c-ac);
+}
+
 .pharos-side {
 	display: flex;
 	flex: none;

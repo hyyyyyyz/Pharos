@@ -320,16 +320,31 @@
 	font-size: var(--fs-sm);
 	line-height: var(--lh-base);
 	color: var(--c-tx2);
+
+	&[hidden] {
+		display: none;
+	}
 }
 
-.pharos-dv-banner-ic {
-	@include dv-icon("chrome://zotero/skin/16/universal/info.svg", 16px);
+.pharos-dv-banner-link {
+	flex: none;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--c-ac);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-base);
 
-	color: var(--c-tx3);
+	&:hover {
+		text-decoration: underline;
+	}
 }
 
 .pharos-dv-banner-text {
 	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .pharos-dv-list {
