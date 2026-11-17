@@ -36,7 +36,7 @@ RUN python -m venv /opt/pharos-app \
 
 RUN python -m venv /opt/pharos-engine \
     && /opt/pharos-engine/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/pharos-engine/bin/pip install "pdf2zh-next==2.9.0"
+    && /opt/pharos-engine/bin/pip install "pdf2zh-next==2.9.0" "bitstring<5"
 
 
 FROM python:3.12-slim-bookworm AS runtime

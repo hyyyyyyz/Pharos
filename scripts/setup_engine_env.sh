@@ -62,7 +62,7 @@ log "Pre-installing conda-prebuilt native deps (cryptography) to avoid a Rosetta
 CONDA_SUBDIR=osx-64 "$CONDA" install -y -n "$ENV_NAME" cryptography
 
 log "Installing pdf2zh-next==$PDF2ZH_VERSION (pulls BabelDOC + native deps) ..."
-"$CONDA" run -n "$ENV_NAME" python -m pip install $PIP_NET_OPTS "pdf2zh-next==$PDF2ZH_VERSION"
+"$CONDA" run -n "$ENV_NAME" python -m pip install $PIP_NET_OPTS "pdf2zh-next==$PDF2ZH_VERSION" "bitstring<5"
 
 log "Verifying native imports ..."
 "$CONDA" run -n "$ENV_NAME" python - <<'PY'
