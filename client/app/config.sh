@@ -1,17 +1,17 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Version of Gecko to build with
-GECKO_VERSION_MAC="140.7.0esr"
-GECKO_VERSION_LINUX="140.7.0esr"
-GECKO_VERSION_WIN="140.7.0esr"
+GECKO_VERSION_MAC="140.17.0esr"
+GECKO_VERSION_LINUX="140.17.0esr"
+GECKO_VERSION_WIN="140.17.0esr"
 RUST_VERSION=1.86.0
 
 # URL prefix for custom builds of Firefox components
 custom_components_url="https://download.zotero.org/dev/firefox-components/"
-custom_components_hash_mac=""
-custom_components_hash_win_x64="8405765d48481431a0361704723c870b2c1c2b9e18d77794841927f4aa3bf04c"
-custom_components_hash_win_arm64="c96e591b86b0f98d85b29bc7e2202d4ea1371a4321ffe76960f7ae7643bf7ff4"
-custom_components_hash_win32="0e2a14ae6e8db4ed56db810e651aaf4f80b7a2e1da0b18b2d8ecddab84174d0a"
+custom_components_hash_mac="15e328615e53f1c37374f44567f108affcf80cfdc07b100da159a5aed15d9b59"
+custom_components_hash_win_x64="44c62e4786f131e579636476e23a6998322ac6956d51b599eee79814b59a2d8b"
+custom_components_hash_win_arm64="78f549343b4e2cd58e987f1d82477a0e9fdbe929c9f7912683ac9ab967d678fa"
+custom_components_hash_win32="ec54d22d7cbf82aca80cf978b8b483c817f55bb2889e2e27f1ba989edbff4697"
 
 APP_NAME="Pharos"
 APP_ID="pharos\@pharos.selab.top"
@@ -39,6 +39,9 @@ NOTARIZATION_BUNDLE_ID=""
 NOTARIZATION_USER=""
 NOTARIZATION_TEAM_ID=""
 NOTARIZATION_PASSWORD=""
+# Name of a notarytool keychain profile (see `xcrun notarytool store-credentials`), e.g., for an
+# App Store Connect API key -- used instead of the Apple ID settings above if set
+NOTARIZATION_PROFILE=""
 
 # Paths for Windows installer build
 NSIS_DIR='C:\Program Files (x86)\NSIS\'
@@ -56,8 +59,7 @@ S3_CI_ZIP_PATH="ci/client"
 S3_DIST_PATH="client"
 
 DEPLOY_HOST="deploy.zotero"
-DEPLOY_PATH="www/www-production/public/download/client/manifests"
-DEPLOY_CMD="ssh $DEPLOY_HOST update-site-files"
+DEPLOY_PATH="www/www-production/public/download/client"
 
 BUILD_PLATFORMS=""
 NUM_INCREMENTALS=6

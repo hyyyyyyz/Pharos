@@ -29,6 +29,23 @@
 Zotero.SyncedSettings = (function () {
 	var _cache = {};
 	
+	// Must match Zotero_Settings::$allowedSettings in the dataserver
+	let _allowedSettings = [
+		'attachmentRenameTemplate',
+		'autoRenameFiles',
+		'autoRenameFilesFileTypes',
+		'feeds',
+		'tagColors',
+		/^lastPageIndex_(u|g[0-9]+)_[A-Z0-9]{8}$/,
+		/^lastRead_(g[0-9]+)_[A-Z0-9]{8}$/,
+		/^lastReadAloudPosition_(u|g[0-9]+)_[A-Z0-9]{8}$/,
+		'readerCustomThemes'
+	];
+	
+	function _isAllowedSetting(setting) {
+		return _allowedSettings.some(x => (typeof x == 'string' ? x === setting : x.test(setting)));
+	}
+	
 	//
 	// Public methods
 	//
@@ -73,9 +90,7 @@ Zotero.SyncedSettings = (function () {
 		loadAll: async function (libraryID) {
 			Zotero.debug("Loading synced settings for library " + libraryID);
 			
-			if (!_cache[libraryID]) {
-				_cache[libraryID] = {};
-			}
+			_cache[libraryID] = {};
 			
 			var invalid = [];
 			
@@ -123,7 +138,7 @@ Zotero.SyncedSettings = (function () {
 				tagColors = tagColors.filter((color) => {
 					if (typeof color != 'object' || typeof color.name != 'string' || typeof color.color != 'string') {
 						Zotero.logError("Removing invalid colored tag: " + JSON.stringify(color));
-						tagsFixed = true;
+						fixed = true;
 						return false;
 					}
 					return true;
@@ -189,7 +204,13 @@ Zotero.SyncedSettings = (function () {
 			var sql = "SELECT setting, value FROM syncedSettings WHERE synced=0 AND libraryID=?";
 			var rows = await Zotero.DB.queryAsync(sql, libraryID);
 			var obj = {};
-			rows.forEach(row => obj[row.setting] = JSON.parse(row.value));
+			for (let row of rows) {
+				if (!_isAllowedSetting(row.setting)) {
+					Zotero.debug(`Skipping upload of invalid setting '${row.setting}'`, 2);
+					continue;
+				}
+				obj[row.setting] = JSON.parse(row.value);
+			}
 			return obj;
 		},
 		
@@ -218,8 +239,13 @@ Zotero.SyncedSettings = (function () {
 		},
 		
 		set: async function (libraryID, setting, value, version = 0, synced) {
-			if (typeof value == undefined) {
+			if (typeof value == 'undefined') {
 				throw new Error("Value not provided");
+			}
+			
+			// Reject local writes the server won't accept
+			if (!synced && !_isAllowedSetting(setting)) {
+				throw new Error(`Invalid synced setting '${setting}'`);
 			}
 			
 			// Prevents a whole bunch of headache if you continue modifying the object after calling #set()
@@ -299,6 +325,10 @@ Zotero.SyncedSettings = (function () {
 			
 			var currentValue = this.get(libraryID, setting);
 			var hasCurrentValue = currentValue !== null;
+			
+			if (!hasCurrentValue) {
+				return false;
+			}
 			
 			var id = libraryID + '/' + setting;
 			

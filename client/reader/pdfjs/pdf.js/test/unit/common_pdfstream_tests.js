@@ -16,8 +16,7 @@
 import { AbortException, isNodeJS } from "../../src/shared/util.js";
 import { getCrossOriginHostname, TestPdfsServer } from "./test_utils.js";
 
-// Common tests to verify behavior across implementations of the IPDFStream
-// interface:
+// Common tests to verify behavior across `BasePDFStream` implementations:
 // - PDFNetworkStream by network_spec.js
 // - PDFFetchStream by fetch_stream_spec.js
 async function testCrossOriginRedirects({
@@ -25,7 +24,7 @@ async function testCrossOriginRedirects({
   redirectIfRange,
   testRangeReader,
 }) {
-  const basicApiUrl = TestPdfsServer.resolveURL("basicapi.pdf").href;
+  const basicApiUrl = TestPdfsServer.resolveURL("basicapi.pdf");
   const basicApiFileLength = 105779;
 
   const rangeSize = 32768;
@@ -84,7 +83,7 @@ function getCrossOriginUrlWithRedirects(testserverUrl, redirectIfRange) {
   if (redirectIfRange) {
     url.searchParams.set("redirectIfRange", "1");
   }
-  return url.href;
+  return url;
 }
 
 export { testCrossOriginRedirects };

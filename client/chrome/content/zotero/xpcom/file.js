@@ -102,7 +102,14 @@ Zotero.File = new function () {
 			}
 		}
 		catch (e) {
-			if (e.becauseNoSuchFile) {}
+			// A missing file, or a filename too long for the filesystem, might still have
+			// an existing parent directory, so continue below
+			if (e.becauseNoSuchFile || e.message?.includes('NS_ERROR_FILE_NAME_TOO_LONG')) {}
+			// A path that can't be parsed (e.g., a POSIX-style path on Windows) doesn't
+			// exist either
+			else if (e.message?.includes('NS_ERROR_FILE_UNRECOGNIZED_PATH')) {
+				return false;
+			}
 			else {
 				throw e;
 			}
@@ -352,13 +359,20 @@ Zotero.File = new function () {
 	}
 
 	/**
-	 * Return a promise for the contents of resource.
+	 * Return a promise for the contents of a local resource URL as a UTF-8
+	 * string. Goes through an nsIChannel to handle jar: URLs containing '@'.
 	 *
-	 * @param {String} url - the resource url
+	 * @param {String} url - the resource url (file://, jar:, resource://, chrome://)
 	 * @return {Promise<String>} the resource contents as a string
 	 */
 	this.getResourceAsync = function (url) {
-		return getContentsFromURLAsync(url);
+		let channel = NetUtil.newChannel({
+			uri: url,
+			loadUsingSystemPrincipal: true,
+			securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+			contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
+		});
+		return this.getContentsAsync(channel, 'UTF-8');
 	}
 	
 	
@@ -662,9 +676,20 @@ Zotero.File = new function () {
 	this.removeIfExists = function (path) {
 		return Promise.resolve(OS.File.remove(path))
 		.then(() => true)
-		.catch(function (e) {
+		.catch(async function (e) {
 			if (e instanceof OS.File.Error && e.becauseNoSuchFile) {
 				return false;
+			}
+			// The read-only attribute on Windows prevents deletion, so clear it and try again
+			if (Zotero.isWin && e.name == 'NotAllowedError') {
+				try {
+					await IOUtils.setWindowsAttributes(path, { readOnly: false });
+					await OS.File.remove(path);
+					return true;
+				}
+				catch (e2) {
+					Zotero.debug(e2, 1);
+				}
 			}
 			Zotero.debug(path, 1);
 			throw e;
@@ -1086,11 +1111,246 @@ Zotero.File = new function () {
 		return this.iterateDirectory(source, function (entry) {
 			return entry.isDir
 				? this.copyDirectory(entry.path, OS.Path.join(target, entry.name))
-				: OS.File.copy(entry.path, OS.Path.join(target, entry.name));
+				: this.copyFile(entry.path, OS.Path.join(target, entry.name));
 		}.bind(this))
 	};
 	
 	
+	var _fsInfoCache = {};
+
+	/**
+	 * Get information about the filesystem containing a path (macOS and Linux)
+	 *
+	 * statfs() is called on the path itself, following symlinks, so a symlinked file is
+	 * classified by its target's volume. The parent directory is used if the path doesn't
+	 * exist.
+	 *
+	 * @param {String} path
+	 * @return {Object|null} - { fsType: statfs f_fstypename on macOS (e.g., 'apfs', 'smbfs')
+	 *     or a name derived from the statfs f_type magic on Linux (e.g., 'ext4', 'cifs',
+	 *     'nfs', or a hex string if unrecognized), readOnly: Boolean }, or null on other
+	 *     platforms or if the check fails
+	 */
+	this.getFileSystemInfo = function (path) {
+		if (!Zotero.isMac && !Zotero.isLinux) return null;
+
+		if (path in _fsInfoCache) {
+			return _fsInfoCache[path];
+		}
+
+		let result = null;
+		try {
+			let { ctypes } = ChromeUtils.importESModule(
+				"resource://gre/modules/ctypes.sys.mjs"
+			);
+			let buf = new (ctypes.ArrayType(ctypes.uint8_t, 2168))();
+			let lib = ctypes.open(Zotero.isMac ? "/usr/lib/libSystem.B.dylib" : "libc.so.6");
+			try {
+				let statfs = lib.declare(
+					"statfs",
+					ctypes.default_abi,
+					ctypes.int,
+					ctypes.char.ptr,
+					ctypes.voidptr_t
+				);
+				if (statfs(path, buf.address()) !== 0) {
+					if (statfs(PathUtils.parent(path), buf.address()) !== 0) {
+						throw new Error("statfs() failed");
+					}
+				}
+				let readUint32 = offset => buf[offset] | (buf[offset + 1] << 8)
+					| (buf[offset + 2] << 16) | (buf[offset + 3] << 24);
+				if (Zotero.isMac) {
+					// struct statfs -- f_flags is a uint32 at byte offset 64, f_fstypename
+					// is a char[16] at byte offset 72
+					const FLAGS_OFFSET = 64;
+					const FSTYPENAME_OFFSET = 72;
+					const FSTYPENAME_LEN = 16;
+					const MNT_RDONLY = 0x1;
+					let typeName = '';
+					for (let i = FSTYPENAME_OFFSET; i < FSTYPENAME_OFFSET + FSTYPENAME_LEN; i++) {
+						if (buf[i] === 0) break;
+						typeName += String.fromCharCode(buf[i]);
+					}
+					result = {
+						fsType: typeName,
+						readOnly: !!(readUint32(FLAGS_OFFSET) & MNT_RDONLY)
+					};
+				}
+				else {
+					// 64-bit struct statfs -- f_type is a word at byte offset 0 and f_flags
+					// a word at byte offset 80. Filesystem type is a magic number (see
+					// linux/magic.h) rather than a name.
+					const FLAGS_OFFSET = 80;
+					const ST_RDONLY = 0x1;
+					const FS_MAGICS = {
+						0xEF53: 'ext4',
+						0x58465342: 'xfs',
+						0x9123683E: 'btrfs',
+						0xFF534D42: 'cifs',
+						0xFE534D42: 'smb2',
+						0x517B: 'smb',
+						0x6969: 'nfs',
+						0x65735546: 'fuse'
+					};
+					let magic = readUint32(0) >>> 0;
+					result = {
+						fsType: FS_MAGICS[magic] || '0x' + magic.toString(16),
+						readOnly: !!(readUint32(FLAGS_OFFSET) & ST_RDONLY)
+					};
+				}
+			}
+			finally {
+				lib.close();
+			}
+		}
+		catch (e) {
+			Zotero.warn("Failed to check filesystem type: " + e);
+		}
+
+		_fsInfoCache[path] = result;
+		return result;
+	};
+
+
+	/**
+	 * Check if a path is on an APFS volume
+	 *
+	 * @param {String} path
+	 * @return {Boolean}
+	 */
+	this.isAPFS = function (path) {
+		return this.getFileSystemInfo(path)?.fsType === 'apfs';
+	};
+
+
+	/**
+	 * Check whether the filesystem containing a path supports POSIX byte-range locks
+	 * (macOS only)
+	 *
+	 * Performs the same fcntl(F_GETLK) probe SQLite uses to choose its locking methods.
+	 * If the path doesn't exist, a temporary sibling file is probed instead.
+	 *
+	 * @param {String} path
+	 * @return {Promise<Boolean>}
+	 */
+	this.supportsByteRangeLocks = async function (path) {
+		if (!Zotero.isMac) return true;
+
+		let probePath = path;
+		let probeCreated = false;
+		if (!(await IOUtils.exists(path))) {
+			probePath = path + '.' + Zotero.Utilities.randomString() + '.lock-probe';
+			// Exclusive creation, so that an existing file is never overwritten and deleted
+			await IOUtils.write(probePath, new Uint8Array(0), { mode: 'create' });
+			probeCreated = true;
+		}
+
+		let result = false;
+		try {
+			let { ctypes } = ChromeUtils.importESModule(
+				"resource://gre/modules/ctypes.sys.mjs"
+			);
+			let lib = ctypes.open("/usr/lib/libSystem.B.dylib");
+			try {
+				// open() and fcntl() are variadic, which matters for argument passing on ARM64
+				let open = lib.declare(
+					"open", ctypes.default_abi, ctypes.int, ctypes.char.ptr, ctypes.int, "..."
+				);
+				let close = lib.declare(
+					"close", ctypes.default_abi, ctypes.int, ctypes.int
+				);
+				let fcntl = lib.declare(
+					"fcntl", ctypes.default_abi, ctypes.int, ctypes.int, ctypes.int, "..."
+				);
+				let flockType = ctypes.StructType("flock", [
+					{ l_start: ctypes.int64_t },
+					{ l_len: ctypes.int64_t },
+					{ l_pid: ctypes.int32_t },
+					{ l_type: ctypes.int16_t },
+					{ l_whence: ctypes.int16_t }
+				]);
+				const O_RDONLY = 0x0;
+				const F_GETLK = 7;
+				const F_RDLCK = 1;
+				const SEEK_SET = 0;
+				let fd = open(probePath, O_RDONLY);
+				if (fd >= 0) {
+					try {
+						let lock = new flockType();
+						lock.l_start = 0;
+						lock.l_len = 1;
+						lock.l_pid = 0;
+						lock.l_type = F_RDLCK;
+						lock.l_whence = SEEK_SET;
+						result = fcntl(fd, F_GETLK, lock.address()) != -1;
+					}
+					finally {
+						close(fd);
+					}
+				}
+			}
+			finally {
+				lib.close();
+			}
+		}
+		catch (e) {
+			Zotero.warn("Failed to check byte-range lock support: " + e);
+		}
+		finally {
+			if (probeCreated) {
+				try {
+					await IOUtils.remove(probePath, { ignoreAbsent: true });
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+			}
+		}
+		return result;
+	};
+
+
+	/**
+	 * Copy a file, using APFS cloning on macOS when available and falling back to a regular
+	 * copy otherwise
+	 *
+	 * @param {String} source
+	 * @param {String} target
+	 */
+	this.copyFile = async function (source, target) {
+		if (this.isAPFS(source)) {
+			try {
+				let { ctypes } = ChromeUtils.importESModule(
+					"resource://gre/modules/ctypes.sys.mjs"
+				);
+				let lib = ctypes.open("/usr/lib/libSystem.B.dylib");
+				try {
+					let clonefile = lib.declare(
+						"clonefile",
+						ctypes.default_abi,
+						ctypes.int,
+						ctypes.char.ptr, // src
+						ctypes.char.ptr, // dst
+						ctypes.uint32_t  // flags
+					);
+					let result = clonefile(source, target, 0);
+					if (result === 0) {
+						return;
+					}
+				}
+				finally {
+					lib.close();
+				}
+			}
+			catch (e) {
+				Zotero.warn("clonefile() failed -- falling back to regular copy: " + e);
+			}
+		}
+		await IOUtils.copy(source, target);
+	};
+
+
 	this.createDirectoryIfMissing = function (dir) {
 		dir = this.pathToFile(dir);
 		if (!dir.exists() || !dir.isDirectory()) {
@@ -1157,7 +1417,7 @@ Zotero.File = new function () {
 	//
 	// @param {String} sourcePath - The file to create a symlink to
 	// @param {String} targetPath - The location of the symlink to create
-	// @return {Promise<Boolean>} - True if successfully created, false otherwise
+	// @return {Boolean} - True if successfully created, false otherwise
 	this.createSymlink = function (sourcePath, targetPath) {
 		const { ctypes } = ChromeUtils.importESModule(
 			"resource://gre/modules/ctypes.sys.mjs"
@@ -1165,7 +1425,7 @@ Zotero.File = new function () {
 		
 		try {
 			const libc = ctypes.open(
-				Services.appinfo.OS === "Darwin" ? "libSystem.B.dylib" : "libc.so"
+				Services.appinfo.OS === "Darwin" ? "libSystem.B.dylib" : "libc.so.6"
 			);
 			
 			const symlink = libc.declare(

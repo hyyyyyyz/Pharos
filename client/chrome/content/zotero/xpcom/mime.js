@@ -31,7 +31,7 @@ Zotero.MIME = new function () {
 	
 	// Magic numbers -- see https://en.wikipedia.org/wiki/List_of_file_signatures
 	var _snifferEntries = [
-		["%PDF-", "application/pdf"],
+		["%PDF-", "application/pdf", 0],
 		["%!PS-Adobe-", 'application/postscript', 0],
 		["%! PS-Adobe-", 'application/postscript', 0],
 		["From", 'text/plain', 0],
@@ -340,15 +340,13 @@ Zotero.MIME = new function () {
 	
 	/**
 	 * @param {String} url
-	 * @param {Zotero.CookieSandbox} [cookieSandbox]
 	 * @return {Promise}
 	 */
-	this.getMIMETypeFromURL = async function (url, cookieSandbox) {
+	this.getMIMETypeFromURL = async function (url) {
 		var xmlhttp = await Zotero.HTTP.request(
 			"HEAD",
 			url,
 			{
-				cookieSandbox,
 				successCodes: false
 			}
 		);

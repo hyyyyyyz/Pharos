@@ -77,7 +77,7 @@ class Field extends PDFObject {
     this._fillColor = data.fillColor || ["T"];
     this._isChoice = Array.isArray(data.items);
     this._items = data.items || [];
-    this._hasValue = data.hasOwnProperty("value");
+    this._hasValue = Object.hasOwn(data, "value");
     this._page = data.page || 0;
     this._strokeColor = data.strokeColor || ["G", 0];
     this._textColor = data.textColor || ["G", 0];
@@ -453,11 +453,9 @@ class Field extends PDFObject {
       return array;
     }
 
-    if (this._children === null) {
-      this._children = this._document.obj._getTerminalChildren(this._fieldPath);
-    }
-
-    return this._children;
+    return (this._children ??= this._document.obj._getTerminalChildren(
+      this._fieldPath
+    ));
   }
 
   getLock() {

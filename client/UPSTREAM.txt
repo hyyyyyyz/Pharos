@@ -6,21 +6,39 @@ git 关系（按项目决定）。以下信息仅作路标：若将来需要人�
 修复，可据此定位对应版本。
 
 上游仓库 : https://github.com/zotero/zotero
-上游版本 : 8.0.5
-上游提交 : bdd3b1df5941ae4626614c626d0f5280205a7e69
-复制日期 : 2026-08-03
+上游版本 : 10.0.7
+上游提交 : 35429ad62024032e0888b6cc1b6b51f96f8a8f1d
+合入日期 : 2026-11-16
+userdata schema : 130
 
 子模块的 pin 记在 js-build/submodule-pins.json，与本文件必须同时更新。
 
-为什么是 8.0.5 而不是更新的分支
+为什么是 10.0.7，以及基线的来回
 ------------------------------
 
-上一个基线是 10.0.SOURCE（提交 a7cae87be8c44f4800a70177a0673d19ca072de8，
-复制于 2026-07-31）。它带着 userdata schema 129，而在售的 Zotero 8.0.5 是
-123。两者不能开同一个库：Zotero 的迁移逻辑是「库比我旧就升级它」，所以
-Pharos 一旦打开真实文库就会把它迁到 129，之后 Zotero 8 直接拒绝打开——
-对用户的文库是一道单向门。
+Pharos 的产品前提是与 Zotero 共享同一个文库。xpcom/pharos/sharedLibrary.js 的
+assertMigrationAllowed() 要求文库的 userdata schema 与客户端自身**精确相等**，
+否则在任何迁移之前拒绝打开——Zotero 的迁移是单向门：库比客户端旧就会被升级，
+升级之后原来的 Zotero 就打不开自己的库了。所以客户端的 schema 必须等于用户
+正在用的 Zotero 的 schema。
 
-Pharos 的产品前提是与 Zotero 共享同一个文库（用户不必同时开两个程序，
-但两边看到的是同一批论文和分类）。这个前提要求 schema 一致，所以基线
-回到在售版本。换基线的迁移过程记在 docs/PHASE-BASELINE.md。
+基线历史：
+  10.0.SOURCE (a7cae87b…, 2026-07-31)  schema 129 —— 最早的拷贝，与当时在售的
+                                      Zotero 8 对不上
+  8.0.5       (bdd3b1df…, 2026-08-03)  schema 123 —— 为对齐当时的 Zotero 8 而回退
+  10.0.7      (35429ad6…, 2026-11-16)  schema 130 —— 负责人本机的 Zotero 已是
+                                      10.0.7，文库 schema 实测 130，于是换回 10
+
+选 10.0.7 而不是更新的 10.0.x：各 tag 的 userdata schema 实测为 10.0.2=129，
+10.0.5/10.0.6/10.0.7=130，10.0.8/10.0.9=131。精确匹配只允许 130，10.0.7 又是
+负责人实际在用的版本。
+
+代价：仍在使用 Zotero 8（schema 123）的用户无法与这个版本的 Pharos 共用文库。
+换基线的过程记在 docs/PHASE-BASELINE.md。
+
+与原始 10.0.7 相比有意不带的内容
+------------------------------
+
+- document-worker/pdf.js/test（约 143 MB 的 pdf.js 测试夹具，构建不需要）
+- 各子模块里的 .github、.eslintrc、.prettierrc 之类仅供上游开发使用的点文件
+- app/modules/*/build（Office 插件的预编译模板；app/build.sh 不读取它们）

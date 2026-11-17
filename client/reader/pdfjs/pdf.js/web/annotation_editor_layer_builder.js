@@ -20,7 +20,6 @@
 /** @typedef {import("../src/display/editor/tools.js").AnnotationEditorUIManager} AnnotationEditorUIManager */
 // eslint-disable-next-line max-len
 /** @typedef {import("./text_accessibility.js").TextAccessibilityManager} TextAccessibilityManager */
-/** @typedef {import("./interfaces").IL10n} IL10n */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/annotation_layer.js").AnnotationLayer} AnnotationLayer */
 // eslint-disable-next-line max-len
@@ -32,8 +31,8 @@ import { GenericL10n } from "web-null_l10n";
 /**
  * @typedef {Object} AnnotationEditorLayerBuilderOptions
  * @property {AnnotationEditorUIManager} [uiManager]
- * @property {PDFPageProxy} pdfPage
- * @property {IL10n} [l10n]
+ * @property {number} pageIndex
+ * @property {L10n} [l10n]
  * @property {StructTreeLayerBuilder} [structTreeLayer]
  * @property {TextAccessibilityManager} [accessibilityManager]
  * @property {AnnotationLayer} [annotationLayer]
@@ -65,7 +64,7 @@ class AnnotationEditorLayerBuilder {
    * @param {AnnotationEditorLayerBuilderOptions} options
    */
   constructor(options) {
-    this.pdfPage = options.pdfPage;
+    this.pageIndex = options.pageIndex;
     this.accessibilityManager = options.accessibilityManager;
     this.l10n = options.l10n;
     if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
@@ -80,6 +79,11 @@ class AnnotationEditorLayerBuilder {
     this.#drawLayer = options.drawLayer || null;
     this.#onAppend = options.onAppend || null;
     this.#structTreeLayer = options.structTreeLayer || null;
+  }
+
+  updatePageIndex(newPageIndex) {
+    this.pageIndex = newPageIndex;
+    this.annotationEditorLayer?.updatePageIndex(newPageIndex);
   }
 
   /**
@@ -114,7 +118,7 @@ class AnnotationEditorLayerBuilder {
       div,
       structTreeLayer: this.#structTreeLayer,
       accessibilityManager: this.accessibilityManager,
-      pageIndex: this.pdfPage.pageNumber - 1,
+      pageIndex: this.pageIndex,
       l10n: this.l10n,
       viewport: clonedViewport,
       annotationLayer: this.#annotationLayer,
@@ -129,7 +133,7 @@ class AnnotationEditorLayerBuilder {
       intent,
     };
 
-    this.annotationEditorLayer.render(parameters);
+    await this.annotationEditorLayer.render(parameters);
     this.show();
   }
 

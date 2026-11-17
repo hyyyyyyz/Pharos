@@ -18,14 +18,16 @@
 /** @typedef {import("../src/display/display_utils").PageViewport} PageViewport */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/annotation_storage").AnnotationStorage} AnnotationStorage */
-/** @typedef {import("./interfaces").IDownloadManager} IDownloadManager */
-/** @typedef {import("./interfaces").IPDFLinkService} IPDFLinkService */
 // eslint-disable-next-line max-len
 /** @typedef {import("./struct_tree_layer_builder.js").StructTreeLayerBuilder} StructTreeLayerBuilder */
 // eslint-disable-next-line max-len
 /** @typedef {import("./text_accessibility.js").TextAccessibilityManager} TextAccessibilityManager */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/editor/tools.js").AnnotationEditorUIManager} AnnotationEditorUIManager */
+/** @typedef {import("./comment_manager.js").CommentManager} CommentManager */
+/** @typedef {import("./pdf_link_service.js").PDFLinkService} PDFLinkService */
+// eslint-disable-next-line max-len
+/** @typedef {import("./base_download_manager.js").BaseDownloadManager} BaseDownloadManager */
 
 import {
   AnnotationLayer,
@@ -42,8 +44,9 @@ import { PresentationModeState } from "./ui_utils.js";
  * @property {string} [imageResourcesPath] - Path for image resources, mainly
  *   for annotation icons. Include trailing slash.
  * @property {boolean} renderForms
- * @property {IPDFLinkService} linkService
- * @property {IDownloadManager} [downloadManager]
+ * @property {PDFLinkService} linkService
+ * @property {BaseDownloadManager} [downloadManager]
+ * @property {boolean} [enableComment]
  * @property {boolean} [enableScripting]
  * @property {Promise<boolean>} [hasJSActionsPromise]
  * @property {Promise<Object<string, Array<Object>> | null>}
@@ -52,6 +55,7 @@ import { PresentationModeState } from "./ui_utils.js";
  * @property {TextAccessibilityManager} [accessibilityManager]
  * @property {AnnotationEditorUIManager} [annotationEditorUIManager]
  * @property {function} [onAppend]
+ * @property {CommentManager} [commentManager]
  */
 
 /**
@@ -61,15 +65,10 @@ import { PresentationModeState } from "./ui_utils.js";
  * @property {StructTreeLayerBuilder} [structTreeLayer]
  */
 
-/**
- * @typedef {Object} InjectLinkAnnotationsOptions
- * @property {Array<Object>} inferredLinks
- * @property {PageViewport} viewport
- * @property {StructTreeLayerBuilder} [structTreeLayer]
- */
-
 class AnnotationLayerBuilder {
   #annotations = null;
+
+  #commentManager = null;
 
   #externalHide = false;
 
@@ -89,6 +88,8 @@ class AnnotationLayerBuilder {
     annotationStorage = null,
     imageResourcesPath = "",
     renderForms = true,
+    enableComment = false,
+    commentManager = null,
     enableScripting = false,
     hasJSActionsPromise = null,
     fieldObjectsPromise = null,
@@ -103,6 +104,8 @@ class AnnotationLayerBuilder {
     this.imageResourcesPath = imageResourcesPath;
     this.renderForms = renderForms;
     this.annotationStorage = annotationStorage;
+    this.enableComment = enableComment;
+    this.#commentManager = commentManager;
     this.enableScripting = enableScripting;
     this._hasJSActionsPromise = hasJSActionsPromise || Promise.resolve(false);
     this._fieldObjectsPromise = fieldObjectsPromise || Promise.resolve(null);
@@ -164,23 +167,20 @@ class AnnotationLayerBuilder {
     const div = (this.div = document.createElement("div"));
     div.className = "annotationLayer";
     this.#onAppend?.(div);
+    this.#initAnnotationLayer(viewport, structTreeLayer);
 
     if (annotations.length === 0) {
       this.#annotations = annotations;
-
-      this.hide(/* internal = */ true);
+      setLayerDimensions(this.div, viewport);
       return;
     }
-
-    this.#initAnnotationLayer(viewport, structTreeLayer);
 
     await this.annotationLayer.render({
       annotations,
       imageResourcesPath: this.imageResourcesPath,
       renderForms: this.renderForms,
-      linkService: this.linkService,
       downloadManager: this.downloadManager,
-      annotationStorage: this.annotationStorage,
+      enableComment: this.enableComment,
       enableScripting: this.enableScripting,
       hasJSActions,
       fieldObjects,
@@ -212,9 +212,12 @@ class AnnotationLayerBuilder {
       accessibilityManager: this._accessibilityManager,
       annotationCanvasMap: this._annotationCanvasMap,
       annotationEditorUIManager: this._annotationEditorUIManager,
+      annotationStorage: this.annotationStorage,
       page: this.pdfPage,
       viewport: viewport.clone({ dontFlip: true }),
       structTreeLayer,
+      commentManager: this.#commentManager,
+      linkService: this.linkService,
     });
   }
 
@@ -238,15 +241,11 @@ class AnnotationLayerBuilder {
   }
 
   /**
-   * @param {InjectLinkAnnotationsOptions} options
+   * @param {Array<Object>} inferredLinks
    * @returns {Promise<void>} A promise that is resolved when the inferred links
    *   are added to the annotation layer.
    */
-  async injectLinkAnnotations({
-    inferredLinks,
-    viewport,
-    structTreeLayer = null,
-  }) {
+  async injectLinkAnnotations(inferredLinks) {
     if (this.#annotations === null) {
       throw new Error(
         "`render` method must be called before `injectLinkAnnotations`."
@@ -265,12 +264,7 @@ class AnnotationLayerBuilder {
       return;
     }
 
-    if (!this.annotationLayer) {
-      this.#initAnnotationLayer(viewport, structTreeLayer);
-      setLayerDimensions(this.div, viewport);
-    }
-
-    await this.annotationLayer.addLinkAnnotations(newLinks, this.linkService);
+    await this.annotationLayer.addLinkAnnotations(newLinks);
     // Don't show the annotation layer if it was explicitly hidden previously.
     if (!this.#externalHide) {
       this.div.hidden = false;

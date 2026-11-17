@@ -81,11 +81,11 @@ const StyleMapping = new Map([
   ["kerning-mode", value => (value === "none" ? "none" : "normal")],
   [
     "xfa-font-horizontal-scale",
-    value => `scaleX(${Math.max(0, parseInt(value) / 100).toFixed(2)})`,
+    value => `scaleX(${Math.max(0, parseInt(value, 10) / 100).toFixed(2)})`,
   ],
   [
     "xfa-font-vertical-scale",
-    value => `scaleY(${Math.max(0, parseInt(value) / 100).toFixed(2)})`,
+    value => `scaleY(${Math.max(0, parseInt(value, 10) / 100).toFixed(2)})`,
   ],
   ["xfa-spacerun", ""],
   ["xfa-tab-stops", ""],
@@ -530,7 +530,7 @@ class Ul extends XhtmlObject {
 
 class XhtmlNamespace {
   static [$buildXFAObject](name, attributes) {
-    if (XhtmlNamespace.hasOwnProperty(name)) {
+    if (Object.hasOwn(XhtmlNamespace, name)) {
       return XhtmlNamespace[name](attributes);
     }
     return undefined;

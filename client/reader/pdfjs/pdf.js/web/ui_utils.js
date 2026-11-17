@@ -13,24 +13,15 @@
  * limitations under the License.
  */
 
-import { MathClamp } from "pdfjs-lib";
-
 const DEFAULT_SCALE_VALUE = "auto";
 const DEFAULT_SCALE = 1.0;
 const DEFAULT_SCALE_DELTA = 1.1;
 const MIN_SCALE = 0.1;
-const MAX_SCALE = 10.0;
+const MAX_SCALE = 25.0;
 const UNKNOWN_SCALE = 0;
 const MAX_AUTO_SCALE = 1.25;
 const SCROLLBAR_PADDING = 40;
 const VERTICAL_PADDING = 5;
-
-const RenderingStates = {
-  INITIAL: 0,
-  RUNNING: 1,
-  PAUSED: 2,
-  FINISHED: 3,
-};
 
 const PresentationModeState = {
   UNKNOWN: 0,
@@ -85,11 +76,8 @@ const AutoPrintRegExp = /\bprint\s*\(/;
  *   specifying the offset from the top left edge.
  * @param {number} [spot.left]
  * @param {number} [spot.top]
- * @param {boolean} [scrollMatches] - When scrolling search results into view,
- *   ignore elements that either: Contains marked content identifiers,
- *   or have the CSS-rule `overflow: hidden;` set. The default value is `false`.
  */
-function scrollIntoView(element, spot, scrollMatches = false) {
+function scrollIntoView(element, spot) {
   // Assuming offsetParent is available (it's not available when viewer is in
   // hidden iframe or object). We have to scroll: if the offsetParent is not set
   // producing the error. See also animationStarted.
@@ -101,11 +89,8 @@ function scrollIntoView(element, spot, scrollMatches = false) {
   let offsetY = element.offsetTop + element.clientTop;
   let offsetX = element.offsetLeft + element.clientLeft;
   while (
-    (parent.clientHeight === parent.scrollHeight &&
-      parent.clientWidth === parent.scrollWidth) ||
-    (scrollMatches &&
-      (parent.classList.contains("markedContent") ||
-        getComputedStyle(parent).overflow === "hidden"))
+    parent.clientHeight === parent.scrollHeight &&
+    parent.clientWidth === parent.scrollWidth
   ) {
     offsetY += parent.offsetTop;
     offsetX += parent.offsetLeft;
@@ -699,7 +684,7 @@ class ProgressBar {
   }
 
   set percent(val) {
-    this.#percent = MathClamp(val, 0, 100);
+    this.#percent = val;
 
     if (isNaN(val)) {
       this.#classList.add("indeterminate");
@@ -840,6 +825,13 @@ function toggleCheckedBtn(button, toggle, view = null) {
   view?.classList.toggle("hidden", !toggle);
 }
 
+function toggleSelectedBtn(button, toggle, view = null) {
+  button.classList.toggle("selected", toggle);
+  button.setAttribute("aria-selected", toggle);
+
+  view?.classList.toggle("hidden", !toggle);
+}
+
 function toggleExpandedBtn(button, toggle, view = null) {
   button.classList.toggle("toggled", toggle);
   button.setAttribute("aria-expanded", toggle);
@@ -897,7 +889,6 @@ export {
   PresentationModeState,
   ProgressBar,
   removeNullCharacters,
-  RenderingStates,
   SCROLLBAR_PADDING,
   scrollIntoView,
   ScrollMode,
@@ -906,6 +897,7 @@ export {
   TextLayerMode,
   toggleCheckedBtn,
   toggleExpandedBtn,
+  toggleSelectedBtn,
   UNKNOWN_SCALE,
   VERTICAL_PADDING,
   watchScroll,

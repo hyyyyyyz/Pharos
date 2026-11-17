@@ -17,10 +17,6 @@
 
 :root {
   --dir-factor: 1;
-  /*#if !MOZCENTRAL*/
-  --inline-start: left;
-  --inline-end: right;
-  /*#endif*/
 
   --sidebar-width: 200px;
   --sidebar-transition-duration: 200ms;
@@ -69,22 +65,6 @@
   --field-color: light-dark(rgb(6 6 6), rgb(250 250 250));
   --field-bg-color: light-dark(rgb(255 255 255), rgb(64 64 68));
   --field-border-color: light-dark(rgb(187 187 188), rgb(115 115 115));
-  --treeitem-color: light-dark(rgb(0 0 0 / 0.8), rgb(255 255 255 / 0.8));
-  --treeitem-bg-color: light-dark(rgb(0 0 0 / 0.15), rgb(255 255 255 / 0.15));
-  --treeitem-hover-color: light-dark(rgb(0 0 0 / 0.9), rgb(255 255 255 / 0.9));
-  --treeitem-selected-color: light-dark(
-    rgb(0 0 0 / 0.9),
-    rgb(255 255 255 / 0.9)
-  );
-  --treeitem-selected-bg-color: light-dark(
-    rgb(0 0 0 / 0.25),
-    rgb(255 255 255 / 0.25)
-  );
-  --thumbnail-hover-color: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.1));
-  --thumbnail-selected-color: light-dark(
-    rgb(0 0 0 / 0.2),
-    rgb(255 255 255 / 0.2)
-  );
   --doorhanger-bg-color: light-dark(rgb(255 255 255), #42414d);
   --doorhanger-border-color: light-dark(rgb(12 12 13 / 0.2), rgb(39 39 43));
   --doorhanger-hover-color: light-dark(rgb(12 12 13), rgb(249 249 250));
@@ -97,15 +77,14 @@
   );
 
   --loading-icon: url(images/loading.svg);
-  --treeitem-expanded-icon: url(images/treeitem-expanded.svg);
-  --treeitem-collapsed-icon: url(images/treeitem-collapsed.svg);
+  --toolbarButton-editorComment-icon: url(images/comment-editButton.svg);
   --toolbarButton-editorFreeText-icon: url(images/toolbarButton-editorFreeText.svg);
   --toolbarButton-editorHighlight-icon: url(images/toolbarButton-editorHighlight.svg);
   --toolbarButton-editorInk-icon: url(images/toolbarButton-editorInk.svg);
   --toolbarButton-editorStamp-icon: url(images/toolbarButton-editorStamp.svg);
   --toolbarButton-editorSignature-icon: url(images/toolbarButton-editorSignature.svg);
   --toolbarButton-menuArrow-icon: url(images/toolbarButton-menuArrow.svg);
-  --toolbarButton-sidebarToggle-icon: url(images/toolbarButton-sidebarToggle.svg);
+  --toolbarButton-viewsManagerToggle-icon: url(images/toolbarButton-viewsManagerToggle.svg);
   --toolbarButton-secondaryToolbarToggle-icon: url(images/toolbarButton-secondaryToolbarToggle.svg);
   --toolbarButton-pageUp-icon: url(images/toolbarButton-pageUp.svg);
   --toolbarButton-pageDown-icon: url(images/toolbarButton-pageDown.svg);
@@ -144,14 +123,11 @@
   );
   --secondaryToolbarButton-documentProperties-icon: url(images/secondaryToolbarButton-documentProperties.svg);
   --editorParams-stampAddImage-icon: url(images/toolbarButton-zoomIn.svg);
+  --comment-edit-button-icon: url(images/comment-editButton.svg);
 }
 
 :root:dir(rtl) {
   --dir-factor: -1;
-  /*#if !MOZCENTRAL*/
-  --inline-start: right;
-  --inline-end: left;
-  /*#endif*/
 }
 
 @media screen and (forced-colors: active) {
@@ -280,29 +256,6 @@ body {
   margin: 0;
 }
 
-#sidebarContainer {
-  position: absolute;
-  inset-block: var(--toolbar-height) 0;
-  inset-inline-start: calc(-1 * var(--sidebar-width));
-  width: var(--sidebar-width);
-  visibility: hidden;
-  z-index: 1;
-  font: message-box;
-  border-top: 1px solid transparent;
-  border-inline-end: var(--doorhanger-border-color-whcm);
-  transition-property: inset-inline-start;
-  transition-duration: var(--sidebar-transition-duration);
-  transition-timing-function: var(--sidebar-transition-timing-function);
-}
-
-#outerContainer:is(.sidebarMoving, .sidebarOpen) #sidebarContainer {
-  visibility: visible;
-}
-
-#outerContainer.sidebarOpen #sidebarContainer {
-  inset-inline-start: 0;
-}
-
 #mainContainer {
   position: absolute;
   inset: 0;
@@ -332,11 +285,6 @@ body {
 #viewerContainer:not(.pdfPresentationMode) {
   transition-duration: var(--sidebar-transition-duration);
   transition-timing-function: var(--sidebar-transition-timing-function);
-}
-
-#outerContainer.sidebarOpen #viewerContainer:not(.pdfPresentationMode) {
-  inset-inline-start: var(--sidebar-width);
-  transition-property: inset-inline-start;
 }
 
 #sidebarContainer :is(input, button, select) {
@@ -383,25 +331,6 @@ body {
     height: 100%;
     padding-inline-end: 2px;
   }
-}
-
-#sidebarResizer {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: -6px;
-  width: 6px;
-  z-index: 200;
-  cursor: ew-resize;
-}
-
-#outerContainer.sidebarOpen #loadingBar {
-  inset-inline-start: var(--sidebar-width);
-}
-
-#outerContainer.sidebarResizing
-  :is(#sidebarContainer, #viewerContainer, #loadingBar) {
-  /* Improve responsiveness and avoid visual glitches when the sidebar is resized. */
-  transition-duration: 0s;
 }
 
 .doorHanger,
@@ -480,7 +409,7 @@ body {
 }
 
 .splitToolbarButtonSeparator {
-  float: var(--inline-start);
+  float: inline-start;
   width: 0;
   height: 62%;
   border-left: 1px solid var(--separator-color);
@@ -501,21 +430,8 @@ body {
   box-sizing: border-box;
 }
 
-.treeItemToggler::before {
-  /* All matching images have a size of 16x16
-   * All relevant containers have a size of 28x28 */
-  position: absolute;
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-
-  content: "";
-  background-color: var(--toolbar-icon-bg-color);
-  mask-size: cover;
-}
-
-#sidebarToggleButton::before {
-  mask-image: var(--toolbarButton-sidebarToggle-icon);
+#viewsManagerToggleButton::before {
+  mask-image: var(--toolbarButton-viewsManagerToggle-icon);
   transform: scaleX(var(--dir-factor));
 }
 
@@ -538,6 +454,11 @@ body {
 
 #zoomInButton::before {
   mask-image: var(--toolbarButton-zoomIn-icon);
+}
+
+#editorCommentButton::before {
+  mask-image: var(--toolbarButton-editorComment-icon);
+  transform: scaleX(var(--dir-factor));
 }
 
 #editorFreeTextButton::before {
@@ -696,150 +617,6 @@ body {
     inset-inline-end: 4px;
   }
 }
-
-#thumbnailView,
-#outlineView,
-#attachmentsView,
-#layersView {
-  position: absolute;
-  width: calc(100% - 8px);
-  inset-block: 0;
-  padding: 4px 4px 0;
-  overflow: auto;
-  user-select: none;
-}
-
-#thumbnailView {
-  width: calc(100% - 60px);
-  padding: 10px 30px 0;
-}
-
-#thumbnailView > a:is(:active, :focus) {
-  outline: 0;
-}
-
-.thumbnail {
-  /* Define these variables here, and not in :root, since the individual
-     thumbnails may have different sizes. */
-  --thumbnail-width: 0;
-  --thumbnail-height: 0;
-
-  float: var(--inline-start);
-  width: var(--thumbnail-width);
-  height: var(--thumbnail-height);
-  margin: 0 10px 5px;
-  padding: 1px;
-  border: 7px solid transparent;
-  border-radius: 2px;
-}
-
-#thumbnailView > a:last-of-type > .thumbnail {
-  margin-bottom: 10px;
-}
-
-a:focus > .thumbnail,
-.thumbnail:hover {
-  border-color: var(--thumbnail-hover-color);
-}
-
-.thumbnail.selected {
-  border-color: var(--thumbnail-selected-color) !important;
-}
-
-.thumbnailImage {
-  width: var(--thumbnail-width);
-  height: var(--thumbnail-height);
-  opacity: 0.9;
-}
-
-a:focus > .thumbnail > .thumbnailImage,
-.thumbnail:hover > .thumbnailImage {
-  opacity: 0.95;
-}
-
-.thumbnail.selected > .thumbnailImage {
-  opacity: 1 !important;
-}
-
-.thumbnail:not([data-loaded]) > .thumbnailImage {
-  width: calc(var(--thumbnail-width) - 2px);
-  height: calc(var(--thumbnail-height) - 2px);
-  border: 1px dashed rgb(132 132 132);
-}
-
-.treeWithDeepNesting > .treeItem,
-.treeItem > .treeItems {
-  margin-inline-start: 20px;
-}
-
-.treeItem > a {
-  text-decoration: none;
-  display: inline-block;
-  /* Subtract the right padding (left, in RTL mode) of the container: */
-  min-width: calc(100% - 4px);
-  height: auto;
-  margin-bottom: 1px;
-  padding: 2px 0 5px;
-  padding-inline-start: 4px;
-  border-radius: 2px;
-  color: var(--treeitem-color);
-  font-size: 13px;
-  line-height: 15px;
-  user-select: none;
-  white-space: normal;
-  cursor: pointer;
-}
-
-#layersView .treeItem > a * {
-  cursor: pointer;
-}
-
-#layersView .treeItem > a > label {
-  padding-inline-start: 4px;
-}
-
-#layersView .treeItem > a > label > input {
-  float: var(--inline-start);
-  margin-top: 1px;
-}
-
-.treeItemToggler {
-  position: relative;
-  float: var(--inline-start);
-  height: 0;
-  width: 0;
-  color: rgb(255 255 255 / 0.5);
-}
-
-.treeItemToggler::before {
-  inset-inline-end: 4px;
-  mask-image: var(--treeitem-expanded-icon);
-}
-
-.treeItemToggler.treeItemsHidden::before {
-  mask-image: var(--treeitem-collapsed-icon);
-  transform: scaleX(var(--dir-factor));
-}
-
-.treeItemToggler.treeItemsHidden ~ .treeItems {
-  display: none;
-}
-
-.treeItem.selected > a {
-  background-color: var(--treeitem-selected-bg-color);
-  color: var(--treeitem-selected-color);
-}
-
-.treeItemToggler:hover,
-.treeItemToggler:hover + a,
-.treeItemToggler:hover ~ .treeItems,
-.treeItem > a:hover {
-  background-color: var(--treeitem-bg-color);
-  background-clip: padding-box;
-  border-radius: 2px;
-  color: var(--treeitem-hover-color);
-}
-
 #outlineOptionsContainer {
   display: none;
 
@@ -1077,7 +854,6 @@ dialog :link {
   }
 
   .menuContainer {
-    width: 100%;
     height: auto;
     max-height: calc(
       var(--viewer-container-height) - var(--toolbar-height) -
@@ -1584,9 +1360,13 @@ dialog :link {
       height: 1px;
     }
 
-    #toolbarViewerLeft #numPages.toolbarLabel {
-      padding-inline-start: 3px;
-      flex: none;
+    #toolbarViewerLeft {
+      margin-inline-start: 8px;
+
+      #numPages.toolbarLabel {
+        padding-inline-start: 3px;
+        flex: none;
+      }
     }
   }
 
@@ -1649,7 +1429,7 @@ dialog :link {
   #sidebarContainer {
     background-color: var(--sidebar-narrow-bg-color);
   }
-  #outerContainer.sidebarOpen #viewerContainer {
+  #outerContainer.viewsManagerOpen #viewerContainer {
     inset-inline-start: 0 !important;
   }
 }

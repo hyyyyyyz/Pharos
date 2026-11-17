@@ -1,0 +1,39 @@
+import { ReadAloudProvider } from '../provider';
+import { BrowserReadAloudVoice } from './voice';
+import { areLocalVoicesUnavailable } from '../local-voices-unavailable';
+
+const VOICES_CHANGED_TIMEOUT = 3000;
+
+export class BrowserReadAloudProvider implements ReadAloudProvider {
+	readonly standardCreditsRemaining = null;
+
+	readonly premiumCreditsRemaining = null;
+
+	async getVoices(): Promise<BrowserReadAloudVoice[]> {
+		// TEMP: See local-voices-unavailable.ts
+		if (areLocalVoicesUnavailable()) {
+			return [];
+		}
+		if (!window.speechSynthesis.getVoices().length) {
+			await new Promise<void>((resolve) => {
+				let timeout: ReturnType<typeof setTimeout>;
+				let done = () => {
+					clearTimeout(timeout);
+					window.speechSynthesis.removeEventListener('voiceschanged', done);
+					resolve();
+				};
+				timeout = setTimeout(done, VOICES_CHANGED_TIMEOUT);
+				window.speechSynthesis.addEventListener('voiceschanged', done, { once: true });
+			});
+		}
+		let voices = window.speechSynthesis.getVoices();
+		// Safari returns duplicates
+		let uniqueById = new Map<string, SpeechSynthesisVoice>();
+		for (let voice of voices) {
+			uniqueById.set(voice.voiceURI, voice);
+		}
+		return Array.from(uniqueById.values())
+			.map(v => new BrowserReadAloudVoice(this, v))
+			.sort((a, b) => b.score - a.score);
+	}
+}

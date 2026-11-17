@@ -24,6 +24,12 @@ delete-or-backspace =
         [macos] Delete
        *[other] Backspace
     }
+-os-name =
+    { PLATFORM() ->
+        [macos] macOS
+        [windows] Windows
+       *[other] Linux
+    }
 general-print = طباعة
 general-remove = إزالة
 general-add = اضافة
@@ -34,17 +40,23 @@ general-open-settings = فتح الإعدادات
 general-settings = الإعدادات...
 general-help = مساعدة
 general-tag = وسم
+general-got-it = Got It
 general-done = تم
 general-view-troubleshooting-instructions = عرض تعليمات استكشاف الأخطاء وإصلاحها
 general-go-back = ارجع
 general-accept = قبول
 general-cancel = إلغاء
+cancel-button =
+    .label = { general-cancel }
 general-show-in-library = عرض في المكتبة
 general-restartApp = إعادة تشغيل { -app-name }
 general-restartInTroubleshootingMode = إعادة التشغيل في وضع استكشاف الأخطاء وإصلاحها
 general-save = حفظ
 general-clear = تفريغ
+clear-button =
+    .label = { general-clear }
 general-update = تحديث
+general-reset-to-default = Reset to Default
 general-back = ارجع
 general-edit = تحرير
 general-cut = قص
@@ -58,9 +70,13 @@ general-et-al = إلخ.
 general-previous = السابق
 general-next = التالي
 general-learn-more = تعرف على المزيد
+general-more-information = المزيد من المعلومات
 general-warning = تحذير
 general-type-to-continue = اكتب ”{ $text }“ للمتابعة.
 general-continue = استمر
+general-allow = Allow
+general-always-allow = Always Allow
+general-deny = Deny
 general-red = أحمر
 general-orange = برتقالي
 general-yellow = أصفر
@@ -74,6 +90,8 @@ general-maroon = كستنائي
 general-gray = رمادي
 general-black = أسود
 general-loading = التحميل
+db-checking-integrity = Checking database integrity…
+db-repairing = Repairing database…
 citation-style-label = نمط الاستشهاد:
 language-label = اللغة
 menu-custom-group-submenu =
@@ -159,14 +177,122 @@ zotero-toolbar-tabs-scroll-backwards =
     .title = التمرير للخلف
 toolbar-add-attachment =
     .tooltiptext = { add-attachment }
-collections-menu-rename-collection =
-    .label = إعادة تسمية المجموعة
-collections-menu-edit-saved-search =
-    .label = تحرير البحث المخزن
+recently-read = Recently Read
+collections-menu-show-recently-read =
+    .label = Show { recently-read }
+item-menu-remove-from-recently-read =
+    .label = Remove from { recently-read }…
+collections-menu-clear-all-last-read =
+    .label = Clear All Last Read Dates…
+recently-read-clear-all-confirm = All Last Read dates in this library will be erased.
+items-section-collections-selected =
+    { $count ->
+        [zero] { $count } مجموعة مختارة
+        [one] { $count } مجموعة مختارة
+        [two] { $count } مجموعتان مختارتان
+        [few] { $count } مجموعات مختارة
+        [many] { $count } مجموعات مختارة
+       *[other] { $count } مجموعات مختارة
+    }
+items-section-searches-selected =
+    { $count ->
+        [one] { $count } saved search selected
+       *[other] { $count } saved searches selected
+    }
+items-section-sources-selected =
+    { $count ->
+        [one] { $count } source selected
+       *[other] { $count } sources selected
+    }
+items-section-library-collections =
+    { $count ->
+        [one] { $library } ({ $count } collection selected)
+       *[other] { $library } ({ $count } collections selected)
+    }
+items-section-library-searches =
+    { $count ->
+        [one] { $library } ({ $count } saved search selected)
+       *[other] { $library } ({ $count } saved searches selected)
+    }
+items-section-library-sources =
+    { $count ->
+        [one] { $library } ({ $count } source selected)
+       *[other] { $library } ({ $count } sources selected)
+    }
+items-section-library-recently-read = { $library } ({ recently-read })
+items-section-library = { $library }
+collections-menu-rename =
+    .label = Rename
+edit-saved-search = تحرير البحث المخزن
+collections-menu-edit-search =
+    .label = Edit Search
+collections-menu-duplicate-search =
+    .label = Duplicate Search
 collections-menu-move-collection =
     .label = الانتقال إلى
 collections-menu-copy-collection =
     .label = النسخ إلى
+collections-menu-export =
+    .label = تصدير...
+collections-menu-generate-report =
+    .label = Generate Report…
+collections-menu-create-bibliography =
+    .label = Create Bibliography…
+collections-menu-unsubscribe =
+    .label = Unsubscribe…
+collections-menu-delete =
+    .label =
+        { $count ->
+            [one] Delete Collection…
+           *[other] Delete Collections…
+        }
+collections-menu-delete-with-items =
+    .label =
+        { $count ->
+            [one] Delete Collection and Items…
+           *[other] Delete Collections and Items…
+        }
+collections-menu-delete-search =
+    .label =
+        { $count ->
+            [one] Delete Search…
+           *[other] Delete Searches…
+        }
+collections-delete-title =
+    { $count ->
+        [one] Delete Collection
+       *[other] Delete Collections
+    }
+collections-delete-message =
+    { $count ->
+        [one] Are you sure you want to delete this collection?
+       *[other] Are you sure you want to delete { $count } collections?
+    }
+collections-delete-keep-items =
+    { $count ->
+        [one] Items within this collection will not be deleted.
+       *[other] Items within these collections will not be deleted.
+    }
+collections-delete-with-items-title =
+    { $count ->
+        [one] Delete Collection and Items
+       *[other] Delete Collections and Items
+    }
+collections-delete-with-items-message =
+    { $count ->
+        [one] Are you sure you want to delete this collection and move all items within it to the Trash?
+       *[other] Are you sure you want to delete { $count } collections and move all items within them to the Trash?
+    }
+collections-delete-search-title =
+    { $count ->
+        [one] Delete Search
+       *[other] Delete Searches
+    }
+collections-delete-search-message =
+    { $count ->
+        [one] Are you sure you want to delete this search?
+       *[other] Are you sure you want to delete { $count } searches?
+    }
 item-creator-moveDown =
     .label = تحريك لأسفل
 item-creator-moveToTop =
@@ -277,8 +403,9 @@ import-online-wrong-credentials = لقد فشل تسجيل الدخول إلى {
 import-online-blocked-by-plugin = لا يمكن متابعة الاستيراد مع تثبيت { $plugin }. يرجى تعطيل هذه الإضافة والمحاولة مرة أخرى.
 import-online-relink-only =
     .label = إعادة ربط استشهادات مندلي المكتبية
-import-online-relink-kb = المزيد من المعلومات
+import-online-relink-kb = { general-more-information }
 import-online-connection-error = تعذر على { -app-name } الاتصال ب { $targetApp }. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.
+tab-title-multiple-collections = Multiple
 items-table-cell-notes =
     .aria-label =
         { $count ->
@@ -289,6 +416,9 @@ items-table-cell-notes =
             [many] { $count } ملاحظات
            *[other] { $count } ملاحظات
         }
+items-column-added-by = Added By
+items-column-modified-by = Modified By
+items-column-last-read = Last Read
 report-error =
     .label = الإبلاغ عن خطأ...
 rtfScan-wizard =
@@ -364,6 +494,7 @@ styleEditor-editor =
     .aria-label = محرر الأسلوب
 styleEditor-preview =
     .aria-label = معاينة
+stylePreview-generating = Generating previews…
 publications-intro-page = منشوراتي
 publications-intro = سيتم عرض العناصر التي تضيفها إلى منشوراتي على صفحة ملفك الشخصي على zotero.org. إذا اخترت تضمين الملفات المرفقة، سيتم إتاحتها للجمهور تحت الرخصة التي تحددها. أضف الأعمال التي ألفتها فقط، و لا تضمن الملفات إلا إن كان لديك الحق في توزيعها وترغب في القيام بذلك.
 publications-include-checkbox-files =
@@ -622,16 +753,9 @@ item-title-empty-note = ملاحظة بدون عنوان
 attachment-preview-placeholder = لا يوجد مرفق للمعاينة
 attachment-rename-from-parent =
     .tooltiptext = إعادة تسمية الملف ليتطابق مع العنصر الأصلي
-file-renaming-auto-rename-prompt-title = تم تغيير إعدادات إعادة التسمية
-file-renaming-auto-rename-prompt-body = هل ترغب في إعادة تسمية الملفات الموجودة في مكتبتك لتتوافق مع الإعدادات الجديدة؟
-file-renaming-auto-rename-prompt-yes = معاينة التغييرات...
-file-renaming-auto-rename-prompt-no = الحفاظ على أسماء الملفات الحالية
-rename-files-preview =
-    .buttonlabelaccept = إعادة تسمية الملفات
-rename-files-preview-loading = التحميل
-rename-files-preview-intro = { -app-name } سيعيد تسمية الملفات التالية في مكتبتك لتتطابق مع العناصر الأصلية:
-rename-files-preview-renaming = إعادة التسمية...
-rename-files-preview-no-files = جميع أسماء الملفات تتطابق مسبقاً مع العناصر الأصلية. لا توجد حاجة لإجراء أي تغييرات.
+account-log-in = Log In
+account-not-logged-in-text = Log in to your Zotero account to sync your data.
+account-error-login-session-expired = Your login session has expired. Please try again.
 toggle-preview =
     .label =
         { $type ->
@@ -646,6 +770,18 @@ quicksearch-input =
     .aria-label = البحث السريع
     .placeholder = { $placeholder }
     .aria-description = { $placeholder }
+advanced-search = البحث المتقدم
+menuitem-advanced-search =
+    .label = { advanced-search }
+quicksearch-advanced-search-button =
+    .tooltiptext = { advanced-search }
+    .aria-label = { advanced-search }
+advanced-search-close =
+    .tooltiptext = Close Advanced Search
+advanced-search-expand =
+    .tooltiptext = Expand Advanced Search
+advanced-search-collapse =
+    .tooltiptext = Collapse Advanced Search
 item-pane-header-view-as =
     .label = عرض كـ
 item-pane-header-none =
@@ -719,10 +855,66 @@ architecture-warning-action = قم بتنزيل { -app-name } 64-بت
 architecture-x64-on-arm64-message = يعمل { -app-name } في الوضع المحاكي. سيعمل الإصدار الأصلي من { -app-name } بكفاءة أكبر.
 architecture-x64-on-arm64-action = قم بتنزيل  { -app-name } ل ARM64
 first-run-guidance-authorMenu = { -app-name } يتيح لك تحديد المحررين والمترجمين أيضًا. يمكنك تحويل المؤلف إلى محرر أو مترجم عن طريق التحديد من هذه القائمة.
+first-run-guidance-readAloud = { -app-name } can now read your documents to you using natural-sounding voices.
 advanced-search-remove-btn =
-    .tooltiptext = { general-remove }
+    .tooltiptext = Remove Condition
 advanced-search-add-btn =
-    .tooltiptext = { general-add }
+    .tooltiptext = Add Condition
+advanced-search-group-btn =
+    .tooltiptext = Add Condition Group
+advanced-search-remove-group-btn =
+    .tooltiptext = Remove Group
+advanced-search-ungroup-btn =
+    .tooltiptext = Ungroup Conditions
+advanced-search-result-level-menu =
+    .aria-label = Result type
+advanced-search-result-level-prefix-root =
+    .value = اعثر
+advanced-search-join-prefix-root =
+    .value = matching
+advanced-search-result-level-any =
+    .label = any items
+advanced-search-result-level-item =
+    .label = top-level items
+advanced-search-result-level-attachment =
+    .label = attachments
+advanced-search-result-level-note =
+    .label = notes
+advanced-search-result-level-annotation =
+    .label = تعليقات توضيحية
+advanced-search-binding-menu =
+    .aria-label = Match against the same item
+advanced-search-binding-separate =
+    .label = separately
+advanced-search-binding-same-attachment =
+    .label = in the same attachment
+advanced-search-binding-same-note =
+    .label = in the same note
+advanced-search-binding-same-annotation =
+    .label = in the same annotation
+advanced-search-of-the-following =
+    .value = of the following
+advanced-search-binding-hint-attachment =
+    .value = These conditions can match separate attachments.
+advanced-search-binding-hint-note =
+    .value = These conditions can match separate notes.
+advanced-search-binding-hint-annotation =
+    .value = These conditions can match separate annotations.
+advanced-search-level-warning-mixed = These conditions cannot all match the same item, so this search will never return results. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-level-warning-unreachable = This search has a condition that cannot apply to the chosen result type. Set the result type to “{ $topLevelItems }” or remove the incompatible condition.
+advanced-search-group-warning-unreachable =
+    A condition here cannot be in the same { $entity ->
+        [attachment] attachment
+        [note] note
+       *[annotation] annotation
+    }. Match these separately or remove the incompatible condition.
+advanced-search-group-warning-mixed = These conditions cannot all match the same item, so this group will never match. Try matching “{ $matchAny }” of them, or set the result type to “{ $topLevelItems }”.
+advanced-search-bind-same-attachment =
+    .label = Match the same attachment
+advanced-search-bind-same-note =
+    .label = Match the same note
+advanced-search-bind-same-annotation =
+    .label = Match the same annotation
 advanced-search-conditions-menu =
     .aria-label = شرط البحث
     .label = { $label }
@@ -732,6 +924,55 @@ advanced-search-operators-menu =
 advanced-search-condition-input =
     .aria-label = القيمة
     .label = { $label }
+search-operator-isEmpty = is empty
+search-operator-isNotEmpty = is not empty
+search-conditions-tooltip-fields = الحقول:
+search-conditions-collection = مجموعة العناصر
+search-conditions-savedSearch = بحث مخزن
+search-conditions-itemTypeID = نوع العنصر
+search-conditions-tag = وسم
+search-conditions-numTags = # of Tags
+search-conditions-numNotes = # of Notes
+search-conditions-numAttachments = # of Attachments
+search-conditions-numAnnotations = # of Annotations
+search-conditions-note = ملاحظة
+search-conditions-childNote = ملحوظة فرعية
+search-conditions-creator = المؤلف
+search-conditions-thesisType = نوع الأطروحة
+search-conditions-reportType = نوع التقرير
+search-conditions-videoRecordingFormat = صيغة التسجيل المرئي
+search-conditions-audioFileType = نوع ملف الصوت
+search-conditions-audioRecordingFormat = صيغة التسجيل الصوتي
+search-conditions-letterType = نوع الخطاب
+search-conditions-interviewMedium = وسيط المقابلة
+search-conditions-manuscriptType = نوع المخطوطة
+search-conditions-presentationType = نوع العرض التقديمي
+search-conditions-mapType = نوع الخريطة
+search-conditions-artworkMedium = وسيط العمل الفني
+search-conditions-dateModified = تاريخ التعديل
+search-conditions-fulltextContent = محتويات المرفق
+search-conditions-programmingLanguage = لغة البرمجة
+search-conditions-fileTypeID = نوع الملف المرفق
+search-conditions-attachmentStorageType = Attachment Storage Type
+search-conditions-lastRead = Attachment Last Read
+search-conditions-annotationText = نص التعليق
+search-conditions-annotationComment = تعليق توضيحي
+search-conditions-annotationType = Annotation Type
+search-conditions-annotationColor = Annotation Color
+search-conditions-annotationAuthor = Annotation Author
+search-conditions-anyField = أي حقل
+search-conditions-titleCreatorYear = العنوان، المؤلف، السنة
+search-conditions-submenu-attachment = مُرفق
+search-conditions-submenu-annotation = التعليق التوضيحي
+search-conditions-short-fulltextContent = Content
+search-conditions-short-fileTypeID = نوع الملف الصوتي
+search-conditions-short-attachmentStorageType = Storage Type
+search-conditions-short-lastRead = Last Read
+search-conditions-short-annotationText = Text
+search-conditions-short-annotationComment = Comment
+search-conditions-short-annotationType = النوع
+search-conditions-short-annotationColor = Color
+search-conditions-short-annotationAuthor = المؤلف
 find-pdf-files-added =
     { $count ->
         [zero] { $count } ملف مضاف
@@ -775,6 +1016,9 @@ file-type-video = فيديو
 file-type-presentation = عرض تقديمي
 file-type-document = مستند
 file-type-ebook = الكتاب الإلكتروني
+attachment-storage-type-storedFile = Stored File
+attachment-storage-type-linkedFile = ملف مرتبط
+attachment-storage-type-webLink = رابط الويب
 post-upgrade-message = لقد تمت ترقيتك إلى <span data-l10n-name="post-upgrade-appver">{ -app-name } { $version }</span>! تعرف على <a data-l10n-name="new-features-link">ما الجديد</a>.
 post-upgrade-remind-me-later =
     .label = { general-remind-me-later }
@@ -783,18 +1027,25 @@ post-upgrade-done =
 text-action-paste-and-search =
     .label = لصق وبحث
 mac-word-plugin-install-message = يحتاج زوتيرو إلى الوصول إلى بيانات وورد لتثبيت إضافة وورد.
+mac-word-plugin-install-folder-message = { -app-name } needs access to Word’s startup folder to install the Word plugin.
 mac-word-plugin-install-action-button =
     .label = تثبيت مكون وورد إضافي
 mac-word-plugin-install-remind-later-button =
     .label = { general-remind-me-later }
 mac-word-plugin-install-dont-ask-again-button =
     .label = { general-dont-ask-again }
+mac-word-plugin-install-folder-dialog-title = Install the plugin in the Word startup folder
+mac-word-plugin-install-folder-dialog-button = تنصيب
+mac-word-plugin-install-wrong-folder-selected = The suggested folder must be selected. Please try again without choosing a different folder.
 file-renaming-banner-message = { -app-name } يقوم الآن تلقائيًا بمزامنة أسماء ملفات المرفقات عند إجراء تغييرات على العناصر.
 file-renaming-banner-documentation-link = { general-learn-more }
 file-renaming-banner-settings-link = { general-settings }
 connector-version-warning = يجب تحديث موصل { -app-name } لكي يعمل مع هذا الإصدار من { -app-name }.
 userjs-pref-warning = تم تجاوز بعض إعدادات { -app-name } باستخدام طريقة غير مدعومة. سيقوم { -app-name } بإعادتها وإعادة التشغيل.
+migrate-extra-fields-progress-headline = Updating Items…
 migrate-extra-fields-progress-message = Migrating new fields from Extra field
+fulltext-indexing-progress-title = Indexing
+fulltext-indexing-progress-message = Full-text search results may be incomplete until indexing finishes.
 long-tag-fixer-window-title =
     .title = علامات التقسيم
 long-tag-fixer-button-dont-split =
@@ -808,3 +1059,155 @@ normalize-attachment-titles-text =
     في الإصدارات القديمة من { -app-name }، وكذلك عند استخدام بعض المكونات الإضافية، يمكن تغيير عناوين المرفقات دون داعٍ لتتطابق مع أسماء الملفات.
     
     هل ترغب في تحديث المرفقات المحددة لاستخدام عناوين أبسط؟ سيتم تغيير المرفقات الأساسية التي تتطابق عناوينها مع اسم الملف فقط.
+banner-close-button =
+    .aria-label = Dismiss notification
+plugins-blocked-plugin =
+    .message = This plugin has been disabled by { -app-name }.
+data-dir-unsupported-storage = This can happen if the { -app-name } data directory is in a cloud storage folder (OneDrive, Dropbox, etc.) or on a network share.
+login-manager-reset = { -app-name } was unable to read your saved login information, so it has been reset. Please log in again in the { preferences-pane-account } pane of the { -app-name } settings.
+os-keystore-save-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to securely save your credentials. Make sure your Keychain is accessible and try again.
+        [windows] { -app-name } couldn’t securely save your credentials. Try again or restart { -app-name }.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to securely save your credentials. Make sure a keyring service is running and try again.
+    }
+os-keystore-read-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to read your saved credentials. Make sure your Keychain is accessible and try again.
+        [windows] { -app-name } couldn’t use { -os-name } Credential Manager to read your saved credentials. Try again or restart { -app-name }.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to read your saved credentials. Make sure a keyring service such as GNOME Keyring or KWallet is running and try again.
+    }
+os-keystore-save-unencrypted = { -app-name } can save your credentials unencrypted instead. Anyone with access to your { -app-name } profile folder would then be able to read them.
+os-keystore-save-unencrypted-button = Save Anyway
+os-keystore-migrate-failed =
+    { PLATFORM() ->
+        [macos] { -app-name } couldn’t access the { -os-name } Keychain to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure your Keychain is accessible and restart { -app-name }.
+        [windows] { -app-name } couldn’t encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Restart { -app-name } and try again.
+       *[other] { -app-name } couldn’t access your { -os-name } keyring to encrypt your stored credentials. Your credentials remain stored unencrypted on disk. Make sure a keyring service is running and restart { -app-name }.
+    }
+search-button =
+    .label = بحث
+save-search-new-button =
+    .label = Save Search…
+save-search-edit-button =
+    .label = حفظ
+save-search-name-title = حفظ البحث
+save-search-name-message = Enter a name for the saved search:
+saved-search-close-confirmation-title = Editing Saved Search
+saved-search-close-confirmation-body = Do you want to save changes you made to this saved search?
+item-pane-batch-editing-prompt =
+    .aria-label = Batch editing
+item-pane-batch-editing-enable =
+    .label = Edit Multiple Items…
+item-pane-batch-editing-multiple-values-placeholder = Multiple
+item-pane-batch-editing-clear-values = Clear all values
+item-pane-batch-editing-header =
+    { $count ->
+        [one] Editing { $count } item
+       *[other] Editing { $count } items
+    }
+item-pane-batch-editing-done =
+    .label = { general-done }
+undo-action-edit-metadata =
+    { $count ->
+        [one] Edit Metadata
+       *[other] Edit Metadata for { $count } Items
+    }
+undo-action-edit-field =
+    { $count ->
+        [one] Edit of “{ $field }”
+       *[other] Edit of “{ $field }” for { $count } Items
+    }
+undo-action-normalize-attachment-titles = Normalize Attachment Title
+undo-action-trash =
+    { $count ->
+        [one] Trash Item
+       *[other] Trash { $count } Items
+    }
+undo-action-restore-items =
+    { $count ->
+        [one] Restore Item
+       *[other] Restore { $count } Items
+    }
+undo-action-trash-collection =
+    { $count ->
+        [one] Trash Collection
+       *[other] Trash { $count } Collections
+    }
+undo-action-trash-search =
+    { $count ->
+        [one] Trash Saved Search
+       *[other] Trash { $count } Saved Searches
+    }
+undo-action-restore-collection =
+    { $count ->
+        [one] Restore Collection
+       *[other] Restore { $count } Collections
+    }
+undo-action-restore-objects =
+    { $count ->
+        [one] Restore Object
+       *[other] Restore { $count } Objects
+    }
+undo-action-add-to-collection =
+    { $count ->
+        [one] Add to Collection
+       *[other] Add { $count } Items to Collection
+    }
+undo-action-remove-from-collection =
+    { $count ->
+        [one] Remove from Collection
+       *[other] Remove { $count } Items from Collection
+    }
+undo-action-move-to-collection =
+    { $count ->
+        [one] Move to Collection
+       *[other] Move { $count } Items to Collection
+    }
+undo-action-rename-collection = إعادة تسمية المجموعة
+undo-action-move-collection = Move Collection
+undo-action-add-tag =
+    { $count ->
+        [one] Add Tag
+       *[other] Add Tag to { $count } Items
+    }
+undo-action-change-tag = Change Tag
+undo-action-split-tag = Split Tag
+undo-action-remove-tag =
+    { $count ->
+        [one] Remove Tag
+       *[other] Remove Tag from { $count } Items
+    }
+undo-action-remove-tags-from-item =
+    { $count ->
+        [one] Remove Tag
+       *[other] Remove { $count } Tags
+    }
+undo-action-remove-all-tags = Remove All Tags
+undo-action-edit-note = تحرير ملاحظة
+undo-action-add-creator = Add Creator
+undo-action-remove-creator = Remove Creator
+undo-action-edit-creator = Edit Creator
+undo-action-reorder-creator = Reorder Creator
+undo-action-change-type = تغيير نوع العنصر
+undo-action-change-parent-item =
+    { $count ->
+        [one] Change Parent Item
+       *[other] Change Parent for { $count } Items
+    }
+undo-action-convert-to-standalone =
+    { $count ->
+        [one] Convert to Standalone
+       *[other] Convert { $count } Items to Standalone
+    }
+undo-action-add-related = Add Related
+undo-action-remove-related = Remove Related
+undo-action-merge-items =
+    { $count ->
+        [one] Merge Item
+       *[other] Merge { $count } Items
+    }
+menu-edit-undo-action = Undo { $action }
+menu-edit-redo-action = Redo { $action }
+local-api-authorize-title = Local API Authorization
+local-api-authorize-text = “{ $appName }”, an application running on your computer, wants to modify your { -app-name } library.

@@ -17,8 +17,10 @@ integration-editBibliography-wrapper =
     .aria-label = Edytuj bibliografię
     .aria-description = { -integration-editBibliography-include-uncited }{ -integration-editBibliography-exclude-cited }{ -integration-editBibliography-edit-reference }
 integration-citationDialog = Okno cytowania
-integration-citationDialog-section-open = Open Documents ({ $count })
+integration-citationDialog-section-open = Otwórz dokumenty ({ $count })
 integration-citationDialog-section-selected = Wybrane elementy ({ $count }/{ $total })
+integration-citationDialog-section-selectedAnnotations = Wybrane adnotacje
+integration-citationDialog-section-selectedItems = Wybrane elementy
 integration-citationDialog-section-cited =
     { $count ->
         [0] Cited Items
@@ -27,6 +29,8 @@ integration-citationDialog-section-cited =
 integration-citationDialog-details-suffix = Przyrostek
 integration-citationDialog-details-prefix = Przedrostek
 integration-citationDialog-details-suppressAuthor = Pomiń autora
+integration-citationDialog-details-locator-info = Tip: You can also type page numbers and other locators directly into the main field. <a data-l10n-name="docs-link">Learn more</a>
+integration-citationDialog-details-includeComments = Dołącz komentarze
 integration-citationDialog-details-remove = { general-remove }
 integration-citationDialog-details-done =
     .label = { general-done }
@@ -39,10 +43,18 @@ integration-citationDialog-lib-message-citation =
     }
 integration-citationDialog-lib-message-add-note =
     { $search ->
-        [true] No selected notes match the current search
-       *[other] No notes are selected
+        [true] No selected or open notes match the current search
+       *[other] No selected or open notes
+    }
+integration-citationDialog-lib-message-annotations =
+    { $search ->
+        [true] No items with annotations match the current search
+       *[other] No selected or open items with annotations
     }
 integration-citationDialog-settings-keepSorted = Utrzymaj źródła posortowane
+integration-citationDialog-preview-error = Podgląd nie jest dostępny
+integration-citationDialog-btn-displayPreview =
+    .title = Wyświetl podgląd cytowania
 integration-citationDialog-btn-settings =
     .title = { general-open-settings }
 integration-citationDialog-mode-library = Biblioteka
@@ -51,6 +63,8 @@ integration-citationDialog-btn-type-citation =
     .title = Dodaj/Edytuj cytowanie
 integration-citationDialog-btn-type-add-note =
     .title = Dodaj notatkę
+integration-citationDialog-btn-type-annotations =
+    .title = Dodaj adnotacje
 integration-citationDialog-btn-accept =
     .title = { general-accept }
 integration-citationDialog-btn-cancel =
@@ -63,11 +77,18 @@ integration-citationDialog-aria-bubble =
 integration-citationDialog-single-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = Wciśnij Tab, aby wybrać elementy, które mają być dodane do tego cytowania. Wciśnij Escape, aby zapobiec zmianom i zamknąć ten komunikat.
+integration-citationDialog-just-added-input-placeholder = Wpisz "10-15", aby zacytować strony lub wyszukaj elementy
+integration-citationDialog-just-added-input-citation =
+    .placeholder = { $placeholder }
+    .title = { $title }
+    .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-input-citation =
     .placeholder = { integration-citationDialog-search-for-items }
     .aria-description = { integration-citationDialog-general-instructions }
 integration-citationDialog-single-input-add-note =
     .placeholder = Wyszukaj notatkę, aby wstawić ją do dokumentu
+integration-citationDialog-single-input-annotations =
+    .placeholder = Wyszukaj adnotację, aby wstawić ją do dokumentu
 integration-citationDialog-aria-item-list =
     .aria-description = Użyj klawiszy strzałki w górę/w dół, aby zmienić wybór elementu. { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-aria-item-library =
@@ -76,14 +97,24 @@ integration-citationDialog-collections-table =
     .aria-label = Kolekcje.
     .aria-description = Wybierz kolekcję i wciśnij Tab, aby nawigować po jego elementach.
 integration-citationDialog-items-table =
+    .title = { integration-citationDialog-add-to-citation-tooltip }
     .aria-label = { integration-citationDialog-enter-to-add-item }
 integration-citationDialog-items-table-added =
+    .title = { integration-citationDialog-add-to-citation-tooltip }
     .aria-label = Ten element został dodany do cytowania. Wciśnij { return-or-enter }, aby dodać go ponownie lub { delete-or-backspace }, aby go usunąć.
+integration-citationDialog-add-to-citation-tooltip =
+    { $count ->
+        [one] Add to Citation
+       *[other] Add { $count } Items to Citation
+    }
 integration-citationDialog-add-all = Dodaj wszystko
 integration-citationDialog-collapse-section =
     .title = Zwiń sekcję
 integration-citationDialog-bubble-empty = (brak tytułu)
 integration-citationDialog-add-to-citation = Dodaj do cytowania
+integration-citationDialog-annotations-filter =
+    .placeholder = Filtruj adnotacje
+integration-citationDialog-annotations-empty = Wybierz element, załącznik lub adnotację, aby wyświetlić szczegóły adnotacji
 integration-prefs-displayAs-label = Wyświetl cytowania jako:
 integration-prefs-footnotes =
     .label = Przypisy dolne
@@ -113,8 +144,6 @@ integration-warning-documentPreferences-changes-will-be-lost = Dokonano zmian w 
 integration-warning-discard-changes = Porzuć zmiany
 integration-warning-command-is-running = Polecenie integracji z edytorem tekstów jest już uruchomione.
 first-run-guidance-citationDialog =
-    Type a title, author, and/or year to search for a reference.
-    
-    After you’ve made your selection, click the bubble or select it via the keyboard and press ↓/Space to show citation options such as page number, prefix, and suffix.
+    Click the bubble or use the ← and ↓ keys to view the citation details and customize options such as page number, prefix, and suffix.
     
     You can also add a page number or other locator by including it with your search terms (e.g., “history { $locator }”) or by typing it after the bubble and pressing { return-or-enter }.

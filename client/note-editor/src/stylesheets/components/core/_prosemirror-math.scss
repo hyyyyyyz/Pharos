@@ -49,7 +49,8 @@ math-inline .math-render {
 }
 
 math-inline .math-src .ProseMirror {
-	display: inline;
+	/* Keep Firefox from dropping the caret out of inline math at the end */
+	display: inline-block;
 	/* Necessary to fix FireFox bug with contenteditable, https://bugzilla.mozilla.org/show_bug.cgi?id=1252108 */
 	border-right: 1px solid transparent;
 	border-left: 1px solid transparent;

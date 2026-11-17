@@ -13,10 +13,11 @@
  * limitations under the License.
  */
 
-import { RenderingStates, ScrollMode, SpreadMode } from "./ui_utils.js";
+import { ScrollMode, SpreadMode } from "./ui_utils.js";
 import { AppOptions } from "./app_options.js";
 import { LinkTarget } from "./pdf_link_service.js";
 import { PDFViewerApplication } from "./app.js";
+import { RenderingStates } from "./renderable_view.js";
 
 const AppConstants =
   typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")
@@ -45,6 +46,10 @@ function getViewerConfiguration() {
       zoomIn: document.getElementById("zoomInButton"),
       zoomOut: document.getElementById("zoomOutButton"),
       print: document.getElementById("printButton"),
+      editorCommentButton: document.getElementById("editorCommentButton"),
+      editorCommentParamsToolbar: document.getElementById(
+        "editorCommentParamsToolbar"
+      ),
       editorFreeTextButton: document.getElementById("editorFreeTextButton"),
       editorFreeTextParamsToolbar: document.getElementById(
         "editorFreeTextParamsToolbar"
@@ -100,24 +105,78 @@ function getViewerConfiguration() {
       ),
       documentPropertiesButton: document.getElementById("documentProperties"),
     },
-    sidebar: {
-      // Divs (and sidebar button)
+    viewsManager: {
       outerContainer: document.getElementById("outerContainer"),
-      sidebarContainer: document.getElementById("sidebarContainer"),
-      toggleButton: document.getElementById("sidebarToggleButton"),
-      resizer: document.getElementById("sidebarResizer"),
-      // Buttons
-      thumbnailButton: document.getElementById("viewThumbnail"),
-      outlineButton: document.getElementById("viewOutline"),
-      attachmentsButton: document.getElementById("viewAttachments"),
-      layersButton: document.getElementById("viewLayers"),
-      // Views
-      thumbnailView: document.getElementById("thumbnailView"),
-      outlineView: document.getElementById("outlineView"),
+      toggleButton: document.getElementById("viewsManagerToggleButton"),
+      sidebarContainer: document.getElementById("viewsManager"),
+      resizer: document.getElementById("viewsManagerResizer"),
+      thumbnailButton: document.getElementById("thumbnailsViewMenu"),
+      outlineButton: document.getElementById("outlinesViewMenu"),
+      attachmentsButton: document.getElementById("attachmentsViewMenu"),
+      layersButton: document.getElementById("layersViewMenu"),
+      viewsManagerSelectorButton: document.getElementById(
+        "viewsManagerSelectorButton"
+      ),
+      viewsManagerSelectorOptions: document.getElementById(
+        "viewsManagerSelectorOptions"
+      ),
+      thumbnailsView: document.getElementById("thumbnailsView"),
+      outlinesView: document.getElementById("outlinesView"),
       attachmentsView: document.getElementById("attachmentsView"),
       layersView: document.getElementById("layersView"),
-      // View-specific options
-      currentOutlineItemButton: document.getElementById("currentOutlineItem"),
+      viewsManagerAddFile: {
+        button: document.getElementById("viewsManagerAddFileButton"),
+        picker: document.getElementById("viewsManagerAddFilePicker"),
+      },
+      viewsManagerCurrentOutlineButton: document.getElementById(
+        "viewsManagerCurrentOutlineButton"
+      ),
+      viewsManagerHeaderLabel: document.getElementById(
+        "viewsManagerHeaderLabel"
+      ),
+      viewsManagerStatus: document.getElementById("viewsManagerStatus"),
+      viewsManagerStatusBar: {
+        viewsManagerStatusAction: document.getElementById(
+          "viewsManagerStatusAction"
+        ),
+        viewsManagerStatusActionDeselectButton: document.getElementById(
+          "viewsManagerStatusActionDeselectButton"
+        ),
+        viewsManagerStatusActionLabel: document.getElementById(
+          "viewsManagerStatusActionLabel"
+        ),
+      },
+      viewsManagerUndoBar: {
+        viewsManagerStatusUndo: document.getElementById(
+          "viewsManagerStatusUndo"
+        ),
+        viewsManagerStatusUndoLabel: document.getElementById(
+          "viewsManagerStatusUndoLabel"
+        ),
+        viewsManagerStatusUndoButton: document.getElementById(
+          "viewsManagerStatusUndoButton"
+        ),
+        viewsManagerStatusUndoCloseButton: document.getElementById(
+          "viewsManagerStatusUndoCloseButton"
+        ),
+      },
+      viewsManagerWaitingBar: {
+        container: document.getElementById("viewsManagerStatusWaiting"),
+        closeButton: document.getElementById(
+          "viewsManagerStatusWaitingCloseButton"
+        ),
+        label: document.getElementById("viewsManagerStatusWaitingLabel"),
+      },
+      manageMenu: {
+        button: document.getElementById("viewsManagerStatusActionButton"),
+        menu: document.getElementById("viewsManagerStatusActionOptions"),
+        copy: document.getElementById("viewsManagerStatusActionCopy"),
+        cut: document.getElementById("viewsManagerStatusActionCut"),
+        delete: document.getElementById("viewsManagerStatusActionDelete"),
+        exportSelected: document.getElementById(
+          "viewsManagerStatusActionExport"
+        ),
+      },
     },
     findBar: {
       bar: document.getElementById("findbar"),
@@ -196,10 +255,7 @@ function getViewerConfiguration() {
     altTextSettingsDialog: {
       dialog: document.getElementById("altTextSettingsDialog"),
       createModelButton: document.getElementById("createModelButton"),
-      aiModelSettings: document.getElementById("aiModelSettings"),
       learnMore: document.getElementById("altTextSettingsLearnMore"),
-      deleteModelButton: document.getElementById("deleteModelButton"),
-      downloadModelButton: document.getElementById("downloadModelButton"),
       showAltTextDialogButton: document.getElementById(
         "showAltTextDialogButton"
       ),
@@ -241,6 +297,22 @@ function getViewerConfiguration() {
       updateButton: document.getElementById("editSignatureUpdateButton"),
     },
     annotationEditorParams: {
+      editorCommentsSidebar: document.getElementById("editorCommentsSidebar"),
+      editorCommentsSidebarCount: document.getElementById(
+        "editorCommentsSidebarCount"
+      ),
+      editorCommentsSidebarTitle: document.getElementById(
+        "editorCommentsSidebarTitle"
+      ),
+      editorCommentsSidebarCloseButton: document.getElementById(
+        "editorCommentsSidebarCloseButton"
+      ),
+      editorCommentsSidebarList: document.getElementById(
+        "editorCommentsSidebarList"
+      ),
+      editorCommentsSidebarResizer: document.getElementById(
+        "editorCommentsSidebarResizer"
+      ),
       editorFreeTextFontSize: document.getElementById("editorFreeTextFontSize"),
       editorFreeTextColor: document.getElementById("editorFreeTextColor"),
       editorInkColor: document.getElementById("editorInkColor"),
@@ -265,13 +337,8 @@ function getViewerConfiguration() {
     editCommentDialog: {
       dialog: document.getElementById("commentManagerDialog"),
       toolbar: document.getElementById("commentManagerToolbar"),
-      actions: document.getElementById("commentActionsButton"),
-      menu: document.getElementById("commentActionsMenu"),
-      editMenuItem: document.getElementById("commentActionsEditButton"),
-      deleteMenuItem: document.getElementById("commentActionsDeleteButton"),
-      closeButton: document.getElementById("commentCloseButton"),
+      title: document.getElementById("commentManagerTitle"),
       textInput: document.getElementById("commentManagerTextInput"),
-      textView: document.getElementById("commentManagerTextView"),
       cancelButton: document.getElementById("commentManagerCancelButton"),
       saveButton: document.getElementById("commentManagerSaveButton"),
     },

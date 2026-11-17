@@ -30,17 +30,21 @@ async function runTests(results) {
       "annotation_spec.mjs",
       "autolinker_spec.mjs",
       "caret_browsing_spec.mjs",
+      "comment_spec.mjs",
       "copy_paste_spec.mjs",
       "document_properties_spec.mjs",
       "find_spec.mjs",
       "freetext_editor_spec.mjs",
       "highlight_editor_spec.mjs",
       "ink_editor_spec.mjs",
+      "reorganize_pages_spec.mjs",
       "scripting_spec.mjs",
       "signature_editor_spec.mjs",
+      "simple_viewer_spec.mjs",
       "stamp_editor_spec.mjs",
       "text_field_spec.mjs",
       "text_layer_spec.mjs",
+      "text_layer_images_spec.mjs",
       "thumbnail_view_spec.mjs",
       "viewer_spec.mjs",
     ],
@@ -50,30 +54,34 @@ async function runTests(results) {
     jasmineDone(suiteInfo) {},
     jasmineStarted(suiteInfo) {},
     specDone(result) {
-      // Report on the result of individual tests.
+      // Ignore excluded (fit/xit) or skipped (pending) tests.
+      if (["excluded", "pending"].includes(result.status)) {
+        return;
+      }
+
+      // Report on passed or failed tests.
       ++results.runs;
-      if (result.failedExpectations.length > 0) {
+      if (result.status === "passed") {
+        console.log(`TEST-PASSED | ${result.description}`);
+      } else {
         ++results.failures;
         console.log(`TEST-UNEXPECTED-FAIL | ${result.description}`);
-      } else {
-        console.log(`TEST-PASSED | ${result.description}`);
       }
     },
     specStarted(result) {},
     suiteDone(result) {
-      // Report on the result of `afterAll` invocations.
-      if (result.failedExpectations.length > 0) {
+      // Ignore excluded (fdescribe/xdescribe) or skipped (pending) suites.
+      if (["excluded", "pending"].includes(result.status)) {
+        return;
+      }
+
+      // Report on failed suites only (indicates problems in setup/teardown).
+      if (result.status === "failed") {
         ++results.failures;
         console.log(`TEST-UNEXPECTED-FAIL | ${result.description}`);
       }
     },
-    suiteStarted(result) {
-      // Report on the result of `beforeAll` invocations.
-      if (result.failedExpectations.length > 0) {
-        ++results.failures;
-        console.log(`TEST-UNEXPECTED-FAIL | ${result.description}`);
-      }
-    },
+    suiteStarted(result) {},
   });
 
   return jasmine.execute();

@@ -23,6 +23,8 @@ import {
   AnnotationType,
   assert,
   BASELINE_FACTOR,
+  BBOX_INIT,
+  F32_BBOX_INIT,
   FeatureTest,
   getModificationDate,
   info,
@@ -122,6 +124,7 @@ class AnnotationFactory {
    * @param {Object} idFactory
    * @param {boolean} [collectFields]
    * @param {Object} [orphanFields]
+   * @param {Array<string>} [collectByType]
    * @param {Object} [pageRef]
    * @returns {Promise} A promise that is resolved with an {Annotation}
    *   instance.
@@ -133,6 +136,7 @@ class AnnotationFactory {
     idFactory,
     collectFields,
     orphanFields,
+    collectByType,
     pageRef
   ) {
     const pageIndex = collectFields
@@ -146,6 +150,7 @@ class AnnotationFactory {
       idFactory,
       collectFields,
       orphanFields,
+      collectByType,
       pageIndex,
       pageRef,
     ]);
@@ -161,6 +166,7 @@ class AnnotationFactory {
     idFactory,
     collectFields = false,
     orphanFields = null,
+    collectByType = null,
     pageIndex = null,
     pageRef = null
   ) {
@@ -169,13 +175,20 @@ class AnnotationFactory {
       return undefined;
     }
 
-    const { acroForm, pdfManager } = annotationGlobals;
-    const id =
-      ref instanceof Ref ? ref.toString() : `annot_${idFactory.createObjId()}`;
-
     // Determine the annotation's subtype.
     let subtype = dict.get("Subtype");
     subtype = subtype instanceof Name ? subtype.name : null;
+
+    if (
+      collectByType &&
+      !collectByType.has(AnnotationType[subtype?.toUpperCase()])
+    ) {
+      return null;
+    }
+
+    const { acroForm, pdfManager } = annotationGlobals;
+    const id =
+      ref instanceof Ref ? ref.toString() : `annot_${idFactory.createObjId()}`;
 
     // Return the right annotation object based on the subtype and field type.
     const parameters = {
@@ -343,12 +356,12 @@ class AnnotationFactory {
 
   static async saveNewAnnotations(
     evaluator,
+    xref,
     task,
     annotations,
     imagePromises,
     changes
   ) {
-    const xref = evaluator.xref;
     let baseFontRef;
     const promises = [];
     const { isOffscreenCanvasSupported } = evaluator.options;
@@ -626,7 +639,7 @@ function getQuadPoints(dict, rect) {
 
 function getTransformMatrix(rect, bbox, matrix) {
   // 12.5.5: Algorithm: Appearance streams
-  const minMax = new Float32Array([Infinity, Infinity, -Infinity, -Infinity]);
+  const minMax = F32_BBOX_INIT.slice();
   Util.axialAlignedBoundingBox(bbox, matrix, minMax);
   const [minX, minY, maxX, maxY] = minMax;
   if (minX === maxX || minY === maxY) {
@@ -649,7 +662,8 @@ function getTransformMatrix(rect, bbox, matrix) {
 
 class Annotation {
   constructor(params) {
-    const { dict, xref, annotationGlobals, ref, orphanFields } = params;
+    const { annotationGlobals, dict, orphanFields, ref, subtype, xref } =
+      params;
     const parentRef = orphanFields?.get(ref);
     if (parentRef) {
       dict.set("Parent", parentRef);
@@ -683,6 +697,7 @@ class Annotation {
 
     // Expose public properties using a data object.
     this.data = {
+      annotationType: AnnotationType[subtype?.toUpperCase()],
       annotationFlags: this.flags,
       borderStyle: this.borderStyle,
       color: this.color,
@@ -694,7 +709,7 @@ class Annotation {
       id: params.id,
       modificationDate: this.modificationDate,
       rect: this.rectangle,
-      subtype: params.subtype,
+      subtype,
       hasOwnCanvas: false,
       noRotate: !!(this.flags & AnnotationFlag.NOROTATE),
       noHTML: isLocked && isContentLocked,
@@ -1092,14 +1107,18 @@ class Annotation {
       }
     } else if (borderStyle.has("Border")) {
       const array = borderStyle.getArray("Border");
-      if (Array.isArray(array) && array.length >= 3) {
-        this.borderStyle.setHorizontalCornerRadius(array[0]);
-        this.borderStyle.setVerticalCornerRadius(array[1]);
-        this.borderStyle.setWidth(array[2], this.rectangle);
+      if (Array.isArray(array)) {
+        if (array.length >= 3) {
+          this.borderStyle.setHorizontalCornerRadius(array[0]);
+          this.borderStyle.setVerticalCornerRadius(array[1]);
+          this.borderStyle.setWidth(array[2], this.rectangle);
 
-        if (array.length === 4) {
-          // Dash array available
-          this.borderStyle.setDashArray(array[3], /* forceStyle = */ true);
+          if (array.length === 4) {
+            // Dash array available
+            this.borderStyle.setDashArray(array[3], /* forceStyle = */ true);
+          }
+        } else if (array.length === 0) {
+          this.borderStyle.setWidth(0);
         }
       }
     } else {
@@ -1452,14 +1471,17 @@ class Annotation {
  * Contains all data regarding an annotation's border style.
  */
 class AnnotationBorderStyle {
-  constructor() {
-    this.width = 1;
-    this.rawWidth = 1;
-    this.style = AnnotationBorderStyleType.SOLID;
-    this.dashArray = [3];
-    this.horizontalCornerRadius = 0;
-    this.verticalCornerRadius = 0;
-  }
+  width = 1;
+
+  rawWidth = 1;
+
+  style = AnnotationBorderStyleType.SOLID;
+
+  dashArray = [3];
+
+  horizontalCornerRadius = 0;
+
+  verticalCornerRadius = 0;
 
   /**
    * Set the width.
@@ -1705,7 +1727,7 @@ class MarkupAnnotation extends Annotation {
     fillAlpha,
     pointsCallback,
   }) {
-    const bbox = (this.data.rect = [Infinity, Infinity, -Infinity, -Infinity]);
+    const bbox = (this.data.rect = BBOX_INIT.slice());
 
     const buffer = ["q"];
     if (extra) {
@@ -1800,8 +1822,8 @@ class MarkupAnnotation extends Annotation {
     });
 
     const retRef = { ref: annotationRef };
-    if (annotation.popup) {
-      const popup = annotation.popup;
+    const { popup } = annotation;
+    if (popup) {
       if (popup.deleted) {
         annotationDict.delete("Popup");
         annotationDict.delete("Contents");
@@ -1860,7 +1882,6 @@ class WidgetAnnotation extends Annotation {
     const data = this.data;
     this._needAppearances = params.needAppearances;
 
-    data.annotationType = AnnotationType.WIDGET;
     if (data.fieldName === undefined) {
       data.fieldName = this._constructFieldName(dict);
     }
@@ -1950,11 +1971,12 @@ class WidgetAnnotation extends Annotation {
    */
   _decodeFormValue(formValue) {
     if (Array.isArray(formValue)) {
-      return formValue
-        .filter(item => typeof item === "string")
-        .map(item => stringToPDFString(item));
+      const arr = formValue
+        .map(item => this._decodeFormValue(item))
+        .filter(item => item !== null);
+      return arr.length > 0 ? arr : null;
     } else if (formValue instanceof Name) {
-      return stringToPDFString(formValue.name);
+      return formValue.name;
     } else if (typeof formValue === "string") {
       return stringToPDFString(formValue);
     }
@@ -2214,9 +2236,9 @@ class WidgetAnnotation extends Annotation {
     }
 
     const dict = new Dict(xref);
-    for (const key of originalDict.getKeys()) {
+    for (const [key, rawVal] of originalDict.getRawEntries()) {
       if (key !== "AP") {
-        dict.set(key, originalDict.getRaw(key));
+        dict.set(key, rawVal);
       }
     }
     if (flags !== undefined) {
@@ -2428,8 +2450,8 @@ class WidgetAnnotation extends Annotation {
 
       if (this._fieldResources.mergedResources.has("Font")) {
         const oldFont = this._fieldResources.mergedResources.get("Font");
-        for (const key of newFont.getKeys()) {
-          oldFont.set(key, newFont.getRaw(key));
+        for (const [key, rawVal] of newFont.getRawEntries()) {
+          oldFont.set(key, rawVal);
         }
       } else {
         this._fieldResources.mergedResources.set("Font", newFont);
@@ -2526,6 +2548,8 @@ class WidgetAnnotation extends Annotation {
         defaultVPadding,
         descent,
         lineHeight,
+        alignment,
+        bidi(lines[0]).dir === "rtl",
         annotationStorage
       );
     }
@@ -2889,6 +2913,8 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     vPadding,
     descent,
     lineHeight,
+    alignment,
+    isRTL,
     annotationStorage
   ) {
     const combWidth = width / this.data.maxLen;
@@ -2900,12 +2926,23 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     for (const [start, end] of positions) {
       buf.push(`(${escapeString(text.substring(start, end))}) Tj`);
     }
+    if (isRTL) {
+      buf.reverse();
+    }
+
+    const textWidth = combWidth * positions.length;
+    let hShift = hPadding;
+    if (alignment === 1) {
+      hShift += Math.floor((width - textWidth) / (2 * combWidth)) * combWidth;
+    } else if (alignment === 2) {
+      hShift += width - textWidth;
+    }
 
     const renderedComb = buf.join(` ${numberToString(combWidth)} 0 Td `);
     return (
       `/Tx BMC q ${colors}BT ` +
       defaultAppearance +
-      ` 1 0 0 1 ${numberToString(hPadding)} ${numberToString(
+      ` 1 0 0 1 ${numberToString(hShift)} ${numberToString(
         vPadding + descent
       )} Tm ${renderedComb}` +
       " ET Q EMC"
@@ -3384,7 +3421,8 @@ class ButtonWidgetAnnotation extends WidgetAnnotation {
         ? this.data.fieldValue
         : "Yes";
 
-    const exportValues = this._decodeFormValue(normalAppearance.getKeys());
+    // Don't decode the keys which are names.
+    const exportValues = [...normalAppearance.getKeys()];
     if (exportValues.length === 0) {
       exportValues.push("Off", yes);
     } else if (exportValues.length === 1) {
@@ -3456,7 +3494,7 @@ class ButtonWidgetAnnotation extends WidgetAnnotation {
     }
     for (const key of normalAppearance.getKeys()) {
       if (key !== "Off") {
-        this.data.buttonValue = this._decodeFormValue(key);
+        this.data.buttonValue = key;
         break;
       }
     }
@@ -3843,7 +3881,6 @@ class TextAnnotation extends MarkupAnnotation {
     this.data.noHTML = false;
 
     const { dict } = params;
-    this.data.annotationType = AnnotationType.TEXT;
 
     if (this.data.hasAppearance) {
       this.data.name = "NoIcon";
@@ -3868,7 +3905,6 @@ class LinkAnnotation extends Annotation {
     super(params);
 
     const { dict, annotationGlobals } = params;
-    this.data.annotationType = AnnotationType.LINK;
 
     // A link is never rendered on the main canvas so we must render its HTML
     // version.
@@ -3900,7 +3936,6 @@ class PopupAnnotation extends Annotation {
     super(params);
 
     const { dict } = params;
-    this.data.annotationType = AnnotationType.POPUP;
 
     // A pop-up is never rendered on the main canvas so we must render its HTML
     // version.
@@ -3992,15 +4027,13 @@ class FreeTextAnnotation extends MarkupAnnotation {
     // We want to be able to add mouse listeners to the annotation.
     this.data.noHTML = false;
 
-    const { annotationGlobals, evaluatorOptions, xref } = params;
-    this.data.annotationType = AnnotationType.FREETEXT;
+    const { annotationGlobals, xref } = params;
     this.setDefaultAppearance(params);
     this._hasAppearance = !!this.appearance;
 
     if (this._hasAppearance) {
       const { fontColor, fontSize } = parseAppearanceStream(
         this.appearance,
-        evaluatorOptions,
         xref,
         annotationGlobals.globalColorSpaceCache
       );
@@ -4222,7 +4255,6 @@ class LineAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.LINE;
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.noHTML = false;
 
@@ -4290,7 +4322,6 @@ class SquareAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.SQUARE;
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.noHTML = false;
 
@@ -4339,7 +4370,6 @@ class CircleAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.CIRCLE;
 
     if (!this.appearance) {
       // The default stroke color is black.
@@ -4403,7 +4433,6 @@ class PolylineAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.POLYLINE;
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.noHTML = false;
     this.data.vertices = null;
@@ -4454,7 +4483,7 @@ class PolylineAnnotation extends MarkupAnnotation {
 
       // If the /Rect-entry is empty/wrong, create a fallback rectangle so that
       // we get similar rendering/highlighting behaviour as in Adobe Reader.
-      const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+      const bbox = BBOX_INIT.slice();
       for (let i = 0, ii = vertices.length; i < ii; i += 2) {
         Util.rectBoundingBox(
           vertices[i] - borderAdjust,
@@ -4489,22 +4518,10 @@ class PolylineAnnotation extends MarkupAnnotation {
   }
 }
 
-class PolygonAnnotation extends PolylineAnnotation {
-  constructor(params) {
-    // Polygons are specific forms of polylines, so reuse their logic.
-    super(params);
+// Polygons are specific forms of polylines, so reuse their logic.
+class PolygonAnnotation extends PolylineAnnotation {}
 
-    this.data.annotationType = AnnotationType.POLYGON;
-  }
-}
-
-class CaretAnnotation extends MarkupAnnotation {
-  constructor(params) {
-    super(params);
-
-    this.data.annotationType = AnnotationType.CARET;
-  }
-}
+class CaretAnnotation extends MarkupAnnotation {}
 
 class InkAnnotation extends MarkupAnnotation {
   constructor(params) {
@@ -4514,7 +4531,6 @@ class InkAnnotation extends MarkupAnnotation {
     this.data.noHTML = false;
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.INK;
     this.data.inkLists = [];
     this.data.isEditable = !this.data.noHTML;
     // We want to be able to add mouse listeners to the annotation.
@@ -4555,7 +4571,7 @@ class InkAnnotation extends MarkupAnnotation {
 
       // If the /Rect-entry is empty/wrong, create a fallback rectangle so that
       // we get similar rendering/highlighting behaviour as in Adobe Reader.
-      const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+      const bbox = BBOX_INIT.slice();
       for (const inkList of this.data.inkLists) {
         for (let i = 0, ii = inkList.length; i < ii; i += 2) {
           Util.rectBoundingBox(
@@ -4792,7 +4808,6 @@ class HighlightAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.HIGHLIGHT;
     this.data.isEditable = !this.data.noHTML;
     // We want to be able to add mouse listeners to the annotation.
     this.data.noHTML = false;
@@ -4936,7 +4951,6 @@ class UnderlineAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.UNDERLINE;
 
     const quadPoints = (this.data.quadPoints = getQuadPoints(dict, null));
     if (quadPoints) {
@@ -4976,7 +4990,6 @@ class SquigglyAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.SQUIGGLY;
 
     const quadPoints = (this.data.quadPoints = getQuadPoints(dict, null));
     if (quadPoints) {
@@ -5022,7 +5035,6 @@ class StrikeOutAnnotation extends MarkupAnnotation {
     super(params);
 
     const { dict, xref } = params;
-    this.data.annotationType = AnnotationType.STRIKEOUT;
 
     const quadPoints = (this.data.quadPoints = getQuadPoints(dict, null));
     if (quadPoints) {
@@ -5064,7 +5076,6 @@ class StampAnnotation extends MarkupAnnotation {
   constructor(params) {
     super(params);
 
-    this.data.annotationType = AnnotationType.STAMP;
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.isEditable = !this.data.noHTML;
     // We want to be able to add mouse listeners to the annotation.
@@ -5117,9 +5128,9 @@ class StampAnnotation extends MarkupAnnotation {
       ctx.drawImage(bitmap, 0, 0);
     }
 
-    const jpegBufferPromise = canvas
+    const jpegBytesPromise = canvas
       .convertToBlob({ type: "image/jpeg", quality: 1 })
-      .then(blob => blob.arrayBuffer());
+      .then(blob => blob.bytes());
 
     const xobjectName = Name.get("XObject");
     const imageName = Name.get("Image");
@@ -5156,7 +5167,7 @@ class StampAnnotation extends MarkupAnnotation {
 
       smaskStream = new Stream(alphaBuffer, 0, 0, smask);
     }
-    const imageStream = new Stream(await jpegBufferPromise, 0, 0, image);
+    const imageStream = new Stream(await jpegBytesPromise, 0, 0, image);
 
     return {
       imageStream,
@@ -5280,10 +5291,9 @@ class FileAttachmentAnnotation extends MarkupAnnotation {
   constructor(params) {
     super(params);
 
-    const { dict, xref } = params;
-    const file = new FileSpec(dict.get("FS"), xref);
+    const { dict } = params;
+    const file = new FileSpec(dict.get("FS"));
 
-    this.data.annotationType = AnnotationType.FILEATTACHMENT;
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.noHTML = false;
     this.data.file = file.serializable;

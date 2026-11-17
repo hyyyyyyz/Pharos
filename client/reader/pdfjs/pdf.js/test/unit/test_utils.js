@@ -16,13 +16,11 @@
 import { assert, isNodeJS } from "../../src/shared/util.js";
 import {
   fetchData as fetchDataNode,
-  NodeCMapReaderFactory,
-  NodeStandardFontDataFactory,
+  NodeBinaryDataFactory,
 } from "../../src/display/node_utils.js";
 import { NullStream, StringStream } from "../../src/core/stream.js";
 import { Page, PDFDocument } from "../../src/core/document.js";
-import { DOMCMapReaderFactory } from "../../src/display/cmap_reader_factory.js";
-import { DOMStandardFontDataFactory } from "../../src/display/standard_fontdata_factory.js";
+import { DOMBinaryDataFactory } from "../../src/display/binary_data_factory.js";
 import { fetchData as fetchDataDOM } from "../../src/display/display_utils.js";
 import { Ref } from "../../src/core/primitives.js";
 
@@ -34,27 +32,33 @@ const STANDARD_FONT_DATA_URL = isNodeJS
   ? "./external/standard_fonts/"
   : "../../external/standard_fonts/";
 
-const WASM_URL = isNodeJS ? "./external/openjpeg/" : "../../external/openjpeg/";
+const WASM_URL = isNodeJS
+  ? "../../generic-legacy/web/wasm/"
+  : "../../build/generic/web/wasm/";
 
 class DefaultFileReaderFactory {
   static async fetch(params) {
     if (isNodeJS) {
       return fetchDataNode(params.path);
     }
-    const data = await fetchDataDOM(params.path, /* type = */ "arraybuffer");
-    return new Uint8Array(data);
+    return fetchDataDOM(params.path, /* type = */ "bytes");
   }
 }
 
-const DefaultCMapReaderFactory =
+const DefaultBinaryDataFactory =
   typeof PDFJSDev !== "undefined" && PDFJSDev.test("GENERIC") && isNodeJS
-    ? NodeCMapReaderFactory
-    : DOMCMapReaderFactory;
+    ? NodeBinaryDataFactory
+    : DOMBinaryDataFactory;
 
-const DefaultStandardFontDataFactory =
-  typeof PDFJSDev !== "undefined" && PDFJSDev.test("GENERIC") && isNodeJS
-    ? NodeStandardFontDataFactory
-    : DOMStandardFontDataFactory;
+async function fetchBuiltInCMapHelper(binaryDataFactory, cMapPacked, name) {
+  return {
+    cMapData: await binaryDataFactory.fetch({
+      kind: "cMapUrl",
+      filename: `${name}${cMapPacked ? ".bcmap" : ""}`,
+    }),
+    isCompressed: cMapPacked,
+  };
+}
 
 function buildGetDocumentParams(filename, options) {
   const params = Object.create(null);
@@ -250,9 +254,9 @@ export {
   buildGetDocumentParams,
   CMAP_URL,
   createIdFactory,
-  DefaultCMapReaderFactory,
+  DefaultBinaryDataFactory,
   DefaultFileReaderFactory,
-  DefaultStandardFontDataFactory,
+  fetchBuiltInCMapHelper,
   getCrossOriginHostname,
   STANDARD_FONT_DATA_URL,
   TEST_PDFS_PATH,

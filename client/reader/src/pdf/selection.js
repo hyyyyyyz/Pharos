@@ -214,7 +214,7 @@ function getRectsFromChars(chars) {
 	return lineRects;
 }
 
-function getTextFromChars(chars) {
+export function getTextFromChars(chars) {
 	let text = [];
 	for (let char of chars) {
 		if (!char.ignorable) {
@@ -767,6 +767,9 @@ export function getSelectionRangesByPosition(pdfPages, position) {
 	selectionRanges = [selectionRange];
 
 	if (position.nextPageRects) {
+		if (!pdfPages[position.pageIndex + 1]) {
+			return [];
+		}
 		let { chars } = pdfPages[position.pageIndex + 1];
 		selectionRange = extractRangeByRects({
 			chars,

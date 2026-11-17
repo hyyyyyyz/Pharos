@@ -163,17 +163,14 @@ describe("Zotero.Sync.Data.Engine", function () {
 	//
 	// Tests
 	//
-	beforeEach(function* () {
-		yield resetDB({
-			thisArg: this,
-			skipBundledFiles: true
-		});
-		
+	beforeEach(async function () {
+		await resetData();
+
 		Zotero.HTTP.mock = sinon.FakeXMLHttpRequest;
-		
-		yield Zotero.Users.setCurrentUserID(userID);
-		yield Zotero.Users.setCurrentUsername("testuser");
-		yield Zotero.Users.setCurrentName("Test User");
+
+		await Zotero.Users.setCurrentUserID(userID);
+		await Zotero.Users.setCurrentUsername("testuser");
+		await Zotero.Users.setCurrentName("Test User");
 	})
 	
 	after(function () {
@@ -530,8 +527,8 @@ describe("Zotero.Sync.Data.Engine", function () {
 			library.libraryVersion = library.storageVersion = lastLibraryVersion;
 			await library.saveTx();
 			
-			await Zotero.SyncedSettings.set(libraryID, "testSetting1", { foo: "bar" });
-			await Zotero.SyncedSettings.set(libraryID, "testSetting2", { bar: "foo" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_BBBBBBBB", { foo: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_CCCCCCCC", { bar: "foo" });
 			
 			var types = Zotero.DataObjectUtilities.getTypes();
 			var objects = {};
@@ -553,12 +550,12 @@ describe("Zotero.Sync.Data.Engine", function () {
 					if (req.url == baseURL + "users/1/settings") {
 						let json = JSON.parse(req.requestBody);
 						assert.lengthOf(Object.keys(json), 2);
-						assert.property(json, "testSetting1");
-						assert.property(json, "testSetting2");
-						assert.property(json.testSetting1, "value");
-						assert.property(json.testSetting2, "value");
-						assert.propertyVal(json.testSetting1.value, "foo", "bar");
-						assert.propertyVal(json.testSetting2.value, "bar", "foo");
+						assert.property(json, "lastPageIndex_u_BBBBBBBB");
+						assert.property(json, "lastPageIndex_u_CCCCCCCC");
+						assert.property(json.lastPageIndex_u_BBBBBBBB, "value");
+						assert.property(json.lastPageIndex_u_CCCCCCCC, "value");
+						assert.propertyVal(json.lastPageIndex_u_BBBBBBBB.value, "foo", "bar");
+						assert.propertyVal(json.lastPageIndex_u_CCCCCCCC.value, "bar", "foo");
 						req.respond(
 							204,
 							{
@@ -608,7 +605,7 @@ describe("Zotero.Sync.Data.Engine", function () {
 			
 			await engine.start();
 			
-			await Zotero.SyncedSettings.set(libraryID, "testSetting2", { bar: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_CCCCCCCC", { bar: "bar" });
 			
 			assert.equal(library.libraryVersion, lastLibraryVersion);
 			assert.equal(library.storageVersion, lastLibraryVersion);
@@ -639,9 +636,9 @@ describe("Zotero.Sync.Data.Engine", function () {
 					if (req.url == baseURL + "users/1/settings") {
 						let json = JSON.parse(req.requestBody);
 						assert.lengthOf(Object.keys(json), 1);
-						assert.property(json, "testSetting2");
-						assert.property(json.testSetting2, "value");
-						assert.propertyVal(json.testSetting2.value, "bar", "bar");
+						assert.property(json, "lastPageIndex_u_CCCCCCCC");
+						assert.property(json.lastPageIndex_u_CCCCCCCC, "value");
+						assert.propertyVal(json.lastPageIndex_u_CCCCCCCC.value, "bar", "bar");
 						req.respond(
 							204,
 							{
@@ -869,6 +866,50 @@ describe("Zotero.Sync.Data.Engine", function () {
 		});
 		
 		
+		it("should save uploaded object to cache after upload on 'unchanged' response", async function () {
+			({ engine, client, caller } = await setup());
+			
+			var library = Zotero.Libraries.userLibrary;
+			var lastLibraryVersion = 5;
+			library.libraryVersion = lastLibraryVersion;
+			await library.saveTx();
+			
+			var item = await createDataObject('item', { version: 1, title: "A" });
+			
+			server.respond(function (req) {
+				if (req.method == "POST" && req.url == baseURL + "users/1/items") {
+					req.respond(
+						200,
+						{
+							"Content-Type": "application/json",
+							"Last-Modified-Version": ++lastLibraryVersion
+						},
+						JSON.stringify({
+							successful: {},
+							unchanged: {
+								"0": item.key
+							},
+							failed: {}
+						})
+					);
+					return;
+				}
+			});
+			
+			await engine.start();
+			
+			// Uploaded data should be saved to the cache with the new library version
+			var version = await Zotero.Sync.Data.Local.getLatestCacheObjectVersion(
+				'item', library.id, item.key
+			);
+			assert.equal(version, lastLibraryVersion);
+			var json = await Zotero.Sync.Data.Local.getCacheObject(
+				'item', library.id, item.key, lastLibraryVersion
+			);
+			assert.propertyVal(json.data, 'title', 'A');
+		});
+		
+		
 		it("should upload child collection after parent collection", async function () {
 			({ engine, client, caller } = await setup());
 			
@@ -928,7 +969,7 @@ describe("Zotero.Sync.Data.Engine", function () {
 			library.libraryVersion = library.storageVersion = lastLibraryVersion;
 			await library.saveTx();
 			
-			await Zotero.SyncedSettings.set(libraryID, "testSetting", { foo: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_AAAAAAAA", { foo: "bar" });
 			
 			server.respond(function (req) {
 				if (req.method == "POST") {
@@ -1029,7 +1070,7 @@ describe("Zotero.Sync.Data.Engine", function () {
 			library.storageVersion = 4;
 			await library.saveTx();
 			
-			await Zotero.SyncedSettings.set(libraryID, "testSetting", { foo: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_AAAAAAAA", { foo: "bar" });
 			
 			server.respond(function (req) {
 				if (req.method == "POST") {
@@ -1059,6 +1100,54 @@ describe("Zotero.Sync.Data.Engine", function () {
 		});
 		
 		
+		it("should upload setting deletions", async function () {
+			({ engine, client, caller } = await setup());
+
+			var library = Zotero.Libraries.userLibrary;
+			var libraryID = library.id;
+			var lastLibraryVersion = 5;
+			library.libraryVersion = library.storageVersion = lastLibraryVersion;
+			await library.saveTx();
+
+			// Create and then delete a setting
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_BBBBBBBB", "value1");
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_CCCCCCCC", "value2");
+			// Mark as synced so the delete log is the only thing to upload
+			await Zotero.SyncedSettings.markAsSynced(
+				libraryID, ["lastPageIndex_u_BBBBBBBB", "lastPageIndex_u_CCCCCCCC"], lastLibraryVersion
+			);
+			await Zotero.SyncedSettings.clear(libraryID, "lastPageIndex_u_BBBBBBBB");
+			await Zotero.SyncedSettings.clear(libraryID, "lastPageIndex_u_CCCCCCCC");
+
+			let deletedKeys = [];
+			server.respond(function (req) {
+				if (req.method == "DELETE" && req.url.includes('/settings?')) {
+					let match = req.url.match(/settingKey=([^&]+)/);
+					if (match) {
+						deletedKeys.push(
+							...decodeURIComponent(match[1]).split(',')
+						);
+						req.respond(
+							204,
+							{
+								"Last-Modified-Version": ++lastLibraryVersion
+							},
+							""
+						);
+						return;
+					}
+				}
+			});
+
+			await engine.start();
+
+			assert.sameMembers(deletedKeys, ["lastPageIndex_u_BBBBBBBB", "lastPageIndex_u_CCCCCCCC"]);
+			// Delete log should be cleared
+			let remaining = await Zotero.Sync.Data.Local.getDeleted('setting', libraryID);
+			assert.lengthOf(remaining, 0);
+		});
+
+
 		it("shouldn't update library storage version after item upload if storage version was already behind", async function () {
 			({ engine, client, caller } = await setup());
 			
@@ -2056,8 +2145,65 @@ describe("Zotero.Sync.Data.Engine", function () {
 			assert.isTrue(item.synced);
 			assert.equal(library.libraryVersion, lastLibraryVersion);
 		});
+
+		it("should reset library version and retry full sync if server version goes backward", async function () {
+			// Reproduces the case where an account is deleted and undeleted on the server,
+			// leaving a fresh shardLibraries row with a low version. A sync attempt then
+			// receives a Last-Modified-Version below the local one, the setter throws, and
+			// start() should reset both versions to -1 and retry.
+			({ engine, client, caller } = await setup());
+			let library = Zotero.Libraries.userLibrary;
+			library.libraryVersion = 100;
+			library.storageVersion = 100;
+			await library.saveTx();
+
+			let seenVersions = [];
+			let stub = sinon.stub(engine, '_runSync').callsFake(async function () {
+				seenVersions.push({
+					libraryVersion: library.libraryVersion,
+					storageVersion: library.storageVersion
+				});
+				if (seenVersions.length === 1) {
+					// Simulate the setter throw that happens when the server's
+					// Last-Modified-Version is below the local libraryVersion
+					library.libraryVersion = 5;
+				}
+			});
+
+			await engine.start();
+
+			assert.equal(stub.callCount, 2);
+			assert.deepEqual(seenVersions[0], { libraryVersion: 100, storageVersion: 100 });
+			assert.deepEqual(seenVersions[1], { libraryVersion: -1, storageVersion: -1 });
+			stub.restore();
+		});
+
+		it("should not retry more than once if version decrease keeps recurring", async function () {
+			({ engine, client, caller } = await setup());
+			let library = Zotero.Libraries.userLibrary;
+			library.libraryVersion = 100;
+			await library.saveTx();
+
+			let stub = sinon.stub(engine, '_runSync').callsFake(async function () {
+				let e = new Error('_libraryVersion cannot decrease');
+				e.name = 'ZoteroLibraryVersionDecreaseError';
+				throw e;
+			});
+
+			let caught;
+			try {
+				await engine.start();
+			}
+			catch (e) {
+				caught = e;
+			}
+
+			assert.equal(stub.callCount, 2);
+			assert.equal(caught && caught.name, 'ZoteroLibraryVersionDecreaseError');
+			stub.restore();
+		});
 	})
-	
+
 	describe("#_startDownload()", function () {
 		it("shouldn't redownload objects that are already up to date", async function () {
 			var userLibraryID = Zotero.Libraries.userLibraryID;
@@ -3533,13 +3679,98 @@ describe("Zotero.Sync.Data.Engine", function () {
 			assert.equal(spy.callCount, 0);
 			
 			assert.isFalse(group.filesEditable);
-			
+
 			assert.ok(Zotero.Items.get(item1.id));
 			assert.isFalse(Zotero.Items.get(item2.id));
 		});
+
+
+		it("should reset rejected settings to remote version on 403", async function () {
+			var group = await createGroup({
+				libraryVersion: 5
+			});
+			var libraryID = group.libraryID;
+			({ engine, client, caller } = await setup({ libraryID }));
+
+			var lastLibraryVersion = 5;
+
+			// Set a setting that will be rejected (admin-only) and one that will succeed
+			await Zotero.SyncedSettings.set(libraryID, "tagColors", [{ name: "A", color: "#CC66CC" }]);
+			await Zotero.SyncedSettings.set(libraryID, "attachmentRenameTemplate", "{{ title }}");
+
+			server.respond(function (req) {
+				if (req.method == "POST" && req.url.includes("/settings")) {
+					// Return write report with 403 for the restricted setting
+					req.respond(
+						200,
+						{
+							"Content-Type": "application/json",
+							"Last-Modified-Version": ++lastLibraryVersion
+						},
+						JSON.stringify({
+							successful: {},
+							success: {},
+							unchanged: {},
+							failed: {
+								1: {
+									key: "attachmentRenameTemplate",
+									code: 403,
+									message: "Only group admins can change setting 'attachmentRenameTemplate'"
+								}
+							}
+						})
+					);
+					return;
+				}
+
+				// GET settings -- return remote values for reset
+				if (req.method == "GET" && req.url.includes("/settings")) {
+					req.respond(
+						200,
+						{
+							"Content-Type": "application/json",
+							"Last-Modified-Version": lastLibraryVersion
+						},
+						JSON.stringify({
+							attachmentRenameTemplate: {
+								value: "{{ firstCreator }} - {{ year }} - {{ title }}",
+								version: 3
+							}
+						})
+					);
+					return;
+				}
+
+				// Default: no other uploads
+				if (req.method == "POST" || req.method == "DELETE") {
+					req.respond(
+						204,
+						{
+							"Last-Modified-Version": lastLibraryVersion
+						},
+						""
+					);
+				}
+			});
+
+			var result = await engine._startUpload();
+			assert.equal(result, engine.UPLOAD_RESULT_SUCCESS);
+
+			// attachmentRenameTemplate should have been reset to the remote version
+			var value = Zotero.SyncedSettings.get(libraryID, "attachmentRenameTemplate");
+			assert.equal(value, "{{ firstCreator }} - {{ year }} - {{ title }}");
+
+			var metadata = Zotero.SyncedSettings.getMetadata(libraryID, "attachmentRenameTemplate");
+			assert.isTrue(metadata.synced);
+			assert.equal(metadata.version, 3);
+
+			// tagColors should have been marked as synced (succeeded)
+			var tagMetadata = Zotero.SyncedSettings.getMetadata(libraryID, "tagColors");
+			assert.isTrue(tagMetadata.synced);
+		});
 	});
-	
-	
+
+
 	describe("Conflict Resolution", function () {
 		beforeEach(function* () {
 			yield Zotero.DB.queryAsync("DELETE FROM syncCache");
@@ -3653,7 +3884,61 @@ describe("Zotero.Sync.Data.Engine", function () {
 			var keys = await Zotero.Sync.Data.Local.getObjectsFromSyncQueue('item', libraryID);
 			assert.lengthOf(keys, 0);
 		});
-		
+
+		it("should auto-resolve lastRead conflict by picking the most recent value", async function () {
+			var libraryID = Zotero.Libraries.userLibraryID;
+			({ engine, client, caller } = await setup());
+
+			// Create a user-library attachment with a lastRead value
+			let attachment = await importFileAttachment('test.pdf');
+			attachment.version = 10;
+			attachment.synced = true;
+			attachment.attachmentLastRead = 1700000000;
+			await attachment.saveTx({ skipAll: true });
+
+			// Save original version in cache
+			let jsonData = attachment.toJSON();
+			jsonData.key = attachment.key;
+			jsonData.version = 10;
+			let json = {
+				key: attachment.key,
+				version: 10,
+				data: jsonData
+			};
+			await Zotero.Sync.Data.Local.saveCacheObjects('item', libraryID, [json]);
+
+			// Modify lastRead locally (older)
+			attachment.attachmentLastRead = 1700000100;
+			attachment.synced = false;
+			await attachment.saveTx({ skipAll: true });
+
+			// Create remote version with newer lastRead
+			let remoteJSON = Object.assign({}, jsonData);
+			remoteJSON.lastRead = 1700000200;
+			remoteJSON.version = 15;
+			let responseJSON = {
+				key: attachment.key,
+				version: 15,
+				data: remoteJSON
+			};
+
+			setResponse({
+				method: "GET",
+				url: `users/1/items?itemKey=${attachment.key}&includeTrashed=1`,
+				status: 200,
+				headers: {
+					"Last-Modified-Version": 15
+				},
+				json: [responseJSON]
+			});
+
+			// Should not show conflict resolution window
+			await engine._downloadObjects('item', [attachment.key]);
+
+			// The most recent lastRead value should win
+			assert.equal(attachment.attachmentLastRead, 1700000200);
+		});
+
 		it("should show conflict resolution window on note conflicts", async function () {
 			var libraryID = Zotero.Libraries.userLibraryID;
 			({ engine, client, caller } = await setup());
@@ -4921,6 +5206,10 @@ describe("Zotero.Sync.Data.Engine", function () {
 			for (let type of types) {
 				let plural = Zotero.DataObjectUtilities.getObjectTypePlural(type);
 				let suffix = type == 'item' ? '&includeTrashed=1' : '';
+				// Only the first request of the restore is marked
+				if (type == types[0]) {
+					suffix += '&restoreToServer=1';
+				}
 				
 				let json = {};
 				json[objectJSON[type][0].key] = objectJSON[type][0].version;
@@ -4941,8 +5230,8 @@ describe("Zotero.Sync.Data.Engine", function () {
 				};
 			}
 			
-			await Zotero.SyncedSettings.set(libraryID, "testSetting", { foo: 2 });
-			var settingsJSON = { testSetting: { value: { foo: 2 } } }
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_AAAAAAAA", { foo: 2 });
+			var settingsJSON = { lastPageIndex_u_AAAAAAAA: { value: { foo: 2 } } }
 			postData.setting = {
 				expectedVersion: lastLibraryVersion++
 			};
@@ -5044,9 +5333,9 @@ describe("Zotero.Sync.Data.Engine", function () {
 			await engine._restoreToServer();
 			
 			// Check settings
-			var setting = Zotero.SyncedSettings.get(libraryID, "testSetting");
+			var setting = Zotero.SyncedSettings.get(libraryID, "lastPageIndex_u_AAAAAAAA");
 			assert.deepEqual(setting, { foo: 2 });
-			var settingMetadata = Zotero.SyncedSettings.getMetadata(libraryID, "testSetting");
+			var settingMetadata = Zotero.SyncedSettings.getMetadata(libraryID, "lastPageIndex_u_AAAAAAAA");
 			assert.equal(settingMetadata.version, postData.setting.expectedVersion + 1);
 			assert.isTrue(settingMetadata.synced);
 			

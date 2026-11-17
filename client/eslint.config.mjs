@@ -47,7 +47,6 @@ export default [
 				XULElementBase: "readonly",
 				XULElementMixin: "readonly",
 				XULTextElement: "readonly",
-				ItemPaneSectionElementBase: "readonly",
 				Cu: "readonly",
 				ChromeWorker: "readonly",
 				Localization: "readonly",

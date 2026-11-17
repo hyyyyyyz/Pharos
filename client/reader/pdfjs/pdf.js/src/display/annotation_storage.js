@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { shadow, unreachable } from "../shared/util.js";
+import { makeMap, shadow, unreachable } from "../shared/util.js";
 import { AnnotationEditor } from "./editor/editor.js";
 import { MurmurHash3_64 } from "../shared/murmurhash3.js";
 
@@ -31,17 +31,21 @@ class AnnotationStorage {
 
   #modifiedIds = null;
 
+  #editorsMap = null;
+
   #storage = new Map();
 
-  constructor() {
-    // Callbacks to signal when the modification state is set or reset.
-    // This is used by the viewer to only bind on `beforeunload` if forms
-    // are actually edited to prevent doing so unconditionally since that
-    // can have undesirable effects.
-    this.onSetModified = null;
-    this.onResetModified = null;
-    this.onAnnotationEditor = null;
+  // Callbacks to signal when the modification state is set or reset.
+  // This is used by the viewer to only bind on `beforeunload` if forms
+  // are actually edited to prevent doing so unconditionally since that
+  // can have undesirable effects.
+  onSetModified = null;
 
+  onResetModified = null;
+
+  onAnnotationEditor = null;
+
+  constructor() {
     if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
       // For testing purposes.
       Object.defineProperty(this, "_setValues", {
@@ -83,20 +87,23 @@ class AnnotationStorage {
    * @param {string} key
    */
   remove(key) {
+    const storedValue = this.#storage.get(key);
+    if (storedValue === undefined) {
+      return;
+    }
+    if (storedValue instanceof AnnotationEditor) {
+      this.#editorsMap.delete(storedValue.annotationElementId);
+    }
     this.#storage.delete(key);
 
     if (this.#storage.size === 0) {
       this.resetModified();
     }
 
-    if (typeof this.onAnnotationEditor === "function") {
-      for (const value of this.#storage.values()) {
-        if (value instanceof AnnotationEditor) {
-          return;
-        }
-      }
-      this.onAnnotationEditor(null);
+    if (this.#storage.values().some(v => v instanceof AnnotationEditor)) {
+      return;
     }
+    this.onAnnotationEditor?.(null);
   }
 
   /**
@@ -122,11 +129,9 @@ class AnnotationStorage {
       this.#setModified();
     }
 
-    if (
-      value instanceof AnnotationEditor &&
-      typeof this.onAnnotationEditor === "function"
-    ) {
-      this.onAnnotationEditor(value.constructor._type);
+    if (value instanceof AnnotationEditor) {
+      (this.#editorsMap ||= new Map()).set(value.annotationElementId, value);
+      this.onAnnotationEditor?.(value.constructor._type);
     }
   }
 
@@ -146,18 +151,14 @@ class AnnotationStorage {
   #setModified() {
     if (!this.#modified) {
       this.#modified = true;
-      if (typeof this.onSetModified === "function") {
-        this.onSetModified();
-      }
+      this.onSetModified?.();
     }
   }
 
   resetModified() {
     if (this.#modified) {
       this.#modified = false;
-      if (typeof this.onResetModified === "function") {
-        this.onResetModified();
-      }
+      this.onResetModified?.();
     }
   }
 
@@ -187,6 +188,10 @@ class AnnotationStorage {
         val instanceof AnnotationEditor
           ? val.serialize(/* isForCopying = */ false, context)
           : val;
+      if (val.page) {
+        val.pageIndex = val.page._pageIndex;
+        delete val.page;
+      }
       if (serialized) {
         map.set(key, serialized);
 
@@ -213,9 +218,23 @@ class AnnotationStorage {
   get editorStats() {
     let stats = null;
     const typeToEditor = new Map();
+    let numberOfEditedComments = 0;
+    let numberOfDeletedComments = 0;
     for (const value of this.#storage.values()) {
       if (!(value instanceof AnnotationEditor)) {
+        if (value.popup) {
+          if (value.popup.deleted) {
+            numberOfDeletedComments += 1;
+          } else {
+            numberOfEditedComments += 1;
+          }
+        }
         continue;
+      }
+      if (value.isCommentDeleted) {
+        numberOfDeletedComments += 1;
+      } else if (value.hasEditedComment) {
+        numberOfEditedComments += 1;
       }
       const editorStats = value.telemetryFinalData;
       if (!editorStats) {
@@ -231,14 +250,19 @@ class AnnotationStorage {
         if (key === "type") {
           continue;
         }
-        let counters = map.get(key);
-        if (!counters) {
-          counters = new Map();
-          map.set(key, counters);
-        }
-        const count = counters.get(val) ?? 0;
-        counters.set(val, count + 1);
+        const counters = map.getOrInsertComputed(key, makeMap);
+        counters.set(val, (counters.get(val) ?? 0) + 1);
       }
+    }
+    if (numberOfDeletedComments > 0 || numberOfEditedComments > 0) {
+      stats ||= Object.create(null);
+      stats.comments = {
+        deleted: numberOfDeletedComments,
+        edited: numberOfEditedComments,
+      };
+    }
+    if (!stats) {
+      return null;
     }
     for (const [type, editor] of typeToEditor) {
       stats[type] = editor.computeTelemetryFinalData(stats[type]);
@@ -250,6 +274,19 @@ class AnnotationStorage {
     this.#modifiedIds = null;
   }
 
+  updateEditor(annotationId, data) {
+    const value = this.#editorsMap?.get(annotationId);
+    if (value) {
+      value.updateFromAnnotationLayer(data);
+      return true;
+    }
+    return false;
+  }
+
+  getEditor(annotationId) {
+    return this.#editorsMap?.get(annotationId) || null;
+  }
+
   /**
    * @returns {{ids: Set<string>, hash: string}}
    */
@@ -258,19 +295,23 @@ class AnnotationStorage {
       return this.#modifiedIds;
     }
     const ids = [];
-    for (const value of this.#storage.values()) {
-      if (
-        !(value instanceof AnnotationEditor) ||
-        !value.annotationElementId ||
-        !value.serialize()
-      ) {
-        continue;
+    if (this.#editorsMap) {
+      for (const value of this.#editorsMap.values()) {
+        if (!value.serialize()) {
+          continue;
+        }
+        ids.push(value.annotationElementId);
       }
-      ids.push(value.annotationElementId);
+    }
+    let hash = "";
+    if (ids.length) {
+      const h = new MurmurHash3_64();
+      h.update(ids.join(","));
+      hash = h.hexdigest();
     }
     return (this.#modifiedIds = {
       ids: new Set(ids),
-      hash: ids.join(","),
+      hash,
     });
   }
 
@@ -285,15 +326,21 @@ class AnnotationStorage {
  * contents. (Necessary since printing is triggered synchronously in browsers.)
  */
 class PrintAnnotationStorage extends AnnotationStorage {
-  #serializable;
+  #serializable = SerializableEmpty;
 
   constructor(parent) {
     super();
-    const { map, hash, transfer } = parent.serializable;
+
+    const { serializable } = parent;
+    if (serializable === SerializableEmpty) {
+      return;
+    }
+    const { map, hash, transfer } = serializable;
     // Create a *copy* of the data, since Objects are passed by reference in JS.
     const clone = structuredClone(map, transfer ? { transfer } : null);
-
-    this.#serializable = { map: clone, hash, transfer };
+    // The `PrintAnnotationStorage` instance is re-used for all pages,
+    // hence we cannot transfer the data since that breaks printing.
+    this.#serializable = { map: clone, hash, transfer: [] };
   }
 
   /**

@@ -1,34 +1,32 @@
-/* eslint-disable import/no-commonjs */
-
-import { createRequire } from "module";
 import fs from "fs";
-
-const require = createRequire(import.meta.url);
-const ttest = require("ttest");
+import { parseArgs } from "node:util";
+import ttest from "ttest";
 
 const VALID_GROUP_BYS = ["browser", "pdf", "page", "round", "stat"];
 
 function parseOptions() {
-  const yargs = require("yargs")
-    .usage(
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(2),
+    allowPositionals: true,
+    options: {
+      groupBy: { type: "string", default: "browser,stat" },
+    },
+  });
+
+  if (positionals.length < 2) {
+    console.error(
       "Compare the results of two stats files.\n" +
-        "Usage:\n  $0 <BASELINE> <CURRENT> [options]"
-    )
-    .demand(2)
-    .string(["groupBy"])
-    .describe(
-      "groupBy",
-      "How statistics should grouped. Valid options: " +
-        VALID_GROUP_BYS.join(" ")
-    )
-    .default("groupBy", "browser,stat");
-  const result = yargs.argv;
-  result.baseline = result._[0];
-  result.current = result._[1];
-  if (result.groupBy) {
-    result.groupBy = result.groupBy.split(/[;, ]+/);
+        "Usage:\n  statcmp.js <BASELINE> <CURRENT> [--groupBy=<fields>]\n\n" +
+        `  --groupBy    How statistics should be grouped. Valid options: ${VALID_GROUP_BYS.join(" ")}. [browser,stat]`
+    );
+    process.exit(1);
   }
-  return result;
+
+  return {
+    baseline: positionals[0],
+    current: positionals[1],
+    groupBy: values.groupBy.split(/[;, ]+/),
+  };
 }
 
 function group(stats, groupBy) {
@@ -67,12 +65,6 @@ function flatten(stats) {
     rows = rows.filter(s => s.stat === "Overall");
   }
   return rows;
-}
-
-function pad(s, length, dir /* default: 'right' */) {
-  s = "" + s;
-  const spaces = new Array(Math.max(0, length - s.length + 1)).join(" ");
-  return dir === "left" ? spaces + s : s + spaces;
 }
 
 function mean(array) {
@@ -155,7 +147,7 @@ function stat(baseline, current) {
   }
 
   // add horizontal line
-  const hline = width.map(w => new Array(w + 1).join("-"));
+  const hline = width.map(w => "-".repeat(w));
   rows.splice(1, 0, hline);
 
   // print output
@@ -163,7 +155,8 @@ function stat(baseline, current) {
   const groupCount = options.groupBy.length;
   for (const row of rows) {
     for (let i = 0; i < row.length; i++) {
-      row[i] = pad(row[i], width[i], i < groupCount ? "right" : "left");
+      row[i] =
+        i < groupCount ? row[i].padEnd(width[i]) : row[i].padStart(width[i]);
     }
     console.log(row.join(" | "));
   }

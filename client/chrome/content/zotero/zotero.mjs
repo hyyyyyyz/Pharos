@@ -70,10 +70,10 @@ const xpcomFilesLocal = [
 	'annotations',
 	'api',
 	'attachments',
-	'browserDownload',
+	'attachmentReadObserver',
+	'browserRequest',
 	'cite',
 	'citeprocRsBridge',
-	'cookieSandbox',
 	'data/library',
 	'data/libraries',
 	'data/dataObject',
@@ -112,11 +112,14 @@ const xpcomFilesLocal = [
 	'locateManager',
 	'mime',
 	'notifier',
+	'undoHistory',
 	'fileHandlers',
+	'osKeyStore',
 	'plugins',
 	'pluginAPI/menuManager',
 	'pluginAPI/itemPaneManager',
 	'pluginAPI/itemTreeManager',
+	'sdt',
 	'reader',
 	'progressQueue',
 	'progressQueueDialog',
@@ -147,6 +150,7 @@ const xpcomFilesLocal = [
 	'storage',
 	'storage/storageEngine',
 	'storage/storageLocal',
+	'storage/fileChangeWatcher',
 	'storage/storageRequest',
 	'storage/storageResult',
 	'storage/storageUtilities',
@@ -260,8 +264,25 @@ function makeZoteroContext() {
 		zContext = new ZoteroContext();
 		zContext.Zotero = function () {};
 
-		// Override Date prototype to follow Zotero configured locale #3880
-		subscriptLoader.loadSubScript("chrome://zotero/content/dateOverrides.js");
+		// Override Date prototype to follow Zotero configured locale (#3880).
+		// Patch this module scope, every open chrome window, and each chrome
+		// window opened in the future. Each require loader sandbox is patched
+		// separately in require.js.
+		let dateOverridesURL = "chrome://zotero/content/dateOverrides.js";
+		subscriptLoader.loadSubScript(dateOverridesURL);
+		for (let win of Services.wm.getEnumerator(null)) {
+			subscriptLoader.loadSubScript(dateOverridesURL, win);
+		}
+		Services.ww.registerNotification({
+			observe(subject, topic) {
+				if (topic !== 'domwindowopened') {
+					return;
+				}
+				subject.addEventListener('load', () => {
+					subscriptLoader.loadSubScript(dateOverridesURL, subject);
+				}, { once: true });
+			}
+		});
 	}
 	
 	// Load zotero.js first
@@ -305,6 +326,27 @@ function makeZoteroContext() {
 		}
 	}
 	
+	// Load platform-specific FileChangeWatcher backend
+	{
+		let os = Services.appinfo.OS;
+		let backendFile = os == "Darwin" ? "storage/fileChangeWatcher_fsevents"
+			: os == "WINNT" ? "storage/fileChangeWatcher_rdcw"
+			: os == "Linux" ? "storage/fileChangeWatcher_inotify"
+			: null;
+		if (backendFile) {
+			try {
+				subscriptLoader.loadSubScript(
+					"chrome://zotero/content/xpcom/" + backendFile + ".js", zContext, "utf-8"
+				);
+			}
+			catch (e) {
+				dump("Error loading " + backendFile + ".js\n\n");
+				dump(e + "\n\n");
+				Components.utils.reportError("Error loading " + backendFile + ".js");
+			}
+		}
+	}
+
 	// Load RDF files into Zotero.RDF.AJAW namespace (easier than modifying all of the references)
 	const rdfXpcomFiles = [
 		'rdf/init',

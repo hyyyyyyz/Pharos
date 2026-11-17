@@ -57,12 +57,15 @@ Zotero.Server = new function () {
 	/**
 	 * initializes a very rudimentary web server
 	 */
-	this.init = function (port) {
+	this.init = async function (port) {
 		if (serv) {
 			Zotero.debug("Already listening on port " + serv.port);
 			return;
 		}
 		
+		// Do any necessary pre-listen initialization first
+		await Zotero.Server.LocalAPI.init();
+
 		port = port || Zotero.Prefs.get('httpServer.port');
 		try {
 			serv = new HttpServer();
@@ -106,7 +109,9 @@ Zotero.Server = new function () {
 		var decodedData = {};
 		for (let variable of splitData) {
 			var splitIndex = variable.indexOf("=");
-			decodedData[decodeURIComponent(variable.substr(0, splitIndex))] = decodeURIComponent(variable.substr(splitIndex+1));
+			let key = variable.substr(0, splitIndex).replaceAll('+', ' ');
+			let value = variable.substr(splitIndex + 1).replaceAll('+', ' ');
+			decodedData[decodeURIComponent(key)] = decodeURIComponent(value);
 		}
 		return decodedData;
 	}
@@ -260,7 +265,7 @@ Zotero.Server.RequestHandler.prototype._bodyData = function () {
 		}
 	}
 	// handle envelope
-	this._processEndpoint("POST", data); // async
+	this._processEndpoint(this.requestMethod || "POST", data); // async
 }
 
 
@@ -317,6 +322,13 @@ Zotero.Server.RequestHandler.prototype.handleRequest = async function () {
 	
 	Zotero.debug(requestDebug, 5);
 	
+	// Make sure the Host header is set to localhost or 127.0.0.1 to prevent DNS rebinding attacks
+	let host = this.headers.host;
+	if (!host || !/^(?:127\.0\.0\.1|\[::1\]|localhost)(?::[0-9]+)?$/i.test(host)) {
+		this._requestFinished(this._generateResponse(400, "text/plain", "Invalid Host header\n"));
+		return;
+	}
+	
 	if (this.headers.origin) {
 		this.origin = this.headers.origin;
 	}
@@ -360,16 +372,23 @@ Zotero.Server.RequestHandler.prototype.handleRequest = async function () {
 	else if (request.method == "GET") {
 		this._processEndpoint("GET", null); // async
 	}
-	else if (request.method == "POST") {
+	else if (request.method == "POST" || request.method == "PUT"
+			|| request.method == "PATCH" || request.method == "DELETE") {
 		const contentLengthRe = /^([0-9]+)$/;
-		
+		this.requestMethod = request.method;
+
 		// parse content length
 		var m = contentLengthRe.exec(this.headers['content-length']);
-		if(!m) {
+		if (!m) {
+			// DELETE is allowed to have no body
+			if (request.method == "DELETE") {
+				this._processEndpoint("DELETE", null); // async
+				return;
+			}
 			this._requestFinished(this._generateResponse(400, "text/plain", "Content-length not provided\n"));
 			return;
 		}
-		
+
 		this.bodyLength = parseInt(m[1]);
 		this._bodyData();
 	} else {
@@ -392,39 +411,29 @@ Zotero.Server.RequestHandler.prototype._processEndpoint = async function (method
 			return;
 		}
 		
-		// Reject browser-based requests that don't require a CORS preflight request [1] if they
-		// don't come from the connector or include Zotero-Allowed-Request
-		//
-		// [1] https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#Simple_requests
-		var whitelistedEndpoints = [
-			'/connector/ping'
-		];
-		var simpleRequestContentTypes = [
-			'application/x-www-form-urlencoded',
-			'multipart/form-data',
-			'text/plain'
-		];
 		var isBrowser = (this.headers['user-agent'] && this.headers['user-agent'].startsWith('Mozilla/'))
 			// Origin isn't sent via fetch() for HEAD/GET, but for crazy UA strings, protecting
 			// POST requests is better than nothing
 			|| 'origin' in this.headers;
 		if (isBrowser
+				// Allow endpoints to explicitly opt into allowing browser requests
+				// if they really want to
+				&& !endpoint.allowRequestsFromUnsafeWebContent
 				&& !this.headers['x-zotero-connector-api-version']
 				&& !this.headers['zotero-allowed-request']
-				&& (!endpoint.supportedDataTypes
-				|| endpoint.supportedDataTypes == '*'
-				|| endpoint.supportedDataTypes.some(type => simpleRequestContentTypes.includes(type)))
-				&& !whitelistedEndpoints.includes(this.pathname)
-				// Ignore test endpoints
+				// Allow browser requests to test endpoints
 				&& !this.pathname.startsWith('/test/')
-				// Ignore content types that trigger preflight requests
-				&& !(this.contentType && !simpleRequestContentTypes.includes(this.contentType))) {
-			this._requestFinished(this._generateResponse(403, "text/plain", "Request not allowed\n"));
+				// Allow browser requests to /connector/ping as long as they come
+				// from navigation, not XHR/fetch()/resource loading
+				&& !(this.pathname === '/connector/ping' && this.headers['sec-fetch-mode'] === 'navigate')) {
+			Zotero.debug('Preventing request from browser');
+			this._cancelResponse();
 			return;
 		}
 		
 		var data = null;
-		if (method === 'POST' && this.contentType) {
+		if ((method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')
+				&& this.contentType) {
 			// check that endpoint supports contentType
 			var supportedDataTypes = endpoint.supportedDataTypes;
 			if (supportedDataTypes && supportedDataTypes != '*'
@@ -547,7 +556,23 @@ Zotero.Server.RequestHandler.prototype._requestFinished = function (responseBody
 	finally {
 		this.response.finish();
 	}
-}
+};
+
+Zotero.Server.RequestHandler.prototype._cancelResponse = function () {
+	// Close the connection without sending anything back, so web content can't
+	// get any information about whether Zotero is running.
+	//
+	// This causes fetch() to throw a TypeError with the message
+	// "NetworkError when attempting to fetch resource.", exactly the same as
+	// when no server is running on our port.
+	if (this._responseSent) {
+		Zotero.debug('Request already finished; not cancelling');
+		return;
+	}
+	Zotero.debug('Cancelling without sending a response');
+	this._responseSent = true;
+	this.response.finish();
+};
 
 Zotero.Server.RequestHandler.prototype._decodeMultipartData = function (data) {
 	const contentDispositionRe = /^Content-Disposition:\s*(.*)$/i;
@@ -572,10 +597,13 @@ Zotero.Server.RequestHandler.prototype._decodeMultipartData = function (data) {
 		let windowsHeaderBoundary = field.indexOf("\r\n\r\n");
 		if (unixHeaderBoundary < windowsHeaderBoundary && unixHeaderBoundary != -1) {
 			fieldData.header = field.slice(0, unixHeaderBoundary).trim();
-			fieldData.body = field.slice(unixHeaderBoundary+2).trim();
+			// Strip only the trailing delimiter newline before the next boundary, not all
+			// surrounding whitespace -- trimming would corrupt binary bodies (e.g., a file
+			// ending in a newline byte)
+			fieldData.body = field.slice(unixHeaderBoundary+2).replace(/\n$/, '');
 		} else if (windowsHeaderBoundary != -1) {
 			fieldData.header = field.slice(0, windowsHeaderBoundary).trim();
-			fieldData.body = field.slice(windowsHeaderBoundary+4).trim();
+			fieldData.body = field.slice(windowsHeaderBoundary+4).replace(/\r\n$/, '');
 		} else {
 			// Only log first 200 characters in case the part is large
 			Zotero.debug('Malformed multipart/form-data body: ' + field.substr(0, 200), 1);

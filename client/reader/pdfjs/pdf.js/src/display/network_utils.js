@@ -49,38 +49,34 @@ function validateRangeRequestCapabilities({
       "rangeChunkSize must be an integer larger than zero."
     );
   }
-  const returnValues = {
-    allowRangeRequests: false,
-    suggestedLength: undefined,
+  const rv = {
+    contentLength: 0,
+    isRangeSupported: false,
   };
 
   const length = parseInt(responseHeaders.get("Content-Length"), 10);
   if (!Number.isInteger(length)) {
-    return returnValues;
+    return rv;
   }
-
-  returnValues.suggestedLength = length;
+  rv.contentLength = length;
 
   if (length <= 2 * rangeChunkSize) {
     // The file size is smaller than the size of two chunks, so it does not
     // make any sense to abort the request and retry with a range request.
-    return returnValues;
+    return rv;
   }
-
   if (disableRange || !isHttp) {
-    return returnValues;
+    return rv;
   }
   if (responseHeaders.get("Accept-Ranges") !== "bytes") {
-    return returnValues;
+    return rv;
   }
 
   const contentEncoding = responseHeaders.get("Content-Encoding") || "identity";
-  if (contentEncoding !== "identity") {
-    return returnValues;
+  if (contentEncoding === "identity") {
+    rv.isRangeSupported = true;
   }
-
-  returnValues.allowRangeRequests = true;
-  return returnValues;
+  return rv;
 }
 
 function extractFilenameFromHeader(responseHeaders) {
@@ -101,21 +97,25 @@ function extractFilenameFromHeader(responseHeaders) {
 
 function createResponseError(status, url) {
   return new ResponseException(
-    `Unexpected server response (${status}) while retrieving PDF "${url}".`,
+    `Unexpected server response (${status}) while retrieving PDF "${url.href}".`,
     status,
-    /* missing = */ status === 404 || (status === 0 && url.startsWith("file:"))
+    /* missing = */ status === 404 || (status === 0 && url.protocol === "file:")
   );
 }
 
-function validateResponseStatus(status) {
-  return status === 200 || status === 206;
+function ensureResponseOrigin(rangeOrigin, origin) {
+  if (rangeOrigin !== origin) {
+    throw new Error(
+      `Expected range response-origin "${rangeOrigin}" to match "${origin}".`
+    );
+  }
 }
 
 export {
   createHeaders,
   createResponseError,
+  ensureResponseOrigin,
   extractFilenameFromHeader,
   getResponseOrigin,
   validateRangeRequestCapabilities,
-  validateResponseStatus,
 };

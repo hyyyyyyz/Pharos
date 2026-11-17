@@ -1,4 +1,4 @@
--- 123
+-- 130
 
 -- Copyright (c) 2009 Center for History and New Media
 --                    George Mason University, Fairfax, Virginia, USA
@@ -164,6 +164,7 @@ CREATE TABLE items (
     libraryID INT NOT NULL,
     key TEXT NOT NULL,
     version INT NOT NULL DEFAULT 0,
+    clientVersion INT NOT NULL DEFAULT 0,
     synced INT NOT NULL DEFAULT 0,
     UNIQUE (libraryID, key),
     FOREIGN KEY (libraryID) REFERENCES libraries(libraryID) ON DELETE CASCADE
@@ -172,7 +173,8 @@ CREATE INDEX items_synced ON items(synced);
 
 CREATE TABLE itemDataValues (
     valueID INTEGER PRIMARY KEY,
-    value UNIQUE
+    value UNIQUE,
+    valueNormalized TEXT
 );
 
 -- Type-specific data for individual items
@@ -211,6 +213,7 @@ CREATE TABLE itemAttachments (
     storageModTime INT,
     storageHash TEXT,
     lastProcessedModificationTime INT,
+    lastRead INT,
     FOREIGN KEY (itemID) REFERENCES items(itemID) ON DELETE CASCADE,
     FOREIGN KEY (parentItemID) REFERENCES items(itemID) ON DELETE CASCADE,
     FOREIGN KEY (charsetID) REFERENCES charsets(charsetID) ON DELETE SET NULL
@@ -220,6 +223,7 @@ CREATE INDEX itemAttachments_charsetID ON itemAttachments(charsetID);
 CREATE INDEX itemAttachments_contentType ON itemAttachments(contentType);
 CREATE INDEX itemAttachments_syncState ON itemAttachments(syncState);
 CREATE INDEX itemAttachments_lastProcessedModificationTime ON itemAttachments(lastProcessedModificationTime);
+CREATE INDEX itemAttachments_lastRead ON itemAttachments(lastRead);
 
 CREATE TABLE itemAnnotations (
     itemID INTEGER PRIMARY KEY,
@@ -227,7 +231,9 @@ CREATE TABLE itemAnnotations (
     type INTEGER NOT NULL,
     authorName TEXT,
     text TEXT,
+    textNormalized TEXT,
     comment TEXT,
+    commentNormalized TEXT,
     color TEXT,
     pageLabel TEXT,
     sortIndex TEXT NOT NULL,
@@ -240,7 +246,8 @@ CREATE INDEX itemAnnotations_parentItemID ON itemAnnotations(parentItemID);
 
 CREATE TABLE tags (
     tagID INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE
+    name TEXT NOT NULL UNIQUE,
+    nameNormalized TEXT
 );
 
 CREATE TABLE itemRelations (
@@ -269,6 +276,8 @@ CREATE TABLE creators (
     firstName TEXT,
     lastName TEXT,
     fieldMode INT,
+    firstNameNormalized TEXT,
+    lastNameNormalized TEXT,
     UNIQUE (lastName, firstName, fieldMode)
 );
 
@@ -293,6 +302,7 @@ CREATE TABLE collections (
     libraryID INT NOT NULL,
     key TEXT NOT NULL,
     version INT NOT NULL DEFAULT 0,
+    clientVersion INT NOT NULL DEFAULT 0,
     synced INT NOT NULL DEFAULT 0,
     UNIQUE (libraryID, key),
     FOREIGN KEY (libraryID) REFERENCES libraries(libraryID) ON DELETE CASCADE,
@@ -349,6 +359,7 @@ CREATE TABLE savedSearches (
     libraryID INT NOT NULL,
     key TEXT NOT NULL,
     version INT NOT NULL DEFAULT 0,
+    clientVersion INT NOT NULL DEFAULT 0,
     synced INT NOT NULL DEFAULT 0,
     UNIQUE (libraryID, key),
     FOREIGN KEY (libraryID) REFERENCES libraries(libraryID) ON DELETE CASCADE
@@ -361,7 +372,6 @@ CREATE TABLE savedSearchConditions (
     condition TEXT NOT NULL,
     operator TEXT,
     value TEXT,
-    required NONE,
     PRIMARY KEY (savedSearchID, searchConditionID),
     FOREIGN KEY (savedSearchID) REFERENCES savedSearches(savedSearchID) ON DELETE CASCADE
 );
@@ -393,9 +403,11 @@ CREATE TABLE libraries (
     editable INT NOT NULL,
     filesEditable INT NOT NULL,
     version INT NOT NULL DEFAULT 0,
+    clientVersion INT NOT NULL DEFAULT 0,
     storageVersion INT NOT NULL DEFAULT 0,
     lastSync INT NOT NULL DEFAULT 0,
-    archived INT NOT NULL DEFAULT 0
+    archived INT NOT NULL DEFAULT 0,
+    isAdmin INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE users (
@@ -444,20 +456,6 @@ CREATE TABLE fulltextItems (
 );
 CREATE INDEX fulltextItems_synced ON fulltextItems(synced);
 CREATE INDEX fulltextItems_version ON fulltextItems(version);
-
-CREATE TABLE fulltextWords (
-    wordID INTEGER PRIMARY KEY,
-    word TEXT UNIQUE
-);
-
-CREATE TABLE fulltextItemWords (
-    wordID INT,
-    itemID INT,
-    PRIMARY KEY (wordID, itemID),
-    FOREIGN KEY (wordID) REFERENCES fulltextWords(wordID),
-    FOREIGN KEY (itemID) REFERENCES items(itemID) ON DELETE CASCADE
-);
-CREATE INDEX fulltextItemWords_itemID ON fulltextItemWords(itemID);
 
 CREATE TABLE syncCache (
     libraryID INT NOT NULL,

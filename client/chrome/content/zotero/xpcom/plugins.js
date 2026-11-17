@@ -40,7 +40,15 @@ Zotero.Plugins = new function () {
 	var scopes = new Map();
 	var observers = new Set();
 	var addonVersions = new Map();
-	var addonL10nSources = new Map();
+
+	// All plugins' FTL content is consolidated into one L10nFileSource, so the
+	// solver never has to choose between competing per-plugin sources.
+	// Miscompiles can happen when a plugin uses `{optional: true}` because the tester
+	// can't distinguish "source has content" from "source is an optional-miss".
+	const PLUGIN_L10N_SOURCE_NAME = "zotero-plugins";
+	const PLUGIN_L10N_PRE_PATH = "zotero-plugins:{locale}/";
+	// addon.id -> Map<full_path, ftl_content>
+	var addonL10nContents = new Map();
 	
 	const REASONS = {
 		APP_STARTUP: 1,
@@ -326,6 +334,151 @@ Zotero.Plugins = new function () {
 	};
 
 
+	/**
+	 * Identify the plugin, if any, whose code appears in an error's stack
+	 *
+	 * The topmost plugin frame wins, so an error thrown by Zotero code that a plugin called
+	 * is attributed to the plugin that called it.
+	 *
+	 * @param {Error|String} error - An error or a stack string
+	 * @return {Promise<Object|false>} - { id, name }, or false if no plugin frame was found
+	 */
+	this.getPluginFromError = async function (error) {
+		try {
+			var stack = typeof error == 'string' ? error : error?.stack;
+			if (!stack) {
+				return false;
+			}
+			var { addons } = await AddonManager.getActiveAddons(["extension"]);
+			if (!addons?.length) {
+				return false;
+			}
+			var roots = addons.map(addon => [addon, _archiveOrDirURI(addon.getResourceURI().spec)]);
+			for (let line of stack.split('\n')) {
+				let uri = _stackFrameURI(line);
+				if (!uri) {
+					continue;
+				}
+				uri = _resolveChromeOrResourceURI(uri);
+				if (!uri) {
+					continue;
+				}
+				uri = _archiveOrDirURI(uri);
+				for (let [addon, root] of roots) {
+					if (root && uri.startsWith(root)) {
+						return { id: addon.id, name: addon.name };
+					}
+				}
+			}
+			return false;
+		}
+		catch (e) {
+			Zotero.logError(e);
+			return false;
+		}
+	};
+
+
+	var warnedRemovedAPICalls = new Set();
+
+	/**
+	 * Warn about a call to an API that was removed, naming the plugin that called it
+	 *
+	 * Resolving the plugin is async, so the warning is logged after this returns.
+	 *
+	 * @param {String} name - The removed API, e.g. "CollectionTree#getSelectedSearch()"
+	 * @param {String} replacement - What to use instead, e.g. "getSelectedSearches()"
+	 */
+	this.warnRemovedAPICall = function (name, replacement) {
+		let stack = new Error().stack;
+		// Warn once per call site, since a plugin may call these repeatedly (e.g., on every
+		// item list load). The frames above the caller are this method and the removed
+		// method itself, which are the same for every caller.
+		let callerFrame = stack.split("\n").find(line => !_isZoteroStackFrame(line));
+		let key = name + "\n" + (callerFrame || "");
+		if (warnedRemovedAPICalls.has(key)) {
+			return;
+		}
+		warnedRemovedAPICalls.add(key);
+		this.getPluginFromError(stack)
+			.then((plugin) => {
+				let caller = plugin ? `${plugin.name} (${plugin.id})` : "Something";
+				Zotero.warn(`${caller} called ${name}, which was removed -- use ${replacement}`);
+			})
+			.catch(e => Zotero.logError(e));
+	};
+
+
+	/**
+	 * Resolve a chrome:// or resource:// URI to the file or JAR URI it points at, since
+	 * plugins can register packages and substitutions under both
+	 *
+	 * @param {String} uri
+	 * @return {String} - The resolved URI, or an empty string if it can't be resolved
+	 */
+	function _resolveChromeOrResourceURI(uri) {
+		try {
+			if (uri.startsWith('chrome://')) {
+				return Cc["@mozilla.org/chrome/chrome-registry;1"]
+					.getService(Ci.nsIChromeRegistry)
+					.convertChromeURL(Services.io.newURI(uri))
+					.spec;
+			}
+			if (uri.startsWith('resource://')) {
+				return Services.io.getProtocolHandler("resource")
+					.QueryInterface(Ci.nsIResProtocolHandler)
+					.resolveURI(Services.io.newURI(uri));
+			}
+		}
+		catch {
+			return '';
+		}
+		return uri;
+	}
+
+
+	/**
+	 * Reduce a URI to something comparable between plugin root URIs and stack frames:
+	 * the containing archive for a jar: URI (which points inside an XPI), or the URI itself
+	 * for a plugin installed unpacked
+	 *
+	 * @param {String} uri
+	 * @return {String}
+	 */
+	function _archiveOrDirURI(uri) {
+		if (uri.startsWith('jar:')) {
+			let pos = uri.indexOf('!/');
+			return pos == -1 ? uri.substring(4) : uri.substring(4, pos);
+		}
+		return uri;
+	}
+
+
+	/**
+	 * @param {String} line - A line from an error stack
+	 * @return {Boolean} - True if the frame is Zotero's own code
+	 */
+	function _isZoteroStackFrame(line) {
+		let uri = _stackFrameURI(line);
+		// Trailing slashes matter: a plugin package can start with our own name, as
+		// chrome://zoterostyle/ does
+		return !uri
+			|| uri.startsWith("chrome://zotero/")
+			|| uri.startsWith("resource://zotero/")
+			|| uri.startsWith("resource://gre/");
+	}
+
+
+	/**
+	 * @param {String} line - A line from an error stack, "name@uri:line:column"
+	 * @return {String} - The URI, without the line and column
+	 */
+	function _stackFrameURI(line) {
+		// A function name can't contain "@", while a URI can (plugin IDs are email-like)
+		return line.slice(line.indexOf('@') + 1).replace(/:\d+(?::\d+)?$/, '');
+	}
+
+
 	this.getAllPluginIDs = async function () {
 		let addons = await AddonManager.getAddonsByTypes(["extension"]);
 		return addons.map(addon => addon.id);
@@ -371,9 +524,12 @@ Zotero.Plugins = new function () {
 			}
 		};
 		try {
-			Services.scriptloader.loadSubScript(
+			Services.scriptloader.loadSubScriptWithOptions(
 				addon.getResourceURI("prefs.js").spec,
-				obj
+				{
+					target: obj,
+					ignoreCache: true
+				}
 			);
 		}
 		catch (e) {
@@ -394,9 +550,12 @@ Zotero.Plugins = new function () {
 			}
 		};
 		try {
-			Services.scriptloader.loadSubScript(
+			Services.scriptloader.loadSubScriptWithOptions(
 				addon.getResourceURI("prefs.js").spec,
-				obj
+				{
+					target: obj,
+					ignoreCache: true
+				}
 			);
 		}
 		catch (e) {
@@ -415,16 +574,9 @@ Zotero.Plugins = new function () {
 	 * could be included in an XHTML file as
 	 *   <link rel="localization" href="make-it-red.ftl"/>
 	 *
-	 * Locale subdirectories that match Zotero locales (Services.locale.availableLocales)
-	 * are registered as is. Other locales are aliased to a best-fit Zotero locale.
-	 * For example, Zotero has an 'eu-ES' locale but no 'eu-FR' locale. If a plugin
-	 * included an 'eu-FR' locale instead, 'eu-FR' would be aliased to 'eu-ES',
-	 * and 'eu-FR' strings would show if the user's Zotero locale is 'eu-ES'.
-	 *
-	 * If a plugin doesn't have a locale matching the current Zotero locale, 'en-US'
-	 * is used as a fallback. If it doesn't have an 'en-*' locale, Fluent chooses a
-	 * fallback arbitrarily. For instance, a plugin with only a 'de' locale would
-	 * show German strings even if the user's Zotero locale is 'en-US'.
+	 * For each Zotero locale the plugin doesn't ship translations for, the
+	 * plugin's closest-locale content (exact -> same-language -> en-US ->
+	 * first available) is used, so every Zotero locale has a valid bundle.
 	 *
 	 * @param addon
 	 * @returns {Promise<void>}
@@ -443,58 +595,102 @@ Zotero.Plugins = new function () {
 			Zotero.logError(e);
 			return;
 		}
-		
-		let matchedLocales = [];
-		let unmatchedLocales = [];
+
+		// Read every .ftl in every plugin locale directory into memory.
+		let pluginFilesByLocale = new Map();
 		for (let pluginLocale of pluginLocales) {
-			(zoteroLocales.includes(pluginLocale) ? matchedLocales : unmatchedLocales)
-				.push(pluginLocale);
-		}
-		
-		let sources = [];
-		// All locales that exactly match a Zotero locale can be registered at once
-		if (matchedLocales.length) {
-			sources.push(new L10nFileSource(
-				addon.id,
-				'app',
-				matchedLocales,
-				// {locale} is replaced with the locale code
-				rootURI.spec + 'locale/{locale}/',
-			));
-		}
-		// Other locales need to be registered individually to create aliases
-		for (let unmatchedLocale of unmatchedLocales) {
-			let resolvedLocale = Zotero.Utilities.Internal.resolveLocale(unmatchedLocale, zoteroLocales);
-			// resolveLocale() returns en-US as a fallback; don't use it unless
-			// the unmatched plugin locale is en-*
-			if (resolvedLocale === 'en-US' && !unmatchedLocale.startsWith('en')) {
-				Zotero.debug(`${addon.id}: No matching locale for ${unmatchedLocale}`);
+			let files;
+			try {
+				files = await readDirectory(rootURI, `locale/${pluginLocale}`);
+			}
+			catch (e) {
+				Zotero.logError(e);
 				continue;
 			}
-			Zotero.debug(`${addon.id}: Aliasing ${unmatchedLocale} to ${resolvedLocale}`);
-			if (sources.some(source => source.locales.includes(resolvedLocale))) {
-				Zotero.debug(`${addon.id}: ${resolvedLocale} already registered`);
-				continue;
+			let contents = new Map();
+			for (let file of files) {
+				if (!file.endsWith('.ftl')) continue;
+				let url = rootURI.spec + `locale/${pluginLocale}/${file}`;
+				try {
+					contents.set(file, await Zotero.File.getResourceAsync(url));
+				}
+				catch (e) {
+					Zotero.logError(new Error(`${addon.id}: failed to read ${url}: ${e}`));
+				}
 			}
-			sources.push(new L10nFileSource(
-				addon.id + '-' + unmatchedLocale,
-				'app',
-				[resolvedLocale],
-				// Don't use the {locale} placeholder here - manually specify the aliased locale code
-				rootURI.spec + `locale/${unmatchedLocale}/`,
-			));
+			pluginFilesByLocale.set(pluginLocale, contents);
 		}
-		L10nRegistry.getInstance().registerSources(sources);
-		addonL10nSources.set(addon.id, sources.map(source => source.name));
+
+		// Plugin locales can have partial coverage, pick the fallback per file.
+		let localesPerFile = new Map();
+		for (let [pluginLocale, files] of pluginFilesByLocale) {
+			for (let filename of files.keys()) {
+				if (!localesPerFile.has(filename)) {
+					localesPerFile.set(filename, []);
+				}
+				localesPerFile.get(filename).push(pluginLocale);
+			}
+		}
+
+		let contributions = new Map();
+		for (let zoteroLocale of zoteroLocales) {
+			let prefix = PLUGIN_L10N_PRE_PATH.replace('{locale}', zoteroLocale);
+			for (let [filename, available] of localesPerFile) {
+				let pick = Zotero.Utilities.Internal.resolveLocale(
+					zoteroLocale, available, { silent: true }
+				);
+				if (!pick) {
+					pick = available.find(l => l.startsWith('en')) || available[0];
+				}
+				contributions.set(
+					prefix + filename,
+					pluginFilesByLocale.get(pick).get(filename)
+				);
+			}
+		}
+		addonL10nContents.set(addon.id, contributions);
+		rebuildUnifiedPluginSource(zoteroLocales);
 	}
-	
-	
-	function unregisterLocales(addon) {
-		let sources = addonL10nSources.get(addon.id);
-		if (sources) {
-			L10nRegistry.getInstance().removeSources(sources);
-			addonL10nSources.delete(addon.id);
+
+
+	/**
+	 * Rebuild the unified plugin L10nFileSource from all active plugins'
+	 * contributions and register (or update) it in L10nRegistry.
+	 */
+	function rebuildUnifiedPluginSource(zoteroLocales) {
+		let fs = [];
+		for (let contributions of addonL10nContents.values()) {
+			for (let [path, source] of contributions) {
+				fs.push({ path, source });
+			}
 		}
+		let registry = L10nRegistry.getInstance();
+		if (!fs.length) {
+			if (registry.hasSource(PLUGIN_L10N_SOURCE_NAME)) {
+				registry.removeSources([PLUGIN_L10N_SOURCE_NAME]);
+			}
+			return;
+		}
+		let source = L10nFileSource.createMock(
+			PLUGIN_L10N_SOURCE_NAME,
+			'app',
+			zoteroLocales,
+			PLUGIN_L10N_PRE_PATH,
+			fs
+		);
+		if (registry.hasSource(PLUGIN_L10N_SOURCE_NAME)) {
+			registry.updateSources([source]);
+		}
+		else {
+			registry.registerSources([source]);
+		}
+	}
+
+
+	function unregisterLocales(addon) {
+		if (!addonL10nContents.has(addon.id)) return;
+		addonL10nContents.delete(addon.id);
+		rebuildUnifiedPluginSource(Services.locale.availableLocales);
 	}
 
 	/**

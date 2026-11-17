@@ -132,7 +132,7 @@ Pharos 是一个开源的 Zotero 衍生科研客户端，面向从研究问题�
 同时占用同一个数据库。文库旁已经预留未来 sidecar 的路径，但目前没有功能向它写入；
 现有 Pharos 原生记录保存在可选后端，每日论文另有带版本、由用户掌控的可迁移 Vault。
 
-兼容迁移已经完成。桌面端当前基于 Zotero 8.0.5、userdata schema 123，正式版
+兼容迁移已经完成。桌面端当前基于 Zotero 10.0.7、userdata schema 130（仍在用 Zotero 8 的用户无法共用文库），正式版
 直接使用同一个 Zotero 数据目录与 `zotero.sqlite`；真实文库副本往返验证中，279 个
 附件全部保持完整。开发、测试与 CI 仍必须使用隔离数据目录，绝不能打开真实文库。
 详见 [`docs/CLIENT_DATA_ARCHITECTURE.md`](docs/CLIENT_DATA_ARCHITECTURE.md)。
@@ -328,7 +328,7 @@ scripts/install_desktop.sh --build-only       # 只编译不安装
   或 profile 的 `user.js` 里设置
   `user_pref("extensions.zotero.pharos.baseURL", "http://localhost:8000");`。
   设置页里刻意没有这个入口。
-- *数据目录。* 与发布版一样，安装后的应用会打开 `~/Zotero` 的 Zotero 文库（schema 123），
+- *数据目录。* 与发布版一样，安装后的应用会打开 `~/Zotero` 的 Zotero 文库（schema 130），
   但使用自己独立的 profile。想先用一个临时文库试用：
   `/Applications/Pharos.app/Contents/MacOS/zotero -datadir ~/PharosTry`。
   开发调试仍应使用会拒绝 `~/Zotero` 的 `app/scripts/run_pharos_dev`。

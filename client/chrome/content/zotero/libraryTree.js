@@ -33,14 +33,11 @@ const React = require('react');
 var LibraryTree = class LibraryTree extends React.Component {
 	constructor(props) {
 		super(props);
-		this._rows = [];
-		this._rowMap = {};
 
 		this.domEl = props.domEl;
 		this._ownerDocument = props.domEl.ownerDocument;
 		
 		this.onSelect = this.createEventBinding('select');
-		this.onRefresh = this.createEventBinding('refresh');
 	}
 	
 	get window() {
@@ -57,6 +54,65 @@ var LibraryTree = class LibraryTree extends React.Component {
 	
 	waitForSelect() {
 		return this._waitForEvent('select');
+	}
+
+	componentDidMount() {
+		// Create an element where we can create drag images to be displayed next to the cursor while dragging
+		// since for multiple item drags we need to display all the elements
+		let elem = this._dragImageContainer = document.createElement("div");
+		elem.style.width = "100%";
+		elem.style.height = "2000px";
+		elem.style.position = "absolute";
+		elem.style.top = "-10000px";
+		elem.className = "drag-image-container";
+		this.domEl.appendChild(elem);
+		// Normal mousemove events are suppressed during native drag-and-drop, so a mousemove
+		// with a drop row still set means the drag ended without a dragleave/drop/dragend
+		// reaching the tree (e.g., a drag that left the window). Clear the leftover drop
+		// indicator when mouse movement resumes.
+		this.domEl.addEventListener('mousemove', this._clearDropIndicator, { passive: true });
+		this.domEl.addEventListener('dragleave', this._handleTreeDragLeave, { passive: true });
+	}
+
+	componentWillUnmount() {
+		this.domEl.removeChild(this._dragImageContainer);
+		this.domEl.removeEventListener('mousemove', this._clearDropIndicator);
+		this.domEl.removeEventListener('dragleave', this._handleTreeDragLeave);
+	}
+
+	// A drag leaving the tree doesn't always send a dragleave to the drop row -- e.g., a fast
+	// exit from the window can target the table body instead -- so also clear the drop
+	// indicator when the drag leaves the tree as a whole
+	_handleTreeDragLeave = (event) => {
+		if (!event.relatedTarget || !this.domEl.contains(event.relatedTarget)) {
+			this._clearDropIndicator();
+		}
+	};
+
+	_clearDropIndicator = () => {
+		if (this._dropRow === null || this._dropRow === undefined) return;
+		this._setDropRow(null);
+	};
+
+	/**
+	 * Update the drop indicator on the existing row elements without re-rendering the rows.
+	 * Re-rendering replaces the cells under the pointer during a drag, which can keep the
+	 * row from receiving a dragleave when the drag leaves quickly, leaving the indicator stuck.
+	 */
+	_setDropRow(row) {
+		let prevDropRow = this._dropRow;
+		this._dropRow = row;
+		for (let index of new Set([prevDropRow, row])) {
+			if (typeof index != 'number') continue;
+			let div = this.tree?.getRowElement(index);
+			if (div) {
+				this._renderDropIndicator(div, index);
+			}
+		}
+	}
+
+	_renderDropIndicator(div, index) {
+		div.classList.toggle('drop', this._dropRow == index);
 	}
 
 	componentDidCatch(error, info) {
@@ -122,6 +178,28 @@ var LibraryTree = class LibraryTree extends React.Component {
 	}
 
 	/**
+	 * Get selected tree rows
+	 */
+	getSelectedRows() {
+		var indexes = this.selection ? Array.from(this.selection.selected) : [];
+		indexes = indexes.filter(index => index < this._rows.length);
+		try {
+			return indexes.map(index => this.getRow(index));
+		}
+		catch (e) {
+			Zotero.debug(indexes);
+			throw e;
+		}
+	}
+
+	/**
+	 * Get selected objects, including collections and searches in the trash in item trees
+	 */
+	getSelectedObjects() {
+		return this.getSelectedRows().map(row => row.ref);
+	}
+
+	/**
 	 * Add a tree row to the main array, update the row count, tell the treebox that the row
 	 * count changed, and update the row map
 	 *
@@ -160,8 +238,8 @@ var LibraryTree = class LibraryTree extends React.Component {
 		let level = this.getLevel(index);
 
 		// Maintain selection unless specified otherwise
-		if (!skipSelectionUpdate && index <= this.selection.focused) {
-			this.selection.select(this.selection.focused - 1);
+		if (!skipSelectionUpdate) {
+			this.selection.adjustForRowRemoval(index);
 		}
 
 		this._rows.splice(index, 1);
@@ -217,16 +295,6 @@ var LibraryTree = class LibraryTree extends React.Component {
 		this.tree && this.tree.scrollToRow(index);
 	}
 
-	_updateHeight = () => {
-		this.forceUpdate(() => {
-			if (this.tree) {
-				this.tree.rerender();
-			}
-		});
-	}
-
-	updateHeight = Zotero.Utilities.debounce(this._updateHeight, 200);
-
 	updateFontSize() {
 		this.tree.updateFontSize();
 	}
@@ -251,10 +319,44 @@ var LibraryTree = class LibraryTree extends React.Component {
 		// the same action as the dropEffect. This allows the dropEffect setting
 		// (which we use in the tree's canDrop() and drop() to determine the desired
 		// action) to be changed, even if the cursor doesn't reflect the new setting.
+		//
+		// The effect also has to be one of the actions allowed at drag start: on Windows,
+		// OLE refuses the drop entirely if it isn't. Some drags allow only 'copy' (see
+		// Zotero.Utilities.Internal.onDragItems()), so a 'move' within Zotero has to be sent
+		// as a 'copy'. The trees' onDrop() handlers act on the effect set here, kept in
+		// Zotero.DragDrop.currentDropEffect, rather than on the drop event's dropEffect, so
+		// the drop still moves.
+		Zotero.DragDrop.currentDropEffect = effect;
+		let allowed = event.dataTransfer.effectAllowed;
+		if (effect != 'none' && allowed && !['uninitialized', 'all'].includes(allowed)
+				&& !allowed.toLowerCase().includes(effect)) {
+			effect = ['copy', 'move', 'link'].find(x => allowed.toLowerCase().includes(x)) || 'none';
+		}
 		if (Zotero.isWin || Zotero.isLinux) {
 			event.dataTransfer.effectAllowed = effect;
 		}
 		event.dataTransfer.dropEffect = effect;
+	}
+
+	/**
+	 * Start a drag using HTML 5 Drag and Drop
+	 */
+	onDragStart(event, index) {
+		// Propagate selection before we set the drag image if dragging not one of the selected rows
+		if (!this.selection.isSelected(index)) {
+			this.selection.select(index);
+		}
+		// Set drag image
+		const dragElems = this.domEl.querySelectorAll('.selected');
+		for (let elem of dragElems) {
+			elem = elem.cloneNode(true);
+			elem.style.position = "initial";
+			this._dragImageContainer.appendChild(elem);
+		}
+	}
+
+	onDragEnd(_event, _index) {
+		this._dragImageContainer.innerHTML = "";
 	}
 };
 

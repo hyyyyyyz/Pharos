@@ -29,6 +29,7 @@ import {
 import { NullStream, Stream } from "./stream.js";
 import { Ascii85Stream } from "./ascii_85_stream.js";
 import { AsciiHexStream } from "./ascii_hex_stream.js";
+import { BrotliStream } from "./brotli_stream.js";
 import { CCITTFaxStream } from "./ccitt_stream.js";
 import { FlateStream } from "./flate_stream.js";
 import { Jbig2Stream } from "./jbig2_stream.js";
@@ -822,6 +823,8 @@ class Parser {
           return new RunLengthStream(stream, maybeLength);
         case "JBIG2Decode":
           return new Jbig2Stream(stream, maybeLength, params);
+        case "BrotliDecode":
+          return new BrotliStream(stream, maybeLength);
       }
       warn(`Filter "${name}" is not supported.`);
       return stream;
@@ -905,7 +908,6 @@ class Lexer {
 
   getNumber() {
     let ch = this.currentChar;
-    let eNotation = false;
     let divideBy = 0; // Different from 0 if it's a floating point value.
     let sign = 1;
 
@@ -948,22 +950,15 @@ class Lexer {
     }
 
     let baseValue = ch - 0x30; // '0'
-    let powerValue = 0;
-    let powerValueSign = 1;
 
     while ((ch = this.nextChar()) >= 0) {
       if (ch >= /* '0' = */ 0x30 && ch <= /* '9' = */ 0x39) {
         const currentDigit = ch - 0x30; // '0'
-        if (eNotation) {
-          // We are after an 'e' or 'E'.
-          powerValue = powerValue * 10 + currentDigit;
-        } else {
-          if (divideBy !== 0) {
-            // We are after a point.
-            divideBy *= 10;
-          }
-          baseValue = baseValue * 10 + currentDigit;
+        if (divideBy !== 0) {
+          // We are after a point.
+          divideBy *= 10;
         }
+        baseValue = baseValue * 10 + currentDigit;
       } else if (ch === /* '.' = */ 0x2e) {
         if (divideBy === 0) {
           divideBy = 1;
@@ -975,18 +970,6 @@ class Lexer {
         // Ignore minus signs in the middle of numbers to match
         // Adobe's behavior.
         warn("Badly formatted number: minus sign in the middle");
-      } else if (ch === /* 'E' = */ 0x45 || ch === /* 'e' = */ 0x65) {
-        // 'E' can be either a scientific notation or the beginning of a new
-        // operator.
-        ch = this.peekChar();
-        if (ch === /* '+' = */ 0x2b || ch === /* '-' = */ 0x2d) {
-          powerValueSign = ch === 0x2d ? -1 : 1;
-          this.nextChar(); // Consume the sign character.
-        } else if (ch < /* '0' = */ 0x30 || ch > /* '9' = */ 0x39) {
-          // The 'E' must be the beginning of a new operator.
-          break;
-        }
-        eNotation = true;
       } else {
         // The last character doesn't belong to us.
         break;
@@ -995,9 +978,6 @@ class Lexer {
 
     if (divideBy !== 0) {
       baseValue /= divideBy;
-    }
-    if (eNotation) {
-      baseValue *= 10 ** (powerValueSign * powerValue);
     }
     return sign * baseValue;
   }

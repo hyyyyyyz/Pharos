@@ -18,7 +18,7 @@
 /** @typedef {import("../src/display/annotation_storage").AnnotationStorage} AnnotationStorage */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/display_utils").PageViewport} PageViewport */
-/** @typedef {import("./interfaces").IPDFLinkService} IPDFLinkService */
+/** @typedef {import("./pdf_link_service.js").PDFLinkService} PDFLinkService */
 
 import { XfaLayer } from "pdfjs-lib";
 
@@ -26,7 +26,7 @@ import { XfaLayer } from "pdfjs-lib";
  * @typedef {Object} XfaLayerBuilderOptions
  * @property {PDFPageProxy} pdfPage
  * @property {AnnotationStorage} [annotationStorage]
- * @property {IPDFLinkService} linkService
+ * @property {PDFLinkService} linkService
  * @property {Object} [xfaHtml]
  */
 

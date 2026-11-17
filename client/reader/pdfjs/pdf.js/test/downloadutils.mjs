@@ -1,5 +1,4 @@
-/*
- * Copyright 2014 Mozilla Foundation
+/* Copyright 2014 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +15,6 @@
 
 import crypto from "crypto";
 import fs from "fs";
-import http from "http";
-import https from "https";
-import { resolve as urlResolve } from "url";
 
 function rewriteWebArchiveUrl(url) {
   // Web Archive URLs need to be transformed to add `if_` after the ID.
@@ -33,65 +29,43 @@ function rewriteWebArchiveUrl(url) {
   return url;
 }
 
-function downloadFile(file, url, redirects = 0) {
+async function downloadFile(file, url) {
   url = rewriteWebArchiveUrl(url);
-  const protocol = /^https:\/\//.test(url) ? https : http;
 
-  return new Promise((resolve, reject) => {
-    protocol
-      .get(url, async function (response) {
-        if ([301, 302, 307, 308].includes(response.statusCode)) {
-          if (redirects > 10) {
-            response.resume();
-            reject(new Error("Too many redirects"));
-            return;
-          }
-          const redirectTo = urlResolve(url, response.headers.location);
-          try {
-            await downloadFile(file, redirectTo, ++redirects);
-            resolve();
-          } catch (ex) {
-            response.resume();
-            reject(ex);
-          }
-          return;
-        }
-
-        if (response.statusCode !== 200) {
-          response.resume();
-          reject(new Error(`HTTP ${response.statusCode}`));
-          return;
-        }
-
-        const stream = fs.createWriteStream(file);
-        stream.on("error", error => reject(error));
-        stream.on("finish", () => {
-          stream.end();
-          resolve();
-        });
-        response.pipe(stream);
-      })
-      .on("error", error => reject(error));
-  });
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(response.statusText);
+  }
+  return fs.promises.writeFile(file, response.body);
 }
 
 async function downloadManifestFiles(manifest) {
-  const links = manifest
-    .filter(item => item.link && !fs.existsSync(item.file))
-    .map(item => {
-      let url = fs.readFileSync(`${item.file}.link`).toString();
-      url = url.replace(/\s+$/, "");
-      return { file: item.file, url };
-    });
+  // Keep track of file identifiers to remove any duplicates,
+  // since multiple test-cases may use the same PDF.
+  const seenFiles = new Set();
 
-  for (const { file, url } of links) {
+  const links = new Map(
+    manifest
+      .filter(({ link, file }) => {
+        if (!link || seenFiles.has(file)) {
+          return false;
+        }
+        seenFiles.add(file);
+        return !fs.existsSync(file);
+      })
+      .map(({ file }) => {
+        const url = fs.readFileSync(`${file}.link`).toString().trimEnd();
+        return [file, url];
+      })
+  );
+  seenFiles.clear();
+
+  for (const [file, url] of links) {
     console.log(`Downloading ${url} to ${file}...`);
     try {
       await downloadFile(file, url);
     } catch (ex) {
       console.error(`Error during downloading of ${url}:`, ex);
-      fs.writeFileSync(file, ""); // making it empty file
-      fs.writeFileSync(`${file}.error`, ex.toString());
     }
   }
 }
@@ -152,4 +126,4 @@ async function verifyManifestFiles(manifest) {
   }
 }
 
-export { downloadManifestFiles, verifyManifestFiles };
+export { calculateMD5, downloadManifestFiles, verifyManifestFiles };

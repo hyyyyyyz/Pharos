@@ -26,7 +26,7 @@ if (!isNodeJS) {
 describe("node_stream", function () {
   const url = process.getBuiltinModule("url");
   const cwdURL = url.pathToFileURL(process.cwd()) + "/";
-  const pdf = new URL("./test/pdfs/tracemonkey.pdf", cwdURL).href;
+  const pdf = new URL("./test/pdfs/tracemonkey.pdf", cwdURL);
   const pdfLength = 1016315;
 
   it("read filesystem pdf files", async function () {
@@ -116,5 +116,42 @@ describe("node_stream", function () {
     expect(isStreamingSupported).toEqual(false);
     expect(isRangeSupported).toEqual(true);
     expect(fullReaderCancelled).toEqual(true);
+  });
+
+  it("read filesystem pdf files (smaller than two range requests)", async function () {
+    const smallPdf = new URL("./test/pdfs/empty.pdf", cwdURL);
+    const smallLength = 4920;
+
+    const stream = new PDFNodeStream({
+      url: smallPdf,
+      rangeChunkSize: 65536,
+      disableStream: true,
+      disableRange: false,
+    });
+
+    const fullReader = stream.getFullReader();
+
+    let isStreamingSupported, isRangeSupported;
+    const promise = fullReader.headersReady.then(() => {
+      isStreamingSupported = fullReader.isStreamingSupported;
+      isRangeSupported = fullReader.isRangeSupported;
+    });
+
+    let len = 0;
+    const read = function () {
+      return fullReader.read().then(function (result) {
+        if (result.done) {
+          return undefined;
+        }
+        len += result.value.byteLength;
+        return read();
+      });
+    };
+
+    await Promise.all([read(), promise]);
+
+    expect(isStreamingSupported).toEqual(false);
+    expect(isRangeSupported).toEqual(false);
+    expect(len).toEqual(smallLength);
   });
 });

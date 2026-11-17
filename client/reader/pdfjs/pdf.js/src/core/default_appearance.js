@@ -97,10 +97,9 @@ function parseDefaultAppearance(str) {
 }
 
 class AppearanceStreamEvaluator extends EvaluatorPreprocessor {
-  constructor(stream, evaluatorOptions, xref, globalColorSpaceCache) {
+  constructor(stream, xref, globalColorSpaceCache) {
     super(stream);
     this.stream = stream;
-    this.evaluatorOptions = evaluatorOptions;
     this.xref = xref;
     this.globalColorSpaceCache = globalColorSpaceCache;
 
@@ -202,25 +201,19 @@ class AppearanceStreamEvaluator extends EvaluatorPreprocessor {
   }
 
   get _pdfFunctionFactory() {
-    const pdfFunctionFactory = new PDFFunctionFactory({
-      xref: this.xref,
-      isEvalSupported: this.evaluatorOptions.isEvalSupported,
-    });
-    return shadow(this, "_pdfFunctionFactory", pdfFunctionFactory);
+    return shadow(
+      this,
+      "_pdfFunctionFactory",
+      new PDFFunctionFactory({ xref: this.xref })
+    );
   }
 }
 
 // Parse appearance stream to extract font and color information.
 // It returns the font properties used to render the first text object.
-function parseAppearanceStream(
-  stream,
-  evaluatorOptions,
-  xref,
-  globalColorSpaceCache
-) {
+function parseAppearanceStream(stream, xref, globalColorSpaceCache) {
   return new AppearanceStreamEvaluator(
     stream,
-    evaluatorOptions,
     xref,
     globalColorSpaceCache
   ).parse();
@@ -246,6 +239,8 @@ function createDefaultAppearance({ fontSize, fontName, fontColor }) {
 }
 
 class FakeUnicodeFont {
+  static #fontNameId = 1;
+
   constructor(xref, fontFamily) {
     this.xref = xref;
     this.widths = null;
@@ -256,11 +251,8 @@ class FakeUnicodeFont {
     const canvas = new OffscreenCanvas(1, 1);
     this.ctxMeasure = canvas.getContext("2d", { willReadFrequently: true });
 
-    if (!FakeUnicodeFont._fontNameId) {
-      FakeUnicodeFont._fontNameId = 1;
-    }
     this.fontName = Name.get(
-      `InvalidPDFjsFont_${fontFamily}_${FakeUnicodeFont._fontNameId++}`
+      `InvalidPDFjsFont_${fontFamily}_${FakeUnicodeFont.#fontNameId++}`
     );
   }
 
@@ -294,7 +286,7 @@ class FakeUnicodeFont {
     descendantFont.set("DW", 1000);
 
     const widths = [];
-    const chars = [...this.widths.entries()].sort();
+    const chars = [...this.widths].sort();
     let currentChar = null;
     let currentWidths = null;
     for (const [char, width] of chars) {

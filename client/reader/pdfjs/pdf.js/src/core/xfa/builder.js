@@ -24,10 +24,10 @@ import {
   $resolvePrototypes,
   $root,
 } from "./symbol_utils.js";
+import { makeArr, warn } from "../../shared/util.js";
 import { NamespaceSetUp } from "./setup.js";
 import { Template } from "./template.js";
 import { UnknownNamespace } from "./unknown.js";
-import { warn } from "../../shared/util.js";
 import { XFAObject } from "./xfa_object.js";
 
 class Root extends XFAObject {
@@ -97,7 +97,7 @@ class Builder {
       this._addNamespacePrefix(prefixes);
     }
 
-    if (attributes.hasOwnProperty($nsAttributes)) {
+    if (Object.hasOwn(attributes, $nsAttributes)) {
       // Only support xfa-data namespace.
       const dataTemplate = NamespaceSetUp.datasets;
       const nsAttrs = attributes[$nsAttributes];
@@ -166,12 +166,9 @@ class Builder {
   _addNamespacePrefix(prefixes) {
     for (const { prefix, value } of prefixes) {
       const namespace = this._searchNamespace(value);
-      let prefixStack = this._namespacePrefixes.get(prefix);
-      if (!prefixStack) {
-        prefixStack = [];
-        this._namespacePrefixes.set(prefix, prefixStack);
-      }
-      prefixStack.push(namespace);
+      this._namespacePrefixes
+        .getOrInsertComputed(prefix, makeArr)
+        .push(namespace);
     }
   }
 

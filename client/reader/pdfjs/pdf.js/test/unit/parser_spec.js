@@ -94,13 +94,11 @@ describe("parser", function () {
         expect(lexer.getNumber()).toEqual(11.234);
       });
 
-      it("should parse PostScript numbers", function () {
+      it("should parse PDF numbers", function () {
         const numbers = [
           "-.002",
           "34.5",
           "-3.62",
-          "123.6e10",
-          "1E-5",
           "-1.",
           "0.0",
           "123",
@@ -242,15 +240,15 @@ describe("parser", function () {
           const lexer = new Lexer(input);
 
           let obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("\x14");
 
           obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("q");
 
           obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("Q");
 
           obj = lexer.getObj();

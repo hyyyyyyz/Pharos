@@ -1,0 +1,108 @@
+/* Settings tab */
+#zotero-prefpane-account .form-grid {
+	align-items: center;
+}
+
+#zotero-prefpane-account .form-grid > hbox {
+	align-items: center;
+}
+
+#zotero-prefpane-account .form-grid > label:nth-child(odd)
+{
+	text-align: end;
+}
+
+#zotero-prefpane-account .form-grid > hbox
+{
+	margin-inline-start: 4px;
+	display: flex;
+	align-items: center;
+}
+
+#zotero-prefpane-account .form-grid > hbox > textbox
+{
+	margin-inline: 3px;
+}
+#zotero-prefpane-account .form-grid > hbox > label:last-child
+{
+	margin-inline-start: 0;
+	margin-inline-end: 10px;
+}
+
+#zotero-prefpane-account .account-logged-out-status {
+	font-style: italic;
+	opacity: 0.7;
+	margin-inline-start: 6px;
+}
+
+#account-username {
+	margin-inline-end: 6px;
+}
+
+#account-emails {
+	margin-inline-start: 4px;
+}
+
+#zotero-prefpane-account .account-login-pending {
+	gap: 6px;
+
+	button {
+		margin-block: 0;
+	}
+}
+
+#zotero-prefpane-account .account-login-status-indicator
+{
+	width: 20px;
+	height: 20px;
+	margin-inline-start: 7px;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
+}
+
+#zotero-prefpane-account .account-login-status-indicator[verified=true]
+{
+	@include svgicon("success", "universal", "20");
+}
+
+#zotero-prefpane-account .account-login-status-indicator[verified=false]
+{
+	@include svgicon("error", "universal", "20");
+}
+
+@keyframes rotating {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+#zotero-prefpane-account .account-login-status-indicator[animated]
+{
+	@include svgicon("sync", "universal", "20");
+	animation: rotating 2s linear infinite;
+}
+
+.storage-settings-download-options
+{
+	margin-inline-start: 40px;
+}
+
+#storage-webdav-settings > .form-grid {
+	padding-top: 0.5em;
+	padding-bottom: 0.5em;
+}
+
+#storage-verify, #storage-abort, #storage-clean
+{
+	margin-inline-start: 0;
+	min-width: 8em;
+}
+
+#storage-terms description
+{
+	font-size: .9em;
+}

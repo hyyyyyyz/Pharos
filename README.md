@@ -200,7 +200,7 @@ library, but current Pharos-native records are kept in the optional backend;
 Daily Papers also has a versioned, user-owned portable Vault.
 
 The compatibility transition is complete. The desktop client now follows the
-Zotero 8.0.5 baseline and userdata schema 123, and production builds use the
+Zotero 10.0.7 baseline and userdata schema 130, and production builds use the
 same Zotero data directory and `zotero.sqlite`. A copied-library round trip was
 verified with all 279 attachments intact. Development, tests, and CI remain
 strictly isolated and must never open a real library. See
@@ -442,7 +442,7 @@ Node.js 20+ with npm, and `wget`, `xz`, `perl`, `python3`, `zip`, `rsync`
   `user_pref("extensions.zotero.pharos.baseURL", "http://localhost:8000");`
   There is deliberately no Settings control for it.
 - *Data directory.* Like a release, the installed app opens the Zotero library
-  at `~/Zotero` (schema 123) while keeping its own profile. To try it on a
+  at `~/Zotero` (schema 130) while keeping its own profile. To try it on a
   throwaway library, start it with
   `/Applications/Pharos.app/Contents/MacOS/zotero -datadir ~/PharosTry`.
   For development, keep using `app/scripts/run_pharos_dev`, which refuses `~/Zotero`.

@@ -28,6 +28,8 @@ class EditorToolbar {
 
   #comment = null;
 
+  #commentButtonDivider = null;
+
   #signatureDescriptionButton = null;
 
   static #l10nRemove = null;
@@ -48,11 +50,14 @@ class EditorToolbar {
     const editToolbar = (this.#toolbar = document.createElement("div"));
     editToolbar.classList.add("editToolbar", "hidden");
     editToolbar.setAttribute("role", "toolbar");
+
     const signal = this.#editor._uiManager._signal;
-    editToolbar.addEventListener("contextmenu", noContextMenu, { signal });
-    editToolbar.addEventListener("pointerdown", EditorToolbar.#pointerDown, {
-      signal,
-    });
+    if (signal instanceof AbortSignal && !signal.aborted) {
+      editToolbar.addEventListener("contextmenu", noContextMenu, { signal });
+      editToolbar.addEventListener("pointerdown", EditorToolbar.#pointerDown, {
+        signal,
+      });
+    }
 
     const buttons = (this.#buttons = document.createElement("div"));
     buttons.className = "buttons";
@@ -97,6 +102,9 @@ class EditorToolbar {
     // the mouse, we don't want to trigger any focus events on
     // the editor.
     const signal = this.#editor._uiManager._signal;
+    if (!(signal instanceof AbortSignal) || signal.aborted) {
+      return false;
+    }
     element.addEventListener("focusin", this.#focusIn.bind(this), {
       capture: true,
       signal,
@@ -106,6 +114,7 @@ class EditorToolbar {
       signal,
     });
     element.addEventListener("contextmenu", noContextMenu, { signal });
+    return true;
   }
 
   hide() {
@@ -123,17 +132,18 @@ class EditorToolbar {
     const { editorType, _uiManager } = this.#editor;
 
     const button = document.createElement("button");
-    button.className = "delete";
+    button.classList.add("basic", "deleteButton");
     button.tabIndex = 0;
     button.setAttribute("data-l10n-id", EditorToolbar.#l10nRemove[editorType]);
-    this.#addListenersToElement(button);
-    button.addEventListener(
-      "click",
-      e => {
-        _uiManager.delete();
-      },
-      { signal: _uiManager._signal }
-    );
+    if (this.#addListenersToElement(button)) {
+      button.addEventListener(
+        "click",
+        e => {
+          _uiManager.delete();
+        },
+        { signal: _uiManager._signal }
+      );
+    }
     this.#buttons.append(button);
   }
 
@@ -150,16 +160,22 @@ class EditorToolbar {
     this.#altText = altText;
   }
 
-  addComment(comment) {
+  addComment(comment, beforeElement = null) {
     if (this.#comment) {
       return;
     }
-    const button = comment.render();
+    const button = comment.renderForToolbar();
     if (!button) {
       return;
     }
     this.#addListenersToElement(button);
-    this.#buttons.prepend(button, this.#divider);
+    const divider = (this.#commentButtonDivider = this.#divider);
+    if (!beforeElement) {
+      this.#buttons.append(button, divider);
+    } else {
+      this.#buttons.insertBefore(button, beforeElement);
+      this.#buttons.insertBefore(divider, beforeElement);
+    }
     this.#comment = comment;
     comment.toolbar = this;
   }
@@ -181,23 +197,55 @@ class EditorToolbar {
     this.#buttons.append(button, this.#divider);
   }
 
+  removeButton(name) {
+    switch (name) {
+      case "comment":
+        this.#comment?.removeToolbarCommentButton();
+        this.#comment = null;
+        this.#commentButtonDivider?.remove();
+        this.#commentButtonDivider = null;
+        break;
+    }
+  }
+
   async addButton(name, tool) {
     switch (name) {
       case "colorPicker":
-        this.addColorPicker(tool);
+        if (tool) {
+          this.addColorPicker(tool);
+        }
         break;
       case "altText":
-        await this.addAltText(tool);
+        if (tool) {
+          await this.addAltText(tool);
+        }
         break;
       case "editSignature":
-        await this.addEditSignatureButton(tool);
+        if (tool) {
+          await this.addEditSignatureButton(tool);
+        }
         break;
       case "delete":
         this.addDeleteButton();
         break;
       case "comment":
-        this.addComment(tool);
+        if (tool) {
+          this.addComment(tool);
+        }
         break;
+    }
+  }
+
+  async addButtonBefore(name, tool, beforeSelector) {
+    if (!tool && name === "comment") {
+      return;
+    }
+    const beforeElement = this.#buttons.querySelector(beforeSelector);
+    if (!beforeElement) {
+      return;
+    }
+    if (name === "comment") {
+      this.addComment(tool, beforeElement);
     }
   }
 
@@ -214,7 +262,7 @@ class EditorToolbar {
   }
 }
 
-class HighlightToolbar {
+class FloatingToolbar {
   #buttons = null;
 
   #toolbar = null;
@@ -229,15 +277,37 @@ class HighlightToolbar {
     const editToolbar = (this.#toolbar = document.createElement("div"));
     editToolbar.className = "editToolbar";
     editToolbar.setAttribute("role", "toolbar");
-    editToolbar.addEventListener("contextmenu", noContextMenu, {
-      signal: this.#uiManager._signal,
-    });
+
+    const signal = this.#uiManager._signal;
+    if (signal instanceof AbortSignal && !signal.aborted) {
+      editToolbar.addEventListener("contextmenu", noContextMenu, {
+        signal,
+      });
+    }
 
     const buttons = (this.#buttons = document.createElement("div"));
     buttons.className = "buttons";
     editToolbar.append(buttons);
 
-    this.#addHighlightButton();
+    if (this.#uiManager.hasCommentManager()) {
+      this.#makeButton(
+        "commentButton",
+        `pdfjs-comment-floating-button`,
+        "pdfjs-comment-floating-button-label",
+        () => {
+          this.#uiManager.commentSelection("floating_button");
+        }
+      );
+    }
+
+    this.#makeButton(
+      "highlightButton",
+      `pdfjs-highlight-floating-button1`,
+      "pdfjs-highlight-floating-button-label",
+      () => {
+        this.#uiManager.highlightSelection("floating_button");
+      }
+    );
 
     return editToolbar;
   }
@@ -279,26 +349,22 @@ class HighlightToolbar {
     this.#toolbar.remove();
   }
 
-  #addHighlightButton() {
+  #makeButton(buttonClass, l10nId, labelL10nId, clickHandler) {
     const button = document.createElement("button");
-    button.className = "highlightButton";
+    button.classList.add("basic", buttonClass);
     button.tabIndex = 0;
-    button.setAttribute("data-l10n-id", `pdfjs-highlight-floating-button1`);
+    button.setAttribute("data-l10n-id", l10nId);
     const span = document.createElement("span");
     button.append(span);
     span.className = "visuallyHidden";
-    span.setAttribute("data-l10n-id", "pdfjs-highlight-floating-button-label");
+    span.setAttribute("data-l10n-id", labelL10nId);
     const signal = this.#uiManager._signal;
-    button.addEventListener("contextmenu", noContextMenu, { signal });
-    button.addEventListener(
-      "click",
-      () => {
-        this.#uiManager.highlightSelection("floating_button");
-      },
-      { signal }
-    );
+    if (signal instanceof AbortSignal && !signal.aborted) {
+      button.addEventListener("contextmenu", noContextMenu, { signal });
+      button.addEventListener("click", clickHandler, { signal });
+    }
     this.#buttons.append(button);
   }
 }
 
-export { EditorToolbar, HighlightToolbar };
+export { EditorToolbar, FloatingToolbar };

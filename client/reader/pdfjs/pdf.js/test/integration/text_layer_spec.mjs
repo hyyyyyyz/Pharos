@@ -114,9 +114,18 @@ describe("Text layer", () => {
         beforeEach(async () => {
           pages = await loadAndWait(
             "tracemonkey.pdf",
-            `.page[data-page-number = "1"] .endOfContent`
+            `.page[data-page-number = "1"] .endOfContent`,
+            undefined,
+            undefined,
+            (_page, browserName) => ({
+              // Enable images in Firefox, to ensure that they do not interfere
+              // with text selection. We do not test it in Chrome because we
+              // know that they do degrate the text selection experience there.
+              imagesRightClickMinSize: browserName === "firefox" ? 16 : -1,
+            })
           );
         });
+
         afterEach(async () => {
           await closePages(pages);
         });
@@ -223,9 +232,18 @@ describe("Text layer", () => {
         beforeEach(async () => {
           pages = await loadAndWait(
             "chrome-text-selection-markedContent.pdf",
-            `.page[data-page-number = "1"] .endOfContent`
+            `.page[data-page-number = "1"] .endOfContent`,
+            undefined,
+            undefined,
+            (_page, browserName) => ({
+              // Enable images in Firefox, to ensure that they do not interfere
+              // with text selection. We do not test it in Chrome because we
+              // know that they do degrate the text selection experience there.
+              imagesRightClickMinSize: browserName === "firefox" ? 16 : -1,
+            })
           );
         });
+
         afterEach(async () => {
           await closePages(pages);
         });
@@ -277,30 +295,21 @@ describe("Text layer", () => {
                 ).then(belowEndPosition),
               ]);
 
-              if (browserName !== "firefox") {
-                await page.mouse.move(positionStart.x, positionStart.y);
-                await page.mouse.down({ clickCount: 1 });
-                await page.mouse.up({ clickCount: 1 });
-                await page.mouse.down({ clickCount: 2 });
-              } else {
-                // When running tests with Firefox we use WebDriver BiDi, for
-                // which puppeteer doesn't support emulating "double click and
-                // hold". We need to manually dispatch an action through the
-                // protocol.
-                // See https://github.com/puppeteer/puppeteer/issues/13745.
-                await page.mainFrame().browsingContext.performActions([
-                  {
-                    type: "pointer",
-                    id: "__puppeteer_mouse",
-                    actions: [
-                      { type: "pointerMove", ...positionStart },
-                      { type: "pointerDown", button: 0 },
-                      { type: "pointerUp", button: 0 },
-                      { type: "pointerDown", button: 0 },
-                    ],
-                  },
-                ]);
-              }
+              // Puppeteer doesn't support emulating "double click and hold" for
+              // WebDriver BiDi, so we must manually dispatch a protocol action
+              // (see https://github.com/puppeteer/puppeteer/issues/13745).
+              await page.mainFrame().browsingContext.performActions([
+                {
+                  type: "pointer",
+                  id: "__puppeteer_mouse",
+                  actions: [
+                    { type: "pointerMove", ...positionStart },
+                    { type: "pointerDown", button: 0 },
+                    { type: "pointerUp", button: 0 },
+                    { type: "pointerDown", button: 0 },
+                  ],
+                },
+              ]);
               await moveInSteps(page, positionStart, positionEnd, 20);
               await page.mouse.up();
 
@@ -321,9 +330,18 @@ describe("Text layer", () => {
         beforeEach(async () => {
           pages = await loadAndWait(
             "annotation-link-text-popup.pdf",
-            `.page[data-page-number = "1"] .endOfContent`
+            `.page[data-page-number = "1"] .endOfContent`,
+            undefined,
+            undefined,
+            (_page, browserName) => ({
+              // Enable images in Firefox, to ensure that they do not interfere
+              // with text selection. We do not test it in Chrome because we
+              // know that they do degrate the text selection experience there.
+              imagesRightClickMinSize: browserName === "firefox" ? 16 : -1,
+            })
           );
         });
+
         afterEach(async () => {
           await closePages(pages);
         });
@@ -438,6 +456,91 @@ describe("Text layer", () => {
           );
         });
       });
+
+      describe("when selecting text with find highlights active", () => {
+        let pages;
+
+        beforeEach(async () => {
+          pages = await loadAndWait(
+            "find_all.pdf",
+            ".textLayer",
+            100,
+            undefined,
+            (_page, browserName) => ({
+              // Enable images in Firefox, to ensure that they do not interfere
+              // with text selection. We do not test it in Chrome because we
+              // know that they do degrate the text selection experience there.
+              imagesRightClickMinSize: browserName === "firefox" ? 16 : -1,
+            })
+          );
+        });
+
+        afterEach(async () => {
+          await closePages(pages);
+        });
+
+        it("doesn't jump when selection anchor is inside a highlight element", async () => {
+          await Promise.all(
+            pages.map(async ([browserName, page]) => {
+              // Highlight all occurrences of the letter A (case insensitive).
+              await page.click("#viewFindButton");
+              await page.waitForSelector("#findInput", { visible: true });
+              await page.type("#findInput", "a");
+              await page.click("#findHighlightAll + label");
+              await page.waitForSelector(".textLayer .highlight");
+
+              // find_all.pdf contains 'AB BA' in a monospace font. These are
+              // the glyph metrics at 100% zoom, extracted from the PDF.
+              const glyphWidth = 15.98;
+              const expectedFirstAX = 30;
+
+              // Compute the drag coordinates to select exactly "AB". The
+              // horizontal positions use the page origin and PDF glyph
+              // metrics; the vertical center comes from the highlight.
+              const pageDiv = await page.$(".page canvas");
+              const pageBox = await pageDiv.boundingBox();
+              const firstHighlight = await page.$(".textLayer .highlight");
+              const highlightBox = await firstHighlight.boundingBox();
+
+              // Drag from beginning of first 'A' to end of second 'B'
+              const aStart = pageBox.x + expectedFirstAX;
+              const startY = Math.round(
+                highlightBox.y + highlightBox.height / 2
+              );
+              const bEnd = Math.round(aStart + glyphWidth * 2);
+
+              await page.mouse.move(aStart, startY);
+              await page.mouse.down();
+              await moveInSteps(
+                page,
+                { x: aStart, y: startY },
+                { x: bEnd, y: startY },
+                20
+              );
+              await page.mouse.up();
+
+              const selection = await page.evaluate(() =>
+                window.getSelection().toString()
+              );
+              expect(selection).withContext(`In ${browserName}`).toEqual("AB");
+
+              // The selectionchange handler in TextLayerBuilder walks up
+              // from .highlight to its parent span before placing
+              // endOfContent (see text_layer_builder.js). Without that
+              // fix, endOfContent would be inserted inside the text span
+              // (as a sibling of the .highlight) instead of as a direct
+              // child of .textLayer. Verify the correct DOM structure.
+              const endOfContentIsDirectChild = await page.evaluate(() => {
+                const eoc = document.querySelector(".textLayer .endOfContent");
+                return eoc?.parentElement?.classList.contains("textLayer");
+              });
+              expect(endOfContentIsDirectChild)
+                .withContext(`In ${browserName}`)
+                .toBeTrue();
+            })
+          );
+        });
+      });
     });
 
     describe("using selection carets", () => {
@@ -465,6 +568,7 @@ describe("Text layer", () => {
           { timeout: 0 }
         );
       });
+
       afterEach(async () => {
         await closeSinglePage(page);
         await browser.close();
@@ -518,7 +622,7 @@ describe("Text layer", () => {
 
         await expectAsync(page)
           .withContext(`second selection`)
-          .toHaveRoughlySelected(/frequently .* We call such a se/s);
+          .toHaveRoughlySelected(/frequently .* We call such a s/s);
 
         await page.mouse.down();
         await moveInSteps(page, intermediateCaretPos, finalCaretPos, 20);
@@ -526,7 +630,7 @@ describe("Text layer", () => {
 
         await expectAsync(page)
           .withContext(`third selection`)
-          .toHaveRoughlySelected(/frequently .* We call such a se/s);
+          .toHaveRoughlySelected(/frequently .* We call such a s/s);
       });
     });
   });

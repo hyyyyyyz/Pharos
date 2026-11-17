@@ -1,0 +1,136 @@
+[
+  {
+    "title": "Titlepage",
+    "startRef": "0"
+  },
+  {
+    "title": "Imprint",
+    "startRef": "3"
+  },
+  {
+    "title": "Dedication",
+    "startRef": "9"
+  },
+  {
+    "title": "The Portent",
+    "startRef": "20",
+    "children": [
+      {
+        "title": "I: My Boyhood",
+        "startRef": "21"
+      },
+      {
+        "title": "II: The Second Hearing",
+        "startRef": "27"
+      },
+      {
+        "title": "III: My Old Nurses Story",
+        "startRef": "37"
+      },
+      {
+        "title": "IV: Hilton Hall",
+        "startRef": "84"
+      },
+      {
+        "title": "V: Lady Alice",
+        "startRef": "94"
+      },
+      {
+        "title": "VI: My Quarters",
+        "startRef": "103"
+      },
+      {
+        "title": "VII: The Library",
+        "startRef": "114"
+      },
+      {
+        "title": "VIII: The Somnambulist",
+        "startRef": "122"
+      },
+      {
+        "title": "IX: The First Waking",
+        "startRef": "130"
+      },
+      {
+        "title": "X: Love and Power",
+        "startRef": "171"
+      },
+      {
+        "title": "XI: A New Pupil",
+        "startRef": "198"
+      },
+      {
+        "title": "XII: Confession",
+        "startRef": "236"
+      },
+      {
+        "title": "XIII: Questioning",
+        "startRef": "251"
+      },
+      {
+        "title": "XIV: Jealousy",
+        "startRef": "272"
+      },
+      {
+        "title": "XV: The Chamber of Ghosts",
+        "startRef": "282"
+      },
+      {
+        "title": "XVI: The Clanking Shoe",
+        "startRef": "309"
+      },
+      {
+        "title": "XVII: The Physician",
+        "startRef": "359"
+      },
+      {
+        "title": "XVIII: Old Friends",
+        "startRef": "376"
+      },
+      {
+        "title": "XIX: Old Constancy",
+        "startRef": "409"
+      },
+      {
+        "title": "XX: Margaret",
+        "startRef": "418"
+      },
+      {
+        "title": "XXI: Hilton",
+        "startRef": "508"
+      },
+      {
+        "title": "XXII: The Sleeper",
+        "startRef": "538"
+      },
+      {
+        "title": "XXIII: My Old Room",
+        "startRef": "584"
+      },
+      {
+        "title": "XXIV: Prison-Breaking",
+        "startRef": "606"
+      },
+      {
+        "title": "XXV: New Entrenchments",
+        "startRef": "642"
+      },
+      {
+        "title": "XXVI: Escape",
+        "startRef": "672"
+      },
+      {
+        "title": "XXVII: Freedom",
+        "startRef": "695"
+      }
+    ]
+  },
+  {
+    "title": "Colophon",
+    "startRef": "702"
+  },
+  {
+    "title": "Uncopyright",
+    "startRef": "709"
+  }
+]

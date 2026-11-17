@@ -235,9 +235,17 @@ describe("Zotero.Pharos.Translate", function () {
 
 			assert.ok(customSections, "the button is injected through CustomSections");
 			assert.strictEqual(customSections.lastElementChild, button.parentElement,
-				"translation is the rightmost custom action, directly beside Find");
-			assert.strictEqual(customSections.nextElementSibling, doc.querySelector('.find'),
-				"CustomSections remains immediately to the left of Find");
+				"translation is the rightmost custom action");
+			// Zotero 10's reader puts its Appearance button between CustomSections
+			// and Find; on 8.0.5 CustomSections was directly beside Find. What
+			// matters is that the custom actions stay ahead of the built-in ones.
+			var find = doc.querySelector('.find');
+			assert.strictEqual(customSections.parentElement, find.parentElement,
+				"CustomSections shares the toolbar group with Find");
+			assert.ok(
+				customSections.compareDocumentPosition(find) & Node.DOCUMENT_POSITION_FOLLOWING,
+				"CustomSections remains to the left of Find"
+			);
 			assert.equal(button.getAttribute('aria-haspopup'), 'menu');
 			assert.equal(button.title, Zotero.getString('pharos-translate-menu'));
 		});

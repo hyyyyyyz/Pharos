@@ -32,9 +32,11 @@ import { calculateSHA256 } from "./calculate_sha256.js";
 import { DecryptStream } from "./decrypt_stream.js";
 
 class ARCFourCipher {
+  a = 0;
+
+  b = 0;
+
   constructor(key) {
-    this.a = 0;
-    this.b = 0;
     const s = new Uint8Array(256);
     const keyLength = key.length;
 

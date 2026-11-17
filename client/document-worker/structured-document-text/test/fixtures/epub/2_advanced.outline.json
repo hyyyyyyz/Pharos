@@ -1,0 +1,235 @@
+[
+  {
+    "title": "Titlepage",
+    "startRef": "0",
+    "position": {
+      "pageIndex": 0
+    }
+  },
+  {
+    "title": "Imprint",
+    "startRef": "3",
+    "position": {
+      "pageIndex": 0
+    }
+  },
+  {
+    "title": "Dedication",
+    "startRef": "9",
+    "position": {
+      "pageIndex": 0
+    }
+  },
+  {
+    "title": "The Portent",
+    "startRef": "20",
+    "position": {
+      "pageIndex": 1
+    },
+    "children": [
+      {
+        "title": "I: My Boyhood",
+        "startRef": "21",
+        "position": {
+          "pageIndex": 1
+        }
+      },
+      {
+        "title": "II: The Second Hearing",
+        "startRef": "27",
+        "position": {
+          "pageIndex": 4
+        }
+      },
+      {
+        "title": "III: My Old Nurses Story",
+        "startRef": "37",
+        "position": {
+          "pageIndex": 6
+        }
+      },
+      {
+        "title": "IV: Hilton Hall",
+        "startRef": "84",
+        "position": {
+          "pageIndex": 18
+        }
+      },
+      {
+        "title": "V: Lady Alice",
+        "startRef": "94",
+        "position": {
+          "pageIndex": 21
+        }
+      },
+      {
+        "title": "VI: My Quarters",
+        "startRef": "103",
+        "position": {
+          "pageIndex": 24
+        }
+      },
+      {
+        "title": "VII: The Library",
+        "startRef": "114",
+        "position": {
+          "pageIndex": 26
+        }
+      },
+      {
+        "title": "VIII: The Somnambulist",
+        "startRef": "122",
+        "position": {
+          "pageIndex": 28
+        }
+      },
+      {
+        "title": "IX: The First Waking",
+        "startRef": "130",
+        "position": {
+          "pageIndex": 30
+        }
+      },
+      {
+        "title": "X: Love and Power",
+        "startRef": "171",
+        "position": {
+          "pageIndex": 33
+        }
+      },
+      {
+        "title": "XI: A New Pupil",
+        "startRef": "198",
+        "position": {
+          "pageIndex": 39
+        }
+      },
+      {
+        "title": "XII: Confession",
+        "startRef": "236",
+        "position": {
+          "pageIndex": 42
+        }
+      },
+      {
+        "title": "XIII: Questioning",
+        "startRef": "251",
+        "position": {
+          "pageIndex": 45
+        }
+      },
+      {
+        "title": "XIV: Jealousy",
+        "startRef": "272",
+        "position": {
+          "pageIndex": 47
+        }
+      },
+      {
+        "title": "XV: The Chamber of Ghosts",
+        "startRef": "282",
+        "position": {
+          "pageIndex": 49
+        }
+      },
+      {
+        "title": "XVI: The Clanking Shoe",
+        "startRef": "309",
+        "position": {
+          "pageIndex": 53
+        }
+      },
+      {
+        "title": "XVII: The Physician",
+        "startRef": "359",
+        "position": {
+          "pageIndex": 59
+        }
+      },
+      {
+        "title": "XVIII: Old Friends",
+        "startRef": "376",
+        "position": {
+          "pageIndex": 62
+        }
+      },
+      {
+        "title": "XIX: Old Constancy",
+        "startRef": "409",
+        "position": {
+          "pageIndex": 64
+        }
+      },
+      {
+        "title": "XX: Margaret",
+        "startRef": "418",
+        "position": {
+          "pageIndex": 65
+        }
+      },
+      {
+        "title": "XXI: Hilton",
+        "startRef": "508",
+        "position": {
+          "pageIndex": 75
+        }
+      },
+      {
+        "title": "XXII: The Sleeper",
+        "startRef": "538",
+        "position": {
+          "pageIndex": 78
+        }
+      },
+      {
+        "title": "XXIII: My Old Room",
+        "startRef": "584",
+        "position": {
+          "pageIndex": 82
+        }
+      },
+      {
+        "title": "XXIV: Prison-Breaking",
+        "startRef": "606",
+        "position": {
+          "pageIndex": 85
+        }
+      },
+      {
+        "title": "XXV: New Entrenchments",
+        "startRef": "642",
+        "position": {
+          "pageIndex": 88
+        }
+      },
+      {
+        "title": "XXVI: Escape",
+        "startRef": "672",
+        "position": {
+          "pageIndex": 92
+        }
+      },
+      {
+        "title": "XXVII: Freedom",
+        "startRef": "695",
+        "position": {
+          "pageIndex": 96
+        }
+      }
+    ]
+  },
+  {
+    "title": "Colophon",
+    "startRef": "702",
+    "position": {
+      "pageIndex": 97
+    }
+  },
+  {
+    "title": "Uncopyright",
+    "startRef": "709",
+    "position": {
+      "pageIndex": 97
+    }
+  }
+]

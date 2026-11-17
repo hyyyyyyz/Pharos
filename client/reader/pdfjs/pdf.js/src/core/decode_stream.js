@@ -102,12 +102,52 @@ class DecodeStream extends BaseStream {
   async getImageData(length, decoderOptions) {
     if (!this.canAsyncDecodeImageFromBuffer) {
       if (this.isAsyncDecoder) {
-        return this.decodeImage(null, decoderOptions);
+        return this.decodeImage(null, length, decoderOptions);
       }
       return this.getBytes(length, decoderOptions);
     }
     const data = await this.stream.asyncGetBytes();
-    return this.decodeImage(data, decoderOptions);
+    return this.decodeImage(data, length, decoderOptions);
+  }
+
+  async asyncGetBytesFromDecompressionStream(name) {
+    this.stream.reset();
+    const bytes = this.stream.isAsync
+      ? await this.stream.asyncGetBytes()
+      : this.stream.getBytes();
+
+    try {
+      const { readable, writable } = new DecompressionStream(name);
+      const writer = writable.getWriter();
+      await writer.ready;
+
+      // We can't await writer.write() because it'll block until the reader
+      // starts which happens few lines below.
+      writer
+        .write(bytes)
+        .then(async () => {
+          await writer.ready;
+          await writer.close();
+        })
+        .catch(() => {});
+
+      const chunks = [];
+      let totalLength = 0;
+
+      for await (const chunk of readable) {
+        chunks.push(chunk);
+        totalLength += chunk.byteLength;
+      }
+      const data = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        data.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return { decompressed: data, compressed: bytes };
+    } catch {
+      return { decompressed: null, compressed: bytes };
+    }
   }
 
   reset() {
@@ -129,13 +169,26 @@ class DecodeStream extends BaseStream {
   }
 
   getBaseStreams() {
-    return this.str ? this.str.getBaseStreams() : null;
+    return this.stream ? this.stream.getBaseStreams() : null;
+  }
+
+  clone() {
+    // Make sure it has been fully read.
+    while (!this.eof) {
+      this.readBlock();
+    }
+    return new Stream(
+      this.buffer,
+      this.start,
+      this.end - this.start,
+      this.dict.clone()
+    );
   }
 }
 
 class StreamsSequenceStream extends DecodeStream {
   constructor(streams, onError = null) {
-    streams = streams.filter(s => s instanceof BaseStream);
+    streams = streams.filter(s => s instanceof BaseStream && !s.isImageStream);
 
     let maybeLength = 0;
     for (const stream of streams) {

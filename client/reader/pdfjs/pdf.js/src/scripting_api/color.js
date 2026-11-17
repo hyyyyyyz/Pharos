@@ -17,21 +17,32 @@ import { ColorConverters } from "../shared/scripting_utils.js";
 import { PDFObject } from "./pdf_object.js";
 
 class Color extends PDFObject {
+  transparent = ["T"];
+
+  black = ["G", 0];
+
+  white = ["G", 1];
+
+  red = ["RGB", 1, 0, 0];
+
+  green = ["RGB", 0, 1, 0];
+
+  blue = ["RGB", 0, 0, 1];
+
+  cyan = ["CMYK", 1, 0, 0, 0];
+
+  magenta = ["CMYK", 0, 1, 0, 0];
+
+  yellow = ["CMYK", 0, 0, 1, 0];
+
+  dkGray = ["G", 0.25];
+
+  gray = ["G", 0.5];
+
+  ltGray = ["G", 0.75];
+
   constructor() {
     super({});
-
-    this.transparent = ["T"];
-    this.black = ["G", 0];
-    this.white = ["G", 1];
-    this.red = ["RGB", 1, 0, 0];
-    this.green = ["RGB", 0, 1, 0];
-    this.blue = ["RGB", 0, 0, 1];
-    this.cyan = ["CMYK", 1, 0, 0, 0];
-    this.magenta = ["CMYK", 0, 1, 0, 0];
-    this.yellow = ["CMYK", 0, 0, 1, 0];
-    this.dkGray = ["G", 0.25];
-    this.gray = ["G", 0.5];
-    this.ltGray = ["G", 0.75];
   }
 
   static _isValidSpace(cColorSpace) {

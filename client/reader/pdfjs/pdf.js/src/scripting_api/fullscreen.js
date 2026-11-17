@@ -17,20 +17,25 @@ import { Cursor } from "./constants.js";
 import { PDFObject } from "./pdf_object.js";
 
 class FullScreen extends PDFObject {
-  constructor(data) {
-    super(data);
+  _backgroundColor = [];
 
-    this._backgroundColor = [];
-    this._clickAdvances = true;
-    this._cursor = Cursor.hidden;
-    this._defaultTransition = "";
-    this._escapeExits = true;
-    this._isFullScreen = true;
-    this._loop = false;
-    this._timeDelay = 3600;
-    this._usePageTiming = false;
-    this._useTimer = false;
-  }
+  _clickAdvances = true;
+
+  _cursor = Cursor.hidden;
+
+  _defaultTransition = "";
+
+  _escapeExits = true;
+
+  _isFullScreen = true;
+
+  _loop = false;
+
+  _timeDelay = 3600;
+
+  _usePageTiming = false;
+
+  _useTimer = false;
 
   get backgroundColor() {
     return this._backgroundColor;

@@ -1,7 +1,7 @@
 {
 	"translatorID": "bc2fbf38-3061-4335-8644-69ce68580b20",
 	"label": "NPR",
-	"creator": "Abe Jellinek",
+	"creator": "Abe Jellinek, Vera de Kok",
 	"target": "^https?://www\\.npr\\.org/",
 	"minVersion": "3.0",
 	"maxVersion": "",
@@ -9,8 +9,9 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2021-08-13 21:08:15"
+	"lastUpdated": "2026-10-15 12:10:00"
 }
+
 
 /*
 	***** BEGIN LICENSE BLOCK *****
@@ -43,7 +44,7 @@ function detectWeb(doc, url) {
 	// page to get it in doWeb.
 	// The JSON-LD also sticks around when you navigate to a non-story page,
 	// which is odd, so we can't use it as a test for a story page at all!
-	if (doc.querySelector('#storytext')) {
+	if (doc.querySelector('#storytext, #main-section > article.story')) {
 		if (doc.querySelector('h1.transcript a')) {
 			if (attr(doc, '.slug a', 'href').includes('npr.org/podcasts/')) {
 				return "podcast";
@@ -52,7 +53,13 @@ function detectWeb(doc, url) {
 				return "radioBroadcast";
 			}
 		}
-		else if (doc.querySelector('#primaryaudio')) {
+		// NPR now ships a headline audio player on ordinary story pages, so the
+		// player alone no longer means "audio + text". Use the page type.
+		else if (attr(doc, 'meta[property="og:type"]', 'content') === 'article'
+			|| /NewsArticle/.test(text(doc, 'script[type="application/ld+json"]'))) {
+			return "newspaperArticle";
+		}
+		else if (doc.querySelector('#headlineaudio')) {
 			return "multiple";
 		}
 		else {
@@ -66,6 +73,31 @@ function detectWeb(doc, url) {
 	// we can't really do search results, because each result might be a
 	// multiple and there's no way to tell from the search page
 	return false;
+}
+
+
+/**
+ * NPR serves several ld+json blocks (NewsArticle, WebPage, Organization, ImageObject).
+ * Parsing the concatenation of all of them throws, so pick the news block.
+ */
+function ldBlock(doc) {
+	for (let script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+		let data = script.textContent;
+		if (!data) continue;
+		let parsed;
+		try {
+			parsed = JSON.parse(data);
+		}
+		catch (e) {
+			continue;
+		}
+		for (let node of (Array.isArray(parsed) ? parsed : [parsed])) {
+			if (node && (node.headline || node.datePublished || node.dateModified)) {
+				return node;
+			}
+		}
+	}
+	return {};
 }
 
 
@@ -108,7 +140,7 @@ function scrape(doc, url) {
 
 function scrapeText(doc, _url) {
 	let item = new Zotero.Item('newspaperArticle');
-	let json = JSON.parse(text(doc, 'script[type="application/ld+json"]'));
+	let json = ldBlock(doc);
 	
 	item.title = json.headline;
 	item.abstractNote = ZU.cleanTags(json.description);
@@ -116,10 +148,11 @@ function scrapeText(doc, _url) {
 	item.date = json.dateModified || json.datePublished;
 	item.section = text(doc, 'h3.slug');
 	item.language = 'en';
-	item.url = json.mainEntityOfPage['@id'];
+	item.url = json.mainEntityOfPage?.['@id'] || _url;
 	
 	if (json.author) {
-		for (let name of json.author.name) {
+		let names = getAuthorNames(doc, json);
+		for (let name of names) {
 			item.creators.push(ZU.cleanAuthor(name, 'author'));
 		}
 	}
@@ -158,15 +191,15 @@ function scrapeAudio(doc, _url) {
 	let item = new Zotero.Item(itemType);
 	let json = JSON.parse(text(doc, 'script[type="application/ld+json"]'));
 	
-	item.title = text(doc, '#primaryaudio .audio-module-title') || json.headline;
+	item.title = text(doc, '#headlineaudio .audio-module-title') || json.headline;
 	item.abstractNote = ZU.cleanTags(json.description);
 	
 	// strip the time from the date, since we have no way of knowing exactly
 	// what time it aired (and the time on the article is based on when the
 	// transcript was published)
-	let date = (json.dateModified || json.datePublished).replace(/T.+$/, '');
+	let date = ((json.dateModified || json.datePublished) || '').replace(/T.+$/, '');
+	item.date = date;
 	if (itemType == 'radioBroadcast') {
-		item.date = date;
 		item.programTitle = text(doc, '.program-block a');
 		if (!item.programTitle) {
 			// transcript pages don't have a .program-block, so we'll use a
@@ -181,39 +214,55 @@ function scrapeAudio(doc, _url) {
 		item.network = 'NPR';
 	}
 	else {
-		// podcasts have no date field
-		item.extra = `issued: ${date}\n`;
 		item.seriesTitle = text(doc, 'h3.slug');
 		item.publisher = 'NPR'; // no good analogue for this, so let it go into extra
 	}
 	
-	item.runningTime = attr(doc, '#primaryaudio .audio-module-duration', 'datetime')
+	item.runningTime = attr(doc, '#headlineaudio .audio-module-duration', 'datetime')
 		.replace(/P(\d+)H,(\d+)M,(\d+)S/, '$1:$2:$3')
 		.replace(/P(\d+)M,(\d+)S/, '$1:$2');
 	item.language = 'en';
-	item.url = json.mainEntityOfPage['@id'];
+	item.url = json.mainEntityOfPage?.['@id'] || _url;
 	
 	if (json.author) {
-		for (let name of json.author.name) {
+		let names = getAuthorNames(doc, json);
+		for (let name of names) {
 			let creatorType = itemType == 'radioBroadcast' ? 'director' : 'podcaster';
 			item.creators.push(ZU.cleanAuthor(name, creatorType));
 		}
 	}
-	
-	item.attachments.push({
-		title: 'Audio',
-		mimeType: 'audio/mpeg',
-		url: attr(doc, '#primaryaudio .audio-tool-download > a', 'href')
-	});
+
+	let downloadURL = attr(doc, '#headlineaudio .audio-tool-download > a', 'href');
+	if (downloadURL) {
+		item.attachments.push({
+			title: 'Audio',
+			mimeType: 'audio/mpeg',
+			url: downloadURL
+		});
+	}
 	
 	item.attachments.push({
 		title: 'Transcript',
 		mimeType: 'text/html',
-		url: attr(doc, '#primaryaudio .audio-tool-transcript > a', 'href'),
+		url: attr(doc, '#headlineaudio .audio-tool-transcript > a', 'href'),
 		snapshot: true
 	});
 	
 	item.complete();
+}
+
+function getAuthorNames(doc, json) {
+	let fromJSON = [];
+	if (json.author?.name) {
+		fromJSON = (Array.isArray(json.author.name) ? json.author.name : [json.author.name])
+			.filter(Boolean);
+	}
+
+	let fromHTML = attr(doc, 'meta[name="cXenseParse:author"]', 'content')
+		.split('|')
+		.filter(Boolean);
+	
+	return fromJSON.length >= fromHTML.length ? fromJSON : fromHTML;
 }
 
 /** BEGIN TEST CASES **/
@@ -254,7 +303,35 @@ var testCases = [
 	{
 		"type": "web",
 		"url": "https://www.npr.org/2021/07/13/1011376403/its-summer-and-that-means-the-mysterious-return-of-glacier-ice-worms",
-		"items": "multiple"
+		"items": [
+			{
+				"itemType": "newspaperArticle",
+				"title": "It's Summer, And That Means The Mysterious Return Of Glacier Ice Worms",
+				"creators": [
+					{
+						"firstName": "Nell",
+						"lastName": "Greenfieldboyce",
+						"creatorType": "author"
+					}
+				],
+				"date": "2021-07-13T05:07:00-04:00",
+				"abstractNote": "On mountaintop glaciers of Alaska, Washington and Oregon, billions of tiny black worms are tunneling upward to the barren, icy surface. What lures them, and how do they survive the frozen depths?",
+				"language": "en",
+				"libraryCatalog": "NPR",
+				"publicationTitle": "NPR",
+				"section": "Science",
+				"url": "https://www.npr.org/2021/07/13/1011376403/its-summer-and-that-means-the-mysterious-return-of-glacier-ice-worms",
+				"attachments": [
+					{
+						"title": "Snapshot",
+						"mimeType": "text/html"
+					}
+				],
+				"tags": [],
+				"notes": [],
+				"seeAlso": []
+			}
+		]
 	},
 	{
 		"type": "web",
@@ -314,21 +391,51 @@ var testCases = [
 						"creatorType": "podcaster"
 					}
 				],
+				"date": "2021-07-07",
 				"abstractNote": "This month on Code Switch, we're talking about books — new and old — that have deepened our understandings of what it means to be free. First up, a conversation with author Kaitlyn Greenidge about her new novel, Libertie, which tells the story of a young woman pushing back against her mother's expectations of what her life should look like.",
-				"extra": "issued: 2021-07-07",
 				"language": "en",
-				"runningTime": "23:33",
+				"publisher": "NPR",
+				"runningTime": "22:39",
 				"seriesTitle": "Code Switch",
 				"url": "https://www.npr.org/2021/06/29/1011289394/egalite-fraternite-and-libertie",
 				"attachments": [
 					{
-						"title": "Audio",
-						"mimeType": "audio/mpeg"
-					},
-					{
 						"title": "Transcript",
 						"mimeType": "text/html",
 						"snapshot": true
+					}
+				],
+				"tags": [],
+				"notes": [],
+				"seeAlso": []
+			}
+		]
+	},
+	{
+		"type": "web",
+		"url": "https://www.npr.org/2026/09/02/nx-s1-5953128/ice-detention-death-lianyong-wei",
+		"items": [
+			{
+				"itemType": "newspaperArticle",
+				"title": "ICE detainee dies just hours after he was admitted into detention",
+				"creators": [
+					{
+						"firstName": "Vanessa",
+						"lastName": "Romo",
+						"creatorType": "author"
+					}
+				],
+				"date": "2026-09-02T05:00:00-04:00",
+				"abstractNote": "Lianyong Wei's death marks the 57th death of an immigrant detainee held in the care of the government since the start of President Trump's second term. Twenty-four of those have occurred since Jan. 1.",
+				"language": "en",
+				"libraryCatalog": "NPR",
+				"publicationTitle": "NPR",
+				"section": "Immigration",
+				"url": "https://www.npr.org/2026/09/02/nx-s1-5953128/ice-detention-death-lianyong-wei",
+				"attachments": [
+					{
+						"title": "Snapshot",
+						"mimeType": "text/html"
 					}
 				],
 				"tags": [],

@@ -13,9 +13,16 @@
  * limitations under the License.
  */
 
-import { AnnotationPrefix, stringToPDFString, warn } from "../shared/util.js";
+import {
+  AnnotationPrefix,
+  makeArr,
+  stringToPDFString,
+  stringToUTF8String,
+  warn,
+} from "../shared/util.js";
 import { Dict, isName, Name, Ref, RefSetCache } from "./primitives.js";
 import { lookupNormalRect, stringToAsciiOrUTF16BE } from "./core_utils.js";
+import { BaseStream } from "./base_stream.js";
 import { NumberTree } from "./name_number_tree.js";
 
 const MAX_DEPTH = 40;
@@ -35,10 +42,41 @@ class StructTreeRoot {
     this.ref = rootRef instanceof Ref ? rootRef : null;
     this.roleMap = new Map();
     this.structParentIds = null;
+    this.kidRefToPosition = undefined;
+    this.parentTree = null;
+  }
+
+  getKidPosition(kidRef) {
+    if (this.kidRefToPosition === undefined) {
+      const obj = this.dict.get("K");
+      if (Array.isArray(obj)) {
+        const map = (this.kidRefToPosition = new Map());
+        for (let i = 0, ii = obj.length; i < ii; i++) {
+          const ref = obj[i];
+          if (ref) {
+            map.set(ref.toString(), i);
+          }
+        }
+      } else if (obj instanceof Dict) {
+        this.kidRefToPosition = new Map([[obj.objId, 0]]);
+      } else if (!obj) {
+        this.kidRefToPosition = new Map();
+      } else {
+        this.kidRefToPosition = null;
+      }
+    }
+    return this.kidRefToPosition
+      ? (this.kidRefToPosition.get(kidRef) ?? NaN)
+      : -1;
   }
 
   init() {
     this.readRoleMap();
+    const parentTree = this.dict.get("ParentTree");
+    if (!parentTree) {
+      return;
+    }
+    this.parentTree = new NumberTree(parentTree, this.xref);
   }
 
   #addIdToPage(pageRef, id, type) {
@@ -413,12 +451,7 @@ class StructTreeRoot {
     for (const element of elements) {
       if (element.structTreeParentId) {
         const id = parseInt(element.structTreeParentId.split("_mc")[1], 10);
-        let elems = idToElements.get(id);
-        if (!elems) {
-          elems = [];
-          idToElements.set(id, elems);
-        }
-        elems.push(element);
+        idToElements.getOrInsertComputed(id, makeArr).push(element);
       }
     }
 
@@ -552,6 +585,51 @@ class StructElementNode {
     const name = nameObj instanceof Name ? nameObj.name : "";
     const { root } = this.tree;
     return root.roleMap.get(name) ?? name;
+  }
+
+  get mathML() {
+    let AFs = this.dict.get("AF") || [];
+    if (!Array.isArray(AFs)) {
+      AFs = [AFs];
+    }
+    for (let af of AFs) {
+      af = this.xref.fetchIfRef(af);
+      if (!(af instanceof Dict)) {
+        continue;
+      }
+      if (!isName(af.get("Type"), "Filespec")) {
+        continue;
+      }
+      if (!isName(af.get("AFRelationship"), "Supplement")) {
+        continue;
+      }
+      const ef = af.get("EF");
+      if (!(ef instanceof Dict)) {
+        continue;
+      }
+      const fileStream = ef.get("UF") || ef.get("F");
+      if (!(fileStream instanceof BaseStream)) {
+        continue;
+      }
+      if (!isName(fileStream.dict.get("Type"), "EmbeddedFile")) {
+        continue;
+      }
+      if (!isName(fileStream.dict.get("Subtype"), "application/mathml+xml")) {
+        continue;
+      }
+      // The default encoding for xml files is UTF-8.
+      return stringToUTF8String(fileStream.getString());
+    }
+    const A = this.dict.get("A");
+    if (A instanceof Dict) {
+      // This stuff isn't in the spec, but MS Office seems to use it.
+      const O = A.get("O");
+      if (isName(O, "MSFT_Office")) {
+        const mathml = A.get("MSFT_MathML");
+        return mathml ? stringToPDFString(mathml) : null;
+      }
+    }
+    return null;
   }
 
   parseKids() {
@@ -695,7 +773,7 @@ class StructTreePage {
       return;
     }
 
-    const parentTree = this.rootDict.get("ParentTree");
+    const { parentTree } = this.root;
     if (!parentTree) {
       return;
     }
@@ -706,10 +784,9 @@ class StructTreePage {
     }
 
     const map = new Map();
-    const numberTree = new NumberTree(parentTree, this.xref);
 
     if (Number.isInteger(id)) {
-      const parentArray = numberTree.get(id);
+      const parentArray = parentTree.get(id);
       if (Array.isArray(parentArray)) {
         for (const ref of parentArray) {
           if (ref instanceof Ref) {
@@ -723,7 +800,7 @@ class StructTreePage {
       return;
     }
     for (const [elemId, type] of ids) {
-      const obj = numberTree.get(elemId);
+      const obj = parentTree.get(elemId);
       if (obj) {
         const elem = this.addNode(this.xref.fetchIfRef(obj), map);
         if (
@@ -754,6 +831,23 @@ class StructTreePage {
 
     const element = new StructElementNode(this, dict);
     map.set(dict, element);
+    switch (element.role) {
+      case "L":
+      case "LBody":
+      case "LI":
+      case "Table":
+      case "THead":
+      case "TBody":
+      case "TFoot":
+      case "TR": {
+        // Always collect all child nodes of lists and tables, even empty ones
+        for (const kid of element.kids) {
+          if (kid.type === StructElementType.ELEMENT) {
+            this.addNode(kid.dict, map, level - 1);
+          }
+        }
+      }
+    }
 
     const parent = dict.get("P");
 
@@ -785,31 +879,14 @@ class StructTreePage {
   }
 
   addTopLevelNode(dict, element) {
-    const obj = this.rootDict.get("K");
-    if (!obj) {
+    const index = this.root.getKidPosition(dict.objId);
+    if (isNaN(index)) {
       return false;
     }
-
-    if (obj instanceof Dict) {
-      if (obj.objId !== dict.objId) {
-        return false;
-      }
-      this.nodes[0] = element;
-      return true;
+    if (index !== -1) {
+      this.nodes[index] = element;
     }
-
-    if (!Array.isArray(obj)) {
-      return true;
-    }
-    let save = false;
-    for (let i = 0; i < obj.length; i++) {
-      const kidRef = obj[i];
-      if (kidRef?.toString() === dict.objId) {
-        this.nodes[i] = element;
-        save = true;
-      }
-    }
-    return save;
+    return true;
   }
 
   /**
@@ -833,6 +910,12 @@ class StructTreePage {
       }
       if (typeof alt === "string") {
         obj.alt = stringToPDFString(alt);
+      }
+      if (obj.role === "Formula") {
+        const { mathML } = node;
+        if (mathML) {
+          obj.mathML = mathML;
+        }
       }
 
       const a = node.dict.get("A");

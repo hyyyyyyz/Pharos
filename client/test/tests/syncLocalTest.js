@@ -18,6 +18,203 @@ describe("Zotero.Sync.Data.Local", function () {
 			await Zotero.Sync.Data.Local.setAPIKey("");
 			assert.strictEqual(await Zotero.Sync.Data.Local.getAPIKey(apiKey), "");
 		})
+		
+		
+		it("should store the key without encryption if the keystore is unusable and the user agrees", async function () {
+			var apiKey = Zotero.Utilities.randomString(24);
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var confirmStub = sinon.stub(Zotero.OSKeyStore, "confirmUnencryptedFallback")
+				.returns(true);
+			try {
+				await Zotero.Sync.Data.Local.setAPIKey(apiKey);
+				assert.ok(confirmStub.called);
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+				// The read shouldn't have retried encryption against the same broken keystore
+				assert.equal(encryptStub.callCount, 1);
+			}
+			finally {
+				encryptStub.restore();
+				confirmStub.restore();
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+		
+		
+		it("shouldn't store the key if the keystore is unusable and the user declines", async function () {
+			var apiKey = Zotero.Utilities.randomString(24);
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var confirmStub = sinon.stub(Zotero.OSKeyStore, "confirmUnencryptedFallback")
+				.returns(false);
+			try {
+				var e = await getPromiseError(Zotero.Sync.Data.Local.setAPIKey(apiKey));
+				assert.ok(e);
+				assert.strictEqual(await Zotero.Sync.Data.Local.getAPIKey(), "");
+			}
+			finally {
+				encryptStub.restore();
+				confirmStub.restore();
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+		
+		
+		it("should prompt before storing the key without encryption", async function () {
+			var apiKey = Zotero.Utilities.randomString(24);
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var promptStub = sinon.stub(Zotero.Prompt, "confirm").returns(0);
+			try {
+				await Zotero.Sync.Data.Local.setAPIKey(apiKey);
+				assert.ok(promptStub.calledOnce);
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+			}
+			finally {
+				encryptStub.restore();
+				promptStub.restore();
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+		
+		
+		it("shouldn't prompt to save the key unencrypted during an automatic sync", async function () {
+			var apiKey = Zotero.Utilities.randomString(24);
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var promptStub = sinon.stub(Zotero.Prompt, "confirm").returns(0);
+			var backgroundStub = sinon.stub(Zotero.Sync.Runner, "backgroundSync").get(() => true);
+			try {
+				var e = await getPromiseError(Zotero.Sync.Data.Local.setAPIKey(apiKey));
+				assert.ok(e);
+				assert.isFalse(promptStub.called);
+				assert.strictEqual(await Zotero.Sync.Data.Local.getAPIKey(), "");
+			}
+			finally {
+				encryptStub.restore();
+				promptStub.restore();
+				backgroundStub.restore();
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+		
+		
+		it("should hide the keystore error for a legacy key for 30 days if the user chooses", async function () {
+			var apiKey = Zotero.Utilities.randomString(24);
+			var nsLoginInfo = new Components.Constructor("@mozilla.org/login-manager/loginInfo;1",
+				Components.interfaces.nsILoginInfo, "init");
+			await Services.logins.addLoginAsync(new nsLoginInfo(
+				Zotero.Sync.Data.Local._loginManagerHost,
+				null,
+				Zotero.Sync.Data.Local._loginManagerRealmLegacy,
+				'API Key',
+				apiKey,
+				'',
+				''
+			));
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var windowStub = sinon.stub(Zotero.OSKeyStore, "_getParentWindow").returns(window);
+			var promptStub = sinon.stub(Zotero.Prompt, "confirm").callsFake((options) => {
+				options.checkbox.value = true;
+				return 0;
+			});
+			// Stands in for a restart
+			var newSession = () => {
+				Zotero.Sync.Data.Local._mirroredAPIKey = false;
+				Zotero.OSKeyStore._migrateAlertShown = false;
+			};
+			try {
+				newSession();
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+				assert.equal(promptStub.callCount, 1);
+				
+				newSession();
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+				assert.equal(promptStub.callCount, 1);
+				
+				Zotero.Prefs.set(
+					'sync.keyStoreMigrateAlertLastShown',
+					Math.floor(Date.now() / 1000) - 31 * 86400
+				);
+				newSession();
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+				assert.equal(promptStub.callCount, 2);
+			}
+			finally {
+				encryptStub.restore();
+				windowStub.restore();
+				promptStub.restore();
+				Zotero.Prefs.clear('sync.keyStoreMigrateAlertLastShown');
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+		
+		
+		it("should encrypt a key stored without encryption in a later session", async function () {
+			if (!Zotero.OSKeyStore.available) {
+				this.skip();
+			}
+			var apiKey = Zotero.Utilities.randomString(24);
+			// Store it with an unusable keystore
+			var encryptStub = sinon.stub(Zotero.OSKeyStore, "encrypt")
+				.rejects(new Error("User canceled OS unlock entry"));
+			var confirmStub = sinon.stub(Zotero.OSKeyStore, "confirmUnencryptedFallback")
+				.returns(true);
+			try {
+				await Zotero.Sync.Data.Local.setAPIKey(apiKey);
+			}
+			finally {
+				encryptStub.restore();
+				confirmStub.restore();
+			}
+			try {
+				// Encryption is retried once per session, so stand in for a restart
+				Zotero.Sync.Data.Local._reencryptedAPIKey = false;
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+				let login = await Zotero.Sync.Data.Local._getAPIKeyLoginInfo();
+				assert.ok(Zotero.OSKeyStore.isEncrypted(login.password));
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+			}
+			finally {
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
+	})
+
+
+	describe("#repairLoginManager()", function () {
+		it("should reset a key database with a primary password set", async function () {
+			var token = Components.classes["@mozilla.org/security/pk11tokendb;1"]
+				.getService(Components.interfaces.nsIPK11TokenDB)
+				.getInternalKeyToken();
+
+			// No-op if no primary password is set
+			assert.isFalse(Zotero.Sync.Data.Local.repairLoginManager());
+
+			if (token.needsUserInit) {
+				token.initPassword("repair-test");
+			}
+			else {
+				token.changePassword("", "repair-test");
+			}
+			try {
+				assert.isTrue(token.hasPassword);
+				assert.isTrue(Zotero.Sync.Data.Local.repairLoginManager());
+				assert.isFalse(token.hasPassword);
+
+				// Credentials should be saveable and readable again
+				var apiKey = Zotero.Utilities.randomString(24);
+				await Zotero.Sync.Data.Local.setAPIKey(apiKey);
+				assert.equal(await Zotero.Sync.Data.Local.getAPIKey(), apiKey);
+			}
+			finally {
+				if (token.hasPassword) {
+					token.changePassword("repair-test", "");
+				}
+				await Zotero.Sync.Data.Local.setAPIKey("");
+			}
+		})
 	})
 	
 	
@@ -225,7 +422,7 @@ describe("Zotero.Sync.Data.Local", function () {
 		it("should return true for unsynced setting", async function () {
 			var group = await createGroup();
 			var libraryID = group.libraryID;
-			await Zotero.SyncedSettings.set(libraryID, "testSetting", { foo: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_AAAAAAAA", { foo: "bar" });
 			assert.isTrue(await Zotero.Sync.Data.Local._libraryHasUnsyncedData(libraryID));
 		});
 		
@@ -253,7 +450,7 @@ describe("Zotero.Sync.Data.Local", function () {
 			var libraryID = group.libraryID;
 			
 			// New setting
-			await Zotero.SyncedSettings.set(libraryID, "testSetting", { foo: "bar" });
+			await Zotero.SyncedSettings.set(libraryID, "lastPageIndex_u_AAAAAAAA", { foo: "bar" });
 			
 			// Changed collection
 			var changedCollection = await createDataObject('collection', { libraryID, version: 1 });
@@ -290,7 +487,7 @@ describe("Zotero.Sync.Data.Local", function () {
 			
 			await Zotero.Sync.Data.Local.resetUnsyncedLibraryData(libraryID);
 			
-			assert.isNull(Zotero.SyncedSettings.get(group.libraryID, "testSetting"));
+			assert.isNull(Zotero.SyncedSettings.get(group.libraryID, "lastPageIndex_u_AAAAAAAA"));
 			
 			assert.equal(changedCollection.name, originalCollectionName);
 			assert.isTrue(changedCollection.synced);
@@ -540,10 +737,7 @@ describe("Zotero.Sync.Data.Local", function () {
 		var types = Zotero.DataObjectUtilities.getTypes();
 		
 		beforeEach(function* () {
-			yield resetDB({
-				thisArg: this,
-				skipBundledFiles: true
-			});
+			yield resetData();
 		})
 		
 		it("shouldn't trigger an auto-sync", async function () {
@@ -2292,12 +2486,19 @@ describe("Zotero.Sync.Data.Local", function () {
 						},
 						{
 							field: "conditions",
-							op: "member-add",
-							value: {
-								condition: "place",
-								operator: "is",
-								value: "Chicago"
-							}
+							op: "modify",
+							value: [
+								{
+									condition: "title",
+									operator: "contains",
+									value: "A"
+								},
+								{
+									condition: "place",
+									operator: "is",
+									value: "Chicago"
+								}
+							]
 						}
 					]
 				);
@@ -2369,21 +2570,19 @@ describe("Zotero.Sync.Data.Local", function () {
 					[
 						{
 							field: "conditions",
-							op: "member-add",
-							value: {
-								condition: "place",
-								operator: "is",
-								value: "New York"
-							}
-						},
-						{
-							field: "conditions",
-							op: "member-remove",
-							value: {
-								condition: "place",
-								operator: "is",
-								value: "Chicago"
-							}
+							op: "modify",
+							value: [
+								{
+									condition: "title",
+									operator: "contains",
+									value: "A"
+								},
+								{
+									condition: "place",
+									operator: "is",
+									value: "New York"
+								}
+							]
 						}
 					]
 				);
@@ -2536,12 +2735,19 @@ describe("Zotero.Sync.Data.Local", function () {
 						},
 						{
 							field: "conditions",
-							op: "member-add",
-							value: {
-								condition: "place",
-								operator: "is",
-								value: "Chicago"
-							}
+							op: "modify",
+							value: [
+								{
+									condition: "title",
+									operator: "contains",
+									value: "A"
+								},
+								{
+									condition: "place",
+									operator: "is",
+									value: "Chicago"
+								}
+							]
 						}
 					]
 				);
@@ -2836,6 +3042,59 @@ describe("Zotero.Sync.Data.Local", function () {
 			);
 			assert.lengthOf(result.conflicts, 0);
 			assert.isFalse(result.localChanged);
+		});
+		
+		it("should automatically use more recent remote lastRead value", function () {
+			var json1 = {
+				key: "AAAAAAAA",
+				version: 1234,
+				itemType: "attachment",
+				lastRead: 1700000100
+			};
+			var json2 = {
+				key: "AAAAAAAA",
+				version: 1235,
+				itemType: "attachment",
+				lastRead: 1700000200
+			};
+			var ignoreFields = ['dateAdded', 'dateModified'];
+			var result = Zotero.Sync.Data.Local._reconcileChangesWithoutCache(
+				'item', json1, json2, ignoreFields
+			);
+			assert.sameDeepMembers(
+				result.changes,
+				[
+					{
+						field: "lastRead",
+						op: "modify",
+						value: 1700000200
+					}
+				]
+			);
+			assert.lengthOf(result.conflicts, 0);
+			assert.isFalse(result.localChanged);
+		});
+		
+		it("should automatically use more recent local lastRead value", function () {
+			var json1 = {
+				key: "AAAAAAAA",
+				version: 1234,
+				itemType: "attachment",
+				lastRead: 1700000200
+			};
+			var json2 = {
+				key: "AAAAAAAA",
+				version: 1235,
+				itemType: "attachment",
+				lastRead: 1700000100
+			};
+			var ignoreFields = ['dateAdded', 'dateModified'];
+			var result = Zotero.Sync.Data.Local._reconcileChangesWithoutCache(
+				'item', json1, json2, ignoreFields
+			);
+			assert.lengthOf(result.changes, 0);
+			assert.lengthOf(result.conflicts, 0);
+			assert.isTrue(result.localChanged);
 		});
 	})
 })

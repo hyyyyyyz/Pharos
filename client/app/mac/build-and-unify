@@ -12,7 +12,7 @@ if [ -z "${1:-}" ]; then
 	echo "Usage: $0 /path/to/firefox" >&2
 	exit 1
 fi
-GECKO_PATH=$1
+GECKO_PATH="$(cd "$1" && pwd)"
 mach=$GECKO_PATH/mach
 
 BUILD_DIR=`mktemp -d`
@@ -27,8 +27,7 @@ export MOZ_BUILD_DATE=`date "+%Y%m%d%H%M%S"`
 
 # Install required Rust version
 rustup toolchain install $RUST_VERSION
-rustup target add aarch64-apple-darwin
-rustup target add x86_64-apple-darwin
+rustup target add --toolchain $RUST_VERSION aarch64-apple-darwin x86_64-apple-darwin
 rustup default $RUST_VERSION
 
 cp "$SCRIPT_DIR/mozconfig" "$GECKO_PATH"
@@ -56,8 +55,20 @@ cp x64/$fx_app_name/Contents/MacOS/firefox zotero
 xz zotero
 mv zotero.xz "$APP_ROOT_DIR/mac/zotero.xz"
 
-# Save a copy of XUL
-#cp x64/$fx_app_name/Contents/MacOS/XUL "$APP_ROOT_DIR/mac/XUL"
+# Package custom Firefox components for fetch_xulrunner. Add XUL to this list if needed.
+# Upload the archive to ${custom_components_url}mac/ and set custom_components_hash_mac
+# in config.sh to the hash printed below.
+custom_components=(libmozglue.dylib)
+mkdir MacOS
+for component in "${custom_components[@]}"; do
+	cp "x64/$fx_app_name/Contents/MacOS/$component" MacOS/
+done
+tar cfJ MacOS.tar.xz MacOS
+components_hash=$(shasum -a 256 MacOS.tar.xz | cut -d ' ' -f 1)
+components_file="$APP_ROOT_DIR/mac/$components_hash.tar.xz"
+mv MacOS.tar.xz "$components_file"
+echo "Custom Firefox components: $components_file"
+echo "custom_components_hash_mac=\"$components_hash\""
 
 # Save a copy of ChannelPrefs.framework
 #

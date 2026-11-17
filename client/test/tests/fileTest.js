@@ -199,6 +199,14 @@ describe("Zotero.File", function () {
 			assert.equal(closest, tmpDir);
 		});
 		
+		it("should return parent directory for a filename too long for the filesystem", async function () {
+			var tmpDir = await getTempDirectory();
+			var closest = await Zotero.File.getClosestDirectory(
+				OS.Path.join(tmpDir, 'a'.repeat(1000) + '.pdf')
+			);
+			assert.equal(closest, tmpDir);
+		});
+		
 		it("should return false for a path that doesn't exist at all", async function () {
 			assert.isFalse(await Zotero.File.getClosestDirectory('/a/b/c'));
 		});
@@ -220,6 +228,49 @@ describe("Zotero.File", function () {
 	});
 	
 	
+	describe("#isAPFS()", function () {
+		it("should return true on macOS for the temp directory", function () {
+			if (!Zotero.isMac) this.skip();
+			assert.isTrue(Zotero.File.isAPFS(Zotero.getTempDirectory().path));
+		});
+
+		it("should return false on non-Mac platforms", function () {
+			if (Zotero.isMac) this.skip();
+			assert.isFalse(Zotero.File.isAPFS(Zotero.getTempDirectory().path));
+		});
+	});
+
+	describe("#copyFile()", function () {
+		it("should copy a file", async function () {
+			let tmpDir = await getTempDirectory();
+			let source = OS.Path.join(tmpDir, "source.txt");
+			let target = OS.Path.join(tmpDir, "target.txt");
+			await Zotero.File.putContentsAsync(source, "Hello world");
+
+			await Zotero.File.copyFile(source, target);
+
+			assert.isTrue(await OS.File.exists(target));
+			assert.equal(await Zotero.File.getContentsAsync(target), "Hello world");
+		});
+
+		it("should copy a file to a different directory", async function () {
+			let tmpDir = await getTempDirectory();
+			let subDir = OS.Path.join(tmpDir, "sub");
+			await OS.File.makeDir(subDir);
+			let source = OS.Path.join(tmpDir, "source.txt");
+			let target = OS.Path.join(subDir, "target.txt");
+			await Zotero.File.putContentsAsync(source, "Hello world");
+
+			await Zotero.File.copyFile(source, target);
+
+			assert.isTrue(await OS.File.exists(target));
+			assert.equal(await Zotero.File.getContentsAsync(target), "Hello world");
+			// Source should still exist
+			assert.isTrue(await OS.File.exists(source));
+		});
+	});
+
+
 	describe("#copyDirectory()", function () {
 		it("should copy all files within a directory", async function () {
 			var tmpDir = Zotero.getTempDirectory().path;
@@ -283,7 +334,16 @@ describe("Zotero.File", function () {
 			var tmpPath = await getTempDirectory();
 			var destPath = OS.Path.join(tmpPath, 'missing');
 			var linkPath = OS.Path.join(tmpPath, 'link');
-			await OS.File.unixSymLink(destPath, linkPath);
+			var isSymlink = false;
+			try {
+				await OS.File.unixSymLink(destPath, linkPath);
+				isSymlink = Zotero.File.pathToFile(linkPath).isSymlink();
+			}
+			catch (e) {}
+			if (!isSymlink) {
+				// Symlink couldn't be created or isn't visible as one (e.g., on CIFS)
+				this.skip();
+			}
 			
 			assert.throws(() => Zotero.File.createDirectoryIfMissing(linkPath), /^Broken symlink/);
 		});
@@ -298,7 +358,16 @@ describe("Zotero.File", function () {
 			var tmpPath = await getTempDirectory();
 			var destPath = OS.Path.join(tmpPath, 'missing');
 			var linkPath = OS.Path.join(tmpPath, 'link');
-			await OS.File.unixSymLink(destPath, linkPath);
+			var isSymlink = false;
+			try {
+				await OS.File.unixSymLink(destPath, linkPath);
+				isSymlink = Zotero.File.pathToFile(linkPath).isSymlink();
+			}
+			catch (e) {}
+			if (!isSymlink) {
+				// Symlink couldn't be created or isn't visible as one (e.g., on CIFS)
+				this.skip();
+			}
 			
 			var e = await getPromiseError(Zotero.File.createDirectoryIfMissingAsync(linkPath));
 			assert.ok(e);

@@ -13,13 +13,11 @@
  * limitations under the License.
  */
 
+import { RenderableView, RenderingStates } from "./renderable_view.js";
 import { RenderingCancelledException } from "pdfjs-lib";
-import { RenderingStates } from "./ui_utils.js";
 
-class BasePDFPageView {
+class BasePDFPageView extends RenderableView {
   #loadingId = null;
-
-  #minDurationToUpdateCanvas = 0;
 
   #renderError = null;
 
@@ -36,24 +34,32 @@ class BasePDFPageView {
   /** @type {null | HTMLDivElement} */
   div = null;
 
+  enableOptimizedPartialRendering = false;
+
+  imagesRightClickMinSize = -1;
+
   eventBus = null;
 
   id = null;
 
+  imageCoordinates = null;
+
   pageColors = null;
+
+  recordedBBoxes = null;
 
   renderingQueue = null;
 
-  renderTask = null;
-
-  resume = null;
-
   constructor(options) {
+    super();
     this.eventBus = options.eventBus;
     this.id = options.id;
     this.pageColors = options.pageColors || null;
     this.renderingQueue = options.renderingQueue;
-    this.#minDurationToUpdateCanvas = options.minDurationToUpdateCanvas ?? 500;
+    this.enableOptimizedPartialRendering =
+      options.enableOptimizedPartialRendering ?? false;
+    this.imagesRightClickMinSize = options.imagesRightClickMinSize ?? -1;
+    this.minDurationToUpdateCanvas = options.minDurationToUpdateCanvas ?? 500;
   }
 
   get renderingState() {
@@ -113,14 +119,14 @@ class BasePDFPageView {
     this.#showCanvas = isLastShow => {
       if (updateOnFirstShow) {
         let tempCanvas = this.#tempCanvas;
-        if (!isLastShow && this.#minDurationToUpdateCanvas > 0) {
+        if (!isLastShow && this.minDurationToUpdateCanvas > 0) {
           // We draw on the canvas at 60fps (in using `requestAnimationFrame`),
           // so if the canvas is large, updating it at 60fps can be a way too
           // much and can cause some serious performance issues.
           // To avoid that we only update the canvas every
           // `this.#minDurationToUpdateCanvas` ms.
 
-          if (Date.now() - this.#startTime < this.#minDurationToUpdateCanvas) {
+          if (Date.now() - this.#startTime < this.minDurationToUpdateCanvas) {
             return;
           }
           if (!tempCanvas) {
@@ -228,6 +234,12 @@ class BasePDFPageView {
       // triggering this callback.
       if (renderTask === this.renderTask) {
         this.renderTask = null;
+        if (this.enableOptimizedPartialRendering) {
+          this.recordedBBoxes ??= renderTask.recordedBBoxes;
+        }
+        if (this.imagesRightClickMinSize !== -1) {
+          this.imageCoordinates ??= this.pdfPage.imageCoordinates;
+        }
       }
     }
     this.renderingState = RenderingStates.FINISHED;

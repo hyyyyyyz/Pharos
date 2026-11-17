@@ -16,6 +16,8 @@
 /** @typedef {import("../src/display/api").PDFPageProxy} PDFPageProxy */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/display_utils").PageViewport} PageViewport */
+// eslint-disable-next-line max-len
+/** @typedef {import("../src/display/text_layer_images.js").TextLayerImages} TextLayerImages */
 /** @typedef {import("./text_highlighter").TextHighlighter} TextHighlighter */
 // eslint-disable-next-line max-len
 /** @typedef {import("./text_accessibility.js").TextAccessibilityManager} TextAccessibilityManager */
@@ -31,11 +33,13 @@ import { removeNullCharacters } from "./ui_utils.js";
  * @property {TextAccessibilityManager} [accessibilityManager]
  * @property {boolean} [enablePermissions]
  * @property {function} [onAppend]
+ * @property {AbortSignal} [abortSignal]
  */
 
 /**
  * @typedef {Object} TextLayerBuilderRenderOptions
  * @property {PageViewport} viewport
+ * @property {TextLayerImages} images
  * @property {Object} [textContentParams]
  */
 
@@ -45,6 +49,8 @@ import { removeNullCharacters } from "./ui_utils.js";
  * contain text that matches the PDF text they are overlaying.
  */
 class TextLayerBuilder {
+  #abortSignal = null;
+
   #enablePermissions = false;
 
   #onAppend = null;
@@ -66,12 +72,14 @@ class TextLayerBuilder {
     accessibilityManager = null,
     enablePermissions = false,
     onAppend = null,
+    abortSignal = null,
   }) {
     this.pdfPage = pdfPage;
     this.highlighter = highlighter;
     this.accessibilityManager = accessibilityManager;
     this.#enablePermissions = enablePermissions === true;
     this.#onAppend = onAppend;
+    this.#abortSignal = abortSignal;
 
     this.div = document.createElement("div");
     this.div.tabIndex = 0;
@@ -83,7 +91,7 @@ class TextLayerBuilder {
    * @param {TextLayerBuilderRenderOptions} options
    * @returns {Promise<void>}
    */
-  async render({ viewport, textContentParams = null }) {
+  async render({ viewport, images, textContentParams = null }) {
     if (this.#renderingDone && this.#textLayer) {
       this.#textLayer.update({
         viewport,
@@ -101,6 +109,7 @@ class TextLayerBuilder {
           disableNormalization: true,
         }
       ),
+      images,
       container: this.div,
       viewport,
     });
@@ -159,24 +168,34 @@ class TextLayerBuilder {
    */
   #bindMouse(end) {
     const { div } = this;
+    const abortSignal = this.#abortSignal;
+    const opts = abortSignal ? { signal: abortSignal } : null;
 
-    div.addEventListener("mousedown", () => {
-      div.classList.add("selecting");
-    });
+    div.addEventListener(
+      "mousedown",
+      () => {
+        div.classList.add("selecting");
+      },
+      opts
+    );
 
-    div.addEventListener("copy", event => {
-      if (!this.#enablePermissions) {
-        const selection = document.getSelection();
-        event.clipboardData.setData(
-          "text/plain",
-          removeNullCharacters(normalizeUnicode(selection.toString()))
-        );
-      }
-      stopEvent(event);
-    });
+    div.addEventListener(
+      "copy",
+      event => {
+        if (!this.#enablePermissions) {
+          const selection = document.getSelection();
+          event.clipboardData.setData(
+            "text/plain",
+            removeNullCharacters(normalizeUnicode(selection.toString()))
+          );
+        }
+        stopEvent(event);
+      },
+      opts
+    );
 
     TextLayerBuilder.#textLayers.set(div, end);
-    TextLayerBuilder.#enableGlobalSelectionListener();
+    TextLayerBuilder.#enableGlobalSelectionListener(abortSignal);
   }
 
   static #removeGlobalSelectionListener(textLayerDiv) {
@@ -188,13 +207,18 @@ class TextLayerBuilder {
     }
   }
 
-  static #enableGlobalSelectionListener() {
+  static #enableGlobalSelectionListener(globalAbortSignal) {
     if (this.#selectionChangeAbortController) {
       // document-level event listeners already installed
       return;
     }
     this.#selectionChangeAbortController = new AbortController();
-    const { signal } = this.#selectionChangeAbortController;
+    const signal = globalAbortSignal
+      ? AbortSignal.any([
+          this.#selectionChangeAbortController.signal,
+          globalAbortSignal,
+        ])
+      : this.#selectionChangeAbortController.signal;
 
     const reset = (end, textLayer) => {
       if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("MOZCENTRAL")) {
@@ -307,6 +331,9 @@ class TextLayerBuilder {
         if (anchor.nodeType === Node.TEXT_NODE) {
           anchor = anchor.parentNode;
         }
+        if (anchor.classList?.contains("highlight")) {
+          anchor = anchor.parentNode;
+        }
         if (!modifyStart && range.endOffset === 0) {
           do {
             while (!anchor.previousSibling) {
@@ -321,6 +348,7 @@ class TextLayerBuilder {
         if (endDiv) {
           endDiv.style.width = parentTextLayer.style.width;
           endDiv.style.height = parentTextLayer.style.height;
+          endDiv.style.userSelect = "text";
           anchor.parentElement.insertBefore(
             endDiv,
             modifyStart ? anchor : anchor.nextSibling

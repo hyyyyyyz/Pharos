@@ -45,7 +45,10 @@ class ExternalServices extends BaseExternalServices {
   }
 
   createScripting() {
-    return new GenericScripting(AppOptions.get("sandboxBundleSrc"));
+    return new GenericScripting(
+      AppOptions.get("sandboxBundleSrc"),
+      AppOptions.get("wasmUrl")
+    );
   }
 
   createSignatureStorage(eventBus, signal) {

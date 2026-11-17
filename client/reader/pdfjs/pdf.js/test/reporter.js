@@ -57,22 +57,18 @@ const TestReporter = function (browser) {
     sendInfo(`Started ${total} tests for ${browser} with seed ${seed}.`);
   };
 
-  this.suiteStarted = function (result) {
-    // Report on the result of `beforeAll` invocations.
-    if (result.failedExpectations.length > 0) {
-      let failedMessages = "";
-      for (const item of result.failedExpectations) {
-        failedMessages += `${item.message} `;
-      }
-      sendResult("TEST-UNEXPECTED-FAIL", result.description, failedMessages);
-    }
-  };
+  this.suiteStarted = function (result) {};
 
   this.specStarted = function (result) {};
 
   this.specDone = function (result) {
-    // Report on the result of individual tests.
-    if (result.failedExpectations.length === 0) {
+    // Ignore excluded (fit/xit) or skipped (pending) tests.
+    if (["excluded", "pending"].includes(result.status)) {
+      return;
+    }
+
+    // Report on passed or failed tests.
+    if (result.status === "passed") {
       sendResult("TEST-PASSED", result.description);
     } else {
       let failedMessages = "";
@@ -84,8 +80,13 @@ const TestReporter = function (browser) {
   };
 
   this.suiteDone = function (result) {
-    // Report on the result of `afterAll` invocations.
-    if (result.failedExpectations.length > 0) {
+    // Ignore excluded (fdescribe/xdescribe) or skipped (pending) suites.
+    if (["excluded", "pending"].includes(result.status)) {
+      return;
+    }
+
+    // Report on failed suites only (indicates problems in setup/teardown).
+    if (result.status === "failed") {
       let failedMessages = "";
       for (const item of result.failedExpectations) {
         failedMessages += `${item.message} `;

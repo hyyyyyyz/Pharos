@@ -122,10 +122,12 @@ const fixedDistCodeTab = [
 ];
 
 class FlateStream extends DecodeStream {
+  #isAsync = true;
+
   constructor(str, maybeLength) {
     super(maybeLength);
 
-    this.str = str;
+    this.stream = str;
     this.dict = str.dict;
 
     const cmf = str.getByte();
@@ -161,62 +163,34 @@ class FlateStream extends DecodeStream {
   }
 
   async asyncGetBytes() {
-    this.str.reset();
-    const bytes = this.str.getBytes();
-
-    try {
-      const { readable, writable } = new DecompressionStream("deflate");
-      const writer = writable.getWriter();
-      await writer.ready;
-
-      // We can't await writer.write() because it'll block until the reader
-      // starts which happens few lines below.
-      writer
-        .write(bytes)
-        .then(async () => {
-          await writer.ready;
-          await writer.close();
-        })
-        .catch(() => {});
-
-      const chunks = [];
-      let totalLength = 0;
-
-      for await (const chunk of readable) {
-        chunks.push(chunk);
-        totalLength += chunk.byteLength;
-      }
-      const data = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        data.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-
-      return data;
-    } catch {
-      // DecompressionStream failed (for example because there are some extra
-      // bytes after the end of the compressed data), so we fallback to our
-      // decoder.
-      // We already get the bytes from the underlying stream, so we just reuse
-      // them to avoid get them again.
-      this.str = new Stream(
-        bytes,
-        2 /* = header size (see ctor) */,
-        bytes.length,
-        this.str.dict
-      );
-      this.reset();
-      return null;
+    const { decompressed, compressed } =
+      await this.asyncGetBytesFromDecompressionStream("deflate");
+    if (decompressed) {
+      return decompressed;
     }
+    // DecompressionStream failed (for example because there are some extra
+    // bytes after the end of the compressed data), so we fallback to our
+    // decoder.
+    // We already get the bytes from the underlying stream, so we just reuse
+    // them to avoid get them again.
+
+    this.#isAsync = false;
+    this.stream = new Stream(
+      compressed,
+      2 /* = header size (see ctor) */,
+      compressed.length,
+      this.stream.dict
+    );
+    this.reset();
+    return null;
   }
 
   get isAsync() {
-    return true;
+    return this.#isAsync;
   }
 
   getBits(bits) {
-    const str = this.str;
+    const str = this.stream;
     let codeSize = this.codeSize;
     let codeBuf = this.codeBuf;
 
@@ -236,7 +210,7 @@ class FlateStream extends DecodeStream {
   }
 
   getCode(table) {
-    const str = this.str;
+    const str = this.stream;
     const codes = table[0];
     const maxLen = table[1];
     let codeSize = this.codeSize;
@@ -312,7 +286,7 @@ class FlateStream extends DecodeStream {
 
   readBlock() {
     let buffer, hdr, len;
-    const str = this.str;
+    const str = this.stream;
     // read block header
     try {
       hdr = this.getBits(3);

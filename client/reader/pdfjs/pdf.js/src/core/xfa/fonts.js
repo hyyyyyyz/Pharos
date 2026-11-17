@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
+import { makeObj, warn } from "../../shared/util.js";
 import { $globalData } from "./symbol_utils.js";
 import { stripQuotes } from "./utils.js";
-import { warn } from "../../shared/util.js";
 
 class FontFinder {
   constructor(pdfFonts) {
@@ -48,14 +48,9 @@ class FontFinder {
   addPdfFont(pdfFont) {
     const cssFontInfo = pdfFont.cssFontInfo;
     const name = cssFontInfo.fontFamily;
-    let font = this.fonts.get(name);
-    if (!font) {
-      font = Object.create(null);
-      this.fonts.set(name, font);
-      if (!this.defaultFont) {
-        this.defaultFont = font;
-      }
-    }
+    const font = this.fonts.getOrInsertComputed(name, makeObj);
+    this.defaultFont ??= font;
+
     let property = "";
     const fontWeight = parseFloat(cssFontInfo.fontWeight);
     if (parseFloat(cssFontInfo.italicAngle) !== 0) {
@@ -105,14 +100,14 @@ class FontFinder {
     name = name.toLowerCase();
 
     const maybe = [];
-    for (const [family, pdfFont] of this.fonts.entries()) {
+    for (const [family, pdfFont] of this.fonts) {
       if (family.replaceAll(pattern, "").toLowerCase().startsWith(name)) {
         maybe.push(pdfFont);
       }
     }
 
     if (maybe.length === 0) {
-      for (const [, pdfFont] of this.fonts.entries()) {
+      for (const pdfFont of this.fonts.values()) {
         if (
           pdfFont.regular.name
             ?.replaceAll(pattern, "")
@@ -126,7 +121,7 @@ class FontFinder {
 
     if (maybe.length === 0) {
       name = name.replaceAll(/psmt|mt/gi, "");
-      for (const [family, pdfFont] of this.fonts.entries()) {
+      for (const [family, pdfFont] of this.fonts) {
         if (family.replaceAll(pattern, "").toLowerCase().startsWith(name)) {
           maybe.push(pdfFont);
         }

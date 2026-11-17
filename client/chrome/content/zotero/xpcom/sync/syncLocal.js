@@ -30,10 +30,25 @@ if (!Zotero.Sync.Data) {
 Zotero.Sync.Data.Local = {
 	_syncQueueIntervals: [0.5, 1, 4, 16, 16, 16, 16, 16, 16, 16, 64], // hours
 	_loginManagerHost: 'chrome://zotero',
-	_loginManagerRealm: 'Zotero Web API',
+	_loginManagerRealm: 'Zotero Web API (encrypted)',
+	_loginManagerRealmLegacy: 'Zotero Web API',
 	_lastSyncTime: null,
 	_lastClassicSyncTime: null,
-	
+	// Item/Collection-only -- synced settings can't affect the undo stack
+	_remoteChangesApplied: false,
+
+	get remoteChangesApplied() {
+		return this._remoteChangesApplied;
+	},
+
+	resetRemoteChangesApplied: function () {
+		this._remoteChangesApplied = false;
+	},
+
+	markRemoteChangesApplied: function () {
+		this._remoteChangesApplied = true;
+	},
+
 	init: async function () {
 		await this._loadLastSyncTime();
 		if (!_lastSyncTime) {
@@ -45,12 +60,62 @@ Zotero.Sync.Data.Local = {
 	/**
 	 * @return {Promise}
 	 */
-	getAPIKey: function () {
+	getAPIKey: async function () {
+		// Prefer the legacy realm during the transition window: an older version
+		// may have written a fresh value there after we migrated, and we want
+		// to use the most recent value. Mirror it to the encrypted realm but
+		// keep the legacy entry so a downgrade can still read it. The legacy
+		// realm will be cleared in a future version once downgrades are
+		// unlikely.
+		var legacyLogin = this._getLegacyAPIKeyLoginInfo();
+		if (legacyLogin) {
+			let apiKey = legacyLogin.password;
+			if (!this._mirroredAPIKey) {
+				try {
+					Zotero.debug("Mirroring plaintext API key to encrypted storage");
+					await this._writeEncryptedAPIKey(apiKey);
+					this._mirroredAPIKey = true;
+				}
+				catch (e) {
+					Zotero.logError(e);
+					if (!Zotero.Sync.Runner.backgroundSync) {
+						Zotero.OSKeyStore.alertMigrateFailed();
+					}
+				}
+			}
+			return apiKey;
+		}
 		var login = this._getAPIKeyLoginInfo();
-		return login
-			? login.password
-			// Fallback to old username/password
-			: this._getAPIKeyFromLogin();
+		if (login) {
+			if (Zotero.OSKeyStore.isEncrypted(login.password)) {
+				return Zotero.OSKeyStore.decrypt(login.password);
+			}
+			// Key stored without encryption after a failed write -- encrypt it now, in case
+			// the keystore has since become usable
+			if (!this._reencryptedAPIKey) {
+				this._reencryptedAPIKey = true;
+				try {
+					Zotero.debug("Encrypting unencrypted API key");
+					await this._writeEncryptedAPIKey(login.password);
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+			}
+			return login.password;
+		}
+		// If the login manager had to be reset, the stored API key is gone, so tell the user
+		// to log in again
+		if (this._loginManagerRepaired && !this._loginManagerRepairAlertShown) {
+			this._loginManagerRepairAlertShown = true;
+			Zotero.alert(
+				null,
+				Zotero.getString('general-error'),
+				Zotero.getString('login-manager-reset')
+			);
+		}
+		// Fallback to old username/password
+		return this._getAPIKeyFromLogin();
 	},
 	
 	
@@ -58,8 +123,7 @@ Zotero.Sync.Data.Local = {
 	 * Check for an API key or a legacy username/password (which may or may not be valid)
 	 */
 	hasCredentials: function () {
-		var login = this._getAPIKeyLoginInfo();
-		if (login) {
+		if (this._getAPIKeyLoginInfo() || this._getLegacyAPIKeyLoginInfo()) {
 			return true;
 		}
 		// If no API key, check for legacy login
@@ -70,6 +134,7 @@ Zotero.Sync.Data.Local = {
 	
 	setAPIKey: async function (apiKey) {
 		var oldLoginInfo = this._getAPIKeyLoginInfo();
+		var legacyLoginInfo = this._getLegacyAPIKeyLoginInfo();
 		
 		// Clear old login
 		if ((!apiKey || apiKey === "")) {
@@ -77,10 +142,65 @@ Zotero.Sync.Data.Local = {
 				Zotero.debug("Clearing old API key");
 				Services.logins.removeLogin(oldLoginInfo);
 			}
+			if (legacyLoginInfo) {
+				Services.logins.removeLogin(legacyLoginInfo);
+			}
 			Zotero.Notifier.trigger('delete', 'api-key', []);
 			return;
 		}
 		
+		await this._saveAPIKey(apiKey);
+		// Drop any leftover plaintext entry from the legacy realm
+		if (legacyLoginInfo) {
+			Services.logins.removeLogin(legacyLoginInfo);
+		}
+		Zotero.Notifier.trigger('modify', 'api-key', []);
+	},
+	
+	
+	/**
+	 * Store the API key, retrying after a login manager repair and, if the keystore still
+	 * can't be used, offering to store the key without it
+	 */
+	_saveAPIKey: async function (apiKey) {
+		var error;
+		try {
+			await this._writeEncryptedAPIKey(apiKey);
+			return;
+		}
+		catch (e) {
+			Zotero.logError(e);
+			error = e;
+		}
+		// If the write failed because the key database was unusable, reset the login manager
+		// and retry, so that logging in works without a manual fix
+		if (this.repairLoginManager()) {
+			try {
+				await this._writeEncryptedAPIKey(apiKey);
+				return;
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+		}
+		// An automatic sync can reach this via the legacy credential upgrade in
+		// _getAPIKeyFromLogin(), so don't interrupt one with a dialog
+		if (Zotero.Sync.Runner.backgroundSync || !Zotero.OSKeyStore.confirmUnencryptedFallback()) {
+			throw error;
+		}
+		await this._writeAPIKey(apiKey);
+		// The keystore is unusable, so don't try to encrypt again on the next read
+		this._reencryptedAPIKey = true;
+	},
+	
+	
+	_writeEncryptedAPIKey: async function (apiKey) {
+		await this._writeAPIKey(await Zotero.OSKeyStore.encrypt(apiKey));
+	},
+	
+	
+	_writeAPIKey: async function (storedValue) {
+		var oldLoginInfo = this._getAPIKeyLoginInfo();
 		var nsLoginInfo = new Components.Constructor("@mozilla.org/login-manager/loginInfo;1",
 				Components.interfaces.nsILoginInfo, "init");
 		var loginInfo = new nsLoginInfo(
@@ -88,7 +208,7 @@ Zotero.Sync.Data.Local = {
 			null,
 			this._loginManagerRealm,
 			'API Key',
-			apiKey,
+			storedValue,
 			'',
 			''
 		);
@@ -100,7 +220,6 @@ Zotero.Sync.Data.Local = {
 			Zotero.debug("Replacing API key");
 			Services.logins.modifyLogin(oldLoginInfo, loginInfo);
 		}
-		Zotero.Notifier.trigger('modify', 'api-key', []);
 	},
 	
 	
@@ -113,9 +232,10 @@ Zotero.Sync.Data.Local = {
 	 * @param {Integer} userID - New userID
 	 * @param {String} username - New username
 	 * @param {String} [name] - New display name
+	 * @param {String[]} [emails] - Email addresses
 	 * @return {Boolean} - True to continue, false to cancel
 	 */
-	checkUser: async function (win, userID, username, name) {
+	checkUser: async function (win, userID, username, name, emails) {
 		var lastUserID = Zotero.Users.getCurrentUserID();
 		var lastUsername = Zotero.Users.getCurrentUsername();
 		var lastName = Zotero.Users.getCurrentName();
@@ -180,6 +300,9 @@ Zotero.Sync.Data.Local = {
 			if (lastName != newName) {
 				await Zotero.Users.setCurrentName(newName);
 			}
+			if (emails) {
+				await Zotero.Users.setCurrentEmails(emails);
+			}
 		});
 		
 		return true;
@@ -236,7 +359,12 @@ Zotero.Sync.Data.Local = {
 		if (Object.keys(settings).length) {
 			return true;
 		}
-		
+
+		let deletedSettings = await this.getDeleted('setting', libraryID);
+		if (deletedSettings.length) {
+			return true;
+		}
+
 		for (let objectType of Zotero.DataObjectUtilities.getTypesForLibrary(libraryID)) {
 			let ids = await Zotero.Sync.Data.Local.getUnsynced(objectType, libraryID);
 			if (ids.length) {
@@ -266,7 +394,10 @@ Zotero.Sync.Data.Local = {
 		for (let key of Object.keys(settings)) {
 			await Zotero.SyncedSettings.clear(libraryID, key, { skipDeleteLog: true });
 		}
-		
+
+		let deletedSettingKeys = await this.getDeleted('setting', libraryID);
+		await this.removeObjectsFromDeleteLog('setting', libraryID, deletedSettingKeys);
+
 		for (let objectType of Zotero.DataObjectUtilities.getTypesForLibrary(libraryID)) {
 			// New/modified objects
 			let ids = await this.getUnsynced(objectType, libraryID);
@@ -277,7 +408,7 @@ Zotero.Sync.Data.Local = {
 		var library = Zotero.Libraries.get(libraryID);
 		library.libraryVersion = -1;
 		await library.saveTx();
-		
+
 		await this.resetUnsyncedLibraryFiles(libraryID);
 	},
 	
@@ -337,8 +468,9 @@ Zotero.Sync.Data.Local = {
 					skipDeleteLog: true
 				}
 			);
+			this.markRemoteChangesApplied();
 		}
-		
+
 		// Deleted objects
 		keys = await Zotero.Sync.Data.Local.getDeleted(objectType, libraryID);
 		await this.removeObjectsFromDeleteLog(objectType, libraryID, keys);
@@ -390,6 +522,40 @@ Zotero.Sync.Data.Local = {
 	
 	
 	/**
+	 * Reset the login manager if the NSS key database is unusable
+	 *
+	 * Zotero never sets a primary password, so if one is set on the key database, it was either
+	 * corrupted or copied in from a Firefox profile, and stored logins can never be decrypted,
+	 * since there's no primary-password prompt. Clear stored logins and reset the key database
+	 * so that credentials can be saved again.
+	 *
+	 * @return {Boolean} - True if the login manager was reset
+	 */
+	repairLoginManager: function () {
+		try {
+			let token = Cc["@mozilla.org/security/pk11tokendb;1"]
+				.getService(Ci.nsIPK11TokenDB)
+				.getInternalKeyToken();
+			if (!token.hasPassword) {
+				return false;
+			}
+			Zotero.debug("Primary password set on NSS key database -- resetting login manager", 1);
+			Services.logins.removeAllLogins();
+			token.reset();
+			if (token.needsUserInit) {
+				token.initPassword("");
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+			return false;
+		}
+		this._loginManagerRepaired = true;
+		return true;
+	},
+
+
+	/**
 	 * @return {nsILoginInfo|false}
 	 */
 	_getAPIKeyLoginInfo: function () {
@@ -402,7 +568,13 @@ Zotero.Sync.Data.Local = {
 		}
 		catch (e) {
 			Zotero.logError(e);
-			if (this._lastLoginManagerErrorTime > Date.now() - 60000) {
+			// If the key database was unusable, reset the login manager so that credentials
+			// can be saved again
+			if (this.repairLoginManager()) {
+				return false;
+			}
+			if (!this._lastLoginManagerErrorTime
+					|| this._lastLoginManagerErrorTime < Date.now() - 60000) {
 				let msg = Zotero.getString('sync.error.loginManagerCorrupted1', Zotero.appName) + "\n\n"
 					+ Zotero.getString('sync.error.loginManagerCorrupted2', Zotero.appName);
 				Zotero.alert(null, Zotero.getString('general.error'), msg);
@@ -412,6 +584,25 @@ Zotero.Sync.Data.Local = {
 		}
 		
 		// Get API from returned array of nsILoginInfo objects
+		return logins.length ? logins[0] : false;
+	},
+	
+	
+	/**
+	 * @return {nsILoginInfo|false}
+	 */
+	_getLegacyAPIKeyLoginInfo: function () {
+		try {
+			var logins = Services.logins.findLogins(
+				this._loginManagerHost,
+				null,
+				this._loginManagerRealmLegacy
+			);
+		}
+		catch (e) {
+			Zotero.logError(e);
+			return false;
+		}
 		return logins.length ? logins[0] : false;
 	},
 	
@@ -1207,6 +1398,12 @@ Zotero.Sync.Data.Local = {
 	 * for download if not (or if this is a new attachment)
 	 */
 	_checkAttachmentForDownload: async function (item, mtime, isNewObject) {
+		// If there's no mtime in the item data from the server, there's no
+		// file on the server -- nothing to download
+		if (!mtime) {
+			return;
+		}
+
 		var markToDownload = true;
 		var fileExists = false;
 		if (!isNewObject) {
@@ -1370,6 +1567,7 @@ Zotero.Sync.Data.Local = {
 									await obj.erase({
 										notifierQueue
 									});
+									Zotero.Sync.Data.Local.markRemoteChangesApplied();
 								}
 								catch (e) {
 									results.push({
@@ -1543,6 +1741,7 @@ Zotero.Sync.Data.Local = {
 				obj.synced = true;
 			}
 			await obj.save(saveOptions);
+			this.markRemoteChangesApplied();
 			let cacheJSON = options.cacheObject ? options.cacheObject : json.data;
 			await this.saveCacheObject(obj.objectType, obj.libraryID, cacheJSON);
 			// Delete older versions of the object in the cache
@@ -1721,7 +1920,20 @@ Zotero.Sync.Data.Local = {
 						|| isAutoMergeType) {
 					continue;
 				}
-				
+
+				// Auto-resolve lastRead by keeping the most recent value
+				if (c1.field == 'lastRead') {
+					if ((c1.value || 0) > (c2.value || 0)) {
+						// Local is more recent -- drop remote change
+						changeset2.splice(j--, 1);
+					}
+					else {
+						// Remote is more recent -- apply it
+						matchedLocalChanges.add(i);
+					}
+					continue;
+				}
+
 				// Conflict
 				matchedLocalChanges.add(i);
 				changeset2.splice(j--, 1);
@@ -1761,6 +1973,7 @@ Zotero.Sync.Data.Local = {
 		
 		var changes = [];
 		var conflicts = [];
+		var localChanged = false;
 		
 		for (let i = 0; i < changeset.length; i++) {
 			let c2 = changeset[i];
@@ -1780,6 +1993,19 @@ Zotero.Sync.Data.Local = {
 			if ((objectType == 'item' && currentJSON.deleted && newJSON.deleted)
 						|| objectType != 'item') {
 				changes.push(c2);
+				continue;
+			}
+			
+			// Auto-resolve lastRead by keeping the most recent value
+			if (c2.field == 'lastRead') {
+				if ((currentJSON.lastRead || 0) > (c2.value || 0)) {
+					// Local is more recent -- keep it and upload
+					localChanged = true;
+				}
+				else {
+					// Remote is more recent -- apply it
+					changes.push(c2);
+				}
 				continue;
 			}
 			
@@ -1803,7 +2029,6 @@ Zotero.Sync.Data.Local = {
 			conflicts.push([c1, c2]);
 		}
 		
-		var localChanged = false;
 		var normalizeHTML = (str) => {
 			let parser = new DOMParser();
 			str = parser.parseFromString(str, 'text/html');
