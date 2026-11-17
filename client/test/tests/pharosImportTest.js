@@ -1,28 +1,43 @@
 describe("Pharos link import", function () {
+	// Own sandbox: a global sinon.restore() would also undo stubs other suites
+	// set up for themselves.
 	var win, doc, rail, translate;
+	var sandbox = sinon.createSandbox();
 
-	before(async function () {
-		win = await loadZoteroPane();
-		doc = win.document;
-		rail = doc.getElementById('pharos-rail');
-	});
-
-	beforeEach(async function () {
-		await selectLibrary(win);
-		rail.module = 'library';
-		rail._importInput.value = '';
+	beforeEach(function () {
 		// The one seam to the network and the item saver. Nothing in this file
 		// reaches arXiv.
-		translate = sinon.stub(Zotero.Pharos.Import, 'translateIdentifier');
+		translate = sandbox.stub(Zotero.Pharos.Import, 'translateIdentifier');
 	});
 
 	afterEach(function () {
-		sinon.restore();
+		sandbox.restore();
 	});
 
-	after(function () {
-		win.close();
-	});
+	// Only the groups that need the main window open one. Creating items
+	// while a window is open that is closed at the end of the file left a
+	// later suite's note save hanging for 10s (pharosStrings), so everything
+	// that can run without a window does.
+	function windowHooks() {
+		before(async function () {
+			win = await loadZoteroPane();
+			doc = win.document;
+			rail = doc.getElementById('pharos-rail');
+		});
+
+		beforeEach(async function () {
+			await selectLibrary(win);
+			rail.module = 'library';
+			rail._importInput.value = '';
+		});
+
+		after(async function () {
+			rail.module = 'library';
+			win.ZoteroPane.itemsView.selection.clearSelection();
+			await Zotero.Promise.delay(500);
+			win.close();
+		});
+	}
 
 	// A stand-in for what the arXiv translator saves.
 	async function fakeSaved(id, props = {}) {
@@ -150,29 +165,29 @@ describe("Pharos link import", function () {
 			assert.isFalse(args.collections);
 		});
 
-		it("should import into the selected collection", async function () {
-			var collection = await createDataObject('collection');
-			await win.ZoteroPane.collectionsView.selectCollection(collection.id);
-			translate.resolves([await createDataObject('item')]);
-			await Zotero.Pharos.Import.importIdentifiers([{ arXiv: '2606.00002' }]);
-			assert.deepEqual(translate.firstCall.args[1].collections, [collection.id]);
-		});
+		// The library's own flags are what is read, so a stand-in library is
+		// enough; a real group would also have to be created and cleaned up.
+		function stubLibrary(flags) {
+			var libraries = sandbox.stub(Zotero.Libraries, 'get');
+			libraries.withArgs(424242).returns(flags);
+			libraries.callThrough();
+		}
 
 		it("should refuse a read-only library", async function () {
-			var group = await createGroup({ editable: false });
+			stubLibrary({ editable: false, filesEditable: true });
 			var result = await Zotero.Pharos.Import.importIdentifiers(
 				[{ arXiv: '2606.00003' }],
-				{ libraryID: group.libraryID, collections: false }
+				{ libraryID: 424242, collections: false }
 			);
 			assert.deepEqual(result.failed.map(f => f.reason), ['read-only']);
 			assert.isFalse(translate.called);
 		});
 
-		it("should refuse a group whose files cannot be edited", async function () {
-			var group = await createGroup({ editable: true, filesEditable: false });
+		it("should refuse a library whose files cannot be edited", async function () {
+			stubLibrary({ editable: true, filesEditable: false });
 			var result = await Zotero.Pharos.Import.importIdentifiers(
 				[{ arXiv: '2606.00004' }],
-				{ libraryID: group.libraryID, collections: false }
+				{ libraryID: 424242, collections: false }
 			);
 			assert.deepEqual(result.failed.map(f => f.reason), ['read-only']);
 		});
@@ -233,113 +248,140 @@ describe("Pharos link import", function () {
 		});
 	});
 
-	describe("rail paste box", function () {
-		it("should import on Enter", async function () {
-			var stub = sinon.stub(Zotero.Pharos.Import, 'importFromText').resolves(
-				{ imported: [], existing: [], failed: [{ identifier: null, reason: 'unrecognized' }] }
-			);
-			rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
-			rail._importInput.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-			await new Promise(r => setTimeout(r, 0));
-			await Zotero.Promise.delay(10);
-			assert.equal(stub.firstCall.args[0], 'https://arxiv.org/abs/1706.03762');
-		});
+	describe("with the main window", function () {
+		windowHooks();
 
-		it("should keep the text and say why when it fails", async function () {
-			sinon.stub(Zotero.Pharos.Import, 'importFromText').resolves(
-				{ imported: [], existing: [], failed: [{ identifier: { arXiv: 'x' }, reason: 'network' }] }
-			);
-			rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
-			await rail.importText(rail._importInput.value);
-			assert.equal(rail._importInput.value, 'https://arxiv.org/abs/1706.03762');
-			assert.equal(rail._importStatus.dataset.kind, 'error');
-			assert.isFalse(rail._importStatus.hidden);
-			assert.isFalse(rail._importInput.disabled);
-		});
-
-		it("should disable the field and show the beam while working", async function () {
-			var release;
-			sinon.stub(Zotero.Pharos.Import, 'importFromText').returns(
-				new Promise(resolve => release = resolve)
-			);
-			var pending = rail.importText('https://arxiv.org/abs/1706.03762');
-			assert.isTrue(rail._importInput.disabled);
-			assert.isTrue(rail._importBox.classList.contains('is-busy'));
-			release({ imported: [], existing: [], failed: [{ identifier: null, reason: 'other' }] });
-			await pending;
-			assert.isFalse(rail._importInput.disabled);
-			assert.isFalse(rail._importBox.classList.contains('is-busy'));
-		});
-
-		it("should select an already-imported item and clear the field", async function () {
-			var item = await fakeSaved('1706.03766');
-			rail._importInput.value = 'https://arxiv.org/abs/1706.03766';
-			await rail.importText('https://arxiv.org/abs/1706.03766');
-			assert.isFalse(translate.called);
-			assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
-			assert.equal(rail._importInput.value, '');
-			assert.equal(rail._importStatus.dataset.kind, 'ok');
-		});
-
-		it("should switch back to the library from another module", async function () {
-			var item = await fakeSaved('1706.03767');
-			rail.module = 'daily';
-			await rail.importText('arXiv:1706.03767');
-			assert.equal(rail.module, 'library');
-			assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
-		});
-	});
-
-	describe("Cmd/Ctrl+V on the item list", function () {
-		var importText;
-
-		function press(target) {
-			var event = new win.KeyboardEvent('keydown', {
-				key: 'v',
-				metaKey: Zotero.isMac,
-				ctrlKey: !Zotero.isMac,
-				bubbles: true,
-				cancelable: true,
+		describe("selected collection", function () {
+			it("should import into the selected collection", async function () {
+				var collection = await createDataObject('collection');
+				await win.ZoteroPane.collectionsView.selectCollection(collection.id);
+				translate.resolves([await createDataObject('item')]);
+				await Zotero.Pharos.Import.importIdentifiers([{ arXiv: '2606.00002' }]);
+				assert.deepEqual(translate.firstCall.args[1].collections, [collection.id]);
 			});
-			target.dispatchEvent(event);
-			return event;
-		}
 
-		beforeEach(function () {
-			importText = sinon.stub(rail, 'importText').resolves(null);
-			win.ZoteroPane.itemsView.focus();
+			// The library's own flags are what is read, so a stand-in library is
+			// enough; a real group would also have to be created and cleaned up.
+			function stubLibrary(flags) {
+				var libraries = sandbox.stub(Zotero.Libraries, 'get');
+				libraries.withArgs(424242).returns(flags);
+				libraries.callThrough();
+			}
+
 		});
 
-		it("should import a recognisable clipboard", function () {
-			sinon.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
-			var event = press(doc.activeElement);
-			assert.isTrue(event.defaultPrevented);
-			assert.isTrue(importText.calledOnce);
+		describe("rail paste box", function () {
+			it("should import on Enter", async function () {
+				var stub = sandbox.stub(Zotero.Pharos.Import, 'importFromText').resolves(
+					{ imported: [], existing: [], failed: [{ identifier: null, reason: 'unrecognized' }] }
+				);
+				rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
+				rail._importInput.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+				await new Promise(r => setTimeout(r, 0));
+				await Zotero.Promise.delay(10);
+				assert.equal(stub.firstCall.args[0], 'https://arxiv.org/abs/1706.03762');
+			});
+
+			it("should keep the text and say why when it fails", async function () {
+				sandbox.stub(Zotero.Pharos.Import, 'importFromText').resolves(
+					{ imported: [], existing: [], failed: [{ identifier: { arXiv: 'x' }, reason: 'network' }] }
+				);
+				rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
+				await rail.importText(rail._importInput.value);
+				assert.equal(rail._importInput.value, 'https://arxiv.org/abs/1706.03762');
+				assert.equal(rail._importStatus.dataset.kind, 'error');
+				assert.isFalse(rail._importStatus.hidden);
+				assert.isFalse(rail._importInput.disabled);
+			});
+
+			it("should disable the field and show the beam while working", async function () {
+				var release;
+				sandbox.stub(Zotero.Pharos.Import, 'importFromText').returns(
+					new Promise(resolve => release = resolve)
+				);
+				var pending = rail.importText('https://arxiv.org/abs/1706.03762');
+				assert.isTrue(rail._importInput.disabled);
+				assert.isTrue(rail._importBox.classList.contains('is-busy'));
+				release({ imported: [], existing: [], failed: [{ identifier: null, reason: 'other' }] });
+				await pending;
+				assert.isFalse(rail._importInput.disabled);
+				assert.isFalse(rail._importBox.classList.contains('is-busy'));
+			});
+
+			it("should select an already-imported item and clear the field", async function () {
+				var item = await fakeSaved('1706.03766');
+				rail._importInput.value = 'https://arxiv.org/abs/1706.03766';
+				await rail.importText('https://arxiv.org/abs/1706.03766');
+				assert.isFalse(translate.called);
+				assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
+				assert.equal(rail._importInput.value, '');
+				assert.equal(rail._importStatus.dataset.kind, 'ok');
+			});
+
+			it("should switch back to the library from another module", async function () {
+				var item = await fakeSaved('1706.03767');
+				// Showing Daily Papers would load its document and fire its backend
+				// requests, which outlive this window; only the switch matters here.
+				sandbox.stub(rail, '_ensureLoaded');
+				rail.module = 'daily';
+				await rail.importText('arXiv:1706.03767');
+				assert.equal(rail.module, 'library');
+				assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
+			});
 		});
 
-		it("should leave any other clipboard alone", function () {
-			sinon.stub(Zotero.Utilities.Internal, 'getClipboard').returns('some copied sentence');
-			var event = press(doc.activeElement);
-			assert.isFalse(event.defaultPrevented);
-			assert.isFalse(importText.called);
+		describe("Cmd/Ctrl+V on the item list", function () {
+			var importText;
+
+			function press(target) {
+				var event = new win.KeyboardEvent('keydown', {
+					key: 'v',
+					metaKey: Zotero.isMac,
+					ctrlKey: !Zotero.isMac,
+					bubbles: true,
+					cancelable: true,
+				});
+				target.dispatchEvent(event);
+				return event;
+			}
+
+			beforeEach(function () {
+				importText = sandbox.stub(rail, 'importText').resolves(null);
+				win.ZoteroPane.itemsView.focus();
+			});
+
+			it("should import a recognisable clipboard", function () {
+				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
+				var event = press(doc.activeElement);
+				assert.isTrue(event.defaultPrevented);
+				assert.isTrue(importText.calledOnce);
+			});
+
+			it("should leave any other clipboard alone", function () {
+				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('some copied sentence');
+				var event = press(doc.activeElement);
+				assert.isFalse(event.defaultPrevented);
+				assert.isFalse(importText.called);
+			});
+
+			it("should leave an empty clipboard alone", function () {
+				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns(null);
+				var event = press(doc.activeElement);
+				assert.isFalse(event.defaultPrevented);
+			});
+
+			it("should do nothing while a text field has focus", function () {
+				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
+				// A field inside the item list's own container, e.g. an inline editor.
+				var field = doc.createElement('input');
+				doc.getElementById('zotero-items-tree').appendChild(field);
+				var event = press(field);
+				field.remove();
+				assert.isFalse(event.defaultPrevented);
+				assert.isFalse(importText.called);
+			});
 		});
 
-		it("should leave an empty clipboard alone", function () {
-			sinon.stub(Zotero.Utilities.Internal, 'getClipboard').returns(null);
-			var event = press(doc.activeElement);
-			assert.isFalse(event.defaultPrevented);
-		});
-
-		it("should do nothing while a text field has focus", function () {
-			sinon.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
-			// A field inside the item list's own container, e.g. an inline editor.
-			var field = doc.createElement('input');
-			doc.getElementById('zotero-items-tree').appendChild(field);
-			var event = press(field);
-			field.remove();
-			assert.isFalse(event.defaultPrevented);
-			assert.isFalse(importText.called);
-		});
 	});
 
 	describe("save from Daily Papers and Find Literature", function () {
@@ -349,7 +391,6 @@ describe("Pharos link import", function () {
 			title: 'Pharos Title',
 			authors: ['Ada Lovelace'],
 			arxiv_url: 'https://arxiv.org/abs/1706.03770',
-			pdf_url: 'https://arxiv.org/pdf/1706.03770',
 			read_status: 'done',
 			summary_zh: 'A Chinese summary.',
 		};
