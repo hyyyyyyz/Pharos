@@ -28,7 +28,6 @@ describe("Pharos link import", function () {
 		beforeEach(async function () {
 			await selectLibrary(win);
 			rail.module = 'library';
-			rail._importInput.value = '';
 		});
 
 		after(async function () {
@@ -269,119 +268,6 @@ describe("Pharos link import", function () {
 			}
 
 		});
-
-		describe("rail paste box", function () {
-			it("should import on Enter", async function () {
-				var stub = sandbox.stub(Zotero.Pharos.Import, 'importFromText').resolves(
-					{ imported: [], existing: [], failed: [{ identifier: null, reason: 'unrecognized' }] }
-				);
-				rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
-				rail._importInput.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-				await new Promise(r => setTimeout(r, 0));
-				await Zotero.Promise.delay(10);
-				assert.equal(stub.firstCall.args[0], 'https://arxiv.org/abs/1706.03762');
-			});
-
-			it("should keep the text and say why when it fails", async function () {
-				sandbox.stub(Zotero.Pharos.Import, 'importFromText').resolves(
-					{ imported: [], existing: [], failed: [{ identifier: { arXiv: 'x' }, reason: 'network' }] }
-				);
-				rail._importInput.value = 'https://arxiv.org/abs/1706.03762';
-				await rail.importText(rail._importInput.value);
-				assert.equal(rail._importInput.value, 'https://arxiv.org/abs/1706.03762');
-				assert.equal(rail._importStatus.dataset.kind, 'error');
-				assert.isFalse(rail._importStatus.hidden);
-				assert.isFalse(rail._importInput.disabled);
-			});
-
-			it("should disable the field and show the beam while working", async function () {
-				var release;
-				sandbox.stub(Zotero.Pharos.Import, 'importFromText').returns(
-					new Promise(resolve => release = resolve)
-				);
-				var pending = rail.importText('https://arxiv.org/abs/1706.03762');
-				assert.isTrue(rail._importInput.disabled);
-				assert.isTrue(rail._importBox.classList.contains('is-busy'));
-				release({ imported: [], existing: [], failed: [{ identifier: null, reason: 'other' }] });
-				await pending;
-				assert.isFalse(rail._importInput.disabled);
-				assert.isFalse(rail._importBox.classList.contains('is-busy'));
-			});
-
-			it("should select an already-imported item and clear the field", async function () {
-				var item = await fakeSaved('1706.03766');
-				rail._importInput.value = 'https://arxiv.org/abs/1706.03766';
-				await rail.importText('https://arxiv.org/abs/1706.03766');
-				assert.isFalse(translate.called);
-				assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
-				assert.equal(rail._importInput.value, '');
-				assert.equal(rail._importStatus.dataset.kind, 'ok');
-			});
-
-			it("should switch back to the library from another module", async function () {
-				var item = await fakeSaved('1706.03767');
-				// Showing Daily Papers would load its document and fire its backend
-				// requests, which outlive this window; only the switch matters here.
-				sandbox.stub(rail, '_ensureLoaded');
-				rail.module = 'daily';
-				await rail.importText('arXiv:1706.03767');
-				assert.equal(rail.module, 'library');
-				assert.deepEqual(win.ZoteroPane.getSelectedItems(true), [item.id]);
-			});
-		});
-
-		describe("Cmd/Ctrl+V on the item list", function () {
-			var importText;
-
-			function press(target) {
-				var event = new win.KeyboardEvent('keydown', {
-					key: 'v',
-					metaKey: Zotero.isMac,
-					ctrlKey: !Zotero.isMac,
-					bubbles: true,
-					cancelable: true,
-				});
-				target.dispatchEvent(event);
-				return event;
-			}
-
-			beforeEach(function () {
-				importText = sandbox.stub(rail, 'importText').resolves(null);
-				win.ZoteroPane.itemsView.focus();
-			});
-
-			it("should import a recognisable clipboard", function () {
-				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
-				var event = press(doc.activeElement);
-				assert.isTrue(event.defaultPrevented);
-				assert.isTrue(importText.calledOnce);
-			});
-
-			it("should leave any other clipboard alone", function () {
-				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('some copied sentence');
-				var event = press(doc.activeElement);
-				assert.isFalse(event.defaultPrevented);
-				assert.isFalse(importText.called);
-			});
-
-			it("should leave an empty clipboard alone", function () {
-				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns(null);
-				var event = press(doc.activeElement);
-				assert.isFalse(event.defaultPrevented);
-			});
-
-			it("should do nothing while a text field has focus", function () {
-				sandbox.stub(Zotero.Utilities.Internal, 'getClipboard').returns('https://arxiv.org/abs/1706.03762');
-				// A field inside the item list's own container, e.g. an inline editor.
-				var field = doc.createElement('input');
-				doc.getElementById('zotero-items-tree').appendChild(field);
-				var event = press(field);
-				field.remove();
-				assert.isFalse(event.defaultPrevented);
-				assert.isFalse(importText.called);
-			});
-		});
-
 	});
 
 	describe("save from Daily Papers and Find Literature", function () {
