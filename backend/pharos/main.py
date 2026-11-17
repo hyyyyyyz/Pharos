@@ -40,7 +40,7 @@ from pharos.daily.service import DailySweeper
 from pharos.db.session import init_engine
 from pharos.engines.babeldoc_engine import BabelDocEngine
 from pharos.services.library import LibraryService
-from pharos.services.translation import JobManager
+from pharos.services.translation import JobManager, fail_interrupted_jobs
 from pharos.storage.blobs import BlobStore
 from pharos.web import mount_web_app
 
@@ -70,6 +70,10 @@ def create_app() -> FastAPI:
         app.state.engine = engine
         app.state.library = library
         app.state.job_manager = JobManager(engine, blobs, settings.max_concurrent_jobs)
+        # Jobs only run inside this process, so any row still queued/running now
+        # was orphaned by the previous one. Fail them with a readable reason
+        # rather than leaving the UI polling a job that will never move.
+        fail_interrupted_jobs()
 
         # The Research Harness kernel: definitions, config head, dispatcher and
         # runner. Its default snapshot keeps every gate off, so a plain

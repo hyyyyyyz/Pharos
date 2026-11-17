@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pharos.db.models import Paper, TranslationJob
@@ -52,6 +53,36 @@ def create_job(
     session.add(job)
     session.flush()
     return job
+
+
+RESTART_ERROR = (
+    "The server restarted while this translation was waiting or running, so it "
+    "was stopped. Start the translation again."
+)
+
+
+def fail_interrupted_jobs() -> int:
+    """Mark every ``queued``/``running`` job as failed; returns how many.
+
+    Jobs run as tasks of this process, so when the process starts no job can
+    legitimately be in flight: any row still saying queued/running was orphaned
+    by a restart or crash and would otherwise sit there forever (and, because a
+    paper allows only one active job, block any further translation of it).
+    Call this once at startup, before the first request is served.
+    """
+    with session_scope() as s:
+        jobs = s.scalars(
+            select(TranslationJob).where(TranslationJob.status.in_(("queued", "running")))
+        ).all()
+        for job in jobs:
+            job.status = "error"
+            job.stage = "error"
+            job.error = RESTART_ERROR
+            job.finished_at = _now()
+        n = len(jobs)
+    if n:
+        log.warning("marked %d interrupted translation job(s) as failed", n)
+    return n
 
 
 class JobManager:
