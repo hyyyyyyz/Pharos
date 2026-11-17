@@ -67,6 +67,8 @@
 				</html:div>
 				<html:button class="pharos-rail-import-btn"
 					data-l10n-id="pharos-import-button-tooltip"/>
+				<!-- Before the account button, which must stay the last element. -->
+				<panel class="pharos-rail-import-panel" noautofocus="true"/>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
 				<html:div class="pharos-rail-spacer"/>
 				<html:div class="pharos-rail-update" hidden="true">
@@ -93,7 +95,6 @@
 					</html:span>
 					<html:span class="pharos-rail-acct-gear"/>
 				</html:button>
-				<panel class="pharos-rail-import-panel" noautofocus="true"/>
 			</html:div>
 		`);
 
