@@ -454,12 +454,21 @@ class LibraryService:
         waste, and the strictly better half of the trade.
         """
         sha256 = paper.orig_sha256
+        # This user's translation outputs live under per-job directories inside a
+        # blob dir that another user's paper may still be using, so they are
+        # removed explicitly rather than relying on the whole-directory rmtree.
+        job_ids = [j.id for j in paper.jobs]
         shared = session.scalar(
             select(Paper.id).where(Paper.orig_sha256 == sha256, Paper.id != paper.id).limit(1)
         )
         session.delete(paper)  # jobs follow via the relationship cascade
         session.flush()
         if shared is not None:
+            @event.listens_for(session, "after_commit", once=True)
+            def _drop_jobs(_session: Session) -> None:
+                for job_id in job_ids:
+                    self.blobs.remove_job(sha256, job_id)
+
             return
 
         # No SQL in this handler: SQLAlchemy considers the session's transaction

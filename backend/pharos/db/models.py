@@ -327,6 +327,12 @@ class TranslationJob(Base):
     engine: Mapped[str] = mapped_column(String(32), default="babeldoc")
     translator_type: Mapped[str] = mapped_column(String(32), default="bing")
     target_lang: Mapped[str] = mapped_column(String(8), default="zh")
+    #: The page range requested (``"1-3,5"``), or NULL for the whole document.
+    #: A partial result must never be served in place of a full translation, so
+    #: the PDF endpoint needs to tell the two apart. Rows from before this column
+    #: existed are NULL, i.e. treated as whole-document, which is what they were
+    #: whenever the caller did not pass ``pages``.
+    pages: Mapped[str | None] = mapped_column(String(128), default=None)
 
     progress: Mapped[float] = mapped_column(Float, default=0.0)  # 0-100
     stage: Mapped[str] = mapped_column(String(32), default="queued")

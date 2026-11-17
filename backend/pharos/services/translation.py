@@ -34,9 +34,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_job(session: Session, paper: Paper, translator_type: str, target_lang: str = "zh") -> TranslationJob:
+def create_job(
+    session: Session,
+    paper: Paper,
+    translator_type: str,
+    target_lang: str = "zh",
+    pages: str | None = None,
+) -> TranslationJob:
     job = TranslationJob(
         paper_id=paper.id,
+        pages=pages,
         translator_type=translator_type,
         target_lang=target_lang,
         status="queued",
@@ -93,7 +100,7 @@ class JobManager:
 
             request = TranslationRequest(
                 source_pdf=source_pdf,
-                output_dir=self._blobs.work_dir(sha256),
+                output_dir=self._blobs.work_dir(sha256, job_id),
                 target_lang=target_lang,
                 pages=pages,
             )
@@ -150,10 +157,10 @@ class JobManager:
     def _adopt_and_finish(self, job_id: str, sha256: str, result: TranslationResult) -> tuple[bool, bool]:
         mono = dual = False
         if result.mono_pdf:
-            self._blobs.adopt_output(sha256, "mono", result.mono_pdf)
+            self._blobs.adopt_output(sha256, job_id, "mono", result.mono_pdf)
             mono = True
         if result.dual_pdf:
-            self._blobs.adopt_output(sha256, "dual", result.dual_pdf)
+            self._blobs.adopt_output(sha256, job_id, "dual", result.dual_pdf)
             dual = True
         with session_scope() as s:
             job = s.get(TranslationJob, job_id)
@@ -161,8 +168,8 @@ class JobManager:
                 job.status = "done"
                 job.stage = "done"
                 job.progress = 100.0
-                job.mono_path = str(self._blobs.path(sha256, "mono")) if mono else None
-                job.dual_path = str(self._blobs.path(sha256, "dual")) if dual else None
+                job.mono_path = str(self._blobs.job_path(sha256, job_id, "mono")) if mono else None
+                job.dual_path = str(self._blobs.job_path(sha256, job_id, "dual")) if dual else None
                 job.total_seconds = result.total_seconds
                 job.tokens = result.tokens
                 job.finished_at = _now()

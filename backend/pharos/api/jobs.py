@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -21,14 +22,36 @@ router = APIRouter(prefix="/api", tags=["jobs"])
 _HEARTBEAT_SECONDS = 15
 
 
+class _Conflict(Exception):
+    """An active job for this paper asks for different pages."""
+
+
+#: Serialises the "is one already running?" check with the insert. The backend is
+#: a single process (README), so a process lock is sufficient; without it two
+#: simultaneous POSTs both see no active job and both queue one.
+_START_LOCK = threading.Lock()
+
+_ACTIVE = ("queued", "running")
+
+
+def _norm_pages(pages: str | None) -> str | None:
+    if pages is None:
+        return None
+    pages = pages.strip()
+    return pages or None
+
+
 def _start_job_row(
-    paper_id: str, user_id: str, translator_type: str, target_lang: str
-) -> tuple[str, str, str] | None:
+    paper_id: str, user_id: str, translator_type: str, target_lang: str, pages: str | None = None
+) -> tuple[str, str, bool] | None:
     """Create a queued job for one of ``user_id``'s papers.
 
-    Returns ``(job_id, sha256, source_lang)``, or ``None`` when the paper is
-    absent, trashed, or somebody else's — three cases the caller deliberately
-    collapses into one 404.
+    Returns ``(job_id, sha256, created)``, or ``None`` when the paper is absent,
+    trashed, or somebody else's — three cases the caller deliberately collapses
+    into one 404. ``created`` is False when an identical job is already queued or
+    running and was returned instead of a new one (the caller must not submit it
+    to the engine a second time). Raises :class:`_Conflict` if the active job
+    asks for different pages, and ``ValueError`` if the paper has no stored PDF.
 
     A trashed paper is treated as absent. Beyond not spending an engine slot on
     something the user deleted, this closes a real race: a purge running
@@ -39,13 +62,30 @@ def _start_job_row(
     so translating a paper you do not own is not a thing this function can be
     talked into doing — it simply finds no row.
     """
-    with session_scope() as s:
+    pages = _norm_pages(pages)
+    with _START_LOCK, session_scope() as s:
         paper = s.scalar(select(Paper).where(Paper.id == paper_id, Paper.user_id == user_id))
         if paper is None or paper.deleted_at is not None:
             return None
-        job = create_job(s, paper, translator_type=translator_type, target_lang=target_lang)
+        if not paper.orig_sha256:
+            # A Zotero-synced record carries metadata only (orig_sha256 == "").
+            # Without this guard the blob path collapses onto the store root.
+            raise ValueError("no stored PDF")
+        active = s.scalar(
+            select(TranslationJob)
+            .where(TranslationJob.paper_id == paper.id, TranslationJob.status.in_(_ACTIVE))
+            .order_by(TranslationJob.created_at.desc())
+            .limit(1)
+        )
+        if active is not None:
+            if active.pages == pages and active.target_lang == target_lang:
+                return active.id, paper.orig_sha256, False
+            raise _Conflict
+        job = create_job(
+            s, paper, translator_type=translator_type, target_lang=target_lang, pages=pages
+        )
         s.flush()
-        return job.id, paper.orig_sha256, paper.source_lang
+        return job.id, paper.orig_sha256, True
 
 
 def _job_snapshot(job_id: str, user_id: str) -> dict | None:
@@ -81,6 +121,11 @@ async def start_translation(
     """Start translating a paper. ``pages`` (e.g. "1", "1-3,5") limits which pages;
     omit for the whole document.
 
+    A paper has at most one queued/running translation: repeating the same request
+    returns that job (nothing new is queued), and asking for different pages while
+    one is running is a 409. Output is stored per job, so a partial run can never
+    overwrite a finished whole-document translation.
+
     Translating is a write against the caller's own library and it consumes a
     shared engine slot, so an unowned paper 404s before any work is queued —
     otherwise a stranger's id would be enough to spend this instance's compute.
@@ -115,13 +160,30 @@ async def start_translation(
     blobs = request.app.state.blobs
 
     translator_type = settings.translator_config().type
-    created = await asyncio.to_thread(_start_job_row, paper_id, user.id, translator_type, "zh")
+    try:
+        created = await asyncio.to_thread(
+            _start_job_row, paper_id, user.id, translator_type, "zh", pages
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This paper has no PDF stored on the server (it was synced from "
+                "Zotero as metadata only), so there is nothing to translate."
+            ),
+        ) from None
+    except _Conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="A translation of this paper is already in progress with different pages.",
+        ) from None
     if created is None:
         raise HTTPException(status_code=404, detail="Paper not found")
-    job_id, sha256, source_lang = created
+    job_id, sha256, is_new = created
 
-    source_pdf = blobs.path(sha256, "original")
-    job_manager.submit(job_id, sha256, source_pdf, target_lang="zh", pages=pages)
+    if is_new:
+        source_pdf = blobs.path(sha256, "original")
+        job_manager.submit(job_id, sha256, source_pdf, target_lang="zh", pages=_norm_pages(pages))
 
     snapshot = await asyncio.to_thread(_job_snapshot, job_id, user.id)
     return JobOut.model_validate(snapshot)
