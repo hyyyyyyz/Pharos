@@ -219,7 +219,20 @@ Zotero.Pharos.Daily = new function () {
 	 * @param {Integer[]} [options.collections]
 	 * @return {Promise<Zotero.Item>} the created item
 	 */
-	this.saveToLibrary = function (paper, { libraryID, collections } = {}) {
+	this.saveToLibrary = async function (paper, { libraryID, collections } = {}) {
+		// The translator pipeline first, so the item is the one the Zotero
+		// Connector would have made; the model's reading is attached to it as
+		// the same child note. When that cannot be done for any reason, the
+		// hand-assembled item below is what has always worked.
+		let imported = await Zotero.Pharos.Import.saveWithTranslator({
+			arxivID: paper.arxiv_id,
+			noteHTML: this.buildNote(paper),
+			libraryID,
+			collections,
+		});
+		if (imported) {
+			return imported;
+		}
 		return Zotero.Pharos.Library.saveExternalPaper({
 			itemType: 'preprint',
 			fields: {
@@ -262,18 +275,10 @@ Zotero.Pharos.Daily = new function () {
 		if (!paper || !paper.arxiv_id) {
 			return null;
 		}
-		try {
-			let search = new Zotero.Search();
-			search.libraryID = libraryID || Zotero.Libraries.userLibraryID;
-			search.addCondition('archiveID', 'is', `arXiv:${paper.arxiv_id}`);
-			let ids = await search.search();
-			return ids.length ? Zotero.Items.get(ids[0]) : null;
-		}
-		catch (e) {
-			// The badge fails OFF rather than wrong, and never takes the list with it.
-			Zotero.logError(e);
-			return null;
-		}
+		// One implementation, shared with the paste-a-link import, so the two can
+		// never disagree about what "already in the library" means. It already
+		// fails open and logs.
+		return Zotero.Pharos.Import.findExisting({ arXiv: paper.arxiv_id }, libraryID);
 	};
 
 	/**
