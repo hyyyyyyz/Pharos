@@ -1,0 +1,157 @@
+# Quality gate for pushes and pull requests: backend, web frontend, the Zotero
+# connector, and the desktop client's Gecko-free checks.
+#
+# What is deliberately NOT here:
+#   * The desktop client's full test suite (`client/test/runtests.sh`). It needs
+#     a Gecko runtime, takes ~30 minutes, and `syncLocalTest` opens a modal that
+#     only a person can dismiss (see AGENTS.md, "The upstream baseline").
+#   * `ruff format --check` and the full `ruff check`. The backend carries
+#     pre-existing lint debt (mostly B008 on FastAPI `Depends`), so the blocking
+#     step only enforces the rules that mean "this code is broken". The full
+#     report runs as a non-blocking step so the debt stays visible.
+#
+# Path filters: each job runs only when something it depends on changed. A
+# change to this file runs everything.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      connector: ${{ steps.filter.outputs.connector }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - "backend/**"
+              - ".github/workflows/ci.yml"
+            frontend:
+              - "frontend/**"
+              - ".github/workflows/ci.yml"
+            connector:
+              - "zotero-connector/**"
+              - ".github/workflows/ci.yml"
+            desktop:
+              - "client/chrome/locale/**"
+              - "client/test/check-locale-parity.js"
+              - ".github/workflows/ci.yml"
+
+  backend:
+    name: Backend (ruff + pytest)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12 matches deploy/Dockerfile. pyproject allows >=3.11.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      # The engine (pdf2zh-next / BabelDOC) is NOT installed: the API reaches it
+      # through a subprocess and the tests stub that boundary.
+      - name: Install backend[dev]
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+          # Current Starlette's TestClient imports httpx2, which `[dev]` does not
+          # list. TEMPORARY: remove this line after the Backend branch (which fixes
+          # the test dependency) is merged.
+          pip install httpx2
+
+      - name: Ruff (blocking rules)
+        # E9/F63/F7: syntax errors and statements that cannot run.
+        run: ruff check . --select E9,F63,F7
+
+      - name: Ruff (full report, non-blocking)
+        continue-on-error: true
+        run: ruff check . --statistics
+
+      # `python -m pytest`, not `pytest`: tests/harness imports `tests.harness.conftest`,
+      # which needs the working directory on sys.path.
+      - name: Pytest
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend (tsc + vitest + build)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      # 22 matches deploy/Dockerfile's web-builder stage.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc -b
+      - run: npm test
+      - run: npm run build
+
+  connector:
+    name: Zotero connector (node --test)
+    needs: changes
+    if: needs.changes.outputs.connector == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: zotero-connector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # No dependencies and no lockfile, so there is nothing to install.
+      - run: npm test
+      - name: XPI builds
+        run: npm run build
+
+  desktop-checks:
+    name: Desktop client (Gecko-free checks)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Locale parity
+        working-directory: client
+        run: node test/check-locale-parity.js

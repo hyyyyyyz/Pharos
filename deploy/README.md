@@ -77,3 +77,18 @@ deploys and rollbacks never restart or rewrite that system service.
 Code rollback never overwrites the live database. A database backup is created
 before every deployment and manual rollback, but restoring one is intentionally
 an operator decision because doing it automatically could discard new user data.
+
+## Known gaps in `deploy-release.sh`
+
+Both are understood and deliberately unchanged: the script runs on a host shared
+with another site, and changes to it cannot be tested from a development machine.
+
+- **First-time `backend.env` has no `PHAROS_CREDENTIAL_SECRET`.** After the first
+  deploy, add an independent random value to `shared/secrets/backend.env` (see
+  `backend.env.example`) and redeploy. Without it, Zotero API keys are stored in
+  plaintext in SQLite. Once set, never change it without first moving the old
+  value to `PHAROS_CREDENTIAL_SECRET_PREVIOUS` for one boot.
+- **A failed protected-baseline check (exit code 71) does not roll back.** The new
+  container is left running, while `state/active-image` and `current` still name
+  the previous release. Check the protected site first; if Pharos itself should go
+  back, run `pharosctl rollback`, which uses `state/previous-image`.

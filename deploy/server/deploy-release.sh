@@ -62,11 +62,14 @@ mkdir -p \
   "$ROOT/shared/cloudflared"
 chmod 700 "$ROOT/shared/secrets" "$ROOT/shared/cloudflared"
 
+# KNOWN GAP (documented, not changed): the file generated below has no
+# PHAROS_CREDENTIAL_SECRET, so a first deploy runs with Zotero keys stored in
+# plaintext until an operator adds one by hand. See deploy/README.md.
 if [[ ! -f "$SECRETS" ]]; then
   auth_secret=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
   {
     printf 'PHAROS_AUTH_SECRET=%s\n' "$auth_secret"
-    printf 'PHAROS_CORS_ORIGINS=https://hyyyyyyz.github.io,tauri://localhost,http://tauri.localhost\n'
+    printf 'PHAROS_CORS_ORIGINS=https://hyyyyyyz.github.io\n'
     printf 'PHAROS_ALLOW_REGISTRATION=true\n'
     printf 'PHAROS_TRANSLATOR_TYPE=bing\n'
     printf 'PHAROS_CHAT_PROVIDER=\n'
@@ -137,6 +140,10 @@ post_new_id=$(docker ps --filter 'name=^/new-api$' --format '{{.ID}}')
 post_proxy_ids=$(docker ps --filter name=cli-proxy-api --format '{{.ID}}' | sort)
 post_api_code=$(curl --connect-timeout 10 --max-time 20 -sS -o /dev/null -w '%{http_code}' https://api.selab.top/api/status)
 
+# KNOWN GAP (documented, not changed): exiting 71 here does NOT roll back. The
+# new Pharos container keeps running while state/active-image and `current`
+# still name the previous release, so the recorded state and the running state
+# disagree until someone runs rollback.sh or redeploys. See deploy/README.md.
 if [[ "$post_new_id" != "$protected_new_id" || "$post_proxy_ids" != "$protected_proxy_ids" || "$post_api_code" != 200 ]]; then
   echo "protected production baseline changed during deployment; Pharos was not allowed to touch it" >&2
   exit 71

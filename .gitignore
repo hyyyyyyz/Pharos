@@ -19,9 +19,6 @@ venv/
 .env
 .env.*
 !.env.example
-# Desktop's public API origin is build configuration, not a secret. Tracking it
-# keeps local and CI installers pointed at the same deployed Pharos service.
-!frontend/.env.desktop
 
 # --- Node / frontend ---
 node_modules/
@@ -64,13 +61,3 @@ output/
 # --- stray agent worktrees ---
 **/.claude/worktrees/
 backend/.claude/
-
-# --- Tauri desktop (build artifacts & generated files) ---
-desktop/node_modules/
-desktop/src-tauri/target/
-desktop/src-tauri/gen/
-# `tauri icon` emits mobile-only assets too; the current desktop bundle does
-# not consume them. Keep the curated macOS/Windows icon set tracked above them.
-desktop/src-tauri/icons/android/
-desktop/src-tauri/icons/ios/
-desktop/src-tauri/icons/64x64.png
