@@ -179,7 +179,7 @@ function Restoring({
         <span className="ph-auth-spin">
           <Icons.sync />
         </span>
-        正在恢复会话…
+        正在恢复会话
       </div>
     );
   }
@@ -399,7 +399,7 @@ function SignInForm(): JSX.Element {
       {serverError && <div className="ph-auth-alert">{serverError}</div>}
 
       <button type="submit" className="ph-auth-submit" disabled={pending}>
-        {pending ? (isRegister ? "创建中…" : "登录中…") : isRegister ? "创建账户" : "登录"}
+        {pending ? (isRegister ? "创建中" : "登录中") : isRegister ? "创建账户" : "登录"}
       </button>
 
       {isRegister && (
