@@ -182,6 +182,9 @@ const xpcomFilesLocal = [
 	'pharos/readerChat',
 	// Before daily and discovery: both call into it at load time.
 	'pharos/library',
+	// After library: daily and discovery hand papers to it, and it shares their
+	// archiveID lookup.
+	'pharos/import',
 	'pharos/daily',
 	'pharos/discovery',
 	'pharos/projects',

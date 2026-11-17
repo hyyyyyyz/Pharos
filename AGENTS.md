@@ -73,7 +73,7 @@ app/scripts/dir_build -p m       # package into app/staging/Pharos.app
 app/scripts/run_pharos_dev       # launch with an isolated data directory
 test/runtests.sh pharosAPI pharosTranslate pharosTranslateBox pharosChat \
     pharosReaderChat pharosDaily pharosDiscovery pharosProjects pharosProjectsApi pharosRail \
-    pharosRailFooter pharosAdmin pharosProtocol pharosAuth pharosTheme \
+    pharosRailFooter pharosAdmin pharosProtocol pharosAuth pharosTheme pharosImport \
     pharosStrings preferences_pharos preferences_pharos_daily
 node test/check-locale-parity.js  # both locale files define the same ids
 ```

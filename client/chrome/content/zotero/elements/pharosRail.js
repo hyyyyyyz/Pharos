@@ -52,6 +52,23 @@
 					     keeps its own stop, but this had no route in. -->
 					<html:button class="pharos-rail-toggle"/>
 				</html:div>
+				<!-- Paste a link, get the paper. Expanded: a one-row field. Collapsed:
+				     the field is hidden and the button below opens it in a panel. -->
+				<html:div class="pharos-rail-import">
+					<html:div class="pharos-rail-import-field">
+						<html:span class="pharos-rail-import-icon"/>
+						<html:input class="pharos-rail-import-input" type="text"
+							spellcheck="false" autocomplete="off"
+							data-l10n-id="pharos-import-placeholder"/>
+						<html:div class="pharos-rail-import-bar"/>
+					</html:div>
+					<html:div class="pharos-rail-import-status" role="status"
+						aria-live="polite" hidden="true"/>
+				</html:div>
+				<html:button class="pharos-rail-import-btn"
+					data-l10n-id="pharos-import-button-tooltip"/>
+				<!-- Before the account button, which must stay the last element. -->
+				<panel class="pharos-rail-import-panel" noautofocus="true"/>
 				<html:nav class="pharos-rail-nav" role="tablist"/>
 				<html:div class="pharos-rail-spacer"/>
 				<html:div class="pharos-rail-update" hidden="true">
@@ -206,6 +223,7 @@
 			});
 
 			this._initUpdateBox();
+			this._initImport();
 
 			this.setAttribute('rail-collapsed',
 				Zotero.Prefs.get('pharos.rail.collapsed') ? 'true' : 'false');
@@ -244,6 +262,216 @@
 			Zotero.Pharos.Updates.start();
 		}
 
+		/* --------------------------------------------------- paste a link */
+
+		/**
+		 * Wire the paste box and the item list's Cmd/Ctrl+V.
+		 *
+		 * Both end in importText(), which is the only place that talks to
+		 * Zotero.Pharos.Import. The shortcut lives here, in a Pharos file, as a
+		 * capturing listener on the window: upstream's item tree and ZoteroPane
+		 * stay untouched, and a clipboard that is not a recognisable link is not
+		 * intercepted at all, so Cmd/Ctrl+V keeps whatever it did before.
+		 */
+		_initImport() {
+			this._importBox = this.querySelector('.pharos-rail-import');
+			this._importInput = this.querySelector('.pharos-rail-import-input');
+			this._importStatus = this.querySelector('.pharos-rail-import-status');
+			this._importButton = this.querySelector('.pharos-rail-import-btn');
+			this._importPanel = this.querySelector('.pharos-rail-import-panel');
+			this._importing = false;
+			this._importTimer = null;
+
+			this._importInput.addEventListener('keydown', (event) => {
+				if (event.isComposing) {
+					return;
+				}
+				if (event.key == 'Enter') {
+					event.preventDefault();
+					this.importText(this._importInput.value);
+				}
+				else if (event.key == 'Escape') {
+					this._clearImportStatus();
+					if (this._importPanel.state != 'closed') {
+						this._importPanel.hidePopup();
+					}
+				}
+			});
+			// Editing after a failure is the retry; the old complaint goes.
+			this._importInput.addEventListener('input', () => this._clearImportStatus());
+
+			this._importButton.addEventListener('click', () => this._openImportPanel());
+			this._importPanel.addEventListener('popupshown', () => {
+				this._importInput.focus();
+			});
+			this._importPanel.addEventListener('popuphidden', () => this._dockImportBox());
+
+			this._onImportKey = event => this._handleItemListPaste(event);
+			window.addEventListener('keydown', this._onImportKey, true);
+		}
+
+		/**
+		 * Collapsed: the field has no room in 56px, so the same element moves
+		 * into a panel. Moving the node (rather than building a second field)
+		 * keeps its text, its state and its listeners.
+		 */
+		_openImportPanel() {
+			if (this._importing && this._importPanel.state != 'closed') {
+				return;
+			}
+			this._importPanel.appendChild(this._importBox);
+			this._importPanel.openPopup(this._importButton, 'after_start', 0, 0, false, false);
+		}
+
+		/** Put the field back in the rail. */
+		_dockImportBox() {
+			if (this._importBox.parentNode == this._importPanel) {
+				this.querySelector('.pharos-rail-inner').insertBefore(
+					this._importBox, this._importButton
+				);
+			}
+		}
+
+		/**
+		 * Cmd/Ctrl+V with the item list focused.
+		 *
+		 * Not handled while focus is in any text field, the search box or the
+		 * note editor -- there a paste means paste -- nor with a modifier beside
+		 * the accelerator, nor while a Pharos module covers the library.
+		 */
+		_handleItemListPaste(event) {
+			let accel = Zotero.isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+			if (!accel || event.shiftKey || event.altKey || event.key.toLowerCase() != 'v') {
+				return;
+			}
+			if (this.module != 'library' || this._importing) {
+				return;
+			}
+			// The event's target is the focused element, and is what the checks
+			// read -- which also keeps them testable without real focus.
+			let active = event.target;
+			if (!active || !active.closest || !active.closest('#zotero-items-tree')) {
+				return;
+			}
+			if (active.closest('input, textarea, [contenteditable], editable-text, search-textbox')) {
+				return;
+			}
+			let text = Zotero.Utilities.Internal.getClipboard('text/plain');
+			if (!text || text.length > Zotero.Pharos.Import.MAX_TEXT_LENGTH
+					|| !Zotero.Pharos.Import.parse(text).length) {
+				return;
+			}
+			event.preventDefault();
+			event.stopPropagation();
+			this.importText(text);
+		}
+
+		/**
+		 * Import whatever links are in `text`, select the result, say what
+		 * happened. Returns the Import result, or null if one is already running
+		 * or there was nothing to do.
+		 */
+		async importText(text) {
+			text = (text || '').trim();
+			if (this._importing || !text) {
+				return null;
+			}
+			this._setImportBusy(true);
+			let result;
+			try {
+				result = await Zotero.Pharos.Import.importFromText(text);
+			}
+			catch (e) {
+				Zotero.logError(e);
+				result = { imported: [], existing: [], failed: [{ identifier: null, reason: 'other' }] };
+			}
+			finally {
+				this._setImportBusy(false);
+			}
+
+			let items = [...result.imported, ...result.existing];
+			if (items.length) {
+				// From another module, back to the library so the new item is
+				// where the user can see it.
+				if (this.module != 'library') {
+					this.module = 'library';
+				}
+				try {
+					await Zotero.getActiveZoteroPane().selectItems(items.map(i => i.id));
+				}
+				catch (e) {
+					Zotero.logError(e);
+				}
+				this._importInput.value = '';
+			}
+			await this._reportImport(result);
+			return result;
+		}
+
+		_setImportBusy(on) {
+			this._importing = on;
+			this._importInput.disabled = on;
+			this._importBox.classList.toggle('is-busy', on);
+			this._importButton.classList.toggle('is-busy', on);
+			if (on) {
+				this._showImportStatus('pharos-import-busy', null, 'busy');
+			}
+		}
+
+		/** The one quiet line under the field. */
+		async _reportImport(result) {
+			let { imported, existing, failed } = result;
+			if (failed.length) {
+				let reason = await document.l10n.formatValue(
+					'pharos-import-fail-' + failed[0].reason
+				);
+				if (imported.length || existing.length) {
+					let done = imported.length + existing.length;
+					await this._showImportStatus('pharos-import-partial', {
+						done, total: done + failed.length, reason,
+					}, 'error');
+				}
+				else {
+					await this._showImportStatus('pharos-import-fail-' + failed[0].reason, null, 'error');
+				}
+				return;
+			}
+			if (imported.length) {
+				await this._showImportStatus('pharos-import-done', { count: imported.length }, 'ok');
+			}
+			else {
+				await this._showImportStatus('pharos-import-existing', { count: existing.length }, 'ok');
+			}
+		}
+
+		/**
+		 * @param {String} id - a pharos-import-* string
+		 * @param {Object|null} args
+		 * @param {String} kind - 'busy' | 'ok' | 'error'
+		 */
+		async _showImportStatus(id, args, kind) {
+			clearTimeout(this._importTimer);
+			let text = await document.l10n.formatValue(id, args || undefined);
+			let status = this._importStatus;
+			status.textContent = text;
+			status.dataset.kind = kind;
+			status.hidden = false;
+			// Success fades on its own; an error stays until the user edits.
+			if (kind == 'ok') {
+				this._importTimer = setTimeout(() => this._clearImportStatus(), 6000);
+			}
+		}
+
+		_clearImportStatus() {
+			clearTimeout(this._importTimer);
+			if (this._importing) {
+				return;
+			}
+			this._importStatus.hidden = true;
+			this._importStatus.textContent = '';
+			delete this._importStatus.dataset.kind;
+		}
+
 		/**
 		 * The observer half of the update banner.
 		 *
@@ -268,6 +496,10 @@
 		destroy() {
 			if (typeof super.destroy == 'function') {
 				super.destroy();
+			}
+			if (this._onImportKey) {
+				window.removeEventListener('keydown', this._onImportKey, true);
+				this._onImportKey = null;
 			}
 			if (this._updateObserver) {
 				Services.obs.removeObserver(

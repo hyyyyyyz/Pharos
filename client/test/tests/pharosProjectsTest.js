@@ -1,4 +1,18 @@
 describe("Zotero.Pharos.Projects", function () {
+
+	// Saving now tries the translator pipeline first (Zotero.Pharos.Import) and
+	// falls back to the hand-assembled item. These tests are about the
+	// fallback's item and must not reach arXiv, so the translator step is made
+	// to fail the way an unreachable network does; pharosImportTest covers the
+	// success path.
+	var _translateStub;
+	beforeEach(function () {
+		_translateStub = sinon.stub(Zotero.Pharos.Import, 'translateIdentifier')
+			.rejects(new Error('Request timed out'));
+	});
+	afterEach(function () {
+		_translateStub.restore();
+	});
 	// Every note this file makes is standalone, so it lands as a top-level item
 	// in the library. Left behind, they change what later suites see when they
 	// select or enumerate items -- three itemPane tests failed only when run

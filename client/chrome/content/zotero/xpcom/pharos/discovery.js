@@ -204,8 +204,27 @@ Zotero.Pharos.Discovery = new function () {
 	 * @param {Object} [options] - libraryID, collections
 	 * @return {Promise<Zotero.Item>}
 	 */
-	this.saveToLibrary = function (result, { libraryID, collections } = {}) {
+	this.saveToLibrary = async function (result, { libraryID, collections } = {}) {
 		let isPreprint = this.isPreprint(result);
+		// Translator pipeline first (see Zotero.Pharos.Import); the arXiv ID is
+		// taken from the result's own URL, the DOI from its field. Anything that
+		// goes wrong falls through to the hand-assembled item below.
+		let arxivID = null;
+		if (isPreprint) {
+			let found = Zotero.Pharos.Import.parse(`${result.url || ''} ${result.pdf_url || ''}`)
+				.find(i => i.arXiv);
+			arxivID = found ? found.arXiv : null;
+		}
+		let imported = await Zotero.Pharos.Import.saveWithTranslator({
+			arxivID,
+			doi: result.doi,
+			noteHTML: this.buildNote(result),
+			libraryID,
+			collections,
+		});
+		if (imported) {
+			return imported;
+		}
 		return Zotero.Pharos.Library.saveExternalPaper({
 			itemType: isPreprint ? 'preprint' : 'journalArticle',
 			fields: {

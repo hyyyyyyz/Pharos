@@ -1004,6 +1004,31 @@ pharos-rail-expand =
 pharos-rail-resize =
     .aria-label = Resize the module rail
 
+## Paste a link to import
+
+pharos-import-placeholder =
+    .placeholder = Paste an arXiv link or DOI
+    .aria-label = Paste an arXiv link or DOI to import the paper
+pharos-import-button-tooltip =
+    .title = Paste a link to import
+    .aria-label = Paste an arXiv link or DOI to import the paper
+pharos-import-busy = Importing…
+pharos-import-done = { $count ->
+    [one] Imported 1 paper
+   *[other] Imported { $count } papers
+}
+pharos-import-existing = { $count ->
+    [one] That paper is already in your library
+   *[other] { $count } of those papers are already in your library
+}
+pharos-import-partial = Imported { $done } of { $total }. { $reason }
+pharos-import-fail-unrecognized = That doesn't look like an arXiv link or a DOI
+pharos-import-fail-not-found = Couldn't find that paper
+pharos-import-fail-network = Can't reach the network
+pharos-import-fail-rate-limited = arXiv is limiting requests right now; try again shortly
+pharos-import-fail-read-only = This library is read-only
+pharos-import-fail-other = Import failed
+
 ## Administrator console
 
 pharos-admin-menu = Admin Console…
