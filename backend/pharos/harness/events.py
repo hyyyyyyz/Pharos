@@ -33,6 +33,20 @@ class EventTooLarge(ValueError):
     pass
 
 
+def encode_event_payload(payload: dict | None) -> str:
+    """Serialize one event payload and enforce the shared storage cap.
+
+    State transitions call this before mutating their row so a caller that
+    catches :class:`EventTooLarge` cannot commit a state change without its
+    matching event.  Keeping the serializer here prevents the state service
+    and direct event producers from drifting onto different limits.
+    """
+    body = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+    if len(body) > MAX_PAYLOAD_CHARS:
+        raise EventTooLarge(f"event payload of {len(body)} chars exceeds the cap")
+    return body
+
+
 @dataclass(frozen=True)
 class EventRecord:
     seq: int
@@ -72,9 +86,7 @@ class EventStore:
         attempt_id: str | None = None,
         now_us: int = 0,
     ) -> EventRecord:
-        body = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        if len(body) > MAX_PAYLOAD_CHARS:
-            raise EventTooLarge(f"event payload of {len(body)} chars exceeds the cap")
+        body = encode_event_payload(payload)
         result = session.execute(
             events.insert().values(
                 run_id=run_id,

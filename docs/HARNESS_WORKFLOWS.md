@@ -1,9 +1,10 @@
 # Pharos Research Harness — 三条工作流规范
 
-> 状态：**目标工作流，尚未实现。** 本文定义 Daily Papers、Literature Discovery 与 Project
-> Research 三条工作流族的业务 contract。执行内核、状态机、权限、预算和持久化的 source of truth 是
+> 状态：**目标业务工作流，尚未迁移。** Pharos H1 durable kernel 已通过 code gate，但 Daily、Discovery
+> 与 Project Research 仍未 cut over。本文定义三条工作流族的业务 contract。执行内核、状态机、权限、预算和持久化的 source of truth 是
 > [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md)；竞品取舍见
-> [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)。本文不得被产品文案解释成已经上线的自动化能力。
+> [`HARNESS_LANDSCAPE.md`](HARNESS_LANDSCAPE.md)；DeepSeek Harness sidecar 的集成边界见
+> [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。本文不得被产品文案解释成已经上线的自动化能力。
 
 ![Pharos Harness 三条工作流族](../figures/pharos-harness-workflow-family.png)
 
@@ -57,6 +58,11 @@ Daily Vault v1 的便携格式与 merge 语义继续以
 [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md) 和 [`PHASE-EVIDENCE.md`](PHASE-EVIDENCE.md) 为准。
 Harness 不能直接把当前 `DailySweeper`、同步 Discovery handler 或 Project CRUD 包一层“Agent”就宣称完成；
 必须先把执行状态移入 durable Run/Step/Attempt。
+
+业务 Workflow 不由 DeepSeek Harness 定义；通过阶段门的 `agent` Step 以 DSH 为执行内核，也只能在
+Pharos 已创建的 Attempt 内启动一个无公网端口的 Node stdio JSON-RPC sidecar；DSH Session 仅是该 Attempt 的内部执行日志，
+不拥有业务状态、publication、approval、usage 或权限。内部 sealed DSH canary 已通过真实进程的 durable
+claim/Artifact/usage/reducer 全链；Daily、Discovery、Project route 仍未绑定 DSH，也没有真实 provider 路径。
 
 ## 2. 三条工作流共用的执行契约
 
@@ -300,12 +306,13 @@ contract；各工作流只能收窄 required/optional/quorum，不能自行发�
 7. 重放时返回已有领域对象，不重复创建或写本地资源。
 
 Pharos 只对自己控制的边界承诺 exactly-once：领域 publication 使用稳定 idempotency key；内部 usage ledger
-以 append-only event/CAS 保证每个 reserve 只完成一次 `settle`、`release` 或 `pending_reconciliation` 转换。它
+以 append-only event、数据库唯一约束和 CAS 保证每个 reserve 最多只有一个 `settle|release` terminal。它
 **不承诺第三方 Provider 调用或实际账单 exactly-once**：
 请求发出后连接中断时，Provider 可能已经处理/计费，但 Pharos 没收到响应。
 
 这类 Attempt 必须记录 `external_outcome=indeterminate` 与已知 provider request ID；预留 usage 进入
-`pending_reconciliation`，不能伪报 settled/released。只有 Provider 支持并实际使用幂等 request key，或动作本身
+pending（即不追加 terminal ledger event），不能伪报 settled/released；当前尚无自动 provider reconciliation
+coordinator。只有 Provider 支持并实际使用幂等 request key，或动作本身
 可安全重复时才自动重试；否则等待 policy/operator/user 决定。UI 与 operator metrics 分别显示“结果不确定”和
 “待对账”，不能写成“绝不会重复收费”。
 
@@ -1490,12 +1497,16 @@ Harness 通用 API 由架构文档定义。双轨期遵守：
 PHAROS_HARNESS_ENABLED
 PHAROS_HARNESS_DISPATCHER_ENABLED
 PHAROS_HARNESS_AGENT_STEPS_ENABLED
+PHAROS_HARNESS_AGENT_RUNTIME_ENABLED
 PHAROS_HARNESS_DOMAIN_PUBLISH_ENABLED
 PHAROS_DISCOVERY_EXECUTION
 PHAROS_DAILY_EXECUTION
 PHAROS_PROJECT_RESEARCH_EXECUTION
 PHAROS_HARNESS_FULLTEXT_ENABLED
 ```
+
+这些环境变量只是在数据库尚无 configuration head 时使用的 bootstrap aliases；一旦存在持久 head，运行时
+authority 是经过校验的 DB revision，环境变量不能覆盖或隐式切换它。
 
 紧急回退由一个版本化配置 revision 原子更新 writer mode 与全部相关 gate；服务只验证最终快照，不能在多个
 逐项修改和重启之间短暂进入非法组合。该 revision 可停止新 Agent/新 publish，同时保持 owner-authorized

@@ -63,13 +63,13 @@ def test_terminal_states_have_no_exits():
         (AttemptState, ATTEMPT_TRANSITIONS),
     ):
         for state in TERMINAL[enum]:
-            assert (
-                table[state] == frozenset()
-            ), f"{enum.__name__}.{state} is terminal but declares transitions"
+            assert table[state] == frozenset(), (
+                f"{enum.__name__}.{state} is terminal but declares transitions"
+            )
 
 
 def test_every_legal_transition_passes():
-    for enum, table in (
+    for _enum, table in (
         (RunState, RUN_TRANSITIONS),
         (StepState, STEP_TRANSITIONS),
         (AttemptState, ATTEMPT_TRANSITIONS),

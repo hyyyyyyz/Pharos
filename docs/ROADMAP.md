@@ -116,16 +116,25 @@ In rough order. Each is a workstream, not a ticket.
    selections retain rectangles, while ambiguous or cross-page selections safely
    degrade to quote-only evidence. Grounded Q&A and claim-level bindings remain
    downstream work.
-5. **Build the Pharos Research Harness.** **Planned, not implemented.** H0 freezes
-   contracts and migrations; H1 delivers a restart-safe kernel and canary; H2
-   migrates Literature Discovery; H3 migrates Daily Papers; H4 adds Project
-   suggestions with human approval; H5 adds selected full-text reading plus an
-   outbound, user-approved desktop capability bridge; H6 hardens eval,
-   observability, quotas, and scale. H0-H6 do
-   not execute experiments or expose shell access. See
+5. **Build the Pharos Research Harness.** **In progress.** H0/H1 code gates now
+   provide explicit migrations, a restart-safe DB kernel, owner-scoped API,
+   Run Center and deterministic fake canary; production restore/operator canary/
+   72-hour soak are still open, so H1 is not Done. H1.5 has completed its sealed
+   offline execution code slice: pinned DeepSeek Harness source, no-tool profile,
+   strict official wire, per-Attempt process/handle, persistent provenance and
+   delivery-aware usage, immutable Artifact binding, and a real Loader durable DB
+   fake canary. Default product startup still has no DSH factory; real provider,
+   restart reconciliation, production process isolation and operator soak remain
+   open, so H1.5 is not Done and H2 has not started. H2 migrates Literature Discovery;
+   H3 migrates Daily Papers; H4 adds Project suggestions with human approval;
+   H5 adds selected full-text reading plus an outbound, user-approved desktop
+   capability bridge; H6 hardens eval, observability, quotas, and scale. H0-H6
+   do not execute experiments or expose shell access. See
    [`HARNESS_ARCHITECTURE.md`](HARNESS_ARCHITECTURE.md),
    [`HARNESS_WORKFLOWS.md`](HARNESS_WORKFLOWS.md), and
-   [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md).
+   [`HARNESS_IMPLEMENTATION_PLAN.md`](HARNESS_IMPLEMENTATION_PLAN.md); the DSH
+   ownership and security boundary is in
+   [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md).
 6. **Grounded paper Q&A** — answers that cite the passage they came from, so a
    reader can check rather than trust.
 7. **Evidence-aware idea workflow** — proposing directions that carry the

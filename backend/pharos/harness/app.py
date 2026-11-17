@@ -16,13 +16,16 @@ import logging
 from pharos.db.session import session_scope
 from pharos.harness.approvals import ApprovalRepository
 from pharos.harness.artifacts import ArtifactStore
+from pharos.harness.clock import SystemClock
 from pharos.harness.configrev import (
+    GATE_NAMES,
     HarnessConfigSnapshot,
     bootstrap_snapshot,
     emergency_stop_active,
 )
 from pharos.harness.contracts import (
     ApprovalState,
+    ConfigIntegrityError,
     ExecutionMode,
     RunState,
     StateError,
@@ -30,22 +33,49 @@ from pharos.harness.contracts import (
     UnavailableError,
 )
 from pharos.harness.dispatcher import HarnessDispatcher
+from pharos.harness.dsh_gateway import DshGatewayFactory
 from pharos.harness.events import EventStore
-from pharos.harness.fakes import FakeClock, FakeModel
-from pharos.harness.model_gateway import FakeModelGateway
-from pharos.harness.registry import Registry
-from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope, now_iso
-from pharos.harness.runner import HarnessRunner, StepExecutor
+from pharos.harness.execution_snapshots import ExecutionSnapshotStore
+from pharos.harness.fakes import FakeModel
+from pharos.harness.model_gateway import (
+    FakeGatewayFactory,
+    GatewayFactory,
+    RuntimeGatewayFactory,
+)
+from pharos.harness.policy_builder import build_run_policy
+from pharos.harness.policy_snapshot import AgentLimits
+from pharos.harness.registry import CompiledWorkflowBinding, Registry
+from pharos.harness.repository import (
+    MAX_RUN_INPUT_CHARS,
+    HarnessConfigService,
+    HarnessDefinitionRepository,
+    HarnessRunRepository,
+    Scope,
+    now_iso,
+)
+from pharos.harness.runner import AgentOutputContract, HarnessRunner, StepExecutor
+from pharos.harness.seams import Clock
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import steps
 from pharos.harness.usage import UsageLedger
 from pharos.harness.workflows.canary import (
     CANARY_KEY,
+    CANARY_V1_IDENTITY,
+    CANARY_V2_IDENTITY,
+    CANARY_V3_IDENTITY,
+    build_canary_capability_registry,
     canary_capabilities,
+    canary_dsh_workflow,
+    canary_model_profiles,
     canary_roles,
+    canary_typed_capabilities,
+    canary_typed_workflow,
     canary_workflow,
     expand,
+    expand_dsh,
+    expand_typed,
     reduce,
+    validate_canary_actor_output,
 )
 
 log = logging.getLogger(__name__)
@@ -56,6 +86,16 @@ CANARY_EXECUTION_WORKFLOWS = frozenset({CANARY_KEY})
 #: this only bounds wake-up latency, never correctness.
 POLL_SECONDS = 0.5
 
+# This is deliberately explicit rather than inferred from a mutable model or
+# provider configuration.  The workflow/role definitions apply the tighter
+# per-role bounds when the immutable Run policy is assembled.
+RUN_AGENT_LIMITS = AgentLimits(
+    max_turns=16,
+    max_tool_calls=0,
+    max_input_chars=MAX_RUN_INPUT_CHARS,
+    max_output_tokens=60_000,
+)
+
 
 class HarnessApp:
     """The kernel: definitions, config, dispatcher, runner, gates."""
@@ -63,38 +103,90 @@ class HarnessApp:
     def __init__(
         self,
         *,
-        clock: FakeClock | None = None,
+        clock: Clock | None = None,
         fake_model: FakeModel | None = None,
         dispatcher: HarnessDispatcher | None = None,
+        dsh_gateway_factory: DshGatewayFactory | None = None,
     ) -> None:
-        self.clock = clock or FakeClock()
+        self.clock = clock if clock is not None else SystemClock()
         self.registry = Registry()
         for capability in canary_capabilities():
             self.registry.register_capability(capability)
-        for role in canary_roles():
+        for capability in canary_typed_capabilities():
+            self.registry.register_capability(capability)
+        roles = canary_roles()
+        for role in roles:
             self.registry.register_role(role)
+        for profile in canary_model_profiles():
+            self.registry.register_model_profile(profile)
         self.registry.register(canary_workflow())
+        self.registry.register(canary_dsh_workflow())
+        self.registry.register(canary_typed_workflow())
         self.registry.compile()
+        self.definition_repository = HarnessDefinitionRepository()
         self.config_service = HarnessConfigService(self.registry)
         self.state = HarnessStateService()
         self.events = EventStore()
         self.usage = UsageLedger()
         self.artifacts = ArtifactStore()
+        self.execution_snapshots = ExecutionSnapshotStore()
         self.approvals = ApprovalRepository()
-        self.gateway = FakeModelGateway(fake_model or FakeModel(clock=self.clock))
+        # The fake model is retained as an observable aggregate for offline
+        # tests, while execution receives only a fresh per-Attempt factory.
+        self.fake_model = fake_model or FakeModel(clock=self.clock)
+        self.fake_gateway_factory = FakeGatewayFactory(self.fake_model)
+        self.gateway_factory: GatewayFactory = (
+            RuntimeGatewayFactory(
+                {
+                    "in_process_fake": self.fake_gateway_factory,
+                    "dsh": dsh_gateway_factory,
+                }
+            )
+            if dsh_gateway_factory is not None
+            else self.fake_gateway_factory
+        )
         from pharos.harness.workflows.canary import build_executors
 
         self.executor = StepExecutor(
-            gateway=self.gateway,
+            gateway_factory=self.gateway_factory,
+            artifacts=self.artifacts,
+            agent_output_contracts={
+                (role.identity(), role.definition_hash()): AgentOutputContract(
+                    schema_name=role.output_schema.rsplit("@", 1)[0],
+                    schema_version=int(role.output_schema.rsplit("@", 1)[1]),
+                    prompt_version=role.prompt_template_version,
+                    validator=validate_canary_actor_output,
+                )
+                for role in roles
+            },
+            capability_contracts=build_canary_capability_registry(),
             capabilities=build_executors(),
+            legacy_capability_identities=frozenset(
+                (capability.identity(), capability.definition_hash())
+                for capability in canary_capabilities()
+            ),
             state=self.state,
             usage=self.usage,
             events=self.events,
             clock=self.clock,
-            expanders={CANARY_KEY: expand},
-            run_reducers={CANARY_KEY: reduce},
+            # Execution hooks are version identities. A route must never
+            # silently run another version's expander/reducer pair.
+            expanders={
+                CANARY_V1_IDENTITY: expand,
+                CANARY_V2_IDENTITY: expand_dsh,
+                CANARY_V3_IDENTITY: expand_typed,
+            },
+            run_reducers={
+                CANARY_V1_IDENTITY: reduce,
+                CANARY_V2_IDENTITY: reduce,
+                CANARY_V3_IDENTITY: reduce,
+            },
         )
-        self.dispatcher = dispatcher or HarnessDispatcher(state_service=self.state)
+        self.dispatcher = dispatcher or HarnessDispatcher(
+            state_service=self.state,
+            config_service=self.config_service,
+            usage_ledger=self.usage,
+        )
         self.runner = HarnessRunner(self.dispatcher, self.executor)
         self._loop_task: asyncio.Task | None = None
         self._stopping = False
@@ -105,11 +197,9 @@ class HarnessApp:
         """Store definitions and apply the safe default when no head exists."""
         with session_scope() as session:
             self._store_definitions(session)
-            head = self.config_service.current(session)
-            if head is not None:
-                snapshot = self.config_service.current_snapshot(session)
-                assert snapshot is not None
-                return snapshot
+            current = self.config_service.current_validated(session)
+            if current is not None:
+                return current.snapshot
             snapshot = bootstrap_snapshot(self.registry)
             self.config_service.apply(
                 session,
@@ -122,24 +212,31 @@ class HarnessApp:
             return snapshot
 
     def _store_definitions(self, session) -> None:  # noqa: ANN001
-        from pharos.harness.repository import HarnessWorkflowStore, now_iso
-
-        store = HarnessWorkflowStore()
+        created_at = now_iso()
         for workflow in self.registry.all_workflows():
-            store.upsert(session, workflow, now_iso())
+            self.definition_repository.persist_workflow_binding(
+                session,
+                registry=self.registry,
+                workflow=workflow,
+                now=created_at,
+            )
 
     def current_snapshot(self) -> HarnessConfigSnapshot:
         with session_scope() as session:
             snapshot = self.config_service.current_snapshot(session)
-            assert snapshot is not None
+            if snapshot is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
             return snapshot
 
     def route_for(self, workflow_key: str):
-        snapshot = self.current_snapshot()
-        for route in snapshot.routes:
-            if route.workflow_key == workflow_key:
-                return route
-        return None
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            return next(
+                (route for route in current.snapshot.routes if route.workflow_key == workflow_key),
+                None,
+            )
 
     def start_loop(self) -> asyncio.Task:
         if self._loop_task is not None and not self._loop_task.done():
@@ -191,6 +288,7 @@ class HarnessApp:
                     & (approvals_table.c.state == ApprovalState.expired.value),
                 )
                 .where(steps.c.state == StepState.waiting_for_approval.value)
+                .distinct()
             )
             .mappings()
             .all()
@@ -220,37 +318,49 @@ class HarnessApp:
     # ----------------------------------------------------------------- gates
 
     def gate_status(self) -> dict:
-        snapshot = self.current_snapshot()
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+        if current is None:
+            return {
+                **{name: False for name in GATE_NAMES},
+                "emergency_stop": emergency_stop_active(),
+                "head_revision_id": None,
+                "head_hash": None,
+            }
+        snapshot = current.snapshot
         return {
-            "harness_enabled": snapshot.gates.get("harness_enabled", False),
-            "dispatcher_enabled": snapshot.gates.get("dispatcher_enabled", False),
-            "canary_enabled": snapshot.gates.get("canary_enabled", False),
-            "agent_steps_enabled": snapshot.gates.get("agent_steps_enabled", False),
-            "domain_publish_enabled": snapshot.gates.get("domain_publish_enabled", False),
+            **{name: snapshot.gates[name] for name in GATE_NAMES},
             "emergency_stop": emergency_stop_active(),
-            "head_revision_id": self._head_revision_id(),
-            "head_hash": self._head_hash(),
+            "head_revision_id": current.revision_id,
+            "head_hash": current.snapshot_sha256,
         }
 
     def _head_revision_id(self) -> str | None:
         with session_scope() as session:
-            head = self.config_service.current(session)
-            return head["current_revision_id"] if head else None
+            current = self.config_service.current_validated(session)
+            return current.revision_id if current else None
 
     def _head_hash(self) -> str | None:
         with session_scope() as session:
-            snapshot = self.config_service.current_snapshot(session)
-            return snapshot.snapshot_hash() if snapshot else None
+            current = self.config_service.current_validated(session)
+            return current.snapshot_sha256 if current else None
 
     def require_start_allowed(self, workflow_key: str) -> None:
         if emergency_stop_active():
             raise UnavailableError("harness is in emergency stop")
-        snapshot = self.current_snapshot()
+        with session_scope() as session:
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            self._check_start_allowed(current.snapshot, workflow_key)
+
+    @staticmethod
+    def _check_start_allowed(snapshot: HarnessConfigSnapshot, workflow_key: str) -> None:
         if not snapshot.gates.get("harness_enabled"):
             raise UnavailableError("harness is disabled")
         if not snapshot.gates.get("dispatcher_enabled"):
             raise UnavailableError("harness dispatcher is disabled; runs would never execute")
-        route = self.route_for(workflow_key)
+        route = next((item for item in snapshot.routes if item.workflow_key == workflow_key), None)
         if route is None or route.activation_state.value != "active":
             raise UnavailableError(f"workflow {workflow_key} is not active")
         if workflow_key in CANARY_EXECUTION_WORKFLOWS and not snapshot.gates.get("canary_enabled"):
@@ -273,27 +383,112 @@ class HarnessApp:
         project_id: str | None = None,
     ) -> dict:
         """Create (or replay) a run under the current config head."""
-        self.require_start_allowed(workflow_key)
-        route = self.route_for(workflow_key)
-        assert route is not None and route.active_version is not None
-        workflow = self.registry.require_workflow(f"{workflow_key}@{route.active_version}")
         now = self.clock.utc_epoch_us()
         with session_scope() as session:
-            revision_id = self._head_revision_id()
-            assert revision_id is not None
-            run = HarnessRunRepository().create(
+            run_repository = HarnessRunRepository()
+            replay = run_repository.find_replay(
+                session,
+                scope=scope,
+                workflow_key=workflow_key,
+                input=input,
+                idempotency_key=idempotency_key,
+            )
+            if replay is not None:
+                # A retry is a read of an already-authorized request, not a
+                # request for today's route/gates to authorize new work.
+                return dict(replay)
+            # Keep validation, route/version selection, gate checks, the
+            # conditional head write fence, and all run/step writes in this
+            # one transaction.  Splitting these reads across sessions lets a
+            # concurrent operator cut over between authorization and insert.
+            current = self.config_service.current_validated(session)
+            if current is None:
+                raise ConfigIntegrityError("config head is not bootstrapped")
+            snapshot = current.snapshot
+            if emergency_stop_active():
+                raise UnavailableError("harness is in emergency stop")
+            self._check_start_allowed(snapshot, workflow_key)
+            route = next(
+                (item for item in snapshot.routes if item.workflow_key == workflow_key), None
+            )
+            if route is None or route.active_version is None:
+                # _check_start_allowed handles the normal route denial; this
+                # keeps the version lookup fail-closed if the contract grows.
+                raise UnavailableError(f"workflow {workflow_key} is not active")
+            workflow = self.registry.require_workflow(f"{workflow_key}@{route.active_version}")
+            self.config_service.fence_current(session, revision_id=current.revision_id)
+            # Startup persists every complete definition closure.  Re-read the
+            # exact persisted binding here so a Run is never bound directly to
+            # a live Registry object or to a partially persisted closure.
+            live_binding = self.registry.compile_workflow_binding(workflow.identity())
+            stored_binding = self.definition_repository.get_binding(
+                session, live_binding.binding_sha256
+            )
+            if stored_binding is None:
+                raise ConfigIntegrityError(
+                    f"workflow binding {live_binding.binding_sha256} is not persisted"
+                )
+            binding = CompiledWorkflowBinding(
+                value=json.loads(stored_binding["binding_json"]),
+                binding_sha256=stored_binding["binding_sha256"],
+            )
+            expander = self.executor.expanders.get(workflow.identity())
+            if expander is None:
+                raise StateError(f"no trusted expander for {workflow.identity()}")
+            # Expansion is a pure, trusted preflight.  It lets the policy
+            # freeze the agent gates that this concrete input actually uses;
+            # optional agent branches must not disable deterministic canary
+            # runs merely because their workflow closure contains a role.
+            expanded_preview = expander(input)
+            preview_step_keys: list[str] = []
+            for entry in expanded_preview:
+                key = entry.get("definition_step_key")
+                if not isinstance(key, str) or not key:
+                    raise StateError("trusted expander returned an invalid step identity")
+                preview_step_keys.append(key)
+            selected_step_keys = tuple(sorted(set(preview_step_keys)))
+            policy = build_run_policy(
+                binding,
+                snapshot,
+                config_revision_id=current.revision_id,
+                config_revision_sha256=current.snapshot_sha256,
+                agent_limits=RUN_AGENT_LIMITS,
+                selected_step_keys=selected_step_keys,
+            )
+            run, created_run = run_repository.create_once(
                 session,
                 scope=scope,
                 workflow=workflow,
-                config_revision_id=revision_id,
+                config_revision_id=current.revision_id,
                 input=input,
                 idempotency_key=idempotency_key,
                 initiator=initiator,
                 now_us=now,
                 project_id=project_id,
             )
+            if not created_run:
+                # Idempotent replay is read-only.  In particular, a legacy
+                # Run created before immutable snapshots were introduced must
+                # remain legacy and must never be activated or backfilled.
+                return dict(run)
+            self.execution_snapshots.write_run(
+                session,
+                scope=scope,
+                run_id=run["id"],
+                workflow_key=workflow.workflow_key,
+                workflow_version=workflow.version,
+                workflow_definition_sha256=workflow.definition_hash(),
+                definition_binding_sha256=binding.binding_sha256,
+                policy_snapshot=policy,
+            )
             if run["state"] == "queued":
-                created_steps = self.runner.activate_run(session, scope=scope, run=run, now_us=now)
+                created_steps = self.runner.activate_run(
+                    session,
+                    scope=scope,
+                    run=run,
+                    now_us=now,
+                    expanded_steps=expanded_preview,
+                )
                 for step in created_steps:
                     if step["state"] != "pending":
                         continue
@@ -309,8 +504,8 @@ class HarnessApp:
                         now_us=now,
                         ready_at=now,
                     )
-                created = HarnessRunRepository().require(session, scope=scope, run_id=run["id"])
-                return dict(created)
+                final_run = run_repository.require(session, scope=scope, run_id=run["id"])
+                return dict(final_run)
             return dict(run)
 
     def get_run(self, *, scope: Scope, run_id: str) -> dict:
@@ -323,39 +518,62 @@ class HarnessApp:
 
     def pause(self, *, scope: Scope, run_id: str) -> dict:
         with session_scope() as session:
-            HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_pause(session, run_id=run_id, now_us=self.clock.utc_epoch_us())
-            run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
+            run_repository = HarnessRunRepository()
+            run = run_repository.require(session, scope=scope, run_id=run_id)
+            if run["state"] == RunState.paused.value or (
+                run["state"] in (RunState.queued.value, RunState.running.value)
+                and run["pause_requested_at"] is not None
+            ):
+                return dict(run)
+            if run["state"] not in (RunState.queued.value, RunState.running.value):
+                raise StateError("run cannot be paused from its current state")
+            requested = self.state.request_pause(
+                session, scope=scope, run_id=run_id, now_us=self.clock.utc_epoch_us()
+            )
+            if not requested:
+                run = run_repository.require(session, scope=scope, run_id=run_id)
+                if run["state"] == RunState.paused.value or run["pause_requested_at"] is not None:
+                    return dict(run)
+                raise StateError("run cannot be paused from its current state")
+            run = run_repository.require(session, scope=scope, run_id=run_id)
             return dict(run)
 
     def cancel(self, *, scope: Scope, run_id: str) -> dict:
+        now = self.clock.utc_epoch_us()
         with session_scope() as session:
             HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            self.state.request_cancel(session, run_id=run_id, now_us=self.clock.utc_epoch_us())
+            self.state.request_cancel(session, scope=scope, run_id=run_id, now_us=now)
+            # A cancelled Run must not continue advertising an actionable
+            # approval. This repair is idempotent for repeated cancel calls.
+            self.approvals.cancel_unconsumed_for_run(
+                session,
+                scope=scope,
+                run_id=run_id,
+                now_us=now,
+            )
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
-            return dict(run)
+            result = dict(run)
+        # Never call a potentially blocking runtime while holding the DB
+        # transaction. The persisted request wins even if no local worker owns
+        # the Attempt; a local owner receives an immediate attempt-scoped
+        # cancellation signal.
+        self.runner.cancel_run_handles(scope=scope, run_id=run_id)
+        return result
 
     def resume(self, *, scope: Scope, run_id: str) -> dict:
         """Clear the pause request and put a paused run back in the queue."""
-        from sqlalchemy import update
-
-        from pharos.harness.tables import runs as runs_table
-
         with session_scope() as session:
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             if run["state"] != RunState.paused.value:
                 raise StateError("run is not paused")
-            session.execute(
-                update(runs_table)
-                .where(scope.where(runs_table), runs_table.c.id == run_id)
-                .values(pause_requested_at=None)
-            )
-            self.state.transition_run(
+            resumed = self.state.resume_run_cas(
                 session,
+                scope=scope,
                 run_id=run_id,
-                target=RunState.queued,
                 now_us=self.clock.utc_epoch_us(),
             )
+            if not resumed:
+                raise StateError("run changed while it was being resumed")
             run = HarnessRunRepository().require(session, scope=scope, run_id=run_id)
             return dict(run)
 
@@ -389,36 +607,51 @@ class HarnessApp:
             step_id = approval["step_id"]
             if step_id is None:
                 return dict(approval)
-            step = session.execute(steps.select().where(steps.c.id == step_id)).mappings().first()
-            if step is not None and step["state"] == StepState.waiting_for_approval.value:
-                definition = json.loads(step["definition_json"])
-                if decision == ApprovalState.approved:
+            step = (
+                session.execute(
+                    steps.select().where(
+                        steps.c.id == step_id,
+                        steps.c.run_id == approval["run_id"],
+                        steps.c.scope_type == scope.scope_type.value,
+                        steps.c.scope_id == scope.scope_id,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if step is None or step["state"] != StepState.waiting_for_approval.value:
+                # Raising rolls the approval decision back with this same
+                # transaction; a stale UI action cannot create a detached
+                # approved grant.
+                raise StateError("approval step is no longer waiting")
+            definition = json.loads(step["definition_json"])
+            if decision == ApprovalState.approved:
+                self.state.transition_step(
+                    session,
+                    step_id=step_id,
+                    target=StepState.ready,
+                    now_us=now,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                )
+            else:
+                on_reject = definition.get("approval_on_reject", "fail")
+                if on_reject == "skip":
                     self.state.transition_step(
                         session,
                         step_id=step_id,
-                        target=StepState.ready,
+                        target=StepState.skipped,
                         now_us=now,
-                        lease_owner=None,
-                        lease_expires_at=None,
+                        skip_reason=f"approval_{decision.value}",
                     )
                 else:
-                    on_reject = definition.get("approval_on_reject", "fail")
-                    if on_reject == "skip":
-                        self.state.transition_step(
-                            session,
-                            step_id=step_id,
-                            target=StepState.skipped,
-                            now_us=now,
-                            skip_reason=f"approval_{decision.value}",
-                        )
-                    else:
-                        self.state.transition_step(
-                            session,
-                            step_id=step_id,
-                            target=StepState.failed,
-                            now_us=now,
-                            error_code=f"approval_{decision.value}",
-                        )
+                    self.state.transition_step(
+                        session,
+                        step_id=step_id,
+                        target=StepState.failed,
+                        now_us=now,
+                        error_code=f"approval_{decision.value}",
+                    )
             return dict(approval)
 
     def pending_approvals(self, *, scope: Scope, run_id: str) -> list[dict]:

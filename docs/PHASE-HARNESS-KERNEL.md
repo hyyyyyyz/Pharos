@@ -5,6 +5,15 @@
 > 连续重启/kill/SSE 断线、production operator canary、72 小时 soak 与回滚演练属于
 > operator operational gate，未执行；在取得这些证据前 H1 不得标 Done，H2 不得开始。
 
+DeepSeek Harness 集成状态：已选型为 Agent Attempt 执行内核，vendor 官方固定 commit
+`cd5ef8148158c3a752a658978873241fdf8e2bbc`（MIT，developer preview），并完成源码 build、SDK 聚焦测试和
+集成架构；本报告之后，H1.5 no-tool safe profile、严格 official-wire transport 与真实 Loader fake canary
+也已完成 code gate，但 per-Attempt product adapter 仍在实现，当前产品 H1 canary 仍为进程内 deterministic
+fake-model。最新证据见 [`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md)。DSH Session 不改变
+Pharos DB 对 Run/Step/Attempt/Event/Artifact/Approval/Usage 的唯一控制权，也不解除 shell、subprocess、
+sandbox、E2B、code-runtime、MCP、general filesystem、非批准 provider network、plugin 或 self-modification denylist。
+详情见 [`DEEPSEEK_HARNESS_INTEGRATION.md`](DEEPSEEK_HARNESS_INTEGRATION.md)。
+
 ## 1. 实际交付与计划差异
 
 ### H0（contracts / migrations / test foundation）
@@ -41,10 +50,16 @@ bootstrap 未迁入该事务以最小化对现有启动路径的改动（主提�
 | 公开 release/projection 表与最小 service（H3 接 daily） | ✅ 表 + service + 测试 |
 | Run Center（web） | ✅ 最小但真实 |
 | Desktop dormant transport | ✅ 无 UI、无 canary 入口 |
+| DeepSeek Harness runtime | ⏳ 后续已完成 source/profile/wire/Loader fake canary code gate；per-Attempt product adapter 与 production gate 未完成，未用于真实模型 |
 
 **未实现（按计划属于后续阶段）**：H2/H3/H4 业务迁移、Local Capability Bridge、实验执行、
 `fork`、任意 Workflow 编辑器、Run Center 之外的桌面 UI。真实 Model Gateway（HTTP）未接：
 H1 唯一实现是 deterministic fake；canary 因此构造上无法花真钱。
+
+**本报告生成时的纵切缺口（后续已补代码）**：当时 `runner.py` 尚未把 Agent typed output 创建为
+immutable Artifact 并绑定 `Step.output_artifact_id`。该原子路径随后由 `6dd63772` 补齐并通过测试；DSH
+仍未通过 per-Attempt gateway → Artifact/usage → reducer 的真实 durable-kernel canary，因此 Agent execution
+仍不能描述为端到端生产完成或用于业务 workflow。
 
 ## 2. Migration revisions
 
@@ -57,13 +72,16 @@ H1 唯一实现是 deterministic fake；canary 因此构造上无法花真钱。
 | `0005_harness_events` | append-only events（AUTOINCREMENT cursor） |
 | `0006_harness_artifacts_links_releases` | artifacts/links/public releases/projections |
 | `0007_harness_approvals_schedules_usage` | approvals/schedules/usage ledger |
+| `0008_harness_attempt_runtime` | H1.5 additive Attempt runtime provenance/deadline/delivery 槽位；旧 Attempt 保持 `NULL` |
 
 ## 3. 测试证据
 
 ```text
 命令: cd backend && .venv/bin/pytest
-结果: 1053 passed, 1 skipped, 1 xfailed（含 85 项 Harness 专项）
-      ruff check pharos/ tests/ 干净；mypy pharos/harness 无问题
+结果: 1070 passed, 1 skipped, 1 xfailed（含 103 项 Harness 专项）
+      6 项 safe-profile policy 测试、实际 effective-config 审计与 shutdown smoke 通过
+      vendor DSH SDK protocol/client/server 聚焦测试 130 项通过
+      ruff 对本轮改动文件干净；mypy pharos/harness 无问题
 ```
 
 Harness 专项矩阵：
@@ -76,8 +94,9 @@ Harness 专项矩阵：
 - 双 worker claim：100 轮 ×2（单步恰好一个胜者 / 队列无重叠）；
 - 故障注入：副作用前/后崩溃、外部结果不明 `indeterminate` + usage release、超大事件
   拒绝、prompt injection 不改 catalog、重启恢复；
-- 配置：双 operator CAS 只一成功且败者无残留、env 不覆盖已有 head、emergency stop
-  deny-only、Decision 9 永久 deny、rollback revision；
+- 配置：双 operator CAS 只一成功且败者无残留、Run 创建与 cutover 原子 fencing、历史合法 snapshot
+  序列化兼容、损坏 head fail closed、env 不覆盖已有 head、emergency stop deny-only、Decision 9 永久 deny、
+  rollback revision；
 - 兼容：`test_app_routes` 全过（含新 harness router）；旧 API 行为不变（flag 关闭时
   Harness 不启动 loop、旧表语义零改动）；frontend `tsc -b` + build + 41 vitest；
   desktop `pharosHarness` 5/5。
@@ -97,6 +116,8 @@ DB 外覆盖，deny-only。生产默认未启用任何 Harness 能力。
 - secret、stack、raw CoT 不入 Event/Artifact（无此字段；payload 上限强制）；
 - 管理员只有 operator status/validate/apply（聚合 gate 状态 + 快照校验），无内容路径；
 - 无 shell、无任意 URL、无 Zotero 访问；capability 目录由受信代码编译；
+- 无 DSH sidecar 进入产品路径；no-tool profile 的实际组合与 shutdown 已在隔离临时目录 smoke，Session 仅限
+  单个 Agent Attempt 内部日志。profile 不是 OS sandbox，父进程 provider allowlist/容器 egress 仍待 adapter 阶段实现；
 - 测试全程离线（fake clock/model/capability），不碰真实 `.env`/生产库/真实 Zotero。
 
 ## 6. 回滚
@@ -112,6 +133,7 @@ DB 外覆盖，deny-only。生产默认未启用任何 Harness 能力。
 | --- | --- |
 | H0 Done：operator 隔离副本 verify/upgrade/backup/restore 报告 | operator |
 | H1 Gate：production operator canary（禁真实模型）、72h soak、rollback 演练 | operator |
+| H1.5：wire code gate 已由 `ae135a9a` 补齐；DB Attempt 绑定、factory/handle、cancel/deadline/recovery 与 DSH Artifact/usage/provenance | 下一实现轮 |
 | H2 Literature Discovery 纵向迁移 | 下一实现轮（禁止提前开始） |
 
 ## 8. Commit SHA
@@ -124,7 +146,21 @@ e1bc476 Define versioned Harness contracts, definitions and deterministic fakes
 61e4f99 Expose the owner-scoped Harness API behind the config gates
 854e019 Add the web Run Center for durable research runs
 671526d Add the dormant desktop Harness transport
-（fault-injection 与文档提交随最后 gate 提交）
+5f0b3b1 Fault-test the Harness kernel and record the H0/H1 stage report
+c017026 Vendor a pinned DeepSeek Harness source snapshot
+39e80dc Make Harness source refresh reproducible
+a5df7d8 Continuously verify the vendored Agent runtime
+d683873 Harden Harness dispatch lifecycle fences
+cb9da65 Close Harness config and lease race gaps
+1d28ce0 Make Harness configuration cutovers atomic
+0ee26b6 Fence the vendored Harness runtime profile
+d7e8c8f Fence Agent runtimes and persist provenance
+6dd6377 Persist validated Agent outputs atomically
+92853f3 Add the deterministic Pharos Harness runtime
+ae135a9 Add the bounded official Harness wire transport
+efa007d Stabilize the Harness wire CI boundary
 ```
 
-未推送；是否推送按调用者当次明确指令。
+前十五项构成原 H0/H1 报告及 source/profile 基线；末五项是本报告之后的 H1.5 additive code-gate
+提交。official-wire 的精确证据与未完成边界以
+[`PHASE-HARNESS-DSH-WIRE.md`](PHASE-HARNESS-DSH-WIRE.md) 为准。

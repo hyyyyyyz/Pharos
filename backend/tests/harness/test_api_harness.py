@@ -14,7 +14,11 @@ from fastapi.testclient import TestClient
 from pharos.api import harness as harness_api
 from pharos.api.deps import current_user, get_settings, require_admin
 from pharos.db.models import User
-from pharos.harness.repository import Scope
+from pharos.db.session import session_scope
+from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute
+from pharos.harness.contracts import ActivationState
+from pharos.harness.repository import Scope, now_iso
+from pharos.harness.tables import config_revisions, runs
 from pharos.harness.workflows.canary import canary_input
 from tests.harness.conftest import enable_canary
 
@@ -66,6 +70,57 @@ def test_workflow_capability_listing(client) -> None:
     assert response.status_code == 200
     keys = {item["workflowKey"] for item in response.json()}
     assert "harness.canary" in keys
+    canaries = [item for item in response.json() if item["workflowKey"] == "harness.canary"]
+    assert {item["version"]: item["activationState"] for item in canaries} == {
+        1: "active",
+        2: "disabled",
+        3: "disabled",
+    }
+
+
+def test_workflow_capability_listing_only_marks_selected_version_active(client) -> None:
+    http, app = client
+    with session_scope() as session:
+        head = app.config_service.current(session)
+        assert head is not None
+        snapshot = HarnessConfigSnapshot(
+            gates={
+                "harness_enabled": True,
+                "dispatcher_enabled": True,
+                "canary_enabled": True,
+                "agent_steps_enabled": True,
+                "agent_runtime_enabled": True,
+                "domain_publish_enabled": False,
+                "fulltext_enabled": False,
+                "desktop_bridge_enabled": False,
+                "experiments_enabled": False,
+            },
+            routes=(
+                WorkflowRoute(
+                    workflow_key="harness.canary",
+                    active_version=2,
+                    activation_state=ActivationState.active,
+                ),
+            ),
+        )
+        app.config_service.apply(
+            session,
+            snapshot=snapshot,
+            expected_head_revision=head["current_revision_id"],
+            actor="test-operator",
+            reason="list v2",
+            now=now_iso(),
+        )
+        session.commit()
+    canaries = [
+        item for item in http.get("/api/harness/workflows").json()
+        if item["workflowKey"] == "harness.canary"
+    ]
+    assert {item["version"]: item["activationState"] for item in canaries} == {
+        1: "disabled",
+        2: "active",
+        3: "disabled",
+    }
 
 
 def test_create_and_run_canary_over_http(client) -> None:
@@ -152,6 +207,31 @@ def test_cancel_and_events_surface(client) -> None:
     assert gate["state"] == "skipped"
 
 
+def test_resume_clears_pause_request_and_releases_a_claim(client) -> None:
+    """The HTTP route must use HarnessApp.resume's complete lifecycle path."""
+    http, app = client
+    run = http.post(
+        "/api/harness/runs",
+        json={
+            "workflowKey": "harness.canary",
+            "input": canary_input("success"),
+            "idempotencyKey": "http-resume-1",
+        },
+    ).json()
+    paused = http.post(f"/api/harness/runs/{run['id']}/pause")
+    assert paused.status_code == 200
+    _drive_to(app, run["id"], "paused")
+
+    resumed = http.post(f"/api/harness/runs/{run['id']}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["state"] == "queued"
+    with session_scope() as session:
+        row = session.execute(runs.select().where(runs.c.id == run["id"])).mappings().one()
+        assert row["pause_requested_at"] is None
+        claimed = app.dispatcher.claim_due(session, now_us=app.clock.utc_epoch_us())
+    assert claimed is not None and claimed.run_id == run["id"]
+
+
 def test_operator_status_and_validation_are_admin_only(client) -> None:
     http, app = client
     app_anon = FastAPI()
@@ -162,11 +242,32 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
     status = http.get("/api/harness/operator/status")
     assert status.status_code == 200
     assert status.json()["harness_enabled"] is True
+    assert {name for name in status.json() if name.endswith("_enabled")} == {
+        "harness_enabled",
+        "dispatcher_enabled",
+        "canary_enabled",
+        "agent_steps_enabled",
+        "agent_runtime_enabled",
+        "domain_publish_enabled",
+        "fulltext_enabled",
+        "desktop_bridge_enabled",
+        "experiments_enabled",
+    }
     validated = http.post(
         "/api/harness/operator/config/validate",
         json={
             "snapshot": {
-                "gates": {"harness_enabled": True, "experiments_enabled": True},
+                "gates": {
+                    "harness_enabled": True,
+                    "dispatcher_enabled": True,
+                    "canary_enabled": False,
+                    "agent_steps_enabled": False,
+                    "agent_runtime_enabled": False,
+                    "domain_publish_enabled": False,
+                    "fulltext_enabled": False,
+                    "desktop_bridge_enabled": False,
+                    "experiments_enabled": True,
+                },
                 "routes": [],
             }
         },
@@ -174,6 +275,54 @@ def test_operator_status_and_validation_are_admin_only(client) -> None:
     assert validated.status_code == 200
     assert validated.json()["valid"] is False
     assert any("Decision 9" in error for error in validated.json()["errors"])
+
+    runtime_without_agent_steps = http.post(
+        "/api/harness/operator/config/validate",
+        json={
+            "snapshot": {
+                "gates": {
+                    "harness_enabled": True,
+                    "dispatcher_enabled": True,
+                    "canary_enabled": False,
+                    "agent_steps_enabled": False,
+                    "agent_runtime_enabled": True,
+                    "domain_publish_enabled": False,
+                    "fulltext_enabled": False,
+                    "desktop_bridge_enabled": False,
+                    "experiments_enabled": False,
+                },
+                "routes": [],
+            }
+        },
+    )
+    assert runtime_without_agent_steps.status_code == 200
+    assert runtime_without_agent_steps.json()["valid"] is False
+    assert any(
+        "agent_runtime_enabled" in error
+        for error in runtime_without_agent_steps.json()["errors"]
+    )
+
+
+def test_config_integrity_failure_is_an_opaque_service_error(client) -> None:
+    http, app = client
+    with session_scope() as session:
+        revision_id = app.config_service.current(session)["current_revision_id"]
+        session.execute(
+            config_revisions.update()
+            .where(config_revisions.c.id == revision_id)
+            .values(snapshot_sha256="0" * 64)
+        )
+
+    response = http.post(
+        "/api/harness/runs",
+        json={
+            "workflowKey": "harness.canary",
+            "input": canary_input("success"),
+            "idempotencyKey": "corrupt-config",
+        },
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "harness configuration integrity failure"}
 
 
 async def test_sse_stream_replays_events(client) -> None:

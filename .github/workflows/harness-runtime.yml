@@ -1,0 +1,187 @@
+name: Validate Harness runtime source
+
+on:
+  push:
+    paths:
+      - "vendor/deepseek-harness/**"
+      - "vendor/README.md"
+      - "scripts/vendor-deepseek-harness.sh"
+      - "scripts/check-deepseek-harness-vendor.sh"
+      - "harness-runtime/**"
+      - "backend/pharos/harness/**"
+      - "backend/pharos/db/migrations.py"
+      - "backend/tests/harness/**"
+      - ".github/workflows/harness-runtime.yml"
+  pull_request:
+    paths:
+      - "vendor/deepseek-harness/**"
+      - "vendor/README.md"
+      - "scripts/vendor-deepseek-harness.sh"
+      - "scripts/check-deepseek-harness-vendor.sh"
+      - "harness-runtime/**"
+      - "backend/pharos/harness/**"
+      - "backend/pharos/db/migrations.py"
+      - "backend/tests/harness/**"
+      - ".github/workflows/harness-runtime.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harness-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-source:
+    name: Pinned source, build and SDK contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify the vendored boundary
+        run: scripts/check-deepseek-harness-vendor.sh
+
+      - name: Verify the Pharos safe-profile policy
+        run: |
+          python3 harness-runtime/scripts/check-profile.py
+          python3 -m unittest discover -s harness-runtime/tests -v
+
+      - name: Install the bounded wire test dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          "pydantic>=2.10,<3"
+          "pydantic-settings>=2.6,<3"
+          "sqlalchemy>=2.0,<3"
+          "pytest>=8.3,<9"
+          "ruff>=0.8,<1"
+          "mypy>=1.13,<2"
+
+      - name: Verify the bounded official Harness wire
+        working-directory: backend
+        run: |
+          # This transport contract is intentionally independent of the durable-kernel
+          # database fixtures in tests/harness/conftest.py. Loading that conftest here
+          # would widen this minimal security test into a full backend installation.
+          python -m pytest --noconftest -q tests/harness/test_dsh_transport.py
+          python -m ruff check \
+            pharos/harness/protocol.py \
+            pharos/harness/transport.py \
+            tests/harness/test_dsh_transport.py \
+            tests/harness/fixtures/fake_dsh_runtime.py
+          python -m mypy \
+            pharos/harness/protocol.py \
+            pharos/harness/transport.py
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+          cache-dependency-path: vendor/deepseek-harness/pnpm-lock.yaml
+
+      - name: Install without lifecycle scripts
+        working-directory: vendor/deepseek-harness
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the pinned upstream snapshot
+        working-directory: vendor/deepseek-harness
+        env:
+          CI: "1"
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm run build
+
+      - name: Run the real Loader and deterministic Pharos canary
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: python3 harness-runtime/scripts/run-fake-canary.py --attempt-transport
+
+      - name: Provision and run the sealed database canary
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          runtime_dir="$RUNNER_TEMP/pharos-dsh-runtime"
+          pins_env="$RUNNER_TEMP/pharos-dsh-pins.env"
+          node_path="$(realpath "$(command -v node)")"
+          cli_path="$GITHUB_WORKSPACE/vendor/deepseek-harness/apps/cli/lib/bin.js"
+          python3 harness-runtime/scripts/provision-runtime.py \
+            --root "$GITHUB_WORKSPACE" \
+            --node "$node_path" \
+            --cli "$cli_path" \
+            --output "$runtime_dir"
+          python3 - "$runtime_dir/runtime-manifest.json" "$node_path" "$cli_path" "$GITHUB_ENV" "$pins_env" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import shlex
+          import sys
+
+          manifest, node, cli, github_env, pins_env = map(pathlib.Path, sys.argv[1:])
+          raw = manifest.read_bytes()
+          payload = json.loads(raw)
+          values = {
+              "PHAROS_TEST_DSH_MANIFEST": str(manifest.resolve()),
+              "PHAROS_TEST_DSH_NODE": str(node.resolve()),
+              "PHAROS_TEST_DSH_CLI": str(cli.resolve()),
+              "PHAROS_TEST_DSH_RUNTIME_SHA256": hashlib.sha256(raw).hexdigest(),
+              "PHAROS_TEST_DSH_PROFILE_SHA256": payload["profile_sha256"],
+              "PHAROS_TEST_DSH_POLICY_SHA256": payload["profile_patch_sha256"],
+              "PHAROS_TEST_DSH_UPSTREAM_COMMIT": payload["upstream_commit"],
+          }
+          with github_env.open("a", encoding="utf-8") as stream:
+              for name, value in values.items():
+                  if "\n" in value or "\r" in value:
+                      raise ValueError("CI runtime pin contains a newline")
+                  stream.write(f"{name}={value}\n")
+          with pins_env.open("w", encoding="utf-8") as stream:
+              for name, value in values.items():
+                  stream.write(f"export {name}={shlex.quote(value)}\n")
+          PY
+          # GITHUB_ENV is visible only to the next step. Source a separate
+          # machine-generated file containing only these newline-checked pins.
+          . "$pins_env"
+          python3 -m pytest -q \
+            backend/tests/harness/test_dsh_app_canary.py \
+            -k sealed_runtime
+
+      - name: Smoke-test bounded SDK shutdown
+        run: |
+          runtime_dir="$(mktemp -d)"
+          mkdir -p "$runtime_dir/home"
+          printf '%s\n' '{"jsonrpc":"2.0","id":"shutdown-smoke","method":"shutdown","params":{}}' | \
+            timeout -k 5s 20s env -i PATH="$PATH" HOME="$runtime_dir/home" DSH_HOME="$runtime_dir/dsh" \
+            DSH_TELEMETRY_DISABLED=1 NODE_ENV=production \
+            node vendor/deepseek-harness/apps/cli/lib/bin.js \
+            --profile sdk \
+            --patch "$GITHUB_WORKSPACE/harness-runtime/profile/pharos-safe.cordis.patch.yml" \
+            > "$runtime_dir/response.jsonl"
+          python3 - "$runtime_dir/response.jsonl" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          assert any(
+              frame.get("id") == "shutdown-smoke" and frame.get("result") == {}
+              for frame in frames
+          ), frames
+          PY
+
+      - name: Verify the stdio SDK contract
+        working-directory: vendor/deepseek-harness
+        env:
+          CI: "1"
+        run: >-
+          pnpm exec vitest run
+          packages/sdk/protocol/tests
+          packages/sdk/client/tests
+          packages/sdk/server/tests

@@ -89,6 +89,16 @@ class AttemptState(StrEnum):
     indeterminate = "indeterminate"
 
 
+class DeliveryState(StrEnum):
+    """Durable evidence for one Attempt's provider-delivery boundary."""
+
+    NOT_STARTED = "not_started"
+    UNKNOWN = "unknown"
+    SENT = "sent"
+    ACKNOWLEDGED = "acknowledged"
+    RECONCILED = "reconciled"
+
+
 ATTEMPT_TERMINAL_STATES = frozenset(
     {
         AttemptState.succeeded,
@@ -238,6 +248,10 @@ class NotFoundError(HarnessError):
 
 class StaleConfigError(HarnessError):
     """A writer ran against a config revision that is no longer current."""
+
+
+class ConfigIntegrityError(HarnessError):
+    """Persisted configuration is missing, corrupt, or internally invalid."""
 
 
 class UnavailableError(HarnessError):

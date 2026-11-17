@@ -29,6 +29,7 @@ from pharos.harness.app import HarnessApp
 from pharos.harness.configrev import HarnessConfigSnapshot, WorkflowRoute, validate_snapshot
 from pharos.harness.contracts import (
     ApprovalState,
+    ConfigIntegrityError,
     HarnessError,
     IdempotencyConflictError,
     NotFoundError,
@@ -85,6 +86,8 @@ def _http_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=str(error))
     if isinstance(error, UnavailableError):
         return HTTPException(status_code=503, detail=str(error))
+    if isinstance(error, ConfigIntegrityError):
+        return HTTPException(status_code=503, detail="harness configuration integrity failure")
     if isinstance(error, (StateError, ValueError)):
         return HTTPException(status_code=400, detail=str(error))
     if isinstance(error, HarnessError):
@@ -170,15 +173,25 @@ def list_workflows(
     out = []
     for workflow in harness.registry.all_workflows():
         route = routes.get(workflow.workflow_key)
+        is_active_version = route is not None and route.active_version == workflow.version
         out.append(
             {
                 "workflowKey": workflow.workflow_key,
                 "version": workflow.version,
                 "inputSchema": workflow.input_schema,
                 "outputSchema": workflow.output_schema,
-                "activationState": route.activation_state.value if route else "disabled",
+                # A route selects one version. Other registered immutable
+                # versions remain visible for diagnostics but are never
+                # reported as active by the key-level route projection.
+                "activationState": (
+                    route.activation_state.value
+                    if is_active_version and route is not None
+                    else "disabled"
+                ),
                 "executionMode": (
-                    route.execution_mode.value if route and route.execution_mode else None
+                    route.execution_mode.value
+                    if is_active_version and route and route.execution_mode
+                    else None
                 ),
             }
         )
@@ -254,22 +267,11 @@ def resume_run(
     run_id: str,
     user: Annotated[User, Depends(current_user)],
     request: Request,
-    session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     harness = _harness(request)
     try:
-        run = harness.get_run(scope=_scope(user), run_id=run_id)
-        if run["state"] != "paused":
-            raise StateError("run is not paused")
-        from pharos.harness.contracts import RunState
-
-        harness.state.transition_run(
-            session, run_id=run_id, target=RunState.queued, now_us=harness.clock.utc_epoch_us()
-        )
-        session.commit()
-        return _run_out(harness.get_run(scope=_scope(user), run_id=run_id))
+        return _run_out(harness.resume(scope=_scope(user), run_id=run_id))
     except Exception as error:
-        session.rollback()
         raise _http_error(error) from error
 
 

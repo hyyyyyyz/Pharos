@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, StrictInt, StrictStr, model_validator
 
 from pharos.harness.contracts import (
     ArtifactSensitivity,
@@ -36,7 +38,15 @@ def canonical_json(value: Any) -> str:
     Sorted keys, no whitespace, no ASCII escaping surprises: the same object
     always produces the same string across processes and restarts.
     """
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    # ``allow_nan=False`` is deliberate: NaN/Infinity are not JSON and would
+    # otherwise produce hashes that cannot be reproduced by another runtime.
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def sha256_hex(value: Any) -> str:
@@ -128,6 +138,10 @@ class RoleDefinition(StrictModel):
     input_schema: str
     output_schema: str
     model_profile: str
+    # This is a trusted execution route, not a model-controlled hint.  Keep
+    # the vocabulary closed so a malformed/future role cannot accidentally be
+    # treated as the in-process fake runtime.
+    runtime_kind: Literal["in_process_fake", "dsh"]
     capability_allowlist: tuple[str, ...] = ()
     max_turns: int = Field(default=4, ge=1)
     max_tool_calls: int = Field(default=8, ge=1)
@@ -140,6 +154,15 @@ class RoleDefinition(StrictModel):
 
     def identity(self) -> str:
         return f"{self.role_key}@{self.version}"
+
+    def canonical(self) -> dict[str, Any]:
+        value = self.model_dump(mode="json")
+        value["capability_allowlist"] = sorted(value["capability_allowlist"])
+        value["allowed_input_sensitivity"] = sorted(value["allowed_input_sensitivity"])
+        return value
+
+    def definition_hash(self) -> str:
+        return sha256_hex(self.canonical())
 
 
 class CapabilityDefinition(StrictModel):
@@ -159,9 +182,257 @@ class CapabilityDefinition(StrictModel):
     def identity(self) -> str:
         return f"{self.capability_key}@{self.version}"
 
+    def canonical(self) -> dict[str, Any]:
+        value = self.model_dump(mode="json")
+        value["retry_classes"] = sorted(value["retry_classes"])
+        return value
+
+    def definition_hash(self) -> str:
+        return sha256_hex(self.canonical())
+
+
+# Model profiles intentionally have a much smaller vocabulary than a generic
+# provider configuration.  In particular, they contain no URL, header, key,
+# or other credential material.  A route is an immutable *selection* record;
+# credential resolution remains an application concern.
+ModelRuntimeKind = Literal["in_process_fake", "dsh"]
+ModelSelectionPolicy = Literal["fixed", "ordered_first_available"]
+ModelReasoning = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+ModelCredentialPolicy = Literal["none", "system_managed", "user_byok"]
+
+_MAX_MODEL_KEY = 64
+_MAX_MODEL_PROVIDER = 64
+_MAX_MODEL_NAME = 128
+_MAX_MODEL_ROUTES = 16
+_MAX_MODEL_TOKENS = 1_000_000
+_MODEL_ROUTE_BINDING_SCHEMA_VERSION = 1
+
+# Provider/model values are identifiers, not arbitrary labels.  In
+# particular, accepting a value such as ``api_key=...`` or ``token:...`` in
+# an otherwise credential-free policy would make the canonical snapshot a
+# convenient place to smuggle credentials.  Keep the check boundary-aware so
+# legitimate names such as ``tokenizer-v3`` are not rejected accidentally.
+_CREDENTIAL_LIKE_METADATA = re.compile(
+    r"(?:^|[^a-z0-9])(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|"
+    r"credential|password|private[_-]?key|secret|token|key)(?:\s*[:=]|$)",
+    re.IGNORECASE,
+)
+
+# Credential-free routes are reserved for the two deterministic canary
+# adapters shipped with Pharos.  This is an exact pair allowlist, not a
+# convention based on a provider name containing ``fake``: a future route
+# cannot avoid credential policy merely by choosing a suggestive identifier.
+_CREDENTIALLESS_CANARY_ROUTES = frozenset(
+    {
+        ("fake", "canary"),
+        ("pharos-fake", "pharos-fake-canary"),
+    }
+)
+
+
+def _model_identifier(value: str, *, field_name: str, max_length: int) -> str:
+    """Validate provider/model identifiers without accepting endpoint data."""
+    if (
+        not value.strip()
+        or value != value.strip()
+        or not value.isascii()
+        or any(
+            char.isspace()
+            or ord(char) < 32
+            or ord(char) == 127
+            or unicodedata.bidirectional(char)
+            in {"RLO", "RLE", "LRO", "LRE", "PDF", "LRI", "RLI", "FSI", "PDI"}
+            for char in value
+        )
+    ):
+        raise ValueError(f"{field_name} must be a non-whitespace printable identifier")
+    if len(value) > max_length:
+        raise ValueError(f"{field_name} is too long")
+    if field_name == "model" and (
+        not value[0].isalnum()
+        or any(not (char.isalnum() or char in "._-/+:") for char in value)
+    ):
+        raise ValueError("model must use the closed model-identifier character set")
+    # A route is metadata, never a raw endpoint.  Model names may contain '/'
+    # (for example, provider/model), so only URL delimiters are forbidden.
+    if "://" in value or ":/" in value:
+        raise ValueError(f"{field_name} must not contain an endpoint")
+    if value.lower().startswith(("sk-", "bearer ")):
+        raise ValueError(f"{field_name} must not contain credential material")
+    if _CREDENTIAL_LIKE_METADATA.search(value):
+        raise ValueError(f"{field_name} must not contain credential-like metadata")
+    return value
+
+
+class ModelRouteDefinition(StrictModel):
+    """One ordered, runtime-scoped provider/model route."""
+
+    route_key: StrictStr = Field(
+        min_length=1, max_length=_MAX_MODEL_KEY, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
+    priority: StrictInt = Field(ge=1, le=10_000)
+    provider: StrictStr = Field(
+        min_length=1,
+        max_length=_MAX_MODEL_PROVIDER,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    model: StrictStr = Field(min_length=1, max_length=_MAX_MODEL_NAME)
+    usage_source: Literal["official", "byok", "system_shared"]
+    credential_policy: ModelCredentialPolicy
+    allowed_runtime_kinds: tuple[ModelRuntimeKind, ...] = Field(min_length=1, max_length=2)
+    reasoning_effort: ModelReasoning | None = None
+    max_output_tokens: StrictInt | None = Field(default=None, gt=0, le=_MAX_MODEL_TOKENS)
+
+    @model_validator(mode="after")
+    def _validate_route(self) -> ModelRouteDefinition:
+        if "@" in self.route_key:
+            raise ValueError("route_key must not contain a version suffix")
+        _model_identifier(self.provider, field_name="provider", max_length=_MAX_MODEL_PROVIDER)
+        _model_identifier(self.model, field_name="model", max_length=_MAX_MODEL_NAME)
+        if len(set(self.allowed_runtime_kinds)) != len(self.allowed_runtime_kinds):
+            raise ValueError("allowed_runtime_kinds must not contain duplicates")
+        if self.usage_source == "byok" and self.credential_policy != "user_byok":
+            raise ValueError("byok usage_source requires user_byok credential_policy")
+        if self.usage_source in {"official", "system_shared"}:
+            if self.credential_policy == "user_byok":
+                raise ValueError(
+                    f"{self.usage_source} usage_source cannot use user_byok credentials"
+                )
+            credentialless_canary = (
+                self.usage_source == "system_shared"
+                and (self.provider, self.model) in _CREDENTIALLESS_CANARY_ROUTES
+                and (
+                    (self.provider, self.model) != ("fake", "canary")
+                    or set(self.allowed_runtime_kinds) == {"in_process_fake"}
+                )
+            )
+            if self.credential_policy == "none" and not credentialless_canary:
+                raise ValueError(
+                    f"{self.usage_source} usage_source requires system_managed credentials"
+                )
+        return self
+
+    def canonical(self) -> dict[str, Any]:
+        value = self.model_dump(mode="json")
+        value["allowed_runtime_kinds"] = sorted(value["allowed_runtime_kinds"])
+        return value
+
+    def definition_hash(self) -> str:
+        return sha256_hex(self.canonical())
+
+
+class ModelProfileDefinition(StrictModel):
+    """Immutable model routing policy referenced by a Role definition.
+
+    ``ordered_first_available`` is ordered by the explicit route priority;
+    input tuple order is not semantic and is normalized for hashing.
+    """
+
+    profile_key: StrictStr = Field(
+        min_length=1, max_length=_MAX_MODEL_KEY, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
+    version: StrictInt = Field(ge=1, le=10_000)
+    selection_policy: ModelSelectionPolicy
+    routes: tuple[ModelRouteDefinition, ...] = Field(
+        min_length=1, max_length=_MAX_MODEL_ROUTES
+    )
+
+    @model_validator(mode="after")
+    def _validate_profile(self) -> ModelProfileDefinition:
+        if "@" in self.profile_key:
+            raise ValueError("profile_key must not contain a version suffix")
+        route_keys = [route.route_key for route in self.routes]
+        priorities = [route.priority for route in self.routes]
+        if len(set(route_keys)) != len(route_keys):
+            raise ValueError("model profile route_key values must be unique")
+        if len(set(priorities)) != len(priorities):
+            raise ValueError("model profile route priority values must be unique")
+        if self.selection_policy == "fixed" and len(self.routes) != 1:
+            raise ValueError("fixed model profile must contain exactly one route")
+        return self
+
+    def identity(self) -> str:
+        return f"{self.profile_key}@{self.version}"
+
+    def canonical(self) -> dict[str, Any]:
+        value = self.model_dump(mode="json")
+        value["routes"] = [
+            route.canonical()
+            for route in sorted(self.routes, key=lambda item: (item.priority, item.route_key))
+        ]
+        return value
+
+    def definition_hash(self) -> str:
+        return sha256_hex(self.canonical())
+
+    def route_binding(self, route_key: str) -> dict[str, Any]:
+        """Return the immutable binding envelope for one profile route.
+
+        A route hash is a binding, rather than merely a hash of the route
+        itself: the same route definition can be safely reused by two
+        profiles while remaining distinguishable in an Attempt provenance
+        record.  Keep this envelope deliberately free of credentials and
+        endpoints; those are not fields in a ``ModelRouteDefinition`` and are
+        resolved separately at execution time.
+        """
+        route = next((item for item in self.routes if item.route_key == route_key), None)
+        if route is None:
+            raise ValueError(f"model profile {self.identity()} has no route {route_key!r}")
+        return {
+            "schema_version": _MODEL_ROUTE_BINDING_SCHEMA_VERSION,
+            "profile_key": self.profile_key,
+            "profile_version": self.version,
+            "profile_definition_hash": self.definition_hash(),
+            "route_key": route.route_key,
+            "route_definition": route.canonical(),
+        }
+
+    def route_hash(self, route_key: str) -> str:
+        """Hash the canonical profile-scoped binding for ``route_key``."""
+        return sha256_hex(self.route_binding(route_key))
+
+    def routes_for_runtime(
+        self, runtime_kind: ModelRuntimeKind
+    ) -> tuple[ModelRouteDefinition, ...]:
+        """Return runtime-compatible routes in deterministic priority order."""
+        return tuple(
+            sorted(
+                (route for route in self.routes if runtime_kind in route.allowed_runtime_kinds),
+                key=lambda item: (item.priority, item.route_key),
+            )
+        )
+
+    def resolve_route(
+        self,
+        runtime_kind: ModelRuntimeKind,
+        *,
+        available_route_keys: frozenset[str] | set[str] | None = None,
+    ) -> ModelRouteDefinition:
+        """Resolve one route, requiring explicit availability for fallback policy."""
+        candidates = self.routes_for_runtime(runtime_kind)
+        if self.selection_policy == "ordered_first_available" and available_route_keys is None:
+            raise ValueError(
+                f"model profile {self.identity()} requires explicit route availability"
+            )
+        if available_route_keys is not None:
+            candidates = tuple(
+                route for route in candidates if route.route_key in available_route_keys
+            )
+        for route in candidates:
+            return route
+        raise ValueError(
+            f"model profile {self.identity()} has no available route for {runtime_kind}"
+        )
+
 
 class HarnessDefinitionSet(StrictModel):
-    """The complete frozen set whose hash a config revision may reference."""
+    """The legacy frozen set whose hash a config revision may reference.
+
+    H1.5 profile storage is intentionally excluded by this temporary hard
+    gate; the profile store cannot enter snapshots until the planned 0010
+    contract separately freezes the profile binding/run policy while
+    preserving the legacy snapshot hash.
+    """
 
     workflows: tuple[WorkflowDefinition, ...] = ()
     roles: tuple[RoleDefinition, ...] = ()

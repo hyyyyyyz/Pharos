@@ -14,7 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import Field
+
 from pharos.harness.contracts import AttemptErrorClass, GatewayError, StrictModel
+from pharos.harness.seams import Clock
 
 MICROSECONDS_PER_SECOND = 1_000_000
 
@@ -51,10 +54,21 @@ class ModelResult(StrictModel):
 
     output: Any = None
     finish_reason: str = "stop"
-    input_tokens: int = 10
-    output_tokens: int = 20
-    cost_micros: int = 0
-    provider_request_id: str = "fake-req-1"
+    input_tokens: int = Field(default=10, ge=0)
+    output_tokens: int = Field(default=20, ge=0)
+    cost_micros: int = Field(default=0, ge=0)
+    provider_request_id: str | None = Field(
+        default="fake-req-1",
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+    )
+    runtime_message_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+    )
     error: str | None = None
 
 
@@ -68,7 +82,7 @@ class FakeModel:
     call with usage, exactly like a real provider might.
     """
 
-    clock: FakeClock
+    clock: Clock
     script: list[Any] | Callable[[int, dict], Any] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     cancelled: bool = False
@@ -81,7 +95,20 @@ class FakeModel:
         entry = (
             self.script(index, payload)
             if callable(self.script)
-            else (self.script[index] if index < len(self.script) else ModelResult())
+            else (
+                self.script[index]
+                if index < len(self.script)
+                # The default fake response is a deterministic typed object;
+                # an explicit ``ModelResult(output=None)`` remains invalid
+                # and is useful to exercise the runner's schema rejection.
+                else ModelResult(
+                    output={
+                        "ok": True,
+                        "workflow": payload.get("workflow"),
+                        "step": payload.get("step"),
+                    }
+                )
+            )
         )
         if isinstance(entry, GatewayError):
             raise entry
