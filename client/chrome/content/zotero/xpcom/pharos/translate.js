@@ -150,7 +150,7 @@ Zotero.Pharos.Translate = new function () {
 	 * The reader toolbar uses the same two commands as the item context menu.
 	 *
 	 * renderToolbar's append target is Reader's CustomSections container, which
-	 * sits immediately before the built-in find button. Keeping the entry here,
+	 * sits ahead of the built-in appearance and find buttons. Keeping the entry here,
 	 * rather than patching the Reader React tree, also means upstream toolbar
 	 * changes cannot silently move it to a different group.
 	 */
