@@ -99,3 +99,10 @@ a:hover {
     transition: none !important;
   }
 }
+
+/* Keyboard focus is always visible. Low specificity on purpose: any control
+   that draws its own ring simply wins. */
+:where(button, [role="button"], a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--c-ac, #4f46e5);
+  outline-offset: 2px;
+}

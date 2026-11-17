@@ -191,6 +191,19 @@
 .ph-set-sec {
   margin-bottom: 24px;
 }
+.ph-set-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 24px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-bd);
+}
+.ph-set-sec-head .ph-set-sec-title {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
 .ph-set-sec-title {
   margin: 24px 0 0;
   padding-bottom: 8px;

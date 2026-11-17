@@ -656,9 +656,6 @@ export function DirectionsSettings(): JSX.Element {
 
       <div className="ph-set-sec ph-dir-sec">
         <div className="ph-set-sec-head">
-          <span className="ph-set-ic ph-set-ic--tx2">
-            <Icons.daily />
-          </span>
           <div className="ph-set-sec-title">研究方向</div>
           {directions !== undefined && directions.length > 0 && (
             <div className="ph-dir-count">
@@ -840,9 +837,6 @@ export function DirectionsSettings(): JSX.Element {
 
       <div className="ph-set-sec ph-dir-sec">
         <div className="ph-set-sec-head">
-          <span className="ph-set-ic ph-set-ic--tx2">
-            <Icons.cloud />
-          </span>
           <div className="ph-set-sec-title">抓取范围</div>
         </div>
 
