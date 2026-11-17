@@ -35,7 +35,7 @@ registration, either behaviour would hand the role to whoever signed up first.
 ## Tests
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]" httpx
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 ```
 
