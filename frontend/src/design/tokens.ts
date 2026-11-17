@@ -132,6 +132,8 @@ export function neutralVars(t: ThemeMode): Vars {
       // The wordmark is navy on transparent; on the dark ground it is lifted to
       // white (inverting would turn the gold beam blue, a brightness lift keeps it clean).
       "--c-logo-filter": "brightness(0) invert(1) opacity(0.92)",
+      // The mark's navy disc nearly matches the dark rail; a hairline keeps its edge.
+      "--c-mark-ring": "var(--c-bds)",
     };
   return {
     "--c-bg": "#F7F2E9",
@@ -160,6 +162,7 @@ export function neutralVars(t: ThemeMode): Vars {
     // The lighthouse beam: the logo's gold #F8C040. See the dark branch.
     "--c-beam": "oklch(0.837 0.151 84)",
     "--c-logo-filter": "none",
+    "--c-mark-ring": "transparent",
   };
 }
 

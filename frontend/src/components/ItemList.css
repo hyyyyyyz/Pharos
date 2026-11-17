@@ -75,13 +75,16 @@
 }
 .ph-il-sortsel {
   height: 28px;
-  padding: 0 8px;
+  padding: 0 24px 0 8px;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
-  background: transparent;
+  background-color: transparent;
   color: var(--c-tx2);
   font-size: var(--fs-sm);
   cursor: pointer;
+  background-position:
+    calc(100% - 13px) 11px,
+    calc(100% - 8px) 11px;
 }
 .ph-il-sortsel:hover {
   border-color: var(--c-bd);

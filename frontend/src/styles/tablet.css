@@ -78,7 +78,8 @@
   }
 
   /* tab strip */
-  .ph-tabbar {
+  .ph-tabbar,
+  .ph-topstrip {
     height: 44px;
   }
   .ph-tabbar-tab {

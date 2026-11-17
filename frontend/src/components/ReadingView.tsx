@@ -1092,7 +1092,9 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   <Icons.redo size={15} />
                 </button>
                 <div className="ph-rv-spacer" />
-                <span className="ph-rv-hint">Ctrl+滚轮 / 双指缩放 · 拖动平移</span>
+                <span className="ph-rv-hint">
+                  {/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"}+滚轮 / 双指缩放 · 拖动平移
+                </span>
               </div>
               {docError ? (
                 <div className="ph-rv-pdf-msg is-err">加载失败：{docError}</div>

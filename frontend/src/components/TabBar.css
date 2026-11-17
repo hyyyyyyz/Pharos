@@ -73,3 +73,11 @@
     color: var(--c-tx);
   }
 }
+
+/* Stands in for the tab strip in modules that have none. */
+.ph-topstrip {
+  flex: none;
+  height: 36px;
+  background: var(--c-rail);
+  border-bottom: 1px solid var(--c-bd);
+}

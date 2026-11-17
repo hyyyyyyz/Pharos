@@ -213,17 +213,6 @@ export const Icons = {
   panelL: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M8 4.5v11"]),
   panelR: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M12 4.5v11"]),
   send: make(["M4 10h11", "M10 5l5 5-5 5"]),
-  brand: make(
-    [
-      "M8.7 18h6.6",
-      "M9.6 18l.7-6.2h3.4l.7 6.2",
-      "M10 8.2h4",
-      "M12 3.5l2.2 2.4H9.8z",
-      "M10.3 8.2v3.6M13.7 8.2v3.6",
-      "M6.2 7.3 8.6 8",
-      "M17.8 7.3 15.4 8",
-    ],
-  ),
   user: make([{ c: true, cx: 10, cy: 7.5, r: 3 }, "M4.8 16.2a5.2 5.2 0 0 1 10.4 0"]),
   check: make(["M5 10.5l3.2 3.4 6.8-7.4"]),
   eye: make(

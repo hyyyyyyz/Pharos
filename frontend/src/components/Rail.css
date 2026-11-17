@@ -74,7 +74,17 @@ html.ph-rail-resizing * {
   padding: 0 0 0 12px;
 }
 .ph-rail-brand--col {
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+/* The mark as supplied: no border, no filter, no inversion. In the dark theme the
+   navy disc nearly matches the rail, so a hairline keeps its edge. */
+.ph-rail-mark-img {
+  display: block;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--c-mark-ring, transparent);
 }
 .ph-rail-brand-mark {
   display: flex;

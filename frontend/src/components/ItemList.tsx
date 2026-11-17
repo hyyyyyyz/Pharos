@@ -668,7 +668,10 @@ export function ItemList(): JSX.Element {
         {hasRows &&
           visible.map((r) => {
             const sel = selectedIds.includes(r.id);
-            const meta = r.vm === null || !pdfTx ? null : statusMeta(r.vm.status);
+            const meta =
+              r.vm === null || !pdfTx || r.vm.status === "untranslated"
+                ? null
+                : statusMeta(r.vm.status);
             const sub =
               r.vm === null
                 ? "—"

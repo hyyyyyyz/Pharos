@@ -103,7 +103,7 @@
   padding: 0 12px;
   border: 1px solid var(--c-bd);
   border-radius: var(--r-sm);
-  background: var(--c-sf);
+  background-color: var(--c-sf);
   color: var(--c-tx);
   font-size: var(--fs-base);
   line-height: var(--lh-base);
@@ -374,4 +374,8 @@
   .ph-pageheader-meta {
     display: none;
   }
+}
+
+select.ph-input {
+  padding-right: 32px;
 }

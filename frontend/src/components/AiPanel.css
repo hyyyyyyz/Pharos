@@ -126,14 +126,15 @@
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   outline: none;
-  background: transparent;
+  background-color: transparent;
   color: var(--c-tx2, #5a616e);
   font: inherit;
-  font-size: var(--fs-meta);
+  font-size: var(--fs-sm);
+  height: 32px;
 }
 
 .ph-ai-session-row select:hover,
-.ph-ai-session-row select:focus { border-color: var(--c-bd); background: var(--c-sf); }
+.ph-ai-session-row select:focus { border-color: var(--c-bd); background-color: var(--c-sf); }
 
 .ph-ai-body {
   position: relative;

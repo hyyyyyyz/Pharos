@@ -67,6 +67,9 @@ export default function App() {
       <Rail />
       <main className="ph-main">
         <Suspense fallback={<div className="ph-lazy-fallback" aria-busy="true" />}>
+        {/* Same height as the 文库 tab strip, so every module's page header sits at
+            the same y and nothing jumps when switching module. */}
+        {activeModule !== "library" && <div className="ph-topstrip" aria-hidden />}
         {activeModule === "library" ? (
           <>
             <TabBar />

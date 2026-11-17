@@ -858,3 +858,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The hint is whole or absent: below this width it is hidden rather than clipped. */
+.ph-rv-subbar {
+  container-type: inline-size;
+}
+@container (max-width: 780px) {
+  .ph-rv-hint {
+    display: none;
+  }
+}

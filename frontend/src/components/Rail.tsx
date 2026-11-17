@@ -16,6 +16,7 @@ import {
   useUI,
   type ModuleKey,
 } from "../store";
+import markImg from "../assets/pharos-mark-72.png";
 import "./Rail.css";
 
 type IconComponent = (typeof Icons)["library"];
@@ -225,7 +226,7 @@ export function Rail(): JSX.Element {
         {exp ? (
           <>
             <span className="ph-rail-brand-mark" aria-hidden>
-              <Icons.brand size={20} />
+              <img className="ph-rail-mark-img" src={markImg} alt="" width={20} height={20} />
             </span>
             <span className="ph-rail-wordmark">Pharos</span>
             <button
@@ -240,6 +241,8 @@ export function Rail(): JSX.Element {
             </button>
           </>
         ) : (
+          <>
+          <img className="ph-rail-mark-img" src={markImg} alt="" width={24} height={24} />
           <button
             type="button"
             onClick={toggleRail}
@@ -250,6 +253,7 @@ export function Rail(): JSX.Element {
           >
             <Icons.panelR />
           </button>
+          </>
         )}
       </div>
 
