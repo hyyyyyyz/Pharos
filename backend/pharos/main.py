@@ -83,8 +83,10 @@ def create_app() -> FastAPI:
         # restart changes nothing user-visible; the loop starts only when the
         # dispatcher gate is enabled by an operator revision.
         from pharos.harness.app import HarnessApp
+        from pharos.harness.clock import SystemClock
 
-        harness = HarnessApp()
+        # Real time in production; tests inject FakeClock.
+        harness = HarnessApp(clock=SystemClock())
         harness.ensure_bootstrapped()
         app.state.harness = harness
         harness_task: asyncio.Task | None = None

@@ -31,10 +31,12 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import HarnessDispatcher
 from pharos.harness.events import EventStore
-from pharos.harness.fakes import FakeClock, FakeModel
+from pharos.harness.clock import SystemClock
+from pharos.harness.fakes import FakeModel
 from pharos.harness.model_gateway import FakeModelGateway
 from pharos.harness.registry import Registry
 from pharos.harness.repository import HarnessConfigService, HarnessRunRepository, Scope, now_iso
+from pharos.harness.seams import Clock
 from pharos.harness.runner import HarnessRunner, StepExecutor
 from pharos.harness.state import HarnessStateService
 from pharos.harness.tables import steps
@@ -63,11 +65,11 @@ class HarnessApp:
     def __init__(
         self,
         *,
-        clock: FakeClock | None = None,
+        clock: Clock | None = None,
         fake_model: FakeModel | None = None,
         dispatcher: HarnessDispatcher | None = None,
     ) -> None:
-        self.clock = clock or FakeClock()
+        self.clock: Clock = clock or SystemClock()
         self.registry = Registry()
         for capability in canary_capabilities():
             self.registry.register_capability(capability)

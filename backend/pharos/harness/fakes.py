@@ -68,7 +68,7 @@ class FakeModel:
     call with usage, exactly like a real provider might.
     """
 
-    clock: FakeClock
+    clock: Any  # any Clock; the scripted model never reads it
     script: list[Any] | Callable[[int, dict], Any] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     cancelled: bool = False
