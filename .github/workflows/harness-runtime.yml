@@ -48,9 +48,7 @@ jobs:
         run: scripts/check-deepseek-harness-vendor.sh
 
       - name: Verify the Pharos safe-profile policy
-        run: |
-          python3 harness-runtime/scripts/check-profile.py
-          python3 -m unittest discover -s harness-runtime/tests -v
+        run: python3 harness-runtime/scripts/check-profile.py
 
       - name: Install the bounded wire test dependencies
         run: >-
@@ -99,6 +97,11 @@ jobs:
           CI: "1"
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run build
+
+      # The provisioning tests copy the built CLI (apps/cli/lib/bin.js), so they
+      # can only run once the snapshot above has been built.
+      - name: Test the runtime tooling against the built snapshot
+        run: python3 -m unittest discover -s harness-runtime/tests -v
 
       - name: Run the real Loader and deterministic Pharos canary
         env:
