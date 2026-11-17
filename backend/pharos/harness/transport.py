@@ -1116,11 +1116,12 @@ class AttemptTransport:
                                         "inbox receipt must be the first prompt event"
                                     )
                                 receipt_seen = True
-                            elif event.type == "agent/inbox/spliced":
-                                if not receipt_seen or not turn_start_seen:
-                                    raise HarnessProtocolError(
-                                        "inbox mutation preceded receipt or turn/start"
-                                    )
+                            elif event.type == "agent/inbox/spliced" and (
+                                not receipt_seen or not turn_start_seen
+                            ):
+                                raise HarnessProtocolError(
+                                    "inbox mutation preceded receipt or turn/start"
+                                )
                             if event.type == "turn/start":
                                 if not receipt_seen or not saw_running:
                                     raise HarnessProtocolError(
