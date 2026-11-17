@@ -39,7 +39,7 @@
   z-index: 4;
   pointer-events: auto;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 /*
@@ -93,7 +93,7 @@
       color-mix(in oklab, var(--c-note-card) 93%, black) 100%
     );
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   /* Two stages: a tight contact shadow and a wide soft one. That pairing is
      what tells the eye how far above the page something floats; the single
      1px shadow this replaces laid the card flat on the paper, which is
@@ -142,9 +142,9 @@
   width: auto;
   height: auto;
   padding: 3px 9px 3px 7px;
-  border-radius: 11px;
+  border-radius: var(--r-md);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--c-tx, #1e222a);
   text-align: left;
   cursor: pointer;
@@ -181,7 +181,7 @@
   height: 16px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   cursor: pointer;
   display: inline-flex;
@@ -253,7 +253,7 @@
   width: 6px;
   height: 34%;
   transform: translateY(-50%);
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: var(--c-note, var(--c-tx3));
   opacity: 0.55;
   cursor: grab;

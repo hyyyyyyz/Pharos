@@ -177,7 +177,7 @@
   }
 }
 .ph-dv-card.is-selected {
-  background: var(--c-acs);
+  background: var(--c-hv);
 }
 .ph-dv-card:focus-visible {
   outline: 2px solid var(--c-ac);

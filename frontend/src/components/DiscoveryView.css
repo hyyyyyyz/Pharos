@@ -308,7 +308,7 @@
   border-bottom: 1px solid var(--c-bd);
 }
 .ph-disc-result.is-selected {
-  background: var(--c-acs);
+  background: var(--c-hv);
 }
 .ph-disc-check {
   flex: none;

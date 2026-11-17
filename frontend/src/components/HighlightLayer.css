@@ -42,7 +42,7 @@
 
 .ph-hl-mark {
   position: absolute;
-  border-radius: 1.5px;
+  border-radius: var(--r-xs);
   /* Multiply keeps the ink underneath: the canvas glyphs show through the wash
      rather than being covered by it. `background` is set inline from the
      highlight's colour token. */
@@ -51,7 +51,6 @@
 
 /* The mark whose toolbar is open, so it is obvious which one is being edited. */
 .ph-hl-mark.is-on {
-  box-shadow: 0 0 0 1px var(--c-ac);
 }
 
 /* A highlight carrying a note gets a marginal rule — the only affordance that
@@ -76,7 +75,7 @@
   padding: 6px;
   background: var(--c-sf);
   border: 1px solid var(--c-bd);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   box-shadow: var(--sh-pop);
   /* Chrome, not content. */
   user-select: none;
@@ -120,7 +119,6 @@
 }
 .ph-hl-sw.is-on {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
 }
 
 .ph-hl-sep {
@@ -137,10 +135,10 @@
   height: 22px;
   padding: 0 6px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx2);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -168,7 +166,7 @@
 /* The honest failure line: a save that never reached the server says so
    here, in the popup, next to the buttons that can retry it. */
 .ph-hl-err {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--c-err, #d93a3a);
   white-space: nowrap;
 }
@@ -190,11 +188,11 @@
   height: 76px;
   padding: 6px 7px;
   resize: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-bg);
   color: var(--c-tx);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   outline: none;
   user-select: text;
@@ -217,8 +215,8 @@
 .ph-hl-primary {
   height: 24px;
   padding: 0 10px;
-  border-radius: 6px;
-  font-size: 11px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-meta);
   cursor: pointer;
 }
 

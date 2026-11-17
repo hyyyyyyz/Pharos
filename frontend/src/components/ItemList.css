@@ -177,11 +177,11 @@
 }
 @media (hover: hover) {
   .ph-il-row:hover:not(.is-selected) {
-    background: var(--c-hv);
+    background: color-mix(in oklab, var(--c-hv) 50%, transparent);
   }
 }
 .ph-il-row.is-selected {
-  background: var(--c-acs);
+  background: var(--c-hv);
 }
 .ph-il-row.is-primary::before {
   content: "";

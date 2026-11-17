@@ -56,7 +56,7 @@ a:hover {
 }
 .ph-scroll::-webkit-scrollbar-thumb {
   background: var(--c-bds, #d4d8de);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 2px solid transparent;
   background-clip: padding-box;
 }

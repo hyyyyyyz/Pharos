@@ -19,19 +19,19 @@
 .ph-dir-note {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 10px 12px;
-  margin-bottom: 18px;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 12px 12px;
+  margin-bottom: 20px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-acsb);
   background: var(--c-acs);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   color: var(--c-tx2);
 }
 .ph-dir-note strong {
   color: var(--c-tx);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* --------------------------------------------------------------- direction */
@@ -40,22 +40,22 @@
    left-aligned icon + title pair shared with the 账户 tab. */
 .ph-dir-count {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3);
 }
 
 .ph-dir-muted {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-tx3);
 }
 
 .ph-dir-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-bg);
 }
@@ -82,7 +82,7 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx3);
   cursor: pointer;
@@ -109,18 +109,18 @@
 .ph-dir-name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
+  gap: 8px;
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: var(--c-tx);
 }
 
 .ph-dir-badge {
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
   background: var(--c-hv);
   color: var(--c-tx3);
-  font-size: 9.5px;
+  font-size: var(--fs-meta);
   font-weight: 500;
 }
 
@@ -129,7 +129,7 @@
    unscannable, and showing none would hide what the row actually matches. */
 .ph-dir-kws {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--c-tx3);
   display: -webkit-box;
@@ -143,7 +143,7 @@
 .ph-dir-acts {
   display: flex;
   flex: none;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* The enable state, in the soft-accent treatment the 主题 buttons use, rather
@@ -153,7 +153,7 @@
   border-color: var(--c-acsb);
   background: var(--c-acs);
   color: var(--c-ac);
-  font-weight: 600;
+  font-weight: 500;
 }
 .ph-dir-btn--on:hover:not(:disabled) {
   background: var(--c-acs);
@@ -163,16 +163,16 @@
 .ph-dir-add {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 30px;
   width: 100%;
-  padding: 0 10px;
+  padding: 0 12px;
   margin-top: 2px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px dashed var(--c-bds);
   background: transparent;
   color: var(--c-tx2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .ph-dir-add:hover:not(:disabled) {
@@ -188,9 +188,9 @@
 /* ------------------------------------------------------------------ editor */
 
 .ph-dir-editor {
-  padding: 10px;
-  margin-bottom: 6px;
-  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-acsb);
   background: var(--c-bg);
 }
@@ -199,13 +199,13 @@
    single-line field turns a paste into a horizontal scroll nobody can read. */
 .ph-dir-textarea {
   width: 100%;
-  padding: 7px 10px;
-  margin-bottom: 9px;
-  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-sf);
   color: var(--c-tx);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   line-height: 1.6;
   resize: vertical;
@@ -217,12 +217,12 @@
 }
 
 .ph-dir-parsed {
-  margin-bottom: 9px;
+  margin-bottom: 8px;
 }
 
 .ph-dir-parsed-head {
-  margin-bottom: 6px;
-  font-size: 11px;
+  margin-bottom: 8px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3);
 }
 
@@ -236,12 +236,12 @@
 }
 
 .ph-dir-chip {
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--c-bd);
   background: var(--c-sf);
   color: var(--c-tx2);
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   /* The exact stored string, spaces and hyphens intact — this is what gets
      substring-matched, so it must not be re-wrapped mid-term. */
@@ -254,8 +254,8 @@
 
 .ph-dir-editor-acts {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* --------------------------------------------------------------- messaging */
@@ -264,16 +264,16 @@
    enforce, and finds out while typing instead of after a round trip. Amber
    weight rather than --c-err, which is reserved for something that did fail. */
 .ph-dir-warn {
-  margin-top: 6px;
-  font-size: 11px;
+  margin-top: 8px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--c-tx2);
   overflow-wrap: anywhere;
 }
 
 .ph-dir-hint {
-  margin: -3px 0 10px;
-  font-size: 11px;
+  margin: -4px 0 12px;
+  font-size: var(--fs-meta);
   line-height: 1.65;
   color: var(--c-tx3);
 }
@@ -292,27 +292,27 @@
 /* ------------------------------------------------------------ empty state */
 
 .ph-dir-empty {
-  padding: 14px;
-  border-radius: 8px;
+  padding: 16px;
+  border-radius: var(--r-sm);
   border: 1px dashed var(--c-bds);
   background: var(--c-bg);
 }
 
 .ph-dir-empty-title {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: var(--c-tx);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .ph-dir-empty-desc {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   color: var(--c-tx2);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .ph-dir-empty-acts {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
