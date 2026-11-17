@@ -1,0 +1,272 @@
+// The paste-a-link field at the right end of the tab bar, left of the tabs menu
+// arrow.
+//
+// 28px tall like a tab, with the tab's 5px corners. Resting it is a 200px
+// outline; focused it grows to 320 and shows where the paper will go. When the
+// title bar is too narrow it folds into a 28px plus button that unfolds in place.
+// Progress is the beam (the only place gold means "work in progress").
+
+$pharos-import-plus: url("data:image/svg+xml;utf8,<svg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M8 3.25V12.75M3.25 8H12.75' stroke='context-stroke' stroke-width='1.5' stroke-linecap='round'/></svg>");
+
+pharos-import-box {
+	display: flex;
+	flex: none;
+	align-items: center;
+	height: 28px;
+	margin-inline: 4px;
+	min-width: 0;
+	-moz-window-dragging: no-drag;
+}
+
+.pharos-import-field {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	box-sizing: border-box;
+	width: 200px;
+	height: 28px;
+	padding-inline: 6px 6px;
+	border: 1px solid var(--c-bd);
+	border-radius: 5px;
+	background: transparent;
+	color: var(--c-tx2);
+	overflow: hidden;
+	transition: border-color var(--dur-fast) var(--ease),
+		background-color var(--dur-fast) var(--ease),
+		width var(--dur-pop) var(--ease);
+
+	&:focus-within {
+		width: 320px;
+		border-color: var(--c-ac);
+		background: var(--c-sf);
+	}
+
+	&[data-state="error"] {
+		width: 320px;
+		border-color: var(--c-err);
+	}
+}
+
+.pharos-import-icon {
+	flex: 0 0 16px;
+	width: 16px;
+	height: 16px;
+	background: $pharos-import-plus no-repeat center / 16px 16px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	stroke: currentColor;
+}
+
+.pharos-import-input {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	padding: 0;
+	margin: 0;
+	border: none;
+	outline: none;
+	background: transparent;
+	color: var(--c-tx);
+	font: inherit;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	text-overflow: ellipsis;
+	-moz-appearance: none;
+	appearance: none;
+
+	&::placeholder {
+		color: var(--c-tx3);
+		opacity: 1;
+	}
+
+	&:disabled {
+		color: var(--c-tx2);
+	}
+}
+
+// A result replaces what is typed without removing it: the text is kept (a
+// failed import comes back on focus) but is not drawn under the message.
+.pharos-import-field[data-state] .pharos-import-input {
+	color: transparent;
+	caret-color: transparent;
+
+	&::placeholder {
+		color: transparent;
+	}
+}
+
+.pharos-import-status {
+	position: absolute;
+	inset-block: 0;
+	inset-inline: 28px 8px;
+	display: flex;
+	align-items: center;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	pointer-events: none;
+	color: var(--c-tx2);
+
+	&[hidden] {
+		display: none;
+	}
+
+	&[data-kind="ok"] {
+		color: var(--c-ok);
+	}
+
+	&[data-kind="error"] {
+		color: var(--c-err);
+	}
+
+	&.is-clickable {
+		pointer-events: auto;
+		cursor: default;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--c-ac);
+		outline-offset: -2px;
+	}
+}
+
+.pharos-import-target {
+	display: none;
+	flex: 0 1 auto;
+	max-width: 110px;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx3);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pharos-import-key {
+	display: none;
+	flex: none;
+	min-width: 18px;
+	height: 18px;
+	box-sizing: border-box;
+	padding-inline: 4px;
+	border: 1px solid var(--c-bd);
+	border-radius: 4px;
+	font-size: var(--fs-sm);
+	line-height: 16px;
+	text-align: center;
+	color: var(--c-tx3);
+}
+
+.pharos-import-field:focus-within:not([data-state]) {
+	.pharos-import-target,
+	.pharos-import-key {
+		display: block;
+	}
+}
+
+.pharos-import-bar {
+	display: none;
+	position: absolute;
+	inset-inline: 0;
+	bottom: 0;
+	height: 2px;
+	overflow: hidden;
+
+	&::before {
+		content: "";
+		position: absolute;
+		inset-block: 0;
+		width: 40%;
+		background: var(--c-beam);
+		animation: pharos-import-slide 1.1s var(--ease) infinite;
+	}
+}
+
+.pharos-import-field.is-busy .pharos-import-bar {
+	display: block;
+}
+
+@keyframes pharos-import-slide {
+	from {
+		inset-inline-start: -40%;
+	}
+
+	to {
+		inset-inline-start: 100%;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pharos-import-field {
+		transition: none;
+	}
+
+	.pharos-import-bar::before {
+		animation: none;
+		inset-inline-start: 0;
+		width: 100%;
+	}
+}
+
+@media (hover: hover) {
+	.pharos-import-field:hover:not(:focus-within):not([data-state]) {
+		border-color: var(--c-tx3);
+	}
+}
+
+// Narrow: a button, which unfolds into the field in place.
+.pharos-import-toggle {
+	display: none;
+	width: 28px;
+	height: 28px;
+	box-sizing: border-box;
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 5px;
+	background: transparent $pharos-import-plus no-repeat center / 16px 16px;
+	color: var(--c-tx2);
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	stroke: currentColor;
+
+	@media (hover: hover) {
+		&:hover {
+			background-color: var(--c-hv);
+			color: var(--c-tx);
+		}
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--c-ac);
+		outline-offset: -2px;
+	}
+
+	&.is-busy {
+		color: var(--c-beam);
+	}
+}
+
+pharos-import-box[narrow="true"] {
+	&:not([open="true"]) {
+		.pharos-import-field {
+			display: none;
+		}
+
+		.pharos-import-toggle {
+			display: block;
+		}
+	}
+
+	&[open="true"] .pharos-import-field {
+		width: 240px;
+
+		&:focus-within,
+		&[data-state="error"] {
+			width: 280px;
+		}
+	}
+}
