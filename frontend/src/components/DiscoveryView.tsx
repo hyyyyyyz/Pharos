@@ -13,6 +13,7 @@ import type {
 import { Icons } from "../design/icons";
 import { isRulesAnalysis, sourceList, sourceName } from "../lib/discovery";
 import { useUI } from "../store";
+import { EmptyState, ModuleShell, PageHeader, SidePanel, SkeletonRows } from "./shell";
 import "./DiscoveryView.css";
 
 const SOURCE_OPTIONS: { id: DiscoverySource; name: string; note: string }[] = [
@@ -140,33 +141,30 @@ function SearchHistoryItem({
   return (
     <button
       type="button"
-      className={cx("ph-disc-history-item", active && "is-active")}
+      className={cx("ph-sp-row ph-disc-history-item", active && "is-active")}
       onClick={onOpen}
     >
-      <span className="ph-disc-history-top">
-        <span
-          className={cx("ph-disc-status-dot", `is-${search.status}`)}
-          title={STATUS_TEXT[search.status]}
-        />
+      <span
+        className={cx("ph-disc-status-dot", `is-${search.status}`)}
+        title={STATUS_TEXT[search.status]}
+      />
+      <span className="ph-disc-history-text">
         <span className="ph-disc-history-query">{search.query}</span>
-      </span>
-      <span className="ph-disc-history-meta">
-        {fmtTime(search.created_at)} · {search.result_count} 篇
-      </span>
-      {/* The outcome in words, for every state except a clean run.
-          The dot alone said it in hue, with the word reachable only by
-          hovering. `partial` means a source died and results are missing, and
-          about one man in twelve cannot separate its gold from complete's
-          teal — so a partial run read as a clean one, and its lower result
-          count was indistinguishable from a genuinely narrower query. Absence
-          of this line is what "nothing went wrong" looks like, and complete is
-          the only state that gets to be silent. */}
-      {search.status !== "complete" && (
-        <span className={cx("ph-disc-history-state", `is-${search.status}`)}>
-          {STATUS_TEXT[search.status]}
+        <span className="ph-disc-history-meta">
+          {fmtTime(search.created_at)} · {search.result_count} 篇 · {sourceList(search.sources)}
+          {/* The outcome in words, for every state except a clean run. A dot
+              alone says it in shape and hue, and `partial` — a source died and
+              results are missing — must not read as a clean run to a reader who
+              cannot tell the hues apart. Absence of this word is what "nothing
+              went wrong" looks like. */}
+          {search.status !== "complete" && (
+            <span className={cx("ph-disc-history-state", `is-${search.status}`)}>
+              {" · "}
+              {STATUS_TEXT[search.status]}
+            </span>
+          )}
         </span>
-      )}
-      <span className="ph-disc-history-sources">{sourceList(search.sources)}</span>
+      </span>
     </button>
   );
 }
@@ -188,48 +186,47 @@ function ResultCard({
   onToggle: () => void;
   onAnalyze: () => void;
 }): JSX.Element {
+  const [open, setOpen] = useState(false);
   const generated = !isRulesAnalysis(result);
-  const trick = generated
-    ? result.core_trick.trim() || "AI 未返回中文核心思路"
-    : "尚未生成中文核心思路";
+  const trick = generated ? result.core_trick.trim() || "AI 未返回中文核心思路" : "";
   const analysisLabel = generated ? "AI 中文解读" : "仅摘要规则";
   const highlights = highlightsOf(result);
+  const byline = [
+    result.authors.length > 0
+      ? result.authors.slice(0, 3).join(", ") + (result.authors.length > 3 ? " 等" : "")
+      : null,
+    ...paperMeta(result),
+  ].filter((x) => x !== null);
   return (
     <article className={cx("ph-disc-result", selected && "is-selected")}>
-      <div className="ph-disc-result-select">
-        <label className="ph-disc-check" title={filed ? "仍可加入其他项目" : "选择论文"}>
-          <input type="checkbox" checked={selected} onChange={onToggle} />
-          <span />
-        </label>
-        <span className="ph-disc-rank">{String(result.rank).padStart(2, "0")}</span>
-      </div>
+      <label className="ph-disc-check" title={filed ? "仍可加入其他项目" : "选择论文"}>
+        <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`选择 ${result.title}`} />
+        <span />
+      </label>
 
       <div className="ph-disc-result-body">
-        <div className="ph-disc-result-title-row">
-          {result.url !== null ? (
-            <a href={result.url} target="_blank" rel="noreferrer" className="ph-disc-result-title">
-              {result.title}
-            </a>
-          ) : (
-            <h3 className="ph-disc-result-title">{result.title}</h3>
-          )}
-        </div>
+        {result.url !== null ? (
+          <a href={result.url} target="_blank" rel="noreferrer" className="ph-disc-result-title">
+            {result.title}
+          </a>
+        ) : (
+          <h3 className="ph-disc-result-title">{result.title}</h3>
+        )}
 
-        <div className="ph-disc-paper-meta">
-          {paperMeta(result).map((item) => <span key={item}>{item}</span>)}
-        </div>
+        <div className="ph-disc-paper-meta">{byline.join(" · ")}</div>
 
-        <div className={cx("ph-disc-trick", !generated && "is-pending")}>
-          <span>核心思路</span>
-          <p>{trick}</p>
-        </div>
+        {/* Two lines of what the paper says: the generated core idea when there
+            is one, otherwise the abstract it was extracted from. */}
+        <p className={cx("ph-disc-abstract", !generated && "is-pending")}>
+          {generated ? trick : result.abstract}
+        </p>
 
-        {highlights.length > 0 && (
+        {open && highlights.length > 0 && (
           <div className="ph-disc-highlights">
             {highlights.map(({ key, label, text, fromRules }) => (
               <div
                 key={key}
-                className={cx("ph-disc-hl", fromRules && "is-rules")}
+                className="ph-disc-hl"
                 title={fromRules ? LIMITATIONS_RULES_HINT : undefined}
               >
                 <span className="ph-disc-hl-k">
@@ -244,39 +241,27 @@ function ResultCard({
           </div>
         )}
 
-        {analysisError !== null && (
-          <div className="ph-disc-analysis-warning is-error">
-            <Icons.alert size={15} />
-            <span>{analysisError}</span>
-          </div>
-        )}
+        {analysisError !== null && <div className="ph-disc-analysis-error">{analysisError}</div>}
 
         <div className="ph-disc-result-footer">
-          <div className="ph-disc-result-state">
-            <span
-              className={cx("ph-disc-analysis-chip", generated && "is-ai")}
-              title={result.analysis_model ?? result.analysis_warning ?? undefined}
-            >
-              {analysisLabel}
-            </span>
-            {filed && <span className="ph-disc-filed-chip">已在当前项目</span>}
-          </div>
-          <div className="ph-disc-result-actions">
-            <button
-              type="button"
-              className="ph-disc-analyze-btn"
-              onClick={onAnalyze}
-              disabled={analyzing}
-            >
-              <Icons.spark size={12} />
-              {analyzing ? "生成中…" : generated ? "重新生成" : "生成核心思路"}
+          <span className="ph-disc-analysis-chip" title={result.analysis_model ?? result.analysis_warning ?? undefined}>
+            {analysisLabel}
+          </span>
+          {filed && <span className="ph-disc-filed-chip">已在当前项目</span>}
+          <span className="ph-disc-footer-spacer" />
+          {highlights.length > 0 && (
+            <button type="button" className="ph-disc-textbtn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              {open ? "收起要点" : "展开要点"}
             </button>
-            {result.pdf_url !== null && (
-              <a className="ph-disc-pdf-link" href={result.pdf_url} target="_blank" rel="noreferrer">
-                查看 PDF
-              </a>
-            )}
-          </div>
+          )}
+          <button type="button" className="ph-disc-textbtn" onClick={onAnalyze} disabled={analyzing}>
+            {analyzing ? "生成中" : generated ? "重新生成" : "生成核心思路"}
+          </button>
+          {result.pdf_url !== null && (
+            <a className="ph-disc-textbtn" href={result.pdf_url} target="_blank" rel="noreferrer">
+              查看 PDF
+            </a>
+          )}
         </div>
       </div>
     </article>
@@ -503,80 +488,77 @@ export function DiscoveryView(): JSX.Element {
 
   const allSelected = results.length > 0 && results.every((result) => selectedSet.has(result.id));
 
-  return (
-    <div className="ph-disc">
-      <aside className="ph-disc-history ph-scroll">
-        <div className="ph-disc-history-head">
-          <span>探索记录</span>
-          <span>{searches.length}</span>
-        </div>
+  const [queryFocus, setQueryFocus] = useState(false);
+  const queryRows = queryFocus || query.length > 60 || query.includes("\n") ? 3 : 1;
 
-        {searchesQuery.isPending ? (
-          <div className="ph-disc-side-state">正在读取历史…</div>
-        ) : searchesQuery.isError ? (
-          <div className="ph-disc-side-state is-error">
-            <span>{errText(searchesQuery.error)}</span>
-            <button type="button" onClick={() => void searchesQuery.refetch()}>重试</button>
-          </div>
-        ) : searches.length === 0 ? (
-          <div className="ph-disc-side-state">
-            <Icons.search size={20} />
-            <span>完成一次检索后，可随时重开结果。</span>
-          </div>
-        ) : (
-          <div className="ph-disc-history-list">
-            {searches.map((search) => (
+  return (
+    <ModuleShell
+      side={
+        <SidePanel storageKey="search" title="检索记录">
+          {searchesQuery.isPending ? (
+            <SkeletonRows rows={4} />
+          ) : searchesQuery.isError ? (
+            <EmptyState
+              inline
+              icon={Icons.compass}
+              tone="error"
+              title="读取历史失败"
+              description={errText(searchesQuery.error)}
+              primary={{ label: "重试", onClick: () => void searchesQuery.refetch() }}
+            />
+          ) : searches.length === 0 ? (
+            <EmptyState inline icon={Icons.compass} title="还没有检索记录" description="完成一次检索后，可随时重开结果" />
+          ) : (
+            searches.map((search) => (
               <SearchHistoryItem
                 key={search.id}
                 search={search}
                 active={search.id === activeSearchId}
                 onOpen={() => setActiveSearchId(search.id)}
               />
-            ))}
-          </div>
-        )}
-      </aside>
-
-      <main className="ph-disc-main ph-scroll">
-        <header className="ph-disc-titlebar">
-          <div>
-            <h1>文献探索</h1>
-            <p>从研究问题出发，保留每次检索的来源、失败和分析边界。</p>
-          </div>
-          {activeProject !== null && (
-            <div className="ph-disc-context">
-              <span>当前项目</span>
-              <strong>{activeProject.name}</strong>
-            </div>
+            ))
           )}
-        </header>
+        </SidePanel>
+      }
+    >
+      <PageHeader
+        title="文献探索"
+        meta={activeProject !== null ? `当前项目：${activeProject.name}` : undefined}
+      >
+        {activeSearch !== null && (
+          <button type="button" className="ph-btn" onClick={reuseSearch}>
+            复用条件
+          </button>
+        )}
+      </PageHeader>
 
+      <div className="ph-disc-scroll ph-scroll">
         <form className="ph-disc-composer" onSubmit={submitSearch}>
-          <label className="ph-disc-query-field">
-            <span>研究问题或 Idea</span>
+          <div className="ph-disc-composer-row">
             <textarea
+              className="ph-input ph-disc-query"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="e.g. KV cache compression for long-context video generation"
+              onFocus={() => setQueryFocus(true)}
+              onBlur={() => setQueryFocus(false)}
+              placeholder="研究问题或 idea，例如 KV cache compression for long-context video generation"
+              aria-label="研究问题或 Idea"
               maxLength={500}
-              rows={3}
+              rows={queryRows}
             />
-          </label>
+          </div>
 
-          <div className="ph-disc-composer-foot">
+          <div className="ph-disc-composer-row ph-disc-options">
             <fieldset className="ph-disc-source-picker">
               <legend>检索来源</legend>
               {SOURCE_OPTIONS.map((source) => (
-                <label key={source.id} className={cx(sources.includes(source.id) && "is-on")}>
+                <label key={source.id} title={source.note}>
                   <input
                     type="checkbox"
                     checked={sources.includes(source.id)}
                     onChange={() => toggleSource(source.id)}
                   />
-                  <span>
-                    <strong>{source.name}</strong>
-                    <small>{source.note}</small>
-                  </span>
+                  {source.name}
                 </label>
               ))}
             </fieldset>
@@ -584,6 +566,7 @@ export function DiscoveryView(): JSX.Element {
             <label className="ph-disc-compact-field">
               <span>关联项目</span>
               <select
+                className="ph-input"
                 value={activeProjectId ?? ""}
                 onChange={(event) => setActiveProject(event.target.value === "" ? null : event.target.value)}
               >
@@ -596,9 +579,10 @@ export function DiscoveryView(): JSX.Element {
               </select>
             </label>
 
-            <label className="ph-disc-compact-field is-limit">
+            <label className="ph-disc-compact-field">
               <span>数量</span>
               <input
+                className="ph-input is-limit"
                 type="number"
                 min={1}
                 max={50}
@@ -609,42 +593,40 @@ export function DiscoveryView(): JSX.Element {
 
             <button
               type="submit"
-              className="ph-disc-search-btn"
+              className="ph-btn is-primary is-lg ph-disc-search-btn"
               disabled={query.trim().length < 2 || sources.length === 0 || searchMutation.isPending}
             >
-              <Icons.search size={15} />
-              {searchMutation.isPending ? "正在检索…" : "运行检索"}
+              {searchMutation.isPending ? "检索中" : "检索"}
             </button>
           </div>
 
-          {sources.length === 0 && <p className="ph-disc-form-hint is-error">至少选择一个检索来源。</p>}
-          {query.trim() !== "" && query.trim().length < 2 && <p className="ph-disc-form-hint is-error">检索词至少需要 2 个字符。</p>}
-          <p className="ph-disc-form-hint">arXiv 建议使用英文关键词；中文会原样发送，当前不会自动翻译。</p>
-          {projectsQuery.isError && <p className="ph-disc-form-hint is-error">项目列表加载失败；仍可检索，但暂时不能归档结果。</p>}
+          {sources.length === 0 && <p className="ph-disc-form-hint is-error">至少选择一个检索来源</p>}
+          {query.trim() !== "" && query.trim().length < 2 && <p className="ph-disc-form-hint is-error">检索词至少需要 2 个字符</p>}
+          <p className="ph-disc-form-hint">arXiv 建议使用英文关键词；中文会原样发送，当前不会自动翻译</p>
+          {projectsQuery.isError && <p className="ph-disc-form-hint is-error">项目列表加载失败；仍可检索，但暂时不能归档结果</p>}
           {searchMutation.isError && <p className="ph-disc-form-hint is-error">{errText(searchMutation.error)}</p>}
         </form>
 
-        {notice !== null && <div className="ph-disc-notice"><Icons.check size={14} />{notice}</div>}
+        {notice !== null && <div className="ph-disc-notice">{notice}</div>}
 
         {activeSearch === null ? (
-          <section className="ph-disc-empty">
-            <span className="ph-disc-empty-mark"><Icons.spark size={24} /></span>
-            <h2>从一个可讨论的问题开始</h2>
-            <p>结果会保留原始来源、结构化摘要和分析方式；没有模型配置时会明确回退为摘要规则提取。</p>
-          </section>
+          <EmptyState
+            icon={Icons.compass}
+            title="从一个可讨论的问题开始"
+            description="结果会保留原始来源、摘要和分析方式；没有配置模型时，会明确回退为摘要规则提取"
+          />
         ) : (
           <section className="ph-disc-results-section">
             <div className="ph-disc-results-head">
-              <div>
+              <h2>{activeSearch.query}</h2>
+              <p>
                 <span className={cx("ph-disc-status", `is-${activeSearch.status}`)}>
                   {STATUS_TEXT[activeSearch.status]}
                 </span>
-                <h2>{activeSearch.query}</h2>
-                <p>
-                  {activeSearch.result_count} 篇 · {sourceList(activeSearch.sources)} · {fmtTime(activeSearch.completed_at ?? activeSearch.created_at)}
-                </p>
-              </div>
-              <button type="button" className="ph-disc-quiet-btn" onClick={reuseSearch}>复用条件</button>
+                {" · "}
+                {activeSearch.result_count} 篇 · {sourceList(activeSearch.sources)} ·{" "}
+                {fmtTime(activeSearch.completed_at ?? activeSearch.created_at)}
+              </p>
             </div>
 
             {Object.keys(activeSearch.errors).length > 0 && (
@@ -658,8 +640,8 @@ export function DiscoveryView(): JSX.Element {
 
             {activeSearch.status === "running" && (
               <div className="ph-disc-running">
-                <span className="ph-disc-running-beam" />
-                正在合并来源并提取论文结构，页面会自动更新。
+                <span className="ph-disc-running-beam" aria-hidden />
+                正在合并来源并提取论文结构，页面会自动更新
               </div>
             )}
 
@@ -671,11 +653,12 @@ export function DiscoveryView(): JSX.Element {
                     checked={allSelected}
                     onChange={() => setSelectedIds(allSelected ? [] : results.map((result) => result.id))}
                   />
-                  选择全部
+                  全选
                 </label>
-                <span>{selectedIds.length} 篇已选择</span>
+                <span className="ph-disc-selcount">{selectedIds.length} 篇已选择</span>
                 <div className="ph-disc-selection-spacer" />
                 <select
+                  className="ph-input"
                   value={activeProjectId ?? ""}
                   onChange={(event) => setActiveProject(event.target.value === "" ? null : event.target.value)}
                   aria-label="归档到项目"
@@ -689,7 +672,7 @@ export function DiscoveryView(): JSX.Element {
                 </select>
                 <button
                   type="button"
-                  className="ph-disc-archive-btn"
+                  className="ph-btn is-lg"
                   disabled={selectedIds.length === 0 || activeProject === null || archiveMutation.isPending}
                   onClick={archiveExisting}
                 >
@@ -697,7 +680,7 @@ export function DiscoveryView(): JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className="ph-disc-new-project-btn"
+                  className="ph-btn is-lg"
                   disabled={selectedIds.length === 0}
                   onClick={() => setNewProjectOpen((open) => !open)}
                 >
@@ -708,26 +691,29 @@ export function DiscoveryView(): JSX.Element {
 
             {newProjectOpen && (
               <form className="ph-disc-new-project" onSubmit={archiveNew}>
-                <div>
+                <div className="ph-disc-new-project-head">
                   <strong>新建项目并归档所选文献</strong>
-                  <span>项目建立后会成为两个模块共享的当前项目。</span>
+                  <span>项目建立后会成为两个模块共享的当前项目</span>
                 </div>
                 <input
+                  className="ph-input"
                   value={newProjectName}
                   onChange={(event) => setNewProjectName(event.target.value)}
                   placeholder="项目名称"
                   autoFocus
                 />
                 <input
+                  className="ph-input"
                   value={newProjectQuestion}
                   onChange={(event) => setNewProjectQuestion(event.target.value)}
                   placeholder="研究问题（可选）"
                 />
                 <button
                   type="submit"
+                  className="ph-btn is-primary is-lg"
                   disabled={selectedIds.length === 0 || newProjectName.trim() === "" || archiveMutation.isPending}
                 >
-                  {archiveMutation.isPending ? "正在创建…" : `创建并加入 ${selectedIds.length} 篇`}
+                  {archiveMutation.isPending ? "正在创建" : `创建并加入 ${selectedIds.length} 篇`}
                 </button>
               </form>
             )}
@@ -737,17 +723,23 @@ export function DiscoveryView(): JSX.Element {
             )}
 
             {searchDetailQuery.isPending && results.length === 0 ? (
-              <div className="ph-disc-loading">正在打开检索结果…</div>
+              <SkeletonRows rows={5} />
             ) : searchDetailQuery.isError ? (
-              <div className="ph-disc-loading is-error">
-                <span>{errText(searchDetailQuery.error)}</span>
-                <button type="button" onClick={() => void searchDetailQuery.refetch()}>重试</button>
-              </div>
+              <EmptyState
+                inline
+                icon={Icons.compass}
+                tone="error"
+                title="无法打开检索结果"
+                description={errText(searchDetailQuery.error)}
+                primary={{ label: "重试", onClick: () => void searchDetailQuery.refetch() }}
+              />
             ) : results.length === 0 && activeSearch.status !== "running" ? (
-              <div className="ph-disc-empty is-small">
-                <h2>没有找到可用结果</h2>
-                <p>查看上方来源错误，或复用条件后放宽关键词与来源。</p>
-              </div>
+              <EmptyState
+                inline
+                icon={Icons.compass}
+                title="没有找到可用结果"
+                description="查看上方来源错误，或复用条件后放宽关键词与来源"
+              />
             ) : (
               <div className="ph-disc-results">
                 {results.map((result) => (
@@ -766,7 +758,7 @@ export function DiscoveryView(): JSX.Element {
             )}
           </section>
         )}
-      </main>
-    </div>
+      </div>
+    </ModuleShell>
   );
 }
