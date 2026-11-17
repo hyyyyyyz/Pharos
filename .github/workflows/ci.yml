@@ -82,14 +82,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ".[dev]"
-          # Current Starlette's TestClient imports httpx2, which `[dev]` does not
-          # list. TEMPORARY: remove this line after the Backend branch (which fixes
-          # the test dependency) is merged.
-          pip install httpx2
 
       - name: Ruff (blocking rules)
-        # E9/F63/F7: syntax errors and statements that cannot run.
-        run: ruff check . --select E9,F63,F7
+        # E9/F63/F7/F82: syntax errors, statements that cannot run, undefined names.
+        run: ruff check . --select E9,F63,F7,F82
 
       - name: Ruff (full report, non-blocking)
         continue-on-error: true
