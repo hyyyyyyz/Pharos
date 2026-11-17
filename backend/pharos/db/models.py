@@ -52,11 +52,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(256))
     display_name: Mapped[str | None] = mapped_column(String(128), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    #: Marks an operator account. The flag exists and is honoured wherever an
-    #: admin-only capability is later added, but on its own it grants NOTHING —
-    #: there are no admin-gated endpoints yet, so an admin is currently an
-    #: ordinary user who happens to carry this bit. Kept deliberately minimal
-    #: (a boolean, not a role enum) until there is a real capability to gate.
+    #: Marks an operator account. Gates the ``/api/admin`` console (user
+    #: administration, provider visibility) and ``POST /api/daily/refresh``, via
+    #: ``require_admin``. Kept deliberately minimal (a boolean, not a role enum)
+    #: until there is a need for finer roles. The first admin is created
+    #: out-of-band (``pharos.auth.bootstrap``); nothing sets this implicitly.
     #: ``server_default`` is required because this column is added to the
     #: already-created ``users`` table by the additive migration, which refuses
     #: a NOT NULL column with no SQL-level default. The other booleans predate
@@ -327,6 +327,12 @@ class TranslationJob(Base):
     engine: Mapped[str] = mapped_column(String(32), default="babeldoc")
     translator_type: Mapped[str] = mapped_column(String(32), default="bing")
     target_lang: Mapped[str] = mapped_column(String(8), default="zh")
+    #: The page range requested (``"1-3,5"``), or NULL for the whole document.
+    #: A partial result must never be served in place of a full translation, so
+    #: the PDF endpoint needs to tell the two apart. Rows from before this column
+    #: existed are NULL, i.e. treated as whole-document, which is what they were
+    #: whenever the caller did not pass ``pages``.
+    pages: Mapped[str | None] = mapped_column(String(128), default=None)
 
     progress: Mapped[float] = mapped_column(Float, default=0.0)  # 0-100
     stage: Mapped[str] = mapped_column(String(32), default="queued")

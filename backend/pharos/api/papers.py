@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pharos.api import ai_chat as ai_chat_api
 from pharos.api.deps import current_user, get_blobs, get_library, get_session
 from pharos.api.schemas import PaperOut, as_utc, paper_out
 from pharos.daily.service import PdfDownloadError
-from pharos.db.models import Paper, User
+from pharos.db.models import Paper, TranslationJob, User
 from pharos.services import arxiv_import
 from pharos.services.library import LibraryService
 from pharos.storage.blobs import BlobStore
@@ -332,6 +334,37 @@ def restore_paper(
     return paper_out(paper)
 
 
+def _translated_pdf_path(
+    session: Session, blobs: BlobStore, paper: Paper, kind: str
+) -> Path | None:
+    """The translated PDF of ``kind`` produced for *this* paper row, if any.
+
+    Looks only at the paper's own finished jobs, newest first, and prefers a
+    whole-document result over a page-range one so that a later partial run never
+    hides a full translation. If only partial results exist the newest is served,
+    which matches what clients showed before. The recorded path must still lie
+    inside the blob store; that also covers jobs finished before per-job
+    directories existed, whose ``mono_path`` points at ``<sha256>/mono.pdf``.
+    """
+    column = TranslationJob.mono_path if kind == "mono" else TranslationJob.dual_path
+    jobs = session.scalars(
+        select(TranslationJob)
+        .where(
+            TranslationJob.paper_id == paper.id,
+            TranslationJob.status == "done",
+            column.is_not(None),
+        )
+        .order_by(TranslationJob.finished_at.desc(), TranslationJob.created_at.desc())
+    ).all()
+    # Whole-document first (stable sort keeps newest-first within each group).
+    jobs = sorted(jobs, key=lambda j: j.pages is not None)
+    for job in jobs:
+        candidate = Path(getattr(job, f"{kind}_path"))
+        if blobs.is_inside(candidate) and candidate.exists():
+            return candidate
+    return None
+
+
 @router.get("/papers/{paper_id}/pdf/{kind}")
 def get_paper_pdf(
     paper_id: str,
@@ -355,16 +388,22 @@ def get_paper_pdf(
        an unauthorised request cannot be distinguished from one for an id that
        was never issued.
 
-    Content addressing means the *bytes* on disk may legitimately be shared with
-    another user who uploaded the same file. That is not a leak: identical input
-    documents produce one blob, and reaching it still requires owning a row that
-    points at it.
+    Content addressing means the *original* bytes on disk may legitimately be
+    shared with another user who uploaded the same file. That is not a leak:
+    identical input documents produce one blob, and reaching it still requires
+    owning a row that points at it. Translations are different — they are never
+    addressed by hash. ``mono``/``dual`` come from a finished job of *this*
+    paper row (see :func:`_translated_pdf_path`), so a user who has not
+    translated a paper cannot reach a translation someone else triggered.
     """
     if kind not in _KINDS:
         raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(_KINDS)}")
     paper = _require_paper(library, session, paper_id, user)
-    path = blobs.path(paper.orig_sha256, kind)  # type: ignore[arg-type]
-    if not path.exists():
+    if kind == "original":
+        path = blobs.path(paper.orig_sha256, "original") if paper.orig_sha256 else None
+    else:
+        path = _translated_pdf_path(session, blobs, paper, kind)
+    if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"{kind} PDF not available yet")
     filename = f"{paper.title[:60]}.{kind}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)

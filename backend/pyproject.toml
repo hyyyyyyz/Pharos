@@ -41,6 +41,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "httpx2",  # required by starlette.testclient (httpx is deprecated there)
     "pre-commit>=4.0",
 ]
 

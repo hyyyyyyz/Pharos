@@ -8,6 +8,7 @@ REST + SSE API. Run with::
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -34,13 +35,14 @@ from pharos.api import (
     updates,
     zotero,
 )
+from pharos.auth.bootstrap import apply_configured_admins
 from pharos.config import get_settings
 from pharos.daily.scheduler import DailyScheduler
 from pharos.daily.service import DailySweeper
 from pharos.db.session import init_engine
 from pharos.engines.babeldoc_engine import BabelDocEngine
 from pharos.services.library import LibraryService
-from pharos.services.translation import JobManager
+from pharos.services.translation import JobManager, fail_interrupted_jobs
 from pharos.storage.blobs import BlobStore
 from pharos.web import mount_web_app
 
@@ -52,6 +54,8 @@ def create_app() -> FastAPI:
     # credential secret is available, upgrade them before any background sync
     # can read one; the migration is idempotent and also completes key rotation.
     zotero.migrate_stored_credentials(settings)
+    # Operator-declared administrators (PHAROS_ADMIN_EMAILS); see auth/bootstrap.
+    apply_configured_admins(settings.admin_email_list)
 
     blobs = BlobStore(settings.files_dir)
     engine = BabelDocEngine(
@@ -70,6 +74,10 @@ def create_app() -> FastAPI:
         app.state.engine = engine
         app.state.library = library
         app.state.job_manager = JobManager(engine, blobs, settings.max_concurrent_jobs)
+        # Jobs only run inside this process, so any row still queued/running now
+        # was orphaned by the previous one. Fail them with a readable reason
+        # rather than leaving the UI polling a job that will never move.
+        fail_interrupted_jobs()
 
         # The Research Harness kernel: definitions, config head, dispatcher and
         # runner. Its default snapshot keeps every gate off, so a plain

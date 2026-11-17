@@ -40,7 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pharos.api.deps import current_user, get_library, get_session
+from pharos.api.deps import current_user, get_library, get_session, require_admin
 from pharos.api.schemas import as_utc
 from pharos.daily import reader, service
 from pharos.db.models import DailyPaper, DailyRun, Paper, User
@@ -449,11 +449,20 @@ def _run_snapshot(date_str: str) -> DailyRunOut | None:
 async def refresh(
     request: Request,
     body: RefreshRequest | None = None,
-    user: User = Depends(current_user),
+    user: User = Depends(require_admin),
 ) -> DailyRunOut:
     """Start a sweep in the background and return its run row immediately.
 
-    Requires an account. A sweep is not a read: it pages arXiv on this
+    **Administrators only (403 otherwise).** The sweep is global, not per user: it
+    writes the shared ``DailyPaper`` rows every account reads and spends the
+    operator's LLM budget, so letting any signed-in account trigger it (with
+    ``reread`` and ``days`` knobs) let one user drain the quota and churn
+    everyone's feed. The built-in scheduler is unaffected — it calls the sweeper
+    directly, not this endpoint — so the digest still keeps itself current. An
+    ordinary user's own lever is their directions/config, which re-rank the
+    shared pool without fetching anything.
+
+    A sweep is not a read: it pages arXiv on this
     instance's behalf and then makes one LLM call per paper against the
     operator's API key. Unauthenticated, it is a free way for anyone who can
     reach the port to spend the operator's money and get the instance

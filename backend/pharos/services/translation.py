@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pharos.db.models import Paper, TranslationJob
@@ -34,9 +35,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_job(session: Session, paper: Paper, translator_type: str, target_lang: str = "zh") -> TranslationJob:
+def create_job(
+    session: Session,
+    paper: Paper,
+    translator_type: str,
+    target_lang: str = "zh",
+    pages: str | None = None,
+) -> TranslationJob:
     job = TranslationJob(
         paper_id=paper.id,
+        pages=pages,
         translator_type=translator_type,
         target_lang=target_lang,
         status="queued",
@@ -45,6 +53,36 @@ def create_job(session: Session, paper: Paper, translator_type: str, target_lang
     session.add(job)
     session.flush()
     return job
+
+
+RESTART_ERROR = (
+    "The server restarted while this translation was waiting or running, so it "
+    "was stopped. Start the translation again."
+)
+
+
+def fail_interrupted_jobs() -> int:
+    """Mark every ``queued``/``running`` job as failed; returns how many.
+
+    Jobs run as tasks of this process, so when the process starts no job can
+    legitimately be in flight: any row still saying queued/running was orphaned
+    by a restart or crash and would otherwise sit there forever (and, because a
+    paper allows only one active job, block any further translation of it).
+    Call this once at startup, before the first request is served.
+    """
+    with session_scope() as s:
+        jobs = s.scalars(
+            select(TranslationJob).where(TranslationJob.status.in_(("queued", "running")))
+        ).all()
+        for job in jobs:
+            job.status = "error"
+            job.stage = "error"
+            job.error = RESTART_ERROR
+            job.finished_at = _now()
+        n = len(jobs)
+    if n:
+        log.warning("marked %d interrupted translation job(s) as failed", n)
+    return n
 
 
 class JobManager:
@@ -93,7 +131,7 @@ class JobManager:
 
             request = TranslationRequest(
                 source_pdf=source_pdf,
-                output_dir=self._blobs.work_dir(sha256),
+                output_dir=self._blobs.work_dir(sha256, job_id),
                 target_lang=target_lang,
                 pages=pages,
             )
@@ -150,10 +188,10 @@ class JobManager:
     def _adopt_and_finish(self, job_id: str, sha256: str, result: TranslationResult) -> tuple[bool, bool]:
         mono = dual = False
         if result.mono_pdf:
-            self._blobs.adopt_output(sha256, "mono", result.mono_pdf)
+            self._blobs.adopt_output(sha256, job_id, "mono", result.mono_pdf)
             mono = True
         if result.dual_pdf:
-            self._blobs.adopt_output(sha256, "dual", result.dual_pdf)
+            self._blobs.adopt_output(sha256, job_id, "dual", result.dual_pdf)
             dual = True
         with session_scope() as s:
             job = s.get(TranslationJob, job_id)
@@ -161,8 +199,8 @@ class JobManager:
                 job.status = "done"
                 job.stage = "done"
                 job.progress = 100.0
-                job.mono_path = str(self._blobs.path(sha256, "mono")) if mono else None
-                job.dual_path = str(self._blobs.path(sha256, "dual")) if dual else None
+                job.mono_path = str(self._blobs.job_path(sha256, job_id, "mono")) if mono else None
+                job.dual_path = str(self._blobs.job_path(sha256, job_id, "dual")) if dual else None
                 job.total_seconds = result.total_seconds
                 job.tokens = result.tokens
                 job.finished_at = _now()
