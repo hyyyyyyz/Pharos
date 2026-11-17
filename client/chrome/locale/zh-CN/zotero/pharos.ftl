@@ -232,6 +232,7 @@ pharos-daily-date-pending = { $count } 篇待解读
 
 pharos-daily-refresh = 更新
 pharos-daily-refreshing = 更新中
+pharos-daily-top-pick = 今日最值得读
 pharos-daily-refresh-tooltip = 抓取今日 arXiv 并解读
 pharos-daily-filter-all = 全部
 pharos-daily-sort-score = 推荐分

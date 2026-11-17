@@ -1776,7 +1776,7 @@ var Zotero_Pharos_Daily = new function () {
 		}
 
 		for (let summary of _dates) {
-			let row = _btn('pharos-dv-date' + (summary.date == _activeDate ? ' is-active' : ''));
+			let row = _btn('pharos-dv-date pharos-side-row' + (summary.date == _activeDate ? ' is-active' : ''));
 			row.dataset.date = summary.date;
 			row.append(_span('pharos-dv-date-text', summary.date));
 			if (summary.pending > 0) {
@@ -1894,8 +1894,21 @@ var Zotero_Pharos_Daily = new function () {
 
 		// No "this chip is empty" state: the active domain is derived from the
 		// chips, every one of which has at least one paper today.
-		for (let paper of _visible()) {
-			_el.list.append(this._card(paper));
+		// The one paper worth reading first today: the highest recommendation
+		// score, wherever the current sort happens to put it. It is the only card
+		// on this screen that is allowed to look different.
+		let visible = _visible();
+		let top = null;
+		for (let paper of visible) {
+			if (typeof paper.score_recommendation != 'number') {
+				continue;
+			}
+			if (!top || paper.score_recommendation > top.score_recommendation) {
+				top = paper;
+			}
+		}
+		for (let paper of visible) {
+			_el.list.append(this._card(paper, paper === top));
 		}
 		_el.list.scrollTop = scroll;
 	};
@@ -1949,8 +1962,9 @@ var Zotero_Pharos_Daily = new function () {
 		return wrap;
 	};
 
-	this._card = function (paper) {
-		let card = _div('pharos-dv-card' + (paper.id == _selectedID ? ' is-selected' : ''));
+	this._card = function (paper, isTop) {
+		let card = _div('pharos-dv-card' + (isTop ? ' is-top' : '')
+			+ (paper.id == _selectedID ? ' is-selected' : ''));
 		card.dataset.paperId = paper.id;
 
 		// Reachable from the keyboard, the way every date in the rail already is
@@ -1974,36 +1988,39 @@ var Zotero_Pharos_Daily = new function () {
 			this.selectPaper(paper.id);
 		});
 
-		let top = _div('pharos-dv-card-top');
 		let score = _span('pharos-dv-score ' + _scoreTier(paper.score_recommendation),
 			_fmtScore(paper.score_recommendation));
 		score.title = _str('pharos-daily-score-tooltip');
-		top.append(score);
-		if (paper.matched_domain) {
-			top.append(_span('pharos-dv-domain', paper.matched_domain));
-		}
-		top.append(_span('pharos-dv-card-title', paper.title));
-		card.append(top);
+		card.append(score);
 
+		let main = _div('pharos-dv-card-main');
+		if (isTop) {
+			main.append(_div('pharos-dv-top-label', _str('pharos-daily-top-pick')));
+		}
+		main.append(_div('pharos-dv-card-title', paper.title));
+		if (paper.matched_domain) {
+			main.append(_div('pharos-dv-domain', paper.matched_domain));
+		}
 		let authors = _authorText(paper.authors);
 		if (authors) {
-			card.append(_div('pharos-dv-card-meta', authors));
+			main.append(_div('pharos-dv-card-meta', authors));
 		}
 
 		if (paper.read_status == 'done') {
 			// Nothing at all when a paper was read and produced no summary: an
-			// empty bordered row reads as "no data" rather than as "there is
-			// simply nothing more to say about this one".
+			// empty row reads as "no data" rather than as "there is simply
+			// nothing more to say about this one".
 			let summary = (paper.summary_zh || '').trim();
 			if (summary) {
-				card.append(_div('pharos-dv-card-sum', summary));
+				main.append(_div('pharos-dv-card-sum', summary));
 			}
 		}
 		else {
 			let row = _div('pharos-dv-card-sum');
 			row.append(this._readChip(paper));
-			card.append(row);
+			main.append(row);
 		}
+		card.append(main);
 		return card;
 	};
 

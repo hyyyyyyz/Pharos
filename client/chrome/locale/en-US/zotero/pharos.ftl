@@ -250,6 +250,7 @@ pharos-daily-date-pending = { $count } awaiting AI
 
 pharos-daily-refresh = Update
 pharos-daily-refreshing = Updating
+pharos-daily-top-pick = Best one to read today
 pharos-daily-refresh-tooltip = Fetch today's arXiv and read it
 pharos-daily-filter-all = All
 pharos-daily-sort-score = Score
