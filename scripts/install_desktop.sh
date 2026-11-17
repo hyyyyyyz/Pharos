@@ -91,10 +91,23 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
 	log "Compiling JS/JSX and SCSS (npm run build) ..."
 	npm run build
 	log "Packaging Pharos.app (first run downloads Firefox ESR 140 from mozilla.org, ~150 MB) ..."
-	app/scripts/dir_build -p m
+	# test/runtests.sh stages a TEST build (the suite and its harness inside
+	# omni.ja) into this same directory, and dir_build is incremental: after a
+	# test run it reports "No changes since last build" and leaves that test
+	# build in place. Installing it would ship the test harness as the user's
+	# daily app, so always package from an empty staging directory.
+	rm -rf "$CLIENT/app/staging"
+	ZOTERO_TEST=0 app/scripts/dir_build -p m
 fi
 
 [ -x "$STAGED/Contents/MacOS/zotero" ] || die "no staged build at $STAGED -- run without --skip-build."
+
+# Whatever produced it (this run, or --skip-build reusing an older one), refuse
+# to go on with a staged app that carries the test suite.
+[ -d "$STAGED" ] || die "No staged build at $STAGED. Run without --skip-build."
+if unzip -l "$STAGED/Contents/Resources/app/omni.ja" 2>/dev/null | grep -q " test/tests/"; then
+	die "$STAGED is a test build (left by test/runtests.sh). Re-run without --skip-build."
+fi
 
 if [ "$BUILD_ONLY" -eq 1 ]; then
 	log "Built: $STAGED ($(du -sh "$STAGED" | cut -f1))"
