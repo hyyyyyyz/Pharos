@@ -39,15 +39,15 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: "library", label: "文库", title: "文库", Icon: Icons.library, comingSoon: false },
-  { key: "runs", label: "运行", title: "研究运行", Icon: Icons.settings, comingSoon: false, harnessOnly: true },
+  { key: "runs", label: "运行", title: "研究运行", Icon: Icons.runs, comingSoon: false, harnessOnly: true },
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
-  { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
-  { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
+  { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.compass, comingSoon: false },
+  { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.project, comingSoon: false },
   {
     key: "admin",
     label: "管理员后台",
     title: "管理员后台",
-    Icon: Icons.settings,
+    Icon: Icons.shield,
     comingSoon: false,
     adminOnly: true,
   },

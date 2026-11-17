@@ -33,7 +33,7 @@ export function AdminView(): JSX.Element {
       <header className="ph-admin-head">
         <div className="ph-admin-title">
           <span className="ph-admin-title-icon">
-            <Icons.settings size={16} />
+            <Icons.shield />
           </span>
           管理员后台
         </div>
