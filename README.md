@@ -407,6 +407,58 @@ builds all three platforms through `.github/workflows/desktop-release.yml`;
 macOS builds are unsigned, so the first launch is refused and has to be allowed
 once under System Settings → Privacy & Security → Open Anyway.
 
+## Build and install from source
+
+Besides the release installers, you can compile the desktop client yourself and
+install it as an everyday application. On macOS one command does it all:
+
+```bash
+scripts/install_desktop.sh                    # build, then install to /Applications
+scripts/install_desktop.sh --dest ~/Applications
+scripts/install_desktop.sh --host-arch-only   # also drop the other CPU architecture (~170 MB smaller)
+scripts/install_desktop.sh --skip-build       # reinstall the last build
+scripts/install_desktop.sh --build-only       # build only
+```
+
+The script checks the tools, runs `npm ci`, `npm run build` and
+`app/scripts/dir_build -p m`, then copies `Pharos.app` to the destination and
+ad-hoc signs it. If a `Pharos.app` is already there it asks first and moves the
+old one to `Pharos.app.bak-<timestamp>` (`--yes` skips the question,
+`--no-backup` deletes instead). It needs about 5 GB of free disk and a network
+connection on the first run, which downloads Firefox ESR 140.7.0 (~150 MB) from
+mozilla.org; the first full build took about 2 minutes of packaging plus the
+dependency install and JS/SCSS compile.
+
+**Prerequisites (macOS):** Xcode Command Line Tools (`xcode-select --install`),
+Node.js 20+ with npm, and `wget`, `xz`, `perl`, `python3`, `zip`, `rsync`
+(`brew install node wget xz`). This repository does not use Git LFS.
+
+**A source build is not a release build.**
+
+- *Version and backend.* The version carries `.SOURCE`, so the build honours the
+  hidden `pharos.baseURL` preference. Release builds ignore it and always use
+  `https://pharos.selab.top`. To use your own backend, set the pref in Config
+  Editor (Settings → Advanced → Config Editor) or in the profile's `user.js`:
+  `user_pref("extensions.zotero.pharos.baseURL", "http://localhost:8000");`
+  There is deliberately no Settings control for it.
+- *Data directory.* Like a release, the installed app opens the Zotero library
+  at `~/Zotero` (schema 123) while keeping its own profile. To try it on a
+  throwaway library, start it with
+  `/Applications/Pharos.app/Contents/MacOS/zotero -datadir ~/PharosTry`.
+  For development, keep using `app/scripts/run_pharos_dev`, which refuses `~/Zotero`.
+- *First launch.* A locally built app has no download quarantine flag, so it
+  normally opens with a double-click. If macOS still refuses it, allow it once
+  under System Settings → Privacy & Security → Open Anyway, or run
+  `xattr -dr com.apple.quarantine /Applications/Pharos.app`.
+- *Updates.* Source builds are never updated by the app; pull and re-run the script.
+
+**Windows and Linux (not verified).** The steps are the same by hand: install
+Node 20+ and the tools above (Windows also needs 7z, rcedit, NSIS), then from
+`client/` run `npm ci && npm run build && app/scripts/dir_build -p w` (or `-p l`).
+The output is in `client/app/staging/`. Neither platform has been built from
+this repository's source on a development machine; the release workflow is the
+tested path.
+
 ## Develop the marketing site
 
 The public website is a separate static Vite/Three.js project and does not need

@@ -299,6 +299,49 @@ app/scripts/run_pharos_dev       # 用隔离的数据目录启动
 首次启动被拦截后，需要到「系统设置 → 隐私与安全性」中选择「仍要打开」；
 macOS 15 已不再支持旧的 Control 点击 →「打开」绕过方式。
 
+## 从源码构建并安装
+
+除了下载发布版安装包，也可以自己编译桌面客户端并装成日常使用的应用。macOS 上一条命令即可：
+
+```bash
+scripts/install_desktop.sh                    # 编译，然后安装到 /Applications
+scripts/install_desktop.sh --dest ~/Applications
+scripts/install_desktop.sh --host-arch-only   # 同时去掉另一种 CPU 架构（约省 170 MB）
+scripts/install_desktop.sh --skip-build       # 直接重装上次的构建
+scripts/install_desktop.sh --build-only       # 只编译不安装
+```
+
+脚本会检查依赖，依次执行 `npm ci`、`npm run build`、`app/scripts/dir_build -p m`，
+再把 `Pharos.app` 复制到目标位置并做 ad-hoc 签名。目标位置已有 `Pharos.app` 时会先询问，
+并把旧的改名为 `Pharos.app.bak-<时间戳>`（`--yes` 跳过询问，`--no-backup` 改为直接删除）。
+需要约 5 GB 空闲磁盘；首次构建要联网，从 mozilla.org 下载 Firefox ESR 140.7.0（约 150 MB）。
+首次完整构建中，打包约 2 分钟，另有依赖安装与 JS/SCSS 编译的时间。
+
+**前置依赖（macOS）：** Xcode 命令行工具（`xcode-select --install`）、Node.js 20+ 与 npm，
+以及 `wget`、`xz`、`perl`、`python3`、`zip`、`rsync`（`brew install node wget xz`）。
+本仓库不使用 Git LFS。
+
+**源码构建不等于发布版：**
+
+- *版本与后端。* 版本号带 `.SOURCE`，因此认隐藏偏好 `pharos.baseURL`；发布版忽略它，
+  固定使用 `https://pharos.selab.top`。接自建后端：在配置编辑器（设置 → 高级 → 配置编辑器）
+  或 profile 的 `user.js` 里设置
+  `user_pref("extensions.zotero.pharos.baseURL", "http://localhost:8000");`。
+  设置页里刻意没有这个入口。
+- *数据目录。* 与发布版一样，安装后的应用会打开 `~/Zotero` 的 Zotero 文库（schema 123），
+  但使用自己独立的 profile。想先用一个临时文库试用：
+  `/Applications/Pharos.app/Contents/MacOS/zotero -datadir ~/PharosTry`。
+  开发调试仍应使用会拒绝 `~/Zotero` 的 `app/scripts/run_pharos_dev`。
+- *首次打开。* 本机编译的应用没有下载隔离标记，通常双击即可打开。若仍被拦截，到
+  「系统设置 → 隐私与安全性」点「仍要打开」，或执行
+  `xattr -dr com.apple.quarantine /Applications/Pharos.app`。
+- *更新。* 源码构建不会被应用内更新替换；拉取新代码后重新运行脚本即可。
+
+**Windows 与 Linux（未验证）：** 手动步骤相同：安装 Node 20+ 和上述工具（Windows 另需 7z、
+rcedit、NSIS），然后在 `client/` 下执行 `npm ci && npm run build && app/scripts/dir_build -p w`
+（Linux 用 `-p l`），产物在 `client/app/staging/`。这两个平台尚未在开发机上用本仓库源码构建过，
+经过验证的路径是发布工作流。
+
 ## 开发宣传网站
 
 公开官网是独立的 Vite/Three.js 静态工程，不需要 Python、后端、数据库或模型密钥。
