@@ -741,7 +741,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
             onClick={toggleAI}
           >
             <span className="ph-rv-ico">
-              <Icons.spark />
+              <Icons.chat />
             </span>
             AI 对话
           </button>
@@ -1196,9 +1196,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   disabled={translate.isPending}
                   onClick={() => translate.mutate()}
                 >
-                  <span className="ph-rv-ico">
-                    <Icons.spark />
-                  </span>
+
                   翻译此篇 · 保留排版
                 </button>
                 {translate.isError && (

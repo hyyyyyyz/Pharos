@@ -129,6 +129,9 @@ export function neutralVars(t: ThemeMode): Vars {
       // only "what to look at now" (current module, today's top paper, work in
       // progress). Same value the beacon accent uses on dark.
       "--c-beam": "oklch(0.82 0.15 84)",
+      // The wordmark is navy on transparent; on the dark ground it is lifted to
+      // white (inverting would turn the gold beam blue, a brightness lift keeps it clean).
+      "--c-logo-filter": "brightness(0) invert(1) opacity(0.92)",
     };
   return {
     "--c-bg": "#F7F2E9",
@@ -156,6 +159,7 @@ export function neutralVars(t: ThemeMode): Vars {
     "--c-overlay": "rgba(12,32,64,.42)",
     // The lighthouse beam: the logo's gold #F8C040. See the dark branch.
     "--c-beam": "oklch(0.837 0.151 84)",
+    "--c-logo-filter": "none",
   };
 }
 

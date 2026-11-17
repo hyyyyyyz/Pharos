@@ -186,7 +186,6 @@ export const Icons = {
   plus: make(["M10 5.5v9M5.5 10h9"]),
   file: make(["M6 3.5h5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z", "M11 3.5V7h3"]),
   open: make(["M11 4.5h4.5V9", "M15.5 4.5 9 11", "M8 5.5H5v9.5h9.5v-3"]),
-  spark: make(["M10 3.5l1.6 4.1 4.4 1.6-4.4 1.6L10 15l-1.6-4.2L4 9.2l4.4-1.6z"]),
   alert: make([{ c: true, cx: 10, cy: 10, r: 6.2 }, "M10 6.6v4", "M10 13.2v.2"]),
   sun: make(
     [

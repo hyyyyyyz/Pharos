@@ -109,9 +109,8 @@
   object-fit: contain;
   background: transparent;
 }
-:root[data-theme="dark"] .ph-auth-wordmark-img,
-.ph-auth-wordmark-img.is-dark {
-  filter: brightness(0) invert(1) opacity(0.92);
+.ph-auth-wordmark-img {
+  filter: var(--c-logo-filter, none);
 }
 
 .ph-auth-tagline {

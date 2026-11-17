@@ -52,6 +52,11 @@ describe("design scale", () => {
     }
   });
 
+  it("lifts the navy wordmark only on the dark ground", () => {
+    expect(neutralVars("light")["--c-logo-filter"]).toBe("none");
+    expect(neutralVars("dark")["--c-logo-filter"]).toMatch(/invert/);
+  });
+
   it("ships the scale with every theme", () => {
     for (const m of ["light", "dark"] as const) {
       const style = themeStyle(m, "pharos") as Record<string, string>;
