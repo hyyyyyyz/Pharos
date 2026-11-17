@@ -76,6 +76,7 @@
 						<html:span class="pharos-rail-acct-name"/>
 						<html:span class="pharos-rail-acct-sub"/>
 					</html:span>
+					<html:span class="pharos-rail-acct-gear"/>
 				</html:button>
 			</html:div>
 		`);
@@ -108,10 +109,10 @@
 		 * key press can, and a mismatch shows only as a rail that stops in a
 		 * different place depending on how it was resized.
 		 *
-		 * MIN_WIDTH is 144, not 44. 44 is the collapsed width; between the two
+		 * MIN_WIDTH is 176, not 56. 56 is the collapsed width; between the two
 		 * the labels are clipped while the rail is not actually collapsed.
 		 */
-		static MIN_WIDTH = 144;
+		static MIN_WIDTH = 176;
 
 		static MAX_WIDTH = 280;
 
@@ -283,7 +284,7 @@
 		 * Wire the update box: download, ignore, and the collapsed shortcut.
 		 *
 		 * Collapsed, the box shrinks to one icon that opens the release page
-		 * directly -- there is no room for two buttons in a 44px column, and the
+		 * directly -- there is no room for two buttons in a 56px column, and the
 		 * icon is the whole affordance, exactly as the account button collapses
 		 * to its avatar.
 		 */
@@ -505,9 +506,9 @@
 		 * Write the width a drag just produced where persistence can find it.
 		 */
 		_recordWidth() {
-			// A collapsed rail is a fixed 44px, and the stylesheet hides the
+			// A collapsed rail is a fixed 56px, and the stylesheet hides the
 			// splitter in that state -- but a drag that started before the rail
-			// collapsed would otherwise record 44 and come back as 144.
+			// collapsed would otherwise record 56 and come back as 176.
 			if (this.railCollapsed) {
 				return;
 			}

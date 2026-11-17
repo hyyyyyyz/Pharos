@@ -232,6 +232,7 @@ pharos-daily-date-pending = { $count } 篇待解读
 
 pharos-daily-refresh = 更新
 pharos-daily-refreshing = 更新中
+pharos-daily-top-pick = 今日最值得读
 pharos-daily-refresh-tooltip = 抓取今日 arXiv 并解读
 pharos-daily-filter-all = 全部
 pharos-daily-sort-score = 推荐分
@@ -259,7 +260,8 @@ pharos-daily-refresh-busy = 已经有一次更新在进行中。
 ## 每日论文 · 未配置解读模型
 
 # 说明而非报错：没有 Key 抓取照样能跑，只是不解读。
-pharos-daily-no-llm = 尚未配置 LLM API Key —— 论文可以正常抓取并按你的方向筛选排序，但无法生成中文解读与评分。这些论文会保持「待解读」，配置后可随时重新解读。
+pharos-daily-no-llm = 尚未配置解读模型：论文照常抓取和排序，配置后可随时解读。
+pharos-daily-no-llm-action = 去配置
 pharos-daily-no-llm-tooltip = 尚未配置 LLM API Key
 # 解读接口返回 503 时显示
 pharos-daily-read-unavailable = 尚未配置解读模型，无法解读。
@@ -661,6 +663,8 @@ pharos-projects-source-rules-where = 可在「文献探索」中打开这篇论�
 pharos-discovery-model = 解读模型：{ $model }
 pharos-discovery-model-unknown = 解读模型未记录
 
+pharos-discovery-points-open = 展开要点
+pharos-discovery-points-close = 收起要点
 pharos-discovery-analyze = 生成核心思路
 pharos-discovery-analyzing = 生成中…
 pharos-discovery-reanalyze = 重新生成

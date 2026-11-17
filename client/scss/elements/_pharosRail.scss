@@ -1,56 +1,36 @@
 // The module rail.
 //
-// Laid out from the web client's Rail.css (frontend/src/components/Rail.css) so
-// the two products read as one component: the widths, the row heights, the
-// radii, the gaps, the paddings, the type scale and the accent states are that
-// file's, and each is cited where it is not obvious.
+// Drawn from the web client's Rail.css so the two products read as one
+// component: 220 wide (176-280 when dragged), 56 collapsed, rows 32 tall with a
+// 2px gap, one icon column shared by the brand, the modules and the account,
+// and the current module marked by a surface step and a 2px beam bar. Sizes
+// and colours come from abstracts/pharosScale; nothing here is a literal.
 //
-// Rail.css's type is in px against ITS OWN 13px base (frontend/src/App.css:12),
-// which is the same number as Zotero's $font-size-base -- but the desktop's root
-// font size is multiplied by the fontSize preference (xpcom/uiProperties.js:58),
-// so a px here would freeze the rail at one size while the window around it
-// scaled. Every type size below therefore keeps Rail.css's RATIO and drops its
-// unit, and each is annotated with the px it comes out at by default.
+// The desktop differences are the ones the platform forces:
 //
-// Four other values deliberately differ. Each is marked below with the reason:
-//
-//   - the module icon box is 20px, not Rail.css's 18px;
-//   - the brand row's leading sits on the module rows' grid, not on Rail.css's
-//     own 4px/7px, which do not line the mark up with the icons;
-//   - the active row's LABEL is --fill-primary, not the accent, which does not
-//     clear 4.5:1 on its own tint for every accent in the shared palette;
-//   - the collapsed active bar is offset by the centring gutter rather than by
-//     Rail.css's -9px, which puts it outside the rail.
-//
-// Everything else that is not cited is Zotero's own (the icon set, the focus
-// ring, `cursor: default`, the fill tokens).
-
-// The rail's widths, from the web client's store.ts:15-17. MUST stay in step
-// with PharosRail.MIN_WIDTH / MAX_WIDTH / DEFAULT_WIDTH, which the keyboard
-// resize and the double-click reset use -- the CSS clamps what a drag can
-// produce, the JS clamps what a key press can, and a mismatch shows up only as
-// a rail that stops in a different place depending on how it was resized.
-$pharos-rail-width: 178px;
-$pharos-rail-width-min: 144px;
+//   - type is in px (see pharosScale), so the rail no longer follows the
+//     font-size preference the way its em sizes did; the web client has no
+//     such preference;
+//   - the width is clamped here AND in PharosRail.MIN_WIDTH / MAX_WIDTH -- the
+//     CSS clamps what a drag can produce, the JS clamps what a key press can,
+//     and a mismatch shows up only as a rail that stops in a different place
+//     depending on how it was resized. Keep them in step;
+//   - icons are SVG files that follow the text colour (context-stroke), drawn
+//     at 16px with a 1.5 stroke from the web client's own paths.
+$pharos-rail-width: 220px;
+$pharos-rail-width-min: 176px;
 $pharos-rail-width-max: 280px;
-$pharos-rail-width-collapsed: 44px;
-// A collapsed row is a square centred in the rail (Rail.css:181-182). The
-// leftover on each side is the gutter the active bar hangs in.
-$pharos-rail-item-collapsed: 32px;
+$pharos-rail-width-collapsed: 56px;
+// A collapsed row is 40 wide, centred in the 56 rail by 8px of padding.
+$pharos-rail-item-collapsed: 40px;
 
-// Undo the platform cap on every one of this file's three <button>s.
+// Undo the platform cap on every <button> here.
 //
-// components/_button.scss:34-39 gives every bare <button> `max-height: 25px;
-// margin: 0 -2px -1px` on macOS, to keep dialog buttons off the non-native
-// styling. The rail's buttons are navigation rows rather than dialog buttons,
-// and because a max-height clamps whatever a height says -- specificity does
-// not enter into it, they are different properties -- that cap was quietly
-// overriding EVERY row height in this file. Measured before this: a row asking
-// for 32px rendered at 25px, and the account row asking for 40px did too. The
-// negative margins came with it, which is why the module list measured 4px
-// shorter than its four rows and two gaps.
-//
-// Nothing about it throws or logs. It reads as a rail that is a bit tight.
+// components/_button.scss gives every bare <button> `max-height: 25px; margin:
+// 0 -2px -1px` on macOS. A max-height clamps whatever a height says, so it was
+// quietly overriding every row height in this file (a row asking for 32px
+// rendered at 25). Nothing throws or logs; it reads as a rail that is a bit
+// tight.
 @mixin pharos-rail-button {
 	max-height: none;
 	margin: 0;
@@ -59,25 +39,19 @@ $pharos-rail-item-collapsed: 32px;
 #pharos-rail {
 	display: flex;
 	width: $pharos-rail-width;
-	// NOT 44px. 44 is the COLLAPSED width, and anywhere between it and 144 the
-	// labels are clipped by the overflow below while the rail is not actually
-	// collapsed -- a half-collapsed state with no way to tell what a module is.
-	// The web client cannot reach it because its drag clamps at 144.
+	// Anywhere between the collapsed width and this minimum the labels would be
+	// clipped while the rail is not actually collapsed.
 	min-width: $pharos-rail-width-min;
-	// Without this the rail drags to any width at all. Zotero's own panes are
-	// clamped the same way (#zotero-collections-pane in components/_collection-tree).
 	max-width: $pharos-rail-width-max;
-	background: var(--material-sidepane);
-	border-inline-end: var(--material-border);
+	background: var(--c-rail);
+	border-inline-end: 1px solid var(--c-bd);
 	overflow: hidden;
-	transition: width 0.16s ease;
+	transition: width var(--dur-pop) var(--ease);
 
 	&[rail-collapsed="true"] {
 		// !important because the splitter writes an inline width, which would
 		// otherwise win over the collapsed state.
 		width: $pharos-rail-width-collapsed !important;
-		// Wins over the 144px above on specificity, not on !important: the
-		// collapsed rail is narrower than the narrowest draggable rail.
 		min-width: $pharos-rail-width-collapsed;
 
 		.pharos-rail-label {
@@ -86,19 +60,13 @@ $pharos-rail-item-collapsed: 32px;
 	}
 }
 
-// The splitter goes with the labels. A collapsed rail is a fixed 44px strip, so
-// a drag beside it can only write a width nothing will honour -- and that width
-// is then what gets persisted, so the rail would come back from a restart at
-// whatever the user happened to drag while it was collapsed. The web client
-// renders its handle only when expanded (Rail.tsx:249) for the same reason.
+// The splitter goes with the labels: a drag beside a collapsed rail can only
+// write a width nothing will honour, and that width is what gets persisted.
 #pharos-rail[rail-collapsed="true"] + #pharos-rail-splitter {
 	display: none;
 }
 
-// A bare XUL splitter draws nothing, so there is no sign that the boundary can
-// be dragged and -- now that it is a tab stop -- no sign when it has focus. The
-// web client answers both with a short notch that grows and takes the accent on
-// hover and focus (Rail.css:39-62).
+// A bare XUL splitter draws nothing. A short notch grows on hover and focus.
 #pharos-rail-splitter {
 	&::before {
 		content: "";
@@ -107,20 +75,23 @@ $pharos-rail-item-collapsed: 32px;
 		inset-inline: 0;
 		margin: auto;
 		width: 2px;
-		height: 34px;
+		height: 32px;
 		border-radius: 2px;
-		background: var(--fill-quarternary);
-		transition: height 0.12s, background 0.12s;
+		background: var(--c-bds);
+		opacity: 0.5;
+		transition:
+			height var(--dur-fast) var(--ease),
+			opacity var(--dur-fast) var(--ease),
+			background-color var(--dur-fast) var(--ease);
 	}
 
 	&:hover::before,
 	&:focus-visible::before {
 		height: 48px;
-		background: var(--color-accent);
+		opacity: 1;
 	}
 
-	// The notch IS the focus indicator, and it is a 2px accent bar on a 5px
-	// element -- more visible than a ring drawn around something that thin.
+	// The notch is the focus indicator.
 	&:focus-visible {
 		outline: none;
 	}
@@ -131,14 +102,12 @@ $pharos-rail-item-collapsed: 32px;
 	flex-direction: column;
 	flex: 1;
 	gap: 2px;
-	padding: 9px 8px 8px;
+	padding: 12px 8px;
 	min-width: 0;
 }
 
 #pharos-rail[rail-collapsed="true"] .pharos-rail-inner {
-	padding: 9px 0 8px;
-	// Every row becomes a fixed-width square, so the column centres them rather
-	// than each row centring its own contents.
+	// Every row becomes a fixed-width box, so the column centres them.
 	align-items: center;
 }
 
@@ -150,153 +119,119 @@ $pharos-rail-item-collapsed: 32px;
 }
 
 .pharos-rail-item {
-	// The collapsed active bar is absolutely positioned against this.
+	// The beam bar is positioned against this.
 	position: relative;
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	padding: 0 9px;
+	gap: 8px;
+	padding: 0 12px;
 	height: 32px;
 	@include pharos-rail-button;
-	// Fixed-height chrome: .pharos-rail-spacer is what absorbs the column's
-	// spare height, and no row gives way to make room for another.
+	// Fixed-height chrome: the spacer absorbs the column's spare height.
 	flex: none;
 	border: none;
-	border-radius: 7px;
+	border-radius: var(--r-sm);
 	background: transparent;
-	color: var(--fill-secondary);
-	// The shorthand FIRST and the two overrides after it: `font` resets
-	// font-size and font-weight, so writing it last would silently undo them.
-	// It is here at all because a <button> otherwise takes the platform's button
-	// font rather than the window's.
+	color: var(--c-tx2);
+	// The shorthand first: `font` resets size and weight, so written last it
+	// would undo them.
 	font: inherit;
-	font-size: 0.9615em; // 12.5px by default -- Rail.css:177
-	font-weight: 500;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	font-weight: 400;
 	text-align: start;
 	cursor: default;
 	min-width: 0;
+	transition:
+		background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 
-	&:hover {
-		background: var(--fill-quinary);
+	// Hover is a colour change only, and only where a pointer can leave: on a
+	// touch screen :hover sticks to the last row tapped, which showed as two
+	// highlighted rows after switching module.
+	@media (hover: hover) {
+		&:hover:not(.is-active) {
+			background: var(--c-hv);
+			color: var(--c-tx);
+		}
 	}
 
+	// The current module: a surface step and the beam. Exactly one row.
 	&.is-active {
-		// The accent at low opacity behind the accent itself, which is what
-		// Rail.css:196-199 does and what the desktop rail was missing entirely:
-		// it used --color-quarternary-on-sidepane, a pure neutral mix, so the
-		// one surface that is visible at all times was the one place the user's
-		// chosen accent never appeared.
-		//
-		// --accent-blue10 rather than a colour of our own: it is the theme's own
-		// soft-accent surface, translucent so it tints whatever it lands on, and
-		// xpcom/pharos/theme.js rewrites it whenever the accent picker changes.
-		// The rail therefore follows the accent with no colour maths here.
-		background: var(--accent-blue10);
-		font-weight: 600;
-		// NOT var(--color-accent), which is what Rail.css:198 uses for the whole
-		// row. Measured on this background across all ten accents: the floor is
-		// 4.16:1 (灯塔青) in the light theme and 4.27:1 (紫丁香) in the dark one,
-		// both under the 4.5:1 this project holds body text to -- BRANDING.md
-		// records --fill-tertiary being moved from 2.79:1 to 4.52:1 for exactly
-		// that reason. Weakening the tint does not rescue it: 灯塔青's
-		// --color-accent is only 4.78:1 against the BARE rail before any tint at
-		// all, so the shortfall is the palette's, not this rule's, and the rail
-		// is not the place to fix it.
-		//
-		// The accent still names the row -- through the tint, the icon and the
-		// collapsed bar. None of those are text, and all of them clear the 3:1
-		// that non-text contrast asks for at every accent in both themes.
-		color: var(--fill-primary);
+		background: var(--c-hv);
+		color: var(--c-tx);
+		font-weight: 500;
 
-		.pharos-rail-icon {
-			color: var(--color-accent);
+		&::before {
+			content: "";
+			position: absolute;
+			inset-inline-start: 0;
+			top: 6px;
+			bottom: 6px;
+			width: 2px;
+			background: var(--c-beam);
 		}
 	}
 
 	&:focus-visible {
-		outline: var(--width-focus-border) solid var(--color-focus-border);
-		outline-offset: -1px;
+		outline: 2px solid var(--c-ac);
+		outline-offset: -2px;
 	}
 }
 
 #pharos-rail[rail-collapsed="true"] .pharos-rail-item {
 	width: $pharos-rail-item-collapsed;
-	height: $pharos-rail-item-collapsed;
 	padding: 0;
-	border-radius: 8px;
 	justify-content: center;
-}
 
-// The active module when collapsed. Without this the only thing separating it
-// from the other four is a tint at 1.15:1 against the rail, on a 32px square
-// with no label -- which is to say, nothing.
-//
-// Rail.css:232-240 offsets the bar by -9px. That is measured for the EXPANDED
-// row's 9px padding; against a collapsed square, which is centred in 44px and
-// so starts at 6px, it lands 3px outside the rail and never paints. Offsetting
-// by the centring gutter instead puts it flush against the rail's leading edge,
-// which is what the rule was drawn to do.
-#pharos-rail[rail-collapsed="true"] .pharos-rail-item.is-active::before {
-	content: "";
-	position: absolute;
-	inset-inline-start: -($pharos-rail-width-collapsed - $pharos-rail-item-collapsed) * 0.5;
-	top: 50%;
-	width: 2.5px;
-	height: 20px;
-	// Logical, so the rounded end stays on the inner side under RTL.
-	border-start-end-radius: 2px;
-	border-end-end-radius: 2px;
-	background: var(--color-accent);
-	transform: translateY(-50%);
+	// Flush against the rail's leading edge: the row is centred in the rail, so
+	// the bar hangs back by the 8px gutter.
+	&.is-active::before {
+		inset-inline-start: -8px;
+	}
 }
 
 .pharos-rail-icon {
-	// 20px, not Rail.css's 18. Zotero's icons are drawn for the size their
-	// folder names give -- these come from skin/20/ -- so rendering one at 18px
-	// puts every stroke off the pixel grid. The web client draws its own line
-	// icons at whatever size it asks for and has no such constraint.
-	width: 20px;
-	height: 20px;
-	flex: 0 0 20px;
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
 	background-repeat: no-repeat;
 	background-position: center;
-	background-size: 20px 20px;
-	// Without this the SVG paints its own colours and ignores fill/stroke; it is
-	// how every other icon in Zotero follows the theme.
+	background-size: 16px 16px;
+	// Without this the SVG paints its own colours and ignores the text colour.
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;
 
-	// Reuses the item-pane icon set rather than adding a second one. The Pharos
-	// modules borrow the closest existing glyph; only the chat bubble is ours.
+	// One icon per module, drawn from the web client's icons.tsx.
 	&.icon-library {
-		background-image: url("chrome://zotero/skin/itempane/20/libraries-collections.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-library.svg");
 	}
 
 	&.icon-daily {
-		background-image: url("chrome://zotero/skin/itempane/20/abstract.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-daily.svg");
 	}
 
 	&.icon-discovery {
-		background-image: url("chrome://zotero/skin/20/universal/magnifier.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-discovery.svg");
 	}
 
 	&.icon-projects {
-		background-image: url("chrome://zotero/skin/itempane/20/notes.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-projects.svg");
 	}
 
 	&.icon-models {
-		background-image: url("chrome://zotero/skin/20/universal/magic-wand.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-models.svg");
 	}
 
 	&.icon-admin {
-		background-image: url("chrome://zotero/skin/20/universal/cog.svg");
+		background-image: url("chrome://zotero/skin/16/universal/pharos-nav-admin.svg");
 	}
 }
 
 .pharos-rail-label {
-	// The rail is resizable, so a long label has to lose gracefully rather than
-	// widen the column or wrap into two lines.
+	// The rail is resizable, so a long label loses gracefully rather than
+	// widening the column or wrapping.
 	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -307,45 +242,32 @@ $pharos-rail-item-collapsed: 32px;
 .pharos-rail-brand {
 	display: flex;
 	align-items: center;
-	// Fixed height, like the module rows.
 	flex: none;
-	// The brand row sits on the module rows' grid rather than on Rail.css's own
-	// numbers (padding-left 4px, gap 7px). Rail.css puts a 24px mark box at 4px
-	// and an 18px icon box at 9px, which leaves the mark's centre 2px left of
-	// the icon column; with Zotero's 20px icons the same numbers drift to 3px
-	// and it shows. 7px + 24px lands the mark's centre on the icon column (19px)
-	// and the 8px gap lands the wordmark on the label column (39px).
 	gap: 8px;
-	height: 34px;
-	padding-inline-start: 7px;
-	margin-block-end: 6px;
+	height: 32px;
+	padding-inline-start: 12px;
+	margin-block-end: 8px;
 	min-width: 0;
 }
 
+// The project mark, the capital P, exported from assets/brand/mark.png. No
+// filter, no inversion: it is the logo as supplied. On the dark rail the
+// navy disc nearly matches the ground, so a hairline keeps its edge.
 .pharos-rail-mark {
-	// 24px because pharos-mark.svg declares a 24-unit viewBox while its paths
-	// are drawn on the 20-unit grid the web client's Icons.brand uses. At 24px
-	// one SVG unit is one pixel and the mark renders at exactly the size the web
-	// client draws it; at 20px it came out a sixth small.
-	width: 24px;
-	height: 24px;
-	flex: 0 0 24px;
-	// Line art, not z.svg. z.svg is the application icon -- a navy rounded
-	// square -- which is invisible against this rail's navy background.
-	background: url("chrome://zotero/skin/pharos-mark.svg") no-repeat center / contain;
-	-moz-context-properties: fill, stroke;
-	// The accent, as Rail.css:94 does. The mark is line art at 1.4px, well over
-	// the 3:1 non-text threshold at every accent in both themes (the floor is
-	// 4.78:1 light, 7.19:1 dark against --material-sidepane).
-	stroke: var(--color-accent);
+	width: 20px;
+	height: 20px;
+	flex: 0 0 20px;
+	border-radius: 50%;
+	background: url("chrome://zotero/skin/pharos-mark-72.png") no-repeat center / contain;
+	box-shadow: 0 0 0 1px var(--c-mark-ring);
 }
 
 .pharos-rail-wordmark {
 	flex: 1;
-	font-size: 1.0769em; // 14px by default -- Rail.css:135
+	font-size: var(--fs-md);
+	line-height: var(--lh-md);
 	font-weight: 600;
-	letter-spacing: 0.01em;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -353,44 +275,42 @@ $pharos-rail-item-collapsed: 32px;
 }
 
 .pharos-rail-toggle {
-	width: 26px;
-	height: 26px;
-	flex: 0 0 26px;
+	width: 32px;
+	height: 32px;
+	flex: 0 0 32px;
 	@include pharos-rail-button;
-	// After the reset above, not before it: the mixin clears `margin`, which
-	// would take this with it. Pulled into the rail's trailing padding as
-	// Rail.css:115 does, so the glyph sits near the pane divider rather than a
-	// third of the way in.
-	margin-inline-end: -5px;
+	// After the reset above: the mixin clears `margin`.
+	margin-inline-end: -4px;
 	border: none;
-	border-radius: 6px;
-	color: var(--fill-tertiary);
+	border-radius: var(--r-sm);
+	color: var(--c-tx3);
 	cursor: default;
-	// Shorthand first: written after background-image it resets it and the
-	// chevron disappears.
-	// The panel glyph rather than an arrow, matching the web client. A chevron
-	// reads as "scroll" here; this one says "the sidebar".
+	// Shorthand first: written after background-image it would reset it.
 	background: transparent url("chrome://zotero/skin/20/universal/sidebar.svg")
 		no-repeat center / 16px 16px;
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;
+	transition:
+		background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 
-	&:hover {
-		background-color: var(--fill-quinary);
-		color: var(--fill-secondary);
+	@media (hover: hover) {
+		&:hover {
+			background-color: var(--c-hv);
+			color: var(--c-tx);
+		}
 	}
 
-	// It is a tab stop now -- see the comment on the element in pharosRail.js --
-	// so it needs to show when it has focus.
+	// A tab stop, so it shows when it has focus.
 	&:focus-visible {
-		outline: var(--width-focus-border) solid var(--color-focus-border);
-		outline-offset: -1px;
+		outline: 2px solid var(--c-ac);
+		outline-offset: -2px;
 	}
 }
 
-// Collapsed: the mark and the wordmark go, leaving only the control that brings
-// the rail back. Losing that button is how the rail became unrecoverable once.
+// Collapsed: the mark and the wordmark go, leaving the control that brings the
+// rail back. Losing that button is how the rail became unrecoverable once.
 #pharos-rail[rail-collapsed="true"] {
 	.pharos-rail-mark,
 	.pharos-rail-wordmark {
@@ -402,59 +322,39 @@ $pharos-rail-item-collapsed: 32px;
 	}
 
 	.pharos-rail-toggle {
-		width: 32px;
-		height: 32px;
-		flex: 0 0 32px;
-		border-radius: 8px;
+		width: $pharos-rail-item-collapsed;
+		flex: 0 0 auto;
 		margin-inline-end: 0;
-		// The accent, which is what Rail.css leaves it: .ph-rail-toggle sets the
-		// colour to the accent and only the EXPANDED variant (Rail.css:116)
-		// overrides it to the tertiary fill. Collapsed, this is the only piece
-		// of chrome above the modules, and it is a glyph rather than text, so
-		// the 3:1 threshold applies rather than 4.5:1.
-		color: var(--color-accent);
-
-		// Mirrored when collapsed, so the glyph always shows which side the panel
-		// will appear on rather than where it is now.
+		// Mirrored when collapsed, so the glyph shows which side the panel will
+		// appear on rather than where it is now.
 		transform: scaleX(-1);
 	}
 }
 
-// The account footer.
-//
-// A spacer takes the leftover height so the account sits on the floor of the
-// rail whatever the window's height and however many modules there are -- the
-// same arrangement as the web client's.
-
+// The account footer: a spacer takes the leftover height so the account sits
+// on the floor of the rail whatever the window's height.
 .pharos-rail-spacer {
 	flex: 1;
-	// The modules are a list that can grow to fill the column; without a floor
-	// the account would end up touching the last of them.
 	min-height: 8px;
 }
 
-// The update banner: between the spacer and the account, so it sits directly
-// above the account button -- the one surface every user passes on the way to
-// settings. Hidden by default; only an available-and-not-ignored version
-// draws it.
+// The update banner sits directly above the account button, the surface every
+// user passes on the way to settings. Hidden unless a version is available and
+// not ignored.
 .pharos-rail-update {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	margin: 0 6px 6px;
-	padding: 8px 9px;
-	border: 1px solid var(--color-border);
-	border-radius: 8px;
-	background: var(--material-background);
-	// Fixed contribution like the account row; the spacer above it still
-	// absorbs the column's spare height.
+	gap: 8px;
+	margin: 0 0 4px;
+	padding: 8px 12px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-sf);
 	flex: none;
 	min-width: 0;
 
-	// The element carries `hidden` and _renderUpdate() flips it. Without this
-	// the author `display: flex` above beats the UA stylesheet's [hidden]
-	// rule, so the "hidden" banner stays visible as an empty bordered box with
-	// a lone download icon -- which is exactly the ghost icon that shipped.
+	// An author `display: flex` beats the UA stylesheet's [hidden] rule, so the
+	// "hidden" banner stayed visible as an empty bordered box.
 	&[hidden] {
 		display: none;
 	}
@@ -468,13 +368,8 @@ $pharos-rail-item-collapsed: 32px;
 }
 
 .pharos-rail-update-icon {
-	width: 16px;
-	height: 16px;
-	flex: 0 0 16px;
-	background: url("chrome://zotero/skin/16/universal/down.svg") no-repeat center / contain;
-	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
-	fill: var(--color-accent);
-	stroke: var(--color-accent);
+	@include pharos-icon("chrome://zotero/skin/16/universal/down.svg");
+	color: var(--c-tx2);
 }
 
 .pharos-rail-update-text {
@@ -494,106 +389,122 @@ $pharos-rail-item-collapsed: 32px;
 }
 
 .pharos-rail-update-title {
-	font-size: $font-size-small;
-	font-weight: 600;
-	color: var(--fill-primary);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 .pharos-rail-update-version {
-	font-size: 0.8077em;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	line-height: var(--lh-meta);
+	color: var(--c-tx3);
 }
 
-// The download progress surface: a thin track under the title, filled as
-// the installer streams in.
+// The download progress: only "work in progress" is allowed the beam.
 .pharos-rail-update-progress {
 	height: 4px;
 	border-radius: 2px;
-	background: var(--fill-quarternary);
+	background: var(--c-hv);
 	overflow: hidden;
 
 	.pharos-rail-update-progress-bar {
 		height: 100%;
 		width: 0;
 		border-radius: 2px;
-		background: var(--color-accent);
-		transition: width 0.15s linear;
+		background: var(--c-beam);
+		transition: width var(--dur-pop) var(--ease);
 	}
 }
 
 .pharos-rail-update-actions {
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 
 	button {
 		flex: 1;
 		min-width: 0;
-		padding: 3px 6px;
-		border-radius: 6px;
-		font-size: $font-size-small;
+		height: 28px;
+		padding: 0 8px;
+		@include pharos-rail-button;
+		border-radius: var(--r-sm);
+		font-size: var(--fs-sm);
+		line-height: var(--lh-sm);
+		font-weight: 500;
 	}
 
 	.pharos-rail-update-download {
 		border: none;
-		background: var(--color-accent);
-		// The platform-aware text colour for the accent, as the Pharos views
-		// use it (pharosProjects.scss:141); hover keeps the same background,
-		// which is also the convention there.
-		color: var(--color-accent-text);
+		background: var(--c-ac);
+		color: var(--c-acc);
 	}
 
 	.pharos-rail-update-ignore {
-		border: 1px solid var(--color-border);
+		border: 1px solid var(--c-bd);
 		background: transparent;
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
+		transition: background-color var(--dur-fast) var(--ease);
 
-		&:hover {
-			background: var(--fill-quinary);
+		@media (hover: hover) {
+			&:hover {
+				background: var(--c-hv);
+			}
 		}
 	}
 }
 
+// The account row: the same height, icon column and left edge as a module row.
+// A person glyph, the name, and a gear on the right.
 .pharos-rail-acct {
 	display: flex;
 	align-items: center;
-	gap: 9px;
-	padding: 0 6px;
-	height: 40px;
+	gap: 8px;
+	padding: 0 12px;
+	height: 32px;
 	@include pharos-rail-button;
-	// Fixed height, like the module rows.
 	flex: none;
 	border: none;
-	border-radius: 8px;
+	border-radius: var(--r-sm);
 	background: transparent;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	// Shorthand first, then the overrides -- see .pharos-rail-item.
 	font: inherit;
 	text-align: start;
 	cursor: default;
 	min-width: 0;
+	transition: background-color var(--dur-fast) var(--ease);
 
-	&:hover {
-		background: var(--fill-quinary);
+	@media (hover: hover) {
+		&:hover {
+			background: var(--c-hv);
+		}
 	}
 
 	&:focus-visible {
-		outline: var(--width-focus-border) solid var(--color-focus-border);
-		outline-offset: -1px;
+		outline: 2px solid var(--c-ac);
+		outline-offset: -2px;
 	}
 }
 
+// The person glyph in the icon column; no coloured disc.
 .pharos-rail-acct-avatar {
-	width: 28px;
-	height: 28px;
-	flex: 0 0 28px;
-	border-radius: 50%;
-	// Accent-soft behind the accent, as Rail.css:264-274 does -- the same pair
-	// as the active module, for the same reason.
-	color: var(--color-accent);
-	// Shorthand first, as with the toggle: written after background-image it
-	// resets it and the glyph disappears.
-	background: var(--accent-blue10)
-		url("chrome://zotero/skin/20/universal/pharos-account.svg") no-repeat center / 17px 17px;
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+	color: var(--c-tx2);
+	background: url("chrome://zotero/skin/20/universal/pharos-account.svg") no-repeat center / 16px 16px;
+	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+	fill: currentColor;
+	stroke: currentColor;
+}
+
+// The settings gear at the row's end.
+.pharos-rail-acct-gear {
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+	color: var(--c-tx3);
+	background: url("chrome://zotero/skin/16/universal/pharos-nav-settings.svg") no-repeat center / 16px 16px;
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;
@@ -607,55 +518,45 @@ $pharos-rail-item-collapsed: 32px;
 	min-width: 0;
 }
 
-.pharos-rail-acct-name,
-.pharos-rail-acct-sub {
-	// An address is longer than this column will ever be, and the rail is
-	// resizable, so it has to lose gracefully rather than widen the column.
+.pharos-rail-acct-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	min-width: 0;
-}
-
-.pharos-rail-acct-name {
-	// Rail.css:281 asks for 12px, which is exactly Zotero's own small size.
-	font-size: $font-size-small;
-	font-weight: 600;
-	color: var(--fill-primary);
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	color: var(--c-tx2);
 }
 
 .pharos-rail-acct-sub {
-	font-size: 0.8077em; // 10.5px by default -- Rail.css:291
-	color: var(--fill-tertiary);
+	// Kept in the DOM (it carries the settings label for assistive technology
+	// and the tests), but the row is one line: the gear says it.
+	display: none;
 }
 
-// Collapsed: the avatar alone, centred, the way the modules keep only their
-// icons. The button stays -- it is the only route from here to signing in.
+// Collapsed: the glyph alone, centred, as the modules keep only their icons.
+// The button stays -- it is the only route from here to signing in.
 #pharos-rail[rail-collapsed="true"] {
-	.pharos-rail-acct-text {
+	.pharos-rail-acct-text,
+	.pharos-rail-acct-gear {
 		display: none;
 	}
 
-	// A square the size of a collapsed module rather than the web client's bare
-	// 30px circle (Rail.css:294-306): keeping one element means the tooltip, the
-	// l10n ids and the click handler stay on a single node in both states, which
-	// is what pharosRailFooterTest pins.
+	// One element in both states, so the tooltip, the l10n ids and the click
+	// handler stay on a single node, which pharosRailFooterTest pins.
 	.pharos-rail-acct {
 		width: $pharos-rail-item-collapsed;
-		height: $pharos-rail-item-collapsed;
 		padding: 0;
-		border-radius: 8px;
 		justify-content: center;
 	}
 
-	// The update banner collapses to one icon -- the whole box is the download
-	// button in this state, the way the account button collapses to its avatar.
+	// The banner collapses to one icon: the whole box is the download button.
 	.pharos-rail-update {
 		align-items: center;
 		justify-content: center;
 		width: $pharos-rail-item-collapsed;
-		height: $pharos-rail-item-collapsed;
-		margin: 0 6px 6px;
+		height: 32px;
+		margin: 0 0 4px;
 		padding: 0;
 		border: none;
 		background: transparent;

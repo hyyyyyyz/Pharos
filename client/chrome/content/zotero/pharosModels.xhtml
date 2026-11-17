@@ -24,6 +24,11 @@
 	<script src="chrome://zotero/content/pharosModels.js"/>
 
 	<vbox flex="1" id="pharos-models-root">
+		<html:div class="pharos-pagehead">
+			<html:h1 class="pharos-pagehead-title" data-l10n-id="pharos-rail-models"/>
+		</html:div>
+		<html:div id="pharos-models-body" class="pharos-content">
+		<html:div class="pharos-content-narrow pharos-models-form">
 		<html:div id="pharos-models-intro" data-l10n-id="pharos-models-intro"/>
 
 		<!-- What is currently in effect. -->
@@ -37,27 +42,27 @@
 		     here for now; other model-backed tasks keep their own surfaces. -->
 		<html:div class="pharos-models-field">
 			<html:label for="pharos-models-base-url" data-l10n-id="pharos-models-base-url"/>
-			<html:input id="pharos-models-base-url" type="url" autocomplete="off"
+			<html:input id="pharos-models-base-url" class="pharos-input" type="url" autocomplete="off"
 				data-l10n-id="pharos-models-base-url-input" data-l10n-attrs="placeholder"/>
 		</html:div>
 		<html:div class="pharos-models-field">
 			<html:label for="pharos-models-model" data-l10n-id="pharos-models-model"/>
-			<html:input id="pharos-models-model" type="text" autocomplete="off"
+			<html:input id="pharos-models-model" class="pharos-input" type="text" autocomplete="off"
 				data-l10n-id="pharos-models-model-input" data-l10n-attrs="placeholder"/>
 		</html:div>
 		<html:div class="pharos-models-field">
 			<html:label for="pharos-models-api-key" data-l10n-id="pharos-models-api-key"/>
-			<html:input id="pharos-models-api-key" type="password" autocomplete="off"
+			<html:input id="pharos-models-api-key" class="pharos-input" type="password" autocomplete="off"
 				data-l10n-id="pharos-models-api-key-input" data-l10n-attrs="placeholder"/>
 		</html:div>
 		<html:div class="pharos-models-field pharos-models-field--row">
 			<html:div class="pharos-models-subfield">
 				<html:label for="pharos-models-temperature" data-l10n-id="pharos-models-temperature"/>
-				<html:input id="pharos-models-temperature" type="number" min="0" max="2" step="0.05"/>
+				<html:input id="pharos-models-temperature" class="pharos-input" type="number" min="0" max="2" step="0.05"/>
 			</html:div>
 			<html:div class="pharos-models-subfield">
 				<html:label for="pharos-models-max-tokens" data-l10n-id="pharos-models-max-tokens"/>
-				<html:input id="pharos-models-max-tokens" type="number" min="256" max="128000" step="1"/>
+				<html:input id="pharos-models-max-tokens" class="pharos-input" type="number" min="256" max="128000" step="1"/>
 			</html:div>
 		</html:div>
 
@@ -73,5 +78,7 @@
 		</hbox>
 
 		<html:div data-l10n-id="pharos-models-server-fallback" class="pharos-models-help"/>
+		</html:div>
+		</html:div>
 	</vbox>
 </window>

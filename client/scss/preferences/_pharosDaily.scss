@@ -8,8 +8,8 @@
 
 #zotero-subpane-pharos-daily {
 	.pharos-daily-prefs-help {
-		color: var(--fill-secondary);
-		font-size: 11px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 		margin-block-end: 8px;
 	}
 
@@ -17,25 +17,25 @@
 	// directions are per-user and take effect at once, the sweep is shared and
 	// only widens from the next run. Given a little more weight than help text.
 	.pharos-daily-prefs-note {
-		color: var(--fill-secondary);
-		border-inline-start: 2px solid var(--color-accent);
+		color: var(--c-tx2);
+		border-inline-start: 2px solid var(--c-ac);
 		padding-inline-start: 8px;
 		margin-block-end: 12px;
 	}
 
 	.pharos-daily-prefs-status,
 	.pharos-daily-prefs-count {
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 	}
 
 	.pharos-daily-prefs-error {
-		color: var(--accent-red);
+		color: var(--c-err);
 		margin-block: 4px;
 	}
 
 	.pharos-daily-prefs-warn {
-		color: var(--accent-red);
-		font-size: 11px;
+		color: var(--c-err);
+		font-size: var(--fs-meta);
 		margin-block: 4px;
 	}
 
@@ -49,7 +49,7 @@
 	.pharos-daily-prefs-actions {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: 4px;
 		margin-block: 8px;
 	}
 
@@ -65,11 +65,11 @@
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: start;
 		gap: 8px;
-		padding: 8px 10px;
-		margin-block-end: 6px;
-		border: var(--material-border);
-		border-radius: 5px;
-		background: var(--material-background);
+		padding: 8px 8px;
+		margin-block-end: 4px;
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
 	}
 
 	// A disabled direction still matches nothing, so it reads as inactive
@@ -85,7 +85,7 @@
 	}
 
 	.pharos-daily-prefs-move {
-		font-size: 10px;
+		font-size: var(--fs-meta);
 		padding: 0 4px;
 		min-width: 2.5em;
 	}
@@ -98,7 +98,7 @@
 	}
 
 	.pharos-daily-prefs-name {
-		font-weight: 600;
+		font-weight: 500;
 		margin-block-end: 4px;
 	}
 
@@ -110,7 +110,7 @@
 	}
 
 	.pharos-daily-prefs-chips {
-		margin-block: 6px;
+		margin-block: 4px;
 	}
 
 	// Terms are shown verbatim, so the chip needs a monospace face and a
@@ -119,40 +119,40 @@
 	// letting them collapse.
 	.pharos-daily-prefs-chip {
 		font-family: monospace;
-		font-size: 11px;
+		font-size: var(--fs-meta);
 		white-space: pre;
-		padding: 1px 5px;
-		border-radius: 3px;
-		border: var(--material-border);
+		padding: 1px 4px;
+		border-radius: var(--r-xs);
+		border: 1px solid var(--c-bd);
 		background: var(--color-background);
 	}
 
 	// A quoted term matches a whole word rather than a substring, which is a
 	// real difference in behaviour and therefore a visible difference here.
 	.pharos-daily-prefs-chip-word {
-		border-color: var(--color-accent);
-		color: var(--color-accent);
+		border-color: var(--c-ac);
+		color: var(--c-ac);
 	}
 
 	// The default. Deliberately the quieter of the two, so the whole-word chip
 	// is what draws the eye -- but named rather than left as an absence, because
 	// "plain substring" is a state the user is being told about.
 	.pharos-daily-prefs-chip-substring {
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 	}
 
 	.pharos-daily-prefs-chip-bad {
-		border-color: var(--accent-red);
-		color: var(--accent-red);
+		border-color: var(--c-err);
+		color: var(--c-err);
 	}
 
 	.pharos-daily-prefs-empty-title {
-		font-weight: 600;
+		font-weight: 500;
 		margin-block-end: 4px;
 	}
 
 	.pharos-daily-prefs-danger {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 
 	//
@@ -162,11 +162,11 @@
 	.pharos-daily-prefs-editor {
 		display: flex;
 		flex-direction: column;
-		padding: 10px;
-		margin-block-end: 6px;
-		border: var(--material-border);
-		border-radius: 5px;
-		background: var(--material-background);
+		padding: 8px;
+		margin-block-end: 4px;
+		border: 1px solid var(--c-bd);
+		border-radius: var(--r-sm);
+		background: var(--c-sf);
 
 		textarea {
 			font-family: monospace;
@@ -175,8 +175,8 @@
 	}
 
 	.pharos-daily-prefs-parsed-head {
-		color: var(--fill-secondary);
-		font-size: 11px;
+		color: var(--c-tx2);
+		font-size: var(--fs-meta);
 		margin-block-start: 4px;
 	}
 
@@ -199,7 +199,7 @@
 		margin-block-end: 4px;
 
 		& > span {
-			color: var(--fill-secondary);
+			color: var(--c-tx2);
 		}
 
 		// A base URL or model name can be long and has no useful break points.

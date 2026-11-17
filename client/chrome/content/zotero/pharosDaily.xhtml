@@ -41,15 +41,15 @@
 	     `label` attribute and ignores textContent, so a value-only Fluent
 	     message on one produces a blank button. -->
 	<vbox flex="1" id="pharos-daily-root">
-		<html:div id="pharos-dv" class="pharos-dv">
-			<html:div id="pharos-dv-rail" class="pharos-dv-rail">
-				<html:div id="pharos-dv-rail-head" class="pharos-dv-rail-head"
+		<html:div id="pharos-dv" class="pharos-dv pharos-shell">
+			<html:div id="pharos-dv-rail" class="pharos-dv-rail pharos-side">
+				<html:div id="pharos-dv-rail-head" class="pharos-dv-rail-head pharos-side-head"
 					data-l10n-id="pharos-daily-rail-head"/>
-				<html:div id="pharos-dv-dates"/>
+				<html:div id="pharos-dv-dates" class="pharos-side-body"/>
 			</html:div>
 
-			<html:div id="pharos-dv-main" class="pharos-dv-main">
-				<html:div id="pharos-dv-bar" class="pharos-dv-bar">
+			<html:div id="pharos-dv-main" class="pharos-dv-main pharos-main">
+				<html:div id="pharos-dv-bar" class="pharos-dv-bar pharos-pagehead">
 					<html:span id="pharos-dv-bar-date" class="pharos-dv-bar-date"/>
 					<html:div id="pharos-dv-filters" class="pharos-dv-filters" hidden="hidden"/>
 					<html:div id="pharos-dv-spacer" class="pharos-dv-spacer"/>
@@ -85,14 +85,16 @@
 				<html:div id="pharos-daily-status" class="pharos-dv-note" role="status"/>
 
 				<html:div id="pharos-dv-banner" class="pharos-dv-banner" hidden="hidden">
-					<html:span id="pharos-dv-banner-ic" class="pharos-dv-banner-ic"/>
 					<html:span id="pharos-dv-banner-text" class="pharos-dv-banner-text"/>
+					<!-- Opens the model console, which is where the fix is. -->
+					<html:button id="pharos-dv-banner-link" class="pharos-dv-banner-link"
+						type="button" data-l10n-id="pharos-daily-no-llm-action"/>
 				</html:div>
 
 				<html:div id="pharos-dv-list" class="pharos-dv-list"/>
 			</html:div>
 
-			<html:div id="pharos-dv-detail" class="pharos-dv-detail"/>
+			<html:div id="pharos-dv-detail" class="pharos-dv-detail pharos-detail"/>
 		</html:div>
 
 		<!-- The data folder sheet. Static shell, dynamic body: the two

@@ -26,6 +26,8 @@
 
 @import "themes/light";
 @import "themes/dark";
+@import "abstracts/pharosScale";
+@import "abstracts/pharosShell";
 
 @import "base/base";
 @import "components/button";
@@ -55,20 +57,8 @@
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
-	background: var(--material-background);
-	color: var(--fill-primary);
-
-	// The web client's --c-hv / --c-acs / --c-acsb / --c-ok-soft / --c-err-soft /
-	// --c-warn, expressed in this tree's variables so both themes follow without
-	// a second palette. Every one resolves to a theme variable.
-	--pharos-pv-hover: var(--fill-quinary);
-	--pharos-pv-soft: var(--fill-quarternary);
-	--pharos-pv-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
-	--pharos-pv-accent-line: color-mix(in srgb, var(--color-accent) 34%, transparent);
-	--pharos-pv-ok-soft: color-mix(in srgb, var(--accent-teal) 13%, transparent);
-	--pharos-pv-err-soft: color-mix(in srgb, var(--accent-red) 13%, transparent);
-	--pharos-pv-warn-soft: color-mix(in srgb, var(--accent-yellow) 14%, transparent);
-	--pharos-pv-warn-line: var(--accent-orange);
+	background: var(--c-sf);
+	color: var(--c-tx);
 
 	// There is no global [hidden] rule in scss/base, so without this every
 	// element toggled with `.hidden = true` stays on screen with no error.
@@ -114,21 +104,21 @@
 .pharos-pv-btn {
 	flex: none;
 	height: 24px;
-	padding: 0 10px;
+	padding: 0 8px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 5px;
-	border: var(--material-border);
-	border-radius: 5px;
-	background: var(--material-background);
-	color: var(--fill-secondary);
-	font-size: 11.5px;
+	gap: 4px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-sf);
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 	font-weight: 500;
 	white-space: nowrap;
 
 	&:hover {
-		background: var(--pharos-pv-hover);
+		background: var(--c-hv);
 	}
 
 	&:disabled {
@@ -137,19 +127,19 @@
 
 	&.is-primary {
 		border-color: transparent;
-		background: var(--color-accent);
-		color: var(--color-accent-text);
+		background: var(--c-ac);
+		color: var(--c-acc);
 
 		&:hover {
-			background: var(--color-accent);
+			background: var(--c-ac);
 		}
 	}
 
 	// A committed destructive action: the second click of an inline confirm.
 	&.is-danger {
 		border-color: transparent;
-		background: var(--accent-red);
-		color: var(--color-accent-text);
+		background: var(--c-err);
+		color: var(--c-acc);
 	}
 
 	// The first click. Text-weight on purpose -- 删除 must not carry more visual
@@ -157,10 +147,10 @@
 	&.is-danger-text {
 		border-color: transparent;
 		background: none;
-		color: var(--accent-red);
+		color: var(--c-err);
 
 		&:hover {
-			background: var(--pharos-pv-err-soft);
+			background: var(--c-err-soft);
 		}
 	}
 }
@@ -170,17 +160,17 @@
 .pharos-pv-select {
 	width: 100%;
 	min-width: 0;
-	padding: 4px 7px;
-	border: var(--material-border);
-	border-radius: 5px;
-	background: var(--material-background);
-	color: var(--fill-primary);
+	padding: 4px 8px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-sf);
+	color: var(--c-tx);
 	font: inherit;
-	font-size: 12px;
+	font-size: var(--fs-sm);
 
 	&:focus {
 		outline: none;
-		border-color: var(--pharos-pv-accent-line);
+		border-color: var(--c-bds);
 	}
 
 	&:disabled {
@@ -196,10 +186,10 @@
 
 .pharos-pv-label {
 	display: block;
-	margin-block-end: 3px;
-	font-size: 10.5px;
-	font-weight: 600;
-	color: var(--fill-tertiary);
+	margin-block-end: 4px;
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx3);
 }
 
 // A capsule. Everything that classifies rather than describes is one of these.
@@ -207,11 +197,11 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	padding: 1px 7px;
-	border-radius: 20px;
-	background: var(--pharos-pv-soft);
-	color: var(--fill-secondary);
-	font-size: 10.5px;
+	padding: 1px 8px;
+	border-radius: var(--r-sm);
+	background: var(--c-hv);
+	color: var(--c-tx2);
+	font-size: var(--fs-meta);
 	font-weight: 500;
 	white-space: nowrap;
 }
@@ -219,38 +209,29 @@
 // =================================================================== sidebar
 
 .pharos-pv-sidebar {
-	width: 232px;
-	flex: none;
-	display: flex;
-	flex-direction: column;
+	// .pharos-side: 264 wide, hairline on the right.
 	min-height: 0;
-	padding-block: 8px;
-	background: var(--material-sidepane);
-	border-inline-end: var(--material-border);
 }
 
 .pharos-pv-side-head {
+	// .pharos-side-head: the 48px title row with the action on the right.
 	flex: none;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 0 8px 6px;
+	padding-inline-end: 8px;
 }
 
 .pharos-pv-side-title {
 	flex: none;
-	font-size: 10.5px;
-	font-weight: 600;
-	letter-spacing: 0.05em;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-side-count {
 	flex: 1;
 	min-width: 0;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
-	font-variant-numeric: tabular-nums;
+	font-size: var(--fs-meta);
+	line-height: var(--lh-meta);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-new {
@@ -258,10 +239,10 @@
 	height: 20px;
 	padding: 0 8px;
 	border: none;
-	border-radius: 5px;
-	background: var(--color-accent);
-	color: var(--color-accent-text);
-	font-size: 11px;
+	border-radius: var(--r-sm);
+	background: var(--c-ac);
+	color: var(--c-acc);
+	font-size: var(--fs-meta);
 	font-weight: 500;
 	white-space: nowrap;
 
@@ -276,30 +257,30 @@
 	flex: none;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	margin: 0 6px 8px;
+	gap: 4px;
+	margin: 0 4px 8px;
 	padding: 8px;
-	border: var(--material-border);
-	border-radius: 6px;
-	background: var(--material-background);
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-sf);
 }
 
 .pharos-pv-create-head {
-	font-size: 11px;
-	font-weight: 600;
-	color: var(--fill-primary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 .pharos-pv-create-actions {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	justify-content: flex-end;
 }
 
 .pharos-pv-form-error {
-	font-size: 11px;
+	font-size: var(--fs-meta);
 	line-height: 1.5;
-	color: var(--accent-red);
+	color: var(--c-err);
 	overflow-wrap: anywhere;
 }
 
@@ -309,10 +290,10 @@
 	flex: none;
 	display: flex;
 	align-items: center;
-	gap: 5px;
-	padding: 0 10px 6px;
-	font-size: 11px;
-	color: var(--fill-tertiary);
+	gap: 4px;
+	padding: 0 8px 4px;
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 
 	input {
 		margin: 0;
@@ -332,7 +313,7 @@
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding-inline: 4px;
+	padding: 0 8px 16px;
 }
 
 // Rows, not <option>s. The bare select carried the name and nothing else: which
@@ -341,28 +322,34 @@
 .pharos-pv-item {
 	display: block;
 	width: 100%;
-	padding: 5px 8px;
-	margin-block-end: 1px;
+	padding: 8px;
+	margin-block-end: 2px;
 	border: none;
-	border-radius: 5px;
+	border-radius: var(--r-sm);
 	background: transparent;
-	color: var(--fill-primary);
+	color: var(--c-tx2);
 	text-align: start;
+	transition:
+		background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 
-	&:hover {
-		background: var(--pharos-pv-hover);
+	@media (hover: hover) {
+		&:hover:not(.is-active) {
+			background: var(--c-hv);
+			color: var(--c-tx);
+		}
 	}
 
-	&.is-active,
-	&.is-active:hover {
-		background: var(--pharos-pv-accent-soft);
+	&.is-active {
+		background: var(--c-hv);
+		color: var(--c-tx);
 	}
 }
 
 .pharos-pv-item-top {
 	display: flex;
 	align-items: center;
-	gap: 5px;
+	gap: 4px;
 	min-width: 0;
 }
 
@@ -372,39 +359,39 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 12px;
-	line-height: 1.45;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
 }
 
 .pharos-pv-item.is-active .pharos-pv-item-name {
-	font-weight: 600;
-	color: var(--color-accent);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 .pharos-pv-state-dot {
 	flex: none;
-	width: 5px;
-	height: 5px;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
-	background: var(--accent-teal);
+	background: var(--c-ok);
 
 	&.is-archived {
-		background: var(--fill-tertiary);
+		background: var(--c-tx3);
 	}
 }
 
 .pharos-pv-item-stage {
 	margin-block-start: 1px;
-	font-size: 10.5px;
-	color: var(--fill-secondary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx2);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 .pharos-pv-item-meta {
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	font-variant-numeric: tabular-nums;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -416,13 +403,13 @@
 // same sentence for the last two and sent the reader to the web app for both.
 .pharos-pv-side-state {
 	flex: none;
-	padding: 6px 10px;
-	font-size: 11.5px;
+	padding: 4px 8px;
+	font-size: var(--fs-meta);
 	line-height: 1.6;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 
 	&.is-error {
-		color: var(--accent-red);
+		color: var(--c-err);
 	}
 }
 
@@ -431,8 +418,8 @@
 	padding: 0;
 	border: none;
 	background: none;
-	color: var(--color-accent);
-	font-size: 11.5px;
+	color: var(--c-ac);
+	font-size: var(--fs-meta);
 
 	&:hover {
 		text-decoration: underline;
@@ -455,27 +442,35 @@
 // request overwrote each other.
 .pharos-pv-notice {
 	flex: none;
-	padding: 5px 14px;
-	font-size: 11.5px;
-	line-height: 1.6;
-	color: var(--fill-secondary);
-	border-block-end: var(--material-border);
+	padding: 8px 24px;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx2);
+	border-block-end: 1px solid var(--c-bd);
 	overflow-wrap: anywhere;
+
+	&:empty {
+		display: none;
+	}
 }
 
 .pharos-pv-error {
 	flex: none;
-	padding: 5px 14px;
-	font-size: 11.5px;
-	line-height: 1.6;
-	color: var(--accent-red);
-	background: var(--pharos-pv-err-soft);
+	padding: 8px 24px;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-err);
+	background: var(--c-err-soft);
 	overflow-wrap: anywhere;
+
+	&:empty {
+		display: none;
+	}
 }
 
 .pharos-pv-error-hint {
 	display: block;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 }
 
 // The one scroll container in the main column, which is what makes the sticky
@@ -484,7 +479,7 @@
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 0 14px 18px;
+	padding: 0 24px 24px;
 }
 
 // -------------------------------------------------------- welcome / failed
@@ -505,43 +500,39 @@
 }
 
 .pharos-pv-welcome-mark {
-	width: 48px;
-	height: 48px;
-	margin: 0 auto 14px;
-	border-radius: 12px;
-	background-color: var(--pharos-pv-accent-soft);
-	background-image: url("chrome://zotero/skin/16/universal/folder.svg");
-	background-repeat: no-repeat;
-	background-position: center;
-	background-size: 26px 26px;
+	width: 24px;
+	height: 24px;
+	margin: 0 auto 8px;
+	background: url("chrome://zotero/skin/16/universal/pharos-nav-projects.svg") no-repeat center / 24px 24px;
 	-moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
 	fill: currentColor;
 	stroke: currentColor;
-	color: var(--color-accent);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-welcome-title {
-	font-size: 15px;
-	font-weight: 600;
-	color: var(--fill-primary);
-	margin-block-end: 5px;
+	font-size: var(--fs-base);
+	line-height: var(--lh-base);
+	font-weight: 500;
+	color: var(--c-tx);
+	margin-block-end: 4px;
 }
 
 .pharos-pv-welcome-desc {
-	font-size: 12.5px;
-	line-height: 1.7;
-	color: var(--fill-secondary);
+	font-size: var(--fs-sm);
+	line-height: var(--lh-base);
+	color: var(--c-tx3);
 	margin-block-end: 16px;
 }
 
 .pharos-pv-cta {
 	height: 28px;
-	padding: 0 14px;
+	padding: 0 12px;
 	border: none;
-	border-radius: 6px;
-	background: var(--color-accent);
-	color: var(--color-accent-text);
-	font-size: 12.5px;
+	border-radius: var(--r-sm);
+	background: var(--c-ac);
+	color: var(--c-acc);
+	font-size: var(--fs-sm);
 	font-weight: 500;
 
 	&:disabled {
@@ -550,16 +541,16 @@
 }
 
 .pharos-pv-load-failed-title {
-	font-size: 13.5px;
-	font-weight: 600;
-	color: var(--fill-primary);
-	margin-block-end: 5px;
+	font-size: var(--fs-base);
+	font-weight: 500;
+	color: var(--c-tx);
+	margin-block-end: 4px;
 }
 
 .pharos-pv-load-failed-text {
-	font-size: 12px;
+	font-size: var(--fs-sm);
 	line-height: 1.7;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	margin-block-end: 12px;
 	overflow-wrap: anywhere;
 }
@@ -569,8 +560,8 @@
 .pharos-pv-header {
 	display: flex;
 	align-items: flex-start;
-	gap: 12px;
-	padding-block: 14px 10px;
+	gap: 16px;
+	padding-block: 16px 12px;
 }
 
 .pharos-pv-header-title {
@@ -581,29 +572,30 @@
 .pharos-pv-kicker {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	margin-block-end: 3px;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	gap: 8px;
+	margin-block-end: 4px;
+	font-size: var(--fs-sm);
+	line-height: var(--lh-sm);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-state {
 	@extend .pharos-pv-chip;
 
-	background: var(--pharos-pv-ok-soft);
-	color: var(--accent-teal);
+	background: var(--c-hv);
+	color: var(--c-ok);
 
 	&.is-archived {
-		background: var(--pharos-pv-soft);
-		color: var(--fill-tertiary);
+		background: var(--c-hv);
+		color: var(--c-tx3);
 	}
 }
 
 .pharos-pv-title {
-	font-size: 16px;
+	font-size: var(--fs-xl);
+	line-height: var(--lh-xl);
 	font-weight: 600;
-	line-height: 1.35;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 	overflow-wrap: anywhere;
 }
 
@@ -611,20 +603,20 @@
 // off the payload and threw it away.
 .pharos-pv-desc {
 	margin-block-start: 4px;
-	font-size: 12px;
+	font-size: var(--fs-sm);
 	line-height: 1.7;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
 
 .pharos-pv-meta {
-	margin-block-start: 5px;
+	margin-block-start: 4px;
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px 10px;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	gap: 4px 8px;
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -633,7 +625,7 @@
 	display: flex;
 	flex-wrap: wrap;
 	justify-content: flex-end;
-	gap: 6px;
+	gap: 4px;
 	max-width: 260px;
 }
 
@@ -643,14 +635,14 @@
 	gap: 8px;
 	padding: 12px;
 	margin-block: 12px;
-	border: var(--material-border);
-	border-radius: 8px;
-	background: var(--material-background);
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
+	background: var(--c-sf);
 }
 
 .pharos-pv-edit-actions {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	justify-content: flex-end;
 }
 
@@ -666,32 +658,32 @@
 .pharos-pv-delete-confirm {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	font-size: 11px;
-	color: var(--accent-red);
+	gap: 4px;
+	font-size: var(--fs-meta);
+	color: var(--c-err);
 }
 
 // --------------------------------------------------------------- question
 
 .pharos-pv-question {
-	padding: 10px 12px;
+	padding: 8px 12px;
 	margin-block-end: 12px;
-	border-inline-start: 2px solid var(--pharos-pv-accent-line);
-	border-radius: 0 6px 6px 0;
-	background: var(--pharos-pv-accent-soft);
+	border-inline-start: 2px solid var(--c-bds);
+	border-radius: 0 var(--r-sm) var(--r-sm) 0;
+	background: var(--c-acs);
 }
 
 .pharos-pv-question-label {
-	font-size: 10.5px;
-	font-weight: 600;
-	color: var(--color-accent);
-	margin-block-end: 3px;
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-ac);
+	margin-block-end: 4px;
 }
 
 .pharos-pv-question-text {
-	font-size: 12.5px;
+	font-size: var(--fs-sm);
 	line-height: 1.7;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
@@ -699,10 +691,10 @@
 // ============================================================= stage path
 
 .pharos-pv-stage-section {
-	padding: 12px;
-	margin-block-end: 12px;
-	border: var(--material-border);
-	border-radius: 8px;
+	padding: 20px;
+	margin-block-end: 16px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
 }
 
 .pharos-pv-section-head {
@@ -710,30 +702,29 @@
 	align-items: baseline;
 	flex-wrap: wrap;
 	gap: 4px 8px;
-	margin-block-end: 10px;
+	margin-block-end: 8px;
 }
 
 .pharos-pv-section-kicker {
 	flex: none;
-	font-size: 10.5px;
-	font-weight: 600;
-	letter-spacing: 0.05em;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx3);
 }
 
 .pharos-pv-section-title {
 	flex: 1;
 	min-width: 0;
-	font-size: 12.5px;
+	font-size: var(--fs-sm);
 	font-weight: 500;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 }
 
 .pharos-pv-stage-controls {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	margin-block-end: 12px;
 }
 
@@ -762,44 +753,44 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 3px;
-	padding: 6px 4px;
+	gap: 4px;
+	padding: 4px 4px;
 	border: 1px solid transparent;
-	border-radius: 6px;
+	border-radius: var(--r-sm);
 	background: none;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 
 	&:hover {
-		background: var(--pharos-pv-hover);
+		background: var(--c-hv);
 	}
 
 	// Reached already. Never `selected`, `open` or `collapsed`: those are
 	// XUL-reserved attribute names and apply layout of their own.
 	&.is-past {
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 
 		.pharos-pv-stage-node {
-			background: var(--pharos-pv-soft);
-			color: var(--fill-secondary);
+			background: var(--c-hv);
+			color: var(--c-tx2);
 		}
 	}
 
 	// Where the project actually is.
 	&.is-current {
-		color: var(--color-accent);
+		color: var(--c-ac);
 
 		.pharos-pv-stage-node {
-			background: var(--color-accent);
-			color: var(--color-accent-text);
-			font-weight: 700;
+			background: var(--c-ac);
+			color: var(--c-acc);
+			font-weight: 500;
 		}
 	}
 
 	// What the records list below is filtered to, which is not necessarily the
 	// stage the project is at: browsing history must not move the project.
 	&.is-viewed {
-		border-color: var(--pharos-pv-accent-line);
-		background: var(--pharos-pv-accent-soft);
+		border-color: var(--c-bds);
+		background: var(--c-acs);
 	}
 }
 
@@ -810,32 +801,32 @@
 	align-items: center;
 	justify-content: center;
 	border-radius: 50%;
-	background: var(--pharos-pv-soft);
-	color: var(--fill-tertiary);
-	font-size: 10.5px;
-	font-weight: 600;
+	background: var(--c-bd);
+	color: var(--c-tx3);
+	font-size: var(--fs-meta);
+	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 }
 
 .pharos-pv-stage-short {
-	font-size: 10.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.3;
 	text-align: center;
 	white-space: nowrap;
 }
 
 .pharos-pv-stage-count {
-	font-size: 10px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
 
 .pharos-pv-stage-help {
 	margin-block-start: 8px;
-	font-size: 10.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.6;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 // ============================================================== work grid
@@ -863,8 +854,8 @@
 
 .pharos-pv-panel {
 	min-width: 0;
-	border: var(--material-border);
-	border-radius: 8px;
+	border: 1px solid var(--c-bd);
+	border-radius: var(--r-sm);
 	// No overflow of its own, deliberately: the sticky automation notice inside
 	// .is-artifacts sticks against .pharos-pv-desk, and an overflow value here
 	// would make this element the scrollport instead and pin the notice to a box
@@ -876,23 +867,22 @@
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 4px 8px;
-	padding: 10px 12px;
-	border-block-end: var(--material-border);
+	padding: 8px 12px;
+	border-block-end: 1px solid var(--c-bd);
 }
 
 .pharos-pv-panel-kicker {
 	flex: none;
-	font-size: 10.5px;
-	font-weight: 600;
-	letter-spacing: 0.05em;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx3);
 }
 
 .pharos-pv-panel-count {
 	flex: 1;
 	min-width: 0;
-	font-size: 11.5px;
-	color: var(--fill-secondary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx2);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -902,25 +892,25 @@
 }
 
 .pharos-pv-panel-empty-title {
-	font-size: 12.5px;
-	font-weight: 600;
-	color: var(--fill-secondary);
+	font-size: var(--fs-sm);
+	font-weight: 500;
+	color: var(--c-tx2);
 	margin-block-end: 4px;
 }
 
 .pharos-pv-panel-empty-desc {
-	font-size: 11.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.7;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 // ============================================================ source cards
 
 .pharos-pv-source-card {
-	padding: 10px 12px;
+	padding: 8px 12px;
 
 	& + & {
-		border-block-start: var(--material-border);
+		border-block-start: 1px solid var(--c-bd);
 	}
 }
 
@@ -937,14 +927,14 @@
 	border: none;
 	background: none;
 	text-align: start;
-	font-size: 12.5px;
+	font-size: var(--fs-sm);
 	font-weight: 500;
 	line-height: 1.45;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 	overflow-wrap: anywhere;
 
 	&.is-link {
-		color: var(--color-accent);
+		color: var(--c-ac);
 
 		&:hover {
 			text-decoration: underline;
@@ -956,8 +946,8 @@
 // omits authors entirely: three names carry the attribution and "et al." carries
 // the rest without becoming the tallest thing in the card.
 .pharos-pv-source-meta {
-	font-size: 11px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	overflow-wrap: anywhere;
 }
 
@@ -971,7 +961,7 @@
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 4px;
-	margin-block-start: 6px;
+	margin-block-start: 4px;
 }
 
 // The analysis MODE, in words -- never the model id, which used to occupy this
@@ -980,8 +970,8 @@
 	@extend .pharos-pv-chip;
 
 	&.is-ai {
-		background: var(--pharos-pv-accent-soft);
-		color: var(--color-accent);
+		background: var(--c-acs);
+		color: var(--c-ac);
 	}
 }
 
@@ -989,8 +979,8 @@
 // capsule beside it would put the two back on the same footing.
 .pharos-pv-analysis-model {
 	min-width: 0;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	overflow-wrap: anywhere;
 }
 
@@ -998,7 +988,7 @@
 	@extend .pharos-pv-chip;
 
 	font-weight: 400;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 // source.paper arrives in every GET already; this needs no extra request.
@@ -1008,8 +998,8 @@
 	// Struck through as well as recoloured: a chip that says a paper is gone
 	// only by being red says nothing to anyone who cannot see the difference.
 	&.is-deleted {
-		background: var(--pharos-pv-err-soft);
-		color: var(--accent-red);
+		background: var(--c-err-soft);
+		color: var(--c-err);
 		text-decoration: line-through;
 	}
 }
@@ -1020,14 +1010,14 @@
 // sentence verbatim, no id. Both are the same fact at the same weight, which is
 // why they share a treatment.
 .pharos-pv-analysis-warning {
-	margin-block-start: 6px;
-	padding: 5px 8px;
-	border-inline-start: 2px solid var(--pharos-pv-warn-line);
-	border-radius: 0 5px 5px 0;
-	background: var(--pharos-pv-warn-soft);
-	font-size: 11px;
+	margin-block-start: 4px;
+	padding: 4px 8px;
+	border-inline-start: 2px solid var(--c-tx3);
+	border-radius: 0 var(--r-sm) var(--r-sm) 0;
+	background: var(--c-hv);
+	font-size: var(--fs-meta);
 	line-height: 1.6;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	overflow-wrap: anywhere;
 }
 
@@ -1041,50 +1031,49 @@
 // An unmodified .pharos-pv-source-insight is summary_zh, which only an llm row
 // has.
 .pharos-pv-source-insight {
-	margin-block-start: 6px;
-	font-size: 11.5px;
+	margin-block-start: 4px;
+	font-size: var(--fs-meta);
 	line-height: 1.65;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	overflow-wrap: anywhere;
 
 	&.is-ai,
 	&.is-extracted,
 	&.is-empty {
-		padding: 6px 9px;
-		border-radius: 6px;
+		padding: 4px 8px;
+		border-radius: var(--r-sm);
 	}
 
 	&.is-ai {
-		background: var(--pharos-pv-accent-soft);
-		box-shadow: inset 2px 0 0 var(--color-accent);
+		background: var(--c-hv);
+		border-inline-start: 2px solid var(--c-bds);
 	}
 
 	// Cut out of the abstract by cue matching. Neutral, and explicitly not the
 	// accent: the accent in this sheet means a model produced it.
 	&.is-extracted {
-		background: var(--pharos-pv-soft);
+		background: var(--c-hv);
 	}
 
 	&.is-empty {
-		border: 1px dashed var(--color-border);
+		border: 1px dashed var(--c-bd);
 	}
 }
 
 .pharos-pv-source-insight-label {
-	font-size: 10.5px;
-	font-weight: 600;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx3);
 	margin-block-end: 1px;
 }
 
 // The accent is reserved for the one state that earned it.
 .pharos-pv-source-insight.is-ai .pharos-pv-source-insight-label {
-	color: var(--color-accent);
+	color: var(--c-ac);
 }
 
 .pharos-pv-source-insight.is-empty .pharos-pv-source-insight-text {
-	color: var(--fill-tertiary);
-	font-style: italic;
+	color: var(--c-tx3);
 }
 
 // ----------------------------------------------------------- evidence note
@@ -1093,44 +1082,44 @@
 	display: block;
 	width: 100%;
 	margin-block-start: 8px;
-	padding: 6px 8px;
-	border: 1px dashed var(--color-border);
-	border-radius: 5px;
+	padding: 4px 8px;
+	border: 1px dashed var(--c-bd);
+	border-radius: var(--r-sm);
 	background: none;
 	text-align: start;
-	font-size: 11.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.65;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 
 	&:hover {
-		background: var(--pharos-pv-hover);
+		background: var(--c-hv);
 	}
 
 	&.is-empty {
-		color: var(--fill-tertiary);
+		color: var(--c-tx3);
 	}
 }
 
 .pharos-pv-source-note-label {
 	display: block;
-	font-size: 10.5px;
-	font-weight: 600;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx3);
 	margin-block-end: 2px;
 }
 
 .pharos-pv-note-editor {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 4px;
 	margin-block-start: 8px;
 }
 
 .pharos-pv-note-actions {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	justify-content: flex-end;
 }
 
@@ -1138,15 +1127,15 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	margin-block-start: 8px;
 }
 
 .pharos-pv-source-added {
 	flex: 1;
 	min-width: 0;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1169,7 +1158,7 @@
 	z-index: 1;
 	display: flex;
 	align-items: flex-start;
-	gap: 7px;
+	gap: 8px;
 	padding: 8px 12px;
 	// Two layers, and the opaque one is the point. --pharos-pv-warn-soft is a
 	// ~14% wash (~11% in dark), and a sticky element with a translucent
@@ -1182,16 +1171,16 @@
 	// the wash over --material-background composites to the colour it already
 	// had, and the notice is now genuinely opaque. 文献探索's sticky selection bar
 	// solves this the same way, with a flat --color-background.
-	background-color: var(--material-background);
+	background-color: var(--c-sf);
 	background-image: linear-gradient(
-		var(--pharos-pv-warn-soft),
-		var(--pharos-pv-warn-soft)
+		var(--c-hv),
+		var(--c-hv)
 	);
-	border-block-end: var(--material-border);
-	border-inline-start: 2px solid var(--pharos-pv-warn-line);
-	font-size: 11.5px;
+	border-block-end: 1px solid var(--c-bd);
+	border-inline-start: 2px solid var(--c-tx3);
+	font-size: var(--fs-meta);
 	line-height: 1.65;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 }
 
 // There is no warning glyph in 16/universal, so info.svg is tinted by the
@@ -1200,7 +1189,7 @@
 	@include pv-icon("chrome://zotero/skin/16/universal/info.svg", 13px);
 
 	margin-block-start: 2px;
-	color: var(--pharos-pv-warn-line);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-automation-text {
@@ -1220,12 +1209,12 @@
 	min-width: 0;
 
 	.pharos-pv-artifact-card + .pharos-pv-artifact-card {
-		border-block-start: var(--material-border);
+		border-block-start: 1px solid var(--c-bd);
 	}
 }
 
 .pharos-pv-artifact-card {
-	padding: 10px 12px;
+	padding: 8px 12px;
 }
 
 .pharos-pv-artifact-top {
@@ -1244,47 +1233,47 @@
 	@extend .pharos-pv-chip;
 
 	font-weight: 400;
-	color: var(--fill-tertiary);
+	color: var(--c-tx3);
 }
 
 .pharos-pv-artifact-status {
 	@extend .pharos-pv-chip;
 
 	&.is-draft {
-		background: var(--pharos-pv-soft);
-		color: var(--fill-tertiary);
+		background: var(--c-hv);
+		color: var(--c-tx3);
 	}
 
 	&.is-ready {
-		background: var(--pharos-pv-accent-soft);
-		color: var(--color-accent);
+		background: var(--c-acs);
+		color: var(--c-ac);
 	}
 
 	// 人工核验 / "Verified by you". A user's judgement, never the platform's.
 	&.is-verified {
-		background: var(--pharos-pv-ok-soft);
-		color: var(--accent-teal);
+		background: var(--c-hv);
+		color: var(--c-ok);
 	}
 
 	&.is-rejected {
-		background: var(--pharos-pv-err-soft);
-		color: var(--accent-red);
+		background: var(--c-err-soft);
+		color: var(--c-err);
 	}
 }
 
 .pharos-pv-artifact-title {
-	font-size: 12.5px;
+	font-size: var(--fs-sm);
 	font-weight: 500;
 	line-height: 1.45;
-	color: var(--fill-primary);
+	color: var(--c-tx);
 	overflow-wrap: anywhere;
 }
 
 .pharos-pv-artifact-body {
 	margin-block-start: 4px;
-	font-size: 11.5px;
+	font-size: var(--fs-meta);
 	line-height: 1.65;
-	color: var(--fill-secondary);
+	color: var(--c-tx2);
 	// Plain text written by a person, so newlines are the only structure it has.
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
@@ -1299,15 +1288,15 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	margin-block-start: 8px;
 }
 
 .pharos-pv-artifact-updated {
 	flex: 1;
 	min-width: 0;
-	font-size: 10.5px;
-	color: var(--fill-tertiary);
+	font-size: var(--fs-meta);
+	color: var(--c-tx3);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1318,14 +1307,14 @@
 	flex-direction: column;
 	gap: 8px;
 	padding: 12px;
-	border-block-end: var(--material-border);
-	background: var(--material-background);
+	border-block-end: 1px solid var(--c-bd);
+	background: var(--c-sf);
 }
 
 .pharos-pv-editor-head {
-	font-size: 11.5px;
-	font-weight: 600;
-	color: var(--fill-primary);
+	font-size: var(--fs-meta);
+	font-weight: 500;
+	color: var(--c-tx);
 }
 
 .pharos-pv-editor-fields {
@@ -1336,7 +1325,7 @@
 
 .pharos-pv-editor-actions {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	justify-content: flex-end;
 }
 

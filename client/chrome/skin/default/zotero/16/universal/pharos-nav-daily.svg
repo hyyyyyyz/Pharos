@@ -1,0 +1,2 @@
+<!-- Pharos navigation icon, the same paths as frontend/src/design/icons.tsx. 20 unit viewBox, 1.5 stroke, rendered at 16px; context-stroke follows the text colour. -->
+<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.8" width="13" height="11.4" rx="1.4"/><path d="M3.5 8.4h13"/><path d="M7 3.4v2.8M13 3.4v2.8"/><path d="M6.4 11.4h7.2M6.4 13.7h4.6"/></svg>

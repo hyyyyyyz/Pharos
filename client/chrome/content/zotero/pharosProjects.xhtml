@@ -43,9 +43,9 @@
 	     in this document produces HTML elements anyway, so a static XUL control
 	     would not match what the script builds beside it. -->
 	<vbox flex="1" id="pharos-pv-root">
-		<html:div id="pharos-pv" class="pharos-pv">
-			<html:aside id="pharos-pv-sidebar" class="pharos-pv-sidebar">
-				<html:div class="pharos-pv-side-head">
+		<html:div id="pharos-pv" class="pharos-pv pharos-shell">
+			<html:aside id="pharos-pv-sidebar" class="pharos-pv-sidebar pharos-side">
+				<html:div class="pharos-pv-side-head pharos-side-head">
 					<html:span class="pharos-pv-side-title"
 						data-l10n-id="pharos-projects-list-head"/>
 					<html:small id="pharos-pv-count" class="pharos-pv-side-count"/>
@@ -64,7 +64,7 @@
 				<html:div id="pharos-pv-side-state" class="pharos-pv-side-state"/>
 			</html:aside>
 
-			<html:main id="pharos-pv-main" class="pharos-pv-main">
+			<html:main id="pharos-pv-main" class="pharos-pv-main pharos-main">
 				<!-- Two regions, not one. Polite notices and the signed-out state
 				     go to the first; failures go to the second, which is an alert.
 				     One element doing both jobs meant a success notice and a failed

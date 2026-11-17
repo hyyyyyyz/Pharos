@@ -9,10 +9,10 @@
 		display: grid;
 		// Fixed label column so the email and password inputs line up with each
 		// other throughout the account form.
-		grid-template-columns: 7em 1fr;
+		grid-template-columns: 120px 1fr;
 		align-items: center;
 		gap: 8px;
-		margin-block-end: 8px;
+		margin-block-end: 12px;
 
 		input {
 			min-width: 0;
@@ -21,16 +21,22 @@
 
 	.pharos-prefs-intro,
 	.pharos-prefs-help {
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 		margin-block-end: 8px;
 	}
 
 	.pharos-prefs-help {
-		font-size: 11px;
+		font-size: var(--fs-sm);
+		line-height: var(--lh-base);
+		color: var(--c-tx3);
 	}
 
 	.pharos-prefs-account {
-		margin-block-end: 8px;
+		margin-block-end: 12px;
+
+		strong {
+			margin-inline-start: 4px;
+		}
 	}
 
 	// The about block: version row and the update-check controls below it.
@@ -38,14 +44,19 @@
 		margin-block-end: 8px;
 
 		strong {
-			margin-inline-start: 6px;
+			margin-inline-start: 4px;
 		}
 	}
 
 	// Sits beside the sign-in button and carries both progress and failure, so
 	// it must not push the button around as its text changes.
+	// Buttons in a row keep a gap; the platform's own negative margins closed it.
+	hbox > button {
+		margin-inline: 0 8px;
+	}
+
 	.pharos-prefs-message {
 		margin-inline-start: 8px;
-		color: var(--fill-secondary);
+		color: var(--c-tx2);
 	}
 }

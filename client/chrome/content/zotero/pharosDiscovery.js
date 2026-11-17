@@ -424,6 +424,11 @@ var Zotero_Pharos_Discovery = new function () {
 			Zotero_Pharos_Discovery.search();
 		});
 		_el.run.addEventListener('click', () => Zotero_Pharos_Discovery.search());
+		// One line until there is more than one line to show, then up to three.
+		_el.query.addEventListener('input', () => {
+			_el.query.style.height = 'auto';
+			_el.query.style.height = Math.min(_el.query.scrollHeight + 2, 72) + 'px';
+		});
 		_el.query.addEventListener('keydown', (event) => {
 			// Enter runs; Shift+Enter is a newline, because the field is three
 			// rows tall and a research question can want one.
@@ -822,6 +827,8 @@ var Zotero_Pharos_Discovery = new function () {
 	/* ------------------------------------------------------------------- run */
 
 	function _renderRun() {
+		// The page header's one action: only meaningful beside a run.
+		_el.reuse.hidden = !_search;
 		if (!_search) {
 			_el.runBox.hidden = true;
 			_el.empty.hidden = false;
@@ -939,13 +946,19 @@ var Zotero_Pharos_Discovery = new function () {
 			_syncSelection();
 		});
 		check.append(box, _span());
-		let rank = _span('pharos-ds-rank', String(result.rank).padStart(2, '0'));
-		rank.title = _str('pharos-discovery-rank-tooltip');
-		select.append(check, rank);
+		// No rank number: the list is already in rank order, and a "01" beside
+		// every row is noise the web client does not show.
+		select.append(check);
 		card.append(select);
 
 		let body = _div('pharos-ds-card-body');
-		body.append(_cardTitle(result), _cardMeta(result), _cardTrick(result));
+		body.append(_cardTitle(result), _cardMeta(result));
+
+		// The key idea, the provenance warning and the four reading rows are
+		// folded away until asked for (展开要点), as in the web client: a result
+		// list should read as titles, bylines and abstracts first.
+		let points = _div('pharos-ds-points');
+		points.append(_cardTrick(result));
 
 		let warning = Zotero.Pharos.Discovery.analysisWarning(result);
 		if (warning) {
@@ -956,13 +969,14 @@ var Zotero_Pharos_Discovery = new function () {
 			warn.title = warning;
 			warn.append(_span('pharos-ds-warn-ic'),
 				_span('pharos-ds-warn-text', _str('pharos-discovery-mode-rules-detail')));
-			body.append(warn);
+			points.append(warn);
 		}
 
 		let highlights = _cardHighlights(result);
 		if (highlights) {
-			body.append(highlights);
+			points.append(highlights);
 		}
+		body.append(points);
 
 		let abstract = String(result.abstract || '').trim();
 		if (abstract) {
@@ -1125,7 +1139,19 @@ var Zotero_Pharos_Discovery = new function () {
 
 		let actions = _div('pharos-ds-card-actions');
 
-		let analyze = _btn('pharos-ds-abtn is-accent', _str(
+		let toggle = _btn('pharos-ds-abtn pharos-ds-points-toggle',
+			_str('pharos-discovery-points-open'));
+		toggle.setAttribute('aria-expanded', 'false');
+		toggle.addEventListener('click', () => {
+			let open = card.classList.toggle('is-open');
+			toggle.setAttribute('aria-expanded', String(open));
+			toggle.textContent = _str(open
+				? 'pharos-discovery-points-close'
+				: 'pharos-discovery-points-open');
+		});
+		actions.append(toggle);
+
+		let analyze = _btn('pharos-ds-abtn', _str(
 			Zotero.Pharos.Discovery.isRules(result)
 				? 'pharos-discovery-analyze'
 				: 'pharos-discovery-reanalyze'

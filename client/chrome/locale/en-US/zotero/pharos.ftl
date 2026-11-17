@@ -250,6 +250,7 @@ pharos-daily-date-pending = { $count } awaiting AI
 
 pharos-daily-refresh = Update
 pharos-daily-refreshing = Updating
+pharos-daily-top-pick = Best one to read today
 pharos-daily-refresh-tooltip = Fetch today's arXiv and read it
 pharos-daily-filter-all = All
 pharos-daily-sort-score = Score
@@ -279,7 +280,8 @@ pharos-daily-refresh-busy = An update is already running.
 ## Daily papers · no reading model
 
 # Informational, never an error: fetching genuinely works without a key.
-pharos-daily-no-llm = No LLM API key is configured. Papers are still fetched, filtered and ranked by your directions, but no Chinese reading or scores can be produced. They stay "Awaiting AI", and can be read at any time once a key is set.
+pharos-daily-no-llm = No model is set up, so papers stay "Awaiting AI" until one is.
+pharos-daily-no-llm-action = Set up
 pharos-daily-no-llm-tooltip = No LLM API key is configured
 # Shown for a 503 from the read endpoint
 pharos-daily-read-unavailable = No reading model is configured, so nothing can be read.
@@ -712,6 +714,8 @@ pharos-projects-source-rules-where = Open this paper in Discovery to generate a 
 pharos-discovery-model = Read by { $model }
 pharos-discovery-model-unknown = Reading model not recorded
 
+pharos-discovery-points-open = Show Key Points
+pharos-discovery-points-close = Hide Key Points
 pharos-discovery-analyze = Generate Key Idea
 pharos-discovery-analyzing = Generating…
 pharos-discovery-reanalyze = Regenerate
