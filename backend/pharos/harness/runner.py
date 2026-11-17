@@ -33,8 +33,7 @@ from pharos.harness.contracts import (
 )
 from pharos.harness.dispatcher import ClaimedStep, HarnessDispatcher
 from pharos.harness.events import EventStore
-from pharos.harness.clock import SystemClock
-from pharos.harness.seams import Clock
+from pharos.harness.fakes import FakeClock
 from pharos.harness.model_gateway import ModelGateway
 from pharos.harness.repository import HarnessRunRepository, HarnessStepRepository, Scope, json_dump
 from pharos.harness.state import HarnessStateService
@@ -60,7 +59,7 @@ class StepExecutor:
     state: HarnessStateService = field(default_factory=HarnessStateService)
     usage: UsageLedger = field(default_factory=UsageLedger)
     events: EventStore = field(default_factory=EventStore)
-    clock: Clock = field(default_factory=SystemClock)
+    clock: FakeClock = field(default_factory=FakeClock)
     expanders: dict[str, StepExpander] = field(default_factory=dict)
     run_reducers: dict[str, RunReducer] = field(default_factory=dict)
 
