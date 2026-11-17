@@ -37,3 +37,7 @@ scripts
 # package tests either, but `COPY backend /app/backend` would.
 backend/tests
 **/*.pyc
+
+# Vendored Harness source and its runtime tooling are not part of the image.
+vendor
+harness-runtime
