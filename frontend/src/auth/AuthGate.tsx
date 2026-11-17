@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, api } from "../api/client";
 import { Icons } from "../design/icons";
+import markImg from "../assets/pharos-mark-72.png";
 import { themeStyle } from "../design/tokens";
 import { useSession, useUI } from "../store";
 import { POSTER_ALT, POSTER_SRC } from "./poster";
@@ -150,7 +151,7 @@ function Poster() {
       ) : (
         <div className="ph-auth-poster-fallback">
           <span className="ph-auth-poster-mark">
-            <Icons.brand size={132} sw={0.55} />
+            <img src={markImg} alt="" width={96} height={96} />
           </span>
           <div className="ph-auth-poster-text">
             <div className="ph-auth-poster-title">Pharos</div>
@@ -179,7 +180,7 @@ function Restoring({
         <span className="ph-auth-spin">
           <Icons.sync />
         </span>
-        正在恢复会话…
+        正在恢复会话
       </div>
     );
   }
@@ -399,7 +400,7 @@ function SignInForm(): JSX.Element {
       {serverError && <div className="ph-auth-alert">{serverError}</div>}
 
       <button type="submit" className="ph-auth-submit" disabled={pending}>
-        {pending ? (isRegister ? "创建中…" : "登录中…") : isRegister ? "创建账户" : "登录"}
+        {pending ? (isRegister ? "创建中" : "登录中") : isRegister ? "创建账户" : "登录"}
       </button>
 
       {isRegister && (

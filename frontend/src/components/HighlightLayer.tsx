@@ -708,7 +708,7 @@ export function HighlightLayer({
               title="让 AI 结合论文上下文解释这段内容"
               onClick={() => askAi("explain")}
             >
-              <Icons.spark size={12} />
+              <Icons.chat size={12} />
               解释
             </button>
             <button

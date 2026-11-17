@@ -1,40 +1,35 @@
 /* Sign-in / sign-up gate.
-   Metrics are taken from the existing surfaces rather than invented: the input
-   is SettingsModal's `.ph-set-input` (30px / 6px radius / 12px text / --c-ac
-   focus ring), the mode switch is `.ph-set-theme`, and the primary button is
-   `.ph-set-connect`. Colour only ever comes from a --c-* variable, so the gate
+   A poster on the left (untouched artwork), a 360px form column at the right,
+   vertically centred. Colour only ever comes from a --c-* variable, so the gate
    follows the user's theme and accent like the rest of the app. */
 
-/* Split gate: a large poster on the left, a narrow sign-in column on the right.
-   The column is a fixed width and the poster takes whatever is left, so the
-   ratio stays "big | small" at every viewport instead of only at one size —
-   roughly 70/30 on a 1440px screen, and still 65/35 on a 1280px laptop. */
 .ph-auth {
   height: 100%;
   display: flex;
   background: var(--c-bg);
   color: var(--c-tx);
   /* The app root normally sets this; the gate renders outside it. */
-  font-size: 12px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
 }
 
 .ph-auth-side {
   flex: none;
-  width: clamp(340px, 30vw, 440px);
+  width: clamp(440px, 30vw, 520px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 24px;
   padding: 24px;
   background: var(--c-sf);
   border-left: 1px solid var(--c-bd);
 }
 
 .ph-auth-panel {
-  width: 320px;
+  width: 360px;
   max-width: 100%;
-  animation: ph-fade 0.16s ease;
+  animation: ph-fade var(--dur-enter) var(--ease);
 }
 
 /* ------------------------------------------------------------- the poster */
@@ -45,17 +40,14 @@
   position: relative;
   overflow: hidden;
 }
-
 .ph-auth-poster-img {
   display: block;
   width: 100%;
   height: 100%;
-  /* Fill the column rather than letterbox; supply a tall image (see poster.ts). */
   object-fit: cover;
 }
 
-/* Shown until artwork is installed. Reads as a deliberate brand panel, not as
-   a missing image. */
+/* Shown only until artwork is installed: a plain surface step, no gradient. */
 .ph-auth-poster-fallback {
   position: absolute;
   inset: 0;
@@ -63,33 +55,25 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22px;
-  background:
-    radial-gradient(120% 90% at 28% 18%, var(--c-acs), transparent 62%),
-    linear-gradient(155deg, var(--c-bg) 10%, var(--c-hv) 100%);
+  gap: 24px;
+  background: var(--c-hv);
 }
-
 .ph-auth-poster-mark {
   display: flex;
-  color: var(--c-ac);
-  opacity: 0.32;
+  color: var(--c-tx3);
 }
-
 .ph-auth-poster-text {
   text-align: center;
 }
-
 .ph-auth-poster-title {
-  font-size: 26px;
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--c-tx);
 }
-
 .ph-auth-poster-sub {
-  margin-top: 6px;
-  font-size: 12.5px;
-  letter-spacing: 0.18em;
+  margin-top: 4px;
+  font-size: var(--fs-base);
   color: var(--c-tx3);
 }
 
@@ -113,41 +97,37 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
 }
-
-.ph-auth-mark {
-  display: flex;
-  color: var(--c-ac);
-}
-
-/* Sized by height so the wordmark's own proportions decide the width. It is
-   a navy-on-transparent PNG, so it needs lifting in dark mode — inverting
-   would turn the gold beam blue, whereas a brightness lift keeps the hues. */
+/* Sized by height so the wordmark's own proportions decide the width. The image
+   is transparent; in the dark theme it is lifted to white (inverting would turn
+   the gold beam blue). */
 .ph-auth-wordmark-img {
-  height: 34px;
+  display: block;
+  height: 40px;
   width: auto;
   max-width: 100%;
   object-fit: contain;
+  background: transparent;
 }
-:root[data-theme="dark"] .ph-auth-wordmark-img,
-.ph-auth-wordmark-img.is-dark {
-  filter: brightness(0) invert(1) opacity(0.92);
+.ph-auth-wordmark-img {
+  filter: var(--c-logo-filter, none);
 }
 
 .ph-auth-tagline {
-  margin: 6px 0 20px;
+  margin: 12px 0 32px;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   color: var(--c-tx3);
 }
 
 /* ------------------------------------------------------------ mode switch */
 
+/* An underlined segment pair, not two buttons. */
 .ph-auth-modes {
   display: flex;
-  gap: 8px;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--c-bd);
 }
 /* Invisible rather than absent while the registration probe is in flight, so
    the panel does not jump when the answer arrives. Not `display: none` and not
@@ -156,23 +136,33 @@
 .ph-auth-modes--probing {
   visibility: hidden;
 }
-
 .ph-auth-mode {
   flex: 1;
-  height: 30px;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid var(--c-bd);
+  height: 40px;
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--c-tx2);
+  color: var(--c-tx3);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 .ph-auth-mode--on {
-  border-color: var(--c-acsb);
-  background: var(--c-acs);
-  color: var(--c-ac);
-  font-weight: 600;
+  border-bottom-color: var(--c-ac);
+  color: var(--c-tx);
+}
+.ph-auth-mode:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .ph-auth-mode:hover:not(.ph-auth-mode--on) {
+    color: var(--c-tx2);
+  }
 }
 
 /* ------------------------------------------------------------------ fields */
@@ -180,34 +170,33 @@
 .ph-auth-form {
   display: block;
 }
-
 .ph-auth-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   color: var(--c-tx2);
 }
 .ph-auth-label-sub {
-  font-weight: 400;
   color: var(--c-tx3);
 }
-
 .ph-auth-input {
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  margin-bottom: 12px;
-  border-radius: 6px;
+  height: 36px;
+  padding: 0 12px;
+  margin-bottom: 16px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-bg);
   color: var(--c-tx);
-  font-size: 12px;
+  font-size: var(--fs-base);
   outline: none;
+  transition: border-color var(--dur-fast) var(--ease);
 }
 .ph-auth-input:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring);
+  outline-offset: 0;
 }
 .ph-auth-input[aria-invalid="true"] {
   border-color: var(--c-err);
@@ -215,89 +204,100 @@
 .ph-auth-input::placeholder {
   color: var(--c-tx3);
 }
-
 /* Inline validation sits directly under its field, so it replaces the input's
    bottom margin rather than adding to it. */
 .ph-auth-input[aria-invalid="true"] + .ph-auth-err {
-  margin-top: -8px;
+  margin-top: -12px;
 }
-
 .ph-auth-err {
-  margin-bottom: 12px;
-  font-size: 11px;
-  line-height: 1.5;
+  margin-bottom: 16px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   color: var(--c-err);
 }
-
-/* The server's message — louder than a field error, because it is the whole
-   reason the attempt failed. */
+/* The server's message: the whole reason the attempt failed. */
 .ph-auth-alert {
-  margin-bottom: 14px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
   background: var(--c-err-soft);
   color: var(--c-err);
-  font-size: 11.5px;
-  line-height: 1.55;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
-
 .ph-auth-note {
-  margin-top: 12px;
-  font-size: 11px;
-  line-height: 1.6;
+  margin-top: 16px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   color: var(--c-tx3);
 }
 /* When it explains a closed registration it leads the form instead. */
 .ph-auth-modes + .ph-auth-note,
 .ph-auth-form > .ph-auth-note:first-child {
   margin-top: 0;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 /* ----------------------------------------------------------------- actions */
 
 .ph-auth-submit {
   width: 100%;
-  height: 32px;
+  height: 40px;
   padding: 0 16px;
-  border-radius: 6px;
+  margin-top: 8px;
+  border-radius: var(--r-sm);
   border: none;
   background: var(--c-ac);
   color: var(--c-acc);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
-.ph-auth-submit:hover:not(:disabled) {
-  background: var(--c-ach);
+.ph-auth-submit:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.ph-auth-submit:focus-visible,
+.ph-auth-ghost:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .ph-auth-submit:hover:not(:disabled) {
+    background: var(--c-ach);
+  }
 }
 .ph-auth-submit:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-
 .ph-auth-ghost {
-  height: 32px;
+  height: 40px;
   padding: 0 16px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-sf);
   color: var(--c-tx2);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
 }
-.ph-auth-ghost:hover {
-  background: var(--c-hv);
+@media (hover: hover) {
+  .ph-auth-ghost:hover {
+    background: var(--c-hv);
+  }
 }
-
 .ph-auth-row {
   display: flex;
   gap: 8px;
 }
 .ph-auth-row > .ph-auth-submit {
   flex: 1;
+  margin-top: 0;
 }
 
 /* -------------------------------------------------------------- restoring */
@@ -307,20 +307,21 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 0 6px;
-  font-size: 12.5px;
+  padding: 16px 0;
+  font-size: var(--fs-base);
   color: var(--c-tx2);
 }
-
+/* A real in-progress state: the one loop allowed here. */
 .ph-auth-spin {
   display: flex;
-  color: var(--c-ac);
+  color: var(--c-tx3);
   animation: ph-spin 1.1s linear infinite;
 }
 
 /* ------------------------------------------------------------------- foot */
 
 .ph-auth-foot {
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--c-tx3);
 }

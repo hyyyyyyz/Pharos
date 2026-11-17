@@ -741,7 +741,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
             onClick={toggleAI}
           >
             <span className="ph-rv-ico">
-              <Icons.spark />
+              <Icons.chat />
             </span>
             AI 对话
           </button>
@@ -1092,7 +1092,9 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   <Icons.redo size={15} />
                 </button>
                 <div className="ph-rv-spacer" />
-                <span className="ph-rv-hint">Ctrl+滚轮 / 双指缩放 · 拖动平移</span>
+                <span className="ph-rv-hint">
+                  {/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"}+滚轮 / 双指缩放 · 拖动平移
+                </span>
               </div>
               {docError ? (
                 <div className="ph-rv-pdf-msg is-err">加载失败：{docError}</div>
@@ -1196,9 +1198,7 @@ export function ReadingView({ paperId }: { paperId: string }): JSX.Element {
                   disabled={translate.isPending}
                   onClick={() => translate.mutate()}
                 >
-                  <span className="ph-rv-ico">
-                    <Icons.spark />
-                  </span>
+
                   翻译此篇 · 保留排版
                 </button>
                 {translate.isError && (

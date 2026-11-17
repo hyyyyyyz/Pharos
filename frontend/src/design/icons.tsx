@@ -14,8 +14,15 @@ interface IconProps extends Omit<SVGProps<SVGSVGElement>, "children"> {
   sw?: number;
 }
 
-function make(paths: Node[], def: { size?: number; sw?: number } = {}) {
-  return function Icon({ size = def.size ?? 18, sw = def.sw ?? 1.5, ...rest }: IconProps) {
+/**
+ * One size, one stroke. Every icon renders at 16px with a 1.5 stroke and takes
+ * its colour from the text role it sits in; a caller may pass `size` for the
+ * few places that are not a control (an empty state is 24). The old per-icon
+ * defaults (13, 14, 15, 22…) are gone on purpose: they were what made the
+ * toolbar and the lists look like they used different sets.
+ */
+function make(paths: Node[], _legacy?: unknown) {
+  return function Icon({ size = 16, sw = 1.5, ...rest }: IconProps) {
     return (
       <svg
         width={size}
@@ -56,7 +63,6 @@ export const Icons = {
       "M6.6 14.9c-2.6-1-4.3-3-2.2-5.6C6.5 6.6 10 5 10.6 4.9",
       "M6.7 14.9c-.5.2-.9.6-.9 1.1 0 .8 1 1.2 1.9 1.2",
     ],
-    { size: 15, sw: 1.4 },
   ),
   // 每日论文: a dated sheet with two lines of text — a digest that arrives daily.
   daily: make(
@@ -68,21 +74,41 @@ export const Icons = {
     ],
     { sw: 1.4 },
   ),
-  settings: make(
-    [
-      "M3.5 6h13",
-      "M3.5 10h13",
-      "M3.5 14h13",
-      { c: true, cx: 7, cy: 6, r: 1.7, fill: "var(--c-rail)" },
-      { c: true, cx: 13, cy: 10, r: 1.7, fill: "var(--c-rail)" },
-      { c: true, cx: 6, cy: 14, r: 1.7, fill: "var(--c-rail)" },
-    ],
-    { size: 16 },
-  ),
-  folder: make(["M2.6 6a1 1 0 0 1 1-1h3l1.2 1.5H16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1z"], { size: 15, sw: 1.4 }),
-  star: make(["M10 3.6l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L4.2 7.8l4-.6z"], { size: 15, sw: 1.4 }),
-  inbox: make(["M3.5 5.5h11v9h-11z", "M3.5 11h3.2l1 1.6h4.6l1-1.6h1.7"], { size: 15, sw: 1.4 }),
-  trash: make(["M4.5 6h10", "M8 6V4.6h3V6", "M6 6l.7 8.4h6.1L13.5 6"], { size: 15, sw: 1.4 }),
+  // 模型配置: three sliders. The rail is not behind it any more, so the knobs
+  // are drawn by breaking the track rather than by painting over it.
+  sliders: make([
+    "M3.5 6h2M8.5 6h8",
+    "M3.5 10h6M12.5 10h4",
+    "M3.5 14h1M7.5 14h9",
+    { c: true, cx: 7, cy: 6, r: 1.5 },
+    { c: true, cx: 11, cy: 10, r: 1.5 },
+    { c: true, cx: 6, cy: 14, r: 1.5 },
+  ]),
+  // 设置: a gear. The old icon (three sliders) now belongs to 模型配置 alone.
+  gear: make(["M8.9 4.4 L9.0 2.7 L11.0 2.7 L11.1 4.4 L13.1 5.2 L14.5 4.1 L15.9 5.5 L14.8 6.9 L15.6 8.9 L17.3 9.0 L17.3 11.0 L15.6 11.1 L14.8 13.1 L15.9 14.5 L14.5 15.9 L13.1 14.8 L11.1 15.6 L11.0 17.3 L9.0 17.3 L8.9 15.6 L6.9 14.8 L5.5 15.9 L4.1 14.5 L5.2 13.1 L4.4 11.1 L2.7 11.0 L2.7 9.0 L4.4 8.9 L5.2 6.9 L4.1 5.5 L5.5 4.1 L6.9 5.2z", { c: true, cx: 10, cy: 10, r: 2.3 }]),
+  // 运行: one source fanning out into two steps — a run is a flow, not a list.
+  runs: make([
+    { c: true, cx: 4.8, cy: 10, r: 1.8 },
+    { c: true, cx: 15.2, cy: 4.8, r: 1.8 },
+    { c: true, cx: 15.2, cy: 15.2, r: 1.8 },
+    "M6.4 9.2 13.6 5.6M6.4 10.8l7.2 3.6",
+  ]),
+  // 文献探索: a compass. The magnifier is reserved for the search box.
+  compass: make([{ c: true, cx: 10, cy: 10, r: 6.8 }, "M12.9 7.1 11.3 11.3 7.1 12.9 8.7 8.7z"]),
+  // 研究项目: a folder holding a small graph of two linked nodes.
+  project: make([
+    "M2.8 5.8a1 1 0 0 1 1-1h3.1l1.3 1.6h8a1 1 0 0 1 1 1v7.6a1 1 0 0 1-1 1H3.8a1 1 0 0 1-1-1z",
+    { c: true, cx: 7.2, cy: 11.4, r: 1.1 },
+    { c: true, cx: 12.8, cy: 11.4, r: 1.1 },
+    "M8.3 11.4h3.4",
+  ]),
+  // 管理后台: a shield with a tick.
+  shield: make(["M10 3 16 5.2v4.4c0 3.4-2.4 5.9-6 7.4-3.6-1.5-6-4-6-7.4V5.2z", "M7.4 10l1.9 1.9 3.3-3.6"]),
+  chat: make(["M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3V13h0A1.5 1.5 0 0 1 4 11.5z"]),
+  folder: make(["M2.6 6a1 1 0 0 1 1-1h3l1.2 1.5H16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1z"]),
+  star: make(["M10 3.6l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L4.2 7.8l4-.6z"]),
+  inbox: make(["M3.5 5.5h11v9h-11z", "M3.5 11h3.2l1 1.6h4.6l1-1.6h1.7"]),
+  trash: make(["M4.5 6h10", "M8 6V4.6h3V6", "M6 6l.7 8.4h6.1L13.5 6"]),
   /* ---------------------------------------------------------------------
      The 手写 tool icons, redrawn.
 
@@ -104,7 +130,6 @@ export const Icons = {
       { r0: { x: 4.8, y: 9.2, width: 10.4, height: 7.6, rx: 1.8 } },
       "M7.2 9.2V6.9a2.8 2.8 0 0 1 5.6 0v2.3",
     ],
-    { size: 15, sw: 1.4 },
   ),
   /** 水彩笔 — a drop, plus the wash it leaves behind. The drop on its own was
    *  any liquid at all; the wash under it is what this tool puts on a page. */
@@ -113,7 +138,6 @@ export const Icons = {
       "M10 3.1c2.3 3 3.9 5.3 3.9 7.2a3.9 3.9 0 0 1-7.8 0c0-1.9 1.6-4.2 3.9-7.2z",
       "M4.4 16.4c1.5-.9 3-.9 4.6 0s3.1.9 4.6 0",
     ],
-    { size: 15, sw: 1.4 },
   ),
   /** 激光笔 — a point that EMITS: a beam with a burst at the far end, rather
    *  than a dot with ticks all round it (which read as a spinner). */
@@ -124,13 +148,11 @@ export const Icons = {
       "M12.3 4.5a7.2 7.2 0 0 1 3.1 3.1",
       "M14.5 2.8a10.4 10.4 0 0 1 2.6 2.6",
     ],
-    { size: 15, sw: 1.5 },
   ),
   /** 改样式 — a brush: handle, ferrule, bristles. Deliberately not a wand,
    *  which the still-deferred 魔法棒 (text transform) will want for itself. */
   styleBrush: make(
     ["M15.9 4.1 11.2 8.8", "M10.4 8 12 9.6 8.6 13 7 11.4z", "M7 11.4 3.9 16.1 8.6 13"],
-    { size: 15, sw: 1.4 },
   ),
   /** 胶带 — a strip on the slant with torn ends. */
   tape: make(
@@ -138,7 +160,6 @@ export const Icons = {
       "M2.6 11.9 3.3 15.4l13.5-3.1-.7-3.5z",
       "M2.6 11.9 5.2 9.6l.5 2 2.6-2.3.5 2 2.6-2.3.5 2 2.6-2.3.5 2",
     ],
-    { size: 15, sw: 1.3 },
   ),
   /** 键盘 — the text tool. A keyboard rather than an "A" or a T-bar, because
    *  what this tool inserts is TYPED text, and the keyboard is the thing that
@@ -151,38 +172,32 @@ export const Icons = {
       "M5 8.4h1M8 8.4h1M11 8.4h1M14 8.4h1",
       "M6.6 11.4h6.8",
     ],
-    { size: 15, sw: 1.3 },
   ),
   /** 便利贴 — a square with its bottom-right corner turned up. The fold IS the
    *  icon: without it this is indistinguishable from a plain text box. */
   sticky: make(
     ["M4 3.8h12v8.4l-3.8 4H4z", "M16 12.2h-3.8v4"],
-    { size: 15, sw: 1.35 },
   ),
-  cloud: make(["M6 13.5a3 3 0 0 1 .3-6 4 4 0 0 1 7.6 1.1A2.7 2.7 0 0 1 14 13.5z"], { size: 13, sw: 1.4 }),
-  sync: make(["M14.5 6.5A5 5 0 0 0 5.3 8", "M5.5 13.5A5 5 0 0 0 14.7 12", "M14.5 4.5v2h-2", "M5.5 15.5v-2h2"], { size: 13, sw: 1.4 }),
+  cloud: make(["M6 13.5a3 3 0 0 1 .3-6 4 4 0 0 1 7.6 1.1A2.7 2.7 0 0 1 14 13.5z"]),
+  sync: make(["M14.5 6.5A5 5 0 0 0 5.3 8", "M5.5 13.5A5 5 0 0 0 14.7 12", "M14.5 4.5v2h-2", "M5.5 15.5v-2h2"]),
   link: make(
     ["M8.5 11.5 11.5 8.5", "M9 7l1.2-1.2a2.5 2.5 0 0 1 3.5 3.5L12.5 10.5", "M11 13l-1.2 1.2a2.5 2.5 0 0 1-3.5-3.5L7.5 9.5"],
-    { size: 14, sw: 1.4 },
   ),
-  plus: make(["M10 5.5v9M5.5 10h9"], { size: 13, sw: 1.7 }),
-  file: make(["M6 3.5h5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z", "M11 3.5V7h3"], { size: 14, sw: 1.4 }),
-  open: make(["M11 4.5h4.5V9", "M15.5 4.5 9 11", "M8 5.5H5v9.5h9.5v-3"], { size: 14, sw: 1.4 }),
-  spark: make(["M10 3.5l1.6 4.1 4.4 1.6-4.4 1.6L10 15l-1.6-4.2L4 9.2l4.4-1.6z"], { size: 15 }),
-  alert: make([{ c: true, cx: 10, cy: 10, r: 6.2 }, "M10 6.6v4", "M10 13.2v.2"], { size: 22 }),
+  plus: make(["M10 5.5v9M5.5 10h9"]),
+  file: make(["M6 3.5h5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z", "M11 3.5V7h3"]),
+  open: make(["M11 4.5h4.5V9", "M15.5 4.5 9 11", "M8 5.5H5v9.5h9.5v-3"]),
+  alert: make([{ c: true, cx: 10, cy: 10, r: 6.2 }, "M10 6.6v4", "M10 13.2v.2"]),
   sun: make(
     [
       { c: true, cx: 10, cy: 10, r: 3.2 },
       "M10 2.6v1.6M10 15.8v1.6M2.6 10h1.6M15.8 10h1.6M4.7 4.7l1.2 1.2M14.1 14.1l1.2 1.2M15.3 4.7l-1.2 1.2M4.7 15.3l1.2-1.2",
     ],
-    { size: 16 },
   ),
-  moon: make(["M15.4 12.3A5.8 5.8 0 1 1 9 4.1a4.6 4.6 0 0 0 6.4 8.2z"], { size: 16 }),
+  moon: make(["M15.4 12.3A5.8 5.8 0 1 1 9 4.1a4.6 4.6 0 0 0 6.4 8.2z"]),
   // 跟随系统: a display, not a half sun/moon. The choice is "whatever this
   // machine says", and the machine is the thing worth drawing.
   display: make(
     [{ r0: { x: 3.2, y: 4.5, width: 13.6, height: 9, rx: 1.4 } }, "M7.5 16.5h5M10 13.5v3"],
-    { size: 16, sw: 1.4 },
   ),
   palette: make(
     [
@@ -191,31 +206,17 @@ export const Icons = {
       { c: true, cx: 7, cy: 13, r: 2 },
       { c: true, cx: 13, cy: 13, r: 2 },
     ],
-    { size: 16, sw: 1.4 },
   ),
-  close: make(["M5.5 5.5l7 7M12.5 5.5l-7 7"], { size: 12 }),
-  caretR: make(["M8 6l4 4-4 4"], { size: 14 }),
-  caretD: make(["M6 8l4 4 4-4"], { size: 14 }),
-  panelL: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M8 4.5v11"], { size: 15, sw: 1.4 }),
-  panelR: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M12 4.5v11"], { size: 15, sw: 1.4 }),
-  send: make(["M4 10h11", "M10 5l5 5-5 5"], { size: 16 }),
-  brand: make(
-    [
-      "M8.7 18h6.6",
-      "M9.6 18l.7-6.2h3.4l.7 6.2",
-      "M10 8.2h4",
-      "M12 3.5l2.2 2.4H9.8z",
-      "M10.3 8.2v3.6M13.7 8.2v3.6",
-      "M6.2 7.3 8.6 8",
-      "M17.8 7.3 15.4 8",
-    ],
-    { size: 20, sw: 1.4 },
-  ),
-  user: make([{ c: true, cx: 10, cy: 7.5, r: 3 }, "M4.8 16.2a5.2 5.2 0 0 1 10.4 0"], { size: 17 }),
-  check: make(["M5 10.5l3.2 3.4 6.8-7.4"], { size: 16, sw: 1.7 }),
+  close: make(["M5.5 5.5l7 7M12.5 5.5l-7 7"]),
+  caretR: make(["M8 6l4 4-4 4"]),
+  caretD: make(["M6 8l4 4 4-4"]),
+  panelL: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M8 4.5v11"]),
+  panelR: make([{ r0: { x: 3.5, y: 4.5, width: 13, height: 11, rx: 1.4 } }, "M12 4.5v11"]),
+  send: make(["M4 10h11", "M10 5l5 5-5 5"]),
+  user: make([{ c: true, cx: 10, cy: 7.5, r: 3 }, "M4.8 16.2a5.2 5.2 0 0 1 10.4 0"]),
+  check: make(["M5 10.5l3.2 3.4 6.8-7.4"]),
   eye: make(
     ["M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10s-3 5.5-7.5 5.5S2.5 10 2.5 10z", { c: true, cx: 10, cy: 10, r: 2.2 }],
-    { size: 15, sw: 1.4 },
   ),
   /** …and on a strip that has been tapped open.
    *
@@ -229,6 +230,5 @@ export const Icons = {
       "M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10s-3 5.5-7.5 5.5S2.5 10 2.5 10z",
       "M7.6 12.4 12.4 7.6",
     ],
-    { size: 15, sw: 1.4 },
   ),
 };

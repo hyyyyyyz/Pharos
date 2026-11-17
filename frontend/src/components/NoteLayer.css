@@ -39,7 +39,7 @@
   z-index: 4;
   pointer-events: auto;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 /*
@@ -93,7 +93,7 @@
       color-mix(in oklab, var(--c-note-card) 93%, black) 100%
     );
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   /* Two stages: a tight contact shadow and a wide soft one. That pairing is
      what tells the eye how far above the page something floats; the single
      1px shadow this replaces laid the card flat on the paper, which is
@@ -138,13 +138,13 @@
 .ph-note-box.is-folded {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: auto;
   height: auto;
-  padding: 3px 9px 3px 7px;
-  border-radius: 11px;
+  padding: 4px 8px 4px 8px;
+  border-radius: var(--r-md);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--c-tx, #1e222a);
   text-align: left;
   cursor: pointer;
@@ -181,7 +181,7 @@
   height: 16px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   cursor: pointer;
   display: inline-flex;
@@ -210,14 +210,14 @@
   color: var(--c-tx, #1e222a);
   /* Clear of the fold chevron (top-right) and, when it is showing, the
      turned corner (bottom-right), so neither ever sits on a glyph. */
-  padding: 4px 20px 11px 7px;
+  padding: 4px 20px 12px 8px;
 }
 
 .ph-note-text {
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 3px 5px;
+  padding: 4px 4px;
   border: 0;
   background: transparent;
   color: var(--c-note, var(--c-tx, #1e222a));
@@ -253,7 +253,7 @@
   width: 6px;
   height: 34%;
   transform: translateY(-50%);
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: var(--c-note, var(--c-tx3));
   opacity: 0.55;
   cursor: grab;

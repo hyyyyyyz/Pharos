@@ -17,6 +17,7 @@ import { api, ApiError } from "../api/client";
 import type { CollectionNode } from "../api/types";
 import { Icons } from "../design/icons";
 import { useUI } from "../store";
+import { SidePanel } from "./shell";
 import "./CollectionTree.css";
 
 /** MIME type for a paper drag. A custom type (rather than "text/plain") means
@@ -195,7 +196,7 @@ export function CollectionTree(): JSX.Element {
   };
 
   const inlineEditor = (depth: number) => (
-    <div className="ph-tree-edit" style={{ paddingLeft: 8 + depth * 15 }}>
+    <div className="ph-tree-edit" style={{ paddingLeft: 8 + depth * 16 }}>
       <input
         ref={inputRef}
         className="ph-tree-input"
@@ -233,7 +234,7 @@ export function CollectionTree(): JSX.Element {
           (active ? " is-active" : "") +
           (dropTarget === node.id ? " is-drop" : "")
         }
-        style={{ paddingLeft: 8 + depth * 15 }}
+        style={{ paddingLeft: 8 + depth * 16 }}
         onClick={() => selectCol(node.id)}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -335,12 +336,15 @@ export function CollectionTree(): JSX.Element {
   const tagList = tags.data ?? [];
 
   return (
-    <aside className="ph-tree ph-scroll">
-      <div className="ph-tree-head">
-        <span className="ph-tree-head-text">分类</span>
+    <SidePanel
+      storageKey="library"
+      title="分类"
+      actions={
         <button
-          className="ph-tree-add"
+          type="button"
+          className="ph-iconbtn"
           title="新建分类"
+          aria-label="新建分类"
           onClick={() => {
             setEditing({ mode: "create", parentId: null });
             if (!favOpen) toggleGroup("favOpen");
@@ -348,7 +352,9 @@ export function CollectionTree(): JSX.Element {
         >
           <Icons.plus />
         </button>
-      </div>
+      }
+    >
+    <div className="ph-tree">
 
       {renderBuiltin(builtins[0])}
 
@@ -369,7 +375,7 @@ export function CollectionTree(): JSX.Element {
               tree is still loading — "暂无分类" during a pending request would
               be asserting something not yet known. */}
           {tree.length === 0 && editing === null && !collections.isPending && (
-            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 15 }}>
+            <div className="ph-tree-empty" style={{ paddingLeft: 8 + 16 }}>
               {collections.isError ? "无法载入分类" : "暂无分类"}
             </div>
           )}
@@ -390,10 +396,7 @@ export function CollectionTree(): JSX.Element {
           faking it with one request per row is not a trade worth making. */}
       {tagList.length > 0 && (
         <>
-          <div className="ph-tree-div" />
-          <div className="ph-tree-head">
-            <span className="ph-tree-head-text">标签</span>
-          </div>
+          <div className="ph-tree-head">标签</div>
           <div className="ph-tree-tags">
             {tagList.map((t) => (
               <span
@@ -465,6 +468,7 @@ export function CollectionTree(): JSX.Element {
           )}
         </div>
       )}
-    </aside>
+    </div>
+    </SidePanel>
   );
 }

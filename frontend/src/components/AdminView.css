@@ -1,169 +1,76 @@
-/* Administrator console. Metrics and colours come from the same tokens the rest
-   of the workbench uses — no new visual language, because this is one more
-   module beside 文库, not a separate product. */
-
-.ph-admin {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  background: var(--c-bg);
-}
-
-/* ---------------------------------------------------------------- header */
-
-.ph-admin-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  height: 44px;
-  padding: 0 16px;
-  background: var(--c-sf);
-  border-bottom: 1px solid var(--c-bd);
-}
-
-.ph-admin-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--c-tx);
-}
-
-.ph-admin-title-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  background: var(--c-acs);
-  color: var(--c-ac);
-}
-
-.ph-admin-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-bd);
-  border-radius: 7px;
-}
-
-.ph-admin-tab {
-  height: 24px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--c-tx2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.ph-admin-tab:hover {
-  color: var(--c-tx);
-}
-.ph-admin-tab.is-on {
-  background: var(--c-sf);
-  color: var(--c-ac);
-  font-weight: 600;
-  box-shadow: var(--sh-sm);
-}
+/* 管理后台 — section list in the side panel; stat cards and a real table. */
 
 .ph-admin-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-
-.ph-admin-panel {
-  padding: 18px 16px 28px;
-  max-width: 1100px;
-}
-
-/* ------------------------------------------------------- account summary */
-
-.ph-admin-account-summary {
+  padding: 24px;
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px 18px;
-  margin-bottom: 14px;
-  padding: 8px 12px;
-  background: var(--c-sf);
-  border: 1px solid var(--c-bd);
-  border-radius: 8px;
-}
-
-.ph-admin-summary-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 11.5px;
-  color: var(--c-tx2);
-  white-space: nowrap;
-}
-
-.ph-admin-summary-item strong {
-  color: var(--c-tx);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --------------------------------------------------------------- toolbar */
-
-.ph-admin-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .ph-admin-searchwrap {
   position: relative;
   flex: 1;
-  max-width: 300px;
+  max-width: 320px;
 }
-
 .ph-admin-searchicon {
   position: absolute;
-  left: 9px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   color: var(--c-tx3);
   pointer-events: none;
 }
-
 .ph-admin-search {
   width: 100%;
-  height: 30px;
-  padding: 0 10px 0 28px;
-  border-radius: 6px;
-  border: 1px solid var(--c-bd);
-  background: var(--c-sf);
-  color: var(--c-tx);
-  font-size: 12px;
-  outline: none;
-}
-.ph-admin-search:focus {
-  border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  padding-left: 36px;
 }
 
-.ph-admin-reg {
-  margin-inline-start: auto;
-  font-size: 11.5px;
-  color: var(--c-tx2);
-  white-space: nowrap;
+/* ------------------------------------------------------------ stat cards */
+
+.ph-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
-.ph-admin-reg-hint {
-  margin-left: 4px;
+.ph-admin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-md);
+  background: var(--c-sf);
+}
+.ph-admin-stat-label {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   color: var(--c-tx3);
+}
+.ph-admin-stat-value {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: 500;
+  color: var(--c-tx);
+  font-variant-numeric: tabular-nums;
+}
+.ph-admin-stat-note {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ph-admin-error {
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--c-err-soft);
+  color: var(--c-err);
+  font-size: var(--fs-sm);
+  line-height: 20px;
 }
 
 /* ----------------------------------------------------------------- table */
@@ -171,270 +78,244 @@
 .ph-admin-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--c-sf);
-  border: 1px solid var(--c-bd);
-  border-radius: 10px;
-  overflow: hidden;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
 }
-
 .ph-admin-table th {
-  padding: 9px 12px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--c-tx3);
-  background: var(--c-hdr);
+  padding: 0 12px 8px;
   border-bottom: 1px solid var(--c-bd);
-  white-space: nowrap;
+  text-align: left;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 400;
+  color: var(--c-tx3);
 }
-
+.ph-admin-table th.is-actions {
+  text-align: right;
+}
 .ph-admin-table td {
-  padding: 10px 12px;
+  height: 52px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--c-bd);
   vertical-align: middle;
 }
-.ph-admin-table tr:last-child td {
-  border-bottom: none;
-}
-
-/* A suspended account stays legible but visibly inert. */
 .ph-admin-table tr.is-suspended td {
-  opacity: 0.55;
-}
-
-.ph-admin-date {
   color: var(--c-tx3);
-  font-size: 11.5px;
-  white-space: nowrap;
 }
-
-.ph-admin-user {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-
-.ph-admin-avatar {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--c-acs);
-  color: var(--c-ac);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ph-admin-userinfo {
-  min-width: 0;
-}
-
 .ph-admin-username {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
+  gap: 8px;
   color: var(--c-tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-
 .ph-admin-self {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 20px;
-  background: var(--c-acs);
-  color: var(--c-ac);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  color: var(--c-tx3);
 }
-
 .ph-admin-useremail {
-  font-size: 11.5px;
-  color: var(--c-tx3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---------------------------------------------------------------- badges */
-
-.ph-admin-badge {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 9px;
-  border-radius: 20px;
-  white-space: nowrap;
-}
-.ph-admin-badge.is-admin {
-  background: var(--c-acs);
-  color: var(--c-ac);
-}
-.ph-admin-badge.is-plain {
-  background: var(--c-hv);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   color: var(--c-tx3);
 }
-.ph-admin-badge.is-ready {
-  background: var(--c-ok-soft);
+.ph-admin-date {
+  color: var(--c-tx2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ph-admin-role-text {
+  color: var(--c-tx3);
+}
+.ph-admin-role-text.is-admin {
+  color: var(--c-tx);
+}
+.ph-admin-role-text.is-ready {
   color: var(--c-ok);
 }
 
-/* --------------------------------------------------------------- actions */
-
 .ph-admin-actions {
   display: flex;
-  gap: 6px;
+  justify-content: flex-end;
   align-items: center;
+  gap: 4px;
 }
-
 .ph-admin-act {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--c-bd);
-  background: var(--c-sf);
-  color: var(--c-tx2);
-  font-size: 11.5px;
-  font-weight: 500;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-aclink);
+  font-size: var(--fs-sm);
   cursor: pointer;
-  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease);
 }
-.ph-admin-act:hover:not(:disabled) {
-  background: var(--c-hv);
-  color: var(--c-tx);
+.ph-admin-act.is-danger {
+  color: var(--c-err);
 }
 .ph-admin-act:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
-.ph-admin-act.is-danger:hover:not(:disabled) {
-  border-color: var(--c-err);
-  color: var(--c-err);
-  background: var(--c-err-soft);
+@media (hover: hover) {
+  .ph-admin-act:hover:not(:disabled) {
+    background: var(--c-hv);
+  }
 }
-
+.ph-admin-act:focus-visible,
+.ph-admin-trash:focus-visible {
+  outline: 2px solid var(--c-ac);
+}
+.ph-admin-trash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .ph-admin-trash:hover:not(:disabled) {
+    background: var(--c-err-soft);
+    color: var(--c-err);
+  }
+}
 .ph-admin-selfnote {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--c-tx3);
 }
 
-/* -------------------------------------------------------- states & notes */
+/* --------------------------------------------------------- delete dialog */
 
-.ph-admin-empty {
-  padding: 28px 0;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--c-tx3);
+.ph-admin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--c-overlay);
 }
-
-.ph-admin-error {
-  margin-bottom: 12px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: var(--c-err-soft);
-  color: var(--c-err);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.ph-admin-note {
-  margin-bottom: 14px;
-  padding: 11px 13px;
-  border-radius: 8px;
-  background: var(--c-sf);
+.ph-admin-dialog {
+  width: min(440px, 100%);
+  padding: 24px;
   border: 1px solid var(--c-bd);
-  color: var(--c-tx2);
-  font-size: 12px;
-  line-height: 1.75;
+  border-radius: var(--r-lg);
+  background: var(--c-sf);
+  box-shadow: var(--sh-pop);
 }
-.ph-admin-note code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--c-hv);
+.ph-admin-dialog-title {
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
   color: var(--c-tx);
-  font-size: 11.5px;
 }
-
-.ph-admin-warn {
-  margin-bottom: 14px;
-  padding: 10px 13px;
-  border-radius: 8px;
-  background: var(--c-err-soft);
-  color: var(--c-err);
-  font-size: 12px;
-  line-height: 1.7;
+.ph-admin-dialog-body,
+.ph-admin-dialog-hint {
+  margin: 12px 0 0;
+  font-size: var(--fs-base);
+  line-height: 22px;
+  color: var(--c-tx2);
+  overflow-wrap: anywhere;
+}
+.ph-admin-dialog-hint {
+  margin-top: 16px;
+  font-size: var(--fs-sm);
+  color: var(--c-tx3);
+}
+.ph-admin-dialog-input {
+  width: 100%;
+  margin-top: 8px;
+}
+.ph-admin-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
 }
 
 /* ------------------------------------------------------------- providers */
 
-.ph-admin-roles {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
+.ph-admin-note {
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx2);
 }
-
+.ph-admin-note code {
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--c-hv);
+  font-size: var(--fs-sm);
+}
+.ph-admin-warn {
+  padding: 8px 12px;
+  border: 1px solid var(--c-bds);
+  border-radius: var(--r-sm);
+  background: var(--c-hv);
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx);
+}
+.ph-admin-roles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
 .ph-admin-role {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  background: var(--c-sf);
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
   border: 1px solid var(--c-bd);
+  border-radius: var(--r-md);
 }
-
 .ph-admin-role-label {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--c-tx3);
 }
-
 .ph-admin-role-value {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--c-ac);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+  color: var(--c-tx);
 }
-
 .ph-admin-providers {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
-
 .ph-admin-provider {
-  padding: 14px;
-  background: var(--c-sf);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
   border: 1px solid var(--c-bd);
-  border-radius: 10px;
+  border-radius: var(--r-md);
+  background: var(--c-sf);
 }
-.ph-admin-provider.is-on {
-  border-color: var(--c-acsb);
-}
-
 .ph-admin-provider-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
+  font-size: var(--fs-sm);
 }
-
 .ph-admin-provider-name {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
   color: var(--c-tx);
 }
-
 .ph-admin-kv {
   display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 5px 10px;
+  grid-template-columns: 48px 1fr;
+  gap: 8px 12px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
 }
 .ph-admin-kv dt {
   color: var(--c-tx3);
@@ -444,166 +325,24 @@
   color: var(--c-tx);
   overflow-wrap: anywhere;
 }
-.ph-admin-url {
-  font-size: 11.5px;
-  color: var(--c-tx2) !important;
-}
-
 .ph-admin-provider-roles {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  flex-wrap: wrap;
+  gap: 12px;
+  font-size: var(--fs-sm);
+  color: var(--c-tx3);
 }
-
-.ph-admin-rolechip {
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 20px;
-  background: var(--c-acs);
-  color: var(--c-ac);
-}
-
 .ph-admin-provider-foot {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: 12px;
-  padding-top: 11px;
-  border-top: 1px solid var(--c-bd);
-  flex-wrap: wrap;
+  gap: 12px;
 }
-
 .ph-admin-probe {
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  color: var(--c-tx2);
 }
 .ph-admin-probe.is-ok {
   color: var(--c-ok);
 }
 .ph-admin-probe.is-bad {
   color: var(--c-err);
-}
-
-@media (max-width: 700px) {
-  .ph-admin-reg {
-    flex-basis: 100%;
-    margin-inline-start: 0;
-  }
-}
-
-/* ----------------------------------------------------------------- delete */
-
-/* Red from the start rather than only on hover: this is the one control in the
-   console that destroys an account, and it should look like it before the
-   pointer arrives. */
-.ph-admin-trash {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--c-err);
-  cursor: pointer;
-}
-.ph-admin-trash:hover:not(:disabled) {
-  background: var(--c-err-soft);
-  border-color: var(--c-err);
-}
-.ph-admin-trash:focus-visible {
-  outline: none;
-  border-color: var(--c-err);
-  box-shadow: 0 0 0 2px color-mix(in oklab, var(--c-err) 30%, transparent);
-}
-.ph-admin-trash:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.ph-admin-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: var(--c-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.ph-admin-dialog {
-  width: 100%;
-  max-width: 420px;
-  padding: 20px;
-  background: var(--c-sf);
-  border: 1px solid var(--c-bd);
-  border-radius: 12px;
-  box-shadow: var(--sh-pop);
-  animation: ph-fade 0.14s ease;
-}
-
-.ph-admin-dialog-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--c-err);
-  margin-bottom: 10px;
-}
-
-.ph-admin-dialog-body {
-  margin: 0 0 14px;
-  font-size: 12.5px;
-  line-height: 1.75;
-  color: var(--c-tx);
-  overflow-wrap: anywhere;
-}
-
-.ph-admin-dialog-hint {
-  margin: 0 0 7px;
-  font-size: 12px;
-  color: var(--c-tx2);
-}
-
-.ph-admin-dialog-input {
-  width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--c-bd);
-  background: var(--c-bg);
-  color: var(--c-tx);
-  font-size: 12.5px;
-  outline: none;
-}
-.ph-admin-dialog-input:focus {
-  border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
-}
-
-.ph-admin-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-/* Stays visibly inert until the typed address matches, so the destructive
-   click is never one slip away. */
-.ph-admin-act.is-destructive {
-  border-color: var(--c-err);
-  background: var(--c-err);
-  color: var(--c-sf);
-  font-weight: 600;
-}
-.ph-admin-act.is-destructive:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--c-err) 85%, black);
-  color: var(--c-sf);
-}
-.ph-admin-act.is-destructive:disabled {
-  background: var(--c-hv);
-  border-color: var(--c-bd);
-  color: var(--c-tx3);
 }

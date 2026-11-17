@@ -17,36 +17,36 @@
 .ph-cs-ic {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: var(--c-hv);
   color: var(--c-tx3);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
 }
 
 .ph-cs-name {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: 500;
   color: var(--c-tx);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .ph-cs-desc {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-tx2);
   line-height: 1.7;
 }
 
 .ph-cs-pill {
   display: inline-flex;
-  margin-top: 14px;
+  margin-top: 16px;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 500;
-  padding: 3px 11px;
-  border-radius: 20px;
+  padding: 4px 12px;
+  border-radius: var(--r-lg);
   background: var(--c-acs);
   color: var(--c-ac);
 }

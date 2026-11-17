@@ -1,102 +1,67 @@
-/* CollectionTree — the 196px category rail of the 文库 view.
-   Every value is copied verbatim from the design prototype (Pharos.dc.html,
-   markup lines 77-94, styles from renderVals() lines 589-598). */
+/* CollectionTree — the category list inside the library's SidePanel.
+   Rows are 32 tall; the caret, icon and label sit in fixed columns. */
 
 .ph-tree {
-  width: 196px;
-  flex: none;
-  background: var(--c-sf, var(--c-sf));
-  border-right: 1px solid var(--c-bd, #e6e8ec);
-  overflow-y: auto;
-  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
 }
 
+/* A group label: 24 above, 8 below, quiet. */
 .ph-tree-head {
-  display: flex;
-  align-items: center;
-  padding: 0 8px 6px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--c-tx3, #8b93a1);
+  padding: 24px 8px 8px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-tx3);
 }
 
-.ph-tree-head-text {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Sits in the 10.5px header, so it is sized to that line rather than to the
-   26px rows below it — a 26px button here would push the header out of rhythm. */
-.ph-tree-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  margin: -2px -2px 0 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--c-tx3, #8b93a1);
-  cursor: pointer;
-}
-.ph-tree-add:hover {
-  background: var(--c-hv);
-  color: var(--c-tx, #1e222a);
-}
-
-/* padding-left is set inline: 8 + depth * 15 px */
+/* padding-left is set inline: 8 + depth * 16 px */
 .ph-tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
+  gap: 8px;
+  height: 32px;
   padding: 0 8px;
-  margin: 0 4px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  font-size: 12px;
-  color: var(--c-tx, #1e222a);
-  font-weight: 400;
+  color: var(--c-tx2);
   background: transparent;
-  transition: background 0.1s;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
-
-.ph-tree-row:hover {
+@media (hover: hover) {
+  .ph-tree-row:hover:not(.is-active) {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+.ph-tree-row.is-active {
+  color: var(--c-tx);
+  font-weight: 500;
   background: var(--c-hv);
 }
-
-.ph-tree-row.is-active {
-  color: var(--c-ac, #5b53d6);
-  font-weight: 600;
-  background: var(--c-acs);
-}
-
-/* Drop target for a paper drag. Inset ring rather than a border: a border would
-   add 1px to a 26px row and shift every row below it as the pointer moves. */
+/* Drop target for a paper drag. Inset ring rather than a border so rows below
+   do not move as the pointer does. */
 .ph-tree-row.is-drop {
   background: var(--c-acs);
-  box-shadow: inset 0 0 0 1px var(--c-ac);
+  outline: 1px solid var(--c-ac);
+  outline-offset: -1px;
 }
 
 .ph-tree-caret {
   display: flex;
-  width: 14px;
-  margin-left: -2px;
-  color: var(--c-tx3, #8b93a1);
+  width: 16px;
+  margin-left: -4px;
+  color: var(--c-tx3);
 }
-
 .ph-tree-icon {
   display: flex;
-  color: var(--c-tx3, #8b93a1);
+  width: 16px;
+  color: var(--c-tx3);
 }
-
-.ph-tree-row.is-active .ph-tree-icon {
-  color: var(--c-ac, #5b53d6);
-}
-
 .ph-tree-text {
   flex: 1;
   min-width: 0;
@@ -104,71 +69,55 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.ph-tree-sync {
-  display: flex;
-  color: var(--c-ac, #5b53d6);
-  animation: ph-spin 1.1s linear infinite;
-}
-
 .ph-tree-count {
-  font-size: 10.5px;
-  color: var(--c-tx3, #8b93a1);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  color: var(--c-tx3);
   font-variant-numeric: tabular-nums;
 }
 
-/* Real-data deviation: placeholder line where the prototype listed mock
-   collections. Same row metrics, muted, not clickable, no hover. */
 .ph-tree-empty {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
+  height: 32px;
   padding: 0 8px;
-  margin: 0 4px;
-  border-radius: 5px;
-  font-size: 12px;
-  color: var(--c-tx3, #8b93a1);
+  font-size: var(--fs-sm);
+  color: var(--c-tx3);
 }
 
 /* ------------------------------------------------------- inline name editor */
 
-/* Occupies exactly one 26px row so creating or renaming a folder does not make
-   the list jump. The input itself is the house input (1px --c-bd, accent focus
-   ring) scaled to fit that row — 22px/4px here against the modal's 30px/6px,
-   the same relationship the 25px toolbar inputs in ItemList already have. */
+/* Occupies exactly one 32px row so naming a folder does not make the list jump. */
 .ph-tree-edit {
   display: flex;
   align-items: center;
-  height: 26px;
+  height: 32px;
   padding: 0 8px;
-  margin: 0 4px;
 }
-
 .ph-tree-input {
   width: 100%;
-  height: 22px;
-  padding: 0 6px;
-  border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 4px;
-  background: var(--c-bg, #fafbfc);
-  color: var(--c-tx, #1e222a);
-  font-size: 12px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-xs);
+  background: var(--c-sf);
+  color: var(--c-tx);
+  font-size: var(--fs-base);
   outline: none;
 }
 .ph-tree-input:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring);
+  outline-offset: 0;
 }
 
-/* Transient feedback (a rejected name, a folder delete that moved children).
-   Click to dismiss; styled as quiet body text, not as a banner. */
+/* Transient feedback (a rejected name, a delete that moved children). Click to
+   dismiss; quiet body text, not a banner. */
 .ph-tree-msg {
-  padding: 4px 12px;
-  margin: 2px 4px 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--c-tx2, #5a616e);
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx2);
   cursor: pointer;
 }
 
@@ -177,71 +126,53 @@
 .ph-tree-menu {
   position: fixed;
   z-index: 50;
-  min-width: 132px;
+  min-width: 136px;
   max-width: 200px;
   padding: 4px;
-  border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 6px;
-  background: var(--c-sf, var(--c-sf));
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-md);
+  background: var(--c-sf);
   box-shadow: var(--sh-pop);
 }
-
 .ph-tree-menu-item {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 26px;
+  height: 32px;
   padding: 0 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
-  color: var(--c-tx, #1e222a);
-  font-size: 12px;
+  color: var(--c-tx);
+  font-size: var(--fs-base);
   text-align: left;
   cursor: pointer;
 }
-.ph-tree-menu-item:hover {
-  background: var(--c-hv);
+@media (hover: hover) {
+  .ph-tree-menu-item:hover {
+    background: var(--c-hv);
+  }
 }
 .ph-tree-menu-item.is-danger {
   color: var(--c-err);
 }
-.ph-tree-menu-item.is-danger:hover {
-  background: var(--c-err-soft);
-}
-
 .ph-tree-menu-note {
-  padding: 4px 8px 6px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--c-tx2, #5a616e);
-}
-
-.ph-tree-div {
-  height: 1px;
-  background: var(--c-bd, #e6e8ec);
-  margin: 8px 8px;
+  padding: 4px 8px 8px;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--c-tx2);
 }
 
 .ph-tree-tags {
   padding: 0 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
-/* The six tag colour tokens the backend allow-lists (amber | blue | green |
-   red | purple | grey). They belong in design/tokens.ts beside every other
-   --c-* variable, and should be moved there: that module is not in this
-   agent's file list, so they are defined here on the rail's own scope as the
-   narrowest place that keeps `data-color` working.
-
-   Consequence of living outside tokens.ts: tokens.ts swaps its whole palette
-   per theme via an inline style on .ph-root, and CSS here cannot read which
-   theme is active. So each hue is pitched at a single mid lightness that stays
-   legible on both the light (var(--c-sf)) and dark (var(--c-sf)) surface, instead of the
-   light/dark pair the other tokens get. Moving them into neutralVars() would
-   let them be tuned per theme like --c-ok and --c-err already are. */
+/* The six tag colours the backend allow-lists. They sit here rather than in
+   tokens.ts because they are categorical labels, not chrome; each is pitched at
+   one mid lightness that reads on both themes' surfaces. */
 .ph-tree {
   --c-tag-amber: oklch(0.68 0.14 78);
   --c-tag-blue: oklch(0.65 0.14 245);
@@ -251,46 +182,30 @@
   --c-tag-grey: oklch(0.62 0.02 250);
 }
 
-/* A chip is a label, not a control: nothing in the current API maps a tag to
-   its papers, so these report what exists and do not pretend to filter.
-   `default` rather than `pointer` so the affordance matches the behaviour. */
+/* A chip is a label, not a control: nothing in the API maps a tag to its
+   papers, so these report what exists and do not pretend to filter. */
 .ph-tree-tag {
   padding: 2px 8px;
-  border-radius: 20px;
-  border: 1px solid var(--c-bd, #e6e8ec);
+  border-radius: var(--r-xs);
+  border: 1px solid var(--c-bd);
   background: transparent;
-  color: var(--c-tx2, #5a616e);
-  font-size: 11px;
+  color: var(--c-tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   cursor: default;
-  /* The rail is 196px; a long tag must not widen it into the item list. */
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Colour is mixed against the surface rather than set flat, so one token works
-   on both themes' backgrounds. A tag with no colour keeps the neutral chip. */
 .ph-tree-tag[data-color] {
   border-color: color-mix(in oklch, var(--c-tag) 38%, transparent);
   background: color-mix(in oklch, var(--c-tag) 14%, transparent);
   color: var(--c-tag);
 }
-.ph-tree-tag[data-color="amber"] {
-  --c-tag: var(--c-tag-amber);
-}
-.ph-tree-tag[data-color="blue"] {
-  --c-tag: var(--c-tag-blue);
-}
-.ph-tree-tag[data-color="green"] {
-  --c-tag: var(--c-tag-green);
-}
-.ph-tree-tag[data-color="red"] {
-  --c-tag: var(--c-tag-red);
-}
-.ph-tree-tag[data-color="purple"] {
-  --c-tag: var(--c-tag-purple);
-}
-.ph-tree-tag[data-color="grey"] {
-  --c-tag: var(--c-tag-grey);
-}
+.ph-tree-tag[data-color="amber"] { --c-tag: var(--c-tag-amber); }
+.ph-tree-tag[data-color="blue"] { --c-tag: var(--c-tag-blue); }
+.ph-tree-tag[data-color="green"] { --c-tag: var(--c-tag-green); }
+.ph-tree-tag[data-color="red"] { --c-tag: var(--c-tag-red); }
+.ph-tree-tag[data-color="purple"] { --c-tag: var(--c-tag-purple); }
+.ph-tree-tag[data-color="grey"] { --c-tag: var(--c-tag-grey); }

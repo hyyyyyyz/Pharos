@@ -11,6 +11,7 @@ import {
   type ProviderStatus,
 } from "../lib/paperChat";
 import { useUI } from "../store";
+import { EmptyState } from "./shell";
 import "./AiPanel.css";
 
 const CHIPS = ["核心贡献是什么？", "真正关键的 trick 是什么？", "实验如何证明方法有效？", "这篇论文有哪些局限？"];
@@ -378,7 +379,6 @@ export function AiPanel({
   return (
     <aside className="ph-ai" aria-label="AI 对话">
       <header className="ph-ai-hd">
-        <span className="ph-ai-hd-mark"><Icons.spark size={13} /></span>
         <div className="ph-ai-hd-grow">
           <div className="ph-ai-hd-title">AI 对话</div>
           <div className={`ph-ai-context is-${contextPhase}`}>{statusLabel}</div>
@@ -386,7 +386,7 @@ export function AiPanel({
         {available && (
           <>
             <button className="ph-ai-head-btn" title="新建对话" onClick={() => void createConversation()}>
-              <Icons.plus size={14} />
+              <Icons.plus />
             </button>
             <div className="ph-ai-menu-wrap">
               <button className="ph-ai-head-btn" title="对话操作" onClick={() => setMenuOpen((open) => !open)}>
@@ -424,31 +424,33 @@ export function AiPanel({
 
       <div className="ph-ai-body ph-scroll" ref={bodyRef}>
         {!available ? (
-          <div className="ph-ai-notice">
-            <strong>当前环境无法连接 AI 对话</strong>
-            <span>请刷新页面后重试。</span>
-          </div>
+          <EmptyState
+            icon={Icons.chat}
+            tone="error"
+            title="当前环境无法连接 AI 对话"
+            description="请刷新页面后重试"
+          />
         ) : provider !== null && !provider.configured ? (
-          <div className="ph-ai-notice">
-            <strong>连接你的模型</strong>
-            <span>
-              支持 OpenAI 兼容接口。API Key 由 Pharos 后端加密保存，不会进入浏览器存储。
-            </span>
-            <button onClick={onOpenSettings}>配置模型</button>
-          </div>
+          <EmptyState
+            icon={Icons.sliders}
+            title="连接你的模型"
+            description="支持 OpenAI 兼容接口。API Key 由 Pharos 后端加密保存，不会进入浏览器存储"
+            primary={onOpenSettings ? { label: "配置模型", onClick: onOpenSettings } : undefined}
+          />
         ) : empty ? (
           <div className="ph-ai-empty">
-            <div className="ph-ai-empty-hd">
-              <span className="ph-ai-empty-mark"><Icons.spark /></span>
-              <div className="ph-ai-empty-txt">
-                {contextPhase === "ready"
+            <EmptyState
+              inline
+              icon={Icons.chat}
+              title={
+                contextPhase === "ready"
                   ? "我已经预先理解这篇论文"
                   : contextPhase === "understanding"
                     ? "正在为这篇论文建立上下文"
-                    : "围绕当前论文开始对话"}
-              </div>
-              <div className="ph-ai-empty-paper" title={documentTitle}>{documentTitle}</div>
-            </div>
+                    : "围绕当前论文开始对话"
+              }
+              description={<span title={documentTitle}>{documentTitle}</span>}
+            />
             <div className="ph-ai-chips">
               {CHIPS.map((chip) => (
                 <button key={chip} className="ph-ai-chip" onClick={() => void send(chip)}>
@@ -463,7 +465,6 @@ export function AiPanel({
               const user = message.role === "user";
               return (
                 <div key={message.id} className={user ? "ph-ai-row ph-ai-row-user" : "ph-ai-row"}>
-                  {!user && <span className="ph-ai-avatar"><Icons.spark size={13} /></span>}
                   <div className={`ph-ai-bubble ${user ? "ph-ai-bubble-user" : "ph-ai-bubble-ai"}`}>
                     {message.content}
                   </div>
@@ -472,7 +473,6 @@ export function AiPanel({
             })}
             {streaming && (
               <div className="ph-ai-row">
-                <span className="ph-ai-avatar"><Icons.spark size={13} /></span>
                 <div className="ph-ai-bubble ph-ai-bubble-ai">
                   {streamingText || "正在思考"}<span className="ph-ai-caret" />
                 </div>

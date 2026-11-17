@@ -63,6 +63,7 @@ import {
 } from "../lib/dailyVault";
 import { dash } from "../lib/model";
 import { useSession, useUI, type SettingsTab } from "../store";
+import { EmptyState, ModuleShell, PageHeader, SidePanel, SkeletonRows } from "./shell";
 import "./DailyView.css";
 
 /** Poll cadence while a sweep is running, matching the translation job poll. */
@@ -182,19 +183,6 @@ function ReadChip({ paper }: { paper: DailyPaper }): JSX.Element | null {
 
 /** The caller's directions, listed so an empty feed can be checked against the
  *  configuration that produced it without leaving the page. */
-function DirectionList({ names }: { names: string[] }): JSX.Element | null {
-  if (names.length === 0) return null;
-  return (
-    <div className="ph-dv-dirs">
-      <span className="ph-dv-dirs-k">当前方向</span>
-      {names.map((n) => (
-        <span key={n} className="ph-dv-dirs-v">
-          {n}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 export function DailyView(): JSX.Element {
   const qc = useQueryClient();
@@ -641,167 +629,247 @@ export function DailyView(): JSX.Element {
 
   const toSettings = (): void => openSettings(DIRECTIONS_TAB);
 
-  return (
-    <div className="ph-dv">
-      {/* -------------------------------------------------------- date rail */}
-      <aside className="ph-dv-rail ph-scroll">
-        <div className="ph-dv-rail-head">日期</div>
-        {datesQuery.isPending && <div className="ph-dv-rail-note">载入中…</div>}
-        {datesQuery.isError && <div className="ph-dv-rail-note is-err">无法连接</div>}
-        {/* The rail lists dates that matched YOU, so "empty" here says the same
-            thing the centre panel spells out — kept terse to match its width. */}
-        {railEmpty && (
-          <div className="ph-dv-rail-note">
-            {digestOff
-              ? "已关闭"
-              : noDirections
-                ? "未配置方向"
-                : everSwept
-                  ? "无匹配日期"
-                  : "暂无记录"}
-          </div>
-        )}
-        {dates.map((d) => (
-          // Same treatment as the paper cards, for the same reason: switching
-          // days is the only route to any digest but the newest, so a bare
-          // onClick puts every earlier day out of a keyboard user's reach. A
-          // <div> rather than a <button> because the row is a three-column grid;
-          // role and tabIndex give it the semantics without the layout.
-          <div
-            key={d.date}
-            role="button"
-            tabIndex={0}
-            aria-pressed={d.date === activeDate}
-            className={d.date === activeDate ? "ph-dv-date is-active" : "ph-dv-date"}
-            onClick={() => setDailyDate(d.date)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                // Space would otherwise scroll the rail out from under the row.
-                e.preventDefault();
-                setDailyDate(d.date);
-              }
-            }}
-          >
-            <span className="ph-dv-date-text">{d.date}</span>
-            {d.pending > 0 && (
-              <span className="ph-dv-date-pending" title={`${d.pending} 篇待解读`}>
-                {d.pending}
-              </span>
-            )}
-            <span className="ph-dv-date-count">{d.total}</span>
-          </div>
-        ))}
-      </aside>
+  // The one paper worth reading first today: the highest recommendation score,
+  // wherever the current sort happens to put it. It is the only card on this
+  // screen that is allowed to look different.
+  const topId = useMemo(() => {
+    let best: DailyPaper | null = null;
+    for (const p of visible) {
+      if (p.score_recommendation === null) continue;
+      if (best === null || compare(p, best, "score") < 0) best = p;
+    }
+    return best?.id ?? null;
+  }, [visible]);
 
-      {/* ----------------------------------------------------------- centre */}
-      <section className="ph-dv-main">
-        <div className="ph-dv-bar">
-          <span className="ph-dv-bar-date">{activeDate ?? "每日论文"}</span>
-          {domains.length > 0 && (
-            <div className="ph-dv-filters">
-              <button
-                className={activeDomain === null ? "ph-dv-fchip is-on" : "ph-dv-fchip"}
-                onClick={() => setDomain(null)}
-              >
-                全部
-              </button>
-              {domains.map((d) => (
-                <button
-                  key={d}
-                  className={activeDomain === d ? "ph-dv-fchip is-on" : "ph-dv-fchip"}
-                  onClick={() => setDomain(activeDomain === d ? null : d)}
-                >
-                  {d}
-                </button>
-              ))}
+  const renderCard = (p: DailyPaper): JSX.Element => {
+    const summary = p.summary_zh?.trim() ?? "";
+    const isTop = p.id === topId;
+    return (
+      <article
+        key={p.id}
+        className={
+          "ph-dv-card" + (isTop ? " is-top" : "") + (p.id === dailyPaperId ? " is-selected" : "")
+        }
+        // Selecting a card is the ONLY way to fill the detail pane, so without
+        // these the whole right-hand side — 中文速览, 要点, 评分, 导入文库,
+        // 解读 — is unreachable without a mouse.
+        //
+        // Still an <article>, not a <button>: the card is a stack of
+        // line-clamped blocks and a button would fight both the layout and the
+        // text selection. The role and the key handler are what make it
+        // announce and behave as the control it already was.
+        role="button"
+        tabIndex={0}
+        aria-pressed={p.id === dailyPaperId}
+        onClick={() => setDailyPaper(p.id)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          // Space would otherwise page the list.
+          event.preventDefault();
+          setDailyPaper(p.id);
+        }}
+      >
+        <span
+          className={`ph-dv-score ${scoreTier(p.score_recommendation)}`}
+          title="推荐分 · 含你的方向相关度"
+        >
+          {fmtScore(p.score_recommendation)}
+        </span>
+        <div className="ph-dv-card-main">
+          {isTop && <div className="ph-dv-top-label">今日最值得读</div>}
+          <div className="ph-dv-card-title">{p.title}</div>
+          {p.matched_domain && <div className="ph-dv-domain">{p.matched_domain}</div>}
+          {/* Nothing at all when a paper is read but produced no summary: an
+              empty row would read as "no data" rather than as "there is simply
+              nothing more to say about this one". */}
+          {p.read_status === "done" ? (
+            summary !== "" && <div className="ph-dv-card-sum">{summary}</div>
+          ) : (
+            <div className="ph-dv-card-sum">
+              <ReadChip paper={p} />
             </div>
           )}
-          <div className="ph-dv-spacer" />
-          {/* The reading model, named on the bar. Not a tooltip-only detail:
-              every summary and every score on this screen came out of it, and
-              two providers give the same paper two different cards. Suppressed
-              while the 未配置 banner is up — that banner already says there is
-              no model, and repeating it here would be noise. */}
-          {llmConfigured && provider !== null && (
-            <span className="ph-dv-model" title={providerLabel(provider)}>
-              {provider.model}
-            </span>
-          )}
-          <div className="ph-dv-sort">
+        </div>
+      </article>
+    );
+  };
+
+  const dayEmpty = papersQuery.isSuccess && papers.length === 0 && !digestOff && !noDirections;
+  const directionsHint =
+    directions.length > 0 ? <>当前方向：{directions.join("、")}</> : undefined;
+
+  return (
+    <>
+      <ModuleShell
+        side={
+          <SidePanel storageKey="daily" title="日期">
+            {datesQuery.isPending && <SkeletonRows rows={5} />}
+            {datesQuery.isError && <div className="ph-dv-rail-note is-err">无法连接</div>}
+            {/* The rail lists dates that matched YOU, so "empty" here says the
+                same thing the centre panel spells out — kept terse. */}
+            {railEmpty && (
+              <div className="ph-dv-rail-note">
+                {digestOff
+                  ? "已关闭"
+                  : noDirections
+                    ? "未配置方向"
+                    : everSwept
+                      ? "无匹配日期"
+                      : "暂无记录"}
+              </div>
+            )}
+            {dates.map((d) => (
+              // Switching days is the only route to any digest but the newest,
+              // so it has to be reachable from the keyboard.
+              <div
+                key={d.date}
+                role="button"
+                tabIndex={0}
+                aria-pressed={d.date === activeDate}
+                className={"ph-sp-row ph-dv-date" + (d.date === activeDate ? " is-active" : "")}
+                onClick={() => setDailyDate(d.date)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    // Space would otherwise scroll the panel out from under the row.
+                    e.preventDefault();
+                    setDailyDate(d.date);
+                  }
+                }}
+              >
+                <span className="ph-dv-date-text">{d.date}</span>
+                {d.pending > 0 && (
+                  <span className="ph-dv-date-pending" title={`${d.pending} 篇待解读`}>
+                    {d.pending} 待读
+                  </span>
+                )}
+                <span className="ph-dv-date-count">{d.total}</span>
+              </div>
+            ))}
+          </SidePanel>
+        }
+        detail={
+          <div className="ph-dv-detail ph-scroll">
+            {selected === null ? (
+              <EmptyState
+                icon={Icons.daily}
+                title="选择一篇论文"
+                description="点选左侧的论文，这里会显示中文速览、要点和评分"
+              />
+            ) : (
+              <PaperDetail
+                paper={selected}
+                onRead={() => read.mutate(selected.id)}
+                reading={read.isPending}
+                canRead={llmConfigured}
+                readError={read.error instanceof Error ? read.error.message : null}
+                onImport={() => importPaper.mutate(selected.id)}
+                importing={importPaper.isPending}
+                importError={importPaper.error instanceof Error ? importPaper.error.message : null}
+              />
+            )}
+          </div>
+        }
+        detailKey="daily"
+      >
+        <PageHeader
+          title="每日论文"
+          meta={
+            <>
+              {activeDate}
+              {/* How many papers are actually in the list below — the VISIBLE
+                  count; the day's own total stays in the tooltip. Suppressed on
+                  an empty day, where the panel already says why. */}
+              {papersQuery.isSuccess && papers.length > 0 && (
+                <span title={visible.length === papers.length ? undefined : `全天 ${papers.length} 篇`}>
+                  {" · "}
+                  {visible.length} 篇
+                </span>
+              )}
+              {llmConfigured && provider !== null && (
+                <span title={providerLabel(provider)}>{" · "}{provider.model}</span>
+              )}
+            </>
+          }
+        >
+          <div className="ph-dv-sort" role="group" aria-label="排序">
             <button
+              type="button"
               className={sort === "score" ? "ph-dv-sbtn is-on" : "ph-dv-sbtn"}
+              aria-pressed={sort === "score"}
               onClick={() => setSort("score")}
             >
               推荐分
             </button>
             <button
+              type="button"
               className={sort === "time" ? "ph-dv-sbtn is-on" : "ph-dv-sbtn"}
+              aria-pressed={sort === "time"}
               onClick={() => setSort("time")}
             >
               时间
             </button>
           </div>
-          {/* How many papers are actually in the list below. The rail carries a
-              per-date total, but once a direction chip narrows the day the two
-              numbers differ and only this one describes what is on screen — so
-              it is the VISIBLE count, with the day's own total kept in reach
-              rather than dropped. Suppressed on an empty day: the centre panel
-              already spells out which of the four causes produced it, and
-              「0 篇」 over that would only repeat it. */}
-          {papersQuery.isSuccess && papers.length > 0 && (
-            <span
-              className="ph-dv-count"
-              title={
-                visible.length === papers.length ? undefined : `全天 ${papers.length} 篇`
-              }
-            >
-              {visible.length} 篇
-            </span>
-          )}
           <button
-            className={vaultNeedsRestore ? "ph-dv-vault is-warn" : "ph-dv-vault"}
+            type="button"
+            className={"ph-btn" + (vaultNeedsRestore ? " is-warn" : "")}
             onClick={() => setVaultOpen(true)}
             title={vaultMessage}
           >
-            <span className="ph-dv-vault-ic">
-              <Icons.folder />
-            </span>
             {vaultBusy ? "同步中" : vaultNeedsRestore ? "待恢复" : "数据目录"}
             {vaultLocation !== null && !vaultNeedsRestore && (
               <span className="ph-dv-vault-dot" aria-label="已连接" />
             )}
           </button>
           {isAdmin && (
-          <button
-            className="ph-dv-refresh"
-            disabled={busy}
-            onClick={() => refresh.mutate()}
-            // The provider rides along here too, so which model is about to
-            // read today's papers is one hover away from the button that starts
-            // it — including on a narrow window where the bar's own label is
-            // the first thing to be squeezed.
-            title={
-              llmConfigured
-                ? `抓取今日 arXiv 并解读\n${providerLabel(provider)}`
-                : "抓取今日 arXiv 并解读"
-            }
-          >
-            <span className={busy ? "ph-dv-refresh-ic is-spin" : "ph-dv-refresh-ic"}>
-              <Icons.sync />
-            </span>
-            {busy ? "更新中" : "更新"}
-          </button>
+            <button
+              type="button"
+              className="ph-btn is-primary"
+              disabled={busy}
+              onClick={() => refresh.mutate()}
+              // The provider rides along here too, so which model is about to
+              // read today's papers is one hover away from the button that
+              // starts it.
+              title={
+                llmConfigured
+                  ? `抓取今日 arXiv 并解读\n${providerLabel(provider)}`
+                  : "抓取今日 arXiv 并解读"
+              }
+            >
+              {busy ? "更新中" : "更新"}
+            </button>
           )}
-        </div>
+        </PageHeader>
+
+        {domains.length > 0 && (
+          <div className="ph-dv-filters" role="group" aria-label="研究方向">
+            <button
+              type="button"
+              className={activeDomain === null ? "ph-dv-fchip is-on" : "ph-dv-fchip"}
+              onClick={() => setDomain(null)}
+            >
+              全部
+            </button>
+            {domains.map((d) => (
+              <button
+                type="button"
+                key={d}
+                className={activeDomain === d ? "ph-dv-fchip is-on" : "ph-dv-fchip"}
+                onClick={() => setDomain(activeDomain === d ? null : d)}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Live counters while a sweep runs — the reason the poll exists. See
             `sweepProgress` for why these come from the caller's own date
             summary and not from `last_run`, which reads 0 until the sweep is
-            already over. */}
+            already over. In progress, so the beam. */}
         {busy && (
-          <div className="ph-dv-note">
-            正在更新 · 已匹配 {sweepProgress?.total ?? 0} 篇 · 已解读{" "}
-            {sweepProgress?.read ?? 0}
+          <div className="ph-dv-note is-busy">
+            <span className="ph-dv-note-beam" aria-hidden />
+            正在更新 · 已匹配 {sweepProgress?.total ?? 0} 篇 · 已解读 {sweepProgress?.read ?? 0}
             {sweepProgress !== null && sweepProgress.failed > 0
               ? ` · 解读失败 ${sweepProgress.failed}`
               : ""}
@@ -829,32 +897,24 @@ export function DailyView(): JSX.Element {
             Deliberately not an error: fetching genuinely works without a key.
             Papers keep arriving and stay 待解读 — visibly unread, never blank. */}
         {statusQuery.isSuccess && !llmConfigured && (
-          <div className="ph-dv-banner">
-            <span className="ph-dv-banner-ic">
-              <Icons.alert size={16} />
-            </span>
-            <span>
-              尚未配置 LLM API Key —— 论文可以正常抓取并按你的方向筛选排序，
-              但无法生成中文解读与评分。这些论文会保持「待解读」状态，配置后可随时重新解读。
-            </span>
+          <div className="ph-dv-note">
+            尚未配置解读模型：论文照常抓取和排序，但保持「待解读」，配置后可随时解读。
+            <button type="button" className="ph-dv-link" onClick={() => openSettings("ai")}>
+              去配置
+            </button>
           </div>
         )}
 
         <div className="ph-dv-list ph-scroll">
-          {papersQuery.isPending && activeDate !== null && (
-            <div className="ph-dv-empty">
-              <div className="ph-dv-empty-text">载入中…</div>
-            </div>
-          )}
+          {papersQuery.isPending && activeDate !== null && <SkeletonRows rows={6} />}
 
           {(papersQuery.isError || (datesQuery.isError && activeDate === null)) && (
-            <div className="ph-dv-empty">
-              <div className="ph-dv-empty-text is-err">
-                无法连接到后端服务。
-                <br />
-                请确认 Pharos 服务已启动后重试。
-              </div>
-            </div>
+            <EmptyState
+              icon={Icons.daily}
+              tone="error"
+              title="无法连接到后端服务"
+              description="请确认 Pharos 服务已启动后重试"
+            />
           )}
 
           {/* ---- cause 1: the module is switched off for this account. The
@@ -862,217 +922,88 @@ export function DailyView(): JSX.Element {
                   nothing is delivered here until the switch goes back on, so
                   that switch is the only fix worth offering. */}
           {digestOff && (
-            <div className="ph-dv-firstuse">
-              <div className="ph-dv-firstuse-inner">
-                <div className="ph-dv-firstuse-mark">
-                  <Icons.daily size={26} sw={1.2} />
-                </div>
-                <div className="ph-dv-firstuse-title">每日论文已关闭</div>
-                <div className="ph-dv-firstuse-desc">
-                  这个账号关闭了每日论文。抓取仍在继续，你的研究方向也都还在，
-                  但不会有论文进入这里。
-                  <br />
-                  在设置里重新开启即可恢复，历史日期会一并回来。
-                </div>
-                <button className="ph-dv-cta" onClick={toSettings}>
-                  前往设置
-                </button>
-              </div>
-            </div>
+            <EmptyState
+              icon={Icons.daily}
+              title="每日论文已关闭"
+              description="这个账号关闭了每日论文。抓取仍在继续，研究方向也都还在，在设置里重新开启即可恢复，历史日期会一并回来。"
+              primary={{ label: "前往设置", onClick: toSettings }}
+            />
           )}
 
           {/* ---- cause 2: no directions at all. Nothing can match; say that. */}
           {noDirections && (
-            <div className="ph-dv-firstuse">
-              <div className="ph-dv-firstuse-inner">
-                <div className="ph-dv-firstuse-mark">
-                  <Icons.daily size={26} sw={1.2} />
-                </div>
-                <div className="ph-dv-firstuse-title">尚未配置研究方向</div>
-                <div className="ph-dv-firstuse-desc">
-                  每日论文按你自己定义的研究方向筛选 arXiv。
-                  当前没有任何启用的方向，因此不会有论文进入这里。
-                  <br />
-                  在设置中添加一个方向并填入关键词即可开始。
-                </div>
-                <button className="ph-dv-cta" onClick={toSettings}>
-                  前往设置
-                </button>
-              </div>
-            </div>
+            <EmptyState
+              icon={Icons.daily}
+              title="尚未配置研究方向"
+              description="每日论文按你定义的研究方向筛选 arXiv。当前没有启用的方向，因此不会有论文进入这里。在设置中添加一个方向并填入关键词即可开始。"
+              primary={{ label: "前往设置", onClick: toSettings }}
+            />
           )}
 
           {/* ---- cause 3: never swept. The digest itself has not run yet. */}
           {showFirstUse && (
-            <div className="ph-dv-firstuse">
-              <div className="ph-dv-firstuse-inner">
-                <div className="ph-dv-firstuse-mark">
-                  <Icons.daily size={26} sw={1.2} />
-                </div>
-                <div className="ph-dv-firstuse-title">每日论文</div>
-                <div className="ph-dv-firstuse-desc">
-                  每天自动扫描 arXiv，按你在设置里定义的研究方向筛出相关论文，
-                  逐篇生成中文速览、要点与评分。
-                  <br />
+            <EmptyState
+              icon={Icons.daily}
+              title="还没有日报"
+              description={
+                <>
+                  每天扫描 arXiv，按你的研究方向筛出论文，逐篇生成中文速览、要点与评分。
                   {isAdmin ? "点「更新」抓取第一份日报。" : "日报由管理员或定时任务生成，稍后再来看看。"}
-                </div>
-                <DirectionList names={directions} />
-                <div className="ph-dv-firstuse-btns">
-                  {isAdmin && (
-                    <button
-                      className="ph-dv-cta"
-                      disabled={busy}
-                      onClick={() => refresh.mutate()}
-                    >
-                      {busy ? "更新中…" : "更新"}
-                    </button>
-                  )}
-                  <button className="ph-dv-cta-ghost" onClick={toSettings}>
-                    调整方向
-                  </button>
-                </div>
-              </div>
-            </div>
+                  {directionsHint && <><br />{directionsHint}</>}
+                </>
+              }
+              primary={
+                isAdmin
+                  ? { label: busy ? "更新中" : "更新", onClick: () => !busy && refresh.mutate() }
+                  : { label: "调整方向", onClick: toSettings }
+              }
+              secondary={isAdmin ? { label: "调整方向", onClick: toSettings } : undefined}
+            />
           )}
 
           {/* ---- cause 4: swept, but nothing matched THIS reader. The fix is
                   the user's, so the settings action leads and 更新 follows. */}
           {showNothingMatched && (
-            <div className="ph-dv-firstuse">
-              <div className="ph-dv-firstuse-inner">
-                <div className="ph-dv-firstuse-mark">
-                  <Icons.daily size={26} sw={1.2} />
-                </div>
-                <div className="ph-dv-firstuse-title">没有论文匹配你的方向</div>
-                <div className="ph-dv-firstuse-desc">
-                  抓取已经运行过，但目前没有任何一篇论文命中你的方向关键词。
-                  <br />
-                  可以在设置中放宽关键词、增加方向或分类，改动会立即重新筛选，无需重新抓取。
-                </div>
-                <DirectionList names={directions} />
-                <div className="ph-dv-firstuse-btns">
-                  <button className="ph-dv-cta" onClick={toSettings}>
-                    调整方向
-                  </button>
-                  {isAdmin && (
-                    <button
-                      className="ph-dv-cta-ghost"
-                      disabled={busy}
-                      onClick={() => refresh.mutate()}
-                    >
-                      {busy ? "更新中…" : "重新抓取"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+            <EmptyState
+              icon={Icons.daily}
+              title="没有论文匹配你的方向"
+              description={
+                <>
+                  抓取已经运行过，但没有论文命中你的方向关键词。在设置中放宽关键词、增加方向或分类，改动会立即重新筛选，无需重新抓取。
+                  {directionsHint && <><br />{directionsHint}</>}
+                </>
+              }
+              primary={{ label: "调整方向", onClick: toSettings }}
+              secondary={
+                isAdmin ? { label: busy ? "更新中" : "重新抓取", onClick: () => !busy && refresh.mutate() } : undefined
+              }
+            />
           )}
 
           {/* ---- the same triage for one date the user navigated to. Reachable
                   when a date is selected and then the directions change under
                   it, since `/dates` would no longer list it. */}
-          {papersQuery.isSuccess && papers.length === 0 && !digestOff && !noDirections && (
-            <div className="ph-dv-empty">
-              {dayRun === null ? (
-                <div className="ph-dv-empty-text">
-                  该日尚未抓取
-                  <br />
-                  <span className="ph-dv-empty-hint">周末与公告间隔期通常没有更新</span>
-                </div>
-              ) : (
-                <div className="ph-dv-empty-text">
-                  该日无匹配你方向的论文
-                  <br />
-                  <span className="ph-dv-empty-hint">
-                    当日共抓取 {dayRun.fetched} 篇，均未命中你的关键词
-                  </span>
-                  <br />
-                  <button className="ph-dv-empty-link" onClick={toSettings}>
-                    调整方向
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          {dayEmpty &&
+            (dayRun === null ? (
+              <EmptyState
+                icon={Icons.daily}
+                title="该日尚未抓取"
+                description="周末与公告间隔期通常没有更新"
+              />
+            ) : (
+              <EmptyState
+                icon={Icons.daily}
+                title="该日无匹配你方向的论文"
+                description={`当日共抓取 ${dayRun.fetched} 篇，均未命中你的关键词`}
+                primary={{ label: "调整方向", onClick: toSettings }}
+              />
+            ))}
 
           {/* No "this chip is empty" state: `activeDomain` is derived from
               `domains`, every member of which has at least one paper today. */}
-
-          {visible.map((p) => {
-            const summary = p.summary_zh?.trim() ?? "";
-            return (
-              <article
-                key={p.id}
-                className={p.id === dailyPaperId ? "ph-dv-card is-selected" : "ph-dv-card"}
-                // Selecting a card is the ONLY way to fill the detail pane, so
-                // without these the whole right-hand side — 中文速览, 要点,
-                // 评分, 导入文库, 解读 — is unreachable without a mouse, while
-                // every other control on this screen (the sort toggle, the
-                // filter chips, 更新) is a real button and tabs fine.
-                //
-                // Still an <article>, not a <button>: the card is a stack of
-                // line-clamped blocks and a button would fight both the layout
-                // and the text selection. The role and the key handler are what
-                // make it announce and behave as the control it already was.
-                role="button"
-                tabIndex={0}
-                aria-pressed={p.id === dailyPaperId}
-                onClick={() => setDailyPaper(p.id)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  // Space would otherwise page the list. Both keys are the half
-                  // of the button contract a non-button never gets for free.
-                  event.preventDefault();
-                  setDailyPaper(p.id);
-                }}
-              >
-                <div className="ph-dv-card-top">
-                  <span
-                    className={`ph-dv-score ${scoreTier(p.score_recommendation)}`}
-                    title="推荐分 · 含你的方向相关度"
-                  >
-                    {fmtScore(p.score_recommendation)}
-                  </span>
-                  {p.matched_domain && <span className="ph-dv-domain">{p.matched_domain}</span>}
-                  <span className="ph-dv-card-title">{p.title}</span>
-                </div>
-                {/* Nothing at all when a paper is read but produced no summary:
-                    an empty bordered row would read as "no data" rather than as
-                    "there is simply nothing more to say about this one". */}
-                {p.read_status === "done" ? (
-                  summary !== "" && <div className="ph-dv-card-sum">{summary}</div>
-                ) : (
-                  <div className="ph-dv-card-sum">
-                    <ReadChip paper={p} />
-                  </div>
-                )}
-              </article>
-            );
-          })}
+          {visible.map(renderCard)}
         </div>
-      </section>
-
-      {/* ------------------------------------------------------------ detail */}
-      <aside className="ph-dv-detail ph-scroll">
-        {selected === null ? (
-          <div className="ph-dv-detail-empty">
-            选择一篇论文
-            <br />
-            查看解读
-          </div>
-        ) : (
-          <PaperDetail
-            paper={selected}
-            onRead={() => read.mutate(selected.id)}
-            reading={read.isPending}
-            canRead={llmConfigured}
-            readError={read.error instanceof Error ? read.error.message : null}
-            onImport={() => importPaper.mutate(selected.id)}
-            importing={importPaper.isPending}
-            importError={importPaper.error instanceof Error ? importPaper.error.message : null}
-          />
-        )}
-      </aside>
+      </ModuleShell>
 
       {vaultOpen && (
         <div className="ph-dv-vault-layer" role="presentation" onMouseDown={() => setVaultOpen(false)}>
@@ -1085,7 +1016,6 @@ export function DailyView(): JSX.Element {
           >
             <header className="ph-dv-vault-head">
               <div>
-                <div className="ph-dv-vault-eyebrow">PHAROS DAILY VAULT · V1</div>
                 <h2 id="daily-vault-title">每日论文数据目录</h2>
               </div>
               <button className="ph-dv-vault-close" onClick={() => setVaultOpen(false)} aria-label="关闭">
@@ -1166,7 +1096,7 @@ export function DailyView(): JSX.Element {
           </section>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1213,14 +1143,11 @@ function PaperDetail({
       <div className="ph-dv-d-actions">
         <button
           type="button"
-          className="ph-dv-d-primary"
+          className="ph-btn is-primary is-lg"
           disabled={imported || importing}
           onClick={onImport}
         >
-          <span className="ph-dv-d-ic">
-            <Icons.plus />
-          </span>
-          {imported ? "已在文库" : importing ? "导入中…" : "导入文库"}
+          {imported ? "已在文库" : importing ? "导入中" : "导入文库"}
         </button>
       </div>
 
@@ -1234,12 +1161,12 @@ function PaperDetail({
             <span className="ph-dv-chip is-pending">待解读</span>
             <button
               type="button"
-              className="ph-dv-d-ghost"
+              className="ph-btn"
               disabled={reading || !canRead}
               title={canRead ? undefined : "尚未配置 LLM API Key"}
               onClick={onRead}
             >
-              {reading ? "解读中…" : "解读"}
+              {reading ? "解读中" : "解读"}
             </button>
           </div>
           {readError !== null && <div className="ph-dv-d-err">解读失败：{clip(readError)}</div>}
@@ -1252,12 +1179,12 @@ function PaperDetail({
             <span className="ph-dv-chip is-err">解读失败</span>
             <button
               type="button"
-              className="ph-dv-d-ghost"
+              className="ph-btn"
               disabled={reading || !canRead}
               title={canRead ? undefined : "尚未配置 LLM API Key"}
               onClick={onRead}
             >
-              {reading ? "重试中…" : "重试"}
+              {reading ? "重试中" : "重试"}
             </button>
           </div>
           {/* The stored failure, then the failure of the retry itself — they are
@@ -1344,17 +1271,11 @@ function PaperDetail({
         <div className="ph-dv-d-links">
           {paper.arxiv_url && (
             <a className="ph-dv-d-link" href={paper.arxiv_url} target="_blank" rel="noreferrer">
-              <span className="ph-dv-d-ic">
-                <Icons.link />
-              </span>
               arXiv 摘要页
             </a>
           )}
           {paper.pdf_url && (
             <a className="ph-dv-d-link" href={paper.pdf_url} target="_blank" rel="noreferrer">
-              <span className="ph-dv-d-ic">
-                <Icons.file />
-              </span>
               PDF
             </a>
           )}

@@ -24,7 +24,6 @@ import type { CollectionNode, SearchField, SearchHit } from "../api/types";
 import { Icons } from "../design/icons";
 import {
   compactAuthors,
-  dash,
   isJobActive,
   statusMeta,
   toVM,
@@ -32,6 +31,7 @@ import {
 } from "../lib/model";
 import { pdfTranslationEnabled, isDetailOverlay, useSession, useUI, type SortCol } from "../store";
 import { PAPER_DRAG_MIME } from "./CollectionTree";
+import { EmptyState, PageHeader, SkeletonRows } from "./shell";
 import "./ItemList.css";
 
 const COLS: { k: SortCol; label: string; cls: string }[] = [
@@ -70,24 +70,6 @@ const BUILTIN_COLS = new Set(["lib", "uncat", "trash"]);
 /** The toolbar magnifier. The prototype does NOT reuse its `I.search` glyph
  *  here — it inlines a smaller one (circle r=4.6 at 8.5,8.5; handle 12.5→15.5)
  *  at 14px. Kept verbatim so the toolbar is pixel-identical. */
-function SearchGlyph(): JSX.Element {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M12.5 12.5l3 3" />
-      <circle cx={8.5} cy={8.5} r={4.6} />
-    </svg>
-  );
-}
 
 /** The five entities `html.escape(quote=True)` produces, and nothing else. */
 const ENTITIES: Record<string, string> = {
@@ -441,7 +423,6 @@ export function ItemList(): JSX.Element {
     e.dataTransfer.effectAllowed = "copy";
   };
 
-  const arrow = sortDir === "asc" ? " ↑" : " ↓";
   const uploadError = upload.error instanceof Error ? upload.error.message : null;
   const importError =
     importArxivMutation.error instanceof Error ? importArxivMutation.error.message : null;
@@ -477,55 +458,64 @@ export function ItemList(): JSX.Element {
   const total = searchQuery.data?.total ?? 0;
   const truncated = searching && total > visible.length;
 
+  const folderName = (nodes: CollectionNode[], id: string): string | null => {
+    for (const n of nodes) {
+      if (n.id === id) return n.name;
+      const hit = folderName(n.children, id);
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+  const title =
+    selectedCol === "trash"
+      ? "回收站"
+      : selectedCol === "uncat"
+        ? "未分类"
+        : inFolder
+          ? (folderName(collectionsQuery.data?.collections ?? [], selectedCol) ?? "分类")
+          : "我的文库";
+  const [arxivOpen, setArxivOpen] = useState(false);
+  const sortLabel = cols.find((c) => c.k === effSortCol)?.label ?? "年份";
+
   return (
     <section className="ph-il">
-      <div className="ph-il-bar">
-        <div className="ph-il-searchwrap">
-          <span className="ph-il-searchicon">
-            <SearchGlyph />
-          </span>
-          <input
-            className="ph-il-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              // Escape clears, which is the fastest way back to the browse view.
-              if (e.key === "Escape") setQuery("");
-            }}
-            placeholder="搜索文库…"
-          />
-        </div>
-        <div className="ph-il-spacer" />
-        {selectedIds.length > 1 && <span className="ph-il-selcount">已选 {selectedIds.length}</span>}
-        <div className="ph-il-actions">
-          <input
-            className="ph-il-arxiv"
-            value={arxivInput}
-            onChange={(e) => setArxivInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") importArxiv();
-            }}
-            placeholder="arXiv 链接 / ID"
-          />
-          <button
-            className="ph-il-btn-ghost"
-            title="导入 arXiv"
-            onClick={importArxiv}
-            disabled={importArxivMutation.isPending || !arxivInput.trim()}
-          >
-            {importArxivMutation.isPending ? "导入中…" : "导入"}
-          </button>
-          <button
-            className="ph-il-btn-primary"
-            title="上传 PDF"
-            onClick={() => fileRef.current?.click()}
-          >
-            <span>
-              <Icons.plus />
+      <PageHeader
+        title={title}
+        meta={
+          searching
+            ? `${visible.length} 条结果`
+            : `${visible.length} 篇${selectedIds.length > 1 ? ` · 已选 ${selectedIds.length}` : ""}`
+        }
+        lead={
+          <div className="ph-il-searchwrap">
+            <span className="ph-il-searchicon">
+              <Icons.search />
             </span>
-            PDF
-          </button>
-        </div>
+            <input
+              className="ph-input ph-il-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Escape clears, which is the fastest way back to the browse view.
+                if (e.key === "Escape") setQuery("");
+              }}
+              placeholder="搜索文库"
+              aria-label="搜索文库"
+            />
+          </div>
+        }
+      >
+        <button
+          type="button"
+          className={"ph-btn" + (arxivOpen ? " is-on" : "")}
+          aria-expanded={arxivOpen}
+          onClick={() => setArxivOpen((o) => !o)}
+        >
+          导入 arXiv
+        </button>
+        <button type="button" className="ph-btn is-primary" onClick={() => fileRef.current?.click()}>
+          添加 PDF
+        </button>
         <input
           ref={fileRef}
           className="ph-il-file"
@@ -536,7 +526,32 @@ export function ItemList(): JSX.Element {
             e.target.value = "";
           }}
         />
-      </div>
+      </PageHeader>
+
+      {arxivOpen && (
+        <div className="ph-il-arxivbar">
+          <input
+            className="ph-input ph-il-arxiv"
+            value={arxivInput}
+            autoFocus
+            onChange={(e) => setArxivInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") importArxiv();
+              if (e.key === "Escape") setArxivOpen(false);
+            }}
+            placeholder="arXiv 链接或编号，例如 1706.03762"
+            aria-label="arXiv 链接或编号"
+          />
+          <button
+            type="button"
+            className="ph-btn is-lg"
+            onClick={importArxiv}
+            disabled={importArxivMutation.isPending || !arxivInput.trim()}
+          >
+            {importArxivMutation.isPending ? "导入中" : "导入"}
+          </button>
+        </div>
+      )}
 
       {/*
           An upload has no progress signal worth showing: `fetch` does not
@@ -544,8 +559,7 @@ export function ItemList(): JSX.Element {
           server reading and indexing the PDF afterwards, which has no
           percentage at all. So this is an indeterminate bar — honest about
           not knowing, and it answers the only question actually being asked
-          ("is it doing anything?"). Before it there was NOTHING: the button
-          went quiet and a large file over a LAN looked like a dead app.
+          ("is it doing anything?").
       */}
       {upload.isPending && uploading && (
         <div className="ph-il-uploading" role="status" aria-live="polite">
@@ -554,7 +568,7 @@ export function ItemList(): JSX.Element {
           </span>
           <span className="ph-il-uploading-txt">
             正在上传 {uploading.name}
-            {uploading.size > 0 && `（${(uploading.size / 1048576).toFixed(1)} MB）`}…
+            {uploading.size > 0 && `（${(uploading.size / 1048576).toFixed(1)} MB）`}
           </span>
         </div>
       )}
@@ -566,6 +580,40 @@ export function ItemList(): JSX.Element {
           quietly, rather than leaving the user to wonder why. */}
       {searching && searchQuery.data?.engine === "like" && (
         <div className="ph-il-note">当前部署未启用全文索引，搜索结果按简单匹配排序</div>
+      )}
+
+      {hasRows && (
+        <div className="ph-il-sortbar">
+          <span>排序</span>
+          <select
+            className="ph-il-sortsel"
+            aria-label="排序方式"
+            value={effSortCol}
+            onChange={(e) => {
+              const next = e.target.value as SortCol;
+              setSortTouched(true);
+              if (next !== effSortCol) setSort(next);
+            }}
+          >
+            {cols.map((c) => (
+              <option key={c.k} value={c.k}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="ph-iconbtn"
+            title={sortDir === "asc" ? "升序，点击改为降序" : "降序，点击改为升序"}
+            aria-label={`${sortLabel}${sortDir === "asc" ? "升序" : "降序"}`}
+            onClick={() => {
+              setSortTouched(true);
+              setSort(effSortCol);
+            }}
+          >
+            {sortDir === "asc" ? "↑" : "↓"}
+          </button>
+        </div>
       )}
 
       <div
@@ -587,153 +635,127 @@ export function ItemList(): JSX.Element {
           sendFile(e.dataTransfer.files[0]);
         }}
       >
-        {listPending && (
-          <div className="ph-il-empty">
-            <div className="ph-il-empty-text">载入中…</div>
-          </div>
-        )}
+        {listPending && <SkeletonRows rows={8} />}
 
         {papersQuery.isError && (
-          <div className="ph-il-empty">
-            <div className="ph-il-empty-text is-error">
-              无法连接到后端服务。
-              <br />
-              请确认 Pharos 服务已启动后重试。
-            </div>
-          </div>
+          <EmptyState
+            icon={Icons.library}
+            tone="error"
+            title="无法连接到后端服务"
+            description="请确认 Pharos 服务已启动后重试"
+            primary={{ label: "重试", onClick: () => void papersQuery.refetch() }}
+          />
         )}
 
         {showFirstUse && (
-          <div className="ph-il-firstuse">
-            <div className="ph-il-firstuse-inner">
-              <div className="ph-il-firstuse-mark">
-                <Icons.brand size={28} sw={1.2} />
-              </div>
-              <div className="ph-il-firstuse-title">欢迎使用 Pharos</div>
-              <div className="ph-il-firstuse-desc">
-                从文献发现、每日追踪到精读、知识沉淀与研究推进，都在同一个工作台完成。
-                <br />
-                拖入 PDF、粘贴 arXiv 链接，或连接 Zotero 云端开始。
-              </div>
-              <div className="ph-il-firstuse-cta">
-                <button className="ph-il-cta-primary" onClick={() => fileRef.current?.click()}>
-                  上传 PDF
-                </button>
-                <button className="ph-il-cta-ghost" onClick={() => openSettings("account")}>
-                  连接 Zotero
-                </button>
-              </div>
-            </div>
-          </div>
+          <EmptyState
+            icon={Icons.library}
+            title="文库里还没有论文"
+            description="拖入 PDF、粘贴 arXiv 链接，或连接 Zotero 云端后，论文会出现在这里"
+            primary={{ label: "添加 PDF", onClick: () => fileRef.current?.click() }}
+            secondary={{ label: "连接 Zotero", onClick: () => openSettings("account") }}
+          />
         )}
 
         {showEmptyList && (
-          <div className="ph-il-empty">
-            <div className={searchError ? "ph-il-empty-text is-error" : "ph-il-empty-text"}>
-              {emptyText}
-            </div>
-          </div>
+          <EmptyState
+            icon={Icons.library}
+            tone={searchError ? "error" : "neutral"}
+            title={emptyText}
+          />
         )}
 
-        {hasRows && (
-          <>
-            <div className="ph-il-head">
-              {cols.map((c) => (
-                <span
-                  key={c.k}
-                  className={c.cls}
-                  onClick={() => {
-                    setSortTouched(true);
-                    setSort(c.k);
-                  }}
-                >
-                  {c.label}
-                  <span
-                    style={{ opacity: effSortCol === c.k && (!searching || sortTouched) ? 1 : 0 }}
-                  >
-                    {arrow}
-                  </span>
-                </span>
-              ))}
-            </div>
-            {visible.map((r) => {
-              const sel = selectedIds.includes(r.id);
-              const meta = r.vm === null || !pdfTx ? null : statusMeta(r.vm.status);
-              const row = (
-                <div
-                  className={
-                    "ph-il-row" +
-                    (sel ? " is-selected" : "") +
-                    (r.id === selectedPaperId ? " is-primary" : "")
+        {hasRows &&
+          visible.map((r) => {
+            const sel = selectedIds.includes(r.id);
+            const meta =
+              r.vm === null || !pdfTx || r.vm.status === "untranslated"
+                ? null
+                : statusMeta(r.vm.status);
+            const sub =
+              r.vm === null
+                ? "—"
+                : [
+                    r.vm.authors.length > 0 ? compactAuthors(r.vm.authors) : null,
+                    r.vm.year,
+                    r.vm.venue,
+                    r.vm.pages !== null ? `${r.vm.pages} 页` : null,
+                  ]
+                    .filter((x) => x !== null && x !== "")
+                    .join(" · ") || "—";
+            const row = (
+              <div
+                className={
+                  "ph-il-row" +
+                  (sel ? " is-selected" : "") +
+                  (r.id === selectedPaperId ? " is-primary" : "")
+                }
+                draggable
+                onDragStart={(e) => onRowDragStart(e, r.id)}
+                onClick={(e) => {
+                  selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
+                  // Overlay mode (touch, narrow): a plain tap shows the detail
+                  // slide-over, mirroring how the desktop pane follows the
+                  // selection. Modified clicks are multi-select business —
+                  // popping a panel over the list on every one of those would
+                  // fight the user's hands.
+                  if (detailOverlay && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+                    setLibDetail(true);
                   }
-                  draggable
-                  onDragStart={(e) => onRowDragStart(e, r.id)}
-                  onClick={(e) => {
-                    selectRow(r.id, order, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
-                    // Overlay mode (touch, narrow): a plain tap shows the detail
-                    // slide-over, mirroring how the desktop pane follows the
-                    // selection. Modified clicks are multi-select business —
-                    // popping a panel over the list on every one of those would
-                    // fight the user's hands.
-                    if (detailOverlay && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-                      setLibDetail(true);
-                    }
-                  }}
-                  onDoubleClick={() => openPaper(r.id)}
-                >
+                }}
+                onDoubleClick={() => openPaper(r.id)}
+              >
+                <span className="ph-il-main">
                   <span className="ph-il-c-title">
                     {r.vm?.isZotero === true && (
                       <span className="ph-il-zotero" title="来自 Zotero 云端">
-                        <Icons.cloud size={13} />
+                        <Icons.cloud />
                       </span>
                     )}
                     <span className="ph-il-title">{r.title}</span>
                   </span>
                   <span
-                    className="ph-il-c-authors"
+                    className="ph-il-sub"
                     title={
                       r.vm !== null && r.vm.authors.length > 0 ? r.vm.authors.join(", ") : undefined
                     }
                   >
-                    {r.vm === null ? "—" : dash(compactAuthors(r.vm.authors))}
+                    {sub}
                   </span>
-                  <span className="ph-il-c-year">{dash(r.vm?.year ?? null)}</span>
-                  <span className="ph-il-c-pages">{dash(r.vm?.pages ?? null)}</span>
-                  {pdfTx && (
-                    <span className="ph-il-c-status">
-                      {meta !== null && (
-                        <span className={`ph-il-pill ${meta.cls}`}>{meta.label}</span>
-                      )}
-                      {r.vm?.status === "translating" && (
-                        <span className="ph-il-prog">
-                          <span style={{ width: `${r.vm.progress}%` }} />
-                        </span>
-                      )}
+                </span>
+                {meta !== null && (
+                  <span className="ph-il-c-status">
+                    <span className={`ph-il-status ${meta.cls}`}>
+                      {r.vm?.status === "translating" ? `${meta.label} ${r.vm.progress}%` : meta.label}
                     </span>
-                  )}
-                </div>
-              );
-
-              if (r.hit === null) return <Fragment key={r.id}>{row}</Fragment>;
-
-              // A hit is the row plus a second line. The wrapper carries the
-              // rule between results so the 28px row itself is untouched.
-              return (
-                <div key={r.id} className="ph-il-hit">
-                  {row}
-                  <div className="ph-il-snip">
-                    <span className="ph-il-snip-field">{FIELD_LABEL[r.hit.field]}</span>
-                    <span className="ph-il-snip-text">{renderSnippet(r.hit.snippet)}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {truncated && (
-              <div className="ph-il-more">
-                共 {total} 条结果，已显示前 {visible.length} 条
+                    {r.vm?.status === "translating" && (
+                      <span className="ph-il-prog">
+                        <span style={{ width: `${r.vm.progress}%` }} />
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
-            )}
-          </>
+            );
+
+            if (r.hit === null) return <Fragment key={r.id}>{row}</Fragment>;
+
+            // A hit is the row plus a snippet line. The wrapper carries the rule
+            // between results so the row itself is untouched.
+            return (
+              <div key={r.id} className="ph-il-hit">
+                {row}
+                <div className="ph-il-snip">
+                  <span className="ph-il-snip-field">{FIELD_LABEL[r.hit.field]}</span>
+                  <span className="ph-il-snip-text">{renderSnippet(r.hit.snippet)}</span>
+                </div>
+              </div>
+            );
+          })}
+        {hasRows && truncated && (
+          <div className="ph-il-more">
+            共 {total} 条结果，已显示前 {visible.length} 条
+          </div>
         )}
 
         {dragOver && <div className="ph-il-drop">松开以导入 PDF</div>}

@@ -16,6 +16,7 @@ import {
   useUI,
   type ModuleKey,
 } from "../store";
+import markImg from "../assets/pharos-mark-72.png";
 import "./Rail.css";
 
 type IconComponent = (typeof Icons)["library"];
@@ -39,15 +40,15 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: "library", label: "文库", title: "文库", Icon: Icons.library, comingSoon: false },
-  { key: "runs", label: "运行", title: "研究运行", Icon: Icons.settings, comingSoon: false, harnessOnly: true },
+  { key: "runs", label: "运行", title: "研究运行", Icon: Icons.runs, comingSoon: false, harnessOnly: true },
   { key: "daily", label: "每日论文", title: "每日论文", Icon: Icons.daily, comingSoon: false },
-  { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.search, comingSoon: false },
-  { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.kb, comingSoon: false },
+  { key: "search", label: "文献探索", title: "文献探索", Icon: Icons.compass, comingSoon: false },
+  { key: "kb", label: "研究项目", title: "研究项目", Icon: Icons.project, comingSoon: false },
   {
     key: "admin",
     label: "管理员后台",
     title: "管理员后台",
-    Icon: Icons.settings,
+    Icon: Icons.shield,
     comingSoon: false,
     adminOnly: true,
   },
@@ -116,7 +117,6 @@ export function Rail(): JSX.Element {
   // the label when there is one, and keep the address in the tooltip so a
   // narrow rail truncating the line never hides *which* account this is.
   const acctName = user === null ? "未登录" : user.display_name?.trim() || user.email;
-  const acctSub = signedIn ? "设置与账户" : "登录";
   const acctTitle = user === null ? "登录 Pharos" : `${user.email} · 账户与设置`;
 
   const railExpanded = useUI((s) => s.railExpanded);
@@ -226,7 +226,7 @@ export function Rail(): JSX.Element {
         {exp ? (
           <>
             <span className="ph-rail-brand-mark" aria-hidden>
-              <Icons.brand />
+              <img className="ph-rail-mark-img" src={markImg} alt="" width={20} height={20} />
             </span>
             <span className="ph-rail-wordmark">Pharos</span>
             <button
@@ -241,6 +241,8 @@ export function Rail(): JSX.Element {
             </button>
           </>
         ) : (
+          <>
+          <img className="ph-rail-mark-img" src={markImg} alt="" width={24} height={24} />
           <button
             type="button"
             onClick={toggleRail}
@@ -251,6 +253,7 @@ export function Rail(): JSX.Element {
           >
             <Icons.panelR />
           </button>
+          </>
         )}
       </div>
 
@@ -276,7 +279,7 @@ export function Rail(): JSX.Element {
               {exp && <span className="ph-rail-item-label">{label}</span>}
               {comingSoon && exp && <span className="ph-rail-item-pill">即将</span>}
               {comingSoon && !exp && <span className="ph-rail-item-dot" />}
-              {active && !exp && <span className="ph-rail-item-bar" />}
+              {active && <span className="ph-rail-item-bar" aria-hidden />}
             </button>
           );
         })}
@@ -284,34 +287,25 @@ export function Rail(): JSX.Element {
 
       <div className="ph-rail-spacer" />
 
-      {exp ? (
-        <button
-          type="button"
-          title={acctTitle}
-          onClick={openAccount}
-          className="ph-rail-acct"
-        >
-          <span className="ph-rail-acct-avatar">
-            <Icons.user />
-          </span>
-          <span className="ph-rail-acct-text">
-            <span className="ph-rail-acct-name">{acctName}</span>
-            <span className="ph-rail-acct-sub">{acctSub}</span>
-          </span>
-        </button>
-      ) : (
-        // Collapsed, the tooltip is the only thing naming this button — so it
-        // has to carry the same identity the expanded label would have shown.
-        <button
-          type="button"
-          title={acctTitle}
-          aria-label={acctTitle}
-          onClick={openAccount}
-          className="ph-rail-acct-mini"
-        >
+      {/* One row, same height and icon column as the navigation above it. The
+          name is the account; the gear says "this opens settings". */}
+      <button
+        type="button"
+        title={acctTitle}
+        aria-label={acctTitle}
+        onClick={openAccount}
+        className={cx("ph-rail-item ph-rail-acct", exp ? "ph-rail-item--exp" : "ph-rail-item--col")}
+      >
+        <span className="ph-rail-item-ic">
           <Icons.user />
-        </button>
-      )}
+        </span>
+        {exp && <span className="ph-rail-item-label">{acctName}</span>}
+        {exp && signedIn && (
+          <span className="ph-rail-acct-gear" aria-hidden>
+            <Icons.gear />
+          </span>
+        )}
+      </button>
 
       {exp && (
         <div

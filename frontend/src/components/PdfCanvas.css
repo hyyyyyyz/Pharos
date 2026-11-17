@@ -79,7 +79,7 @@
   position: relative;
   /* A PDF page is white paper — not a themed surface. */
   background: var(--c-sheet);
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   /* The hairline is a shadow, not a border: a border would inset the content
      box and the text layer would land 1px off the glyphs it must cover. */
   box-shadow:
@@ -148,12 +148,12 @@
 
 .ph-pc-hit {
   position: absolute;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: color-mix(in oklch, var(--c-ac) 26%, transparent);
 }
 .ph-pc-hit.is-on {
   background: color-mix(in oklch, var(--c-ac) 55%, transparent);
-  box-shadow: 0 0 0 1px var(--c-ac);
+  outline: 1px solid var(--c-ac);
 }
 
 /* ---------------------------------------------------------------- find bar */
@@ -167,7 +167,7 @@
   z-index: 5;
   background: var(--c-sf, #fff);
   border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   box-shadow: var(--sh-md);
   /* Chrome, not content — this is the one place the old blanket rule belongs. */
   user-select: none;
@@ -184,14 +184,14 @@
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 30px;
   padding: 0 12px;
-  border-radius: 15px;
+  border-radius: var(--r-lg);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   color: var(--c-tx2, #5a616e);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   box-shadow: var(--sh-md);
   cursor: pointer;
@@ -206,9 +206,9 @@
 .ph-pc-find {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 32px;
-  padding: 0 5px 0 8px;
+  padding: 0 4px 0 8px;
 }
 
 .ph-pc-find-open {
@@ -234,12 +234,12 @@
 .ph-pc-find-in {
   width: 150px;
   height: 24px;
-  padding: 0 7px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-bg, #fafbfc);
   color: var(--c-tx, #1e222a);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   outline: none;
   user-select: text;
 }
@@ -248,13 +248,13 @@
 }
 .ph-pc-find-in:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring); outline-offset: 0;
 }
 
 .ph-pc-find-n {
   min-width: 46px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3, #8b93a1);
   font-variant-numeric: tabular-nums;
 }
@@ -270,7 +270,7 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx2, #5a616e);
   cursor: pointer;
@@ -298,7 +298,7 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-tx3, #8b93a1);
   user-select: none;
 }

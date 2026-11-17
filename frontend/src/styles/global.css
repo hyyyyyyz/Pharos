@@ -56,7 +56,7 @@ a:hover {
 }
 .ph-scroll::-webkit-scrollbar-thumb {
   background: var(--c-bds, #d4d8de);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -98,4 +98,78 @@ a:hover {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Keyboard focus is always visible. Low specificity on purpose: any control
+   that draws its own ring simply wins. */
+:where(button, [role="button"], a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--c-ac, #4f46e5);
+  outline-offset: 2px;
+}
+
+/* Native <select> and checkbox keep their elements (and so their accessibility)
+   but share the input look: 32px, --r-sm, hairline border, a drawn chevron and
+   a drawn tick, all from the theme variables. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 32px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--c-bd);
+  border-radius: var(--r-sm);
+  background-color: var(--c-sf);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--c-tx3) 50%),
+    linear-gradient(135deg, var(--c-tx3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 14px,
+    calc(100% - 12px) 14px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--c-tx);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  min-width: 0;
+}
+select:hover {
+  border-color: var(--c-bds);
+}
+select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--c-bds);
+  border-radius: var(--r-xs);
+  background: var(--c-sf);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+input[type="checkbox"]:checked {
+  background: var(--c-ac);
+  border-color: var(--c-ac);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--c-acc);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

@@ -17,6 +17,7 @@ import type {
 import { Icons } from "../design/icons";
 import { isRulesAnalysis, sourceName } from "../lib/discovery";
 import { useUI } from "../store";
+import { EmptyState, ModuleShell, PageHeader, SidePanel, SkeletonRows } from "./shell";
 import "./ProjectsView.css";
 
 interface StageDef {
@@ -125,14 +126,14 @@ function ProjectListItem({
   onClick: () => void;
 }): JSX.Element {
   return (
-    <button type="button" className={cx("ph-proj-item", active && "is-active")} onClick={onClick}>
-      <span className="ph-proj-item-top">
-        <strong>{project.name}</strong>
-        <span className={cx("ph-proj-state-dot", project.status === "archived" && "is-archived")} />
-      </span>
-      <span className="ph-proj-item-stage">{stageDef(project.stage).label}</span>
-      <span className="ph-proj-item-meta">
-        {project.source_count} 篇文献 · {project.artifact_count} 条记录
+    <button type="button" className={cx("ph-sp-row ph-proj-item", active && "is-active")} onClick={onClick}>
+      <span className={cx("ph-proj-state-dot", project.status === "archived" && "is-archived")} aria-hidden />
+      <span className="ph-proj-item-text">
+        <span className="ph-proj-item-name">{project.name}</span>
+        <span className="ph-proj-item-meta">
+          {stageDef(project.stage).label} · {project.source_count} 篇文献 · {project.artifact_count} 条记录
+          {project.status === "archived" ? " · 已归档" : ""}
+        </span>
       </span>
     </button>
   );
@@ -231,7 +232,7 @@ function SourceCard({
           <div>
             <button type="button" onClick={onCancelNote}>取消</button>
             <button type="button" className="is-primary" onClick={onSaveNote} disabled={busy}>
-              {busy ? "保存中…" : "保存备注"}
+              {busy ? "保存中" : "保存备注"}
             </button>
           </div>
         </div>
@@ -586,232 +587,245 @@ export function ProjectsView(): JSX.Element {
     createMutation.error ?? updateMutation.error ?? deleteMutation.error ?? advanceMutation.error ??
     sourceNoteMutation.error ?? removeSourceMutation.error ?? saveArtifactMutation.error ?? removeArtifactMutation.error;
 
+  const busyStage = advanceMutation.isPending || updateMutation.isPending;
+
   return (
-    <div className="ph-proj">
-      <aside className="ph-proj-sidebar ph-scroll">
-        <div className="ph-proj-side-head">
-          <div>
-            <span>研究项目</span>
-            <small>{projects.length}</small>
-          </div>
-          <button type="button" onClick={() => setCreateOpen((open) => !open)} title="新建项目">
-            <Icons.plus size={14} />
-          </button>
-        </div>
+    <ModuleShell
+      side={
+        <SidePanel
+          storageKey="projects"
+          title="项目"
+          actions={
+            <button
+              type="button"
+              className="ph-iconbtn"
+              onClick={() => setCreateOpen((open) => !open)}
+              title="新建项目"
+              aria-label="新建项目"
+            >
+              <Icons.plus />
+            </button>
+          }
+        >
+          {createOpen && (
+            <form className="ph-proj-create" onSubmit={createProject}>
+              <input className="ph-input" value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="项目名称" aria-label="项目名称" autoFocus />
+              <textarea className="ph-input" value={createQuestion} onChange={(event) => setCreateQuestion(event.target.value)} placeholder="核心研究问题（可选）" aria-label="核心研究问题" rows={2} />
+              <textarea className="ph-input" value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="项目说明（可选）" aria-label="项目说明" rows={2} />
+              {createMutation.isError && <span className="ph-proj-form-error">{errText(createMutation.error)}</span>}
+              <div className="ph-proj-create-actions">
+                <button type="button" className="ph-btn" onClick={() => setCreateOpen(false)}>取消</button>
+                <button type="submit" className="ph-btn is-primary" disabled={createName.trim() === "" || createMutation.isPending}>
+                  {createMutation.isPending ? "创建中" : "创建项目"}
+                </button>
+              </div>
+            </form>
+          )}
 
-        {createOpen && (
-          <form className="ph-proj-create" onSubmit={createProject}>
-            <strong>新建研究项目</strong>
-            <input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="项目名称" autoFocus />
-            <textarea value={createQuestion} onChange={(event) => setCreateQuestion(event.target.value)} placeholder="核心研究问题（可选）" rows={2} />
-            <textarea value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="项目说明（可选）" rows={2} />
-            {createMutation.isError && <span className="ph-proj-form-error">{errText(createMutation.error)}</span>}
-            <div>
-              <button type="button" onClick={() => setCreateOpen(false)}>取消</button>
-              <button type="submit" className="is-primary" disabled={createName.trim() === "" || createMutation.isPending}>
-                {createMutation.isPending ? "创建中…" : "创建项目"}
-              </button>
-            </div>
-          </form>
-        )}
+          <label className="ph-proj-archive-filter">
+            <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+            显示已归档
+          </label>
 
-        <label className="ph-proj-archive-filter">
-          <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
-          显示已归档
-        </label>
-
-        {projectsQuery.isPending ? (
-          <div className="ph-proj-side-state">正在读取项目…</div>
-        ) : projectsQuery.isError ? (
-          <div className="ph-proj-side-state is-error">
-            <span>{errText(projectsQuery.error)}</span>
-            <button type="button" onClick={() => void projectsQuery.refetch()}>重试</button>
-          </div>
-        ) : visibleProjects.length === 0 ? (
-          <div className="ph-proj-side-state">
-            <Icons.kb size={20} />
-            <span>{projects.length === 0 ? "还没有研究项目" : "没有符合筛选的项目"}</span>
-          </div>
-        ) : (
-          <div className="ph-proj-list">
-            {visibleProjects.map((item) => (
+          {projectsQuery.isPending ? (
+            <SkeletonRows rows={4} />
+          ) : projectsQuery.isError ? (
+            <EmptyState
+              inline
+              icon={Icons.project}
+              tone="error"
+              title="读取项目失败"
+              description={errText(projectsQuery.error)}
+              primary={{ label: "重试", onClick: () => void projectsQuery.refetch() }}
+            />
+          ) : visibleProjects.length === 0 ? (
+            <EmptyState
+              inline
+              icon={Icons.project}
+              title={projects.length === 0 ? "还没有研究项目" : "没有符合筛选的项目"}
+            />
+          ) : (
+            visibleProjects.map((item) => (
               <ProjectListItem
                 key={item.id}
                 project={item}
                 active={item.id === activeProjectId}
                 onClick={() => setActiveProject(item.id)}
               />
-            ))}
-          </div>
-        )}
-      </aside>
-
-      <main className="ph-proj-main ph-scroll">
-        {project === null ? (
-          <div className="ph-proj-empty">
-            <span><Icons.kb size={26} /></span>
-            <h1>建立一个可持续推进的研究项目</h1>
-            <p>项目把探索结果、证据备注、实验计划、真实结果和论文主张放在同一条可追溯路径上。</p>
-            <button type="button" onClick={() => setCreateOpen(true)}>新建项目</button>
-          </div>
-        ) : projectQuery.isError ? (
-          <div className="ph-proj-empty is-error">
-            <h1>项目加载失败</h1>
-            <p>{errText(projectQuery.error)}</p>
-            <button type="button" onClick={() => void projectQuery.refetch()}>重试</button>
-          </div>
-        ) : (
-          <div className="ph-proj-desk">
-            <header className="ph-proj-header">
-              <div className="ph-proj-header-title">
-                <div className="ph-proj-header-kicker">
-                  <span className={cx("ph-proj-status", project.status === "archived" && "is-archived")}>
-                    {project.status === "active" ? "进行中" : "已归档"}
-                  </span>
-                  <span>{stageDef(project.stage).label}</span>
-                </div>
-                <h1>{project.name}</h1>
-                {project.description !== "" && <p>{project.description}</p>}
-                {/* When the project was opened and when it last moved. A
-                    workspace that spans months is the point of the module, and
-                    without these the only dates on screen belong to individual
-                    sources and records — so a project dormant since April and
-                    one touched this morning looked identical. `updated_at`
-                    defaults to NULL and is only written by a PATCH, so it is
-                    omitted rather than backfilled from `created_at`: "never
-                    edited" is a fact, not a gap to paper over. */}
-                <div className="ph-proj-header-meta">
-                  <span>创建于 {fmtDate(project.created_at)}</span>
-                  {project.updated_at !== null && (
-                    <span>更新于 {fmtDate(project.updated_at)}</span>
-                  )}
-                </div>
-              </div>
-              <div className="ph-proj-header-actions">
-                <button type="button" onClick={startEdit}>编辑</button>
-                <button
-                  type="button"
-                  onClick={() => updateMutation.mutate({
-                    id: project.id,
-                    patch: { status: project.status === "active" ? "archived" : "active" },
-                  })}
-                  disabled={updateMutation.isPending}
-                >
-                  {project.status === "active" ? "归档" : "恢复"}
-                </button>
-                {confirmProject ? (
-                  <span className="ph-proj-delete-confirm">
-                    删除整个项目？
-                    <button type="button" onClick={() => setConfirmProject(false)}>取消</button>
-                    <button type="button" className="is-danger" onClick={() => deleteMutation.mutate(project.id)} disabled={deleteMutation.isPending}>确认删除</button>
-                  </span>
-                ) : (
-                  <button type="button" className="is-danger-text" onClick={() => setConfirmProject(true)}>删除</button>
-                )}
-              </div>
-            </header>
-
-            {editOpen && (
-              <form className="ph-proj-edit" onSubmit={saveProject}>
-                <label>
-                  <span>项目名称</span>
-                  <input value={projectDraft.name} onChange={(event) => setProjectDraft((draft) => ({ ...draft, name: event.target.value }))} />
-                </label>
-                <label>
-                  <span>研究问题</span>
-                  <textarea value={projectDraft.research_question} onChange={(event) => setProjectDraft((draft) => ({ ...draft, research_question: event.target.value }))} rows={3} />
-                </label>
-                <label>
-                  <span>项目说明</span>
-                  <textarea value={projectDraft.description} onChange={(event) => setProjectDraft((draft) => ({ ...draft, description: event.target.value }))} rows={3} />
-                </label>
-                <div className="ph-proj-edit-actions">
-                  <button type="button" onClick={() => setEditOpen(false)}>取消</button>
-                  <button type="submit" className="is-primary" disabled={projectDraft.name.trim() === "" || updateMutation.isPending}>
-                    {updateMutation.isPending ? "保存中…" : "保存项目"}
-                  </button>
-                </div>
-              </form>
+            ))
+          )}
+        </SidePanel>
+      }
+    >
+      {project === null ? (
+        <>
+          <PageHeader title="研究项目" />
+          <EmptyState
+            icon={Icons.project}
+            title="建立一个可持续推进的研究项目"
+            description="项目把探索结果、证据备注、实验计划、真实结果和论文主张放在同一条可追溯路径上"
+            primary={{ label: "新建项目", onClick: () => setCreateOpen(true) }}
+          />
+        </>
+      ) : projectQuery.isError ? (
+        <>
+          <PageHeader title={project.name} />
+          <EmptyState
+            icon={Icons.project}
+            tone="error"
+            title="项目加载失败"
+            description={errText(projectQuery.error)}
+            primary={{ label: "重试", onClick: () => void projectQuery.refetch() }}
+          />
+        </>
+      ) : (
+        <>
+          <PageHeader
+            title={project.name}
+            meta={
+              <>
+                {project.status === "active" ? "进行中" : "已归档"} · {stageDef(project.stage).label} · 创建于{" "}
+                {fmtDate(project.created_at)}
+                {/* `updated_at` defaults to NULL and is only written by a PATCH,
+                    so it is omitted rather than backfilled from `created_at`:
+                    "never edited" is a fact, not a gap to paper over. */}
+                {project.updated_at !== null && <> · 更新于 {fmtDate(project.updated_at)}</>}
+              </>
+            }
+          >
+            <button type="button" className="ph-btn" onClick={startEdit}>编辑</button>
+            <button
+              type="button"
+              className="ph-btn"
+              onClick={() => updateMutation.mutate({
+                id: project.id,
+                patch: { status: project.status === "active" ? "archived" : "active" },
+              })}
+              disabled={updateMutation.isPending}
+            >
+              {project.status === "active" ? "归档" : "恢复"}
+            </button>
+            {confirmProject ? (
+              <span className="ph-proj-delete-confirm">
+                删除整个项目？
+                <button type="button" className="ph-btn" onClick={() => setConfirmProject(false)}>取消</button>
+                <button type="button" className="ph-btn is-danger" onClick={() => deleteMutation.mutate(project.id)} disabled={deleteMutation.isPending}>确认删除</button>
+              </span>
+            ) : (
+              <button type="button" className="ph-btn is-danger-text" onClick={() => setConfirmProject(true)}>删除</button>
             )}
+          </PageHeader>
 
-            {project.research_question !== "" && !editOpen && (
-              <section className="ph-proj-question">
-                <span>核心研究问题</span>
-                <p>{project.research_question}</p>
-              </section>
-            )}
-
-            {notice !== null && <div className="ph-proj-notice"><Icons.check size={14} />{notice}</div>}
-            {busyError !== null && <div className="ph-proj-error"><Icons.alert size={15} />{errText(busyError)}</div>}
-
-            <section className="ph-proj-stage-section">
-              <div className="ph-proj-section-head">
-                <div>
-                  <span>研究路径</span>
-                  <h2>{stageDef(project.stage).note}</h2>
-                </div>
-                <div className="ph-proj-stage-controls">
-                  <select value={stageDraft} onChange={(event) => setStageDraft(event.target.value as ResearchStage)} aria-label="修改项目阶段">
-                    {STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={stageDraft === project.stage || updateMutation.isPending}
-                    onClick={() => updateMutation.mutate({ id: project.id, patch: { stage: stageDraft } })}
-                  >
-                    保存阶段
-                  </button>
-                  <button
-                    type="button"
-                    className="is-primary"
-                    disabled={project.stage === "complete" || project.status === "archived" || advanceMutation.isPending}
-                    onClick={() => advanceMutation.mutate(project.id)}
-                  >
-                    {advanceMutation.isPending ? "推进中…" : "进入下一阶段"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="ph-proj-timeline ph-scroll">
-                {STAGES.map((stage, index) => {
-                  const count = stageCounts.get(stage.id) ?? 0;
-                  return (
-                    <button
-                      key={stage.id}
-                      type="button"
-                      className={cx(
-                        "ph-proj-stage",
-                        index < currentStageIndex && "is-past",
-                        stage.id === project.stage && "is-current",
-                        stage.id === viewedStage && "is-viewed",
-                      )}
-                      onClick={() => setViewedStage(stage.id)}
-                    >
-                      <span className="ph-proj-stage-node">{index + 1}</span>
-                      <strong>{stage.short}</strong>
-                      <small>{count === 0 ? "无记录" : `${count} 条`}</small>
+          <div className="ph-proj-desk ph-scroll">
+            <div className="ph-proj-content">
+              {editOpen && (
+                <form className="ph-proj-edit" onSubmit={saveProject}>
+                  <label>
+                    <span>项目名称</span>
+                    <input className="ph-input" value={projectDraft.name} onChange={(event) => setProjectDraft((draft) => ({ ...draft, name: event.target.value }))} />
+                  </label>
+                  <label>
+                    <span>研究问题</span>
+                    <textarea className="ph-input" value={projectDraft.research_question} onChange={(event) => setProjectDraft((draft) => ({ ...draft, research_question: event.target.value }))} rows={3} />
+                  </label>
+                  <label>
+                    <span>项目说明</span>
+                    <textarea className="ph-input" value={projectDraft.description} onChange={(event) => setProjectDraft((draft) => ({ ...draft, description: event.target.value }))} rows={3} />
+                  </label>
+                  <div className="ph-proj-edit-actions">
+                    <button type="button" className="ph-btn" onClick={() => setEditOpen(false)}>取消</button>
+                    <button type="submit" className="ph-btn is-primary" disabled={projectDraft.name.trim() === "" || updateMutation.isPending}>
+                      {updateMutation.isPending ? "保存中" : "保存项目"}
                     </button>
-                  );
-                })}
-              </div>
-              <p className="ph-proj-stage-help">点击阶段查看对应记录；阶段下拉可显式回退，所有调整只改变项目状态，不会触发自动实验。</p>
-            </section>
+                  </div>
+                </form>
+              )}
 
-            <div className="ph-proj-workgrid">
+              {!editOpen && (project.research_question !== "" || project.description !== "") && (
+                <section className="ph-proj-question">
+                  {project.research_question !== "" && (
+                    <>
+                      <span>核心研究问题</span>
+                      <p>{project.research_question}</p>
+                    </>
+                  )}
+                  {project.description !== "" && <p className="ph-proj-desc">{project.description}</p>}
+                </section>
+              )}
+
+              {notice !== null && <div className="ph-proj-notice">{notice}</div>}
+              {busyError !== null && <div className="ph-proj-error">{errText(busyError)}</div>}
+
+              {/* The nine stages as one bar: done in --c-tx2, the current stage
+                  in the accent, the rest in a hairline. Only an operation that
+                  is actually running (advancing) lights the current segment in
+                  the beam. */}
+              <section className="ph-proj-stage-section">
+                <div className="ph-proj-section-head">
+                  <h2>研究路径<span>{stageDef(project.stage).note}</span></h2>
+                  <div className="ph-proj-stage-controls">
+                    <select className="ph-input" value={stageDraft} onChange={(event) => setStageDraft(event.target.value as ResearchStage)} aria-label="修改项目阶段">
+                      {STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      className="ph-btn is-lg"
+                      disabled={stageDraft === project.stage || updateMutation.isPending}
+                      onClick={() => updateMutation.mutate({ id: project.id, patch: { stage: stageDraft } })}
+                    >
+                      保存阶段
+                    </button>
+                    <button
+                      type="button"
+                      className="ph-btn is-primary is-lg"
+                      disabled={project.stage === "complete" || project.status === "archived" || advanceMutation.isPending}
+                      onClick={() => advanceMutation.mutate(project.id)}
+                    >
+                      {advanceMutation.isPending ? "推进中" : "进入下一阶段"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="ph-proj-timeline" role="tablist" aria-label="研究阶段">
+                  {STAGES.map((stage, index) => {
+                    const count = stageCounts.get(stage.id) ?? 0;
+                    return (
+                      <button
+                        key={stage.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={stage.id === viewedStage}
+                        className={cx(
+                          "ph-proj-stage",
+                          index < currentStageIndex && "is-past",
+                          stage.id === project.stage && "is-current",
+                          stage.id === project.stage && busyStage && "is-busy",
+                          stage.id === viewedStage && "is-viewed",
+                        )}
+                        onClick={() => setViewedStage(stage.id)}
+                      >
+                        <span className="ph-proj-stage-bar" />
+                        <strong>{stage.short}</strong>
+                        <small>{count === 0 ? "无记录" : `${count} 条`}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="ph-proj-stage-help">点击阶段查看对应记录；阶段下拉可显式回退，所有调整只改变项目状态，不会触发自动实验</p>
+              </section>
+
               <section className="ph-proj-panel">
                 <div className="ph-proj-panel-head">
-                  <div>
-                    <span>项目文献</span>
-                    <h2>{project.sources.length} 篇证据来源</h2>
-                  </div>
+                  <h2>来源<span>{project.sources.length} 篇</span></h2>
                 </div>
 
                 {project.sources.length === 0 ? (
-                  <div className="ph-proj-panel-empty">
-                    <Icons.file size={20} />
-                    <strong>还没有项目文献</strong>
-                    <span>前往「文献探索」检索并选择论文加入这个项目。</span>
-                  </div>
+                  <EmptyState
+                    inline
+                    icon={Icons.file}
+                    title="还没有项目文献"
+                    description="前往「文献探索」检索并选择论文加入这个项目"
+                  />
                 ) : (
                   <div className="ph-proj-source-list">
                     {project.sources.map((source) => (
@@ -835,14 +849,11 @@ export function ProjectsView(): JSX.Element {
                 )}
               </section>
 
-              <section className="ph-proj-panel is-artifacts">
+              <section className="ph-proj-panel">
                 <div className="ph-proj-panel-head">
-                  <div>
-                    <span>{stageDef(viewedStage).label}</span>
-                    <h2>{viewedArtifacts.length} 条研究记录</h2>
-                  </div>
-                  <button type="button" className="is-primary" onClick={openNewArtifact}>
-                    <Icons.plus size={13} />新建记录
+                  <h2>产出<span>{stageDef(viewedStage).label} · {viewedArtifacts.length} 条</span></h2>
+                  <button type="button" className="ph-btn is-primary" onClick={openNewArtifact}>
+                    新建记录
                   </button>
                 </div>
 
@@ -854,61 +865,59 @@ export function ProjectsView(): JSX.Element {
                     paraphrase is a promise the backend did not make, and one
                     hidden in a `title=` tooltip is not shown at all. */}
                 {project.automation_notice && (
-                  <div className="ph-proj-automation-note">
-                    <Icons.alert size={15} />
-                    <span>{project.automation_notice}</span>
-                  </div>
+                  <div className="ph-proj-automation-note">{project.automation_notice}</div>
                 )}
 
                 {artifactDraft !== null && (
                   <form className="ph-proj-artifact-editor" onSubmit={saveArtifact}>
                     <div className="ph-proj-artifact-editor-head">
                       <strong>{artifactDraft.id === null ? "新建研究记录" : "编辑研究记录"}</strong>
-                      <button type="button" onClick={() => setArtifactDraft(null)}><Icons.close size={11} /></button>
+                      <button type="button" className="ph-iconbtn" aria-label="关闭" onClick={() => setArtifactDraft(null)}><Icons.close /></button>
                     </div>
                     <div className="ph-proj-artifact-fields">
                       <label>
                         <span>阶段</span>
-                        <select value={artifactDraft.stage} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, stage: event.target.value as ResearchStage })}>
+                        <select className="ph-input" value={artifactDraft.stage} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, stage: event.target.value as ResearchStage })}>
                           {STAGES.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
                         </select>
                       </label>
                       <label>
                         <span>类型</span>
-                        <select value={artifactDraft.type} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, type: event.target.value as ProjectArtifactType })}>
+                        <select className="ph-input" value={artifactDraft.type} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, type: event.target.value as ProjectArtifactType })}>
                           {Object.entries(TYPE_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                         </select>
                       </label>
                       <label>
                         <span>状态</span>
-                        <select value={artifactDraft.status} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, status: event.target.value as ProjectArtifactStatus })}>
+                        <select className="ph-input" value={artifactDraft.status} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, status: event.target.value as ProjectArtifactStatus })}>
                           {Object.entries(STATUS_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                         </select>
                       </label>
                     </div>
                     <label>
                       <span>标题</span>
-                      <input value={artifactDraft.title} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, title: event.target.value })} placeholder="一句话说明这条记录" autoFocus />
+                      <input className="ph-input" value={artifactDraft.title} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, title: event.target.value })} placeholder="一句话说明这条记录" autoFocus />
                     </label>
                     <label>
                       <span>正文</span>
-                      <textarea value={artifactDraft.body} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, body: event.target.value })} placeholder="记录假设、实验约束、真实结果、主张或审阅意见。不要把计划写成已经执行。" rows={9} />
+                      <textarea className="ph-input" value={artifactDraft.body} onChange={(event) => setArtifactDraft((draft) => draft === null ? null : { ...draft, body: event.target.value })} placeholder="记录假设、实验约束、真实结果、主张或审阅意见。不要把计划写成已经执行。" rows={9} />
                     </label>
                     <div className="ph-proj-artifact-actions">
-                      <button type="button" onClick={() => setArtifactDraft(null)}>取消</button>
-                      <button type="submit" className="is-primary" disabled={artifactDraft.title.trim() === "" || saveArtifactMutation.isPending}>
-                        {saveArtifactMutation.isPending ? "保存中…" : "保存记录"}
+                      <button type="button" className="ph-btn" onClick={() => setArtifactDraft(null)}>取消</button>
+                      <button type="submit" className="ph-btn is-primary" disabled={artifactDraft.title.trim() === "" || saveArtifactMutation.isPending}>
+                        {saveArtifactMutation.isPending ? "保存中" : "保存记录"}
                       </button>
                     </div>
                   </form>
                 )}
 
                 {viewedArtifacts.length === 0 && artifactDraft === null ? (
-                  <div className="ph-proj-panel-empty">
-                    <Icons.spark size={20} />
-                    <strong>这个阶段还没有记录</strong>
-                    <span>新建一条真实的科研记录；系统不会替你声称实验已经执行。</span>
-                  </div>
+                  <EmptyState
+                    inline
+                    icon={Icons.file}
+                    title="这个阶段还没有记录"
+                    description="新建一条真实的科研记录；系统不会替你声称实验已经执行"
+                  />
                 ) : (
                   <div className="ph-proj-artifact-list">
                     {viewedArtifacts.map((artifact) => (
@@ -928,8 +937,8 @@ export function ProjectsView(): JSX.Element {
               </section>
             </div>
           </div>
-        )}
-      </main>
-    </div>
+        </>
+      )}
+    </ModuleShell>
   );
 }

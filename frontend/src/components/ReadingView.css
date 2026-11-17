@@ -43,7 +43,7 @@
   flex: none;
   width: 24px;
   height: 24px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   color: var(--c-tx2, #5a616e);
@@ -57,7 +57,7 @@
 .ph-rv-file {
   min-width: 0;
   max-width: min(36vw, 420px);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-tx2, #5a616e);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -69,26 +69,26 @@
   display: flex;
   background: var(--c-bg, #fafbfc);
   border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 1px;
   gap: 1px;
 }
 
 .ph-rv-seg-btn {
   height: 22px;
-  padding: 0 9px;
-  border-radius: 5px;
+  padding: 0 8px;
+  border-radius: var(--r-xs);
   white-space: nowrap;
   border: none;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   background: transparent;
   color: var(--c-tx2, #5a616e);
   box-shadow: none;
 }
 .ph-rv-seg-btn.is-on {
-  font-weight: 600;
+  font-weight: 500;
   background: var(--c-sf, #fff);
   color: var(--c-ac, #5b53d6);
   box-shadow: var(--sh-sm);
@@ -102,12 +102,12 @@
 .ph-rv-ai-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 24px;
-  padding: 0 9px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   border: 1px solid var(--c-bd, #e6e8ec);
   background: transparent;
@@ -147,10 +147,10 @@
 
 .ph-rv-mock {
   position: relative;
-  margin: 0 auto 18px;
+  margin: 0 auto 20px;
   width: 150px;
   height: 110px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   overflow: hidden;
@@ -166,7 +166,7 @@
   height: 5px;
   width: 66%;
   background: var(--c-bds, #d4d8de);
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   margin: 0 auto 8px;
 }
 .ph-rv-mock-cols {
@@ -196,28 +196,28 @@
 }
 
 .ph-rv-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: 500;
   color: var(--c-tx, #1e222a);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 .ph-rv-meta {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-tx3, #8b93a1);
   margin-bottom: 16px;
 }
 .ph-rv-cta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 32px;
   padding: 0 16px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   border: none;
   background: var(--c-ac, #5b53d6);
   color: var(--c-acc, #fff);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: 500;
   cursor: pointer;
 }
 .ph-rv-cta:hover {
@@ -228,19 +228,19 @@
   cursor: default;
 }
 .ph-rv-note {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3, #8b93a1);
-  margin-top: 11px;
+  margin-top: 12px;
 }
 /* not in the prototype: without it there is no path to the source PDF */
 .ph-rv-ghost {
   display: inline-block;
-  margin-top: 9px;
+  margin-top: 8px;
   padding: 0;
   border: none;
   background: transparent;
   color: var(--c-tx2, #5a616e);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .ph-rv-ghost:hover {
@@ -256,30 +256,30 @@
 }
 .ph-rv-trans-head {
   text-align: center;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 .ph-rv-spinner {
   width: 40px;
   height: 40px;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
   border-radius: 50%;
   border: 3px solid var(--c-bd, #e6e8ec);
   border-top-color: var(--c-ac, #5b53d6);
   animation: ph-spin 1s linear infinite;
 }
 .ph-rv-trans-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: var(--c-tx, #1e222a);
 }
 .ph-rv-trans-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-tx3, #8b93a1);
-  margin-top: 3px;
+  margin-top: 4px;
 }
 .ph-rv-prog {
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: var(--c-bd, #e6e8ec);
   overflow: hidden;
   margin-bottom: 16px;
@@ -288,18 +288,17 @@
   display: block;
   height: 100%;
   background: var(--c-ac, #5b53d6);
-  border-radius: 3px;
-  transition: width 0.2s;
+  border-radius: var(--r-xs);
 }
 .ph-rv-steps {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .ph-rv-step {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .ph-rv-dot {
   width: 18px;
@@ -309,7 +308,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--fs-meta);
 }
 .ph-rv-dot.is-done {
   background: var(--c-ac, #5b53d6);
@@ -324,12 +323,12 @@
   color: var(--c-tx3, #8b93a1);
 }
 .ph-rv-step-label {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-tx, #1e222a);
   font-weight: 400;
 }
 .ph-rv-step-label.is-active {
-  font-weight: 600;
+  font-weight: 500;
 }
 .ph-rv-step-label.is-todo {
   color: var(--c-tx3, #8b93a1);
@@ -344,22 +343,22 @@
 .ph-rv-err-icon {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: var(--c-err-soft, #fdeceb);
   color: var(--c-err, #d93a3a);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
 }
 .ph-rv-err-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: 500;
   color: var(--c-tx, #1e222a);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .ph-rv-err-msg {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-tx2, #5a616e);
   line-height: 1.7;
   margin-bottom: 16px;
@@ -372,12 +371,12 @@
 }
 .ph-rv-btn-primary {
   height: 28px;
-  padding: 0 14px;
-  border-radius: 6px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
   border: none;
   background: var(--c-ac, #5b53d6);
   color: var(--c-acc, #fff);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
 }
@@ -387,12 +386,12 @@
 }
 .ph-rv-btn-outline {
   height: 28px;
-  padding: 0 14px;
-  border-radius: 6px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   color: var(--c-tx2, #5a616e);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   cursor: pointer;
 }
 
@@ -407,10 +406,10 @@
 .ph-rv-subbar {
   flex: none;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   border-bottom: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
 }
@@ -420,7 +419,7 @@
   align-items: center;
   background: var(--c-bg, #fafbfc);
   border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 .ph-rv-zoom-btn {
@@ -430,19 +429,19 @@
   background: transparent;
   color: var(--c-tx2, #5a616e);
   cursor: pointer;
-  font-size: 15px;
+  font-size: var(--fs-md);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
 }
 .ph-rv-zoom-btn.is-plus {
-  font-size: 14px;
+  font-size: var(--fs-base);
 }
 .ph-rv-zoom-val {
   min-width: 42px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 500;
   color: var(--c-tx, #1e222a);
   font-variant-numeric: tabular-nums;
@@ -450,12 +449,12 @@
 
 .ph-rv-fit {
   height: 24px;
-  padding: 0 9px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-bg, #fafbfc);
   color: var(--c-tx2, #5a616e);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   cursor: pointer;
 }
 .ph-rv-fit:hover {
@@ -463,7 +462,7 @@
 }
 
 .ph-rv-hint {
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3, #8b93a1);
 }
 
@@ -474,7 +473,7 @@
   width: 1px;
   height: 16px;
   background: var(--c-bd, #e6e8ec);
-  margin: 0 3px;
+  margin: 0 4px;
 }
 
 .ph-rv-inkwrap {
@@ -487,7 +486,7 @@
   flex: none;
   width: 24px;
   height: 24px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   color: var(--c-tx2, #5a616e);
@@ -515,15 +514,15 @@
   z-index: 30;
   background: var(--c-sf, #fff);
   border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   box-shadow: var(--sh-sm);
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 
 .ph-rv-ink-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-rv-ink-color {
@@ -542,7 +541,7 @@
 .ph-rv-ink-width {
   width: 24px;
   height: 22px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
@@ -563,12 +562,12 @@
 
 .ph-rv-ink-finger {
   height: 22px;
-  padding: 0 9px;
-  border-radius: 11px;
+  padding: 0 8px;
+  border-radius: var(--r-md);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: transparent;
   color: var(--c-tx2, #5a616e);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -591,7 +590,7 @@
   display: flex;
   background: var(--c-bg, #fafbfc);
   border: 1px solid var(--c-bd, #e6e8ec);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 1px;
   gap: 1px;
 }
@@ -599,11 +598,11 @@
 .ph-rv-ink-seg-btn {
   height: 22px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: none;
   background: transparent;
   color: var(--c-tx2, #5a616e);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -613,7 +612,7 @@
 .ph-rv-ink-seg-btn.is-on {
   background: var(--c-sf, #fff);
   color: var(--c-ac, #5b53d6);
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--sh-sm);
 }
 
@@ -626,7 +625,7 @@
   background: var(--c-tx, #1e222a);
 }
 .ph-rv-ink-note {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--c-tx3, #8b93a1);
   white-space: nowrap;
 }
@@ -636,7 +635,7 @@
 .ph-rv-ink-more-btn {
   width: 24px;
   height: 22px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: 1px solid transparent;
   background: transparent;
   color: var(--c-tx2, #5a616e);
@@ -663,9 +662,9 @@
 .ph-rv-ink-tray {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-  padding-top: 6px;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--c-bd, #e6e8ec);
 }
 
@@ -675,13 +674,13 @@
 .ph-rv-ink-grid {
   display: grid;
   grid-template-columns: repeat(5, 22px);
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-rv-ink-chip {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid rgba(0, 0, 0, 0.12);
   padding: 0;
   cursor: pointer;
@@ -702,7 +701,7 @@
 .ph-rv-ink-width-val {
   min-width: 22px;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
   color: var(--c-tx2, #5a616e);
 }
@@ -714,10 +713,158 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-tx3, #8b93a1);
   background: var(--c-read, #f1f2f4);
 }
 .ph-rv-pdf-msg.is-err {
   color: var(--c-err, #d93a3a);
+}
+
+/* ======================================================= redesign: chrome */
+/* The paper is the bright element; everything around it steps back. Bars are
+   40 tall with 28 controls, icons sit in the secondary colour and only light up
+   on hover or when on. */
+
+.ph-rv-bar {
+  height: 40px;
+  padding: 0 12px;
+}
+.ph-rv-subbar {
+  height: 40px;
+}
+
+.ph-rv-outline-btn,
+.ph-rv-ink-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-tx3);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  .ph-rv-outline-btn:hover,
+  .ph-rv-ink-btn:hover:not(:disabled) {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+.ph-rv-ink-btn.is-on {
+  border: none;
+  background: var(--c-acs);
+  color: var(--c-aclink);
+}
+.ph-rv-outline-btn:focus-visible,
+.ph-rv-ink-btn:focus-visible,
+.ph-rv-ai-btn:focus-visible,
+.ph-rv-seg-btn:focus-visible,
+.ph-rv-zoom-btn:focus-visible,
+.ph-rv-fit:focus-visible {
+  outline: 2px solid var(--c-ac);
+  outline-offset: 1px;
+}
+
+.ph-rv-seg {
+  padding: 2px;
+  gap: 2px;
+}
+.ph-rv-seg-btn {
+  height: 24px;
+  color: var(--c-tx3);
+}
+.ph-rv-seg-btn.is-on {
+  color: var(--c-tx);
+}
+
+.ph-rv-ai-btn {
+  height: 28px;
+  border: none;
+  color: var(--c-tx2);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+.ph-rv-ai-btn.is-on {
+  border: none;
+  background: var(--c-acs);
+  color: var(--c-aclink);
+}
+@media (hover: hover) {
+  .ph-rv-ai-btn:not(.is-on):hover {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+
+.ph-rv-zoom {
+  border: none;
+  background: transparent;
+}
+.ph-rv-zoom-btn {
+  width: 28px;
+  height: 28px;
+  color: var(--c-tx3);
+  border-radius: var(--r-sm);
+}
+@media (hover: hover) {
+  .ph-rv-zoom-btn:hover {
+    background: var(--c-hv);
+    color: var(--c-tx);
+  }
+}
+.ph-rv-fit {
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--c-tx2);
+  font-size: var(--fs-sm);
+}
+.ph-rv-hint {
+  font-size: var(--fs-meta);
+}
+.ph-rv-inkbar {
+  box-shadow: var(--sh-pop);
+  border-radius: var(--r-md);
+}
+
+/* Translation in progress is work in progress: the beam. */
+.ph-rv-spinner {
+  border-top-color: var(--c-beam);
+}
+.ph-rv-prog-fill {
+  background: var(--c-beam);
+}
+.ph-rv-dot.is-done {
+  background: var(--c-ok);
+}
+.ph-rv-dot.is-active {
+  border-color: var(--c-beam);
+  color: var(--c-tx);
+}
+
+.ph-rv-fit {
+  white-space: nowrap;
+  flex: none;
+}
+.ph-rv-hint {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The hint is whole or absent: below this width it is hidden rather than clipped. */
+.ph-rv-subbar {
+  container-type: inline-size;
+}
+@container (max-width: 780px) {
+  .ph-rv-hint {
+    display: none;
+  }
 }

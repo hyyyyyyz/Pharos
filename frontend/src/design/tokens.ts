@@ -125,6 +125,15 @@ export function neutralVars(t: ThemeMode): Vars {
       "--sh-md": "0 2px 12px rgba(0,0,0,.55)",
       "--sh-pop": "0 12px 34px rgba(0,0,0,.65)",
       "--c-overlay": "rgba(4,10,18,.6)",
+      // The lighthouse beam. Fixed, never follows the user's accent: it marks
+      // only "what to look at now" (current module, today's top paper, work in
+      // progress). Same value the beacon accent uses on dark.
+      "--c-beam": "oklch(0.82 0.15 84)",
+      // The wordmark is navy on transparent; on the dark ground it is lifted to
+      // white (inverting would turn the gold beam blue, a brightness lift keeps it clean).
+      "--c-logo-filter": "brightness(0) invert(1) opacity(0.92)",
+      // The mark's navy disc nearly matches the dark rail; a hairline keeps its edge.
+      "--c-mark-ring": "var(--c-bds)",
     };
   return {
     "--c-bg": "#F7F2E9",
@@ -150,7 +159,46 @@ export function neutralVars(t: ThemeMode): Vars {
     "--sh-md": "0 2px 10px rgba(12,32,64,.09)",
     "--sh-pop": "0 12px 34px rgba(12,32,64,.16)",
     "--c-overlay": "rgba(12,32,64,.42)",
+    // The lighthouse beam: the logo's gold #F8C040. See the dark branch.
+    "--c-beam": "oklch(0.837 0.151 84)",
+    "--c-logo-filter": "none",
+    "--c-mark-ring": "transparent",
   };
+}
+
+/**
+ * Type, radius and motion scale — identical in both themes, emitted next to the
+ * colours so every surface (the app root and the sign-in gate) gets them.
+ *
+ * Six sizes, four radii, one easing curve. Components reference these instead
+ * of writing numbers, so a size can only be changed here. Nothing is smaller
+ * than 11px.
+ */
+export const SCALE_VARS: Vars = {
+  "--fs-meta": "11px",
+  "--lh-meta": "16px",
+  "--fs-sm": "12px",
+  "--lh-sm": "16px",
+  "--fs-base": "13px",
+  "--lh-base": "20px",
+  "--fs-md": "15px",
+  "--lh-md": "22px",
+  "--fs-lg": "18px",
+  "--lh-lg": "26px",
+  "--fs-xl": "22px",
+  "--lh-xl": "30px",
+  "--r-xs": "4px",
+  "--r-sm": "8px",
+  "--r-md": "12px",
+  "--r-lg": "16px",
+  "--ease": "cubic-bezier(0.22, 1, 0.36, 1)",
+  "--dur-fast": "140ms",
+  "--dur-pop": "180ms",
+  "--dur-enter": "320ms",
+};
+
+export function scaleVars(): Vars {
+  return SCALE_VARS;
 }
 
 export function accentVars(key: AccentKey, t: ThemeMode): Vars {
@@ -222,5 +270,5 @@ export function accentSwatch(key: AccentKey, t: ThemeMode): string {
 
 /** All theme variables, ready to spread onto the root element's `style`. */
 export function themeStyle(mode: ThemeMode, accent: AccentKey): CSSProperties {
-  return { ...neutralVars(mode), ...accentVars(accent, mode) } as CSSProperties;
+  return { ...scaleVars(), ...neutralVars(mode), ...accentVars(accent, mode) } as CSSProperties;
 }

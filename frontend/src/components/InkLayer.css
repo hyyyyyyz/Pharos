@@ -182,8 +182,8 @@
   justify-content: center;
   gap: 2px;
   max-width: 340px;
-  padding: 3px 4px;
-  border-radius: 10px;
+  padding: 4px 4px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
@@ -200,11 +200,11 @@
   height: 26px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-tx, #1e222a);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -222,10 +222,10 @@
 
 .ph-ink-sel-n {
   min-width: 14px;
-  padding: 0 3px;
+  padding: 0 4px;
   color: var(--c-tx3, #8b93a1);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--fs-meta);
+  font-weight: 500;
   text-align: center;
 }
 
@@ -248,7 +248,7 @@
 .ph-ink-sel-color {
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   border: 1px solid rgba(0, 0, 0, 0.12);
   cursor: pointer;
   padding: 0;
@@ -263,7 +263,7 @@
   width: 22px;
   height: 22px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx2, #5a616e);
   cursor: pointer;
@@ -307,8 +307,8 @@
   transform: translate(-8px, -100%);
   display: flex;
   gap: 2px;
-  padding: 3px;
-  border-radius: 9px;
+  padding: 4px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
@@ -317,13 +317,13 @@
 
 .ph-ink-press-btn {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-tx, #1e222a);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   cursor: pointer;
 }
 .ph-ink-press-btn:hover:not(:disabled) {

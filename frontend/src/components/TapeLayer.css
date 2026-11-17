@@ -71,7 +71,7 @@
   z-index: 5;
   pointer-events: auto;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   box-sizing: border-box;
 }
 
@@ -150,7 +150,7 @@
   gap: 4px;
   max-width: 260px;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd, #e6e8ec);
   background: var(--c-sf, #fff);
   box-shadow: var(--sh-md, 0 4px 16px rgba(20, 24, 32, 0.14));
@@ -159,12 +159,12 @@
 
 .ph-tape-pop-btn {
   height: 24px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx2, #5a616e);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   white-space: nowrap;
   cursor: pointer;
   display: inline-flex;

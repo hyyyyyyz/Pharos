@@ -9,6 +9,8 @@ import {
   type HarnessRunState,
 } from "../api/harness";
 import { ApiError } from "../api/client";
+import { Icons } from "../design/icons";
+import { EmptyState, ModuleShell, PageHeader, SidePanel } from "./shell";
 import "./HarnessRunCenter.css";
 
 /** Poll while any visible run may still move; terminal runs stop the clock. */
@@ -45,7 +47,14 @@ function formatUs(us: number | null): string {
 }
 
 function RunStatePill({ state }: { state: HarnessRunState }): JSX.Element {
-  return <span className={`ph-run-state ph-run-state--${state}`}>{STATE_LABEL[state]}</span>;
+  // A dot and a word: the dot is the shape of the state, the word is its name.
+  // Only a run that is actually moving (running, queued) uses the beam.
+  return (
+    <span className={`ph-run-state ph-run-state--${state}`}>
+      <span className="ph-run-state-dot" aria-hidden />
+      {STATE_LABEL[state]}
+    </span>
+  );
 }
 
 function StepRow({ step }: { step: HarnessRunDetail["steps"][number] }): JSX.Element {
@@ -91,15 +100,16 @@ function ApprovalCard({
       <div className="ph-run-approval-row">
         <input
           type="text"
+          className="ph-input"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           placeholder="理由（可选）"
           disabled={busy}
         />
-        <button type="button" disabled={busy} onClick={() => void decide("approved")}>
+        <button type="button" className="ph-btn is-primary" disabled={busy} onClick={() => void decide("approved")}>
           批准
         </button>
-        <button type="button" disabled={busy} onClick={() => void decide("rejected")}>
+        <button type="button" className="ph-btn" disabled={busy} onClick={() => void decide("rejected")}>
           拒绝
         </button>
       </div>
@@ -215,134 +225,130 @@ export function HarnessRunCenter(): JSX.Element {
   };
 
   return (
-    <div className="ph-runcenter">
-      <div className="ph-runcenter-list">
-        <div className="ph-runcenter-list-head">
-          <span>运行</span>
-          <div className="ph-runcenter-filters">
-            {(["all", "active"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={filter === key ? "is-on" : ""}
-                onClick={() => setFilter(key)}
-              >
-                {key === "all" ? "全部" : "进行中"}
-              </button>
-            ))}
-          </div>
-        </div>
-        {error && <div className="ph-runcenter-error">{error}</div>}
-        <ul className="ph-runcenter-runs">
+    <ModuleShell
+      side={
+        <SidePanel
+          storageKey="runs"
+          title="运行列表"
+          actions={
+            <span className="ph-runcenter-filters" role="group" aria-label="筛选">
+              {(["all", "active"] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={filter === key ? "is-on" : ""}
+                  aria-pressed={filter === key}
+                  onClick={() => setFilter(key)}
+                >
+                  {key === "all" ? "全部" : "进行中"}
+                </button>
+              ))}
+            </span>
+          }
+        >
+          {error && <div className="ph-runcenter-error">{error}</div>}
           {visible.map((run) => (
-            <li key={run.id}>
-              <button
-                type="button"
-                className={selected === run.id ? "is-active" : ""}
-                onClick={() => setSelected(run.id)}
-              >
+            <button
+              key={run.id}
+              type="button"
+              className={"ph-sp-row ph-runcenter-run" + (selected === run.id ? " is-active" : "")}
+              onClick={() => setSelected(run.id)}
+            >
+              <span className="ph-runcenter-run-text">
                 <span className="ph-runcenter-run-workflow">{run.workflowKey}</span>
-                <RunStatePill state={run.state} />
-                <span className="ph-runcenter-run-time">{formatUs(run.createdAtUs)}</span>
-              </button>
-            </li>
-          ))}
-          {visible.length === 0 && <li className="ph-runcenter-empty">暂无运行记录</li>}
-        </ul>
-      </div>
-
-      <div className="ph-runcenter-detail">
-        {detail === null ? (
-          <div className="ph-runcenter-empty">选择左侧的运行查看详情</div>
-        ) : (
-          <>
-            <div className="ph-runcenter-detail-head">
-              <div>
-                <h2>
-                  {detail.workflowKey} v{detail.workflowVersion}
-                </h2>
-                <span className="ph-runcenter-detail-id">{detail.id}</span>
-              </div>
-              <div className="ph-runcenter-detail-actions">
-                {detail.state === "running" && (
-                  <button type="button" onClick={() => void control("pause")}>
-                    暂停
-                  </button>
-                )}
-                {detail.state === "paused" && (
-                  <button type="button" onClick={() => void control("resume")}>
-                    继续
-                  </button>
-                )}
-                {ACTIVE_STATES.includes(detail.state) && (
-                  <button type="button" onClick={() => void control("cancel")}>
-                    取消
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="ph-runcenter-detail-meta">
-              <RunStatePill state={detail.state} />
-              {detail.outcome && (
-                <span className="ph-runcenter-outcome">
-                  结果：{OUTCOME_LABEL[detail.outcome] ?? detail.outcome}
+                <span className="ph-runcenter-run-meta">
+                  <RunStatePill state={run.state} />
+                  <span className="ph-runcenter-run-time">{formatUs(run.createdAtUs)}</span>
                 </span>
-              )}
-              <span>创建 {formatUs(detail.createdAtUs)}</span>
-              <span>结束 {formatUs(detail.finishedAtUs)}</span>
-            </div>
-            {detail.errorMessage && (
-              <div className="ph-runcenter-error">{detail.errorMessage}</div>
-            )}
-
-            {approvals.filter((approval) => approval.state === "pending").length > 0 && (
-              <section className="ph-runcenter-section">
-                <h3>等待批准</h3>
-                {approvals
-                  .filter((approval) => approval.state === "pending")
-                  .map((approval) => (
-                    <ApprovalCard key={approval.id} approval={approval} onDecide={decide} />
-                  ))}
-              </section>
-            )}
-
-            <section className="ph-runcenter-section">
-              <h3>步骤</h3>
-              <ul className="ph-runcenter-steps">
-                {detail.steps.map((step) => (
-                  <StepRow key={step.id} step={step} />
-                ))}
-              </ul>
-            </section>
-
-            <section className="ph-runcenter-section">
-              <h3>产物</h3>
-              {artifacts.length === 0 ? (
-                <div className="ph-runcenter-empty">暂无产物</div>
-              ) : (
-                artifacts.map((artifact) => (
-                  <ArtifactBlock key={artifact.id} artifact={artifact} />
-                ))
-              )}
-            </section>
-
-            <section className="ph-runcenter-section">
-              <h3>事件</h3>
-              <ul className="ph-runcenter-events">
-                {events.map((event) => (
-                  <li key={event.seq}>
-                    <span className="ph-runcenter-event-seq">{event.seq}</span>
-                    <span className="ph-runcenter-event-type">{event.event_type}</span>
-                    <span className="ph-runcenter-event-time">
-                      {formatUs(event.created_at_us)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </>
+              </span>
+            </button>
+          ))}
+          {visible.length === 0 && (
+            <EmptyState inline icon={Icons.runs} title="暂无运行记录" description="工作流启动后，运行会出现在这里" />
+          )}
+        </SidePanel>
+      }
+    >
+      <PageHeader
+        title={detail === null ? "运行" : `${detail.workflowKey} v${detail.workflowVersion}`}
+        meta={detail === null ? undefined : detail.id}
+      >
+        {detail !== null && detail.state === "running" && (
+          <button type="button" className="ph-btn" onClick={() => void control("pause")}>
+            暂停
+          </button>
         )}
-      </div>
-    </div>
+        {detail !== null && detail.state === "paused" && (
+          <button type="button" className="ph-btn" onClick={() => void control("resume")}>
+            继续
+          </button>
+        )}
+        {detail !== null && ACTIVE_STATES.includes(detail.state) && (
+          <button type="button" className="ph-btn is-danger-text" onClick={() => void control("cancel")}>
+            取消运行
+          </button>
+        )}
+      </PageHeader>
+
+      {detail === null ? (
+        <EmptyState icon={Icons.runs} title="选择一个运行" description="在左侧选择一个运行，查看它的步骤、产物和事件" />
+      ) : (
+        <div className="ph-runcenter-detail ph-scroll">
+          <div className="ph-runcenter-detail-meta">
+            <RunStatePill state={detail.state} />
+            {detail.outcome && (
+              <span className="ph-runcenter-outcome">
+                结果：{OUTCOME_LABEL[detail.outcome] ?? detail.outcome}
+              </span>
+            )}
+            <span>创建 {formatUs(detail.createdAtUs)}</span>
+            <span>结束 {formatUs(detail.finishedAtUs)}</span>
+          </div>
+          {detail.errorMessage && <div className="ph-runcenter-error">{detail.errorMessage}</div>}
+
+          {approvals.filter((approval) => approval.state === "pending").length > 0 && (
+            <section className="ph-runcenter-section">
+              <h3>等待批准</h3>
+              {approvals
+                .filter((approval) => approval.state === "pending")
+                .map((approval) => (
+                  <ApprovalCard key={approval.id} approval={approval} onDecide={decide} />
+                ))}
+            </section>
+          )}
+
+          <section className="ph-runcenter-section">
+            <h3>步骤</h3>
+            <ul className="ph-runcenter-steps">
+              {detail.steps.map((step) => (
+                <StepRow key={step.id} step={step} />
+              ))}
+            </ul>
+          </section>
+
+          <section className="ph-runcenter-section">
+            <h3>产物</h3>
+            {artifacts.length === 0 ? (
+              <div className="ph-runcenter-quiet">暂无产物</div>
+            ) : (
+              artifacts.map((artifact) => <ArtifactBlock key={artifact.id} artifact={artifact} />)
+            )}
+          </section>
+
+          <section className="ph-runcenter-section">
+            <h3>事件</h3>
+            <ul className="ph-runcenter-events">
+              {events.map((event) => (
+                <li key={event.seq}>
+                  <span className="ph-runcenter-event-seq">{event.seq}</span>
+                  <span className="ph-runcenter-event-type">{event.event_type}</span>
+                  <span className="ph-runcenter-event-time">{formatUs(event.created_at_us)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+    </ModuleShell>
   );
 }

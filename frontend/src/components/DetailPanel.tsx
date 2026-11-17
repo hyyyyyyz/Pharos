@@ -12,6 +12,7 @@ import type { Paper } from "../api/types";
 import { Icons } from "../design/icons";
 import { dash, isJobActive, statusOf, toVM } from "../lib/model";
 import { isDetailOverlay, pdfTranslationEnabled, useSession, useUI } from "../store";
+import { EmptyState } from "./shell";
 import "./DetailPanel.css";
 
 /** Job error messages can be a whole stack trace; the panel only has room for a line. */
@@ -50,7 +51,7 @@ export function DetailPanel(): JSX.Element {
 
   if (!paper) {
     return (
-      <aside className={detailOverlay ? "ph-dp ph-dp--overlay ph-scroll" : "ph-dp ph-scroll"}>
+      <div className="ph-dp ph-scroll">
         {detailOverlay && (
           <button
             type="button"
@@ -62,12 +63,8 @@ export function DetailPanel(): JSX.Element {
             <Icons.close />
           </button>
         )}
-        <div className="ph-dp-empty">
-          选择一个条目
-          <br />
-          查看详情
-        </div>
-      </aside>
+        <EmptyState icon={Icons.file} title="选择一个条目" description="在列表中点选一篇论文，这里会显示它的信息和操作" />
+      </div>
     );
   }
 
@@ -83,7 +80,7 @@ export function DetailPanel(): JSX.Element {
   const abstract = vm.abstract?.trim() ?? "";
 
   return (
-    <aside className={detailOverlay ? "ph-dp ph-dp--overlay ph-scroll" : "ph-dp ph-scroll"}>
+    <div className="ph-dp ph-scroll">
       {detailOverlay && (
         <button
           type="button"
@@ -106,9 +103,6 @@ export function DetailPanel(): JSX.Element {
         <div className="ph-dp-actions">
           {translated || !pdfTx ? (
             <button type="button" className="ph-dp-primary" onClick={() => openPaper(paper.id)}>
-              <span className="ph-dp-ic">
-                <Icons.open />
-              </span>
               打开阅读
             </button>
           ) : (
@@ -118,9 +112,6 @@ export function DetailPanel(): JSX.Element {
               disabled={translate.isPending || isJobActive(job)}
               onClick={() => translate.mutate()}
             >
-              <span className="ph-dp-ic">
-                <Icons.spark />
-              </span>
               翻译此篇 · 保留排版
             </button>
           )}
@@ -131,9 +122,6 @@ export function DetailPanel(): JSX.Element {
               title="打开阅读（原文）"
               onClick={() => openPaper(paper.id)}
             >
-              <span className="ph-dp-ic">
-                <Icons.open />
-              </span>
               阅读原文
             </button>
           )}
@@ -193,12 +181,12 @@ export function DetailPanel(): JSX.Element {
           {abstract !== "" ? (
             <div className="ph-dp-abstract">{abstract}</div>
           ) : (
-            <div className="ph-dp-muted ph-dp-muted-ab">暂无摘要 · 未能从该 PDF 提取</div>
+            <div className="ph-dp-muted">暂无摘要 · 未能从该 PDF 提取</div>
           )}
         </div>
 
         <div className="ph-dp-sec">
-          <div className="ph-dp-label ph-dp-label-7">附件</div>
+          <div className="ph-dp-label">附件</div>
           <div className="ph-dp-file">
             <span className="ph-dp-file-ic">
               <Icons.file />
@@ -208,7 +196,7 @@ export function DetailPanel(): JSX.Element {
         </div>
 
         <div className="ph-dp-sec">
-          <div className="ph-dp-label ph-dp-label-7">标签</div>
+          <div className="ph-dp-label">标签</div>
           {tags.length > 0 ? (
             <div className="ph-dp-tags">
               {tags.map((t) => (
@@ -223,10 +211,10 @@ export function DetailPanel(): JSX.Element {
         </div>
 
         <div className="ph-dp-sec-last">
-          <div className="ph-dp-label ph-dp-label-7">笔记</div>
+          <div className="ph-dp-label">笔记</div>
           <div className="ph-dp-muted">暂无笔记 · 点击添加</div>
         </div>
       </div>
-    </aside>
+    </div>
   );
 }

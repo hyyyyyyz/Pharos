@@ -42,7 +42,7 @@
 
 .ph-hl-mark {
   position: absolute;
-  border-radius: 1.5px;
+  border-radius: var(--r-xs);
   /* Multiply keeps the ink underneath: the canvas glyphs show through the wash
      rather than being covered by it. `background` is set inline from the
      highlight's colour token. */
@@ -51,7 +51,7 @@
 
 /* The mark whose toolbar is open, so it is obvious which one is being edited. */
 .ph-hl-mark.is-on {
-  box-shadow: 0 0 0 1px var(--c-ac);
+  outline: 1px solid var(--c-ac);
 }
 
 /* A highlight carrying a note gets a marginal rule — the only affordance that
@@ -72,11 +72,11 @@
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
+  gap: 8px;
+  padding: 8px;
   background: var(--c-sf);
   border: 1px solid var(--c-bd);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   box-shadow: var(--sh-pop);
   /* Chrome, not content. */
   user-select: none;
@@ -101,7 +101,7 @@
 .ph-hl-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .ph-hl-sw {
@@ -120,7 +120,7 @@
 }
 .ph-hl-sw.is-on {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring);
 }
 
 .ph-hl-sep {
@@ -135,12 +135,12 @@
   align-items: center;
   gap: 4px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--c-tx2);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -168,7 +168,7 @@
 /* The honest failure line: a save that never reached the server says so
    here, in the popup, next to the buttons that can retry it. */
 .ph-hl-err {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--c-err, #d93a3a);
   white-space: nowrap;
 }
@@ -182,19 +182,19 @@
 .ph-hl-note {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-hl-ta {
   width: 220px;
   height: 76px;
-  padding: 6px 7px;
+  padding: 8px 8px;
   resize: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--c-bd);
   background: var(--c-bg);
   color: var(--c-tx);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   outline: none;
   user-select: text;
@@ -204,21 +204,21 @@
 }
 .ph-hl-ta:focus {
   border-color: var(--c-ac);
-  box-shadow: 0 0 0 2px var(--c-ring);
+  outline: 2px solid var(--c-ring); outline-offset: 0;
 }
 
 .ph-hl-note-row {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ph-hl-ghost,
 .ph-hl-primary {
   height: 24px;
-  padding: 0 10px;
-  border-radius: 6px;
-  font-size: 11px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-meta);
   cursor: pointer;
 }
 
