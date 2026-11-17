@@ -1,4 +1,4 @@
-import { clearSession, getToken } from "../auth/session";
+import { ApiError, body as jsonBody, empty, failure, http, json } from "../api/transport";
 
 /**
  * The document a conversation is about.
@@ -76,68 +76,20 @@ export type ChatEvent =
   | { type: "done"; message: ChatMessage }
   | { type: "error"; message: string };
 
-const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PREPARE_POLL_MS = 1_200;
 const PREPARE_TIMEOUT_MS = 180_000;
 const controllers = new Map<string, AbortController>();
 
-class WebChatError extends Error {
-  readonly status: number | null;
-
-  constructor(message: string, status: number | null = null) {
-    super(message);
-    this.name = "WebChatError";
-    this.status = status;
-  }
-}
-
 const paperIdOf = (documentRef: DocumentRef): string => {
   const paperId = documentRef.paperId?.trim();
   if (!paperId) {
-    throw new WebChatError("网页端 AI 对话只能读取已经导入 Pharos 文库的论文。", 400);
+    throw new ApiError(400, "网页端 AI 对话只能读取已经导入 Pharos 文库的论文。");
   }
   return paperId;
 };
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => window.setTimeout(resolve, ms));
-
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = getToken();
-  if (!token) throw new WebChatError("登录状态已失效，请重新登录。", 401);
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (response.status === 401) clearSession();
-  return response;
-}
-
-async function failure(response: Response): Promise<WebChatError> {
-  let message = response.statusText || "请求失败";
-  try {
-    const value = (await response.json()) as { detail?: unknown };
-    if (typeof value.detail === "string" && value.detail.trim()) message = value.detail;
-  } catch {
-    /* non-JSON response */
-  }
-  return new WebChatError(message, response.status);
-}
-
-async function json<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await request(path, init);
-  if (!response.ok) throw await failure(response);
-  return (await response.json()) as T;
-}
-
-const jsonBody = (value: unknown): Pick<RequestInit, "headers" | "body"> => ({
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(value),
-});
-
-async function empty(path: string, init: RequestInit): Promise<void> {
-  const response = await request(path, init);
-  if (!response.ok) throw await failure(response);
-}
 
 async function pollPreparation(
   paperId: string,
@@ -172,7 +124,7 @@ async function consumeEvents(
   response: Response,
   onEvent: (event: ChatEvent) => void,
 ): Promise<void> {
-  if (!response.body) throw new WebChatError("模型响应没有可读的数据流。", 502);
+  if (!response.body) throw new ApiError(502, "模型响应没有可读的数据流。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
@@ -258,7 +210,7 @@ export const webChat = {
     const controller = new AbortController();
     controllers.set(sendRequest.runId, controller);
     try {
-      const response = await request(
+      const response = await http(
         `/ai/conversations/${encodeURIComponent(sendRequest.conversationId)}/messages/stream`,
         {
           method: "POST",
@@ -270,7 +222,7 @@ export const webChat = {
       await consumeEvents(response, onEvent);
       return sendRequest.runId;
     } catch (error) {
-      if (controller.signal.aborted) throw new WebChatError("已停止生成。");
+      if (controller.signal.aborted) throw new ApiError(499, "已停止生成。");
       throw error;
     } finally {
       controllers.delete(sendRequest.runId);

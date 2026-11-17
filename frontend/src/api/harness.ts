@@ -1,26 +1,6 @@
 /** Typed client for the Research Harness API. */
 
-import { ApiError, authHeaders } from "./client";
-
-const BASE = "/api";
-
-async function json<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init.headers ?? {}) },
-  });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = (await res.json()) as { detail?: unknown };
-      if (typeof body.detail === "string") detail = body.detail;
-    } catch {
-      /* keep statusText */
-    }
-    throw new ApiError(res.status, detail);
-  }
-  return (await res.json()) as T;
-}
+import { json } from "./transport";
 
 export type HarnessRunState =
   | "queued"
