@@ -84,7 +84,7 @@ Stated plainly because a gap someone rediscovers is a gap that wasted their time
 In rough order. Each is a workstream, not a ticket.
 
 1. ~~**Make the Zotero foundation version-compatible.**~~ **Done.** The client is
-   on Zotero 8.0.5/userdata schema 123, production shared-library mode is
+   on Zotero 10.0.7/userdata schema 130 (8.0.5/123 until 2026-11-16), production shared-library mode is
    enabled, Pharos-native server records stay outside `zotero.sqlite`, and the
    Zotero → Pharos → Vibero copied-library round trip kept all 279 attachments
    intact. A local sidecar path is reserved but has no writer yet.

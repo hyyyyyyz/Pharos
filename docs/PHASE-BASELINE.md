@@ -284,3 +284,122 @@ PRODUCT／DOCUMENT），而且**过期条目也会导致失败**，免得名单�
 - **线上后端落后于代码**，缺 `/api/auth/status` 等接口
 - **CI 从未运行过**。工作流已移到仓库根目录（原先在 `client/.github/` 下，GitHub 不读那里），
   等一次手动触发验证
+
+---
+
+# 追加：2026-11-16，基线换到 Zotero 10.0.7（schema 130）
+
+上面整份记录讲的是 10.0 → 8.0.5。这一节是反方向：8.0.5 → 10.0.7。起因很直接——
+负责人本机的 Zotero 已经是 10.0.7，文库实测 **schema 130**，而 8.0.5 客户端是 123，
+`assertMigrationAllowed()` 精确匹配不成立，按设计拒绝打开。闸没有错，是基线落后了。
+决定的来龙去脉与代价见 [DECISIONS.md](DECISIONS.md) §11 的修订。
+
+## 先确认目标是哪个 tag
+
+不凭印象，逐个读 `resource/schema/userdata.sql` 第一行：
+
+| tag | userdata schema |
+| --- | --- |
+| 8.0.5 | 123 |
+| 10.0.2 | 129 |
+| 10.0.5 / 10.0.6 / **10.0.7** | **130** |
+| 10.0.8 / 10.0.9 | 131 |
+
+只有 10.0.5–10.0.7 是 130；10.0.7 又是负责人在用的版本，所以不选"最新的 10.x"。
+
+## 做法与上次相同
+
+三棵树放在仓库外：原始 8.0.5（`bdd3b1df`，合并基）、原始 10.0.7（`35429ad6`，theirs）、
+当前 `client/`（ours）。子模块（含嵌套的 `translate/modules/utilities`、`reader/pdfjs/pdf.js`
+等）按两个 tag 各自的 gitlink 取，三棵树结构一致才能合并。然后 `git merge`。
+
+### 合并统计
+
+- 上游 8.0.5 → 10.0.7：**4935 个文件**有变化（新增 1205、删除 141、修改 1436、其余为改名）
+- 我们对 8.0.5 的改动：**736 个文件**
+- 两边都改过的文件：**109 个**，其中 **43 个自动合并成功**，**66 个冲突**
+- 66 个冲突里：**46 个是 modify/delete**，**19 个是内容冲突**，**1 个 add/add**
+- 46 个 modify/delete 里 44 个只是我们旧拷贝删掉了的东西（子模块里的 `.github`、`.eslintrc`、
+  Office 插件的 `build/` 预编译模板等）而上游又改了它们。这些不用重贴，保持删除
+
+### 冲突逐项处理
+
+| 文件 | 处理 |
+| --- | --- |
+| `zoteroPane.xhtml` | 把 `pharos-deck` 外壳从我们的版本里**结构化摘掉**（按标签配对），三方合并后再**结构化套回去**。合并本身零冲突，往返无损 |
+| `zoteroPane.js` | 一处：升级横幅的版本参数。以上游为底，保留我们的 `String(majorVersion)` |
+| `itemDetails.js` | 上游把一半内容挪进 `itemPaneContainerBase.mjs`。**以上游为底重贴**四处 Pharos 改动：两个面板的挂载、`primaryPane`/`setPrimaryPane`、渲染时主面板优先于固定面板、`scrollToPane` 的覆盖 |
+| `itemTree.jsx` | 上游把"空库欢迎文字"整段挪到了 `collectionViewItemTree.jsx`，我们对它的唯一改动（`SERVICE_DOMAIN_NAME`）重贴到新位置 |
+| `app/build.sh` | 取上游新结构，在 `else`（未签名构建）分支里保留我们的 Word dylib 临时签名，并把上游新增的"给 Mozilla 辅助 app 重签"放进同一分支 |
+| `app/scripts/dir_build` | 以上游为底（增量更新机制回来了），保留：无 git 元数据时的时间戳哈希回退、`codesign_local` 调用（改用 `$APP_NAME.app`）。`incremental_update` 里写死的 `Zotero.app` / `Zotero_*` 改成 `$APP_NAME` |
+| `js-build/reader.js` | 保留我们的 pin/摘要/按需源码构建；源码构建换成 10 的 `npm run build:zotero` |
+| `js-build/pdf-worker.js`、`pdf-worker/` | 删除。10 用 `document-worker`，新增的 `js-build/document-worker.js` 补上同样的 pin 与 npm 缓存适配 |
+| `reader/pdfjs/build`、`reader/package.json` | 取上游。我们当年为 8.0.5 的 reader 手工补的 `PDFJS_CONFIG` 现在上游自带 |
+| `resource/config.mjs` | 保留我们的 URL 与注释，补上游新增的 `READ_ALOUD_URL` |
+| `brand.ftl` | 保留我们的名字，补上游新增的 `-subscription-name`（Read Aloud 的 ftl 在用，缺了会渲染出错） |
+| `scss/themes/_{light,dark}.scss` | 上游新增三个键，我们已经有了同名键，保留我们的 |
+| `zotero.ftl`（en-US、zh-CN） | 保留 `{ -app-name }`，补上游新增的 `mac-word-plugin-install-folder-message` |
+| `word-for-mac/.../installer.mjs` | 上游新增 `{ folderAccess }` 参数，我们的 `zp` 空值保护保留 |
+| `account.svg`（add/add） | 上游 10 用 `account.svg` 作新的"账户"设置页图标，**同名撞车**。上游保留原名，我们的图标改名 `pharos-account.svg`，两处引用改过去 |
+| `version`、`updater.exe`/`zotero.exe` 的 tar.xz | 版本号保持 2.0.0.SOURCE；两个 Windows 压缩包取上游真实二进制 |
+
+### 没有冲突、但必须改的
+
+- `pharosChatBox.js`、`pharosTranslateBox.js`：8.0.5 那次把 `ItemPaneSectionElementBase` 的
+  `importESModule` 改成了全局；10 里它又只剩模块形式。**表现与上次一模一样**：控制台一行
+  ReferenceError，整个分节静默消失。是启动应用才看到的，合并和构建都不报错。
+  **上次记下的"一次 import 失败，表现为一个位置错误的空面板"，这次是它的镜像。**
+- 偏好设置：上游把"同步"页换成"账户"页（`preferences_account`），原先同步页的位置现在是账户页。
+  我们的 Pharos 设置页挂在它之后，没受影响。
+- 阅读器工具栏：上游在自定义按钮区和"查找"之间插了"外观"按钮，
+  `pharosTranslateTest` 里"翻译按钮紧挨着查找"的断言不再成立。改成断言真正要紧的性质（
+  Pharos 的按钮仍在内置按钮之前）。
+
+### 没有重复上次的坑
+
+- 构建脚本这次**带回**了增量更新机制，并检查了其中所有写死的 `Zotero`。
+- 上次两次栽在"上游基础设施跟着新基线走"（`js-build/reader.js`、`codesign_local`）。
+  这次逐个冲突文件对着"我们的改动"清单核对，三个脚本的适配都在。
+- 合并之后又做了一次机械核对：把我们对 8.0.5 新增的每一行，在合并结果里逐行查找，
+  缺失的只有上面解释过的那几处（被有意替换的行）。
+
+### 有意没带的
+
+- `document-worker/pdf.js/test`（143 MB pdf.js 测试夹具，构建不需要）
+- 子模块里的点文件、`app/modules/*/build/`（见 `client/UPSTREAM.txt`）
+
+## 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm ci && npm run build` | 通过（reader 从源码编，约 2 分钟；document-worker、note-editor 取官方预编译） |
+| `app/scripts/dir_build -p m` | 通过，产出 `Pharos.app` |
+| 隔离目录启动、新建空文库 | 进入主界面，左侧模块栏在；**userdata = 130** |
+| 在一份真实文库的**副本**上启动 | 不报 schema 不匹配，不触发迁移（system 32 / userdata 130 前后一致），无新增表，`integrity_check` ok，条目、分类、标签可见 |
+| Pharos 测试套件 | **595/597**，与升级前相同；两个失败是原有的 `pharosDiscovery` 两条 |
+| `check-locale-parity` | 通过（722 个 id） |
+| `scripts/install_desktop.sh --build-only` | 通过 |
+
+### 上游套件（`itemPane` + `zoteroPane`，207 个）
+
+| | 三次结果 |
+| --- | --- |
+| 原始 10.0.7（A/B 对照，同一台机器） | 206、207、206 |
+| 合并后的 Pharos（并发其他命令时） | 200、202、200 |
+| 合并后的 Pharos（机器空闲） | 206、204、206 |
+
+失败全是焦点与交互类（窗口没有成为系统激活窗口就超时），与 AGENTS.md 里记的同一类噪声。
+单独拎出 `should tab across the zotero pane` 在两边各跑四次：Pharos 4 次失败，原始 10.0.7
+3 次失败。**这个量级的差别区分不出"我们引入"与"测试机环境"**；结论是它在原始版本上
+同样会失败，不是合并带来的。**一次并发跑出 200 对 206 的落差本身说明：对比必须在空闲机器上做。**
+
+## 过程中发现的、不属于这次改动的事
+
+- 构建启动时会尝试把 LibreOffice 插件装进用户**真实的** LibreOffice 配置（`unopkg`），
+  这是上游行为，与数据目录隔离无关。
+- 无后端可达时，启动日志里有 `pharos.selab.top` 的 530 错误刷屏，属于预期。
+- `Missing chrome or resource URL: chrome://zotero/skin/16/white/loading.svg`：来源不在
+  `client/` 里，Mozilla 运行时自带的引用，未处理。
+- `zoteroPane.js:1723` 的 `tagSelector is null` 在没有标签选择器的测试窗口里出现，上游代码。
+- Read Aloud（朗读）是 10 的新功能，其账户入口指向 zotero.org；是否对 Pharos 用户隐藏
+  是产品决定，没有动。

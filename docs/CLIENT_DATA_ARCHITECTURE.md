@@ -30,7 +30,8 @@ Sharing the library does **not** mean sharing the whole application identity.
 
 Shared-library mode is enabled in production and guarded.
 
-- Pharos is aligned to the Zotero 8.0.5 baseline and userdata schema `123`;
+- Pharos is aligned to the Zotero 10.0.7 baseline and userdata schema `130`
+  (previously 8.0.5 / `123`; see DECISIONS.md §11, revision of 2026-11-16);
 - `DATA_DIR_NAME: "Zotero"` and `DB_NAME: "zotero"` make a release open the
   same library and attachments while `ID: "pharos"` keeps the application
   profile, URL protocol and branding separate;

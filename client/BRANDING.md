@@ -72,7 +72,7 @@ bundle ID、协议、凭据或用户可见品牌伪装成 Zotero。完整约束�
    仍是 `Zotero` 时解析到了 `~/Zotero`，构建版直接去开真实的 `zotero.sqlite`——
    当时只因另一进程持有 SQLite 锁而失败（`NS_ERROR_STORAGE_BUSY`）。若那时真 Zotero
    未运行，schema 迁移有可能让正版客户端打不开自己的库。当时把默认目录改为
-   `~/Pharos` 是正确止损，但它不是最终产品架构。随后 Zotero 8.0.5 兼容迁移和
+   `~/Pharos` 是正确止损，但它不是最终产品架构。随后 Zotero 8.0.5 兼容迁移（现已换到 10.0.7，见 UPSTREAM.txt）和
    往返测试已经完成，正式版现已共享文库；开发构建继续强制隔离。
 
 2. **自动更新**。`[AppUpdate]` 原本指向 Zotero 官方更新服务器，存在把官方 Zotero 当作

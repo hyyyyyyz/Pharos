@@ -62,8 +62,8 @@ Pharos 独有记录目前进入可选后端，每日论文另有用户选择的�
 不会给 `zotero.sqlite` 增加私有表或字段。源码仅预留文库旁的
 `pharos-local.sqlite` 路径，目前没有功能创建或写入它。
 
-**当前安全状态：正式版共享文库已经启用。** 客户端基线是 Zotero 8.0.5，
-userdata schema 123，数据库名仍为 `zotero.sqlite`。文库副本已经完成 Zotero →
+**当前安全状态：正式版共享文库已经启用。** 客户端基线是 Zotero 10.0.7，
+userdata schema 130，数据库名仍为 `zotero.sqlite`。文库副本已经完成 Zotero →
 Pharos → Vibero 往返验证，279 个附件全部保持完整。Pharos 遇到不兼容 schema 时
 不会迁移真实文库，也不会把 Pharos 独有数据写入 `zotero.sqlite`。详见
 [`../docs/CLIENT_DATA_ARCHITECTURE.md`](../docs/CLIENT_DATA_ARCHITECTURE.md)。

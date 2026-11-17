@@ -66,7 +66,7 @@ cd backend && .venv/bin/pytest
 cd frontend && npm run build && npx tsc -b
 npm test                         # Vitest, sharing vite.config.ts
 
-# Desktop client
+# Desktop client (Zotero 10.0.7 baseline, userdata schema 130)
 cd client
 npm run build                    # transpile JS/JSX, compile SCSS
 app/scripts/dir_build -p m       # package into app/staging/Pharos.app
@@ -80,8 +80,10 @@ node test/check-locale-parity.js  # both locale files define the same ids
 
 ### The upstream baseline
 
-The whole suite is **3364/3404** on a clean tree. Nobody had run it end to end
-before, so that number is worth stating rather than discovering again:
+The whole suite was **3364/3404** on the Zotero 8.0.5 baseline. The baseline is
+now 10.0.7 and the full suite has not been re-run end to end on it, so treat
+that number as history until it is. Nobody had run it end to end before 8.0.5,
+so a number is worth stating rather than discovering again:
 
 ```bash
 cd client && test/runtests.sh          # all of it, ~30 minutes
@@ -106,10 +108,14 @@ the full run is for before a release.
 
 ### `itemPane` and `zoteroPane` are a RANGE, not a number
 
-They score roughly **189-199 out of 203**, and which number you get is largely
-luck. Four failures are hard and repeatable (bibliography-entry mode, `不详` vs
-`n.d.`); the rest are focus and interaction tests that time out when the window
-is not OS-active, and how many time out varies run to run on the same code.
+On the Zotero 10.0.7 baseline they score roughly **200-207 out of 207**, and
+which number you get is largely luck: there are no hard, repeatable failures
+any more, only focus and interaction tests that time out when the window is not
+OS-active (tab traversal, batch edits, focus while switching items), and how
+many time out varies run to run on the same code -- 200 with other work running
+on the machine, 204-206 when it is idle, against 206-207 for pristine upstream.
+(On 8.0.5 it was 153/157 with four repeatable `不详` vs `n.d.` failures; before
+that, 189-199 of 203.)
 
 This was written down after quoting "199/203, four known failures" for a long
 time as though it were a baseline. It is the top of the range. Treating it as
@@ -186,8 +192,9 @@ problem, or a licence violation.
   client's context-menu tests exist because the menu is addressed by index and a
   mismatch shows the wrong entry without throwing.
 - **Check upstream tests before and after.** `client/` carries Zotero's full
-  suite. `itemPane` and `zoteroPane` have four pre-existing failures
-  (bibliography-entry mode); anything beyond that is yours.
+  suite. `itemPane` and `zoteroPane` have no repeatable
+  failures on 10.0.7, only the focus-dependent noise described above; a failure
+  that repeats across runs is yours.
 - **Commit messages say why.** The diff already says what.
 - **Version by the size of the change, not the size of the diff.** Desktop
   releases are `MAJOR.MINOR.PATCH`, tagged `desktop-v<version>`. A defect

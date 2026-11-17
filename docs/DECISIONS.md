@@ -261,6 +261,26 @@ This also supersedes the desktop portion of decision 8. One-way Zotero Cloud
 import remains valid for the browser and remote-device companion, which cannot
 open a local Zotero database.
 
+**Revision, 2026-11-16: the baseline moved to Zotero 10.0.7 (userdata schema 130).**
+The owner's installed Zotero is 10.0.7 and their library is schema 130, so the
+8.0.5 client (schema 123) refused to open it -- the exact-match guard doing what
+it exists to do. The baseline therefore moved forward again, by the method in
+[`PHASE-BASELINE.md`](PHASE-BASELINE.md) (three-way merge of pristine 8.0.5,
+pristine 10.0.7 and `client/`). 10.0.7 was chosen, not "the newest 10.x": the
+schema of each tag was read from `resource/schema/userdata.sql` -- 10.0.2 is
+129, 10.0.5 through 10.0.7 are 130, 10.0.8 and later are 131 -- and only 130
+matches.
+
+Nothing about the guard changed. `assertMigrationAllowed()` still requires
+equality, and there is no 123-to-130 range or automatic migration of an older
+library; that would reopen the one-way door this decision exists to keep shut.
+
+**The cost, stated plainly:** anyone still running Zotero 8 (schema 123) cannot
+share a library with this Pharos. Its guard will refuse their library rather
+than upgrade it, which is safe but means they must stay on the earlier Pharos or
+move to Zotero 10 first. Zotero 10 upgrading a library is itself one-way for
+Zotero 8.
+
 ## 12. The desktop's discovery does not poll
 
 The web client polls the search history and the open run every two seconds while
