@@ -937,6 +937,28 @@ pharos-rail-expand =
 pharos-rail-resize =
     .aria-label = 调整模块栏宽度
 
+## 粘贴链接导入
+
+pharos-import-placeholder =
+    .placeholder = 粘贴 arXiv 链接或 DOI
+    .aria-label = 粘贴 arXiv 链接或 DOI 导入论文
+pharos-import-button-tooltip =
+    .title = 粘贴链接导入
+    .aria-label = 粘贴 arXiv 链接或 DOI 导入论文
+pharos-import-busy = 正在导入…
+pharos-import-done = 已导入 { $count } 篇
+pharos-import-existing = { $count ->
+    [one] 文库里已有这篇
+   *[other] 其中 { $count } 篇文库里已有
+}
+pharos-import-partial = 已导入 { $done }/{ $total } 篇。{ $reason }
+pharos-import-fail-unrecognized = 无法识别的链接
+pharos-import-fail-not-found = 没找到这篇论文
+pharos-import-fail-network = 网络不通
+pharos-import-fail-rate-limited = arXiv 暂时限流，稍后再试
+pharos-import-fail-read-only = 这个文库是只读的
+pharos-import-fail-other = 导入失败
+
 ## 管理员后台
 
 pharos-admin-menu = 管理员后台…
