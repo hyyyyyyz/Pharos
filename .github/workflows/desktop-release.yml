@@ -252,26 +252,46 @@ jobs:
           test -d artifacts/pharos-linux
           find artifacts -maxdepth 2 -type f | sort
 
+      # Each job resolves the version for itself — `steps` is job-scoped, so
+      # the two build jobs' `version` steps are not reachable from here. This
+      # job runs only on a tag (see the `if` above), so the tag is the whole
+      # source of truth and the prefix strip is all that is needed.
+      - name: Resolve version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#desktop-v}" >> "$GITHUB_OUTPUT"
+
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
           # A tag is the decision to release. Since the job gate and artifact
           # check above require every platform, publish it outright.
           draft: false
+          # The heading takes the version being built, not a literal.
+          #
+          # This body is the same text for every release, which is fine for the
+          # install instructions below — they do not change — but the heading
+          # was written as "Pharos Desktop 1.3.1" and then shipped verbatim on
+          # 1.4.0, 1.5.0, 1.6.0, 1.6.1 and 2.0.0. Every one of those releases
+          # publicly announced itself as 1.3.1, and the bullets under it read as
+          # news about an upgrade five versions old.
+          #
+          # What is genuinely per-release — what changed — belongs in notes
+          # written for that release; edit the published release to add them.
+          # What this template can be trusted with is the part that is true of
+          # every build: where it connects, and how to install an unsigned one.
           body: |
-            ## Pharos Desktop 1.3.1
+            ## Pharos Desktop ${{ steps.version.outputs.value }}
 
-            - Starting with 1.3.1, official Pharos builds connect to the hosted product at
-              `https://pharos.selab.top`. The editable server-address field has
-              been removed from Settings so an installed client has one clear
-              account and service boundary.
-            - Credentials remain bound to the service that issued them. Since
-              older releases did not record a trustworthy token origin, 1.3.1
-              discards every legacy Pharos token and cached account identity
-              before that token can be attached to an official-service request.
-              Sign in again once after upgrading.
-            - The local Zotero library, PDF Reader, notes and annotations are not
-              affected by this account migration and remain available offline.
+            - Official Pharos builds connect to the hosted product at
+              `https://pharos.selab.top`. There is no editable server-address
+              field in Settings, so an installed client has one clear account
+              and service boundary.
+            - Credentials stay bound to the service that issued them. Upgrading
+              from a release older than 1.3.1 discards every legacy Pharos token
+              and cached account identity once, because those releases did not
+              record a trustworthy token origin. Sign in again after upgrading.
+            - The local Zotero library, PDF Reader, notes and annotations are
+              not affected by any of the above and remain available offline.
 
             ## Install
 
