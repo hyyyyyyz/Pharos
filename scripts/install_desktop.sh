@@ -150,6 +150,11 @@ codesign --verify --deep --strict "$TARGET" \
 	&& echo "  signature: ad-hoc, valid" \
 	|| die "codesign verification failed for $TARGET"
 
+# Read the schema this build carries rather than naming a number here: the
+# baseline has moved before, and a stale figure in this message tells the user
+# the wrong thing about which Zotero library the app will agree to open.
+SCHEMA="$(head -n 1 "$CLIENT/resource/schema/userdata.sql" | tr -dc '0-9')"
+
 cat <<EOF
 
 Installed: $TARGET ($(du -sh "$TARGET" | cut -f1))
@@ -159,8 +164,8 @@ First launch
     opens it with a plain double-click. If Gatekeeper still objects, run:
         xattr -dr com.apple.quarantine "$TARGET"
   - This is a source build: automatic updates do not apply; rebuild to upgrade.
-  - It opens the Zotero library (~/Zotero, schema 123). To try it on a throwaway
-    library first, launch with a separate data directory:
+  - It opens the Zotero library (~/Zotero) only if that library's userdata
+    schema is exactly ${SCHEMA:-the one this build carries}. To try it on a throwaway library first, launch with a separate data directory:
         "$TARGET/Contents/MacOS/zotero" -datadir "\$HOME/PharosTry"
   - Self-hosted backend: see README, 'Pointing a source build at your backend'.
 EOF
